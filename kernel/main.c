@@ -21,14 +21,6 @@
 
 #include "mem/mem.h"
 
-int get_buddy(int page_idx, int order) {
-  int buddy_idx = page_idx ^ (1 << order);
-  kprintf("order: %d | pages: %d\npage index: %d | buddy index: %d\n\n",
-      order, 2 << order, page_idx, buddy_idx);
-
-  return buddy_idx;
-}
-
 void kmain(multiboot_info_t *mbinfo) {
   kclear();
   kprintf("Kernel loaded!\n");
@@ -57,4 +49,16 @@ void kmain(multiboot_info_t *mbinfo) {
       mem_init(mb->base_addr_low, mb->length_low);
     }
   }
+
+  page_t *page = alloc_pages(1, 3);
+  kprintf("page = { \n"
+          "  frame = %p\n"
+          "  size = %u\n"
+          "  flags = %b\n"
+          "  next = %p\n"
+          "}\n",
+          page->frame,
+          page->size,
+          page->flags,
+          page->next);
 }

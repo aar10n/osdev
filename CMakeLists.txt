@@ -57,5 +57,5 @@ add_executable(kernel
     kernel/cpu/gdt.c include/kernel/cpu/gdt.h
     include/multiboot.h
     kernel/mem/mem.c kernel/mem/mem.h
-    kernel/mem/alloc.c kernel/mem/alloc.h)
+    kernel/mem/alloc.c kernel/mem/alloc.h kernel/mem/page.c kernel/mem/page.h)
 target_link_libraries(kernel drivers fs libc)

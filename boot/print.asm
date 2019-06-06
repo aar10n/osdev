@@ -29,7 +29,7 @@ putx:
     cmp cl, 4        ; Loop 4 times
     je .end
     mov ax, dx       ; Move the value into `ax`
-    and ax, 0xF      ; Single out the last bit
+    and ax, 0xF      ; Single out the prev bit
     add al, '0'      ; Convert it to ASCII
     cmp al, '9'      ; Check if `al` is less than 9
     jle .skip

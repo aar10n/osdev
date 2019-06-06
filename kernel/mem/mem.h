@@ -15,15 +15,23 @@
 #define ptov(addr) ((addr) + KERNEL_BASE)
 #define vtop(addr) ((addr) - KERNEL_BASE)
 
-#define flag_get(flags, flag) ((flags >> flag) & 1)
-#define flag_set(flags, flag) (flags |= (1 << flag))
+#define addr_to_pde(addr) ((unsigned int)((uintptr_t) addr >> 22))
+#define addr_to_pte(addr) ((unsigned int)((uintptr_t) addr >> 12 & 0x03FF))
 
-#define addr_to_pde(addr) ((unsigned int)(addr >> 22))
-#define addr_to_pte(addr) ((unsigned int)(addr >> 12 & 0x03FF))
-
-#define BLOCK_IS_TOP  0
-#define BLOCK_IS_HEAD 2
-#define BLOCK_IS_FREE 4
+/*
+ * page status flags
+ *
+ *   PAGE_FREE  - Page is available
+ *   PAGE_USED  - Page is unavailable
+ *   PAGE_HEAD  - Page is a head buddy
+ *   PAGE_TAIL  - Page is a tail buddy
+ *   PAGE_SPLIT - Page is a split page
+ */
+#define PAGE_FREE  0x00
+#define PAGE_USED  0x01
+#define PAGE_HEAD  0x02
+#define PAGE_TAIL  0x04
+#define PAGE_SPLIT 0x08
 
 //
 //
@@ -32,21 +40,28 @@
 extern uint32_t _kernel_start;
 extern uint32_t _kernel_end;
 extern uint32_t _page_directory;
-extern uint32_t _initial_page_table;
+// extern uint32_t _initial_page_table;
 
 #define kernel_start (ptov((uint32_t) &_kernel_start))
 #define kernel_end ((uint32_t) &_kernel_end)
 #define page_directory ((uint32_t *) &_page_directory)
-#define initial_page_table ((uint32_t *) &_initial_page_table)
 
 typedef struct page {
-  void  *addr;
+  uintptr_t frame;
   size_t size;
+  uint8_t flags;
+  struct page *next;
+  struct page *parent;
+
+  union {
+    struct page *head;   // PAGE_SPLIT
+    struct page *tail;   // PAGE_HEAD
+  };
 } page_t;
 
 void mem_init(uint32_t base_addr, size_t length);
-void mem_split(unsigned int order);
-
-page_t *alloc_pages(unsigned int order);
+page_t *alloc_pages(int num, int order);
+page_t *alloc_page();
+void free_page(page_t *page);
 
 #endif //KERNEL_MEM_MEM_H

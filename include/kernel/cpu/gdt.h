@@ -13,7 +13,7 @@ typedef struct __attribute__((packed)) {
   uint8_t  base_middle;         // The next 8 bits of the kheap_base.
   uint8_t  access;              // Access flags, determine what ring this segment can be used in.
   uint8_t  granularity;
-  uint8_t  base_high;           // The last 8 bits of the kheap_base.
+  uint8_t  base_high;           // The prev 8 bits of the kheap_base.
 } gdt_entry_t;
 
 typedef struct __attribute__((packed)) {

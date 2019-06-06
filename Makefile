@@ -7,9 +7,9 @@ run: $(BUILD)/osdev.iso $(BUILD)/disk.img
 
 debug: $(BUILD)/osdev.iso $(BUILD)/disk.img
 	qemu-system-i386 -s -S 								\
-    	-drive file=$(BUILD)/osdev.iso,media=cdrom	    \
-    	-drive file=$(BUILD)/disk.img,format=raw,if=ide &
-	i386-elf-gdb 										\
+    	-drive file=$(BUILD)/disk.img,format=raw,if=ide \
+        -drive file=$(BUILD)/osdev.iso,media=cdrom	    &
+	i386-elf-gdb -w 									\
 		-ex "target remote localhost:1234"				\
 		-ex "add-symbol $(BUILD)/kernel"
 

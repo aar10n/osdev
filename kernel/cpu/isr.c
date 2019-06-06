@@ -120,6 +120,7 @@ char *exception_messages[] = {
 
 void isr_handler(registers_t r) {
   kprintf("%s - %b\n", exception_messages[r.int_no], r.err_code);
+  while (1); // hang
 }
 
 void register_interrupt_handler(uint8_t n, isr_t handler) {

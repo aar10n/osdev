@@ -82,7 +82,7 @@ enum ATADeviceControl {
   DC2,  // Reserved.
   DC3,  // Reserved.
   DC4,  // Reserved.
-  HOB,  // Read last HOB of last LBA48 value.
+  HOB,  // Read prev HOB of prev LBA48 value.
 };
 
 // ATA Device Address Register

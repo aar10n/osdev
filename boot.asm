@@ -37,11 +37,10 @@ _page_directory:
   dd 0b10000011                       ; 4MB Identity Map
   times (KERNEL_PAGE - 1) dd 0        ; Page Directory Entries
   dd 0b10000011                       ; 4MB Kernel
-  dd 0b10000011                       ; 4MB Kernel Cache
-  times (1024 - KERNEL_PAGE - 2) dd 0 ; Page Directory Entries
-global _initial_page_table
-_initial_page_table:
-  times (1024) dd 0
+  times (1024 - KERNEL_PAGE - 1) dd 0 ; Page Directory Entries
+;global _initial_page_table
+;_initial_page_table:
+;  times (1024) dd 0
 
 
 ;
@@ -83,9 +82,9 @@ _higher_half:
   ;  mov cr3, eax ;
 
   mov esp, kernel_stack_top ; Setup the stack pointer
-  ;  push eax                  ; Push the multiboot header
+  push eax                  ; Push the multiboot header
 
-  add ebx, KERNEL_BASE   ; Make the header virtual
+  add ebx, KERNEL_BASE      ; Make the header virtual
   push ebx                  ; Push the header pointer
 
   cli                       ; Clear interrupts
