@@ -1,5 +1,5 @@
 #
-# This file defines various toolchains
+# Compiler toolchain options
 #
 
 ifndef TARGET
