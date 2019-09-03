@@ -9,8 +9,8 @@
 #include <drivers/screen.h>
 
 #include <stdint.h>
-#include <stdlib.h>
-#include <stdio.h>
+#include "../../libc/stdlib.h"
+#include "../../libc/stdio.h"
 
 uint32_t tick = 0;
 

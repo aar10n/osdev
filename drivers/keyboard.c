@@ -9,9 +9,9 @@
 #include <kernel/cpu/isr.h>
 
 #include <stdint.h>
-#include <stdlib.h>
+#include "../libc/stdlib.h"
 #include <stddef.h>
-#include <stdio.h>
+#include "../libc/stdio.h"
 
 char *translate_scancode(char scancode);
 

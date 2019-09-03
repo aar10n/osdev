@@ -21,9 +21,8 @@ MB_MAGIC equ 0x1BADB002                ; Multiboot head magic number
 MB_FLAGS equ MB_ALIGN | MB_INFO        ; Multiboot header flags
 MB_CHECKSUM equ -(MB_MAGIC + MB_FLAGS) ; Multiboot header checksum
 
-KERNEL_BASE equ 0xC0000000          ; Kernel virtual location (3GB)
-KERNEL_PAGE equ (KERNEL_BASE >> 22) ; Kernel page index
-
+KERNEL_BASE equ 0xC0000000             ; Kernel virtual location (3GB)
+KERNEL_PAGE equ (KERNEL_BASE >> 22)    ; Kernel page index
 
 ;
 ; Data
@@ -36,12 +35,12 @@ global _page_directory
 _page_directory:
   dd 0b10000011                       ; 4MB Identity Map
   times (KERNEL_PAGE - 1) dd 0        ; Page Directory Entries
-  dd 0b10000011                       ; 4MB Kernel
+  dd 0b10000011                       ; 4MB Kernel Area
   times (1024 - KERNEL_PAGE - 1) dd 0 ; Page Directory Entries
-;global _initial_page_table
-;_initial_page_table:
-;  times (1024) dd 0
 
+global _kernel_page_table
+_kernel_page_table:
+  times 1024 dd 0
 
 ;
 ; Text
@@ -67,7 +66,7 @@ _start:
 
   mov ecx, cr0
   or ecx, (1 << 0)  ; Enable Protected Mode
-  or ecx, (1 << 31) ; Enable Paging Mode
+  or ecx, (1 << 31) ; Enable Paging
   mov cr0, ecx
 
   ; Absolute jump to higher half
@@ -78,8 +77,9 @@ _higher_half:
   ; Unmap the first 4MB of memory
   mov dword [_page_directory], 0
   invlpg [0]
-  ;  mov eax, cr3 ; invlpg
-  ;  mov cr3, eax ;
+
+;  mov eax, cr3 ; invlpg
+;  mov cr3, eax ;
 
   mov esp, kernel_stack_top ; Setup the stack pointer
   push eax                  ; Push the multiboot header
@@ -98,6 +98,7 @@ _higher_half:
 ; Bss
 ;
 section .bss
+
 global kernel_stack_bottom
 global kernel_stack_top
 kernel_stack_bottom:

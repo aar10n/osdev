@@ -4,7 +4,7 @@
 
 #include <drivers/serial.h>
 #include <drivers/asm.h>
-#include <string.h>
+#include "../libc/string.h"
 
 
 int is_transmit_empty(int port) {

@@ -4,15 +4,15 @@
 
 #include <drivers/asm.h>
 #include <drivers/screen.h>
-#include <stdlib.h>
-#include <stdio.h>
+#include "../../libc/stdlib.h"
+#include "../../libc/stdio.h"
 
-#include "kernel/cpu/isr.h"
-#include "idt.h"
+#include <kernel/cpu/isr.h>
+#include <kernel/cpu/idt.h>
 
 isr_t interrupt_handlers[256];
 
-void isr_install() {
+void install_isr() {
   set_idt_gate(0, (uint32_t)isr0);
   set_idt_gate(1, (uint32_t)isr1);
   set_idt_gate(2, (uint32_t)isr2);
@@ -118,8 +118,30 @@ char *exception_messages[] = {
     "Reserved"
 };
 
-void isr_handler(registers_t r) {
-  kprintf("%s - %b\n", exception_messages[r.int_no], r.err_code);
+void isr_debug_dump(cpu_t cpu, uint32_t int_no, uint32_t err_code) {
+  kprintf("-- cpu exception --\n");
+  kprintf("interrupt number: %d\n", int_no);
+  kprintf("error code: %d\n", err_code);
+  kprintf("general registers:\n");
+  kprintf("  eax: %p\n", cpu.eax);
+  kprintf("  ebx: %p\n", cpu.ebx);
+  kprintf("  ecx: %p\n", cpu.ecx);
+  kprintf("  edx: %p\n", cpu.edx);
+  kprintf("  esi: %p\n", cpu.esi);
+  kprintf("  edi: %p\n", cpu.edi);
+  kprintf("  esp: %p\n", cpu.esp);
+  kprintf("  ebp: %p\n", cpu.ebp);
+  kprintf("control registers:\n");
+  kprintf("  cr0: %b\n", cpu.cr0);
+  kprintf("  cr2: %p\n", cpu.cr2);
+  kprintf("  cr3: %p\n", cpu.cr3);
+  kprintf("  cr4: %b\n", cpu.cr4);
+}
+
+void isr_handler(cpu_t cpu, uint32_t int_no, uint32_t err_code) {
+  kprintf("\n%s - %b\n", exception_messages[int_no], err_code);
+  kprintf("cr2: %p\n\n", cpu.cr2);
+  isr_debug_dump(cpu, int_no, err_code);
   while (1); // hang
 }
 

@@ -1,0 +1,43 @@
+#
+# This file defines various toolchains
+#
+
+ifndef TARGET
+	TARGET = default
+endif
+
+# Toolchains
+ifeq ($(TARGET),i386)
+	TOOLCHAIN = i386-elf-
+	QEMU = qemu-system-i386
+	CFLAGS += -ffreestanding -m32
+	ASFLAGS += -f elf32
+	LDFLAGS +=
+else ifeq ($(TARGET),i686)
+	TOOLCHAIN = i686-elf-
+	QEMU = qemu-system-i686
+	CFLAGS += -ffreestanding -m32
+	ASFLAGS += -f elf32
+	LDFLAGS +=
+else ifeq ($(TARGET),default)
+	TOOLCHAIN =
+	QEMU =
+	CFLAGS +=
+	ASFLAGS +=
+	LDFLAGS +=
+else
+	ERR = $(error unknown target $(TARGET))
+endif
+
+CXX_STD = -std=c++98
+C_STD = -std=c99
+
+# Programs
+CXX = $(TOOLCHAIN)g++ $(CXX_STD)
+CC  = $(TOOLCHAIN)gcc $(C_STD)
+LD  = $(TOOLCHAIN)ld
+AR  = $(TOOLCHAIN)ar
+AS	= nasm
+
+GDB = $(TOOLCHAIN)gdb
+MKRESCUE = $(TOOLCHAIN)grub-mkrescue

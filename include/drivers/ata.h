@@ -8,6 +8,10 @@
 #include <stdint.h>
 #include <stddef.h>
 
+#define ATA_DRIVE_PRIMARY   ATA_MASTER, ATA_IO_PRIMARY, ATA_CTRL_PRIMARY
+#define ATA_DRIVE_SECONDARY ATA_MASTER, ATA_IO_SECONDARY, ATA_CTRL_SECONDARY
+
+
 // ATA Data Direction
 #define ATA_READ      0x00
 #define ATA_WRITE     0x01

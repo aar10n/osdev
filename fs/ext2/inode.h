@@ -35,8 +35,6 @@ typedef struct __attribute__((packed)) {
   uint8_t  i_osd2[12];
 } inode_t;
 
-typedef inode_t (inode_table_t[32]);
-
 // Defined Reserved Inodes
 #define EXT2_BAD_INO         1  // bad blocks inode
 #define EXT2_ROOT_INO        2  // root directory inode

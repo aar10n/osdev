@@ -2,18 +2,19 @@
 // Created by Aaron Gill-Braun on 2019-04-29.
 //
 
-#ifndef KERNEL_MEM_MEM_H
-#define KERNEL_MEM_MEM_H
+#ifndef KERNEL_MEM_MM_H
+#define KERNEL_MEM_MM_H
 
+#include <stddef.h>
 #include <stdbool.h>
-#include "multiboot.h"
+#include "../../libc/multiboot.h"
 
 #define KERNEL_BASE 0xC0000000
 #define PAGE_SIZE 4096
 #define MAX_ORDER 11
 
-#define ptov(addr) ((addr) + KERNEL_BASE)
-#define vtop(addr) ((addr) - KERNEL_BASE)
+#define ptov(addr) (((uintptr_t) addr) + KERNEL_BASE)
+#define vtop(addr) (((uintptr_t) addr) - KERNEL_BASE)
 
 #define addr_to_pde(addr) ((unsigned int)((uintptr_t) addr >> 22))
 #define addr_to_pte(addr) ((unsigned int)((uintptr_t) addr >> 12 & 0x03FF))
@@ -39,15 +40,13 @@
 
 extern uint32_t _kernel_start;
 extern uint32_t _kernel_end;
-extern uint32_t _page_directory;
-// extern uint32_t _initial_page_table;
 
 #define kernel_start (ptov((uint32_t) &_kernel_start))
 #define kernel_end ((uint32_t) &_kernel_end)
-#define page_directory ((uint32_t *) &_page_directory)
 
 typedef struct page {
   uintptr_t frame;
+  uintptr_t addr;
   size_t size;
   uint8_t flags;
   struct page *next;
@@ -59,9 +58,9 @@ typedef struct page {
   };
 } page_t;
 
-void mem_init(uint32_t base_addr, size_t length);
-page_t *alloc_pages(int num, int order);
+void mem_init(uintptr_t base_addr, size_t size);
+page_t *alloc_pages(int order);
 page_t *alloc_page();
 void free_page(page_t *page);
 
-#endif //KERNEL_MEM_MEM_H
+#endif //KERNEL_MEM_MM_H

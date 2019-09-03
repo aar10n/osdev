@@ -1,4 +1,4 @@
-#include "idt.h"
+#include "kernel/cpu/idt.h"
 
 #include <drivers/asm.h>
 #include <stdint.h>

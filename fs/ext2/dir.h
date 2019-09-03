@@ -2,8 +2,8 @@
 // Created by Aaron Gill-Braun on 2019-04-22.
 //
 
-#ifndef INCLUDE_FS_EXT2_DIRECTORY_H
-#define INCLUDE_FS_EXT2_DIRECTORY_H
+#ifndef INCLUDE_FS_EXT2_DIR_H
+#define INCLUDE_FS_EXT2_DIR_H
 
 #include <stdint.h>
 
@@ -18,7 +18,7 @@ typedef struct __attribute__((packed)) {
   uint16_t rec_len;
   uint8_t  name_len;
   uint8_t  file_type;
-  uint8_t  name[255];
+  char    *name;
 } linked_directory_entry_t;
 
 // Defined Inode File Types
@@ -107,4 +107,4 @@ typedef struct __attribute__((packed)) {
 // crc32 hash function
 
 
-#endif //INCLUDE_FS_EXT2_DIRECTORY_H
+#endif //INCLUDE_FS_EXT2_DIR_H

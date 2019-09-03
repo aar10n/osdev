@@ -83,8 +83,25 @@ typedef struct {
   uint32_t eip, cs, eflags, useresp, ss; /* Pushed by the processor automatically */
 } registers_t;
 
-void isr_install();
-void isr_handler(registers_t r);
+typedef struct __attribute__((packed)) {
+  // general registers
+  uint32_t eax;
+  uint32_t ebx;
+  uint32_t ecx;
+  uint32_t edx;
+  uint32_t esi;
+  uint32_t edi;
+  uint32_t esp;
+  uint32_t ebp;
+  // control registers
+  uint32_t cr0;
+  uint32_t cr2;
+  uint32_t cr3;
+  uint32_t cr4;
+} cpu_t;
+
+void install_isr();
+void isr_handler(cpu_t cpu, uint32_t int_no, uint32_t err_code);
 
 typedef void (*isr_t)(registers_t);
 void register_interrupt_handler(uint8_t n, isr_t handler);

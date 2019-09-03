@@ -2,12 +2,12 @@
 // Created by Aaron Gill-Braun on 2019-04-29.
 //
 
-#include <stdio.h>
+#include "../../libc/stdio.h"
 #include <stddef.h>
-#include <stdbool.h>
-#include <math.h>
-#include "mem.h"
-#include "alloc.h"
+#include "../../libc/math.h"
+#include "mm.h"
+#include "heap.h"
+#include "page.h"
 
 struct free_pages {
   int num_pages;
@@ -15,7 +15,6 @@ struct free_pages {
 };
 
 struct free_pages free[MAX_ORDER];
-static uint32_t *pd;
 
 void add_page(page_t *page) {
   int order = log2(page->size / PAGE_SIZE);
@@ -44,12 +43,12 @@ void remove_page(page_t *page) {
   free[order].num_pages -= 1;
 }
 
-void page_split(page_t *page) {
+void split_page(page_t *page) {
   page_t *head = _kmalloc(sizeof(page_t));
   page_t *tail = _kmalloc(sizeof(page_t));
 
 
-  page->flags = (PAGE_SPLIT | PAGE_USED);
+  page->flags = PAGE_SPLIT | PAGE_USED;
   page->head = head;
 
   head->frame = page->frame;
@@ -67,7 +66,7 @@ void page_split(page_t *page) {
   add_page(head);
 }
 
-void page_join(page_t *page) {
+void join_page(page_t *page) {
   // free and reuse head & tail
 
   page->flags = PAGE_FREE;
@@ -91,7 +90,7 @@ page_t *get_buddy(page_t *page) {
 //
 //
 
-void mem_distribute(size_t mem_size) {
+void mem_prealloc(size_t mem_size) {
   size_t available = next_pow2(mem_size) >> 1;
   mem_size -= available;
   while (available != 0) {
@@ -123,7 +122,7 @@ page_t *mem_split(int order) {
     page = free[order - 1].first;
   }
 
-  page_split(free[order].first);
+  split_page(free[order].first);
   page->flags |= PAGE_USED;
 
   remove_page(page);
@@ -134,24 +133,23 @@ page_t *mem_split(int order) {
 //
 //
 
-void mem_init(uint32_t base_addr, size_t length) {
-  mem_distribute(length);
-
-  kprintf("base_addr: %p\n\n", base_addr);
+void mem_init(uintptr_t base_addr, size_t size) {
+  mem_prealloc(size);
 
   uintptr_t page_frame = base_addr;
   for (int i = 0; i < MAX_ORDER; i++) {
     // kprintf("%d | %d blocks (%d pages per block)\n",
     //         i, free[i].num_pages, 1 << i);
-    // kprintf("%d | page frame: %p (%d, %d)\n", i, page_frame,
-    //     addr_to_pde(page_frame), addr_to_pte(page_frame));
 
     free[i].first = _kmalloc(sizeof(page_t));
     page_t *page = free[i].first;
     for (int j = 0; j < free[i].num_pages; j++) {
+      if (j < free[i].num_pages - 1) {
+        page->next = _kmalloc(sizeof(page_t));
+      }
+
       page->flags = PAGE_FREE;
       page->size = (1 << i) * PAGE_SIZE;
-      page->next = _kmalloc(sizeof(page_t));
       page->frame = page_frame;
 
       page_frame += (1 << i) * PAGE_SIZE;
@@ -161,7 +159,7 @@ void mem_init(uint32_t base_addr, size_t length) {
   }
 }
 
-page_t *alloc_pages(int num, int order) {
+page_t *alloc_pages(int order) {
   if (order > MAX_ORDER - 1) {
     // error
     kprintf("error: invalid allocation order\n");
@@ -175,11 +173,13 @@ page_t *alloc_pages(int num, int order) {
   page->flags |= PAGE_USED;
 
   remove_page(page);
+
+  map_page(page);
   return page;
 }
 
 page_t *alloc_page() {
-  return alloc_pages(1, 0);
+  return alloc_pages(0);
 }
 
 void free_page(page_t *page) {
