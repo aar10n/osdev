@@ -6,8 +6,8 @@ BUILD = build
 BUILD_DIR = $(BUILD)/$(NAME)
 
 CFLAGS  = -g -Wall -Wextra
+LDFLAGS = -T linker.ld
 ASFLAGS =
-LDFLAGS =
 
 INCLUDE = -Iinclude -Ilibc
 
@@ -33,6 +33,7 @@ kernel = \
 kernel-y = $(patsubst %.c,$(BUILD_DIR)/%.o, \
 	$(patsubst %.asm,$(BUILD_DIR)/%.o,$(kernel)))
 
+
 drivers = \
 	drivers/asm.asm \
 	drivers/ata.c \
@@ -44,6 +45,7 @@ drivers = \
 drivers-y = $(patsubst %.c,$(BUILD_DIR)/%.o, \
 	$(patsubst %.asm,$(BUILD_DIR)/%.o,$(drivers)))
 
+
 fs = \
 	fs/fs.c \
 	fs/ext2/ext2.c \
@@ -53,6 +55,7 @@ fs = \
 
 fs-y = $(patsubst %.c,$(BUILD_DIR)/%.o, \
 	$(patsubst %.asm,$(BUILD_DIR)/%.o,$(fs)))
+
 
 libc = \
 	libc/math.c \
@@ -97,7 +100,7 @@ $(BUILD)/osdev.iso: $(BUILD)/osdev.bin $(BUILD)/disk.img grub.cfg
 	$(MKRESCUE) -o $@ $(BUILD)/iso &> /dev/null
 
 $(BUILD)/osdev.bin: $(kernel-y) $(drivers-y) $(fs-y) $(libc-y)
-	$(LD) -T linker.ld $^ -o $@
+	$(LD) $(LDFLAGS) $^ -o $@
 
 $(BUILD)/disk.img:
 	@echo $(shell util/create-disk.sh $@)
