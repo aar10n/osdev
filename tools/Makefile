@@ -27,7 +27,9 @@ help:
 	@echo "==============="
 	@echo "  ext2 - A tool for interacting with ext2 filesystems"
 
-ext2: $(BUILD)/ext2
+all: $(BUILD)/ext2;
+
+ext2: $(BUILD)/ext2;
 
 # -------------- #
 #  Dependencies  #

@@ -70,12 +70,12 @@ libc-y = $(patsubst %.c,$(BUILD_DIR)/%.o, \
 #  Targets  #
 # --------- #
 
-all: $(BUILD)/osdev.iso
+all: $(BUILD)/osdev.iso;
 
 run: $(BUILD)/osdev.iso $(BUILD)/disk.img
 	$(QEMU) -serial file:$(BUILD)/stdio \
 		-drive file=$(BUILD)/disk.img,format=raw,if=ide \
-		-drive file=$(BUILD)/osdev.iso,media=cdrom \
+		-drive file=$(BUILD)/osdev.iso,media=cdrom
 
 debug: $(BUILD)/osdev.iso $(BUILD)/disk.img
 	$(QEMU) -s -S \
@@ -104,6 +104,8 @@ $(BUILD)/osdev.bin: $(kernel-y) $(drivers-y) $(fs-y) $(libc-y)
 
 $(BUILD)/disk.img:
 	@echo $(shell util/create-disk.sh $@)
+
+#
 
 # Compilation rules
 
