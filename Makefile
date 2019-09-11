@@ -79,11 +79,16 @@ run: $(BUILD)/osdev.iso $(BUILD)/disk.img
 
 debug: $(BUILD)/osdev.iso $(BUILD)/disk.img
 	$(QEMU) -s -S \
-    	-drive file=$(BUILD)/disk.img,format=raw,if=ide \
-        -drive file=$(BUILD)/osdev.iso,media=cdrom
+		-drive file=$(BUILD)/disk.img,format=raw,if=ide \
+		-drive file=$(BUILD)/osdev.iso,media=cdrom &
 	$(GDB) -w \
 		-ex "target remote localhost:1234" \
 		-ex "add-symbol $(BUILD)/osdev.bin"
+
+run-debug: $(BUILD)/osdev.iso $(BUILD)/disk.img
+	$(QEMU) -s -S \
+		-drive file=$(BUILD)/disk.img,format=raw,if=ide \
+		-drive file=$(BUILD)/osdev.iso,media=cdrom &
 
 clean:
 	rm -rf $(BUILD_DIR)
