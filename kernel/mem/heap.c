@@ -4,15 +4,15 @@
 
 #include <stddef.h>
 #include <stdint.h>
-#include "../../libc/stdio.h"
-#include "../../libc/string.h"
+#include <stdio.h>
+#include <string.h>
+
 #include "heap.h"
 
 #define HEAP_BASE 0xC0300000
-#define HEAP_MAX  0xC0400000
+#define HEAP_MAX 0xC0400000
 
 static uintptr_t heap_ptr = HEAP_BASE;
-
 
 // _kmalloc - Initial Kernel Heap Allocator
 void *_kmalloc(size_t size) {

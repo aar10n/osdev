@@ -2,26 +2,26 @@
 // Created by Aaron Gill-Braun on 2019-04-17.
 //
 
-#include "../libc/multiboot.h"
-#include <drivers/ata.h>
 #include <drivers/asm.h>
+#include <drivers/ata.h>
 #include <drivers/keyboard.h>
 #include <drivers/screen.h>
 #include <drivers/serial.h>
+#include <multiboot.h>
 
-#include <fs/fs.h>
 #include <fs/ext2/ext2.h>
+#include <fs/fs.h>
 
-#include <kernel/cpu/isr.h>
 #include <kernel/cpu/gdt.h>
+#include <kernel/cpu/isr.h>
 
-#include "../libc/stdio.h"
-#include "../libc/math.h"
-#include "../libc/string.h"
+#include <math.h>
+#include <stdio.h>
+#include <string.h>
 
+#include "mem/heap.h"
 #include "mem/mm.h"
 #include "mem/page.h"
-#include "mem/heap.h"
 
 void kmain(multiboot_info_t *mbinfo) {
   kclear();
@@ -39,10 +39,7 @@ void kmain(multiboot_info_t *mbinfo) {
   kprintf("\n");
   kprintf("Kernel Start: %p\n", kernel_start);
   kprintf("Kernel End: %p\n", kernel_end);
-  kprintf(
-      "Kernel Size: %d KiB\n",
-      (kernel_end - kernel_start) / 1024
-  );
+  kprintf("Kernel Size: %d KiB\n", (kernel_end - kernel_start) / 1024);
   kprintf("\n");
   kprintf("Lower Memory: %d KiB\n", mbinfo->mem_lower);
   kprintf("Upper Memory: %d KiB\n", mbinfo->mem_upper);
@@ -61,7 +58,7 @@ void kmain(multiboot_info_t *mbinfo) {
   }
 
 
-  ata_t disk = {ATA_DRIVE_PRIMARY};
+  ata_t disk = { ATA_DRIVE_PRIMARY };
   ata_info_t disk_info;
   ata_identify(&disk, &disk_info);
 

@@ -12,4 +12,4 @@ void map_page(page_t *page);
 void remap_page(page_t *page);
 void unmap_page(page_t *page);
 
-#endif //KERNEL_MEM_PAGE_H
+#endif // KERNEL_MEM_PAGE_H

@@ -1,6 +1,6 @@
-#include "string.h"
 #include <stddef.h>
 #include <stdint.h>
+#include <string.h>
 
 int memcmp(const void *str1, const void *str2, size_t count) {
   const unsigned char *s1 = str1;
@@ -31,8 +31,8 @@ void *memmove(void *dest, const void *src, size_t len) {
       *d++ = *s++;
     }
   } else {
-    char *lasts = s + (len-1);
-    char *lastd = d + (len-1);
+    char *lasts = s + (len - 1);
+    char *lastd = d + (len - 1);
     while (len--) {
       *lastd-- = *lasts--;
     }

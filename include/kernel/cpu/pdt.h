@@ -5,4 +5,4 @@
 #ifndef KERNEL_CPU_PDT_H
 #define KERNEL_CPU_PDT_H
 
-#endif //KERNEL_CPU_PDT_H
+#endif // KERNEL_CPU_PDT_H

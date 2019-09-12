@@ -2,11 +2,12 @@
 // Created by Aaron Gill-Braun on 2019-04-29.
 //
 
-#include "../../libc/stdio.h"
+#include <math.h>
 #include <stddef.h>
-#include "../../libc/math.h"
-#include "mm.h"
+#include <stdio.h>
+
 #include "heap.h"
+#include "mm.h"
 #include "page.h"
 
 struct free_pages {
@@ -138,11 +139,9 @@ void mem_init(uintptr_t base_addr, size_t size) {
 
   uintptr_t page_frame = base_addr;
   for (int i = 0; i < MAX_ORDER; i++) {
-    // kprintf("%d | %d blocks (%d pages per block)\n",
-    //         i, free[i].num_pages, 1 << i);
-
     free[i].first = _kmalloc(sizeof(page_t));
     page_t *page = free[i].first;
+
     for (int j = 0; j < free[i].num_pages; j++) {
       if (j < free[i].num_pages - 1) {
         page->next = _kmalloc(sizeof(page_t));

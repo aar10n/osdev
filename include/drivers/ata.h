@@ -5,51 +5,51 @@
 #ifndef DRIVERS_ATA_H
 #define DRIVERS_ATA_H
 
-#include <stdint.h>
 #include <stddef.h>
+#include <stdint.h>
 
-#define ATA_DRIVE_PRIMARY   ATA_MASTER, ATA_IO_PRIMARY, ATA_CTRL_PRIMARY
+#define ATA_DRIVE_PRIMARY ATA_MASTER, ATA_IO_PRIMARY, ATA_CTRL_PRIMARY
 #define ATA_DRIVE_SECONDARY ATA_MASTER, ATA_IO_SECONDARY, ATA_CTRL_SECONDARY
 
 
 // ATA Data Direction
-#define ATA_READ      0x00
-#define ATA_WRITE     0x01
+#define ATA_READ 0x00
+#define ATA_WRITE 0x01
 
 // ATA Bus Channels
-#define ATA_PRIMARY   0x00
+#define ATA_PRIMARY 0x00
 #define ATA_SECONDARY 0x01
 
 // ATA Drive Types
-#define ATA_MASTER    0x00
-#define ATA_SLAVE     0x01
+#define ATA_MASTER 0x00
+#define ATA_SLAVE 0x01
 
 // ATA I/O Ports
-#define ATA_IO_PRIMARY     0x1F0
-#define ATA_IO_SECONDARY   0x170
-#define ATA_CTRL_PRIMARY   0x3F6
+#define ATA_IO_PRIMARY 0x1F0
+#define ATA_IO_SECONDARY 0x170
+#define ATA_CTRL_PRIMARY 0x3F6
 #define ATA_CTRL_SECONDARY 0x376
 
 // ATA Registers
-#define ATA_REG_DATA        0
-#define ATA_REG_ERROR       1
-#define ATA_REG_FEATURES    1
-#define ATA_REG_SECCOUNT    2
-#define ATA_REG_LBA_LO      3
-#define ATA_REG_LBA_MID     4
-#define ATA_REG_LBA_HI      5
-#define ATA_REG_DRIVE       6
-#define ATA_REG_STATUS      7
-#define ATA_REG_COMMAND     7
+#define ATA_REG_DATA 0
+#define ATA_REG_ERROR 1
+#define ATA_REG_FEATURES 1
+#define ATA_REG_SECCOUNT 2
+#define ATA_REG_LBA_LO 3
+#define ATA_REG_LBA_MID 4
+#define ATA_REG_LBA_HI 5
+#define ATA_REG_DRIVE 6
+#define ATA_REG_STATUS 7
+#define ATA_REG_COMMAND 7
 
-#define ATA_REG_STATUS_ALT  0
+#define ATA_REG_STATUS_ALT 0
 #define ATA_REG_DEVICE_CTRL 0
 #define ATA_REG_DEVICE_ADDR 1
 
 // ATA Commands
-#define ATA_CMD_IDENTIFY      0xEC
-#define ATA_CMD_FLUSH_CACHE   0xE7
-#define ATA_CMD_READ_SECTORS  0x20
+#define ATA_CMD_IDENTIFY 0xEC
+#define ATA_CMD_FLUSH_CACHE 0xE7
+#define ATA_CMD_READ_SECTORS 0x20
 #define ATA_CMD_WRITE_SECTORS 0x30
 
 
@@ -109,10 +109,10 @@ typedef struct {
 } ata_t;
 
 typedef struct {
-  uint8_t ata_device   : 1; // word 0 [bit  0]     | 0 = ATA device
-  uint8_t lba_enabled  : 1; // word 49 [bit 9]     | 1 = LBA supported
-  uint8_t dma_enabled  : 1; // word 49 [bit 8]     | 1 = DMA supported
-  uint8_t dma_modes    : 4; // word 63 [bits 0-2]  | Available DMA modes
+  uint8_t ata_device : 1;   // word 0 [bit  0]     | 0 = ATA device
+  uint8_t lba_enabled : 1;  // word 49 [bit 9]     | 1 = LBA supported
+  uint8_t dma_enabled : 1;  // word 49 [bit 8]     | 1 = DMA supported
+  uint8_t dma_modes : 4;    // word 63 [bits 0-2]  | Available DMA modes
   uint8_t dma_selected : 4; // word 63 [bits 8-10] | Selected DMA modes
   uint32_t sectors;         // word 60 & 61        | Number of sectors
   // word 88 (Ultra DMA modes)
@@ -127,4 +127,4 @@ void ata_write(ata_t *disk, size_t lba, int sectors, uint8_t *buffer);
 void ata_read_sector(ata_t *disk, size_t lba, uint8_t *buffer);
 void ata_write_sector(ata_t *disk, size_t lba, uint8_t *buffer);
 
-#endif //DRIVERS_ATA_H
+#endif // DRIVERS_ATA_H

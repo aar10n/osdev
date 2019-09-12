@@ -7,4 +7,4 @@
 
 void *_kmalloc(size_t size);
 
-#endif //KERNEL_MEM_HEAP_H
+#endif // KERNEL_MEM_HEAP_H

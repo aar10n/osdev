@@ -3,11 +3,11 @@
 
 #include <stdint.h>
 
-#define MEMORY_AVAILABLE              1
-#define MEMORY_RESERVED               2
-#define MEMORY_ACPI_RECLAIMABLE       3
-#define MEMORY_NVS                    4
-#define MEMORY_BADRAM                 5
+#define MEMORY_AVAILABLE 1
+#define MEMORY_RESERVED 2
+#define MEMORY_ACPI_RECLAIMABLE 3
+#define MEMORY_NVS 4
+#define MEMORY_BADRAM 5
 
 
 /* The Multiboot header. */

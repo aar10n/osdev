@@ -77,10 +77,10 @@ extern void irq15();
 
 /* Struct which aggregates many registers */
 typedef struct {
-  uint32_t ds; /* Data segment selector */
-  uint32_t edi, esi, ebp, esp, ebx, edx, ecx, eax; /* Pushed by pusha. */
-  uint32_t int_no, err_code; /* Interrupt number and error code (if applicable) */
-  uint32_t eip, cs, eflags, useresp, ss; /* Pushed by the processor automatically */
+  uint32_t ds;                                     // Data segment selector
+  uint32_t edi, esi, ebp, esp, ebx, edx, ecx, eax; // Pushed by pusha
+  uint32_t int_no, err_code;                       // Interrupt number and error code
+  uint32_t eip, cs, eflags, useresp, ss;           // Pushed by the processor automatically
 } registers_t;
 
 typedef struct __attribute__((packed)) {
@@ -106,4 +106,4 @@ void isr_handler(cpu_t cpu, uint32_t int_no, uint32_t err_code);
 typedef void (*isr_t)(registers_t);
 void register_interrupt_handler(uint8_t n, isr_t handler);
 
-#endif //KERNEL_CPU_ISR_H
+#endif // KERNEL_CPU_ISR_H

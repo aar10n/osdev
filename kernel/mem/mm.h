@@ -5,9 +5,9 @@
 #ifndef KERNEL_MEM_MM_H
 #define KERNEL_MEM_MM_H
 
-#include <stddef.h>
+#include <multiboot.h>
 #include <stdbool.h>
-#include "../../libc/multiboot.h"
+#include <stddef.h>
 
 #define KERNEL_BASE 0xC0000000
 #define PAGE_SIZE 4096
@@ -16,8 +16,8 @@
 #define ptov(addr) (((uintptr_t) addr) + KERNEL_BASE)
 #define vtop(addr) (((uintptr_t) addr) - KERNEL_BASE)
 
-#define addr_to_pde(addr) ((unsigned int)((uintptr_t) addr >> 22))
-#define addr_to_pte(addr) ((unsigned int)((uintptr_t) addr >> 12 & 0x03FF))
+#define addr_to_pde(addr) ((unsigned int) ((uintptr_t) addr >> 22))
+#define addr_to_pte(addr) ((unsigned int) ((uintptr_t) addr >> 12 & 0x03FF))
 
 /*
  * page status flags
@@ -28,10 +28,10 @@
  *   PAGE_TAIL  - Page is a tail buddy
  *   PAGE_SPLIT - Page is a split page
  */
-#define PAGE_FREE  0x00
-#define PAGE_USED  0x01
-#define PAGE_HEAD  0x02
-#define PAGE_TAIL  0x04
+#define PAGE_FREE 0x00
+#define PAGE_USED 0x01
+#define PAGE_HEAD 0x02
+#define PAGE_TAIL 0x04
 #define PAGE_SPLIT 0x08
 
 //
@@ -53,8 +53,8 @@ typedef struct page {
   struct page *parent;
 
   union {
-    struct page *head;   // PAGE_SPLIT
-    struct page *tail;   // PAGE_HEAD
+    struct page *head; // PAGE_SPLIT
+    struct page *tail; // PAGE_HEAD
   };
 } page_t;
 
@@ -63,4 +63,4 @@ page_t *alloc_pages(int order);
 page_t *alloc_page();
 void free_page(page_t *page);
 
-#endif //KERNEL_MEM_MM_H
+#endif // KERNEL_MEM_MM_H

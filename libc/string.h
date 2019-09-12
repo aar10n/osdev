@@ -1,3 +1,10 @@
+//
+// Created by Aaron Gill-Braun on 2019-04-21.
+//
+
+#ifndef LIBC_STRING_H
+#define LIBC_STRING_H
+
 #include <stddef.h>
 #include <stdint.h>
 
@@ -9,3 +16,5 @@ void *memset(void *dest, int val, size_t len);
 int strcmp(const char *s1, const char *s2);
 int strlen(const char *s);
 void reverse(char *s);
+
+#endif // LIBC_STRING_H

@@ -8,4 +8,4 @@
 void printf(const char *format, ...);
 void kprintf(const char *format, ...);
 
-#endif //LIBC_STDIO_H
+#endif // LIBC_STDIO_H

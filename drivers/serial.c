@@ -2,10 +2,10 @@
 // Created by Aaron Gill-Braun on 2019-04-20.
 //
 
-#include <drivers/serial.h>
-#include <drivers/asm.h>
-#include "../libc/string.h"
+#include <string.h>
 
+#include <drivers/asm.h>
+#include <drivers/serial.h>
 
 int is_transmit_empty(int port) {
   return inb(port + 5) & 0x20;
@@ -28,7 +28,8 @@ void init_serial(int port) {
 }
 
 void serial_write_char(int port, char a) {
-  while (is_transmit_empty(port) == 0);
+  while (is_transmit_empty(port) == 0)
+    ;
 
   outb(port, a);
 }

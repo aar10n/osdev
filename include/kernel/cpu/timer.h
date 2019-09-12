@@ -9,4 +9,4 @@
 
 void init_timer(uint32_t freq);
 
-#endif //KERNEL_CPU_TIMER_H
+#endif // KERNEL_CPU_TIMER_H

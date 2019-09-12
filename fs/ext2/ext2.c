@@ -5,8 +5,9 @@
 // ext2 Filesystem Driver
 
 #include <fs/ext2/ext2.h>
-#include "../../libc/stdio.h"
-#include "../../libc/string.h"
+#include <stdio.h>
+#include <string.h>
+
 #include "../../kernel/mem/heap.h"
 
 void ext2_mount(ata_t *disk) {
@@ -48,12 +49,10 @@ void ext2_mount(ata_t *disk) {
 
     inode_t inode = inode_table[entry->inode - 1];
     if ((inode.i_mode & 0xF000) == EXT2_S_IFDIR) {
-
     }
 
     index += entry->rec_len;
   }
-
 }
 
 inode_t *ext2_alloc_node(uint16_t mode, uint16_t flags) {}

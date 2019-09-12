@@ -2,20 +2,21 @@
 // Created by Aaron Gill-Braun on 2019-04-18.
 //
 
-#include <stdint.h>
 
 #ifndef KERNEL_CPU_IDT_H
 #define KERNEL_CPU_IDT_H
 
+#include <stdint.h>
+
 #define KERNEL_CS 0x08
 #define IDT_ENTRIES 256
 
-#define low_16(address) (uint16_t)((address) & 0xFFFF)
+#define low_16(address) (uint16_t)((address) &0xFFFF)
 #define high_16(address) (uint16_t)(((address) >> 16) & 0xFFFF)
 
 typedef struct {
   uint16_t low_offset; /* Lower 16 bits of handler function address */
-  uint16_t sel; /* Kernel segment selector */
+  uint16_t sel;        /* Kernel segment selector */
   uint8_t always0;
   /* First byte
    * Bit 7: "Interrupt is present"
@@ -38,4 +39,4 @@ idt_register_t idt_reg;
 void set_idt_gate(int n, uint32_t handler);
 void install_idt();
 
-#endif //KERNEL_CPU_IDT_H
+#endif // KERNEL_CPU_IDT_H

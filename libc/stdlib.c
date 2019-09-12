@@ -1,7 +1,7 @@
-#include <stdint.h>
 #include "stdlib.h"
-#include "string.h"
+#include <stdint.h>
 #include "stdio.h"
+#include "string.h"
 
 // dtoc - Digit to Char
 char dtoc(int d, int b) {
@@ -10,8 +10,10 @@ char dtoc(int d, int b) {
     case 10:
       return d + '0';
     case 16: {
-      if (d <= 9) return d + '0';
-      else return d + '7';
+      if (d <= 9)
+        return d + '0';
+      else
+        return d + '7';
     }
     default:
       return d;

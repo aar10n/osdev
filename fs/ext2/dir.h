@@ -2,8 +2,8 @@
 // Created by Aaron Gill-Braun on 2019-04-22.
 //
 
-#ifndef INCLUDE_FS_EXT2_DIR_H
-#define INCLUDE_FS_EXT2_DIR_H
+#ifndef FS_EXT2_DIR_H
+#define FS_EXT2_DIR_H
 
 #include <stdint.h>
 
@@ -16,20 +16,20 @@
 typedef struct __attribute__((packed)) {
   uint32_t inode;
   uint16_t rec_len;
-  uint8_t  name_len;
-  uint8_t  file_type;
-  char    *name;
+  uint8_t name_len;
+  uint8_t file_type;
+  char *name;
 } linked_directory_entry_t;
 
 // Defined Inode File Types
-#define EXT2_FT_UNKNOWN  0  // Unknown File Type
-#define EXT2_FT_REG_FILE 1  // Regular File
-#define EXT2_FT_DIR      2  // Directory File
-#define EXT2_FT_CHRDEV   3  // Character Device
-#define EXT2_FT_BLKDEV   4  // Block Device
-#define EXT2_FT_FIFO     5  // Buffer File
-#define EXT2_FT_SOCK     6  // Socket File
-#define EXT2_FT_SYMLINK  7  // Symbolic Link
+#define EXT2_FT_UNKNOWN 0  // Unknown File Type
+#define EXT2_FT_REG_FILE 1 // Regular File
+#define EXT2_FT_DIR 2      // Directory File
+#define EXT2_FT_CHRDEV 3   // Character Device
+#define EXT2_FT_BLKDEV 4   // Block Device
+#define EXT2_FT_FIFO 5     // Buffer File
+#define EXT2_FT_SOCK 6     // Socket File
+#define EXT2_FT_SYMLINK 7  // Symbolic Link
 
 //
 //
@@ -59,9 +59,9 @@ typedef struct __attribute__((packed)) {
 // uint8_t   reserved - unused flags
 
 // Defined Indexed Directory Hash Versions
-#define DX_HASH_LEGACY   0
+#define DX_HASH_LEGACY 0
 #define DX_HASH_HALF_MD4 1
-#define DX_HASH_TEA      2
+#define DX_HASH_TEA 2
 
 //
 // Indexed Directory Entry
@@ -95,7 +95,9 @@ typedef struct __attribute__((packed)) {
 //    set, continue searching in the successor addr
 
 // Insert Algorithm
-// Insertion of new entries into the directory is considerably more complex than lookup, due to the need to split leaf blocks when they become full, and to satisfy the conditions that allow hash key collisions to be handled reliably and efficiently. I'll just summarize here:
+// Insertion of new entries into the directory is considerably more complex than lookup, due to the
+// need to split leaf blocks when they become full, and to satisfy the conditions that allow hash
+// key collisions to be handled reliably and efficiently. I'll just summarize here:
 //
 //  - Probe the index as for lookup
 //  - If the target leaf addr is full, split it and note the addr
@@ -107,4 +109,4 @@ typedef struct __attribute__((packed)) {
 // crc32 hash function
 
 
-#endif //INCLUDE_FS_EXT2_DIR_H
+#endif // FS_EXT2_DIR_H

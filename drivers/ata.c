@@ -2,12 +2,12 @@
 // Created by Aaron Gill-Braun on 2019-04-21.
 //
 
-#include <drivers/ata.h>
-#include <drivers/asm.h>
-
-#include "../libc/stdio.h"
-#include <stddef.h>
 #include <stdbool.h>
+#include <stddef.h>
+#include <stdio.h>
+
+#include <drivers/asm.h>
+#include <drivers/ata.h>
 
 /* Delay */
 void ata_delay(ata_t *disk) {
@@ -54,15 +54,12 @@ void ata_read_write(bool operation, ata_t *disk, size_t lba, int sectors, uint8_
   uint8_t drive_type = (disk->type == ATA_MASTER ? 0xE0 : 0xF0);
   uint8_t slave_bit = (disk->type == ATA_MASTER ? 0x00 : 0x01);
 
-  outb(
-      disk->port_io + ATA_REG_DRIVE,
-      drive_type | (slave_bit << 4) | ((lba >> 24) & 0x0F)
-  );
+  outb(disk->port_io + ATA_REG_DRIVE, drive_type | (slave_bit << 4) | ((lba >> 24) & 0x0F));
   outb(disk->port_io + ATA_REG_ERROR, 0x00);
   outb(disk->port_io + ATA_REG_SECCOUNT, (uint8_t) sectors);
   outb(disk->port_io + ATA_REG_LBA_LO, (uint8_t) lba);
-  outb(disk->port_io + ATA_REG_LBA_MID, (uint8_t) (lba >> 8));
-  outb(disk->port_io + ATA_REG_LBA_HI, (uint8_t) (lba >> 16));
+  outb(disk->port_io + ATA_REG_LBA_MID, (uint8_t)(lba >> 8));
+  outb(disk->port_io + ATA_REG_LBA_HI, (uint8_t)(lba >> 16));
 
   if (operation == ATA_READ) {
     // Send the READ SECTORS command
@@ -75,7 +72,7 @@ void ata_read_write(bool operation, ata_t *disk, size_t lba, int sectors, uint8_
   // For each sector
   for (int k = 0; k < sectors; k++) {
     int err = ata_poll(disk);
-    if(err != 0) return;
+    if (err != 0) return;
 
     // Read or write data to disk
     for (int i = (512 * k); i < (512 * (k + 1)); i += 2) {
@@ -117,7 +114,7 @@ void ata_identify(ata_t *disk, ata_info_t *info) {
   outb(disk->port_io + ATA_REG_COMMAND, ATA_CMD_IDENTIFY);
 
   int err = ata_poll(disk);
-  if(err != 0) {
+  if (err != 0) {
     info->ata_device = 0;
     return;
   }
@@ -165,7 +162,7 @@ void init_ata() {
   ata_t primary_bus = { ATA_DRIVE_PRIMARY };
   ata_identify(&primary_bus, &info);
   if (!info.ata_device) {
-    ata_t secondary_bus= { ATA_DRIVE_SECONDARY };
+    ata_t secondary_bus = { ATA_DRIVE_SECONDARY };
     ata_identify(&secondary_bus, &info);
 
     if (!info.ata_device) {

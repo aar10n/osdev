@@ -30,7 +30,7 @@ ExperimentalAutoDetectBinPacking: false
 IndentWidth: 2
 KeepEmptyLinesAtTheStartOfBlocks: false
 Language: Cpp
-MaxEmptyLinesToKeep: 4
+MaxEmptyLinesToKeep: 3
 PointerAlignment: Right
 ReflowComments: true
 SortIncludes: true
@@ -38,4 +38,5 @@ SortUsingDeclarations: true
 SpaceAfterCStyleCast: true
 SpaceBeforeCpp11BracedList: false
 UseTab: Never
+SpacesBeforeTrailingComments: 1
 ...

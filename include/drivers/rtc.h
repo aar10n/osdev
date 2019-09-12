@@ -5,4 +5,4 @@
 #ifndef DRIVERS_RTC_H
 #define DRIVERS_RTC_H
 
-#endif //DRIVERS_RTC_H
+#endif // DRIVERS_RTC_H

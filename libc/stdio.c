@@ -2,22 +2,30 @@
 // Created by Aaron Gill-Braun on 2019-04-21.
 //
 
-#include "stdio.h"
 #include <stdarg.h>
-#include "string.h"
-#include "stdlib.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include <drivers/screen.h>
-#include <stdbool.h>
 #include <drivers/serial.h>
+#include <stdbool.h>
 
 #define BUFSIZE 1024
 
 #define next_char() format++;
-#define advance(index, fmt) pos += index; format += fmt;
-#define append_current() string[pos] = *format; advance(1, 1);
-#define append_char(ch) string[pos] = ch; advance(1, 1);
-#define append_buffer() buffer[index] = *format; index++;
+#define advance(index, fmt) \
+  pos += index;             \
+  format += fmt;
+#define append_current() \
+  string[pos] = *format; \
+  advance(1, 1);
+#define append_char(ch) \
+  string[pos] = ch;     \
+  advance(1, 1);
+#define append_buffer()    \
+  buffer[index] = *format; \
+  index++;
 
 #define peek() (*(format + 1))
 #define is_repeat() (peek() == (*format))
@@ -47,11 +55,11 @@
 
 typedef struct {
   // Flags
-  uint16_t alt_form      : 1; // Use the alternate for numbers
-  uint16_t pad_zero      : 1; // Pad with zeros instead of spaces
-  uint16_t pad_right     : 1; // Padding is applied to the right
-  uint16_t add_space     : 1; // Add a space if there is no sign
-  uint16_t add_sign      : 1; // Add plus sign if positive number
+  uint16_t alt_form : 1;  // Use the alternate for numbers
+  uint16_t pad_zero : 1;  // Pad with zeros instead of spaces
+  uint16_t pad_right : 1; // Padding is applied to the right
+  uint16_t add_space : 1; // Add a space if there is no sign
+  uint16_t add_sign : 1;  // Add plus sign if positive number
 
   // Length
   // uint16_t is_char       : 1; //
@@ -59,14 +67,14 @@ typedef struct {
   // uint16_t is_long       : 1; //
   // uint16_t is_longlong   : 1; //
 
-  uint16_t is_unsigned   : 1; // Value is unsigned
-  uint16_t is_uppercase  : 1; // Use uppercase for letters
+  uint16_t is_unsigned : 1;   // Value is unsigned
+  uint16_t is_uppercase : 1;  // Use uppercase for letters
   uint16_t is_scientific : 1; // Use scientific notation
 
   // Options
-  uint8_t  radix;             // Radix for conversion
-  uint16_t width;             // Width of the value
-  uint16_t precision;         // Precision of the value
+  uint8_t radix;      // Radix for conversion
+  uint16_t width;     // Width of the value
+  uint16_t precision; // Precision of the value
 } format_t;
 
 //
@@ -75,11 +83,21 @@ typedef struct {
 
 int add_prefix(char *s, int r) {
   switch (r) {
-    case 2: s[0] = 'b'; s[1] = '0';  return 2;
-    case 8: s[0] = '0';              return 1;
-    case 10:                         return 0;
-    case 16: s[0] = 'x'; s[1] = '0'; return 2;
-    default:                         return 0;
+    case 2:
+      s[0] = 'b';
+      s[1] = '0';
+      return 2;
+    case 8:
+      s[0] = '0';
+      return 1;
+    case 10:
+      return 0;
+    case 16:
+      s[0] = 'x';
+      s[1] = '0';
+      return 2;
+    default:
+      return 0;
   }
 }
 
@@ -90,8 +108,10 @@ char _dtoc(int d, int r) {
     case 10:
       return d + '0';
     case 16: {
-      if (d <= 9) return d + '0';
-      else return d + '7';
+      if (d <= 9)
+        return d + '0';
+      else
+        return d + '7';
     }
     default:
       return d;
@@ -109,8 +129,7 @@ void _itoa(int n, char *s, format_t *f) {
     do {
       uint8_t digit = (un % f->radix);
       uint8_t ch = _dtoc(digit, f->radix);
-      if (!f->is_uppercase && (ch >= 'A' && ch <= 'F'))
-        ch += 32;
+      if (!f->is_uppercase && (ch >= 'A' && ch <= 'F')) ch += 32;
       s[i++] = ch;
     } while ((un /= f->radix) > 0);
 
@@ -121,8 +140,7 @@ void _itoa(int n, char *s, format_t *f) {
     do {
       uint8_t digit = (n % f->radix);
       uint8_t ch = _dtoc(digit, f->radix);
-      if (!f->is_uppercase && (ch >= 'A' && ch <= 'F'))
-        ch += 32;
+      if (!f->is_uppercase && (ch >= 'A' && ch <= 'F')) ch += 32;
       s[i++] = ch;
     } while ((n /= f->radix) > 0);
 
@@ -134,9 +152,7 @@ void _itoa(int n, char *s, format_t *f) {
   reverse(s);
 }
 
-void _dtoa(double n, char *str, format_t *f) {
-
-}
+void _dtoa(double n, char *str, format_t *f) {}
 
 //
 //
@@ -234,7 +250,7 @@ void kprintf(const char *format, ...) {
   format_t fmt_info;
   va_list valist;
   va_start(valist, format);
- start:
+start:
   switch (*format) {
     case '\0':
       append_char('\0');
@@ -248,32 +264,54 @@ void kprintf(const char *format, ...) {
   }
 
 
- flags:
+flags:
   // Flags
   switch (*format) {
-    case '#': setflag(flag_alt_form);  next_char(); goto flags;
-    case '0': setflag(flag_pad_zero);  next_char(); goto flags;
-    case '-': setflag(flag_pad_right); next_char(); goto flags;
-    case ' ': setflag(flag_add_space); next_char(); goto flags;
-    case '+': setflag(flag_add_sign);  next_char(); goto flags;
-    default:                                        goto width;
+    case '#':
+      setflag(flag_alt_form);
+      next_char();
+      goto flags;
+    case '0':
+      setflag(flag_pad_zero);
+      next_char();
+      goto flags;
+    case '-':
+      setflag(flag_pad_right);
+      next_char();
+      goto flags;
+    case ' ':
+      setflag(flag_add_space);
+      next_char();
+      goto flags;
+    case '+':
+      setflag(flag_add_sign);
+      next_char();
+      goto flags;
+    default:
+      goto width;
   }
 
- width:
+width:
   // Width
   switch (*format) {
-    case '1': case '2': case '3':
-    case '4': case '5': case '6':
-    case '7': case '8': case '9':
+    case '1':
+    case '2':
+    case '3':
+    case '4':
+    case '5':
+    case '6':
+    case '7':
+    case '8':
+    case '9':
       append_buffer();
       goto width;
     default:
       goto length;
   }
 
- // precision:
+  // precision:
 
- length:
+length:
   // Length
   switch (*format) {
     case 'h':
@@ -292,7 +330,7 @@ void kprintf(const char *format, ...) {
       goto type;
   }
 
- type:
+type:
   // Type
   switch (*format) {
     case 'd':
@@ -358,35 +396,34 @@ void kprintf(const char *format, ...) {
   }
 
   // Formats
- format_int: NULL;
+format_int:
+  NULL;
   int dec = va_arg(valist, int);
   apply_format(_itoa, dec);
   goto start;
 
- format_float: NULL;
+format_float:
+  NULL;
   double fp = va_arg(valist, double);
   apply_format(_dtoa, fp);
   goto start;
 
- format_char: NULL;
+format_char:
+  NULL;
   char char_value = va_arg(valist, int);
   append_char(char_value);
   goto start;
 
- format_string: NULL;
+format_string:
+  NULL;
   char *str = va_arg(valist, char *);
   len = strlen(str);
   memcpy(string + pos, str, len);
   advance(len, 1);
   goto start;
 
- end:
+end:
   va_end(valist);
   kputs(string);
   serial_write(COM1, string);
 }
-
-
-// void kprintf(const char *format, ...) {
-//
-// }

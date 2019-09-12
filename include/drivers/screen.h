@@ -1,3 +1,10 @@
+//
+// Created by Aaron Gill-Braun on 2019-04-21.
+//
+
+#ifndef DRIVERS_SCREEN_H
+#define DRIVERS_SCREEN_H
+
 #define VIDEO_ADDRESS ((char *) 0xC00B8000)
 #define MAX_ROWS 25
 #define MAX_COLS 80
@@ -13,3 +20,5 @@ void screen_clear();
 void kputc(char c);
 void kputs(char *s);
 void kclear();
+
+#endif // DRIVERS_SCREEN_H

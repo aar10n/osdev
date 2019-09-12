@@ -1,9 +1,13 @@
-#include <drivers/screen.h>
-#include <drivers/asm.h>
+//
+// Created by Aaron Gill-Braun on 2019-04-22.
+//
 
 #include <stddef.h>
 #include <stdint.h>
-#include "../libc/string.h"
+#include <string.h>
+
+#include <drivers/asm.h>
+#include <drivers/screen.h>
 
 typedef struct {
   int x;
@@ -11,11 +15,7 @@ typedef struct {
   int pos;
 } cursor_t;
 
-static cursor_t cursor = {
-    .x   = 0,
-    .y   = 0,
-    .pos = 0
-};
+static cursor_t cursor = { 0, 0, 0 };
 
 
 void set() {
@@ -28,14 +28,11 @@ void set() {
 
 void scroll() {
   for (int i = 0; i < MAX_ROWS; i++) {
-    memcpy(VIDEO_ADDRESS + ((i - 1) * MAX_COLS * 2),
-           VIDEO_ADDRESS + (i * MAX_COLS * 2),
-           MAX_COLS * 2);
+    memcpy(
+        VIDEO_ADDRESS + ((i - 1) * MAX_COLS * 2), VIDEO_ADDRESS + (i * MAX_COLS * 2), MAX_COLS * 2);
   }
 
-  memset(VIDEO_ADDRESS + ((MAX_ROWS - 1) * MAX_COLS * 2),
-         0x0,
-         MAX_COLS * 2);
+  memset(VIDEO_ADDRESS + ((MAX_ROWS - 1) * MAX_COLS * 2), 0x0, MAX_COLS * 2);
 
   cursor.x = 0;
   cursor.y = MAX_ROWS - 1;

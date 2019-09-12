@@ -14,4 +14,4 @@ void init_serial(int port);
 void serial_write(int port, char *s);
 void serial_write_char(int port, char a);
 
-#endif //DRIVERS_SERIAL_H
+#endif // DRIVERS_SERIAL_H
