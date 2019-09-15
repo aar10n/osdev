@@ -7,7 +7,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "heap.h"
+#include <kernel/mem/heap.h>
 
 #define HEAP_BASE 0xC0300000
 #define HEAP_MAX 0xC0400000

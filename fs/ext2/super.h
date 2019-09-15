@@ -17,7 +17,7 @@
 //
 //
 
-typedef struct __attribute__((packed)) {
+typedef struct __attribute__((packed)) ext2_superblock {
   uint32_t s_inodes_count;
   uint32_t s_blocks_count;
   uint32_t s_r_blocks_count;
@@ -73,7 +73,7 @@ typedef struct __attribute__((packed)) {
   uint32_t s_default_mount_options;
   uint32_t s_first_meta_bg;
   uint8_t s_unused[760];
-} superblock_t;
+} ext2_superblock_t;
 
 
 // s_first_data_block
@@ -160,7 +160,7 @@ typedef struct __attribute__((packed)) {
 //
 //
 
-typedef struct __attribute__((packed)) {
+typedef struct __attribute__((packed)) ext2_bg_descriptor {
   uint32_t bg_block_bitmap;
   uint32_t bg_inode_bitmap;
   uint32_t bg_inode_table;
@@ -169,9 +169,7 @@ typedef struct __attribute__((packed)) {
   uint16_t bg_used_dirs_count;
   uint16_t bg_pad;
   uint8_t bg_reserved[12];
-} bg_descriptor_t;
-
-typedef bg_descriptor_t(bg_descriptor_table_t[32]);
+} ext2_bg_descriptor_t;
 
 
 /* Block Bitmap */

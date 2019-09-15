@@ -10,6 +10,4 @@
 #include "../../../fs/ext2/inode.h"
 #include "../../../fs/ext2/super.h"
 
-void ext2_mount(ata_t *disk);
-
 #endif // FS_EXT2_EXT2_H

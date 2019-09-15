@@ -1,5 +1,5 @@
-#ifndef MULTIBOOT_H
-#define MULTIBOOT_H
+#ifndef LIBC_MULTIBOOT_H
+#define LIBC_MULTIBOOT_H
 
 #include <stdint.h>
 
@@ -11,7 +11,7 @@
 
 
 /* The Multiboot header. */
-typedef struct {
+typedef struct multiboot_header {
   uint32_t magic;
   uint32_t flags;
   uint32_t checksum;
@@ -23,7 +23,7 @@ typedef struct {
 } multiboot_header_t;
 
 /* The symbol table for a.out. */
-typedef struct {
+typedef struct aout_symbol_table {
   uint32_t tabsize;
   uint32_t strsize;
   uint32_t addr;
@@ -31,7 +31,7 @@ typedef struct {
 } aout_symbol_table_t;
 
 /* The section header table for ELF. */
-typedef struct {
+typedef struct elf_section_header_table {
   uint32_t num;
   uint32_t size;
   uint32_t addr;
@@ -39,7 +39,7 @@ typedef struct {
 } elf_section_header_table_t;
 
 /* The Multiboot information. */
-typedef struct {
+typedef struct multiboot_info {
   uint32_t flags;
   uint32_t mem_lower;
   uint32_t mem_upper;
@@ -50,13 +50,13 @@ typedef struct {
   union {
     aout_symbol_table_t aout_sym;
     elf_section_header_table_t elf_sec;
-  } u;
+  };
   uint32_t mmap_length;
   uint32_t mmap_addr;
 } multiboot_info_t;
 
 /* The module structure. */
-typedef struct {
+typedef struct module {
   uint32_t mod_start;
   uint32_t mod_end;
   uint32_t string;
@@ -65,7 +65,7 @@ typedef struct {
 
 /* The memory map. Be careful that the offset 0 is base_addr_low
   but no size. */
-typedef struct {
+typedef struct memory_map {
   uint32_t size;
   uint32_t base_addr_low;
   uint32_t base_addr_high;
@@ -74,4 +74,4 @@ typedef struct {
   uint32_t type;
 } memory_map_t;
 
-#endif /* ! MULTIBOOT_H */
+#endif // LIBC_MULTIBOOT_H

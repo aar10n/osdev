@@ -14,7 +14,7 @@
 //
 
 // Inode Structure
-typedef struct __attribute__((packed)) {
+typedef struct __attribute__((packed)) ext2_inode {
   uint16_t i_mode;
   uint16_t i_uid;
   uint32_t i_size;
@@ -33,7 +33,7 @@ typedef struct __attribute__((packed)) {
   uint32_t i_dir_acl;
   uint32_t i_faddr;
   uint8_t i_osd2[12];
-} inode_t;
+} ext2_inode_t;
 
 // Defined Reserved Inodes
 #define EXT2_BAD_INO 1         // bad blocks inode
@@ -90,14 +90,14 @@ typedef struct __attribute__((packed)) {
 #define EXT2_RESERVED_FL 0x00008000     // reserved for ext2 library
 
 // Inode i_osd2 Structure: Linux
-typedef struct __attribute__((packed)) {
+typedef struct __attribute__((packed)) ext2_inode_table_osd2 {
   uint8_t l_i_frag;
   uint8_t l_i_fsize;
   uint16_t l_i_reserved0;
   uint16_t l_i_uid_high;
   uint16_t l_i_gid_high;
   uint32_t l_i_reserved1;
-} inode_table_osd2_t;
+} ext2_inode_table_osd2_t;
 
 // Locating an inode:
 //   addr group = (inode - 1) / s_inodes_per_group

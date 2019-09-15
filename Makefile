@@ -48,6 +48,7 @@ drivers-y = $(patsubst %.c,$(BUILD_DIR)/%.o, \
 
 fs = \
 	fs/fs.c \
+	fs/super.c \
 	fs/ext2/ext2.c \
 	fs/ext2/dir.c \
 	fs/ext2/inode.c \

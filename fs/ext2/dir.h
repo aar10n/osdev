@@ -13,13 +13,13 @@
 //
 //
 
-typedef struct __attribute__((packed)) {
+typedef struct __attribute__((packed)) ext2_dirent {
   uint32_t inode;
   uint16_t rec_len;
   uint8_t name_len;
   uint8_t file_type;
   char *name;
-} linked_directory_entry_t;
+} ext2_dirent_t;
 
 // Defined Inode File Types
 #define EXT2_FT_UNKNOWN 0  // Unknown File Type
@@ -68,16 +68,16 @@ typedef struct __attribute__((packed)) {
 //
 
 // Indexed Directory Entry Structure
-typedef struct __attribute__((packed)) {
+typedef struct __attribute__((packed)) ext2_indexed_dirent {
   uint32_t hash;
   uint32_t block;
-} indexed_directory_entry_t;
+} ext2_indexed_dirent_t;
 
 // Indexed Directory Entry Count and Limit Structure
-typedef struct __attribute__((packed)) {
+typedef struct __attribute__((packed)) ext2_indexed_dirent_limits {
   uint16_t limit;
   uint16_t count;
-} indexed_directory_limits_t;
+} ext2_indexed_dirent_limits_t;
 
 // Lookup Algorithm
 // Lookup is straightforword:

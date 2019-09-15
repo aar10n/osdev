@@ -4,8 +4,8 @@
 
 #include <stdio.h>
 
-#include "mm.h"
-#include "page.h"
+#include <kernel/mem/mm.h>
+#include <kernel/mem/page.h>
 
 #define PE_PRESENT 0x01
 #define PE_READ_WRITE 0x02

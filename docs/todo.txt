@@ -1,1 +1,0 @@
-target triplet = cpu-vendor-os

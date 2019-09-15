@@ -19,9 +19,9 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "mem/heap.h"
-#include "mem/mm.h"
-#include "mem/page.h"
+#include <kernel/mem/heap.h>
+#include <kernel/mem/mm.h>
+#include <kernel/mem/page.h>
 
 void kmain(multiboot_info_t *mbinfo) {
   kclear();
@@ -61,6 +61,4 @@ void kmain(multiboot_info_t *mbinfo) {
   ata_t disk = { ATA_DRIVE_PRIMARY };
   ata_info_t disk_info;
   ata_identify(&disk, &disk_info);
-
-  ext2_mount(&disk);
 }

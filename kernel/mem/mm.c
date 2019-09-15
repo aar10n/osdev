@@ -6,9 +6,9 @@
 #include <stddef.h>
 #include <stdio.h>
 
-#include "heap.h"
-#include "mm.h"
-#include "page.h"
+#include <kernel/mem/heap.h>
+#include <kernel/mem/mm.h>
+#include <kernel/mem/page.h>
 
 struct free_pages {
   int num_pages;
