@@ -69,6 +69,17 @@ int strlen(const char *s) {
   return len;
 }
 
+void *strcpy(char *dest, const char *src) {
+  size_t len = strlen(src);
+  char *d = dest;
+  const char *s = src;
+  while (len--) {
+    *d++ = *s++;
+  }
+  *d = '\0';
+  return dest;
+}
+
 void reverse(char *s) {
   char ch;
   for (int i = 0, j = strlen(s) - 1; i < j; i++, j--) {

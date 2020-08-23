@@ -12,6 +12,8 @@
 #include <drivers/screen.h>
 
 #include <kernel/cpu/isr.h>
+#include <kernel/mem/heap.h>
+#include <string.h>
 
 char *translate_scancode(char scancode);
 
@@ -19,11 +21,24 @@ static void keyboard_callback(registers_t regs) {
   /* The PIC leaves us the scancode in port 0x60 */
   uint8_t scancode = inb(0x60);
   char *key = translate_scancode(scancode);
-  kprintf("keypress | %d -- '%s'\n", scancode, key);
+  kprintf("keypress | %#X (%#b) - %s\n", scancode, scancode, key);
 }
 
 char *translate_scancode(char scancode) {
+  int is_keyup = (1 << 7) & scancode;
+  if (is_keyup) {
+    char keyup_char = ~(1 << 7) & scancode;
+    char* key = translate_scancode(keyup_char);
+    size_t len = strlen(key);
+    char *string = _kmalloc(len + 4);
+    strcpy(string, key);
+    strcpy(string + len, " up");
+    return string;
+  }
+
   switch (scancode) {
+    case 0x1:
+      return "Esc";
     case 0x2:
       return "1";
     case 0x3:

@@ -15,6 +15,7 @@ void *memset(void *dest, int val, size_t len);
 
 int strcmp(const char *s1, const char *s2);
 int strlen(const char *s);
+void *strcpy(char *dest, const char *src);
 void reverse(char *s);
 
 #endif // LIBC_STRING_H

@@ -18,9 +18,9 @@ include util/Makefile.toolchain
 # --------- #
 
 kernel = \
-	boot.asm \
+	boot.s \
 	kernel/main.c \
-	kernel/cpu/interrupt.asm \
+	kernel/cpu/interrupt.s \
 	kernel/cpu/gdt.c \
 	kernel/cpu/idt.c \
 	kernel/cpu/isr.c \
@@ -31,11 +31,11 @@ kernel = \
 	kernel/mem/page.c
 
 kernel-y = $(patsubst %.c,$(BUILD_DIR)/%.o, \
-	$(patsubst %.asm,$(BUILD_DIR)/%.o,$(kernel)))
+	$(patsubst %.s,$(BUILD_DIR)/%.o,$(kernel)))
 
 
 drivers = \
-	drivers/asm.asm \
+	drivers/asm.s \
 	drivers/ata.c \
 	drivers/keyboard.c \
 	drivers/rtc.c \
@@ -43,7 +43,7 @@ drivers = \
 	drivers/serial.c
 
 drivers-y = $(patsubst %.c,$(BUILD_DIR)/%.o, \
-	$(patsubst %.asm,$(BUILD_DIR)/%.o,$(drivers)))
+	$(patsubst %.s,$(BUILD_DIR)/%.o,$(drivers)))
 
 
 fs = \
@@ -55,7 +55,7 @@ fs = \
 	fs/ext2/super.c
 
 fs-y = $(patsubst %.c,$(BUILD_DIR)/%.o, \
-	$(patsubst %.asm,$(BUILD_DIR)/%.o,$(fs)))
+	$(patsubst %.s,$(BUILD_DIR)/%.o,$(fs)))
 
 
 libc = \
@@ -65,7 +65,7 @@ libc = \
 	libc/string.c
 
 libc-y = $(patsubst %.c,$(BUILD_DIR)/%.o, \
-	$(patsubst %.asm,$(BUILD_DIR)/%.o,$(libc)))
+	$(patsubst %.s,$(BUILD_DIR)/%.o,$(libc)))
 
 # --------- #
 #  Targets  #
@@ -111,14 +111,12 @@ $(BUILD)/osdev.bin: $(kernel-y) $(drivers-y) $(fs-y) $(libc-y)
 $(BUILD)/disk.img:
 	@echo $(shell util/create-disk.sh $@)
 
-#
-
 # Compilation rules
 
 $(BUILD_DIR)/%.o: %.c
 	@mkdir -p $(@D)
 	$(CC) $(INCLUDE) $(CFLAGS) -c $< -o $@
 
-$(BUILD_DIR)/%.o: %.asm
+$(BUILD_DIR)/%.o: %.s
 	@mkdir -p $(@D)
 	$(AS) $(ASFLAGS) $< -o $@
