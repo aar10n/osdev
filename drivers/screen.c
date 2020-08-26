@@ -6,7 +6,7 @@
 #include <stdint.h>
 #include <string.h>
 
-#include <drivers/asm.h>
+#include <kernel/cpu/asm.h>
 #include <drivers/screen.h>
 
 typedef struct {

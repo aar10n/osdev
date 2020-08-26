@@ -14,29 +14,37 @@
 #define low_16(address) (uint16_t)((address) &0xFFFF)
 #define high_16(address) (uint16_t)(((address) >> 16) & 0xFFFF)
 
-typedef struct {
-  uint16_t low_offset; /* Lower 16 bits of handler function address */
-  uint16_t sel;        /* Kernel segment selector */
-  uint8_t always0;
-  /* First byte
-   * Bit 7: "Interrupt is present"
-   * Bits 6-5: Privilege level of caller (0=kernel..3=user)
-   * Bit 4: Set to 0 for interrupt gates
-   * Bits 3-0: bits 1110 = decimal 14 = "32 bit interrupt gate" */
-  uint8_t flags;
-  uint16_t high_offset; /* Higher 16 bits of handler function address */
-} __attribute__((packed)) idt_gate_t;
+// IDT Gate Types
+#define TASK_GATE_32 0x5
+#define INTERRUPT_GATE_16 0x6
+#define TRAP_GATE_16 0x7
+#define INTERRUPT_GATE_32 0xE
+#define TRAP_GATE_32 0xF
 
-typedef struct {
+typedef struct __attribute__((packed)) {
+  uint8_t gate_type : 4;       // The IDT gate type
+  uint8_t storage_segment : 1; // Storage segment (0 for interrupt and trap gates)
+  uint8_t privilege_level : 2; // Descriptor privilege level (0=kernel..3=user)
+  uint8_t present : 1;         // Present (0 for unused interrupts)
+} idt_gate_attr_t;
+
+typedef struct __attribute__((packed)) {
+  uint16_t low_offset;  // Bits 0..15 of the handler function address
+  uint16_t selector;    // Code segment selector in GDT or LDT
+  uint8_t zero;         // Always set to 0
+  idt_gate_attr_t attr; // Attributes
+  uint16_t high_offset; // Bits 16..31 of the handler function address
+} idt_gate_t;
+
+typedef struct __attribute__((packed)) {
   uint16_t limit;
   uint32_t base;
-} __attribute__((packed)) idt_register_t;
+} idt_register_t;
 
 idt_gate_t idt[IDT_ENTRIES];
 idt_register_t idt_reg;
 
-
-void set_idt_gate(int n, uint32_t handler);
 void install_idt();
+void set_idt_gate(int vector, uint32_t handler);
 
 #endif // KERNEL_CPU_IDT_H

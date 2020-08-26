@@ -2,7 +2,7 @@
 // Created by Aaron Gill-Braun on 2019-04-17.
 //
 
-#include <drivers/asm.h>
+#include <kernel/cpu/asm.h>
 #include <drivers/ata.h>
 #include <drivers/keyboard.h>
 #include <drivers/screen.h>
@@ -13,7 +13,7 @@
 #include <fs/fs.h>
 
 #include <kernel/cpu/gdt.h>
-#include <kernel/cpu/isr.h>
+#include <kernel/cpu/idt.h>
 
 #include <math.h>
 #include <stdio.h>
@@ -23,12 +23,12 @@
 #include <kernel/mem/mm.h>
 #include <kernel/mem/page.h>
 
-void kmain(multiboot_info_t *mbinfo) {
+void main(multiboot_info_t *mbinfo) {
   kclear();
   kprintf("Kernel loaded!\n");
 
   install_gdt();
-  install_isr();
+  install_idt();
 
   enable_hardware_interrupts();
 
@@ -47,7 +47,7 @@ void kmain(multiboot_info_t *mbinfo) {
 
   init_paging();
   memory_map_t *mmap = (memory_map_t *) ptov(mbinfo->mmap_addr);
-  int num_entries = mbinfo->mmap_length / sizeof(memory_map_t);
+  uint64_t num_entries = mbinfo->mmap_length / sizeof(memory_map_t);
   for (int i = 0; i < num_entries; i++) {
     memory_map_t *mb = &mmap[i];
     if (mb->base_addr_low != 0 && mb->type == MEMORY_AVAILABLE) {

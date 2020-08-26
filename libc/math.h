@@ -23,4 +23,8 @@ int abs(int j);
 int log2(unsigned int v);
 unsigned int next_pow2(unsigned int v);
 
+double pow(double x, double y);
+double fmod(double x, double y);
+int imax(int x, int y);
+
 #endif // LIBC_MATH_H

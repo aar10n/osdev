@@ -1,7 +1,7 @@
 bits 32
 
 ; Kernel main
-extern kmain
+extern main
 
 
 ;
@@ -88,7 +88,7 @@ _higher_half:
   push ebx                  ; Push the header pointer
 
   cli                       ; Clear interrupts
-  call kmain                ; Enter the kernel
+  call main                 ; Enter the kernel
 .hang:
   hlt                       ; Halt if the kernel exits
   jmp .hang                 ; Hang forever

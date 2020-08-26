@@ -6,11 +6,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#include <kernel/cpu/isr.h>
+#include <kernel/cpu/interrupt.h>
 #include <kernel/cpu/timer.h>
 
-#include <drivers/asm.h>
 #include <drivers/screen.h>
+#include <kernel/cpu/asm.h>
+#include <kernel/cpu/cpu.h>
 
 uint32_t tick = 0;
 

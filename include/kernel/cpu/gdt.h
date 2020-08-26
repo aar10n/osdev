@@ -25,7 +25,7 @@ gdt_entry_t gdt[3];
 gdt_descriptor_t gdt_desc;
 
 
-void gdt_set_gate(int32_t num, uint32_t base, uint32_t limit, uint8_t access, uint8_t gran);
 void install_gdt();
+void gdt_set_gate(int32_t num, uint32_t base, uint32_t limit, uint8_t access, uint8_t gran);
 
 #endif // KERNEL_CPU_GDT_H

@@ -9,49 +9,29 @@
 
 #include <drivers/screen.h>
 #include <drivers/serial.h>
+#include <kernel/mem/heap.h>
 #include <stdbool.h>
+#include "math.h"
 
-#define BUFSIZE 1024
+typedef enum {
+  START,
+  FLAGS,
+  WIDTH,
+  PRECISION,
+  LENGTH,
+  FORMAT,
+} parse_state_t;
 
-#define next_char() format++;
-#define advance(index, fmt) \
-  pos += index;             \
-  format += fmt;
-#define append_current() \
-  string[pos] = *format; \
-  advance(1, 1);
-#define append_char(ch) \
-  string[pos] = ch;     \
-  advance(1, 1);
-#define append_buffer()    \
-  buffer[index] = *format; \
-  index++;
-
-#define peek() (*(format + 1))
-#define is_repeat() (peek() == (*format))
-
-#define setflag(flag) (flag = 1)
-#define unsetflag(flag) (flag = 0)
-
-#define apply_format(format, value)       \
-  fmt_info.alt_form = flag_alt_form;      \
-  fmt_info.pad_zero = flag_pad_zero;      \
-  fmt_info.pad_right = flag_pad_right;    \
-  fmt_info.add_space = flag_add_space;    \
-  fmt_info.add_sign = flag_add_sign;      \
-                                          \
-  fmt_info.is_unsigned = is_unsigned;     \
-  fmt_info.is_uppercase = is_uppercase;   \
-  fmt_info.is_scientific = is_scientific; \
-                                          \
-  fmt_info.radix = radix;                 \
-  fmt_info.width = width;                 \
-  fmt_info.precision = precision;         \
-  format(value, temp, &fmt_info);         \
-  len = strlen(temp);                     \
-  memcpy(string + pos, temp, len);        \
-  advance(len, 1);
-
+typedef enum {
+  L_NONE,
+  L_CHAR,
+  L_SHORT,
+  L_LONG,
+  L_LONGLONG,
+  L_LONGDOUBLE,
+  L_INTMAX,
+  L_SIZE,
+} fmt_length_t;
 
 typedef struct {
   // Flags
@@ -59,50 +39,26 @@ typedef struct {
   uint16_t pad_zero : 1;  // Pad with zeros instead of spaces
   uint16_t pad_right : 1; // Padding is applied to the right
   uint16_t add_space : 1; // Add a space if there is no sign
-  uint16_t add_sign : 1;  // Add plus sign if positive number
+  uint16_t add_plus : 1;  // Add plus sign if positive number
+
+  uint16_t is_unsigned : 1;  // Value is unsigned
+  uint16_t is_uppercase : 1; // Use uppercase for letters
+  uint16_t is_width_arg : 1; // Width is an argument index
+  uint16_t is_prec_arg : 1;  // Precision is an argument index
 
   // Length
-  // uint16_t is_char       : 1; //
-  // uint16_t is_short      : 1; //
-  // uint16_t is_long       : 1; //
-  // uint16_t is_longlong   : 1; //
-
-  uint16_t is_unsigned : 1;   // Value is unsigned
-  uint16_t is_uppercase : 1;  // Use uppercase for letters
-  uint16_t is_scientific : 1; // Use scientific notation
+  fmt_length_t length; // Length of argument
 
   // Options
-  uint8_t radix;      // Radix for conversion
-  uint16_t width;     // Width of the value
-  uint16_t precision; // Precision of the value
-} format_t;
+  int width;     // Width of the value
+  int precision; // Precision of the value
+} fmt_options_t;
 
 //
 //
 //
 
-int add_prefix(char *s, int r) {
-  switch (r) {
-    case 2:
-      s[0] = 'b';
-      s[1] = '0';
-      return 2;
-    case 8:
-      s[0] = '0';
-      return 1;
-    case 10:
-      return 0;
-    case 16:
-      s[0] = 'x';
-      s[1] = '0';
-      return 2;
-    default:
-      return 0;
-  }
-}
-
-// dtoc - Digit to Char
-char _dtoc(int d, int r) {
+char digit2char(int d, int r) {
   switch (r) {
     case 2:
     case 10:
@@ -118,49 +74,463 @@ char _dtoc(int d, int r) {
   }
 }
 
-// itoa - Int to ASCII
-void _itoa(int n, char *s, format_t *f) {
-  int i = 0;
-  int sign;
-
-  if (f->is_unsigned) {
-    unsigned int un = (unsigned int) n;
-
-    do {
-      uint8_t digit = (un % f->radix);
-      uint8_t ch = _dtoc(digit, f->radix);
-      if (!f->is_uppercase && (ch >= 'A' && ch <= 'F')) ch += 32;
-      s[i++] = ch;
-    } while ((un /= f->radix) > 0);
-
-    if (f->alt_form) i += add_prefix(s + i, f->radix);
-  } else {
-    if ((sign = n) < 0) n = -n;
-
-    do {
-      uint8_t digit = (n % f->radix);
-      uint8_t ch = _dtoc(digit, f->radix);
-      if (!f->is_uppercase && (ch >= 'A' && ch <= 'F')) ch += 32;
-      s[i++] = ch;
-    } while ((n /= f->radix) > 0);
-
-    if (f->alt_form) i += add_prefix(s + i, f->radix);
-    if (sign < 0) s[i++] = '-';
+int char2digit(char c, int r) {
+  switch (r) {
+    case 2:
+    case 10:
+      return c - '0'; // c - 48
+    case 16:
+      if (c >= 'a' && c <= 'f') {
+        return c - 'W'; // c - 87
+      } else if (c >= 'A' && c <= 'F') {
+        return c - '7'; // c - 55
+      } else {
+        return c -  '0'; // c - 48
+      }
+    default:
+      return -1;
   }
-
-  s[i] = '\0';
-  reverse(s);
 }
 
-void _dtoa(double n, char *str, format_t *f) {}
+//
+
+int _itoa(int value, char *str, int base, fmt_options_t *opts) {
+  const char *lookup = opts->is_uppercase ? "0123456789abcdef" : "0123456789ABCDEF";
+
+  char alt_form[2];
+  char prefix[16];
+  char number[64];
+
+  int alt_form_len = 0;
+  int prefix_len = 0;
+  int padding_len = 0;
+  int number_len = 0;
+
+
+  if (opts->is_unsigned) {
+    // unsigned number
+    unsigned uvalue = (unsigned)value;
+    int index = 63;
+    if (uvalue == 0) {
+      number[index] = '0';
+      index--;
+      number_len++;
+    } else {
+      while (uvalue != 0) {
+        number[index] = lookup[uvalue % base];
+        uvalue /= base;
+        index--;
+        number_len++;
+      }
+    }
+
+    // alternate form
+    if (opts->alt_form) {
+      if (base == 2) {
+        alt_form[0] = '0';
+        alt_form[1] = 'b';
+        alt_form_len = 2;
+      } else if (base == 16) {
+        alt_form[0] = '0';
+        alt_form[1] = opts->is_uppercase ? 'X' : 'x';
+        alt_form_len = 2;
+      }
+    }
+
+    // calculate padding
+    int total_len = opts->width - (number_len + alt_form_len);
+    if (opts->is_width_arg) {
+      // TODO: this
+    } else {
+      padding_len = imax(total_len, 0);
+    }
+  } else {
+    // signed number
+    int svalue = abs(value);
+    int index = 63;
+    if (svalue == 0) {
+      number[index] = '0';
+      index--;
+      number_len++;
+    } else {
+      while (svalue != 0) {
+        number[index] = lookup[svalue % base];
+        svalue /= base;
+        index--;
+        number_len++;
+      }
+    }
+
+    // prefix options
+    if (value < 0) {
+      prefix[0] = '-';
+      prefix_len = 1;
+    } else if (opts->add_plus) {
+      prefix[0] = '+';
+      prefix_len = 1;
+    } else if (opts->add_space) {
+      prefix[0] = ' ';
+      prefix_len = 1;
+    }
+
+    // calculate padding
+    int total_len = opts->width - number_len + prefix_len +
+                    (opts->add_space || opts->add_plus);
+    if (opts->is_width_arg) {
+      // TODO: this
+    } else {
+      padding_len = imax(total_len, 0);
+    }
+  }
+
+  // padding (a) - prefix - alt_form - padding (b) - number - padding (c)
+  int index = 0;
+
+  // padding
+  if (!opts->pad_right && (opts->precision || !opts->pad_zero)) {
+    for (int i = 0; i < padding_len; i++) {
+      str[index] = ' ';
+      index++;
+    }
+  }
+
+  // prefix
+  memcpy(str + index, prefix, prefix_len);
+  index += prefix_len;
+
+  // alt_form
+  memcpy(str + index, alt_form, alt_form_len);
+  index += alt_form_len;
+
+  // padding
+  if (opts->pad_zero && !(opts->precision || opts->pad_right)) {
+    for (int i = 0; i < padding_len; i++) {
+      str[index] = '0';
+      index++;
+    }
+  }
+
+  // number
+  int number_index = 64 - number_len;
+  memcpy(str + index, number + number_index, number_len);
+  index += number_len;
+
+  // padding
+  if (opts->pad_right) {
+    for (int i = 0; i < padding_len; i++) {
+      str[index] = ' ';
+      index++;
+    }
+  }
+
+  return index;
+}
+
+void _dtoa(double value, char *str, fmt_options_t *opts) {}
+
+int _atoi(const char *str, int base) {
+  int index = 0;
+  size_t len = strlen(str);
+  if (len == 0) return 0; // undefined
+
+  bool negative = false;
+  if (str[index] == '+') {
+    // ignore
+    index++;
+  } else if (str[index] == '-') {
+    negative = true;
+    index++;
+  }
+
+  int value = 0;
+  while (str[index]) {
+    char ch = str[index];
+    if (ch >= '0' && ch <= '9') {
+      int column = len - (index + 1);
+      int digit = char2digit(ch, 10);
+      value += digit * pow(base, column);
+    } else {
+      return -1;
+    }
+
+    index++;
+  }
+
+  return negative ? -value : value;
+}
+
+//
+
+int parse_int(char *dest, const char *str) {
+  char const *ptr = str;
+  int n = 0;
+  while (*ptr) {
+    char ch = *ptr;
+    if (ch >= '0' && ch <= '9') {
+      dest[n] = ch;
+      n++;
+      ptr++;
+    } else {
+      break;
+    }
+  }
+
+  dest[n] = '\0';
+  return n;
+}
+
+int ksnprintf_internal(char *str, size_t size, bool limit, const char *format, va_list *valist) {
+  char const *fmt_ptr = format;
+  char buffer[128];
+
+  int n = 0;
+  fmt_options_t fmt_options = {};
+  parse_state_t state = START;
+
+  while (*fmt_ptr) {
+    int format_len = 0;
+
+    char ch = *fmt_ptr;
+    if (state == START) {
+      if (ch == '%') {
+        state = FLAGS;
+        fmt_ptr++;
+        continue;
+      } else {
+        buffer[0] = ch;
+        format_len++;
+      }
+    } else if (state == FLAGS) {
+      switch (ch) {
+        case '#':
+          fmt_options.alt_form = true;
+          break;
+        case '0':
+          fmt_options.pad_zero = true;
+          break;
+        case '-':
+          fmt_options.pad_right = true;
+          break;
+        case ' ':
+          fmt_options.add_space = true;
+          break;
+        case '+':
+          fmt_options.add_plus = true;
+          break;
+        default:
+          state = WIDTH;
+          continue;
+      }
+
+      fmt_ptr++;
+      continue;
+    } else if (state == WIDTH) {
+      char temp[16];
+      if (ch >= '1' && ch <= '9') {
+        int count = parse_int(temp, fmt_ptr);
+        fmt_ptr += count;
+        fmt_options.width = _atoi(temp, 10);
+      } else if (ch == '*') {
+        fmt_ptr++;
+        int count = parse_int(temp, fmt_ptr);
+        fmt_ptr += count;
+        if (count > 0 && *fmt_ptr == '$') {
+          fmt_ptr++;
+          fmt_options.is_width_arg = true;
+          fmt_options.width = atoi(temp);
+        }
+      }
+
+      state = PRECISION;
+      continue;
+    } else if (state == PRECISION) {
+      char temp[16];
+      if (ch == '.') {
+        fmt_ptr++;
+        ch = *fmt_ptr;
+        if (ch >= '1' && ch <= '9') {
+          int count = parse_int(temp, fmt_ptr);
+          fmt_ptr += count;
+          fmt_options.precision = atoi(temp);
+        } else if (ch == '*') {
+          fmt_ptr++;
+          int count = parse_int(temp, fmt_ptr);
+          fmt_ptr += count;
+          if (count > 0 && *fmt_ptr == '$') {
+            fmt_ptr++;
+            fmt_options.is_prec_arg = true;
+            fmt_options.precision = atoi(temp);
+          }
+        }
+      }
+
+      state = LENGTH;
+      continue;
+    } else if (state == LENGTH) {
+      switch (ch) {
+        case 'h':
+          fmt_options.length = *(fmt_ptr + 1) == 'h' ? L_CHAR : L_SHORT;
+          break;
+        case 'l':
+          fmt_options.length = *(fmt_ptr + 1) == 'l' ? L_LONGLONG : L_LONG;
+          break;
+        case 'L':
+          fmt_options.length = L_LONGDOUBLE;
+          break;
+        case 'j':
+          fmt_options.length = L_INTMAX;
+          break;
+        case 'z':
+          fmt_options.length = L_SIZE;
+          break;
+        default:
+          fmt_options.length = L_NONE;
+          state = FORMAT;
+          continue;
+      }
+
+      state = FORMAT;
+      fmt_ptr++;
+      continue;
+    } else if (state == FORMAT) {
+      switch (ch) {
+        case 'd':
+        case 'i': {
+          int value = va_arg(*valist, int);
+          format_len = _itoa(value, buffer, 10, &fmt_options);
+          break;
+        }
+        case 'b':
+        case 'o':
+        case 'u':
+        case 'p':
+        case 'x':
+        case 'X': {
+          if (ch == 'p') {
+            // %#x
+            fmt_options.alt_form = true;
+            ch = 'x';
+          } else if (ch == 'X') {
+            fmt_options.is_uppercase = true;
+          }
+          fmt_options.is_unsigned = true;
+
+          int base = ch == 'b' ? 2 :
+                     ch == 'o' ? 8 :
+                     ch == 'u' ? 10 :
+                     ch == 'x' ? 16 :
+                     ch == 'X' ? 16 :
+                     10;
+
+          unsigned value = va_arg(*valist, unsigned);
+          format_len = _itoa(value, buffer, base, &fmt_options);
+          break;
+        }
+        case 'e':
+        case 'E':
+          // scientific notation
+          break;
+        case 'f':
+        case 'F':
+          // double (in decimal notation)
+          break;
+        case 'g':
+        case 'G':
+          // double (in f/F or e/E notation)
+          break;
+        case 'a':
+        case 'A':
+          // double (in hex notation)
+          break;
+        case 'c': {
+          char value = va_arg(*valist, int);
+          buffer[0] = value;
+          format_len = 1;
+          break;
+        }
+        case 's': {
+          char *value = va_arg(*valist, char *);
+          int len = strlen(value);
+          memcpy(buffer, value, len);
+          format_len = len;
+          break;
+        }
+        case 'n': {
+          int *value = va_arg(*valist, int *);
+          *value = n;
+          break;
+        }
+        case 'm':
+          // glibc extension - print output of strerror(errno) [no argument]
+          break;
+        case '%':
+          buffer[0] = '%';
+          format_len = 1;
+          break;
+        default:
+          break;
+      }
+      state = START;
+    }
+
+    if (limit) {
+      if (n + format_len > (int)size - 1) {
+        size_t to_write = size - (n + format_len) - 1;
+        memcpy(str + n, buffer, to_write);
+        n += to_write;
+        str[n] = '\0';
+        return -1;
+      }
+    }
+
+    memcpy(str + n, buffer, format_len);
+    n += format_len;
+    fmt_ptr++;
+    memset(buffer, 0, format_len);
+    memset(&fmt_options, 0, sizeof(fmt_options_t));
+  }
+
+  str[n] = '\0';
+  return n + 1;
+}
 
 //
 //
 //
 
 /*
- * kprintf - write formatted output
- * ================================
+ * ksnprintf - write formatted data to a sized buffer
+ * ==================================================
+ *
+ * ksnprintf(char *str, size_t n, const char *format, ...);
+ *
+ */
+int ksnprintf(char *str, size_t n, const char *format, ...) {
+  va_list valist;
+  va_start(valist, format);
+  int vn = ksnprintf_internal(str, n, true, format, &valist);
+  va_end(valist);
+  return vn;
+}
+
+/*
+ * ksprintf - write formatted data to a buffer
+ * ===========================================
+ *
+ * ksprintf(char *str, const char *format, ...);
+ *
+ */
+int ksprintf(char *str, const char *format, ...) {
+  va_list valist;
+  va_start(valist, format);
+  int n = ksnprintf_internal(str, -1, false, format, &valist);
+  va_end(valist);
+  return n;
+}
+
+/*
+ * kprintf - write formatted data to standard output
+ * =================================================
  *
  * kprintf(const char *format, ...);
  *
@@ -214,216 +584,11 @@ void _dtoa(double n, char *str, format_t *f) {}
  *   '%' - A '%' literal
  */
 void kprintf(const char *format, ...) {
-  char string[BUFSIZE];
-  char temp[64];
-  char buffer[16];
-
-  int len = 0;
-  int pos = 0;
-  int index = 0;
-  int radix = 10;
-  int width = 0;
-  int precision = 0;
-
-  bool is_uppercase = false;
-  bool is_unsigned = false;
-  bool is_scientific = false;
-
-  // Flags
-  bool flag_alt_form = false;
-  bool flag_pad_zero = false;
-  bool flag_pad_right = false;
-  bool flag_add_space = false;
-  bool flag_add_sign = false;
-
-  // Length
-  bool length_hh;
-  bool length_h;
-  bool length_l;
-  bool length_ll;
-  bool length_z;
-
-  memset(string, 0, BUFSIZE);
-  memset(temp, 0, 32);
-  memset(buffer, 0, 8);
-
-  format_t fmt_info;
+  char str[256];
   va_list valist;
   va_start(valist, format);
-start:
-  switch (*format) {
-    case '\0':
-      append_char('\0');
-      goto end;
-    case '%':
-      next_char();
-      goto flags;
-    default:
-      append_current();
-      goto start;
-  }
-
-
-flags:
-  // Flags
-  switch (*format) {
-    case '#':
-      setflag(flag_alt_form);
-      next_char();
-      goto flags;
-    case '0':
-      setflag(flag_pad_zero);
-      next_char();
-      goto flags;
-    case '-':
-      setflag(flag_pad_right);
-      next_char();
-      goto flags;
-    case ' ':
-      setflag(flag_add_space);
-      next_char();
-      goto flags;
-    case '+':
-      setflag(flag_add_sign);
-      next_char();
-      goto flags;
-    default:
-      goto width;
-  }
-
-width:
-  // Width
-  switch (*format) {
-    case '1':
-    case '2':
-    case '3':
-    case '4':
-    case '5':
-    case '6':
-    case '7':
-    case '8':
-    case '9':
-      append_buffer();
-      goto width;
-    default:
-      goto length;
-  }
-
-  // precision:
-
-length:
-  // Length
-  switch (*format) {
-    case 'h':
-      is_repeat() ? setflag(length_hh) : setflag(length_h);
-      next_char();
-      goto type;
-    case 'l':
-      is_repeat() ? setflag(length_ll) : setflag(length_l);
-      next_char();
-      goto type;
-    case 'z':
-      setflag(length_z);
-      next_char();
-      goto type;
-    default:
-      goto type;
-  }
-
-type:
-  // Type
-  switch (*format) {
-    case 'd':
-    case 'i':
-      // Decimal
-      radix = 10;
-      unsetflag(is_unsigned);
-      goto format_int;
-    case 'b':
-      // Binary
-      radix = 2;
-      setflag(is_unsigned);
-      setflag(flag_alt_form);
-      goto format_int;
-    case 'o':
-      // Octal
-      radix = 8;
-      setflag(is_unsigned);
-      goto format_int;
-    case 'u':
-      // Unsigned Decimal
-      radix = 10;
-      setflag(is_unsigned);
-      goto format_int;
-    case 'X':
-      setflag(is_uppercase);
-    case 'x':
-      // Hexadecimal
-      radix = 16;
-      setflag(is_unsigned);
-      goto format_int;
-    case 'E':
-      setflag(is_uppercase);
-    case 'e':
-      // Scientific
-      setflag(is_scientific);
-      goto format_int;
-    case 'F':
-      setflag(is_uppercase);
-    case 'f':
-      // Float
-      radix = 10;
-      goto format_float;
-    case 'c':
-      // Character
-      goto format_char;
-    case 's':
-      // String
-      goto format_string;
-    case 'p':
-      // Pointer
-      radix = 16;
-      setflag(is_unsigned);
-      setflag(is_uppercase);
-      setflag(flag_alt_form);
-      goto format_int;
-    case '%':
-      append_current();
-      goto start;
-    default:
-      // Error
-      goto end;
-  }
-
-  // Formats
-format_int:
-  NULL;
-  int dec = va_arg(valist, int);
-  apply_format(_itoa, dec);
-  goto start;
-
-format_float:
-  NULL;
-  double fp = va_arg(valist, double);
-  apply_format(_dtoa, fp);
-  goto start;
-
-format_char:
-  NULL;
-  char char_value = va_arg(valist, int);
-  append_char(char_value);
-  goto start;
-
-format_string:
-  NULL;
-  char *str = va_arg(valist, char *);
-  len = strlen(str);
-  memcpy(string + pos, str, len);
-  advance(len, 1);
-  goto start;
-
-end:
+  ksnprintf_internal(str, 256, true, format, &valist);
   va_end(valist);
-  kputs(string);
-  serial_write(COM1, string);
+  kputs(str);
+  serial_write(COM1, str);
 }

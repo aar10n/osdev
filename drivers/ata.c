@@ -6,7 +6,7 @@
 #include <stddef.h>
 #include <stdio.h>
 
-#include <drivers/asm.h>
+#include <kernel/cpu/asm.h>
 #include <drivers/ata.h>
 
 /* Delay */

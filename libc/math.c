@@ -32,3 +32,30 @@ int log2(unsigned int v) {
 unsigned int next_pow2(unsigned int v) {
   return 1U << (log2(v - 1) + 1);
 }
+
+double pow(double x, double y) {
+  if (x == 0) return 0;
+  if (y == 0) return 1;
+
+  if (fmod(y, 1) == 0) {
+    double value = 0;
+    while (y) {
+      value *= x;
+      if (y < 0) {
+        y++;
+      } else {
+        y--;
+      }
+    }
+    return value;
+  }
+  return -1;
+}
+
+double fmod(double x, double y) {
+  return x - ((int) x / y) * y;
+}
+
+int imax(int x, int y) {
+  return x > y ? x : y;
+}

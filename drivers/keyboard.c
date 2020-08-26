@@ -7,11 +7,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#include <drivers/asm.h>
+#include <kernel/cpu/asm.h>
 #include <drivers/keyboard.h>
 #include <drivers/screen.h>
 
-#include <kernel/cpu/isr.h>
+#include <kernel/cpu/cpu.h>
+#include <kernel/cpu/interrupt.h>
 #include <kernel/mem/heap.h>
 #include <string.h>
 
@@ -152,17 +153,61 @@ char *translate_scancode(char scancode) {
     case 0x39:
       return "Space";
     case 0x3A:
-      return "v";
+      return "CapsLock";
     case 0x3B:
-      return "v";
+      return "F1";
     case 0x3C:
-      return "v";
+      return "F2";
     case 0x3D:
-      return "v";
+      return "F3";
     case 0x3E:
-      return "v";
+      return "F4";
     case 0x3F:
-      return "v";
+      return "F5";
+    case 0x40:
+      return "F6";
+    case 0x41:
+      return "F7";
+    case 0x42:
+      return "F8";
+    case 0x43:
+      return "F9";
+    case 0x44:
+      return "F10";
+    case 0x45:
+      return "NumLock";
+    case 0x46:
+      return "ScrollLock";
+    case 0x47:
+      return "Keypad 7";
+    case 0x48:
+      return "Keypad 8";
+    case 0x49:
+      return "Keypad 9";
+    case 0x4A:
+      return "Keypad -";
+    case 0x4B:
+      return "Keypad 4";
+    case 0x4C:
+      return "Keypad 5";
+    case 0x4D:
+      return "Keypad 6";
+    case 0x4E:
+      return "Keypad +";
+    case 0x4F:
+      return "Keypad 1";
+    case 0x50:
+      return "Keypad 2";
+    case 0x51:
+      return "Keypad 3";
+    case 0x52:
+      return "Keypad 0";
+    case 0x53:
+      return "Keypad Del";
+    case 0x54:
+      return "?Alt?";
+    case 0x5b:
+      return "Command";
     default:
       return "";
   }

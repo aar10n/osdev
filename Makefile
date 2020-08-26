@@ -20,30 +20,33 @@ include util/Makefile.toolchain
 kernel = \
 	boot.s \
 	kernel/main.c \
+	kernel/cpu/asm.s \
+	kernel/cpu/exception.s \
 	kernel/cpu/interrupt.s \
+	kernel/cpu/exception.c \
 	kernel/cpu/gdt.c \
 	kernel/cpu/idt.c \
-	kernel/cpu/isr.c \
+	kernel/cpu/interrupt.c \
 	kernel/cpu/pdt.c \
+	kernel/cpu/rtc.c \
 	kernel/cpu/timer.c \
 	kernel/mem/heap.c \
 	kernel/mem/mm.c \
 	kernel/mem/page.c
 
-kernel-y = $(patsubst %.c,$(BUILD_DIR)/%.o, \
-	$(patsubst %.s,$(BUILD_DIR)/%.o,$(kernel)))
+kernel-y = $(patsubst %.c,$(BUILD_DIR)/%_c.o, \
+	$(patsubst %.s,$(BUILD_DIR)/%_s.o,$(kernel)))
 
 
 drivers = \
-	drivers/asm.s \
 	drivers/ata.c \
 	drivers/keyboard.c \
 	drivers/rtc.c \
 	drivers/screen.c \
 	drivers/serial.c
 
-drivers-y = $(patsubst %.c,$(BUILD_DIR)/%.o, \
-	$(patsubst %.s,$(BUILD_DIR)/%.o,$(drivers)))
+drivers-y = $(patsubst %.c,$(BUILD_DIR)/%_c.o, \
+	$(patsubst %.s,$(BUILD_DIR)/%_s.o,$(drivers)))
 
 
 fs = \
@@ -54,8 +57,8 @@ fs = \
 	fs/ext2/inode.c \
 	fs/ext2/super.c
 
-fs-y = $(patsubst %.c,$(BUILD_DIR)/%.o, \
-	$(patsubst %.s,$(BUILD_DIR)/%.o,$(fs)))
+fs-y = $(patsubst %.c,$(BUILD_DIR)/%_c.o, \
+	$(patsubst %.s,$(BUILD_DIR)/%_s.o,$(fs)))
 
 
 libc = \
@@ -64,8 +67,8 @@ libc = \
 	libc/stdlib.c \
 	libc/string.c
 
-libc-y = $(patsubst %.c,$(BUILD_DIR)/%.o, \
-	$(patsubst %.s,$(BUILD_DIR)/%.o,$(libc)))
+libc-y = $(patsubst %.c,$(BUILD_DIR)/%_c.o, \
+	$(patsubst %.s,$(BUILD_DIR)/%_s.o,$(libc)))
 
 # --------- #
 #  Targets  #
@@ -113,10 +116,10 @@ $(BUILD)/disk.img:
 
 # Compilation rules
 
-$(BUILD_DIR)/%.o: %.c
+$(BUILD_DIR)/%_c.o: %.c
 	@mkdir -p $(@D)
 	$(CC) $(INCLUDE) $(CFLAGS) -c $< -o $@
 
-$(BUILD_DIR)/%.o: %.s
+$(BUILD_DIR)/%_s.o: %.s
 	@mkdir -p $(@D)
 	$(AS) $(ASFLAGS) $< -o $@

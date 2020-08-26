@@ -15,6 +15,10 @@ int memcmp(const void *str1, const void *str2, size_t count) {
 }
 
 void *memcpy(void *dest, const void *src, size_t len) {
+  if (len == 0) {
+    return NULL;
+  }
+
   char *d = dest;
   const char *s = src;
   while (len--) {
@@ -24,6 +28,10 @@ void *memcpy(void *dest, const void *src, size_t len) {
 }
 
 void *memmove(void *dest, const void *src, size_t len) {
+  if (len == 0) {
+    return dest;
+  }
+
   char *d = dest;
   const char *s = src;
   if (d < s) {
