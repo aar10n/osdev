@@ -61,8 +61,7 @@ void main(multiboot_info_t *mbinfo) {
   mem_init(base_addr, mem_size);
   kheap_init();
 
-  // page_t *page = alloc_pages(2, 0);
-  // mm_print_debug_page(page);
+  printf_fp(3.141);
 
   // ata_t disk = { ATA_DRIVE_PRIMARY };
   // ata_info_t disk_info;

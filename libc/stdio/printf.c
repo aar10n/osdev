@@ -60,39 +60,6 @@ char width[16];
 char prec[16];
 
 //
-//
-//
-
-static inline uint64_t get_integer_arg(va_list *valist, fmt_options_t *opts) {
-  switch (opts->length) {
-    case L_NONE: // NOLINT(bugprone-branch-clone)
-    case L_CHAR:
-    case L_SHORT: return va_arg(*valist, int);
-    case L_LONG: return va_arg(*valist, long int);
-    case L_LONGLONG: return va_arg(*valist, long long int);
-    case L_LONGDOUBLE: return va_arg(*valist, long double);
-    case L_INTMAX: return va_arg(*valist, intmax_t);
-    case L_SIZE: return va_arg(*valist, size_t);
-  }
-}
-
-static inline uint64_t long_mod(uint64_t a, uint64_t b) {
-  uint64_t x = b;
-  while (x <= a / 2) {
-    x <<= 1;
-  }
-
-  while (a >= b) {
-    if (a >= x) {
-      a -= x;
-    }
-    x >>= 1;
-  }
-
-  return a;
-}
-
-//
 
 char digit2char(int d, int r) {
   switch (r) {
@@ -130,8 +97,8 @@ int char2digit(char c, int r) {
 
 //
 
-int _itoa(int64_t value, char *str, int base, fmt_options_t *opts) {
-  const char *lookup = opts->is_uppercase ? "0123456789abcdef" : "0123456789ABCDEF";
+int _itoa(int value, char *str, int base, fmt_options_t *opts) {
+  const char *lookup = opts->is_uppercase ? "0123456789ABCDEF" : "0123456789abcdef";
 
   int alt_form_len = 0;
   int prefix_len = 0;
@@ -141,7 +108,7 @@ int _itoa(int64_t value, char *str, int base, fmt_options_t *opts) {
 
   if (opts->is_unsigned) {
     // unsigned number
-    uint64_t uvalue = (uint64_t)value;
+    unsigned uvalue = (unsigned)value;
     int index = 63;
     if (uvalue == 0) {
       number[index] = '0';
@@ -149,8 +116,7 @@ int _itoa(int64_t value, char *str, int base, fmt_options_t *opts) {
       number_len++;
     } else {
       while (uvalue != 0) {
-        uint64_t mod = long_mod(uvalue, base);
-        number[index] = lookup[mod];
+        number[index] = lookup[uvalue % base];
         uvalue /= base;
         index--;
         number_len++;
@@ -179,7 +145,7 @@ int _itoa(int64_t value, char *str, int base, fmt_options_t *opts) {
     }
   } else {
     // signed number
-    int64_t svalue = abs(value);
+    int svalue = abs(value);
     int index = 63;
     if (svalue == 0) {
       number[index] = '0';
@@ -187,8 +153,7 @@ int _itoa(int64_t value, char *str, int base, fmt_options_t *opts) {
       number_len++;
     } else {
       while (svalue != 0) {
-        uint64_t mod = long_mod(svalue, base);
-        number[index] = lookup[mod];
+        number[index] = lookup[svalue % base];
         svalue /= base;
         index--;
         number_len++;
@@ -430,7 +395,7 @@ int ksnprintf_internal(char *str, size_t size, bool limit, const char *format, v
       switch (ch) {
         case 'd':
         case 'i': {
-          uint64_t value = get_integer_arg(valist, &fmt_options);
+          int value = va_arg(*valist, int);
           format_len = _itoa(value, buffer, 10, &fmt_options);
           break;
         }

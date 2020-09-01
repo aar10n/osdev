@@ -26,7 +26,8 @@ typedef union double_raw {
 void printf_fp(double value) {
   double_raw_t raw = { .value = value };
 
-  kprintf("%b | %011b | %020b%032b\n", raw.sign, raw.exp, raw.alt.frac_high, raw.alt.frac_low);
+  // kprintf("%b | %011b | %020b%032b\n", raw.sign, raw.exp, raw.alt.frac_high, raw.alt.frac_low);
+  kprintf("%b | %011b | %052b\n", raw.sign, raw.exp, raw.frac);
 
   if (raw.exp == 0 && raw.frac == 0) {
     // signed zero
