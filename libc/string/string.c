@@ -1,5 +1,4 @@
 #include <stddef.h>
-#include <stdint.h>
 #include <string.h>
 
 int memcmp(const void *str1, const void *str2, size_t count) {

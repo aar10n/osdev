@@ -1,7 +1,6 @@
-#include "stdlib.h"
+#include <stdlib.h>
 #include <stdint.h>
-#include "stdio.h"
-#include "string.h"
+#include <string.h>
 
 // dtoc - Digit to Char
 char dtoc(int d, int b) {

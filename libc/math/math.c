@@ -2,7 +2,7 @@
 // Created by Aaron Gill-Braun on 2019-05-22.
 //
 
-#include "math.h"
+#include <math.h>
 
 #define LT(n) n, n, n, n, n, n, n, n, n, n, n, n, n, n, n, n
 static const char log2_lookup[256] = {

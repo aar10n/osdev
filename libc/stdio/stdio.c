@@ -9,9 +9,8 @@
 
 #include <drivers/screen.h>
 #include <drivers/serial.h>
-#include <kernel/mem/heap.h>
 #include <stdbool.h>
-#include "math.h"
+#include <math.h>
 
 typedef enum {
   START,

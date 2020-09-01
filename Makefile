@@ -32,7 +32,6 @@ kernel = \
 	kernel/cpu/pdt.c \
 	kernel/cpu/rtc.c \
 	kernel/cpu/timer.c \
-	kernel/mem/cache.c \
 	kernel/mem/heap.c \
 	kernel/mem/mm.c \
 	kernel/mem/paging.c \
@@ -66,10 +65,12 @@ fs-y = $(patsubst %.c,$(BUILD_DIR)/%_c.o, \
 
 
 libc = \
-	libc/math.c \
-	libc/stdio.c \
-	libc/stdlib.c \
-	libc/string.c
+	libc/math/math.c \
+	libc/stdio/printf.c \
+	libc/stdio/printf_fp.c \
+	libc/stdio/stdio.c \
+	libc/stdlib/stdlib.c \
+	libc/string/string.c
 
 libc-y = $(patsubst %.c,$(BUILD_DIR)/%_c.o, \
 	$(patsubst %.s,$(BUILD_DIR)/%_s.o,$(libc)))
