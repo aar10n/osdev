@@ -11,28 +11,23 @@
 
 #define KERNEL_BASE 0xC0000000
 #define PAGE_SIZE 4096
-#define MAX_ORDER 11
+#define MAX_ORDER 10
 
-#define ptov(addr) (((uintptr_t) addr) + KERNEL_BASE)
-#define vtop(addr) (((uintptr_t) addr) - KERNEL_BASE)
+#define phys_to_virt(addr) (((uintptr_t) addr) + KERNEL_BASE)
+#define virt_to_phys(addr) (((uintptr_t) addr) - KERNEL_BASE)
 
-#define addr_to_pde(addr) ((unsigned int) ((uintptr_t) addr >> 22))
-#define addr_to_pte(addr) ((unsigned int) ((uintptr_t) addr >> 12 & 0x03FF))
+#define addr_to_pde(addr) ((unsigned int) ((uintptr_t) (addr) >> 22))
+#define addr_to_pte(addr) ((unsigned int) ((uintptr_t) (addr) >> 12 & 0x03FF))
 
-/*
- * page status flags
- *
- *   PAGE_FREE  - Page is available
- *   PAGE_USED  - Page is unavailable
- *   PAGE_HEAD  - Page is a head buddy
- *   PAGE_TAIL  - Page is a tail buddy
- *   PAGE_SPLIT - Page is a split page
- */
-#define PAGE_FREE 0x00
-#define PAGE_USED 0x01
-#define PAGE_HEAD 0x02
-#define PAGE_TAIL 0x04
-#define PAGE_SPLIT 0x08
+#define align(value, size) ((value + size) & ~(size))
+
+#define ZONE_DMA       0x1
+#define ZONE_NORMAL    0x2
+#define ZONE_HIGHMEM   0x4
+
+#define PAGE_PRESENT   0x8
+#define PAGE_READWRITE 0x16
+#define PAGE_USER      0x32
 
 //
 //
@@ -41,26 +36,42 @@
 extern uint32_t _kernel_start;
 extern uint32_t _kernel_end;
 
-#define kernel_start (ptov((uint32_t) &_kernel_start))
+#define kernel_start (phys_to_virt((uint32_t) &_kernel_start))
 #define kernel_end ((uint32_t) &_kernel_end)
 
 typedef struct page {
-  uintptr_t frame;
-  uintptr_t addr;
-  size_t size;
-  uint8_t flags;
-  struct page *next;
-  struct page *parent;
-
+  uintptr_t virt_addr; // virtual address (not constant)
+  uintptr_t phys_addr; // physical address (constant)
   union {
-    struct page *head; // PAGE_SPLIT
-    struct page *tail; // PAGE_HEAD
-  };
+    uint16_t raw : 10;
+    struct {
+      uint16_t free : 1;      // page is free
+      uint16_t split : 1;     // page was split
+      uint16_t head : 1;      // page is head of split page
+      uint16_t tail : 1;      // page is tail of split page
+      uint16_t present : 1;   // page is mapped in memory
+      uint16_t readwrite : 1; // page is read/write or read-only
+      uint16_t user : 1;      // page is for user or supervisor
+      uint16_t reserved : 3;
+    };
+  } flags;
+  uint16_t zone : 2;  // the zone this page belongs to
+  uint16_t order : 4; // the order (and size) of this page
+
+  struct page *next;
+  struct page *prev;
+
+  struct page *parent;
+  struct page *head;
+  struct page *tail;
 } page_t;
 
 void mem_init(uintptr_t base_addr, size_t size);
-page_t *alloc_pages(int order);
-page_t *alloc_page();
+page_t *alloc_pages(int order, uint8_t flags);
+page_t *alloc_page(uint8_t flags);
 void free_page(page_t *page);
+
+void mm_print_debug_stats();
+void mm_print_debug_page(page_t *page);
 
 #endif // KERNEL_MEM_MM_H

@@ -3,11 +3,11 @@
 
 #include <stdint.h>
 
-#define MEMORY_AVAILABLE 1
-#define MEMORY_RESERVED 2
-#define MEMORY_ACPI_RECLAIMABLE 3
-#define MEMORY_NVS 4
-#define MEMORY_BADRAM 5
+#define MULTIBOOT_MEMORY_AVAILABLE              1
+#define MULTIBOOT_MEMORY_RESERVED               2
+#define MULTIBOOT_MEMORY_ACPI_RECLAIMABLE       3
+#define MULTIBOOT_MEMORY_NVS                    4
+#define MULTIBOOT_MEMORY_BADRAM                 5
 
 
 /* The Multiboot header. */
@@ -15,11 +15,19 @@ typedef struct multiboot_header {
   uint32_t magic;
   uint32_t flags;
   uint32_t checksum;
+
+  // These are only valid if MULTIBOOT_AOUT_KLUDGE is set.
   uint32_t header_addr;
   uint32_t load_addr;
   uint32_t load_end_addr;
   uint32_t bss_end_addr;
   uint32_t entry_addr;
+
+  // These are only valid if MULTIBOOT_VIDEO_MODE is set.
+  uint32_t mode_type;
+  uint32_t width;
+  uint32_t height;
+  uint32_t depth;
 } multiboot_header_t;
 
 /* The symbol table for a.out. */
@@ -40,19 +48,74 @@ typedef struct elf_section_header_table {
 
 /* The Multiboot information. */
 typedef struct multiboot_info {
+  // Multiboot info version number
   uint32_t flags;
+  // Available memory from BIOS
   uint32_t mem_lower;
   uint32_t mem_upper;
+  // Root partition
   uint32_t boot_device;
+  // Kernel command line
   uint32_t cmdline;
+  // Boot module list
   uint32_t mods_count;
   uint32_t mods_addr;
+
   union {
     aout_symbol_table_t aout_sym;
     elf_section_header_table_t elf_sec;
-  };
+  } u;
+
+  // Memory mapping buffer
   uint32_t mmap_length;
   uint32_t mmap_addr;
+
+  // Drive info buffer
+  uint32_t drives_length;
+  uint32_t drives_addr;
+
+  // ROM configuration table
+  uint32_t config_table;
+
+  // Boot loader Name
+  uint32_t boot_loader_name;
+
+  // APM table
+  uint32_t apm_table;
+
+  // Video info
+  uint32_t vbe_control_info;
+  uint32_t vbe_mode_info;
+  uint16_t vbe_mode;
+  uint16_t vbe_interface_seg;
+  uint16_t vbe_interface_off;
+  uint16_t vbe_interface_len;
+
+  uint32_t framebuffer_addr_low;
+  uint32_t framebuffer_addr_high;
+  uint32_t framebuffer_pitch;
+  uint32_t framebuffer_width;
+  uint32_t framebuffer_height;
+  uint8_t framebuffer_bpp;
+#define MULTIBOOT_FRAMEBUFFER_TYPE_INDEXED 0
+#define MULTIBOOT_FRAMEBUFFER_TYPE_RGB     1
+#define MULTIBOOT_FRAMEBUFFER_TYPE_EGA_TEXT     2
+  uint8_t framebuffer_type;
+  union {
+    struct {
+      uint32_t framebuffer_palette_addr;
+      uint16_t framebuffer_palette_num_colors;
+    };
+    struct
+    {
+      uint8_t framebuffer_red_field_position;
+      uint8_t framebuffer_red_mask_size;
+      uint8_t framebuffer_green_field_position;
+      uint8_t framebuffer_green_mask_size;
+      uint8_t framebuffer_blue_field_position;
+      uint8_t framebuffer_blue_mask_size;
+    };
+  };
 } multiboot_info_t;
 
 /* The module structure. */
@@ -63,15 +126,13 @@ typedef struct module {
   uint32_t reserved;
 } module_t;
 
-/* The memory map. Be careful that the offset 0 is base_addr_low
-  but no size. */
-typedef struct memory_map {
+typedef struct __attribute__((packed)) {
   uint32_t size;
   uint32_t base_addr_low;
   uint32_t base_addr_high;
   uint32_t length_low;
   uint32_t length_high;
   uint32_t type;
-} memory_map_t;
+} multiboot_mmap_entry_t;
 
 #endif // LIBC_MULTIBOOT_H

@@ -1,6 +1,6 @@
 NAME = osdev
 VERSION = 1.0
-TARGET = i386
+TARGET = x86_64
 
 BUILD = build
 BUILD_DIR = $(BUILD)/$(NAME)
@@ -10,6 +10,8 @@ LDFLAGS = -T linker.ld
 ASFLAGS =
 
 INCLUDE = -Iinclude -Ilibc
+
+QEMU_MEMORY = 256M
 
 include util/Makefile.toolchain
 
@@ -30,9 +32,11 @@ kernel = \
 	kernel/cpu/pdt.c \
 	kernel/cpu/rtc.c \
 	kernel/cpu/timer.c \
+	kernel/mem/cache.c \
 	kernel/mem/heap.c \
 	kernel/mem/mm.c \
-	kernel/mem/page.c
+	kernel/mem/paging.c \
+	kernel/vga/vga.c \
 
 kernel-y = $(patsubst %.c,$(BUILD_DIR)/%_c.o, \
 	$(patsubst %.s,$(BUILD_DIR)/%_s.o,$(kernel)))
@@ -77,12 +81,19 @@ libc-y = $(patsubst %.c,$(BUILD_DIR)/%_c.o, \
 all: $(BUILD)/osdev.iso;
 
 run: $(BUILD)/osdev.iso $(BUILD)/disk.img
-	$(QEMU) -serial file:$(BUILD)/stdio \
+	$(QEMU) \
+		-usb \
+		-vga std \
+		-m $(QEMU_MEMORY) \
+		-serial file:$(BUILD)/stdio \
 		-drive file=$(BUILD)/disk.img,format=raw,if=ide \
 		-drive file=$(BUILD)/osdev.iso,media=cdrom
 
 debug: $(BUILD)/osdev.iso $(BUILD)/disk.img
 	$(QEMU) -s -S \
+		-usb \
+		-vga std \
+		-m $(QEMU_MEMORY) \
 		-drive file=$(BUILD)/disk.img,format=raw,if=ide \
 		-drive file=$(BUILD)/osdev.iso,media=cdrom &
 	$(GDB) -w \
@@ -91,12 +102,21 @@ debug: $(BUILD)/osdev.iso $(BUILD)/disk.img
 
 run-debug: $(BUILD)/osdev.iso $(BUILD)/disk.img
 	$(QEMU) -s -S \
+		-usb \
+		-vga std \
+		-m $(QEMU_MEMORY) \
+		-serial file:$(BUILD)/stdio \
 		-drive file=$(BUILD)/disk.img,format=raw,if=ide \
 		-drive file=$(BUILD)/osdev.iso,media=cdrom &
 
+.PHONY: clean
 clean:
 	rm -rf $(BUILD_DIR)
 	mkdir $(BUILD_DIR)
+
+.PHONY: config-info
+config-info:
+	$(info $($(variable)))
 
 # -------------- #
 #  Dependencies  #

@@ -54,6 +54,10 @@ typedef struct {
   int precision; // Precision of the value
 } fmt_options_t;
 
+char alt_form[2];
+char prefix[16];
+char number[64];
+
 //
 //
 //
@@ -96,10 +100,6 @@ int char2digit(char c, int r) {
 
 int _itoa(int value, char *str, int base, fmt_options_t *opts) {
   const char *lookup = opts->is_uppercase ? "0123456789abcdef" : "0123456789ABCDEF";
-
-  char alt_form[2];
-  char prefix[16];
-  char number[64];
 
   int alt_form_len = 0;
   int prefix_len = 0;
@@ -211,7 +211,9 @@ int _itoa(int value, char *str, int base, fmt_options_t *opts) {
   }
 
   // number
+  int test = 0;
   int number_index = 64 - number_len;
+  int *ptr = &number_index;
   memcpy(str + index, number + number_index, number_len);
   index += number_len;
 
@@ -226,7 +228,9 @@ int _itoa(int value, char *str, int base, fmt_options_t *opts) {
   return index;
 }
 
-void _dtoa(double value, char *str, fmt_options_t *opts) {}
+void _dtoa(double value, char *str, fmt_options_t *opts) {
+
+}
 
 int _atoi(const char *str, int base) {
   int index = 0;

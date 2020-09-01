@@ -28,8 +28,7 @@ void set() {
 
 void scroll() {
   for (int i = 0; i < MAX_ROWS; i++) {
-    memcpy(
-        VIDEO_ADDRESS + ((i - 1) * MAX_COLS * 2), VIDEO_ADDRESS + (i * MAX_COLS * 2), MAX_COLS * 2);
+    memcpy(VIDEO_ADDRESS + ((i - 1) * MAX_COLS * 2), VIDEO_ADDRESS + (i * MAX_COLS * 2), MAX_COLS * 2);
   }
 
   memset(VIDEO_ADDRESS + ((MAX_ROWS - 1) * MAX_COLS * 2), 0x0, MAX_COLS * 2);

@@ -28,8 +28,7 @@ void init_serial(int port) {
 }
 
 void serial_write_char(int port, char a) {
-  while (is_transmit_empty(port) == 0)
-    ;
+  while (is_transmit_empty(port) == 0);
 
   outb(port, a);
 }

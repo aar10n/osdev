@@ -59,3 +59,15 @@ double fmod(double x, double y) {
 int imax(int x, int y) {
   return x > y ? x : y;
 }
+
+unsigned int umax(unsigned int x, unsigned int y) {
+  return x > y ? x : y;
+}
+
+int imin(int x, int y) {
+  return x > y ? y : x;
+}
+
+int umin(unsigned int x, unsigned int y) {
+  return x > y ? y : x;
+}

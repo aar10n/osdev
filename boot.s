@@ -14,15 +14,17 @@ KERNEL_DS equ 0x10                     ; Kernel Data Segment
 STACK_SIZE equ 0x4000                  ; 16KB Stack Size
 
 ; Multiboot Header
-MB_ALIGN equ 0x1                       ; Align loaded modules on page boundaries
-MB_INFO equ 0x2                        ; Include information about system memory
+_ALIGN equ 0x1                         ; Align loaded modules on page boundaries
+_INFO equ 0x2                          ; Include information about system memory
+_VIDINFO equ 0x4                       ; OS wants video mode set
 
 MB_MAGIC equ 0x1BADB002                ; Multiboot head magic number
-MB_FLAGS equ MB_ALIGN | MB_INFO        ; Multiboot header flags
+MB_FLAGS equ _ALIGN | _INFO | _VIDINFO ; Multiboot header flags
 MB_CHECKSUM equ -(MB_MAGIC + MB_FLAGS) ; Multiboot header checksum
 
 KERNEL_BASE equ 0xC0000000             ; Kernel virtual location (3GB)
 KERNEL_PAGE equ (KERNEL_BASE >> 22)    ; Kernel page index
+
 
 ;
 ; Data
@@ -53,6 +55,9 @@ multiboot:
   dd MB_MAGIC
   dd MB_FLAGS
   dd MB_CHECKSUM
+  dd 0, 0, 0, 0, 0
+  dd 0 ; Mode
+  dd 1024, 768, 32
 
 ; Entry point
 global _start

@@ -26,5 +26,8 @@ unsigned int next_pow2(unsigned int v);
 double pow(double x, double y);
 double fmod(double x, double y);
 int imax(int x, int y);
+unsigned int umax(unsigned int x, unsigned int y);
+int imin(int x, int y);
+int umin(unsigned int x, unsigned int y);
 
 #endif // LIBC_MATH_H

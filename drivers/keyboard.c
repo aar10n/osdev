@@ -23,6 +23,10 @@ static void keyboard_callback(registers_t regs) {
   uint8_t scancode = inb(0x60);
   char *key = translate_scancode(scancode);
   kprintf("keypress | %#X (%#b) - %s\n", scancode, scancode, key);
+  int is_keyup = (1 << 7) & scancode;
+  if (is_keyup) {
+    kfree(key);
+  }
 }
 
 char *translate_scancode(char scancode) {
@@ -31,7 +35,7 @@ char *translate_scancode(char scancode) {
     char keyup_char = ~(1 << 7) & scancode;
     char* key = translate_scancode(keyup_char);
     size_t len = strlen(key);
-    char *string = _kmalloc(len + 4);
+    char *string = kmalloc(len + 4);
     strcpy(string, key);
     strcpy(string + len, " up");
     return string;

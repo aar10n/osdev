@@ -6,27 +6,27 @@ ifndef TARGET
 	TARGET = default
 endif
 
-# Toolchains
-ifeq ($(TARGET),i386)
-	TOOLCHAIN = i386-elf-
-	QEMU = qemu-system-i386
-	CFLAGS += -ffreestanding -m32
-	ASFLAGS += -f elf32
-	LDFLAGS +=
-else ifeq ($(TARGET),i686)
-	TOOLCHAIN = i686-elf-
-	QEMU = qemu-system-i686
-	CFLAGS += -ffreestanding -m32
-	ASFLAGS += -f elf32
-	LDFLAGS +=
-else ifeq ($(TARGET),default)
+# Target
+ifeq ($(TARGET),default)
 	TOOLCHAIN =
 	QEMU =
 	CFLAGS +=
 	ASFLAGS +=
 	LDFLAGS +=
+else ifeq ($(TARGET),i386)
+	TOOLCHAIN = i386-elf-
+	QEMU = qemu-system-i386
+	CFLAGS += -ffreestanding -m32
+	ASFLAGS += -f elf32
+	LDFLAGS +=
+else ifeq ($(TARGET),x86_64)
+	TOOLCHAIN = i686-elf-
+	QEMU = qemu-system-x86_64
+	CFLAGS += -ffreestanding -m32
+	ASFLAGS += -f elf32
+	LDFLAGS +=
 else
-	ERR = $(error unknown target $(TARGET))
+$(error unknown target $(TARGET))
 endif
 
 CXX_STD = -std=c++98
