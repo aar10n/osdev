@@ -28,7 +28,7 @@ uint32_t *get_page_table(int table_index) {
 //
 //
 
-void init_paging() {
+void paging_init() {
   page_directory = (uint32_t *) &_page_directory;
   kernel_page_table = (uint32_t *) &_kernel_page_table;
 

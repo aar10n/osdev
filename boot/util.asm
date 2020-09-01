@@ -1,5 +1,5 @@
 ;
-; util.asm
+; asm.asm
 ;   Contains a number of utility macros to make
 ;   working with the utility functions easier
 ; 

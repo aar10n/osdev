@@ -11,7 +11,12 @@ ASFLAGS =
 
 INCLUDE = -Iinclude -Ilibc
 
-QEMU_MEMORY = 256M
+QEMU_FLAGS = -usb \
+             -vga std \
+             -m 256M \
+             -serial file:$(BUILD)/stdio \
+             -drive file=$(BUILD)/disk.img,format=raw,if=ide \
+             -drive file=$(BUILD)/osdev.iso,media=cdrom
 
 include util/Makefile.toolchain
 
@@ -19,12 +24,18 @@ include util/Makefile.toolchain
 #  Sources  #
 # --------- #
 
+# Generates a list of objects from a list of sources
+objects = $(patsubst %.c,$(BUILD_DIR)/%_c.o, \
+		  $(patsubst %.s,$(BUILD_DIR)/%_s.o, \
+		  $(patsubst %.asm,$(BUILD_DIR)/%_asm.o, \
+		  $(1))))
+
 kernel = \
-	boot.s \
+	boot.asm \
 	kernel/main.c \
-	kernel/cpu/asm.s \
-	kernel/cpu/exception.s \
-	kernel/cpu/interrupt.s \
+	kernel/cpu/asm.asm \
+	kernel/cpu/exception.asm \
+	kernel/cpu/interrupt.asm \
 	kernel/cpu/exception.c \
 	kernel/cpu/gdt.c \
 	kernel/cpu/idt.c \
@@ -37,8 +48,7 @@ kernel = \
 	kernel/mem/paging.c \
 	kernel/vga/vga.c \
 
-kernel-y = $(patsubst %.c,$(BUILD_DIR)/%_c.o, \
-	$(patsubst %.s,$(BUILD_DIR)/%_s.o,$(kernel)))
+kernel-y := $(call objects,$(kernel))
 
 
 drivers = \
@@ -48,8 +58,7 @@ drivers = \
 	drivers/screen.c \
 	drivers/serial.c
 
-drivers-y = $(patsubst %.c,$(BUILD_DIR)/%_c.o, \
-	$(patsubst %.s,$(BUILD_DIR)/%_s.o,$(drivers)))
+drivers-y = $(call objects,$(drivers))
 
 
 fs = \
@@ -60,11 +69,12 @@ fs = \
 	fs/ext2/inode.c \
 	fs/ext2/super.c
 
-fs-y = $(patsubst %.c,$(BUILD_DIR)/%_c.o, \
-	$(patsubst %.s,$(BUILD_DIR)/%_s.o,$(fs)))
+fs-y = $(call objects,$(fs))
 
 
 libc = \
+	libc/builtins/divdi3.s \
+	libc/builtins/udivdi3.s \
 	libc/math/math.c \
 	libc/stdio/printf.c \
 	libc/stdio/printf_fp.c \
@@ -72,8 +82,7 @@ libc = \
 	libc/stdlib/stdlib.c \
 	libc/string/string.c
 
-libc-y = $(patsubst %.c,$(BUILD_DIR)/%_c.o, \
-	$(patsubst %.s,$(BUILD_DIR)/%_s.o,$(libc)))
+libc-y = $(call objects,$(libc))
 
 # --------- #
 #  Targets  #
@@ -82,42 +91,30 @@ libc-y = $(patsubst %.c,$(BUILD_DIR)/%_c.o, \
 all: $(BUILD)/osdev.iso;
 
 run: $(BUILD)/osdev.iso $(BUILD)/disk.img
-	$(QEMU) \
-		-usb \
-		-vga std \
-		-m $(QEMU_MEMORY) \
-		-serial file:$(BUILD)/stdio \
-		-drive file=$(BUILD)/disk.img,format=raw,if=ide \
-		-drive file=$(BUILD)/osdev.iso,media=cdrom
+	$(QEMU) $(QEMU_FLAGS)
 
 debug: $(BUILD)/osdev.iso $(BUILD)/disk.img
-	$(QEMU) -s -S \
-		-usb \
-		-vga std \
-		-m $(QEMU_MEMORY) \
-		-drive file=$(BUILD)/disk.img,format=raw,if=ide \
-		-drive file=$(BUILD)/osdev.iso,media=cdrom &
+	$(QEMU) -s -S $(QEMU_FLAGS) &
 	$(GDB) -w \
 		-ex "target remote localhost:1234" \
 		-ex "add-symbol $(BUILD)/osdev.bin"
 
 run-debug: $(BUILD)/osdev.iso $(BUILD)/disk.img
-	$(QEMU) -s -S \
-		-usb \
-		-vga std \
-		-m $(QEMU_MEMORY) \
-		-serial file:$(BUILD)/stdio \
-		-drive file=$(BUILD)/disk.img,format=raw,if=ide \
-		-drive file=$(BUILD)/osdev.iso,media=cdrom &
+	$(QEMU) -s -S $(QEMU_FLAGS) &
 
 .PHONY: clean
 clean:
 	rm -rf $(BUILD_DIR)
 	mkdir $(BUILD_DIR)
 
-.PHONY: config-info
-config-info:
-	$(info $($(variable)))
+# Other targets
+
+tools:
+	cd tools && $(MAKE) all
+
+.PHONY: test
+test:
+	$(info $(libc-y))
 
 # -------------- #
 #  Dependencies  #
@@ -144,3 +141,7 @@ $(BUILD_DIR)/%_c.o: %.c
 $(BUILD_DIR)/%_s.o: %.s
 	@mkdir -p $(@D)
 	$(AS) $(ASFLAGS) $< -o $@
+
+$(BUILD_DIR)/%_asm.o: %.asm
+	@mkdir -p $(@D)
+	$(NASM) $(NASMFLAGS) $< -o $@

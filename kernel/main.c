@@ -45,13 +45,13 @@ void main(multiboot_info_t *mbinfo) {
   kprintf("Upper Memory: %d KiB\n", mbinfo->mem_upper);
   kprintf("\n");
 
-  init_paging();
+  paging_init();
 
   uintptr_t mem_start = 0x100000;
   // align the kernel_end address
   uintptr_t kernel_aligned = (virt_to_phys(kernel_end) + 0x1000) & 0xFFFF000;
   kprintf("kernel_aligned %p\n", phys_to_virt(kernel_aligned));
-  // save 1 MB heap for the "dumb" allocator
+  // set aside 1mb for the watermark allocator heap
   uintptr_t base_addr = kernel_aligned + 0x100000;
   kprintf("start_addr %p\n", phys_to_virt(base_addr));
   size_t mem_size = (mbinfo->mem_upper * 1024) - (base_addr - mem_start);
@@ -59,38 +59,10 @@ void main(multiboot_info_t *mbinfo) {
 
   // Initialize memory
   mem_init(base_addr, mem_size);
+  kheap_init();
 
   // page_t *page = alloc_pages(2, 0);
   // mm_print_debug_page(page);
-
-  kheap_init();
-
-  kprintf("pde: %d | pte: %d\n", addr_to_pde(0xC0000041), addr_to_pte(0xC0000041));
-
-#define KMALLOC_TEST(test, size) \
-  kprintf("%s - kmalloc(%d)\n", #test, size);\
-  void *test = kmalloc(size); \
-  kprintf("%s -> 0x%08X\n\n", #test, test);
-
-#define KFREE_TEST(test) \
-  kprintf("%s - kmalloc(%s)\n", #test, #test);\
-  kfree(test); \
-  kprintf("\n");
-
-#define KREALLOC_TEST(test, ptr, size) \
-  kprintf("%s - krealloc(%s, %u)\n", #test, #ptr, size); \
-  void *test = krealloc(ptr, size); \
-  kprintf("%s -> 0x%08X\n\n", #test, test);
-
-  KMALLOC_TEST(test1, 8);
-  KMALLOC_TEST(test2, 8);
-
-  KFREE_TEST(test2);
-
-  KMALLOC_TEST(test4, 16);
-
-  KREALLOC_TEST(test5, test1, 12);
-
 
   // ata_t disk = { ATA_DRIVE_PRIMARY };
   // ata_info_t disk_info;

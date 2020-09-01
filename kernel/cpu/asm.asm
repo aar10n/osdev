@@ -1,7 +1,6 @@
 KERNEL_CS equ 0x08
 KERNEL_DS equ 0x10
 
-
 global outb
 outb:
   mov al, [esp + 8]
@@ -76,3 +75,26 @@ global disable_hardware_interrupts
 disable_hardware_interrupts:
   cli
   ret
+
+global has_fpu
+fpu_exists: dw 0x0000
+has_fpu:
+  mov edx, cr0
+  mov ebx, cr0
+  btr ebx, 2  ; clear cr0.em
+  btr ebx, 3  ; clear cr0.ts
+
+  and edx, ebx
+  mov cr0, edx
+  fninit
+  fnstsw [fpu_exists]
+  cmp word [fpu_exists], 0
+  jne nofpu
+  jmp hasfpu
+  nofpu:
+  mov eax, 0
+  ret
+  hasfpu:
+  mov eax, 1
+  ret
+

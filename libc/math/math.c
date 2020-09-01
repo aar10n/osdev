@@ -40,7 +40,7 @@ double pow(double x, double y) {
   if (fmod(y, 1) == 0) {
     double value = 0;
     while (y) {
-      value *= x;
+      value += x;
       if (y < 0) {
         y++;
       } else {

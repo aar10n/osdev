@@ -56,9 +56,42 @@ typedef struct {
 char alt_form[2];
 char prefix[16];
 char number[64];
+char width[16];
+char prec[16];
 
 //
 //
+//
+
+static inline uint64_t get_integer_arg(va_list *valist, fmt_options_t *opts) {
+  switch (opts->length) {
+    case L_NONE: // NOLINT(bugprone-branch-clone)
+    case L_CHAR:
+    case L_SHORT: return va_arg(*valist, int);
+    case L_LONG: return va_arg(*valist, long int);
+    case L_LONGLONG: return va_arg(*valist, long long int);
+    case L_LONGDOUBLE: return va_arg(*valist, long double);
+    case L_INTMAX: return va_arg(*valist, intmax_t);
+    case L_SIZE: return va_arg(*valist, size_t);
+  }
+}
+
+static inline uint64_t long_mod(uint64_t a, uint64_t b) {
+  uint64_t x = b;
+  while (x <= a / 2) {
+    x <<= 1;
+  }
+
+  while (a >= b) {
+    if (a >= x) {
+      a -= x;
+    }
+    x >>= 1;
+  }
+
+  return a;
+}
+
 //
 
 char digit2char(int d, int r) {
@@ -97,7 +130,7 @@ int char2digit(char c, int r) {
 
 //
 
-int _itoa(int value, char *str, int base, fmt_options_t *opts) {
+int _itoa(int64_t value, char *str, int base, fmt_options_t *opts) {
   const char *lookup = opts->is_uppercase ? "0123456789abcdef" : "0123456789ABCDEF";
 
   int alt_form_len = 0;
@@ -108,7 +141,7 @@ int _itoa(int value, char *str, int base, fmt_options_t *opts) {
 
   if (opts->is_unsigned) {
     // unsigned number
-    unsigned uvalue = (unsigned)value;
+    uint64_t uvalue = (uint64_t)value;
     int index = 63;
     if (uvalue == 0) {
       number[index] = '0';
@@ -116,7 +149,8 @@ int _itoa(int value, char *str, int base, fmt_options_t *opts) {
       number_len++;
     } else {
       while (uvalue != 0) {
-        number[index] = lookup[uvalue % base];
+        uint64_t mod = long_mod(uvalue, base);
+        number[index] = lookup[mod];
         uvalue /= base;
         index--;
         number_len++;
@@ -145,7 +179,7 @@ int _itoa(int value, char *str, int base, fmt_options_t *opts) {
     }
   } else {
     // signed number
-    int svalue = abs(value);
+    int64_t svalue = abs(value);
     int index = 63;
     if (svalue == 0) {
       number[index] = '0';
@@ -153,7 +187,8 @@ int _itoa(int value, char *str, int base, fmt_options_t *opts) {
       number_len++;
     } else {
       while (svalue != 0) {
-        number[index] = lookup[svalue % base];
+        uint64_t mod = long_mod(svalue, base);
+        number[index] = lookup[mod];
         svalue /= base;
         index--;
         number_len++;
@@ -210,9 +245,7 @@ int _itoa(int value, char *str, int base, fmt_options_t *opts) {
   }
 
   // number
-  int test = 0;
   int number_index = 64 - number_len;
-  int *ptr = &number_index;
   memcpy(str + index, number + number_index, number_len);
   index += number_len;
 
@@ -328,41 +361,39 @@ int ksnprintf_internal(char *str, size_t size, bool limit, const char *format, v
       fmt_ptr++;
       continue;
     } else if (state == WIDTH) {
-      char temp[16];
       if (ch >= '1' && ch <= '9') {
-        int count = parse_int(temp, fmt_ptr);
+        int count = parse_int(width, fmt_ptr);
         fmt_ptr += count;
-        fmt_options.width = _atoi(temp, 10);
+        fmt_options.width = _atoi(width, 10);
       } else if (ch == '*') {
         fmt_ptr++;
-        int count = parse_int(temp, fmt_ptr);
+        int count = parse_int(width, fmt_ptr);
         fmt_ptr += count;
         if (count > 0 && *fmt_ptr == '$') {
           fmt_ptr++;
           fmt_options.is_width_arg = true;
-          fmt_options.width = atoi(temp);
+          fmt_options.width = atoi(width);
         }
       }
 
       state = PRECISION;
       continue;
     } else if (state == PRECISION) {
-      char temp[16];
       if (ch == '.') {
         fmt_ptr++;
         ch = *fmt_ptr;
         if (ch >= '1' && ch <= '9') {
-          int count = parse_int(temp, fmt_ptr);
+          int count = parse_int(prec, fmt_ptr);
           fmt_ptr += count;
-          fmt_options.precision = atoi(temp);
+          fmt_options.precision = atoi(prec);
         } else if (ch == '*') {
           fmt_ptr++;
-          int count = parse_int(temp, fmt_ptr);
+          int count = parse_int(prec, fmt_ptr);
           fmt_ptr += count;
           if (count > 0 && *fmt_ptr == '$') {
             fmt_ptr++;
             fmt_options.is_prec_arg = true;
-            fmt_options.precision = atoi(temp);
+            fmt_options.precision = atoi(prec);
           }
         }
       }
@@ -399,7 +430,7 @@ int ksnprintf_internal(char *str, size_t size, bool limit, const char *format, v
       switch (ch) {
         case 'd':
         case 'i': {
-          int value = va_arg(*valist, int);
+          uint64_t value = get_integer_arg(valist, &fmt_options);
           format_len = _itoa(value, buffer, 10, &fmt_options);
           break;
         }

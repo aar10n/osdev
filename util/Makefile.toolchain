@@ -2,6 +2,14 @@
 # Compiler toolchain options
 #
 
+TOOLCHAIN =
+QEMU =
+CFLAGS +=
+ASFLAGS +=
+NASMFLAGS +=
+LDFLAGS +=
+
+
 ifndef TARGET
 	TARGET = default
 endif
@@ -12,21 +20,24 @@ ifeq ($(TARGET),default)
 	QEMU =
 	CFLAGS +=
 	ASFLAGS +=
+	NASMFLAGS +=
 	LDFLAGS +=
 else ifeq ($(TARGET),i386)
 	TOOLCHAIN = i386-elf-
 	QEMU = qemu-system-i386
 	CFLAGS += -ffreestanding -m32
-	ASFLAGS += -f elf32
+	ASFLAGS += -march=i686 -mtune=i386 --32
+	NASMFLAGS += -f elf32
 	LDFLAGS +=
 else ifeq ($(TARGET),x86_64)
 	TOOLCHAIN = i686-elf-
 	QEMU = qemu-system-x86_64
 	CFLAGS += -ffreestanding -m32
-	ASFLAGS += -f elf32
+	ASFLAGS += -march=i686 -mtune=i686 --32
+	NASMFLAGS += -f elf32
 	LDFLAGS +=
 else
-$(error unknown target $(TARGET))
+    $(error unknown target $(TARGET))
 endif
 
 CXX_STD = -std=c++98
@@ -37,7 +48,8 @@ CXX = $(TOOLCHAIN)g++ $(CXX_STD)
 CC  = $(TOOLCHAIN)gcc $(C_STD)
 LD  = $(TOOLCHAIN)ld
 AR  = $(TOOLCHAIN)ar
-AS	= nasm
+AS	= $(TOOLCHAIN)as
+NASM = nasm
 
 GDB = $(TOOLCHAIN)gdb
 MKRESCUE = $(TOOLCHAIN)grub-mkrescue

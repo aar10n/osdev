@@ -14,7 +14,7 @@
 #define PE_CACHE_DISABLED 0x16
 #define PE_PAGE_SIZE_4MB 0x64
 
-void init_paging();
+void paging_init();
 void map_page(page_t *page);
 void remap_page(page_t *page);
 void unmap_page(page_t *page);

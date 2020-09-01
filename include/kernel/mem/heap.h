@@ -53,8 +53,6 @@ typedef struct heap {
   chunk_t *chunks;      // a linked list of free chunks
 } heap_t;
 
-static heap_t *kheap = NULL;
-
 void kheap_init();
 heap_t *create_heap(uintptr_t base_addr, size_t size);
 

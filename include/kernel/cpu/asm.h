@@ -2,9 +2,8 @@
 // Created by Aaron Gill-Braun on 2019-04-21.
 //
 
-
-#ifndef DRIVERS_ASM_H
-#define DRIVERS_ASM_H
+#ifndef KERNEL_CPU_ASM_H
+#define KERNEL_CPU_ASM_H
 
 #include <stdint.h>
 
@@ -19,5 +18,6 @@ void interrupt();
 void interrupt_out_of_memory();
 void enable_hardware_interrupts();
 void disable_hardware_interrupts();
+int has_fpu();
 
-#endif // DRIVERS_ASM_H
+#endif // KERNEL_CPU_ASM_H

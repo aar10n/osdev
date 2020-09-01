@@ -13,6 +13,7 @@
 #include <math.h>
 
 static uintptr_t heap_ptr = SIMPLE_HEAP_BASE;
+static heap_t *kheap = NULL;
 
 static inline uintptr_t next_chunk_start() {
   if (kheap->last_chunk == NULL) {
