@@ -9,16 +9,18 @@ CFLAGS  = -g -Wall -Wextra
 LDFLAGS = -T linker.ld
 ASFLAGS =
 
-INCLUDE = -Iinclude -Ilibc
+INCLUDE = -Iinclude -Ilib -Ilibc
 
 QEMU_FLAGS = -usb \
              -vga std \
              -m 256M \
              -serial file:$(BUILD)/stdio \
              -drive file=$(BUILD)/disk.img,format=raw,if=ide \
+             -drive file=$(BUILD)/disk.img,format=raw,if=none,id=drive-virtio-disk0 \
+             -device virtio-blk-pci,drive=drive-virtio-disk0,id=virtio-disk0,bootindex=0 \
              -drive file=$(BUILD)/osdev.iso,media=cdrom
 
-include util/Makefile.toolchain
+include scripts/Makefile.toolchain
 
 # --------- #
 #  Sources  #
@@ -33,6 +35,7 @@ objects = $(patsubst %.c,$(BUILD_DIR)/%_c.o, \
 kernel = \
 	boot.asm \
 	kernel/main.c \
+	kernel/bus/pci.c \
 	kernel/cpu/asm.asm \
 	kernel/cpu/exception.asm \
 	kernel/cpu/interrupt.asm \
@@ -52,6 +55,7 @@ kernel-y := $(call objects,$(kernel))
 
 
 drivers = \
+	drivers/ahci.c \
 	drivers/ata.c \
 	drivers/keyboard.c \
 	drivers/rtc.c \
@@ -70,6 +74,13 @@ fs = \
 	fs/ext2/super.c
 
 fs-y = $(call objects,$(fs))
+
+
+lib = \
+	lib/macros/repeat.h \
+	lib/hashtable.c
+
+lib-y = $(call objects,$(lib))
 
 
 libc = \
@@ -126,11 +137,11 @@ $(BUILD)/osdev.iso: $(BUILD)/osdev.bin $(BUILD)/disk.img grub.cfg
 	cp grub.cfg $(BUILD)/iso/boot/grub/grub.cfg
 	$(MKRESCUE) -o $@ $(BUILD)/iso &> /dev/null
 
-$(BUILD)/osdev.bin: $(kernel-y) $(drivers-y) $(fs-y) $(libc-y)
+$(BUILD)/osdev.bin: $(kernel-y) $(drivers-y) $(fs-y) $(lib-y) $(libc-y)
 	$(LD) $(LDFLAGS) $^ -o $@
 
 $(BUILD)/disk.img:
-	@echo $(shell util/create-disk.sh $@)
+	@echo $(shell scripts/create-disk.sh $@)
 
 # Compilation rules
 

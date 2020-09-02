@@ -7,7 +7,7 @@ BUILD = ../build
 CFLAGS  = -Wall -Wextra
 INCLUDE = -I../include
 
-include ../util/Makefile.toolchain
+include ../scripts/Makefile.toolchain
 
 # --------- #
 #  Sources  #
