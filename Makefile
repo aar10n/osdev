@@ -16,8 +16,9 @@ QEMU_FLAGS = -usb \
              -m 256M \
              -serial file:$(BUILD)/stdio \
              -drive file=$(BUILD)/disk.img,format=raw,if=ide \
-             -drive file=$(BUILD)/disk.img,format=raw,if=none,id=drive-virtio-disk0 \
-             -device virtio-blk-pci,drive=drive-virtio-disk0,id=virtio-disk0,bootindex=0 \
+             -drive file=$(BUILD)/disk.img,format=raw,if=none,id=disk \
+             -device ahci,id=ahci \
+             -device ide-hd,drive=disk,bus=ahci.0 \
              -drive file=$(BUILD)/osdev.iso,media=cdrom
 
 include scripts/Makefile.toolchain
@@ -56,7 +57,8 @@ kernel-y := $(call objects,$(kernel))
 
 drivers = \
 	drivers/ahci.c \
-	drivers/ata.c \
+	drivers/ata_dma.c \
+	drivers/ata_pio.c \
 	drivers/keyboard.c \
 	drivers/rtc.c \
 	drivers/screen.c \
@@ -77,7 +79,6 @@ fs-y = $(call objects,$(fs))
 
 
 lib = \
-	lib/macros/repeat.h \
 	lib/hashtable.c
 
 lib-y = $(call objects,$(lib))

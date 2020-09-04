@@ -2,11 +2,11 @@
 // Created by Aaron Gill-Braun on 2019-04-17.
 //
 
-#include <kernel/cpu/asm.h>
-#include <drivers/ata.h>
+#include <drivers/ata_pio.h>
 #include <drivers/keyboard.h>
 #include <drivers/screen.h>
 #include <drivers/serial.h>
+#include <kernel/cpu/asm.h>
 #include <multiboot.h>
 
 #include <fs/ext2/ext2.h>
@@ -19,6 +19,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include <kernel/bus/pci.h>
 #include <kernel/mem/heap.h>
 #include <kernel/mem/mm.h>
 #include <kernel/mem/paging.h>
@@ -51,7 +52,7 @@ void main(multiboot_info_t *mbinfo) {
   // align the kernel_end address
   uintptr_t kernel_aligned = (virt_to_phys(kernel_end) + 0x1000) & 0xFFFF000;
   kprintf("kernel_aligned %p\n", phys_to_virt(kernel_aligned));
-  // set aside 1mb for the watermark allocator heap
+  // set aside one mb for the watermark allocator heap
   uintptr_t base_addr = kernel_aligned + 0x100000;
   kprintf("start_addr %p\n", phys_to_virt(base_addr));
   size_t mem_size = (mbinfo->mem_upper * 1024) - (base_addr - mem_start);
@@ -61,9 +62,13 @@ void main(multiboot_info_t *mbinfo) {
   mem_init(base_addr, mem_size);
   kheap_init();
 
-  printf_fp(3.141);
-
-  // ata_t disk = { ATA_DRIVE_PRIMARY };
+  // ata_t disk = ATA_DRIVE_PRIMARY;
   // ata_info_t disk_info;
   // ata_identify(&disk, &disk_info);
+  // ata_print_debug_ata_disk(&disk);
+  // ata_print_debug_ata_info(&disk_info);
+
+  // pci_enumerate_busses();
+  pci_device_t *device = pci_locate_device(PCI_STORAGE_CONTROLLER, PCI_IDE_CONTROLLER);
+  pci_print_debug_device(device);
 }

@@ -59,6 +59,8 @@ char number[64];
 char width[16];
 char prec[16];
 
+int number_index;
+
 //
 
 char digit2char(int d, int r) {
@@ -131,7 +133,8 @@ int _itoa(int value, char *str, int base, fmt_options_t *opts) {
         alt_form_len = 2;
       } else if (base == 16) {
         alt_form[0] = '0';
-        alt_form[1] = opts->is_uppercase ? 'X' : 'x';
+        // alt_form[1] = opts->is_uppercase ? 'x' : 'x';
+        alt_form[1] = 'x';
         alt_form_len = 2;
       }
     }
@@ -210,7 +213,7 @@ int _itoa(int value, char *str, int base, fmt_options_t *opts) {
   }
 
   // number
-  int number_index = 64 - number_len;
+  number_index = 64 - number_len;
   memcpy(str + index, number + number_index, number_len);
   index += number_len;
 

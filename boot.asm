@@ -40,9 +40,9 @@ _page_directory:
   dd 0b10000011                       ; 4MB Kernel Area
   times (1024 - KERNEL_PAGE - 1) dd 0 ; Page Directory Entries
 
-global _kernel_page_table
-_kernel_page_table:
-  times 1024 dd 0
+;global _kernel_page_table
+;_kernel_page_table:
+;  times 1024 dd 0
 
 ;
 ; Text
@@ -83,8 +83,8 @@ _higher_half:
   mov dword [_page_directory], 0
   invlpg [0]
 
-;  mov eax, cr3 ; invlpg
-;  mov cr3, eax ;
+  mov eax, cr3 ; invlpg
+  mov cr3, eax ;
 
   mov esp, kernel_stack_top ; Setup the stack pointer
   push eax                  ; Push the multiboot header

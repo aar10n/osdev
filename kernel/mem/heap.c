@@ -95,7 +95,7 @@ heap_t *create_heap(uintptr_t base_addr, size_t size) {
 
     page_t *page = alloc_pages(order, ZONE_NORMAL);
     page->virt_addr = virt_addr;
-    map_page(page);
+    // map_page(page);
     if (source != NULL) {
       source->next = page;
       page->prev = source;
@@ -150,15 +150,15 @@ void *kmalloc(size_t size) {
   }
 
   size_t aligned = next_pow2(umax(size, CHUNK_MIN_SIZE));
-  kprintf("kmalloc\n");
+  // kprintf("kmalloc\n");
   // kprintf("size: %u\n", size);
-  kprintf("aligned: %u\n", aligned);
+  // kprintf("aligned: %u\n", aligned);
 
   // first search for the best fitting chunk in the list
   // of free chunks. If one is not found, we will create
   // a new chunk in the unmanaged heap memory.
   if (kheap->chunks) {
-    kprintf("[kmalloc] searching free chunks\n");
+    // kprintf("[kmalloc] searching free chunks\n");
 
     chunk_t *chunk = NULL;
     chunk_t *chunk_last = NULL;
@@ -184,7 +184,7 @@ void *kmalloc(size_t size) {
     }
 
     if (chunk) {
-      kprintf("[kmalloc] free chunk found (size %d)\n", 1 << chunk->size);
+      // kprintf("[kmalloc] free chunk found (size %d)\n", 1 << chunk->size);
       // if a chunk was found remove it from the list
       if (chunk_last) {
         chunk_last->next = chunk->next;
@@ -197,12 +197,12 @@ void *kmalloc(size_t size) {
     }
   }
 
-  kprintf("[kmalloc] creating new chunk\n");
+  // kprintf("[kmalloc] creating new chunk\n");
 
   // if we get this far it means that no existing chunk could
   // fit the requested size therefore a new chunk must be made.
   uintptr_t chunk_start = next_chunk_start();
-  kprintf("[kmalloc] chunk_start: %p\n", chunk_start);
+  // kprintf("[kmalloc] chunk_start: %p\n", chunk_start);
   uintptr_t chunk_end = chunk_start + sizeof(chunk_t) + aligned;
   if (chunk_end > kheap->end_addr) {
     // if we've run out of unclaimed heap space, there is still
@@ -228,8 +228,8 @@ void *kmalloc(size_t size) {
     chunk->last.free = false;
   }
 
-  kprintf("[kmalloc] new chunk header at %p\n", chunk_start);
-  kprintf("[kmalloc] new chunk data at %p\n", chunk_start + sizeof(chunk_t));
+  // kprintf("[kmalloc] new chunk header at %p\n", chunk_start);
+  // kprintf("[kmalloc] new chunk data at %p\n", chunk_start + sizeof(chunk_t));
 
   kheap->last_chunk = chunk;
   return (void *) chunk_start + sizeof(chunk_t);
@@ -252,7 +252,7 @@ void kfree(void *ptr) {
 
   chunk_t *chunk = get_chunk(ptr);
   chunk_t *next_chunk = get_next_chunk(chunk);
-  kprintf("[kfree] freeing pointer %p\n", ptr);
+  // kprintf("[kfree] freeing pointer %p\n", ptr);
 
   // finally mark the chunk as free and add it to the free list
   chunk->free = true;
@@ -279,10 +279,10 @@ void *kcalloc(size_t nmemb, size_t size) {
     return NULL;
   }
 
-  kprintf("kcalloc\n");
-  kprintf("nmemb: %u\n", nmemb);
-  kprintf("size: %u\n", size);
-  kprintf("total: %u\n", nmemb * size);
+  // kprintf("kcalloc\n");
+  // kprintf("nmemb: %u\n", nmemb);
+  // kprintf("size: %u\n", size);
+  // kprintf("total: %u\n", nmemb * size);
 
   size_t total = nmemb * size;
   if (total > CHUNK_MAX_SIZE) {
@@ -325,14 +325,14 @@ void *krealloc(void *ptr, size_t size) {
   chunk_t *chunk = get_chunk(ptr);
   size_t old_size = 1 << chunk->size;
 
-  kprintf("krealloc\n");
-  kprintf("ptr: %p\n", ptr);
-  kprintf("size: %u\n", size);
-  kprintf("aligned: %u\n", aligned);
-  kprintf("old size: %u\n", old_size);
+  // kprintf("krealloc\n");
+  // kprintf("ptr: %p\n", ptr);
+  // kprintf("size: %u\n", size);
+  // kprintf("aligned: %u\n", aligned);
+  // kprintf("old size: %u\n", old_size);
 
   if (aligned <= old_size) {
-    kprintf("[krealloc] no changes needed\n");
+    // kprintf("[krealloc] no changes needed\n");
     return ptr;
   }
 
@@ -356,7 +356,7 @@ void *krealloc(void *ptr, size_t size) {
   chunk_t *next_chunk = get_next_chunk(chunk);
   size_t next_size = next_chunk ? 1 << next_chunk->size : 0;
   if (next_chunk && next_chunk->free && old_size + next_size >= aligned) {
-    kprintf("[krealloc] expanding into next chunk\n");
+    // kprintf("[krealloc] expanding into next chunk\n");
 
     // find the chunk before this next one in the free list
     chunk_t *curr = kheap->chunks;
@@ -381,7 +381,7 @@ void *krealloc(void *ptr, size_t size) {
       // if the next chunk was the last chunk created, set it
       // to the current chunk instead. this effectively erases
       // the next_chunk header completely.
-      kprintf("[krealloc] erasing next chunk\n");
+      // kprintf("[krealloc] erasing next chunk\n");
 
       kheap->last_chunk = chunk;
     } else {
@@ -391,7 +391,7 @@ void *krealloc(void *ptr, size_t size) {
       // these 'holes' are unusable and unreclaimable which is
       // unfortunate but acceptable given how much quicker this
       // method of expansion is compared to relocating the pointer.
-      kprintf("[krealloc] creating memory hole\n");
+      // kprintf("[krealloc] creating memory hole\n");
 
       next_chunk->magic = HOLE_MAGIC;
       next_chunk->free = false;
@@ -402,7 +402,7 @@ void *krealloc(void *ptr, size_t size) {
       memset(next_chunk, 0, sizeof(chunk_t));
     }
 
-    kprintf("[krealloc] expansion complete\n");
+    // kprintf("[krealloc] expansion complete\n");
 
     chunk->size = log2(old_size + next_size);
     return ptr;
@@ -411,14 +411,14 @@ void *krealloc(void *ptr, size_t size) {
   // if the above failed, we need to allocate a new block of
   // memory of the correct size and then copy over all of the
   // existing data to that new pointer.
-  kprintf("[krealloc] allocating new chunk\n");
+  // kprintf("[krealloc] allocating new chunk\n");
 
   void *new_ptr = kmalloc(aligned);
   if (new_ptr == NULL) {
     return NULL;
   }
 
-  kprintf("[krealloc] freeing old chunk\n");
+  // kprintf("[krealloc] freeing old chunk\n");
   memcpy(new_ptr, ptr, old_size);
   kfree(ptr);
   return new_ptr;

@@ -203,9 +203,9 @@ page_t *mem_split(int order, int zone) {
 void mem_init_zone(uintptr_t base_addr, size_t size, uint8_t zone) {
   free_pages_t *free = zones[zone].free_pages;
 
-  kprintf("%s\n", zones[zone].name);
-  kprintf("start_addr: 0x%08x\n", base_addr);
-  kprintf("size: %d MiB (%d B)\n", size / (1024 * 1024), size);
+  // kprintf("%s\n", zones[zone].name);
+  // kprintf("start_addr: 0x%08x\n", base_addr);
+  // kprintf("size: %d MiB (%d B)\n", size / (1024 * 1024), size);
 
   size_t remaining = size;
   uintptr_t cur_addr = base_addr;
@@ -249,7 +249,7 @@ void mem_init_zone(uintptr_t base_addr, size_t size, uint8_t zone) {
       pages_created++;
     }
 
-    kprintf("%d pages of order %d created in zone %s\n", pages_created, order, zones[zone].name);
+    // kprintf("%d pages of order %d created in zone %s\n", pages_created, order, zones[zone].name);
 
     // link first and last pages
     free[order].count += pages_created;
@@ -262,24 +262,26 @@ void mem_init(uintptr_t base_addr, size_t size) {
   size_t offset = 0;
   for (int i = 0; i < 3; i++) {
     page_zone_t *zone = &zones[i];
-    kprintf("\ninitializing zone %s\n", zone->name);
+    // kprintf("\ninitializing zone %s\n", zone->name);
     if (size <= zone->max_length) {
       mem_init_zone(base_addr + offset, size, i);
-      kprintf("zone %s initialized!\n", zones[i].name);
+      // kprintf("zone %s initialized!\n", zones[i].name);
       break;
     } else {
       mem_init_zone(base_addr + offset, zone->max_length, i);
       offset += zone->max_length;
       size -= zone->max_length;
-      kprintf("zone %s initialized!\n", zones[i].name);
+      // kprintf("zone %s initialized!\n", zones[i].name);
     }
   }
+
+
 }
 
 page_t *alloc_pages(int order, uint8_t flags) {
   uint8_t zone = get_zone(flags);
   free_pages_t *free = zones[zone].free_pages;
-  kprintf("allocating page of order %d (%s)\n", order, zones[zone].name);
+  // kprintf("allocating page of order %d (%s)\n", order, zones[zone].name);
 
   if (order > MAX_ORDER || order < 0) {
     // error

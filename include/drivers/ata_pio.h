@@ -8,8 +8,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define ATA_DRIVE_PRIMARY ATA_MASTER, ATA_IO_PRIMARY, ATA_CTRL_PRIMARY
-#define ATA_DRIVE_SECONDARY ATA_MASTER, ATA_IO_SECONDARY, ATA_CTRL_SECONDARY
+#define ATA_DRIVE_PRIMARY { ATA_MASTER, ATA_IO_PRIMARY, ATA_CTRL_PRIMARY }
+#define ATA_DRIVE_SECONDARY { ATA_MASTER, ATA_IO_SECONDARY, ATA_CTRL_SECONDARY }
 
 
 // ATA Data Direction
@@ -101,7 +101,6 @@ enum ATADeviceAddress {
   DA0  // Reserved.
 };
 
-
 typedef struct {
   uint8_t type;
   size_t port_io;
@@ -126,5 +125,8 @@ void ata_read(ata_t *disk, size_t lba, int sectors, uint8_t *buffer);
 void ata_write(ata_t *disk, size_t lba, int sectors, uint8_t *buffer);
 void ata_read_sector(ata_t *disk, size_t lba, uint8_t *buffer);
 void ata_write_sector(ata_t *disk, size_t lba, uint8_t *buffer);
+
+void ata_print_debug_ata_disk(ata_t *disk);
+void ata_print_debug_ata_info(ata_info_t *info);
 
 #endif // DRIVERS_ATA_H

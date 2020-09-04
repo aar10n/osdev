@@ -3,29 +3,44 @@ KERNEL_DS equ 0x10
 
 global outb
 outb:
-  mov al, [esp + 8]
-  mov dx, [esp + 4]
+  mov al, [esp + 8] ; data
+  mov dx, [esp + 4] ; port
   out dx, al
   ret
 
 global inb
 inb:
-  mov dx, [esp + 4]
+  mov dx, [esp + 4] ; port
   in  al, dx
   ret
 
 global outw
 outw:
-  mov ax, [esp + 8]
-  mov dx, [esp + 4]
+  mov ax, [esp + 8] ; data
+  mov dx, [esp + 4] ; port
   out dx, ax
   ret
 
 global inw
 inw:
-  mov dx, [esp + 4]
+  mov dx, [esp + 4] ; port
   in  ax, dx
   ret
+
+global outdw
+outdw:
+  mov eax, [esp + 8] ; data
+  mov dx, [esp + 4]  ; port
+  out dx, eax
+  ret
+
+global indw
+indw:
+  mov dx, [esp + 4] ; port
+  in eax, dx
+  ret
+
+; GDT/IDT
 
 global load_gdt
 load_gdt:
@@ -47,6 +62,15 @@ load_idt:
   lidt [eax]
   ret
 
+;
+
+global invl_page
+invl_page:
+  mov eax, [esp + 4]
+  invlpg [eax]
+
+; Interrupts
+
 global interrupt
 interrupt:
   push ebp
@@ -54,7 +78,6 @@ interrupt:
   int 49
   pop ebp
   ret
-
 
 global interrupt_out_of_memory
 interrupt_out_of_memory:
@@ -64,17 +87,17 @@ interrupt_out_of_memory:
   pop ebp
   ret
 
-
 global enable_hardware_interrupts
 enable_hardware_interrupts:
   sti
   ret
 
-
 global disable_hardware_interrupts
 disable_hardware_interrupts:
   cli
   ret
+
+; FPU
 
 global has_fpu
 fpu_exists: dw 0x0000

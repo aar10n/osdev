@@ -5,7 +5,7 @@
 #ifndef FS_EXT2_EXT2_H
 #define FS_EXT2_EXT2_H
 
-#include <drivers/ata.h>
+#include <drivers/ata_pio.h>
 #include "../../../fs/ext2/dir.h"
 #include "../../../fs/ext2/inode.h"
 #include "../../../fs/ext2/super.h"

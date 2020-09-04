@@ -6,8 +6,8 @@
 #include <stddef.h>
 #include <stdio.h>
 
+#include <drivers/ata_pio.h>
 #include <kernel/cpu/asm.h>
-#include <drivers/ata.h>
 
 /* Delay */
 void ata_delay(ata_t *disk) {
@@ -95,9 +95,7 @@ void ata_read_write(bool operation, ata_t *disk, size_t lba, int sectors, uint8_
 }
 
 //
-//
-// Public API Functions
-//
+// Public Functions
 //
 
 /* Identify a disk */
@@ -159,14 +157,44 @@ void ata_write_sector(ata_t *disk, size_t lba, uint8_t *buffer) {
 void init_ata() {
   ata_info_t info;
 
-  ata_t primary_bus = { ATA_DRIVE_PRIMARY };
+  ata_t primary_bus = ATA_DRIVE_PRIMARY;
   ata_identify(&primary_bus, &info);
   if (!info.ata_device) {
-    ata_t secondary_bus = { ATA_DRIVE_SECONDARY };
+    ata_t secondary_bus = ATA_DRIVE_SECONDARY;
     ata_identify(&secondary_bus, &info);
 
     if (!info.ata_device) {
       kprintf("No drives found.\n");
     }
   }
+}
+
+// Debugging
+
+void ata_print_debug_ata_disk(ata_t *disk) {
+  kprintf("disk = {\n"
+          "  type = %#X\n"
+          "  port_io = %#X\n"
+          "  port_data = %#X\n"
+          "}\n",
+          disk->type,
+          disk->port_io,
+          disk->port_data);
+}
+
+void ata_print_debug_ata_info(ata_info_t *info) {
+  kprintf("info = {\n"
+          "  ata_device = %#X\n"
+          "  lba_enabled = %d\n"
+          "  dma_enabled = %d\n"
+          "  dma_modes = %d\n"
+          "  dma_selected = %d\n"
+          "  sectors = %u\n"
+          "}\n",
+          info->ata_device,
+          info->lba_enabled,
+          info->dma_enabled,
+          info->dma_modes,
+          info->dma_selected,
+          info->sectors);
 }
