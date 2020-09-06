@@ -50,6 +50,7 @@ kernel = \
 	kernel/cpu/pdt.c \
 	kernel/cpu/rtc.c \
 	kernel/cpu/timer.c \
+	kernel/mem/paging.asm \
 	kernel/mem/heap.c \
 	kernel/mem/mm.c \
 	kernel/mem/paging.c \
@@ -81,7 +82,8 @@ fs-y = $(call objects,$(fs))
 
 
 lib = \
-	lib/hash_table.c
+	lib/hash_table.c \
+	lib/segment_tree.c
 
 lib-y = $(call objects,$(lib))
 
