@@ -21,8 +21,8 @@ void invl_page(uint32_t page);
 
 void interrupt();
 void interrupt_out_of_memory();
-void enable_hardware_interrupts();
-void disable_hardware_interrupts();
+void enable_interrupts();
+void disable_interrupts();
 int has_fpu();
 
 #endif // KERNEL_CPU_ASM_H

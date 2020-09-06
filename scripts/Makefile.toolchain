@@ -26,10 +26,10 @@ else ifeq ($(TARGET),i386)
 	TOOLCHAIN = i386-elf-
 	QEMU = qemu-system-i386
 	CFLAGS += -ffreestanding -m32
-	ASFLAGS += -march=i686 -mtune=i386 --32
+	ASFLAGS += -march=i386 -mtune=i386 --32
 	NASMFLAGS += -f elf32
 	LDFLAGS +=
-else ifeq ($(TARGET),x86_64)
+else ifeq ($(TARGET),i686)
 	TOOLCHAIN = i686-elf-
 	QEMU = qemu-system-x86_64
 	CFLAGS += -ffreestanding -m32

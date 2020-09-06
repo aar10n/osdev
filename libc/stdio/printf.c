@@ -40,7 +40,7 @@ typedef struct {
   uint16_t add_space : 1; // Add a space if there is no sign
   uint16_t add_plus : 1;  // Add plus sign if positive number
 
-  uint16_t is_unsigned : 1;  // Value is unsigned
+  uint16_t is_signed : 1;    // Value is signed
   uint16_t is_uppercase : 1; // Use uppercase for letters
   uint16_t is_width_arg : 1; // Width is an argument index
   uint16_t is_prec_arg : 1;  // Precision is an argument index
@@ -49,35 +49,31 @@ typedef struct {
   fmt_length_t length; // Length of argument
 
   // Options
-  int width;     // Width of the value
-  int precision; // Precision of the value
+  uint32_t width;     // Width of the value
+  uint32_t precision; // Precision of the value
 } fmt_options_t;
 
-char alt_form[2];
-char prefix[16];
-char number[64];
-char width[16];
-char prec[16];
+typedef union double_raw {
+  double value;
+  struct {
+    uint64_t frac : 52;
+    uint64_t exp : 11;
+    uint64_t sign : 1;
+  };
+} double_raw_t;
 
-int number_index;
+// Buffers
+#define PRINTF_BUFFER_SIZE 256
+
+#define NTOA_BUFFER_SIZE 32
+#define FTOA_BUFFER_SIZE 32
+
+static const double pow10[] = {
+  1, 10, 100, 1000, 10000, 100000,
+  1000000, 10000000, 100000000, 1000000000
+};
 
 //
-
-char digit2char(int d, int r) {
-  switch (r) {
-    case 2:
-    case 10:
-      return d + '0';
-    case 16: {
-      if (d <= 9)
-        return d + '0';
-      else
-        return d + '7';
-    }
-    default:
-      return d;
-  }
-}
 
 int char2digit(char c, int r) {
   switch (r) {
@@ -99,128 +95,130 @@ int char2digit(char c, int r) {
 
 //
 
-int _itoa(int value, char *str, int base, fmt_options_t *opts) {
+int ntoa_signed(char *buf, int value, int base, fmt_options_t *opts) {
   const char *lookup = opts->is_uppercase ? "0123456789ABCDEF" : "0123456789abcdef";
 
-  int alt_form_len = 0;
+  int index = 0;
+  if (value == 0) {
+    buf[index] = '0';
+    return 1;
+  } else {
+    while (value != 0) {
+      buf[index] = lookup[value % base];
+      value /= base;
+      index++;
+    }
+    return index;
+  }
+}
+
+int ntoa_unsigned(char *buf, unsigned value, int base, fmt_options_t *opts) {
+  const char *lookup = opts->is_uppercase ? "0123456789ABCDEF" : "0123456789abcdef";
+
+  int index = 0;
+  if (value == 0) {
+    buf[index] = '0';
+    return 1;
+  } else {
+    while (value != 0) {
+      buf[index] = lookup[value % base];
+      value /= base;
+      index++;
+    }
+    return index;
+  }
+}
+
+int apply_alt_form(char *buf, int base, fmt_options_t *opts) {
+  if (opts->alt_form) {
+    if (base == 2) {
+      buf[0] = '0';
+      buf[1] = 'b';
+      return 2;
+    } else if (base == 16) {
+      buf[0] = '0';
+      buf[1] = 'x';
+      return 2;
+    }
+  }
+  return 0;
+}
+
+int apply_prefix(char *buf, bool negative, fmt_options_t *opts) {
+  if (negative) {
+    buf[0] = '-';
+    return 1;
+  } else if (opts->add_plus) {
+    buf[0] = '+';
+    return 1;
+  } else if (opts->add_space) {
+    buf[0] = ' ';
+    return 1;
+  }
+  return 0;
+}
+
+//
+
+
+int _ntoa(char *buf, unsigned value, int base, fmt_options_t *opts) {
   int prefix_len = 0;
   int padding_len = 0;
   int number_len = 0;
 
-
-  if (opts->is_unsigned) {
-    // unsigned number
-    unsigned uvalue = (unsigned)value;
-    int index = 63;
-    if (uvalue == 0) {
-      number[index] = '0';
-      index--;
-      number_len++;
-    } else {
-      while (uvalue != 0) {
-        number[index] = lookup[uvalue % base];
-        uvalue /= base;
-        index--;
-        number_len++;
-      }
-    }
-
-    // alternate form
-    if (opts->alt_form) {
-      if (base == 2) {
-        alt_form[0] = '0';
-        alt_form[1] = 'b';
-        alt_form_len = 2;
-      } else if (base == 16) {
-        alt_form[0] = '0';
-        // alt_form[1] = opts->is_uppercase ? 'x' : 'x';
-        alt_form[1] = 'x';
-        alt_form_len = 2;
-      }
-    }
-
-    // calculate padding
-    int total_len = opts->width - (number_len + alt_form_len);
-    if (opts->is_width_arg) {
-      // TODO: this
-    } else {
-      padding_len = imax(total_len, 0);
-    }
-  } else {
+  static char number[NTOA_BUFFER_SIZE];
+  static char prefix[16];
+  if (opts->is_signed) {
     // signed number
-    int svalue = abs(value);
-    int index = 63;
-    if (svalue == 0) {
-      number[index] = '0';
-      index--;
-      number_len++;
-    } else {
-      while (svalue != 0) {
-        number[index] = lookup[svalue % base];
-        svalue /= base;
-        index--;
-        number_len++;
-      }
-    }
-
+    number_len = ntoa_signed(number, abs((int) value), base, opts);
     // prefix options
-    if (value < 0) {
-      prefix[0] = '-';
-      prefix_len = 1;
-    } else if (opts->add_plus) {
-      prefix[0] = '+';
-      prefix_len = 1;
-    } else if (opts->add_space) {
-      prefix[0] = ' ';
-      prefix_len = 1;
-    }
-
-    // calculate padding
-    int total_len = opts->width - number_len + prefix_len +
-                    (opts->add_space || opts->add_plus);
-    if (opts->is_width_arg) {
-      // TODO: this
-    } else {
-      padding_len = imax(total_len, 0);
-    }
+    prefix_len = apply_prefix(prefix, ((int) value) < 0, opts);
+  } else {
+    // unsigned number
+    number_len = ntoa_unsigned(number, value, base, opts);
+    // alt form options
+    prefix_len = apply_alt_form(prefix, base, opts);
   }
 
-  // padding (a) - prefix - alt_form - padding (b) - number - padding (c)
+  // reverse the number
+  number[number_len] = '\0';
+  reverse(number);
+
+  // calculate padding
+  uint32_t total_len = opts->width - (number_len + prefix_len);
+  padding_len = imax(total_len, 0);
+
+  // | space padding - prefix - zero padding - number - right padding |
   int index = 0;
 
-  // padding
+  // space padding
   if (!opts->pad_right && (opts->precision || !opts->pad_zero)) {
     for (int i = 0; i < padding_len; i++) {
-      str[index] = ' ';
+      buf[index] = ' ';
       index++;
     }
   }
 
-  // prefix
-  memcpy(str + index, prefix, prefix_len);
+  // number prefix
+  memcpy(buf + index, prefix, prefix_len);
   index += prefix_len;
 
-  // alt_form
-  memcpy(str + index, alt_form, alt_form_len);
-  index += alt_form_len;
-
-  // padding
+  // zero padding
   if (opts->pad_zero && !(opts->precision || opts->pad_right)) {
     for (int i = 0; i < padding_len; i++) {
-      str[index] = '0';
+      buf[index] = '0';
       index++;
     }
   }
 
   // number
-  number_index = 64 - number_len;
-  memcpy(str + index, number + number_index, number_len);
+  memcpy(buf + index, number, number_len);
   index += number_len;
 
-  // padding
+  // right padding
   if (opts->pad_right) {
     for (int i = 0; i < padding_len; i++) {
-      str[index] = ' ';
+      buf[index] = ' ';
       index++;
     }
   }
@@ -228,9 +226,125 @@ int _itoa(int value, char *str, int base, fmt_options_t *opts) {
   return index;
 }
 
-void _dtoa(double value, char *str, fmt_options_t *opts) {
+int _ftoa(char *buf, double value, fmt_options_t *opts) {
+  static char fnumber[FTOA_BUFFER_SIZE];
+  static char fprefix[16];
 
+  int prefix_len = 0;
+  int padding_len = 0;
+  int number_len = 0;
+
+  double_raw_t raw = { .value = value };
+
+  prefix_len = apply_prefix(fprefix, value < 0, opts);
+  if (raw.exp == 0 && raw.frac == 0) {
+    // signed zero
+    fnumber[0] = '0';
+    number_len = 1;
+  } else if (raw.exp == 0x7FF && raw.frac == 0) {
+    // infinity
+    const char *inf = opts->is_uppercase ? "INFINITY" : "infinity";
+    int len = strlen(inf);
+    memcpy(fnumber, inf, len);
+    number_len = len;
+  } else if (raw.exp == 0x7FF && raw.frac != 0) {
+    // NaN
+    const char *nan = opts->is_uppercase ? "NAN" : "nan";
+    int len = strlen(nan);
+    memcpy(fnumber, nan, len);
+    number_len = len;
+  } else {
+    double diff = 0.0;
+    size_t len = 0;
+    uint32_t prec = opts->precision;
+
+    // set default precision, if not set explicitly
+    if (!prec) {
+      prec = 6;
+    }
+    // limit precision to 9, cause a prec >= 10 can lead to overflow errors
+    while ((len < FTOA_BUFFER_SIZE) && (prec > 9)) {
+      buf[len++] = '0';
+      prec--;
+    }
+
+    int whole = (int) value;
+    double tmp = (value - whole) * pow10[prec];
+    unsigned long frac = (unsigned long) tmp;
+    diff = tmp - frac;
+
+    if (diff > 0.5) {
+      ++frac;
+      // handle rollover, e.g. case 0.99 with prec 1 is 1.0
+      if (frac >= pow10[prec]) {
+        frac = 0;
+        ++whole;
+      }
+    } else if (diff < 0.5) {
+    } else if ((frac == 0) || (frac & 1)) {
+      // if halfway, round up if odd OR if last digit is 0
+      ++frac;
+    }
+
+    unsigned int count = prec;
+    // now do fractional part, as an unsigned number
+    while (len < FTOA_BUFFER_SIZE) {
+      --count;
+      fnumber[len++] = (char) (48 + (frac % 10));
+      if (!(frac /= 10)) {
+        break;
+      }
+    }
+
+    // add extra 0s
+    while ((len < FTOA_BUFFER_SIZE) && (count-- > 0U)) {
+      fnumber[len++] = '0';
+    }
+
+    if (len < FTOA_BUFFER_SIZE) {
+      // add decimal
+      fnumber[len++] = '.';
+    }
+
+    // do whole part, number is reversed
+    while (len < FTOA_BUFFER_SIZE) {
+      fnumber[len++] = (char)(48 + (whole % 10));
+      if (!(whole /= 10)) {
+        break;
+      }
+    }
+
+    unsigned width = opts->width;
+    // pad leading zeros
+    if (!opts->pad_right && opts->pad_zero) {
+      if (opts->width && (value < 0 || (opts->add_plus || opts->add_space))) {
+        width--;
+      }
+      while ((len < width) && (len < FTOA_BUFFER_SIZE)) {
+        fnumber[len++] = '0';
+      }
+    }
+
+    number_len = len;
+  }
+
+  fnumber[number_len] = '\0';
+  reverse(fnumber);
+
+  int index = 0;
+
+  // prefix
+  memcpy(buf + index, fprefix, prefix_len);
+  index += prefix_len;
+
+  // number
+  memcpy(buf + index, fnumber, number_len);
+  index += number_len;
+
+  return index;
 }
+
+//
 
 int _atoi(const char *str, int base) {
   int index = 0;
@@ -288,7 +402,7 @@ int ksnprintf_internal(char *str, size_t size, bool limit, const char *format, v
   char buffer[128];
 
   int n = 0;
-  fmt_options_t fmt_options = {};
+  fmt_options_t opts = {};
   parse_state_t state = START;
 
   while (*fmt_ptr) {
@@ -307,19 +421,19 @@ int ksnprintf_internal(char *str, size_t size, bool limit, const char *format, v
     } else if (state == FLAGS) {
       switch (ch) {
         case '#':
-          fmt_options.alt_form = true;
+          opts.alt_form = true;
           break;
         case '0':
-          fmt_options.pad_zero = true;
+          opts.pad_zero = true;
           break;
         case '-':
-          fmt_options.pad_right = true;
+          opts.pad_right = true;
           break;
         case ' ':
-          fmt_options.add_space = true;
+          opts.add_space = true;
           break;
         case '+':
-          fmt_options.add_plus = true;
+          opts.add_plus = true;
           break;
         default:
           state = WIDTH;
@@ -329,39 +443,41 @@ int ksnprintf_internal(char *str, size_t size, bool limit, const char *format, v
       fmt_ptr++;
       continue;
     } else if (state == WIDTH) {
+      static char width[4];
       if (ch >= '1' && ch <= '9') {
         int count = parse_int(width, fmt_ptr);
         fmt_ptr += count;
-        fmt_options.width = _atoi(width, 10);
+        opts.width = _atoi(width, 10);
       } else if (ch == '*') {
         fmt_ptr++;
         int count = parse_int(width, fmt_ptr);
         fmt_ptr += count;
         if (count > 0 && *fmt_ptr == '$') {
           fmt_ptr++;
-          fmt_options.is_width_arg = true;
-          fmt_options.width = atoi(width);
+          opts.is_width_arg = true;
+          opts.width = atoi(width);
         }
       }
 
       state = PRECISION;
       continue;
     } else if (state == PRECISION) {
+      static char prec[4];
       if (ch == '.') {
         fmt_ptr++;
         ch = *fmt_ptr;
         if (ch >= '1' && ch <= '9') {
           int count = parse_int(prec, fmt_ptr);
           fmt_ptr += count;
-          fmt_options.precision = atoi(prec);
+          opts.precision = atoi(prec);
         } else if (ch == '*') {
           fmt_ptr++;
           int count = parse_int(prec, fmt_ptr);
           fmt_ptr += count;
           if (count > 0 && *fmt_ptr == '$') {
             fmt_ptr++;
-            fmt_options.is_prec_arg = true;
-            fmt_options.precision = atoi(prec);
+            opts.is_prec_arg = true;
+            opts.precision = atoi(prec);
           }
         }
       }
@@ -371,22 +487,22 @@ int ksnprintf_internal(char *str, size_t size, bool limit, const char *format, v
     } else if (state == LENGTH) {
       switch (ch) {
         case 'h':
-          fmt_options.length = *(fmt_ptr + 1) == 'h' ? L_CHAR : L_SHORT;
+          opts.length = *(fmt_ptr + 1) == 'h' ? L_CHAR : L_SHORT;
           break;
         case 'l':
-          fmt_options.length = *(fmt_ptr + 1) == 'l' ? L_LONGLONG : L_LONG;
+          opts.length = *(fmt_ptr + 1) == 'l' ? L_LONGLONG : L_LONG;
           break;
         case 'L':
-          fmt_options.length = L_LONGDOUBLE;
+          opts.length = L_LONGDOUBLE;
           break;
         case 'j':
-          fmt_options.length = L_INTMAX;
+          opts.length = L_INTMAX;
           break;
         case 'z':
-          fmt_options.length = L_SIZE;
+          opts.length = L_SIZE;
           break;
         default:
-          fmt_options.length = L_NONE;
+          opts.length = L_NONE;
           state = FORMAT;
           continue;
       }
@@ -398,8 +514,9 @@ int ksnprintf_internal(char *str, size_t size, bool limit, const char *format, v
       switch (ch) {
         case 'd':
         case 'i': {
+          opts.is_signed = true;
           int value = va_arg(*valist, int);
-          format_len = _itoa(value, buffer, 10, &fmt_options);
+          format_len = _ntoa(buffer, value, 10, &opts);
           break;
         }
         case 'b':
@@ -410,12 +527,11 @@ int ksnprintf_internal(char *str, size_t size, bool limit, const char *format, v
         case 'X': {
           if (ch == 'p') {
             // %#x
-            fmt_options.alt_form = true;
+            opts.alt_form = true;
             ch = 'x';
           } else if (ch == 'X') {
-            fmt_options.is_uppercase = true;
+            opts.is_uppercase = true;
           }
-          fmt_options.is_unsigned = true;
 
           int base = ch == 'b' ? 2 :
                      ch == 'o' ? 8 :
@@ -425,7 +541,7 @@ int ksnprintf_internal(char *str, size_t size, bool limit, const char *format, v
                      10;
 
           unsigned value = va_arg(*valist, unsigned);
-          format_len = _itoa(value, buffer, base, &fmt_options);
+          format_len = _ntoa(buffer, value, base, &opts);
           break;
         }
         case 'e':
@@ -433,9 +549,16 @@ int ksnprintf_internal(char *str, size_t size, bool limit, const char *format, v
           // scientific notation
           break;
         case 'f':
-        case 'F':
+        case 'F': {
+          if (ch == 'F') {
+            opts.is_uppercase = true;
+          }
+
           // double (in decimal notation)
+          double value = va_arg(*valist, double);
+          format_len = _ftoa(buffer, value, &opts);
           break;
+        }
         case 'g':
         case 'G':
           // double (in f/F or e/E notation)
@@ -489,7 +612,7 @@ int ksnprintf_internal(char *str, size_t size, bool limit, const char *format, v
     n += format_len;
     fmt_ptr++;
     memset(buffer, 0, format_len);
-    memset(&fmt_options, 0, sizeof(fmt_options_t));
+    memset(&opts, 0, sizeof(fmt_options_t));
   }
 
   str[n] = '\0';
@@ -586,7 +709,7 @@ int ksprintf(char *str, const char *format, ...) {
  *   '%' - A '%' literal
  */
 void kprintf(const char *format, ...) {
-  char str[256];
+  static char str[PRINTF_BUFFER_SIZE];
   va_list valist;
   va_start(valist, format);
   ksnprintf_internal(str, 256, true, format, &valist);

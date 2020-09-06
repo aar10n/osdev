@@ -87,13 +87,13 @@ interrupt_out_of_memory:
   pop ebp
   ret
 
-global enable_hardware_interrupts
-enable_hardware_interrupts:
+global enable_interrupts
+enable_interrupts:
   sti
   ret
 
-global disable_hardware_interrupts
-disable_hardware_interrupts:
+global disable_interrupts
+disable_interrupts:
   cli
   ret
 

@@ -1,6 +1,6 @@
 NAME = osdev
 VERSION = 1.0
-TARGET = x86_64
+TARGET = i686
 
 BUILD = build
 BUILD_DIR = $(BUILD)/$(NAME)
@@ -36,6 +36,7 @@ objects = $(patsubst %.c,$(BUILD_DIR)/%_c.o, \
 kernel = \
 	boot.asm \
 	kernel/main.c \
+	kernel/time.c \
 	kernel/bus/pci.c \
 	kernel/cpu/asm.asm \
 	kernel/cpu/exception.asm \
@@ -50,7 +51,7 @@ kernel = \
 	kernel/mem/heap.c \
 	kernel/mem/mm.c \
 	kernel/mem/paging.c \
-	kernel/vga/vga.c \
+	kernel/vga/vga.c
 
 kernel-y := $(call objects,$(kernel))
 
@@ -60,7 +61,6 @@ drivers = \
 	drivers/ata_dma.c \
 	drivers/ata_pio.c \
 	drivers/keyboard.c \
-	drivers/rtc.c \
 	drivers/screen.c \
 	drivers/serial.c
 
@@ -79,7 +79,7 @@ fs-y = $(call objects,$(fs))
 
 
 lib = \
-	lib/hashtable.c
+	lib/hash_table.c
 
 lib-y = $(call objects,$(lib))
 
@@ -89,12 +89,12 @@ libc = \
 	libc/builtins/udivdi3.s \
 	libc/math/math.c \
 	libc/stdio/printf.c \
-	libc/stdio/printf_fp.c \
 	libc/stdio/stdio.c \
 	libc/stdlib/stdlib.c \
 	libc/string/string.c
 
 libc-y = $(call objects,$(libc))
+
 
 # --------- #
 #  Targets  #

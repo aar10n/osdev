@@ -218,5 +218,5 @@ char *translate_scancode(char scancode) {
 }
 
 void init_keyboard() {
-  register_interrupt_handler(IRQ1, keyboard_callback);
+  register_isr(IRQ1, keyboard_callback);
 }

@@ -5,6 +5,9 @@
 #include <kernel/cpu/asm.h>
 #include <kernel/cpu/gdt.h>
 
+gdt_entry_t gdt[3];
+gdt_descriptor_t gdt_desc;
+
 void install_gdt() {
   gdt_desc.limit = (sizeof(gdt_entry_t) * 5) - 1;
   gdt_desc.base = (uint32_t) &gdt;

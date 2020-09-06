@@ -10,6 +10,4 @@ int ksnprintf(char *str, size_t n, const char *format, ...);
 int ksprintf(char *str, const char *format, ...);
 void kprintf(const char *format, ...);
 
-void printf_fp(double value);
-
 #endif // LIBC_STDIO_H

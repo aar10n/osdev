@@ -12,6 +12,9 @@
 // Interrupt Descriptor Table
 // IDT entries (called) gates map ISRs to the correct interrupts.
 
+idt_gate_t idt[IDT_ENTRIES];
+idt_register_t idt_reg;
+
 void set_idt_gate(int vector, uint32_t handler) {
   idt[vector].low_offset = low_16(handler);
   idt[vector].selector = KERNEL_CS;

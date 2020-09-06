@@ -11,7 +11,7 @@ extern main
 ; Kernel
 KERNEL_CS equ 0x08                     ; Kernel Code Segment
 KERNEL_DS equ 0x10                     ; Kernel Data Segment
-STACK_SIZE equ 0x4000                  ; 16KB Stack Size
+STACK_SIZE equ 0x8000                  ; 16KB Stack Size
 
 ; Multiboot Header
 _ALIGN equ 0x1                         ; Align loaded modules on page boundaries
@@ -19,7 +19,7 @@ _INFO equ 0x2                          ; Include information about system memory
 _VIDINFO equ 0x4                       ; OS wants video mode set
 
 MB_MAGIC equ 0x1BADB002                ; Multiboot head magic number
-MB_FLAGS equ _ALIGN | _INFO | _VIDINFO ; Multiboot header flags
+MB_FLAGS equ _ALIGN | _INFO;| _VIDINFO ; Multiboot header flags
 MB_CHECKSUM equ -(MB_MAGIC + MB_FLAGS) ; Multiboot header checksum
 
 KERNEL_BASE equ 0xC0000000             ; Kernel virtual location (3GB)

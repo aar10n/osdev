@@ -45,7 +45,7 @@ extern void isr47();
 
 typedef void (*isr_t)(registers_t);
 
-void register_interrupt_handler(uint8_t n, isr_t handler);
-void interrupt_handler(registers_t reg);
+void register_isr(uint8_t interrupt, isr_t handler);
+void unregister_isr(uint8_t interrupt);
 
 #endif

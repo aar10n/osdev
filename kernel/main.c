@@ -20,9 +20,11 @@
 #include <string.h>
 
 #include <kernel/bus/pci.h>
+#include <kernel/cpu/rtc.h>
 #include <kernel/mem/heap.h>
 #include <kernel/mem/mm.h>
 #include <kernel/mem/paging.h>
+#include <kernel/time.h>
 
 void main(multiboot_info_t *mbinfo) {
   kclear();
@@ -31,7 +33,7 @@ void main(multiboot_info_t *mbinfo) {
   install_gdt();
   install_idt();
 
-  enable_hardware_interrupts();
+  enable_interrupts();
 
   init_serial(COM1);
   init_keyboard();
@@ -62,6 +64,17 @@ void main(multiboot_info_t *mbinfo) {
   mem_init(base_addr, mem_size);
   kheap_init();
 
+  kprintf("\n");
+
+  rtc_init(RTC_MODE_CLOCK);
+
+  rtc_time_t time;
+  rtc_get_time(&time);
+  rtc_print_debug_time(&time);
+
+  // rtc_init(RTC_MODE_TIMER);
+  // rtc_print_debug_status();
+
   // ata_t disk = ATA_DRIVE_PRIMARY;
   // ata_info_t disk_info;
   // ata_identify(&disk, &disk_info);
@@ -69,6 +82,6 @@ void main(multiboot_info_t *mbinfo) {
   // ata_print_debug_ata_info(&disk_info);
 
   // pci_enumerate_busses();
-  pci_device_t *device = pci_locate_device(PCI_STORAGE_CONTROLLER, PCI_IDE_CONTROLLER);
-  pci_print_debug_device(device);
+  // pci_device_t *device = pci_locate_device(PCI_STORAGE_CONTROLLER, PCI_IDE_CONTROLLER);
+  // pci_print_debug_device(device);
 }

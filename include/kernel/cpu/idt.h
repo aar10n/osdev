@@ -41,9 +41,6 @@ typedef struct __attribute__((packed)) {
   uint32_t base;
 } idt_register_t;
 
-idt_gate_t idt[IDT_ENTRIES];
-idt_register_t idt_reg;
-
 void install_idt();
 void set_idt_gate(int vector, uint32_t handler);
 
