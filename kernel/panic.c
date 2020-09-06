@@ -15,6 +15,7 @@ _Noreturn void panic(const char *fmt, ...) {
   va_start(valist, fmt);
   kvfprintf(fmt, valist);
   va_end(valist);
+  kprintf("\n");
 
   while (1) {
     __asm("hlt");
