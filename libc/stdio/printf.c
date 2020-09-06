@@ -638,6 +638,11 @@ int ksnprintf(char *str, size_t n, const char *format, ...) {
   return vn;
 }
 
+int kvsnprintf(char *str, size_t n, const char *format, va_list args) {
+  int vn = ksnprintf_internal(str, n, true, format, &args);
+  return vn;
+}
+
 /*
  * ksprintf - write formatted data to a buffer
  * ===========================================
@@ -650,6 +655,11 @@ int ksprintf(char *str, const char *format, ...) {
   va_start(valist, format);
   int n = ksnprintf_internal(str, -1, false, format, &valist);
   va_end(valist);
+  return n;
+}
+
+int kvsprintf(char *str, const char *format, va_list args) {
+  int n = ksnprintf_internal(str, -1, false, format, &args);
   return n;
 }
 
@@ -712,8 +722,15 @@ void kprintf(const char *format, ...) {
   static char str[PRINTF_BUFFER_SIZE];
   va_list valist;
   va_start(valist, format);
-  ksnprintf_internal(str, 256, true, format, &valist);
+  ksnprintf_internal(str, PRINTF_BUFFER_SIZE, true, format, &valist);
   va_end(valist);
+  kputs(str);
+  serial_write(COM1, str);
+}
+
+void kvfprintf(const char *format, va_list args) {
+  static char str[PRINTF_BUFFER_SIZE];
+  ksnprintf_internal(str, PRINTF_BUFFER_SIZE, true, format, &args);
   kputs(str);
   serial_write(COM1, str);
 }

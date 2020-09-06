@@ -14,6 +14,7 @@ INCLUDE = -Iinclude -Ilib -Ilibc
 QEMU_FLAGS = -usb \
              -vga std \
              -m 256M \
+             -rtc base=localtime,clock=host \
              -serial file:$(BUILD)/stdio \
              -drive file=$(BUILD)/disk.img,format=raw,if=ide \
              -drive file=$(BUILD)/disk.img,format=raw,if=none,id=disk \
@@ -36,6 +37,7 @@ objects = $(patsubst %.c,$(BUILD_DIR)/%_c.o, \
 kernel = \
 	boot.asm \
 	kernel/main.c \
+	kernel/panic.c \
 	kernel/time.c \
 	kernel/bus/pci.c \
 	kernel/cpu/asm.asm \
