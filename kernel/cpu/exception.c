@@ -66,7 +66,7 @@ void isr_debug_dump(cpu_t cpu, uint32_t int_no, uint32_t err_code) {
 
 // Handle severe and non-ignorable errors
 _Noreturn void exception_handler(cpu_t cpu, uint32_t int_no, uint32_t err_code) {
-  kprintf("\n%s - %#07b\n", exception_messages[int_no], err_code);
+  kprintf("\n%s - %#08b\n", exception_messages[int_no], err_code);
   kprintf("cr2: %p\n\n", cpu.cr2);
   kprintf("cr2: %p\n", phys_to_virt(cpu.cr2));
   isr_debug_dump(cpu, int_no, err_code);
