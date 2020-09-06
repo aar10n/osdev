@@ -19,4 +19,9 @@ void map_page(page_t *page);
 void remap_page(page_t *page);
 void unmap_page(page_t *page);
 
+// assembly functions
+void enable_paging();
+void disable_paging();
+void switch_page_directory(uint32_t *pd);
+
 #endif // KERNEL_MEM_PAGE_H

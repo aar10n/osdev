@@ -71,8 +71,11 @@ static inline chunk_t *get_next_chunk(chunk_t *chunk) {
 // ----- heap creation -----
 
 void kheap_init() {
-  // 0xD0000000
-  heap_t *heap = create_heap(0xC0300000, 0x100000);
+  // 0xC0200000 - address right after kernel
+  // 0xC1200000 - virtual address of first normal page
+  // 0x400000 - 4mb
+  // 0x800000 - 8mb
+  heap_t *heap = create_heap(0xC1200000, 0x800000);
   kheap = heap;
 }
 
@@ -80,6 +83,8 @@ heap_t *create_heap(uintptr_t base_addr, size_t size) {
   if (size < HEAP_MIN_SIZE) {
     size = HEAP_MIN_SIZE;
   }
+
+  kprintf("creating heap\n");
 
   size_t aligned_size = align(size, PAGE_SIZE);
   uintptr_t aligned_addr = align(base_addr, PAGE_SIZE);
@@ -94,6 +99,8 @@ heap_t *create_heap(uintptr_t base_addr, size_t size) {
     uint32_t offset = (1 << order) * PAGE_SIZE;
 
     page_t *page = alloc_pages(order, ZONE_NORMAL);
+    // kprintf("page->virt_addr: %p\n", page->virt_addr);
+    // kprintf("page->virt_addr: %p\n", phys_to_virt(page->virt_addr));
     page->virt_addr = virt_addr;
     // map_page(page);
     if (source != NULL) {

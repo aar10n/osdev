@@ -4,6 +4,7 @@
 
 #include <stdio.h>
 
+#include <kernel/panic.h>
 #include <kernel/cpu/asm.h>
 #include <kernel/mem/mm.h>
 #include <kernel/mem/paging.h>
@@ -15,8 +16,7 @@ uint32_t *get_page_table(int table_index) {
   uint32_t virtual = 0xFFC00000;
   virtual |= (table_index << 12);
   if ((uint32_t *) virtual == NULL) {
-    kprintf("error: page table at index %d not available\n", table_index);
-    return NULL;
+    panic("page table at index %d not available", table_index);
   }
   return (uint32_t *) virtual;
 }
@@ -35,7 +35,7 @@ void paging_init() {
 
   // Map the kernel (i.e first 4MB of the physical address space) to 3GB
   int kernel_page = addr_to_pde(kernel_start);
-  page_directory[kernel_page] = 0 | PE_PAGE_SIZE_4MB | PE_READ_WRITE | PE_PRESENT;
+  page_directory[kernel_page] = 0 | PE_PAGE_SIZE_4MB | PE_PRESENT;
 
   // Map remainder of the last 1GB ram as kernel space
   for (int i = 769; i < 1022; i++) {

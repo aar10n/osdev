@@ -9,6 +9,7 @@
 
 #include <kernel/mem/heap.h>
 #include <kernel/mem/mm.h>
+#include <kernel/panic.h>
 
 typedef struct free_pages {
   int count;
@@ -186,8 +187,7 @@ page_t *mem_split(int order, int zone) {
   page_t *page;
   if (order == MAX_ORDER) {
     // no free pages
-    kprintf("error: no free pages");
-    return NULL;
+    panic("no free pages");
   } else if (free[order].count == 0) {
     kprintf("no pages available\n");
     page = mem_split(order + 1, zone);
@@ -221,17 +221,18 @@ void mem_init_zone(uintptr_t base_addr, size_t size, uint8_t zone) {
     // kprintf("chunk size: %d MiB (%d B)\n", chunk_size / (1024 * 1024), chunk_size);
     remaining -= chunk_size;
 
-    int chunk_log = log2(chunk_size / PAGE_SIZE);
-    int order = chunk_log > MAX_ORDER ? MAX_ORDER : chunk_log;
-    int block_size = (1 << order) * PAGE_SIZE;
-    int block_count = chunk_size / block_size;
+    uint32_t chunk_log = log2(chunk_size / PAGE_SIZE);
+    uint32_t order = chunk_log > MAX_ORDER ? MAX_ORDER : chunk_log;
+    size_t block_size = (1 << order) * PAGE_SIZE;
+    uint32_t block_count = chunk_size / block_size;
 
     int pages_created = 0;
     page_t *prev_page = NULL;
     for (int i = 0; i < block_count; i++) {
+      // kprintf("%s - %d | %p (%p)\n", zones[zone].name, order, cur_addr, phys_to_virt(cur_addr));
       page_t *page = kmalloc(sizeof(page_t));
       page->phys_addr = cur_addr;
-      page->virt_addr = (uintptr_t) NULL;
+      page->virt_addr = phys_to_virt(cur_addr);
       page->zone = zone;
       page->order = order;
       page->flags.raw = 0;
@@ -283,15 +284,11 @@ page_t *alloc_pages(int order, uint8_t flags) {
   free_pages_t *free = zones[zone].free_pages;
   // kprintf("allocating page of order %d (%s)\n", order, zones[zone].name);
 
-  if (order > MAX_ORDER || order < 0) {
-    // error
-    kprintf("error: invalid allocation order\n");
-    return NULL;
-  } else if (free[order].count == 0) {
+  kassert(order <= MAX_ORDER && order > 0);
+  if (free[order].count == 0) {
     if (order == MAX_ORDER) {
       // no free pages
-      kprintf("error: no free pages");
-      return NULL;
+      panic("no free pages");
     }
 
     page_t *page = mem_split(order + 1, zone);
@@ -363,10 +360,7 @@ int print_node(char *buffer, page_t *page, char *prefix, char *child_prefix) {
 }
 
 void print_buddy_tree(page_t *page) {
-  int depth = get_tree_depth(page);
-  int order_max = page->order;
-
-  char buffer[4096];
+  static char buffer[4096];
   memset(buffer, 0, 512);
   print_node(buffer, page, "", "");
   kprintf(buffer);
