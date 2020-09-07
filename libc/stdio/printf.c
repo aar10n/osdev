@@ -63,7 +63,7 @@ typedef union double_raw {
 } double_raw_t;
 
 // Buffers
-#define PRINTF_BUFFER_SIZE 256
+#define PRINTF_BUFFER_SIZE 1024
 
 #define NTOA_BUFFER_SIZE 32
 #define FTOA_BUFFER_SIZE 32

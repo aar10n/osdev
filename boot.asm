@@ -19,7 +19,7 @@ _INFO equ 0x2                          ; Include information about system memory
 _VIDINFO equ 0x4                       ; OS wants video mode set
 
 MB_MAGIC equ 0x1BADB002                ; Multiboot head magic number
-MB_FLAGS equ _ALIGN | _INFO;| _VIDINFO ; Multiboot header flags
+MB_FLAGS equ _ALIGN | _INFO| _VIDINFO ; Multiboot header flags
 MB_CHECKSUM equ -(MB_MAGIC + MB_FLAGS) ; Multiboot header checksum
 
 KERNEL_BASE equ 0xC0000000             ; Kernel virtual location (3GB)
@@ -43,6 +43,10 @@ _page_directory:
 ;global _kernel_page_table
 ;_kernel_page_table:
 ;  times 1024 dd 0
+
+global _first_page_table
+_first_page_table:
+  times 1024 dd 0
 
 ;
 ; Text
@@ -80,8 +84,9 @@ _start:
 
 _higher_half:
   ; Unmap the first 4MB of memory
-  mov dword [_page_directory], 0
-  invlpg [0]
+
+;  mov dword [_page_directory], 0
+;  invlpg [0]
 
   mov eax, cr3 ; invlpg
   mov cr3, eax ;

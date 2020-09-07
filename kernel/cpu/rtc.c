@@ -34,26 +34,6 @@ void rtc_write(uint8_t reg, uint8_t data) {
 void rtc_irq_handler(registers_t regs) {
   time++;
 
-  if (time > 2000) {
-    kprintf("done!\n");
-    kprintf("time: %d\n", time);
-    kprintf("seconds elapsed: %d\n", time / 2014);
-    unregister_isr(IRQ8);
-
-    rtc_init(RTC_MODE_CLOCK);
-    rtc_time_t rtc_time;
-    rtc_get_time(&rtc_time);
-    rtc_print_debug_time(&rtc_time);
-
-    return;
-  }
-
-  if (time % 100 == 0) {
-    kprintf("time: %u\n", time);
-    kprintf("seconds elapsed: %u\n", time / 1024);
-    kprintf("milliseconds elapsed: %u\n", time / 1.204);
-  }
-
   // If we dont read the value of the C status register
   // the next RTC interrupt will not fire
   outb(CMOS_CONFIG_PORT, RTC_REG_STATUS_C);

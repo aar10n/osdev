@@ -126,13 +126,22 @@ typedef struct module {
   uint32_t reserved;
 } module_t;
 
-typedef struct __attribute__((packed)) {
+// typedef struct __attribute__((packed)) {
+//   uint32_t size;
+//   uint32_t base_addr_low;
+//   uint32_t base_addr_high;
+//   uint32_t length_low;
+//   uint32_t length_high;
+//   uint32_t type;
+// } multiboot_mmap_entry_t;
+
+typedef struct {
   uint32_t size;
   uint32_t base_addr_low;
   uint32_t base_addr_high;
   uint32_t length_low;
   uint32_t length_high;
   uint32_t type;
-} multiboot_mmap_entry_t;
+} memory_map_t;
 
 #endif // LIBC_MULTIBOOT_H
