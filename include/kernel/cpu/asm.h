@@ -24,5 +24,7 @@ void interrupt_out_of_memory();
 void enable_interrupts();
 void disable_interrupts();
 int has_fpu();
+int has_sse();
+void enable_sse();
 
 #endif // KERNEL_CPU_ASM_H

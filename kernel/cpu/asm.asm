@@ -104,8 +104,8 @@ fpu_exists: dw 0x0000
 has_fpu:
   mov edx, cr0
   mov ebx, cr0
-  btr ebx, 2  ; clear cr0.em
-  btr ebx, 3  ; clear cr0.ts
+  btr ebx, 2  ; clear EM bit
+  btr ebx, 3  ; clear TS bit
 
   and edx, ebx
   mov cr0, edx
@@ -119,5 +119,34 @@ has_fpu:
   ret
   hasfpu:
   mov eax, 1
+  ret
+
+; SSE
+
+global has_sse
+has_sse:
+  mov eax, 0x1
+  cpuid
+  test edx, 1<<25
+  jz nosse
+  jmp hassse
+  nosse:
+  mov eax, 0
+  ret
+  hassse:
+  mov eax, 1
+  ret
+
+global enable_sse
+enable_sse:
+  mov ebx, cr0
+  and ebx, ~(1 << 2) ; clear the EM bit
+  or ebx, 1 << 1     ; set the MP bit
+  mov cr0, ebx
+
+  mov ebx, cr4
+  or ebx, 1 << 8     ; set the OSFXSR bit
+  or ebx, 1 << 9     ; set the OSXMMEXCPT bit
+  mov cr4, ebx
   ret
 
