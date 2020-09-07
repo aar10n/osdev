@@ -30,9 +30,10 @@ include scripts/Makefile.toolchain
 
 # Generates a list of objects from a list of sources
 objects = $(patsubst %.c,$(BUILD_DIR)/%_c.o, \
+		  $(patsubst %.cpp,$(BUILD_DIR)/%_cpp.o, \
 		  $(patsubst %.s,$(BUILD_DIR)/%_s.o, \
 		  $(patsubst %.asm,$(BUILD_DIR)/%_asm.o, \
-		  $(1))))
+		  $(1)))))
 
 kernel = \
 	boot.asm \
@@ -104,7 +105,7 @@ libc-y = $(call objects,$(libc))
 #  Targets  #
 # --------- #
 
-all: $(BUILD)/osdev.iso;
+all: $(BUILD)/osdev.iso
 
 run: $(BUILD)/osdev.iso $(BUILD)/disk.img
 	$(QEMU) $(QEMU_FLAGS)
@@ -125,12 +126,10 @@ clean:
 
 # Other targets
 
+.PHONY: tools
+.SILENT: tools
 tools:
-	cd tools && $(MAKE) all
-
-.PHONY: test
-test:
-	$(info $(libc-y))
+	$(MAKE) -C tools $(tool)
 
 # -------------- #
 #  Dependencies  #
@@ -153,6 +152,10 @@ $(BUILD)/disk.img:
 $(BUILD_DIR)/%_c.o: %.c
 	@mkdir -p $(@D)
 	$(CC) $(INCLUDE) $(CFLAGS) -c $< -o $@
+
+$(BUILD_DIR)/%_cpp.o: %.cpp
+	@mkdir -p $(@D)
+	$(CXX) $(INCLUDE) $(CXXFLAGS) -c $< -o $@
 
 $(BUILD_DIR)/%_s.o: %.s
 	@mkdir -p $(@D)

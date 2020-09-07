@@ -2,10 +2,10 @@ NAME = tools
 VERSION = 1.0
 TARGET = default
 
-BUILD = ../build
+BUILD = ../build/tools
 
 CFLAGS  = -Wall -Wextra
-INCLUDE = -I../include
+INCLUDE =
 
 include ../scripts/Makefile.toolchain
 
@@ -14,8 +14,7 @@ include ../scripts/Makefile.toolchain
 # --------- #
 
 ext2 = ext2/main.c
-
-ext2-y = $(patsubst %.c,$(BUILD_DIR)/ext2/%.o,$(ext2))
+initrd = initrd/main.c
 
 # --------- #
 #  Targets  #
@@ -25,17 +24,23 @@ help:
 	@echo "==============="
 	@echo "    Targets    "
 	@echo "==============="
-	@echo "  ext2 - A tool for interacting with ext2 filesystems"
+	@echo "  ext2 	- Interact with ext2 file systems"
+	@echo "  initrd - Generate ramdisk file systems"
 
-all: $(BUILD)/ext2;
+all: ext2 initrd
 
-ext2: $(BUILD)/ext2;
+ext2: $(BUILD)/ext2
+initrd: $(BUILD)/initrd
 
 # -------------- #
 #  Dependencies  #
 # -------------- #
 
 $(BUILD)/ext2: $(ext2)
+	@mkdir -p $(@D)
+	$(CC) $(INCLUDE) $(CFLAGS) $^ -o $@
+
+$(BUILD)/initrd: $(initrd)
 	@mkdir -p $(@D)
 	$(CC) $(INCLUDE) $(CFLAGS) $^ -o $@
 
