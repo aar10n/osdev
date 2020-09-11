@@ -123,31 +123,51 @@ run-debug: $(BUILD)/osdev.iso $(BUILD)/disk.img
 clean:
 	rm -rf $(BUILD_DIR)
 	mkdir $(BUILD_DIR)
+	$(MAKE) -C tools clean
 
-# Other targets
+# Tools
 
 .PHONY: tools
-.SILENT: tools
 tools:
-	$(MAKE) -C tools $(tool)
+	$(MAKE) -C tools all
+
+.PHONY: initrd
+initrd:
+	$(MAKE) -C tools initrd
+
+ramdisk: initrd $(BUILD)/initrd.img
 
 # -------------- #
 #  Dependencies  #
 # -------------- #
 
-$(BUILD)/osdev.iso: $(BUILD)/osdev.bin $(BUILD)/disk.img grub.cfg
+# Kernel
+
+$(BUILD)/osdev.iso: $(BUILD)/osdev.bin $(BUILD)/initrd.img grub.cfg
 	mkdir -p $(BUILD)/iso/boot/grub
-	cp $< $(BUILD)/iso/boot/osdev
+	mkdir -p $(BUILD)/iso/modules
+	cp $(BUILD)/osdev.bin $(BUILD)/iso/boot/osdev
+	cp $(BUILD)/initrd.img $(BUILD)/iso/modules/initrd
 	cp grub.cfg $(BUILD)/iso/boot/grub/grub.cfg
 	$(MKRESCUE) -o $@ $(BUILD)/iso &> /dev/null
 
 $(BUILD)/osdev.bin: $(kernel-y) $(drivers-y) $(fs-y) $(lib-y) $(libc-y)
 	$(LD) $(LDFLAGS) $^ -o $@
 
-$(BUILD)/disk.img:
-	@echo $(shell scripts/create-disk.sh $@)
+# External Data
 
-# Compilation rules
+$(BUILD)/disk.img:
+	scripts/create-disk.sh $@
+
+$(BUILD)/initrd.img: $(BUILD)/initrd
+	scripts/create-initrd.sh $< $@
+
+# Tools
+
+
+# ------------------- #
+#  Compilation Rules  #
+# ------------------- #
 
 $(BUILD_DIR)/%_c.o: %.c
 	@mkdir -p $(@D)
