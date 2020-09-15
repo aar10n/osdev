@@ -6,6 +6,15 @@
 #define KERNEL_CPU_ASM_H
 
 #include <stdint.h>
+#include <kernel/cpu/cpu.h>
+
+void cpuinfo(cpuinfo_t *info);
+
+uintptr_t get_eip();
+uintptr_t get_esp();
+void set_esp(uintptr_t ptr);
+uintptr_t get_ebp();
+void set_ebp(uintptr_t ptr);
 
 void outb(uint16_t port, uint8_t data);
 uint8_t inb(uint16_t port);
