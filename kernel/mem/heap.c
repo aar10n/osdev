@@ -7,13 +7,22 @@
 #include <stdio.h>
 #include <string.h>
 
+#include <kernel/mem/cache.h>
 #include <kernel/mem/heap.h>
 #include <kernel/mem/mm.h>
 #include <kernel/mem/paging.h>
+#include <kernel/panic.h>
 #include <math.h>
 
 static uintptr_t heap_ptr = SIMPLE_HEAP_BASE;
 static heap_t *kheap = NULL;
+static cache_t caches[] = {
+    {.name = "directory", .size = 4096, .count = 1024 }
+};
+
+#define NUM_CACHES sizeof(caches) / sizeof(cache_t)
+
+//
 
 static inline uintptr_t next_chunk_start() {
   if (kheap->last_chunk == NULL) {
@@ -68,6 +77,16 @@ static inline chunk_t *get_next_chunk(chunk_t *chunk) {
   return NULL;
 }
 
+static inline cache_t *get_cache(size_t size) {
+  for (int i = 0; i < NUM_CACHES; i++) {
+    cache_t *cache = &caches[i];
+    if (cache->size == size) {
+      return cache;
+    }
+  }
+  return NULL;
+}
+
 // ----- heap creation -----
 
 void kheap_init() {
@@ -77,6 +96,11 @@ void kheap_init() {
   // 0x800000 - 8mb
   heap_t *heap = create_heap(0xC1200000, 0x800000);
   kheap = heap;
+
+  for (int i = 0; i < NUM_CACHES; i++) {
+    cache_t *cache = &caches[i];
+    create_cache(cache);
+  }
 }
 
 heap_t *create_heap(uintptr_t base_addr, size_t size) {
@@ -134,8 +158,7 @@ void *kmalloc(size_t size) {
     size_t aligned = align(size, sizeof(int));
     if (heap_ptr >= SIMPLE_HEAP_MAX) {
       // panic - Out of memory!
-      kprintf("fatal error: out of memory!\n");
-      return NULL;
+      panic("out of memory");
     }
 
     uintptr_t addr = heap_ptr;
@@ -156,6 +179,14 @@ void *kmalloc(size_t size) {
     return NULL;
   }
 
+  // first check if there is a cache for the object size
+  cache_t *cache = get_cache(size);
+  if (cache != NULL) {
+    kprintf("[kmalloc] using cache \"%s\"\n", cache->name);
+    return cache_alloc(cache);
+  }
+
+  // otherwise proceed with the normal allocation
   size_t aligned = next_pow2(umax(size, CHUNK_MIN_SIZE));
   // kprintf("kmalloc\n");
   // kprintf("size: %u\n", size);

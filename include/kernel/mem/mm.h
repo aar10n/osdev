@@ -20,7 +20,7 @@
 #define addr_to_pde(addr) ((unsigned int) ((uintptr_t) (addr) >> 22))
 #define addr_to_pte(addr) ((unsigned int) ((uintptr_t) (addr) >> 12 & 0x03FF))
 
-#define align(value, size) ((value + size) & ~(size))
+#define align(value, size) (((value) + (size)) & ~(size))
 
 #define ZONE_DMA       0x1
 #define ZONE_NORMAL    0x2

@@ -18,17 +18,10 @@
 #define HEAP_MAX_SIZE 0x400000 // 4 MiB
 
 #define CHUNK_MIN_SIZE 8
-#define CHUNK_MAX_SIZE 2048
+#define CHUNK_MAX_SIZE 8192
 
 #define CHUNK_MAGIC 0xABCD
 #define HOLE_MAGIC 0xFACE
-
-// typedef struct chunk {
-//   uintptr_t ptr;
-//   size_t size;
-//   struct chunk *next;
-//   struct chunk *last;
-// } chunk_t;
 
 // 8 bytes
 typedef struct chunk {
