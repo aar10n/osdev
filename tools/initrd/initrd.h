@@ -37,7 +37,7 @@ typedef struct {
 
 typedef struct {
   uint16_t id;     // node id
-  uint16_t flags;  // node type + flags
+  uint16_t flags;  // node flags
   uint16_t blocks; // the number of blocks used for the data
   uint32_t length; // node data length
   uint32_t offset; // offset from start to node data

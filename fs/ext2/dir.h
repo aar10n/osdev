@@ -68,13 +68,13 @@ typedef struct __attribute__((packed)) ext2_dirent {
 //
 
 // Indexed Directory Entry Structure
-typedef struct __attribute__((packed)) ext2_indexed_dirent {
+typedef struct __attribute__((packed)) {
   uint32_t hash;
   uint32_t block;
 } ext2_indexed_dirent_t;
 
 // Indexed Directory Entry Count and Limit Structure
-typedef struct __attribute__((packed)) ext2_indexed_dirent_limits {
+typedef struct __attribute__((packed)) {
   uint16_t limit;
   uint16_t count;
 } ext2_indexed_dirent_limits_t;
@@ -83,7 +83,7 @@ typedef struct __attribute__((packed)) ext2_indexed_dirent_limits {
 // Lookup is straightforword:
 //
 //  - Compute a hash of the name
-//  - Read the index root
+//  - Read the index is_root
 //  - Use binary search (linear in the current code) to find the
 //    first index or leaf addr that could contain the target hash
 //    (in tree order)

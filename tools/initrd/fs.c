@@ -2,7 +2,6 @@
 // Created by Aaron Gill-Braun on 2020-09-08.
 //
 
-#include <libgen.h>
 #include <math.h>
 #include <stdio.h>
 #include <string.h>

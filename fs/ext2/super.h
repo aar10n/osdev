@@ -143,7 +143,7 @@ typedef struct __attribute__((packed)) ext2_superblock {
 
 // s_feature_ro_compat
 #define EXT2_FEATURE_RO_COMPAT_SPARSE_SUPER 0x0001 // Sparse Superblock
-#define EXT2_FEATURE_RO_COMPAT_LARGE_FILE 0x0002   // Large file support, 64-bit file size
+#define EXT2_FEATURE_RO_COMPAT_LARGE_FILE 0x0002   // Large node support, 64-bit node size
 #define EXT2_FEATURE_RO_COMPAT_BTREE_DIR 0x0004    // Binary tree sorted directory files
 
 // s_algo_bitmap
@@ -160,7 +160,7 @@ typedef struct __attribute__((packed)) ext2_superblock {
 //
 //
 
-typedef struct __attribute__((packed)) ext2_bg_descriptor {
+typedef struct __attribute__((packed)) {
   uint32_t bg_block_bitmap;
   uint32_t bg_inode_bitmap;
   uint32_t bg_inode_table;

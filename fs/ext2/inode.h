@@ -14,7 +14,7 @@
 //
 
 // Inode Structure
-typedef struct __attribute__((packed)) ext2_inode {
+typedef struct __attribute__((packed)) {
   uint16_t i_mode;
   uint16_t i_uid;
   uint32_t i_size;
@@ -37,7 +37,7 @@ typedef struct __attribute__((packed)) ext2_inode {
 
 // Defined Reserved Inodes
 #define EXT2_BAD_INO 1         // bad blocks inode
-#define EXT2_ROOT_INO 2        // root directory inode
+#define EXT2_ROOT_INO 2        // is_root directory inode
 #define EXT2_ACL_IDX_INO 3     // ACL index inode (deprecated?)
 #define EXT2_ACL_DATA_INO 4    // ACL data inode (deprecated?)
 #define EXT2_BOOT_LOADER_INO 5 // boot loader inode
@@ -45,10 +45,10 @@ typedef struct __attribute__((packed)) ext2_inode {
 
 // i_mode
 //
-// -- file format --
+// -- node format --
 #define EXT2_S_IFSOCK 0xC000 // socket
 #define EXT2_S_IFLNK 0xA000  // symbolic link
-#define EXT2_S_IFREG 0x8000  // regular file
+#define EXT2_S_IFREG 0x8000  // regular node
 #define EXT2_S_IFBLK 0x6000  // block device
 #define EXT2_S_IFDIR 0x4000  // directory
 #define EXT2_S_IFCHR 0x2000  // character device
@@ -71,11 +71,11 @@ typedef struct __attribute__((packed)) ext2_inode {
 // i_flags
 #define EXT2_SECRM_FL 0x00000001     // secure deletion
 #define EXT2_UNRM_FL 0x00000002      // record for undelete
-#define EXT2_COMPR_FL 0x00000004     // compressed file
+#define EXT2_COMPR_FL 0x00000004     // compressed node
 #define EXT2_SYNC_FL 0x00000008      // synchronous updates
-#define EXT2_IMMUTABLE_FL 0x00000010 // immutable file
+#define EXT2_IMMUTABLE_FL 0x00000010 // immutable node
 #define EXT2_APPEND_FL 0x00000020    // append only
-#define EXT2_NODUMP_FL 0x00000040    // do not dump/delete file
+#define EXT2_NODUMP_FL 0x00000040    // do not dump/delete node
 #define EXT2_NOATIME_FL 0x00000080   // do not update .i_atime
 // -- Reserved for compression usage --
 #define EXT2_DIRTY_FL 0x00000100    // Dirty (modified)
@@ -86,11 +86,11 @@ typedef struct __attribute__((packed)) ext2_inode {
 #define EXT2_BTREE_FL 0x00001000        // b-tree format directory
 #define EXT2_INDEX_FL 0x00001000        // hash indexed directory
 #define EXT2_IMAGIC_FL 0x00002000       // AFS directory
-#define EXT3_JOURNAL_DATA_FL 0x00004000 // journal file data
+#define EXT3_JOURNAL_DATA_FL 0x00004000 // journal node data
 #define EXT2_RESERVED_FL 0x00008000     // reserved for ext2 library
 
 // Inode i_osd2 Structure: Linux
-typedef struct __attribute__((packed)) ext2_inode_table_osd2 {
+typedef struct __attribute__((packed)) {
   uint8_t l_i_frag;
   uint8_t l_i_fsize;
   uint16_t l_i_reserved0;
