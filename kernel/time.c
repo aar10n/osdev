@@ -50,7 +50,7 @@ uint8_t get_weekday(uint8_t day, uint8_t month, uint32_t year) {
     e -= 1;
   }
 
-  return (-1 + day + e + f + g + (g / 4)) % 7;
+  return (day + e + f + g + (g / 4)) % 7;
 }
 
 const char *get_weekday_str(uint8_t weekday, bool alt) {

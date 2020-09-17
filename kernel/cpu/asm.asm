@@ -55,8 +55,6 @@ set_ebp:
 ;
 
 ; output data to port - byte
-;   @param - uint16_t port
-;   @param - uint8_t data
 global outb
 outb:
   mov dx, [esp + 4] ; port
@@ -65,8 +63,6 @@ outb:
   ret
 
 ; input data from port - byte
-;   @param - uint16_t port
-;   @returns - uint8_t
 global inb
 inb:
   mov dx, [esp + 4] ; port
@@ -74,8 +70,6 @@ inb:
   ret
 
 ; output data to port - word
-;   @param - uint16_t port
-;   @param - uint16_t data
 global outw
 outw:
   mov dx, [esp + 4] ; port
@@ -84,8 +78,6 @@ outw:
   ret
 
 ; input data from port - word
-;   @param - uint16_t port
-;   @returns - uint16_t
 global inw
 inw:
   mov dx, [esp + 4] ; port
@@ -93,8 +85,6 @@ inw:
   ret
 
 ; output data to port - double word
-;   @param - uint16_t port
-;   @param - uint32_t data
 global outdw
 outdw:
   mov dx, [esp + 4]  ; port
@@ -103,8 +93,6 @@ outdw:
   ret
 
 ; input data from port - double word
-;   @param - uint16_t port
-;   @returns - uint32_t
 global indw
 indw:
   mov dx, [esp + 4] ; port
@@ -116,7 +104,6 @@ indw:
 ;
 
 ; loads the global descriptor table
-;   @param - void *ldt
 global load_gdt
 load_gdt:
   mov eax, [esp + 4]
@@ -133,7 +120,6 @@ load_gdt:
   ret
 
 ; loads the interrupt descriptor table
-;   @param - void *idt
 global  load_idt
 load_idt:
   mov eax, [esp + 4]
@@ -143,7 +129,6 @@ load_idt:
 ;
 
 ; invalidates a page in the tlb
-;   @param - int page
 global invl_page
 invl_page:
   mov eax, [esp + 4]
