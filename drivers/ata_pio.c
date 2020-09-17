@@ -92,6 +92,7 @@ void ata_read_write(bool operation, ata_t *disk, size_t lba, int sectors, uint8_
     }
     ata_delay(disk);
   }
+
 }
 
 //
