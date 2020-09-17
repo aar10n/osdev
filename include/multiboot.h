@@ -3,11 +3,11 @@
 
 #include <stdint.h>
 
-#define MULTIBOOT_MEMORY_AVAILABLE              1
-#define MULTIBOOT_MEMORY_RESERVED               2
-#define MULTIBOOT_MEMORY_ACPI_RECLAIMABLE       3
-#define MULTIBOOT_MEMORY_NVS                    4
-#define MULTIBOOT_MEMORY_BADRAM                 5
+#define MB_MEMORY_AVAILABLE 1
+#define MB_MEMORY_RESERVED  2
+#define MB_MEMORY_ACPI      3
+#define MB_MEMORY_NVS       4
+#define MB_MEMORY_BADRAM    5
 
 
 /* The Multiboot header. */
@@ -39,7 +39,7 @@ typedef struct aout_symbol_table {
 } aout_symbol_table_t;
 
 /* The section header table for ELF. */
-typedef struct elf_section_header_table {
+typedef struct {
   uint32_t num;
   uint32_t size;
   uint32_t addr;
@@ -97,9 +97,9 @@ typedef struct multiboot_info {
   uint32_t framebuffer_width;
   uint32_t framebuffer_height;
   uint8_t framebuffer_bpp;
-#define MULTIBOOT_FRAMEBUFFER_TYPE_INDEXED 0
-#define MULTIBOOT_FRAMEBUFFER_TYPE_RGB     1
-#define MULTIBOOT_FRAMEBUFFER_TYPE_EGA_TEXT     2
+#define MB_FRAMEBUFFER_TYPE_INDEXED 0
+#define MB_FRAMEBUFFER_TYPE_RGB     1
+#define MB_FRAMEBUFFER_TYPE_EGA_TEXT     2
   uint8_t framebuffer_type;
   union {
     struct {
@@ -124,16 +124,7 @@ typedef struct module {
   uint32_t mod_end;
   uint32_t string;
   uint32_t reserved;
-} module_t;
-
-// typedef struct __attribute__((packed)) {
-//   uint32_t size;
-//   uint32_t base_addr_low;
-//   uint32_t base_addr_high;
-//   uint32_t length_low;
-//   uint32_t length_high;
-//   uint32_t type;
-// } multiboot_mmap_entry_t;
+} mb_module_t;
 
 typedef struct {
   uint32_t size;
@@ -142,6 +133,6 @@ typedef struct {
   uint32_t length_low;
   uint32_t length_high;
   uint32_t type;
-} memory_map_t;
+} mb_mmap_entry_t;
 
 #endif // LIBC_MULTIBOOT_H
