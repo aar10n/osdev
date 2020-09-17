@@ -11,8 +11,10 @@ ASFLAGS =
 
 INCLUDE = -Iinclude -Ilib -Ilibc
 
-QEMU_FLAGS = -usb \
+QEMUFLAGS = -usb \
              -vga std \
+             -cpu Nehalem \
+             -smp 2 \
              -m 256M \
              -rtc base=localtime,clock=host \
              -serial file:$(BUILD)/stdio \
@@ -28,23 +30,19 @@ include scripts/Makefile.toolchain
 #  Sources  #
 # --------- #
 
-# Generates a list of objects from a list of sources
-objects = $(patsubst %.c,$(BUILD_DIR)/%_c.o, \
-		  $(patsubst %.cpp,$(BUILD_DIR)/%_cpp.o, \
-		  $(patsubst %.s,$(BUILD_DIR)/%_s.o, \
-		  $(patsubst %.asm,$(BUILD_DIR)/%_asm.o, \
-		  $(1)))))
-
 kernel = \
 	boot.asm \
+	kernel/task.asm \
 	kernel/main.c \
 	kernel/panic.c \
+	kernel/task.c \
 	kernel/time.c \
 	kernel/bus/pci.c \
 	kernel/cpu/asm.asm \
 	kernel/cpu/exception.asm \
 	kernel/cpu/interrupt.asm \
 	kernel/cpu/exception.c \
+	kernel/cpu/asm.c \
 	kernel/cpu/gdt.c \
 	kernel/cpu/idt.c \
 	kernel/cpu/interrupt.c \
@@ -52,6 +50,7 @@ kernel = \
 	kernel/cpu/rtc.c \
 	kernel/cpu/timer.c \
 	kernel/mem/paging.asm \
+	kernel/mem/cache.c \
 	kernel/mem/heap.c \
 	kernel/mem/mm.c \
 	kernel/mem/paging.c \
@@ -77,7 +76,8 @@ fs = \
 	fs/ext2/ext2.c \
 	fs/ext2/dir.c \
 	fs/ext2/inode.c \
-	fs/ext2/super.c
+	fs/ext2/super.c \
+	fs/rd/rd.c
 
 fs-y = $(call objects,$(fs))
 
@@ -96,7 +96,8 @@ libc = \
 	libc/stdio/printf.c \
 	libc/stdio/stdio.c \
 	libc/stdlib/stdlib.c \
-	libc/string/string.c
+	libc/string/string.c \
+	libc/libgen.c
 
 libc-y = $(call objects,$(libc))
 
@@ -108,16 +109,16 @@ libc-y = $(call objects,$(libc))
 all: $(BUILD)/osdev.iso
 
 run: $(BUILD)/osdev.iso $(BUILD)/disk.img
-	$(QEMU) $(QEMU_FLAGS)
+	$(QEMU) $(QEMUFLAGS)
 
 debug: $(BUILD)/osdev.iso $(BUILD)/disk.img
-	$(QEMU) -s -S $(QEMU_FLAGS) &
+	$(QEMU) -s -S $(QEMUFLAGS) &
 	$(GDB) -w \
 		-ex "target remote localhost:1234" \
 		-ex "add-symbol $(BUILD)/osdev.bin"
 
 run-debug: $(BUILD)/osdev.iso $(BUILD)/disk.img
-	$(QEMU) -s -S $(QEMU_FLAGS) &
+	$(QEMU) -s -S $(QEMUFLAGS) &
 
 .PHONY: clean
 clean:
