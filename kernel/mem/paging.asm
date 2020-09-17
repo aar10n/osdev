@@ -20,19 +20,14 @@ disable_paging:
   mov cr0, ecx        ; set control reg
 
 ; Switches the page directory
-;   @param - page_directory_t *pd
 global switch_page_directory
-extern current_directory
 switch_page_directory:
   mov eax, [esp + 4]           ; page directory address
   mov cr3, eax                 ; load the page directory
-  mov [current_directory], eax ; set the current directory
   call enable_paging           ; force enable paging
   ret
 
 ; Copies the data from one page frame to another
-;   @param - uintptr_t src
-;   @param - uintptr_t dest
 global copy_page_frame
 copy_page_frame:
   mov esi, [esp + 4]   ; source frame address
