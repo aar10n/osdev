@@ -4,11 +4,13 @@
 
 TOOLCHAIN =
 QEMU =
+
 CFLAGS +=
 CXXFLAGS +=
 ASFLAGS +=
 NASMFLAGS +=
 LDFLAGS +=
+QEMUFLAGS +=
 
 
 ifndef TARGET
@@ -45,7 +47,7 @@ else
 endif
 
 CXX_STD = -std=c++20
-C_STD = -std=c99
+C_STD = -std=c11
 
 # Programs
 CXX = $(TOOLCHAIN)g++ $(CXX_STD)
@@ -57,3 +59,12 @@ NASM = nasm
 
 GDB = $(TOOLCHAIN)gdb
 MKRESCUE = $(TOOLCHAIN)grub-mkrescue
+
+# Helpers
+
+# Generates a list of objects from a list of sources
+objects = $(patsubst %.c,$(BUILD_DIR)/%_c.o, \
+		  $(patsubst %.cpp,$(BUILD_DIR)/%_cpp.o, \
+		  $(patsubst %.s,$(BUILD_DIR)/%_s.o, \
+		  $(patsubst %.asm,$(BUILD_DIR)/%_asm.o, \
+		  $(1)))))
