@@ -13,6 +13,7 @@
 
 #define PAGE_SIZE 4096
 #define MAX_ORDER 10
+#define MIN_MEMORY 0x2000000 // 32 MiB
 
 #define phys_to_virt(addr) (((uintptr_t) addr) + KERNEL_BASE)
 #define virt_to_phys(addr) (((uintptr_t) addr) - KERNEL_BASE)
@@ -22,9 +23,10 @@
 
 #define align(value, size) (((value) + (size)) & ~(size))
 
-#define ZONE_DMA       0x1
-#define ZONE_NORMAL    0x2
-#define ZONE_HIGHMEM   0x4
+#define ZONE_RESRV   0x0
+#define ZONE_DMA     0x1
+#define ZONE_NORMAL  0x2
+#define ZONE_HIGHMEM 0x4
 
 #define PAGE_PRESENT   0x8
 #define PAGE_READWRITE 0x16
@@ -37,7 +39,7 @@
 extern uint32_t _kernel_start;
 extern uint32_t _kernel_end;
 
-#define kernel_start (phys_to_virt((uint32_t) &_kernel_start))
+#define kernel_start ((uint32_t) &_kernel_start)
 #define kernel_end ((uint32_t) &_kernel_end)
 
 typedef struct page {
@@ -66,6 +68,22 @@ typedef struct page {
   struct page *head;
   struct page *tail;
 } page_t;
+
+typedef struct free_pages {
+  int count;
+  page_t *first;
+} free_pages_t;
+
+typedef struct mem_zone {
+  const char *name;
+  int type;
+  size_t length;
+  free_pages_t free_pages[MAX_ORDER + 1];
+} mem_zone_t;
+
+//
+
+extern page_t **mem;
 
 void mem_init(uintptr_t base_addr, size_t size);
 page_t *alloc_pages(int order, uint8_t flags);

@@ -11,24 +11,28 @@
 #include <kernel/mem/mm.h>
 #include <kernel/panic.h>
 
-typedef struct free_pages {
-  int count;
-  page_t *first;
-} free_pages_t;
+#define ZONE(t, l) \
+  { .name = #t, .type = t, .length = l }
 
-typedef struct page_zone {
-  const char *name;
-  size_t max_length;
-  free_pages_t free_pages[MAX_ORDER + 1];
-} page_zone_t;
+#define NUM_ZONES \
+  (sizeof(zones) / sizeof(zones[0]))
 
-page_zone_t zones[3] = {
-    { .name = "ZONE_DMA", .max_length = 0x1000000 },     // 16 MiB
-    { .name = "ZONE_NORMAL", .max_length = 0x32000000 }, // 800 MiB
-    { .name = "ZONE_HIGHMEM", .max_length = 0xFFFFFFFF } // 4 GiB
+
+// Define the memory zones
+mem_zone_t zones[] = {
+    ZONE(ZONE_RESRV, 0x200000),    // 2 MiB - kernel
+    ZONE(ZONE_DMA, 0xE00000),      // 14 MiB - available
+    ZONE(ZONE_RESRV, 0x400000),    // 4 MiB - reserved
+    ZONE(ZONE_NORMAL, 0x32000000), // 800 MiB - available
+    ZONE(ZONE_HIGHMEM, 0xFFFFFFFF) // 4 GiB - available
 };
 
-// free_pages_t free[MAX_ORDER + 1];
+// this is a 1024x1024 array of pointers to page structs
+// and it allows you to find the page for any given virtual
+// address by indexing it like the page directory/table.
+page_t **mem = NULL;
+
+// Helper functions
 
 static inline free_pages_t *get_free_pages(page_t *page) {
   return zones[page->zone].free_pages;
@@ -36,15 +40,16 @@ static inline free_pages_t *get_free_pages(page_t *page) {
 
 static inline uint8_t get_zone(uint8_t flags) {
   uint8_t zone = (flags & 0x3);
+  // index into zones array
   switch (zone) {
     case ZONE_DMA:
-      return 0;
+      return 1;
     case ZONE_NORMAL:
-      return 1;
+      return 3;
     case ZONE_HIGHMEM:
-      return 2;
+      return 4;
     default:
-      return 1;
+      return 3;
   }
 }
 
@@ -230,9 +235,13 @@ void mem_init_zone(uintptr_t base_addr, size_t size, uint8_t zone) {
     page_t *prev_page = NULL;
     for (int i = 0; i < block_count; i++) {
       // kprintf("%s - %d | %p (%p)\n", zones[zone].name, order, cur_addr, phys_to_virt(cur_addr));
+
+      // create the page struct
+      uintptr_t virt_addr = phys_to_virt(cur_addr);
+
       page_t *page = kmalloc(sizeof(page_t));
       page->phys_addr = cur_addr;
-      page->virt_addr = phys_to_virt(cur_addr);
+      page->virt_addr = virt_addr;
       page->zone = zone;
       page->order = order;
       page->flags.raw = 0;
@@ -244,6 +253,16 @@ void mem_init_zone(uintptr_t base_addr, size_t size, uint8_t zone) {
       } else {
         free[order].first = page;
       }
+
+      // assign the range in the mem array this page represents
+      // to the pointer for this page
+      // uintptr_t upper_bound = virt_addr + block_size;
+      // for (uintptr_t j = virt_addr; j < upper_bound; j += PAGE_SIZE) {
+      //   int pde_index = addr_to_pde(j);
+      //   int pte_index = addr_to_pte(j);
+      //   kprintf("adding to mem array - mem[%d][%d]\n", pde_index, pte_index);
+      //   mem[pde_index + pte_index] = page;
+      // }
 
       prev_page = page;
       cur_addr += block_size;
@@ -260,18 +279,39 @@ void mem_init_zone(uintptr_t base_addr, size_t size, uint8_t zone) {
 }
 
 void mem_init(uintptr_t base_addr, size_t size) {
+  if (size < MIN_MEMORY) {
+    uint32_t mib = MIN_MEMORY / (1024 * 1024);
+    panic("not enough memory - a minimum of %u is required", mib);
+  }
+
+  kprintf("initializing memory\n");
+
+  // first clear the mem array
+  // memset(mem, 0, 1024 * 1024 * sizeof(page_t *));
+
   size_t offset = 0;
-  for (int i = 0; i < 3; i++) {
-    page_zone_t *zone = &zones[i];
-    // kprintf("\ninitializing zone %s\n", zone->name);
-    if (size <= zone->max_length) {
+  for (int i = 0; i < NUM_ZONES; i++) {
+    mem_zone_t zone = zones[i];
+    if (zone.type == ZONE_RESRV) {
+      if (size <= zone.length) {
+        panic("not enough memory for reserved zone %d", i);
+      }
+
+      kprintf("reserving zone\n");
+      offset += zone.length;
+      size -= zone.length;
+      continue;
+    }
+
+    kprintf("initializing zone %s\n", zone.name);
+    if (size <= zone.length) {
       mem_init_zone(base_addr + offset, size, i);
       // kprintf("zone %s initialized!\n", zones[i].name);
       break;
     } else {
-      mem_init_zone(base_addr + offset, zone->max_length, i);
-      offset += zone->max_length;
-      size -= zone->max_length;
+      mem_init_zone(base_addr + offset, zone.length, i);
+      offset += zone.length;
+      size -= zone.length;
       // kprintf("zone %s initialized!\n", zones[i].name);
     }
   }
