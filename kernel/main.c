@@ -24,20 +24,30 @@
 #include <kernel/mem/heap.h>
 #include <kernel/mem/mm.h>
 #include <kernel/mem/paging.h>
+#include <kernel/panic.h>
+#include <kernel/task.h>
 #include <kernel/time.h>
 
-void main(multiboot_info_t *mbinfo) {
+void main(multiboot_info_t *mbinfo, pde_t *kernel_pd, pte_t *first_pt) {
+  install_idt();
+  install_gdt();
+
   kclear();
   kprintf("Kernel loaded!\n");
-
-  install_gdt();
-  install_idt();
 
   enable_interrupts();
 
   init_serial(COM1);
   init_keyboard();
   init_ata();
+
+  kassertf(mbinfo->mods_count == 01, "failed to load initrd");
+  mb_module_t *rd_module = (mb_module_t *)(mbinfo->mods_addr);
+  uint32_t rd_start = phys_to_virt(rd_module->mod_start);
+  uint32_t rd_end = phys_to_virt(rd_module->mod_end);
+  uint32_t rd_size = rd_module->mod_end - rd_module->mod_start;
+
+  uint8_t *initrd = (uint8_t *) rd_start;
 
   kprintf("\n");
   kprintf("Kernel Start: %p (%p)\n", kernel_start, virt_to_phys(kernel_start));
@@ -50,36 +60,38 @@ void main(multiboot_info_t *mbinfo) {
 
   paging_init();
 
-  uintptr_t mem_start = 0x100000;
   // align the kernel_end address
-  uintptr_t kernel_aligned = (virt_to_phys(kernel_end) + 0x1000) & 0xFFFF000;
+  uintptr_t kernel_aligned = align(virt_to_phys(kernel_end), 0x1000);
+  // uintptr_t kernel_aligned = (virt_to_phys(kernel_end) + 0x1000) & 0xFF00000;
   kprintf("kernel_aligned %p\n", phys_to_virt(kernel_aligned));
-  // set aside one mb for the watermark allocator heap
-  uintptr_t base_addr = kernel_aligned + 0x100000;
-  kprintf("start_addr %p\n", phys_to_virt(base_addr));
-  size_t mem_size = (mbinfo->mem_upper * 1024) - (base_addr - mem_start);
-  kprintf("base address: %p | size: %u MiB\n", base_addr, mem_size / (1024 * 1024));
+  // set aside 1mb for the watermark allocator heap
+  // uintptr_t base_addr = kernel_aligned + 0x100000;
+  kprintf("start_addr %p\n", phys_to_virt(kernel_aligned));
+  size_t mem_size = (mbinfo->mem_upper * 1024) - (kernel_aligned);
+  kprintf("base address: %p | size: %u MiB\n", kernel_aligned, mem_size / (1024 * 1024));
 
-  // Initialize memory
-  mem_init(base_addr, mem_size);
+  // Initialize memory starting just after the kernel
+  mem_init(kernel_aligned, mem_size);
   kheap_init();
 
   kprintf("\n");
 
-  rtc_init(RTC_MODE_CLOCK);
+  rtc_init(RTC_MODE_TIMER);
 
-  rtc_time_t time;
-  rtc_get_time(&time);
-  rtc_print_debug_time(&time);
+  kprintf("has sse: %d\n", has_sse());
+  if (has_sse()) {
+    kprintf("enabling sse\n");
+    enable_sse();
+  }
 
-  // rtc_init(RTC_MODE_TIMER);
-  // rtc_print_debug_status();
+  // tasking_init();
+  // int ret = fork();
+  // kprintf("fork() -> %#x | getpid() -> %#x\n", ret, getpid());
 
-  // ata_t disk = ATA_DRIVE_PRIMARY;
-  // ata_info_t disk_info;
-  // ata_identify(&disk, &disk_info);
-  // ata_print_debug_ata_disk(&disk);
-  // ata_print_debug_ata_info(&disk_info);
+  // fs_type_t ext2 = {
+  //   .name = "ext2",
+  //   .mount = ext2_mount };
+  // fs_register_type(&ext2);
 
   // pci_enumerate_busses();
   // pci_device_t *device = pci_locate_device(PCI_STORAGE_CONTROLLER, PCI_IDE_CONTROLLER);
