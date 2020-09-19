@@ -14,8 +14,8 @@
 #define pde_to_pt(entry) \
   ((pte_t *) ((entry) & PE_ADDRESS))
 
-#define current_pd ((pde_t *) 0xFFC00000)
-#define current_pd_ptr ((pde_t *) (current_pd[1023] & PE_ADDRESS))
+#define current_pd ((pde_t *) 0xFFFFF000)
+#define current_pd_ptr ((pde_t *) phys_to_virt(current_pd[1023] & PE_ADDRESS))
 
 // bit masks
 #define PE_ADDRESS   0xFFFFF000 // the table or frame address

@@ -9,6 +9,7 @@
 #include <kernel/mem/heap.h>
 #include <kernel/mem/mm.h>
 #include <kernel/mem/paging.h>
+#include <kernel/panic.h>
 
 extern uintptr_t _kernel_directory;
 pde_t *kernel_pd;
@@ -26,11 +27,21 @@ pte_t *create_page_table() {
 }
 
 pte_t *get_page_table(int index) {
-  pde_t *pde = current_pd;
-  if (pde[index] == 0) {
+  pde_t *pd = current_pd;
+  kprintf("[paging] getting page table at index %d\n", index);
+  pde_t pde = pd[index];
+  if (pde == 0) {
+    return NULL;
+  } else if (entry_flag(pde, PDE_PAGE_SIZE)) {
+    kprintf("[paging] entry does not point to a page table\n");
     return NULL;
   }
-  return pde_to_pt(pde[index]);
+
+  if (!entry_flag(pde, PE_PRESENT)) {
+    kprintf("[paging] table exists but is not present\n");
+  }
+
+  return pde_to_pt(pde);
 }
 
 pte_t *clone_page_table(const pte_t *src) {
@@ -103,8 +114,8 @@ void paging_init() {
 
   // Map in the last 1GB ram as kernel space
   for (int i = kernel_page + 1; i < 1023; i++) {
-    uint32_t addr = i << 22;
-    pde_t pde = virt_to_phys(addr) | PDE_PAGE_SIZE | PE_READ_WRITE | PE_PRESENT;
+    uint32_t addr = virt_to_phys(i << 22);
+    pde_t pde = addr | PDE_PAGE_SIZE | PE_READ_WRITE | PE_PRESENT;
     kernel_pd[i] = pde;
   }
 }
@@ -113,18 +124,37 @@ void paging_init() {
 
 void map_frame(uintptr_t virt_addr, pte_t pte) {
   int index = addr_to_pde(virt_addr);
-  pte_t *page_table = get_page_table(index);
-  if (page_table == NULL) {
-    kprintf("allocating new page table\n");
-    // create the table
-    pde_t *pd = current_pd;
-    page_table = create_page_table();
+  pde_t pde = current_pd[index];
 
-    pd[index] = virt_to_phys(page_table)
-                | entry_flag(pte, PE_READ_WRITE)
-                | entry_flag(pte, PE_USER)
-                | entry_flag(pte, PE_CACHE_DISABLED)
-                | PE_PRESENT;
+  pte_t *page_table;
+  if (pde == 0) {
+    kprintf("[paging] allocating new page table\n");
+    // create the table
+    page_table = create_page_table();
+    current_pd[index] = virt_to_phys(page_table)
+                        | entry_flag(pte, PE_READ_WRITE)
+                        | entry_flag(pte, PE_USER)
+                        | entry_flag(pte, PE_CACHE_DISABLED)
+                        | PE_PRESENT;
+  } else if (entry_flag(pde, PDE_PAGE_SIZE)) {
+    kprintf("[paging] attempting to map frame in 4MB page\n");
+    kprintf("[paging] skipping...\n");
+    return;
+  } else if (!entry_flag(pde, PE_PRESENT)) {
+    kprintf("[paging] requested page table was marked as non-present\n");
+    kprintf("[paging] setting it to present\n");
+    pde |= PE_PRESENT;
+    current_pd[index] = pde;
+    page_table = pde_to_pt(pde);
+  } else {
+    page_table = pde_to_pt(pde);
+  }
+
+  int pt_index = addr_to_pte(virt_addr);
+  pte_t existing = page_table[pt_index];
+  if (entry_flag(existing, PE_PRESENT)) {
+    kprintf("[paging] frame is already mapped!\n");
+    panic("requested frame already mapped");
   }
 
   page_table[addr_to_pte(virt_addr)] = pte;
