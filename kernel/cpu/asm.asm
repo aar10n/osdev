@@ -36,7 +36,8 @@ get_esp:
 
 global set_esp
 set_esp:
-  mov esp, [esp + 4]
+  mov eax, [esp + 4]
+  mov esp, eax
   ret
 
 ; Base pointer

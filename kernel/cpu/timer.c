@@ -11,12 +11,14 @@
 
 #include <kernel/cpu/asm.h>
 #include <kernel/cpu/cpu.h>
+#include <kernel/task.h>
 
 uint32_t tick = 0;
 
 static void timer_irq_handler(registers_t regs) {
   tick++;
-  kprintf("tick: %d\n", tick);
+  // kprintf("tick: %d\n", tick);
+  task_switch();
 }
 
 void init_timer(uint32_t freq) {

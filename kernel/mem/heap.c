@@ -17,7 +17,7 @@
 static uintptr_t heap_ptr = SIMPLE_HEAP_BASE;
 static heap_t *kheap = NULL;
 static cache_t caches[] = {
-    {.name = "directory", .size = 4096, .count = 1024 }
+    { .name = "directory", .size = 4096, .count = 1024 }
 };
 
 #define NUM_CACHES sizeof(caches) / sizeof(cache_t)
@@ -94,13 +94,13 @@ void kheap_init() {
   // 0xC1200000 - virtual address of first normal page
   // 0x400000 - 4mb
   // 0x800000 - 8mb
-  heap_t *heap = create_heap(0xC1200000, 0x800000);
-  kheap = heap;
-
   for (int i = 0; i < NUM_CACHES; i++) {
     cache_t *cache = &caches[i];
     create_cache(cache);
   }
+
+  heap_t *heap = create_heap(0xC1200000, 0x800000);
+  kheap = heap;
 }
 
 heap_t *create_heap(uintptr_t base_addr, size_t size) {

@@ -14,10 +14,9 @@ void create_cache(cache_t *cache) {
   size_t size = cache->size;
   size_t count = cache->count;
 
-  size_t total_size = size * count;
-  size_t aligned_size = align(total_size, PAGE_SIZE);
+  size_t total_size = size * count / PAGE_SIZE;
   size_t real_count = 0;
-  int order = log2(aligned_size);
+  int order = log2(total_size);
   while (order >= 0) {
     int next_order;
     if (order > MAX_ORDER) {
@@ -30,8 +29,7 @@ void create_cache(cache_t *cache) {
 
     page_t *page = alloc_pages(next_order, 0);
     uintptr_t ptr = page->virt_addr;
-    size_t remaining = 1 << next_order;
-    while (remaining >= size) {
+    for (size_t i = 0; i < 1 << next_order; i++) {
       slab_t *slab = kmalloc(sizeof(slab_t));
       slab->ptr = (void *) ptr;
       slab->next = NULL;
@@ -45,12 +43,10 @@ void create_cache(cache_t *cache) {
 
       real_count++;
       ptr += size;
-      remaining -= size;
     }
   }
 
   kprintf("cache created!\n");
-  kprintf("real count: %d\n", real_count);
 }
 
 void *cache_alloc(cache_t *cache) {
