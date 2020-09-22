@@ -2,6 +2,7 @@
 // Created by Aaron Gill-Braun on 2020-09-05.
 //
 
+#include <kernel/cpu/pit.h>
 #include <kernel/time.h>
 
 const char *month_str[] = {
@@ -26,6 +27,9 @@ const char *weekday_str_alt[] = {
 
 // sum of days for previous month
 uint32_t em[] = { 0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334 };
+
+
+double us_scale = (1.f / 1193181.f) * 1e6;
 
 //
 
@@ -59,4 +63,13 @@ const char *get_weekday_str(uint8_t weekday, bool alt) {
 
 const char *get_month_str(uint8_t month, bool alt) {
   return alt ? month_str_alt[month - 1] : month_str[month - 1];
+}
+
+//
+
+void usleep(uint32_t microseconds) {
+  uint32_t end = tick + (us_scale * microseconds);
+  while (tick < end) {
+    __asm volatile("hlt");
+  }
 }

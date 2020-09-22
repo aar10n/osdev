@@ -43,6 +43,7 @@ typedef enum {
 void rtc_init(rtc_mode_t mode);
 
 void rtc_get_time(rtc_time_t *rtc_time);
+void rtc_sleep(uint32_t ms);
 
 void rtc_print_debug_time(rtc_time_t *rtc_time);
 void rtc_print_debug_status();

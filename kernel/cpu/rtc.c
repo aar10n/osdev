@@ -9,6 +9,7 @@
 #include <kernel/cpu/cpu.h>
 #include <kernel/cpu/interrupt.h>
 #include <kernel/cpu/rtc.h>
+#include <kernel/task.h>
 #include <kernel/time.h>
 
 rtc_mode_t curr_mode = -1;
@@ -33,7 +34,7 @@ void rtc_write(uint8_t reg, uint8_t data) {
 
 void rtc_irq_handler(registers_t regs) {
   time++;
-
+  task_switch();
   // If we dont read the value of the C status register
   // the next RTC interrupt will not fire
   outb(CMOS_CONFIG_PORT, RTC_REG_STATUS_C);
@@ -58,8 +59,8 @@ void rtc_init(rtc_mode_t mode) {
     uint8_t reg_a = 0b00100110;
     rtc_write(RTC_REG_STATUS_A, reg_a);
 
-    // configure clock mode
-    // enable daylight savings, 24 hour mode and binary output
+    // configure clock flags
+    // enable daylight savings, 24 hour flags and binary output
     uint8_t reg_b = 0b00000111;
     rtc_write(RTC_REG_STATUS_B, reg_b);
   } else if (mode == RTC_MODE_TIMER) {
@@ -80,11 +81,11 @@ void rtc_init(rtc_mode_t mode) {
   enable_interrupts();
 }
 
-/* ----- Clock mode functions ----- */
+/* ----- Clock flags functions ----- */
 
 void rtc_get_time(rtc_time_t *rtc_time) {
   if (curr_mode != RTC_MODE_CLOCK) {
-    kprintf("[rtc] not in clock mode\n");
+    kprintf("[rtc] not in clock flags\n");
     return;
   }
 
@@ -97,6 +98,13 @@ void rtc_get_time(rtc_time_t *rtc_time) {
   rtc_time->year = rtc_read(RTC_REG_YEAR) + 2000;
 
   rtc_time->weekday = get_weekday(rtc_time->day, rtc_time->month, rtc_time->year);
+}
+
+void rtc_sleep(uint32_t ms) {
+  uint32_t end = time + ms;
+  while (time < end) {
+    __asm volatile("hlt");
+  }
 }
 
 // Debugging
