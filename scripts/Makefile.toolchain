@@ -32,7 +32,7 @@ else ifeq ($(TARGET),i386)
 	CFLAGS += -ffreestanding -m32 -Wall -Wextra
 	CXXFLAGS += $(CFLAGS) -fno-rtti -fno-exceptions
 	ASFLAGS += -march=i386 -mtune=i386 --32
-	NASMFLAGS += -f elf32
+	NASMFLAGS += -g -f elf32
 	LDFLAGS +=
 else ifeq ($(TARGET),i686)
 	TOOLCHAIN = i686-elf-
@@ -40,7 +40,7 @@ else ifeq ($(TARGET),i686)
 	CFLAGS += -ffreestanding -m32
 	CXXFLAGS += $(CFLAGS) -fno-rtti -fno-exceptions
 	ASFLAGS += -march=i686 -mtune=i686 --32
-	NASMFLAGS += -f elf32
+	NASMFLAGS += -g -f elf32
 	LDFLAGS +=
 else
     $(error unknown target $(TARGET))
@@ -63,8 +63,8 @@ MKRESCUE = $(TOOLCHAIN)grub-mkrescue
 # Helpers
 
 # Generates a list of objects from a list of sources
-objects = $(patsubst %.c,$(BUILD_DIR)/%_c.o, \
-		  $(patsubst %.cpp,$(BUILD_DIR)/%_cpp.o, \
-		  $(patsubst %.s,$(BUILD_DIR)/%_s.o, \
-		  $(patsubst %.asm,$(BUILD_DIR)/%_asm.o, \
+objects = $(patsubst %.c,$(2)/%_c.o, \
+		  $(patsubst %.cpp,$(2)/%_cpp.o, \
+		  $(patsubst %.s,$(2)/%_s.o, \
+		  $(patsubst %.asm,$(2)/%_asm.o, \
 		  $(1)))))

@@ -19,7 +19,12 @@
 #include <stdio.h>
 #include <string.h>
 
+#include <kernel/acpi.h>
 #include <kernel/bus/pci.h>
+#include <kernel/cpu/apic.h>
+#include <kernel/cpu/ioapic.h>
+#include <kernel/cpu/pic.h>
+#include <kernel/cpu/pit.h>
 #include <kernel/cpu/rtc.h>
 #include <kernel/mem/heap.h>
 #include <kernel/mem/mm.h>
@@ -28,37 +33,60 @@
 #include <kernel/task.h>
 #include <kernel/time.h>
 
-void main(multiboot_info_t *mbinfo, pde_t *kernel_pd, pte_t *first_pt) {
+extern uintptr_t initial_directory;
+extern uintptr_t test_val;
+extern uintptr_t ap_start;
+
+void main(multiboot_info_t *mbinfo) {
+  pde_t *initial_pd = (pde_t *) initial_directory;
+  pde_t *initial_pd_alt = (pde_t *) &initial_directory;
+
   install_idt();
   install_gdt();
+
+  pic_remap(0x20, 0x28);
+  pic_disable();
+
+  rtc_init(RTC_MODE_TIMER);
+  init_serial(COM1);
+
+  system_info_t *sys_info = acpi_get_sysinfo();
+  ioapic_init(sys_info);
+  apic_init(sys_info->apic_base);
+
+  ioapic_set_mask(0, 1, 0);
+  // ioapic_set_mask(0, 8, 0);
+
+  init_keyboard();
+
+  enable_interrupts();
+
+  cpuinfo_t info;
+  cpuinfo(&info);
+
+  multiboot_info_t *mb = kmalloc(sizeof(multiboot_info_t));
+  memcpy(mb, mbinfo, sizeof(multiboot_header_t));
 
   kclear();
   kprintf("Kernel loaded!\n");
 
-  enable_interrupts();
-
-  init_serial(COM1);
-  init_keyboard();
-  init_ata();
-
-  kassertf(mbinfo->mods_count == 01, "failed to load initrd");
-  mb_module_t *rd_module = (mb_module_t *)(mbinfo->mods_addr);
-  uint32_t rd_start = phys_to_virt(rd_module->mod_start);
-  uint32_t rd_end = phys_to_virt(rd_module->mod_end);
-  uint32_t rd_size = rd_module->mod_end - rd_module->mod_start;
-
-  uint8_t *initrd = (uint8_t *) rd_start;
+  // kassertf(mbinfo->mods_count == 01, "failed to load initrd");
+  // mb_module_t *rd_module = (mb_module_t *)(mbinfo->mods_addr);
+  // uint32_t rd_start = phys_to_virt(rd_module->mod_start);
+  // uint32_t rd_end = phys_to_virt(rd_module->mod_end);
+  // uint32_t rd_size = rd_module->mod_end - rd_module->mod_start;
+  //
+  // uint8_t *initrd = (uint8_t *) rd_start;
 
   kprintf("\n");
   kprintf("Kernel Start: %p (%p)\n", kernel_start, virt_to_phys(kernel_start));
   kprintf("Kernel End: %p (%p)\n", kernel_end, virt_to_phys(kernel_end));
   kprintf("Kernel Size: %d KiB\n", (kernel_end - kernel_start) / 1024);
   kprintf("\n");
-  kprintf("Lower Memory: %d KiB\n", mbinfo->mem_lower);
-  kprintf("Upper Memory: %d KiB\n", mbinfo->mem_upper);
-  kprintf("\n");
 
-  paging_init();
+  kprintf("Lower Memory: %d KiB\n", mb->mem_lower);
+  kprintf("Upper Memory: %d KiB\n", mb->mem_upper);
+  kprintf("\n");
 
   // align the kernel_end address
   uintptr_t kernel_aligned = align(virt_to_phys(kernel_end), 0x1000);
@@ -70,19 +98,22 @@ void main(multiboot_info_t *mbinfo, pde_t *kernel_pd, pte_t *first_pt) {
   size_t mem_size = (mbinfo->mem_upper * 1024) - (kernel_aligned);
   kprintf("base address: %p | size: %u MiB\n", kernel_aligned, mem_size / (1024 * 1024));
 
-  // Initialize memory starting just after the kernel
+  paging_init();
   mem_init(kernel_aligned, mem_size);
   kheap_init();
 
-  kprintf("\n");
+  // init_keyboard();
+  init_ata();
 
-  rtc_init(RTC_MODE_TIMER);
+  kprintf("\n");
 
   kprintf("has sse: %d\n", has_sse());
   if (has_sse()) {
     kprintf("enabling sse\n");
     enable_sse();
   }
+
+  kprintf("has long mode: %d\n", has_long_mode());
 
   // tasking_init();
   // int ret = fork();
