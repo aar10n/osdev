@@ -218,5 +218,6 @@ char *translate_scancode(char scancode) {
 }
 
 void init_keyboard() {
-  register_isr(IRQ1, keyboard_callback);
+  register_isr(254, keyboard_callback);
+  inb(0x60);
 }

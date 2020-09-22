@@ -30,8 +30,8 @@ interrupt_common:
 %macro interrupt 2
   global isr%2
   isr%2:
-    push byte %1
-    push byte %2
+    push %1
+    push %2
     jmp interrupt_common
 %endmacro
 
@@ -52,3 +52,11 @@ interrupt 12, 44 ; PS2 Mouse
 interrupt 13, 45 ; FPU / Coprocessor / Inter-processor
 interrupt 14, 46 ; Primary ATA Hard Disk
 interrupt 15, 47 ; Secondary ATA Hard Disk
+
+%assign irq 16
+%assign vec 48
+%rep 208
+  interrupt irq, vec ; Available
+%assign irq irq + 1
+%assign vec vec + 1
+%endrep

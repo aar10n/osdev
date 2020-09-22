@@ -4,9 +4,11 @@
 
 #include <stddef.h>
 
+#include <kernel/cpu/apic.h>
 #include <kernel/cpu/asm.h>
 #include <kernel/cpu/cpu.h>
 #include <kernel/cpu/interrupt.h>
+#include <kernel/cpu/pic.h>
 
 isr_t interrupt_handlers[256];
 
@@ -19,14 +21,13 @@ void unregister_isr(uint8_t interrupt) {
 }
 
 void interrupt_handler(registers_t reg) {
-  // Send EOI to PIC
-  if (reg.int_no >= 40) outb(0xA0, 0x20); /* slave */
-  outb(0x20, 0x20);                       /* master */
-
+  // pic_send_eoi(reg.int_no);
 
   isr_t handler = interrupt_handlers[reg.int_no];
   if (handler) {
     handler(reg);
   }
+
+  apic_send_eoi();
 }
 
