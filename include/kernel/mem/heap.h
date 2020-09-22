@@ -11,8 +11,8 @@
 // the memory allocator during startup. We only need
 // enough memory to allocate a couple of page_t structs
 // so 1 MiB should be more than enough.
-#define SIMPLE_HEAP_BASE 0xC010F000
-#define SIMPLE_HEAP_MAX 0xC020F000
+#define SIMPLE_HEAP_BASE 0xC020F000
+#define SIMPLE_HEAP_MAX 0xC030F000
 
 #define HEAP_MIN_SIZE 0x1000   // 4 KiB
 #define HEAP_MAX_SIZE 0x400000 // 4 MiB

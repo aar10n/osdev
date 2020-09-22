@@ -6,7 +6,6 @@
 #define KERNEL_BUS_PCI_CLASSES_H
 
 #include <stdbool.h>
-#include <macros/repeat.h>
 
 /* --------------- PCI Classses --------------- */
 

@@ -2,8 +2,6 @@
 // Created by Aaron Gill-Braun on 2019-04-22.
 //
 
-#include <stddef.h>
-#include <stdint.h>
 #include <string.h>
 
 #include <kernel/cpu/asm.h>
@@ -16,7 +14,7 @@ typedef struct {
 } cursor_t;
 
 static cursor_t cursor = { 0, 0, 0 };
-
+char *video_address = VIRT_VIDEO_ADDRESS;
 
 void set() {
   cursor.pos = (cursor.y * MAX_COLS + cursor.x) * 2;
@@ -28,10 +26,10 @@ void set() {
 
 void scroll() {
   for (int i = 0; i < MAX_ROWS; i++) {
-    memcpy(VIDEO_ADDRESS + ((i - 1) * MAX_COLS * 2), VIDEO_ADDRESS + (i * MAX_COLS * 2), MAX_COLS * 2);
+    memcpy(video_address + ((i - 1) * MAX_COLS * 2), video_address + (i * MAX_COLS * 2), MAX_COLS * 2);
   }
 
-  memset(VIDEO_ADDRESS + ((MAX_ROWS - 1) * MAX_COLS * 2), 0x0, MAX_COLS * 2);
+  memset(video_address + ((MAX_ROWS - 1) * MAX_COLS * 2), 0x0, MAX_COLS * 2);
 
   cursor.x = 0;
   cursor.y = MAX_ROWS - 1;
@@ -79,7 +77,7 @@ void kputc(char c) {
       break;
   }
 
-  char *vga = VIDEO_ADDRESS;
+  char *vga = video_address;
   vga[cursor.pos] = c;
   vga[cursor.pos + 1] = 0x07;
 
@@ -95,7 +93,7 @@ void kputs(char *s) {
 }
 
 void kclear() {
-  memset(VIDEO_ADDRESS, 0x00, MAX_ROWS * MAX_COLS * 2);
+  memset(video_address, 0x00, MAX_ROWS * MAX_COLS * 2);
   cursor.x = 0;
   cursor.y = 0;
   update();

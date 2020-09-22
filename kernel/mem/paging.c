@@ -11,10 +11,10 @@
 #include <kernel/mem/paging.h>
 #include <kernel/panic.h>
 
-extern uintptr_t _kernel_directory;
+extern uintptr_t kernel_directory;
 pde_t *kernel_pd;
 
-extern uintptr_t _first_page_table;
+extern uintptr_t first_page_table;
 pte_t *first_pt;
 
 
@@ -91,8 +91,8 @@ pde_t *clone_page_directory(const pde_t *src) {
 //
 
 void paging_init() {
-  kernel_pd = (pde_t *) &_kernel_directory;
-  first_pt = (pde_t *) &_first_page_table;
+  kernel_pd = (pde_t *) &kernel_directory;
+  first_pt = (pde_t *) &first_page_table;
 
   // Identity map the first 4mb except for the very first page
   // this ensures that any null pointer accesses cause a page
@@ -118,6 +118,9 @@ void paging_init() {
     pde_t pde = addr | PDE_PAGE_SIZE | PE_READ_WRITE | PE_PRESENT;
     kernel_pd[i] = pde;
   }
+
+  // finally swap to the kernel page directory
+  set_page_directory(virt_to_phys(kernel_pd));
 }
 
 /* ----- Map Page Frame ----- */

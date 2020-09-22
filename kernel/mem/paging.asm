@@ -1,16 +1,10 @@
-; Flushes the translation lookaside buffer
-global flush_tlb
-flush_tlb:
-  mov eax, cr3
-  mov cr3, eax
-  ret
-
 ; Enables paging
 global enable_paging
 enable_paging:
   mov ecx, cr0        ; set control reg
   or ecx, (1 << 31)   ; set paging bit high
   mov cr0, ecx        ; set control reg
+  ret
 
 ; Disables paging
 global disable_paging
@@ -18,13 +12,28 @@ disable_paging:
   mov ecx, cr0        ; get control reg
   and ecx, ~(1 << 31) ; set paging bit low
   mov cr0, ecx        ; set control reg
+  ret
 
-; Switches the page directory
-global switch_page_directory
-switch_page_directory:
-  mov eax, [esp + 4]           ; page directory address
-  mov cr3, eax                 ; load the page directory
-  call enable_paging           ; force enable paging
+; Flushes the translation lookaside buffer
+global flush_tlb
+flush_tlb:
+  mov eax, cr3
+  mov cr3, eax
+  ret
+
+; Invalidates a page in the tlb
+global invl_page
+invl_page:
+  mov eax, [esp + 4]
+  invlpg [eax]
+  ret
+
+; Sets the page directory
+global set_page_directory
+set_page_directory:
+  mov eax, [esp + 4] ; page directory address
+  mov cr3, eax       ; load the page directory
+  call flush_tlb
   ret
 
 ; Copies the data from one page frame to another
@@ -38,12 +47,12 @@ copy_page_frame:
 
   mov ecx, 1024        ; set count to 1024
   mov ebx, 0           ; set offset to 0
-l1:
+.l1:
   mov eax, [esi + ebx] ; copy value from src
   mov [edi + ebx], eax ; copy value to dest
   add ebx, 4           ; offset to next byte
   dec ecx              ; decrease count by 1
-  jnz l1
+  jnz .l1
 
   call enable_paging   ; re-enable paging
   ret

@@ -22,6 +22,7 @@
 #define addr_to_pte(addr) ((unsigned int) ((uintptr_t) (addr) >> 12 & 0x03FF))
 
 #define align(value, size) (((value) + (size)) & ~(size))
+// #define align(value, size) ((value) + (-(value) & (size)))
 
 #define ZONE_RESRV   0x0
 #define ZONE_DMA     0x1
@@ -36,11 +37,11 @@
 //
 //
 
-extern uint32_t _kernel_start;
-extern uint32_t _kernel_end;
+extern uint32_t kernel_image_start;
+extern uint32_t kernel_image_end;
 
-#define kernel_start ((uint32_t) &_kernel_start)
-#define kernel_end ((uint32_t) &_kernel_end)
+#define kernel_start ((uint32_t) &kernel_image_start)
+#define kernel_end ((uint32_t) &kernel_image_end)
 
 typedef struct page {
   uintptr_t virt_addr; // virtual address (not constant)

@@ -49,10 +49,11 @@ void map_page(page_t *page);
 void remap_page(page_t *page);
 void unmap_page(page_t *page);
 
-void flush_tlb();
 void enable_paging();
 void disable_paging();
-void switch_page_directory(pde_t *pd);
+void flush_tlb();
+void invl_page();
+void set_page_directory(uintptr_t pd);
 void copy_page_frame(uintptr_t src, uintptr_t dest);
 
 #endif // KERNEL_MEM_PAGE_H

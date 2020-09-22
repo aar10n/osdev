@@ -16,8 +16,29 @@ cpuinfo:
   mov [edi + 12], edx ; cpuinfo->edx
   ret
 
+global has_long_mode
+has_long_mode:
+  ; check if long mode identification
+  ; function exists with cpuid
+  mov eax, 0x80000000
+  cpuid
+  cmp eax, 0x80000001
+  jb .no_long
+  ; use long mode identification
+  ; function
+  mov eax, 0x80000001
+  cpuid
+  test edx, (1 << 29) ; check LM-bit
+  jz .no_long
+.has_long:
+  mov eax, 1
+  ret
+.no_long:
+  mov eax, 1
+  ret
+
 ;
-; Registets
+; Registers
 ;
 
 ; Instruction pointer
@@ -34,21 +55,35 @@ get_esp:
   mov eax, esp
   ret
 
-global set_esp
-set_esp:
-  mov eax, [esp + 4]
-  mov esp, eax
-  ret
-
 ; Base pointer
 global get_ebp
 get_ebp:
   mov eax, ebp
   ret
 
-global set_ebp
-set_ebp:
-  mov ebp, [esp + 4]
+;void get_msr(uint32_t msr, uint64_t *value) {
+;  __asm volatile("rdmsr" : "=a"(*lo), "=q"(*hi) : "c"(msr));
+;}
+;
+;void set_msr(uint32_t msr, uint64_t value) {
+;  __asm volatile("wrmsr" : : "a"(lo), "q"(hi), "c"(msr));
+;}
+global get_msr
+get_msr:
+  mov ecx, [esp + 4] ; msr address
+  mov edi, [esp + 8] ; uint64_t pointer
+  rdmsr
+  mov [edi], eax     ; low 32 bits
+  mov [edi + 4], edx ; high 32 bits
+  ret
+
+
+global set_msr
+set_msr:
+  mov ecx, [esp + 4]  ; msr address
+  mov eax, [esp + 8]  ; low 32 bits of value
+  mov edx, [esp + 12] ; high 32 bits of value
+  wrmsr
   ret
 
 ;
@@ -128,32 +163,8 @@ load_idt:
   ret
 
 ;
-
-; invalidates a page in the tlb
-global invl_page
-invl_page:
-  mov eax, [esp + 4]
-  invlpg [eax]
-
-;
 ; Interrupts
 ;
-
-global interrupt
-interrupt:
-  push ebp
-  mov ebp, esp
-  int 49
-  pop ebp
-  ret
-
-global interrupt_out_of_memory
-interrupt_out_of_memory:
-  push ebp
-  mov ebp, esp
-  int 50
-  pop ebp
-  ret
 
 global enable_interrupts
 enable_interrupts:

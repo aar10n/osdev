@@ -5,13 +5,16 @@
 #ifndef DRIVERS_SCREEN_H
 #define DRIVERS_SCREEN_H
 
-#define VIDEO_ADDRESS ((char *) 0xC00B8000)
+#define VIRT_VIDEO_ADDRESS ((char *) 0xC00B8000)
+#define PHYS_VIDEO_ADDRESS ((char *) 0xB8000)
 #define MAX_ROWS 25
 #define MAX_COLS 80
 
 /* Screen i/o ports */
 #define VGA_CTRL_PORT 0x3D4
 #define VGA_DATA_PORT 0x3D5
+
+extern char *video_address;
 
 void screen_print(char *s);
 void screen_print_char(char c);

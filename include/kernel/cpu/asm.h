@@ -9,12 +9,14 @@
 #include <kernel/cpu/cpu.h>
 
 void cpuinfo(cpuinfo_t *info);
+int has_long_mode();
 
 uintptr_t get_eip();
 uintptr_t get_esp();
-void set_esp(uintptr_t ptr);
 uintptr_t get_ebp();
-void set_ebp(uintptr_t ptr);
+
+void get_msr(uint32_t msr, uint64_t *result);
+void set_msr(uint32_t msr, uint64_t value);
 
 void outb(uint16_t port, uint8_t data);
 uint8_t inb(uint16_t port);
@@ -26,12 +28,9 @@ uint32_t indw(uint16_t port);
 void load_idt(void *idt);
 void load_gdt(void *idt);
 
-void invl_page(uint32_t page);
-
-void interrupt();
-void interrupt_out_of_memory();
 void enable_interrupts();
 void disable_interrupts();
+
 int has_fpu();
 int has_sse();
 void enable_sse();

@@ -130,4 +130,34 @@ typedef struct {
   } edx;
 } cpuinfo_t;
 
+typedef struct interrupt_source {
+  uint8_t source_irq;
+  uint8_t system_interrupt;
+  uint8_t flags;
+  struct interrupt_source *next;
+} source_override_t;
+
+typedef struct {
+  uint8_t local_apic_id;
+  uint8_t processor_id;
+} cpu_core_t;
+
+typedef struct {
+  uint8_t ioapic_id;
+  uint8_t max_irq;
+  uint32_t ioapic_addr;
+  uint32_t interrupt_base;
+  source_override_t *overrides;
+} ioapic_t;
+
+typedef struct {
+  uintptr_t apic_base;
+  uint8_t bsp_id;
+  uint8_t core_count;
+  uint8_t ioapic_count;
+  cpu_core_t *cores;
+  ioapic_t *ioapics;
+} system_info_t;
+
+
 #endif

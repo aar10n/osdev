@@ -21,14 +21,14 @@
 #define INTERRUPT_GATE_32 0xE
 #define TRAP_GATE_32 0xF
 
-typedef struct __attribute__((packed)) {
+typedef struct {
   uint8_t gate_type : 4;       // The IDT gate type
   uint8_t storage_segment : 1; // Storage segment (0 for interrupt and trap gates)
   uint8_t privilege_level : 2; // Descriptor privilege level (0=kernel..3=user)
   uint8_t present : 1;         // Present (0 for unused interrupts)
 } idt_gate_attr_t;
 
-typedef struct __attribute__((packed)) {
+typedef struct {
   uint16_t low_offset;  // Bits 0..15 of the handler function address
   uint16_t selector;    // Code segment selector in GDT or LDT
   uint8_t zero;         // Always set to 0
