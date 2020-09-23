@@ -6,8 +6,8 @@
 #include <string.h>
 #include <stdio.h>
 
-#include <kernel/mem/paging.h>
-#include <kernel/mem/stack.h>
+#include <kernel/mm/paging.h>
+#include <kernel/mm/stack.h>
 
 // static uintptr_t stack_top = 0xC8000000; // 128 MiB
 uintptr_t initial_esp = 0;

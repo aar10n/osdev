@@ -1,5 +1,5 @@
 ; defined in exception.c
-[extern exception_handler]
+extern exception_handler
 
 temp dd 0 ; temp variable
 

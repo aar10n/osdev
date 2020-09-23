@@ -8,7 +8,6 @@
 #include <kernel/cpu/exception.h>
 #include <kernel/cpu/idt.h>
 #include <kernel/cpu/interrupt.h>
-#include <kernel/cpu/pic.h>
 
 // Interrupt Descriptor Table
 // IDT entries (called) gates map ISRs to the correct interrupts.

@@ -13,12 +13,11 @@ void pic_remap(uint8_t offset1, uint8_t offset2) {
   uint8_t pic1_mask = inb(PIC1_DATA);
   uint8_t pic2_mask = inb(PIC2_DATA);
 
-  // start the initialization sequence
-  outb(PIC1_COMMAND, PIC_INIT);
-  outb(PIC2_COMMAND, PIC_INIT);
+  // initialize both pics
+  outb(PIC1_COMMAND, ICW1_INIT);
+  outb(PIC2_COMMAND, ICW1_INIT);
 
-  // offset interrupt vectors by 32 to avoid
-  // interfering with cpu exceptions
+  // set irq base offsets
   outb(PIC1_DATA, offset1);
   outb(PIC2_DATA, offset2);
 
@@ -27,12 +26,12 @@ void pic_remap(uint8_t offset1, uint8_t offset2) {
   outb(PIC2_DATA, 0x02);
 
   // set both pics to run in 8086/88 mode
-  outb(PIC1_DATA, PIC_8086);
-  outb(PIC2_DATA, PIC_8086);
+  outb(PIC1_DATA, ICW4_8086);
+  outb(PIC2_DATA, ICW4_8086);
 
   // write back the saved masks
-  outb(PIC1_DATA, pic1_mask);
-  outb(PIC2_DATA, pic2_mask);
+  outb(PIC1_DATA, 0);
+  outb(PIC2_DATA, 0);
 }
 
 void pic_send_eoi(uint32_t vector) {
@@ -42,8 +41,42 @@ void pic_send_eoi(uint32_t vector) {
 }
 
 void pic_disable() {
-  // mask all interrupts effectively disabling
-  // both pics
+  // // initialize both pics
+  // outb(PIC1_COMMAND, ICW1_INIT);
+  // outb(PIC2_COMMAND, ICW1_INIT);
+  //
+  // // set irq base offsets
+  // outb(PIC1_DATA, 0x20);
+  // outb(PIC2_DATA, 0x28);
+  //
+  // // set up master <-> slave communication
+  // outb(PIC1_DATA, 0x04);
+  // outb(PIC2_DATA, 0x02);
+  //
+  // // set both pics to run in 8086/88 mode
+  // outb(PIC1_DATA, ICW4_8086);
+  // outb(PIC2_DATA, ICW4_8086);
+  //
+  // // write back the saved masks
+  // outb(PIC1_DATA, 0xFF);
+  // outb(PIC2_DATA, 0xFF);
+
+  // initialize both pics
+  outb(PIC1_COMMAND, ICW1_INIT | ICW1_ICW4);
+  outb(PIC2_COMMAND, ICW1_INIT | ICW1_ICW4);
+
+  // set irq base offsets
+  outb(PIC1_DATA, 0xE0);
+  outb(PIC2_DATA, 0xE8);
+
+  // set up master <-> slave communication
+  outb(PIC1_DATA, 0x04);
+  outb(PIC2_DATA, 0x02);
+
+  outb(PIC1_DATA, 1);
+  outb(PIC2_DATA, 1);
+
+  // mask all interrupts
   outb(PIC1_DATA, 0xFF);
   outb(PIC2_DATA, 0xFF);
 }

@@ -5,7 +5,6 @@
 #include <stddef.h>
 
 #include <kernel/cpu/apic.h>
-#include <kernel/cpu/asm.h>
 #include <kernel/cpu/cpu.h>
 #include <kernel/cpu/interrupt.h>
 #include <kernel/cpu/pic.h>

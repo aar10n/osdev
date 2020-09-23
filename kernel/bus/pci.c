@@ -5,7 +5,7 @@
 #include <kernel/bus/pci.h>
 #include <kernel/bus/pci_tables.h>
 #include <kernel/cpu/asm.h>
-#include <kernel/mem/heap.h>
+#include <kernel/mm/heap.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>

@@ -5,8 +5,8 @@
 #include <string.h>
 
 #include <kernel/cpu/asm.h>
-#include <kernel/mem/paging.h>
-#include <kernel/mem/heap.h>
+#include <kernel/mm/paging.h>
+#include <kernel/mm/heap.h>
 #include <kernel/task.h>
 
 #include <stdio.h>

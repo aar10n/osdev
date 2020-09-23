@@ -2,42 +2,6 @@ KERNEL_CS equ 0x08
 KERNEL_DS equ 0x10
 
 ;
-; CPU
-;
-
-global cpuinfo
-cpuinfo:
-  mov edi, [esp + 4]  ; cpuinfo pointer
-  mov eax, 0x1        ; 1 for cpu info
-  cpuid
-  mov [edi], eax      ; cpuinfo->eax
-  mov [edi + 4], ebx  ; cpuinfo->ebx
-  mov [edi + 8], ecx  ; cpuinfo->ecx
-  mov [edi + 12], edx ; cpuinfo->edx
-  ret
-
-global has_long_mode
-has_long_mode:
-  ; check if long mode identification
-  ; function exists with cpuid
-  mov eax, 0x80000000
-  cpuid
-  cmp eax, 0x80000001
-  jb .no_long
-  ; use long mode identification
-  ; function
-  mov eax, 0x80000001
-  cpuid
-  test edx, (1 << 29) ; check LM-bit
-  jz .no_long
-.has_long:
-  mov eax, 1
-  ret
-.no_long:
-  mov eax, 1
-  ret
-
-;
 ; Registers
 ;
 

@@ -5,7 +5,7 @@
 #ifndef KERNEL_TASK_H
 #define KERNEL_TASK_H
 
-#include <kernel/mem/paging.h>
+#include <kernel/mm/paging.h>
 #include <stdint.h>
 
 typedef struct task {

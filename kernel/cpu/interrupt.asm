@@ -1,5 +1,5 @@
 ; defined in interrupt.c
-[extern interrupt_handler]
+extern interrupt_handler
 
 ; Common interrupt code
 interrupt_common:

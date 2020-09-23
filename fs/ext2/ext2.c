@@ -5,7 +5,7 @@
 // ext2 Filesystem Driver
 
 #include <fs/ext2/ext2.h>
-#include <kernel/mem/heap.h>
+#include <kernel/mm/heap.h>
 
 #include <fs/fs.h>
 #include <stdio.h>

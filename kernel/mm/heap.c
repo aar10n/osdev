@@ -7,10 +7,10 @@
 #include <stdio.h>
 #include <string.h>
 
-#include <kernel/mem/cache.h>
-#include <kernel/mem/heap.h>
-#include <kernel/mem/mm.h>
-#include <kernel/mem/paging.h>
+#include <kernel/mm/cache.h>
+#include <kernel/mm/heap.h>
+#include <kernel/mm/mm.h>
+#include <kernel/mm/paging.h>
 #include <kernel/panic.h>
 #include <math.h>
 

@@ -1,5 +1,6 @@
 extern ap_main
-extern initial_directory
+;extern initial_directory
+extern kernel_directory
 
 KERNEL_CS equ 0x08
 KERNEL_BASE equ 0xC0000000
@@ -40,7 +41,8 @@ ap_start32:
   ; 32-bit protected mode
   mov dword [label(ap_end) + 8], 0xDEADBEEF
 
-  mov ecx, (initial_directory - KERNEL_BASE)
+;  mov ecx, (initial_directory - KERNEL_BASE)
+  mov ecx, (kernel_directory - KERNEL_BASE)
   mov cr3, ecx      ; Load the page directory
 
   mov ecx, cr4      ;

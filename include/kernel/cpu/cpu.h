@@ -7,7 +7,7 @@
 
 #include <stdint.h>
 
-typedef struct __attribute__((packed)) {
+typedef struct {
   // general registers
   uint32_t eax;
   uint32_t ebx;
@@ -31,6 +31,9 @@ typedef struct {
   uint32_t eip, cs, eflags, useresp, ss;           // Pushed by the processor automatically
 } registers_t;
 
+// CPUID Information
+
+// cpuid: eax = 1
 typedef struct {
   union {
     uint32_t raw;
@@ -128,36 +131,57 @@ typedef struct {
       uint32_t pbe : 1;   // pending break enable
     };
   } edx;
-} cpuinfo_t;
+} cpu_info_t;
+
+// System Information
+
+// logical core
+
+typedef struct {
+  uint8_t id;
+  uint8_t version;
+  uint8_t max_lvt;
+  struct {
+    uint8_t enabled : 1;
+    uint8_t bsp : 1;
+    uint8_t has_eoi_supress : 1;
+    uint8_t reserved : 5;
+  } flags;
+} apic_desc_t;
+
+typedef struct {
+  uint8_t id;
+  apic_desc_t *local_apic;
+} core_desc_t;
 
 typedef struct interrupt_source {
   uint8_t source_irq;
-  uint8_t system_interrupt;
+  uint8_t dest_interrupt;
   uint8_t flags;
   struct interrupt_source *next;
-} source_override_t;
+} irq_source_t;
 
 typedef struct {
-  uint8_t local_apic_id;
-  uint8_t processor_id;
-} cpu_core_t;
-
-typedef struct {
-  uint8_t ioapic_id;
-  uint8_t max_irq;
-  uint32_t ioapic_addr;
-  uint32_t interrupt_base;
-  source_override_t *overrides;
-} ioapic_t;
+  uint8_t id;
+  uint8_t version;
+  uint8_t max_rentry;
+  uint32_t address;
+  uint32_t base;
+  irq_source_t *sources;
+} ioapic_desc_t;
 
 typedef struct {
   uintptr_t apic_base;
   uint8_t bsp_id;
   uint8_t core_count;
   uint8_t ioapic_count;
-  cpu_core_t *cores;
-  ioapic_t *ioapics;
+  core_desc_t *cores;
+  ioapic_desc_t *ioapics;
 } system_info_t;
 
+// Cpu Functions
+
+void get_cpu_info(cpu_info_t *info);
+int has_long_mode();
 
 #endif

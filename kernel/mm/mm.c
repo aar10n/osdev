@@ -7,8 +7,8 @@
 #include <stdio.h>
 #include <string.h>
 
-#include <kernel/mem/heap.h>
-#include <kernel/mem/mm.h>
+#include <kernel/mm/heap.h>
+#include <kernel/mm/mm.h>
 #include <kernel/panic.h>
 
 #define ZONE(t, l) \

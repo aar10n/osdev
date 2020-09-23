@@ -7,7 +7,7 @@ SECTIONS {
   . = kernel + offset;
 
   kernel_image_start = .;
-  .text ALIGN(4K) : AT(ADDR(.text) - offset) {
+  .text : AT(ADDR(.text) - offset) {
     *(.multiboot)
     kernel_text_start = .;
     *(.text)
@@ -27,6 +27,5 @@ SECTIONS {
     *(.bss)
     kernel_bss_end = .;
   }
-
   kernel_image_end = .;
 }

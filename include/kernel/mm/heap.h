@@ -5,7 +5,7 @@
 #ifndef KERNEL_MEM_HEAP_H
 #define KERNEL_MEM_HEAP_H
 
-#include <kernel/mem/mm.h>
+#include <kernel/mm/mm.h>
 
 // The simple heap is a 1 MiB heap used to bootstrap
 // the memory allocator during startup. We only need

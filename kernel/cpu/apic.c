@@ -9,14 +9,11 @@
 #include <kernel/cpu/asm.h>
 #include <kernel/cpu/interrupt.h>
 #include <kernel/cpu/rtc.h>
-#include <kernel/mem/mm.h>
+#include <kernel/mm/mm.h>
 
 extern uintptr_t ap_start;
 extern uintptr_t ap_end;
-uintptr_t apic_base = 0;
-volatile uint8_t core_count = 1;
-
-extern uintptr_t test_val;
+uintptr_t apic_base = 0xFEE000F0;
 
 static uint32_t apic_read(uint32_t reg) {
   if (apic_base == 0) return 0;
@@ -41,24 +38,23 @@ void svr_handler(registers_t regs) {
 void apic_init(uintptr_t local_apic_base) {
   apic_base = local_apic_base;
 
-  register_isr(248, svr_handler);
-
+  // copy smp trampoline code to low memory
   uintptr_t dest = phys_to_virt(SMPBOOT_START);
   memcpy((void *) dest, &ap_start, (uintptr_t) &ap_end -  (uintptr_t)&ap_start);
 
-
-  // uint32_t svr = make_svr(248, 1, 0, 0);
-  // apic_write(APIC_REG_SVR, svr);
+  // ensure apic is enabled
+  uint32_t svr = apic_read(APIC_REG_SVR);
+  apic_write(APIC_REG_SVR, svr | (1 << 8));
 
   // uint32_t dfr = 0x00FFFFFF;
   // apic_write(APIC_REG_DFR, dfr);
-  //
+
   // uint32_t ldr = 0xF0000000;
   // apic_write(APIC_REG_LDR, ldr);
 
-  apic_write(APIC_REG_TPR, 0);
-
-  apic_write(APIC_REG_ERROR, 0);
+  // apic_write(APIC_REG_TPR, (2 << 4));
+  //
+  // apic_write(APIC_REG_ERROR, 0);
 
   // uint32_t icr0 = make_icr_low(0, APIC_INIT, 0, 0, 1, 0, 3);
   // apic_write(APIC_REG_ICR_LOW, icr0);
@@ -81,7 +77,6 @@ void apic_init(uintptr_t local_apic_base) {
   // }
 
   apic_send_eoi();
-
 }
 
 void apic_send_eoi() {

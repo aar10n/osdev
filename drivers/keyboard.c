@@ -11,25 +11,48 @@
 #include <drivers/keyboard.h>
 #include <drivers/screen.h>
 
+#include <drivers/serial.h>
 #include <kernel/cpu/cpu.h>
 #include <kernel/cpu/interrupt.h>
-#include <kernel/mem/heap.h>
+#include <kernel/cpu/rtc.h>
+#include <kernel/mm/heap.h>
+#include <kernel/panic.h>
 #include <string.h>
 
-char *translate_scancode(char scancode);
+char *translate_scancode(uint8_t scancode);
 
-static void keyboard_callback(registers_t regs) {
-  /* The PIC leaves us the scancode in port 0x60 */
-  uint8_t scancode = inb(0x60);
-  char *key = translate_scancode(scancode);
-  kprintf("keypress | %#X (%#b) - %s\n", scancode, scancode, key);
-  int is_keyup = (1 << 7) & scancode;
-  if (is_keyup) {
-    kfree(key);
+static uint8_t kbd_read_input() {
+  i8042_status_t status;
+  status.raw = inb(KBD_REG_STATUS);
+
+  if (status.output_ready) {
+    return inb(KBD_REG_DATA);
+  }
+  return 0;
+}
+
+static void kbd_flush_buffer() {
+  int trials = 128;
+  while (trials--) {
+    if (kbd_read_input() == 0) {
+      break;
+    }
+    rtc_sleep(1);
   }
 }
 
-char *translate_scancode(char scancode) {
+static void keyboard_callback(registers_t regs) {
+  uint8_t scancode = kbd_read_input();
+  if (scancode == 0) return;
+  // kbd_flush_buffer();
+
+  kprintf("keypress\n");
+  char *key = translate_scancode(scancode);
+  kprintf("keypress | %#X (%#b) - %s\n", scancode, scancode, key);
+  kfree(key);
+}
+
+char *translate_scancode(uint8_t scancode) {
   int is_keyup = (1 << 7) & scancode;
   if (is_keyup) {
     char keyup_char = ~(1 << 7) & scancode;
@@ -218,6 +241,6 @@ char *translate_scancode(char scancode) {
 }
 
 void init_keyboard() {
-  register_isr(254, keyboard_callback);
-  inb(0x60);
+  register_isr(IRQ1, keyboard_callback);
+  kbd_flush_buffer();
 }

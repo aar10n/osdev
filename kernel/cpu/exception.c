@@ -3,7 +3,7 @@
 //
 
 #include <kernel/cpu/exception.h>
-#include <kernel/mem/mm.h>
+#include <kernel/mm/mm.h>
 #include <stdio.h>
 
 char *exception_messages[] = {
@@ -73,5 +73,8 @@ _Noreturn void exception_handler(cpu_t cpu, uint32_t int_no, uint32_t err_code) 
 
   // handle error
 
-  while (1); // hang
+  // hang
+  while (true) {
+    __asm("hlt");
+  }
 }

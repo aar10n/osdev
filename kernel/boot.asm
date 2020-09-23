@@ -13,10 +13,10 @@ KERNEL_PAGE equ (KERNEL_BASE >> 22)         ; Kernel page index
 ; Multiboot flags
 MB_ALIGN equ 0x1                            ; Align loaded modules on page boundaries
 MB_INFO equ 0x2                             ; Include information about system memory
-MB_VIDINFO equ 0x4                          ; OS wants video mode set
+MB_VIDEO equ 0x4                            ; OS wants video mode set
 
 MB_MAGIC equ 0x1BADB002                     ; Multiboot head magic number
-MB_FLAGS equ MB_ALIGN | MB_INFO             ; Multiboot header flags
+MB_FLAGS equ MB_ALIGN | MB_INFO ;| MB_VIDEO ; Multiboot header flags
 MB_CHECKSUM equ -(MB_MAGIC + MB_FLAGS)      ; Multiboot header checksum
 
 
@@ -29,13 +29,7 @@ align 4
 dd MB_MAGIC
 dd MB_FLAGS
 dd MB_CHECKSUM
-; MULTIBOOT_MEMORY_INFO
-dd 0x00000000    ; header_addr
-dd 0x00000000    ; load_addr
-dd 0x00000000    ; load_end_addr
-dd 0x00000000    ; bss_end_addr
-dd 0x00000000    ; entry_addr
-; MULTIBOOT_VIDEO_MODE
+dd 0, 0, 0, 0, 0
 dd 0             ; Graphics Mode
 dd 1024, 768, 32 ; Width, height, depth
 
@@ -47,7 +41,8 @@ section .text
 
 global start
 start:
-  mov ecx, (initial_directory - KERNEL_BASE)
+;  mov ecx, (initial_directory - KERNEL_BASE)
+  mov ecx, (kernel_directory - KERNEL_BASE)
   mov cr3, ecx      ; Load the page directory
 
   mov ecx, cr4      ;
@@ -72,7 +67,6 @@ higher_half:
 
   cli                       ; Disable interrupts
   call main                 ; Start the kernel
-  cli                       ; Disable interrupts
 .hang:
   hlt                       ; If the kernel exits
   jmp .hang                 ; Hang forever
@@ -89,17 +83,17 @@ align 4096
 ; memory. This is only used until we configure our proper
 ; paging scheme, at which point we switch over to use
 ; the _kernel_directory
-global initial_directory
-initial_directory:
-  %assign i 0
-  %rep 1024
-  %if i == KERNEL_PAGE
-    dd 0b10000011
-  %else
-    dd (i << 22) | 0b10000011
-  %endif
-  %assign i i + 1
-  %endrep
+;global initial_directory
+;initial_directory:
+;  %assign i 0
+;  %rep 1024
+;  %if i == KERNEL_PAGE
+;    dd 0b10000011
+;  %else
+;    dd (i << 22) | 0b10000011
+;  %endif
+;  %assign i i + 1
+;  %endrep
 
 global kernel_directory
 kernel_directory:

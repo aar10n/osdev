@@ -6,10 +6,12 @@
 #include <string.h>
 
 #include <kernel/cpu/asm.h>
-#include <kernel/mem/heap.h>
-#include <kernel/mem/mm.h>
-#include <kernel/mem/paging.h>
+#include <kernel/mm/heap.h>
+#include <kernel/mm/mm.h>
+#include <kernel/mm/paging.h>
 #include <kernel/panic.h>
+
+// extern uintptr_t initial_directory;
 
 extern uintptr_t kernel_directory;
 pde_t *kernel_pd;
@@ -120,7 +122,7 @@ void paging_init() {
   }
 
   // finally swap to the kernel page directory
-  set_page_directory(virt_to_phys(kernel_pd));
+  // set_page_directory(virt_to_phys(&kernel_directory));
 }
 
 /* ----- Map Page Frame ----- */

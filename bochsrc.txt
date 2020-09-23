@@ -1,0 +1,8 @@
+megs: 256
+display_library: sdl2
+ata1-master: type=cdrom, path=build/osdev.iso, status=inserted
+boot: cdrom
+log: build/log.txt
+cpu: count=1, ips=10000000
+com1: enabled=1, mode=file, dev=build/stdio
+port_e9_hack: enabled=1

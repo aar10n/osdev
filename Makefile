@@ -50,6 +50,9 @@ all: $(BUILD)/osdev.iso
 run: $(BUILD)/osdev.iso $(BUILD)/disk.img
 	$(QEMU) $(QEMUFLAGS)
 
+run-bochs: $(BUILD)/osdev.iso $(BUILD)/disk.img
+	bochs
+
 debug: $(BUILD)/osdev.iso $(BUILD)/disk.img
 	$(QEMU) -s -S $(QEMUFLAGS) &
 	$(GDB) -w \
@@ -98,7 +101,7 @@ $(BUILD)/osdev.iso: $(BUILD)/osdev.bin $(BUILD)/initrd.img grub.cfg
 	cp grub.cfg $(BUILD)/iso/boot/grub/grub.cfg
 	$(MKRESCUE) -o $@ $(BUILD)/iso &> /dev/null
 
-$(BUILD)/osdev.bin: $(obj-y)
+$(BUILD)/osdev.bin: $(kernel-y) $(drivers-y) $(fs-y) $(lib-y) $(libc-y) $(obj-y)
 	$(LD) $(LDFLAGS) $^ -o $@
 
 # External Data

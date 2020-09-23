@@ -12,18 +12,18 @@ kernel += boot.asm \
 kernel += bus/pci.c
 
 # kernel/cpu
-kernel += cpu/asm.asm \
+kernel += cpu/asm.asm cpu/cpu.asm \
 	cpu/exception.asm cpu/interrupt.asm \
 	cpu/exception.c cpu/apic.c cpu/asm.c \
 	cpu/gdt.c cpu/idt.c cpu/interrupt.c \
 	cpu/ioapic.c cpu/pic.c cpu/pit.c \
 	cpu/rtc.c
 
-# kernel/mem
-kernel += mem/paging.asm \
-	mem/cache.c mem/heap.c \
-	mem/mm.c mem/paging.c \
-	mem/stack.c
+# kernel/mm
+kernel += mm/paging.asm \
+	mm/cache.c mm/heap.c \
+	mm/mm.c mm/paging.c \
+	mm/stack.c
 
 # kernel/smp
 kernel += smp/entry.asm \

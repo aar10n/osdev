@@ -5,8 +5,8 @@
 #include <math.h>
 #include <stdio.h>
 
-#include <kernel/mem/cache.h>
-#include <kernel/mem/heap.h>
+#include <kernel/mm/cache.h>
+#include <kernel/mm/heap.h>
 
 void create_cache(cache_t *cache) {
   kprintf("creating cache \"%s\"\n", cache->name);

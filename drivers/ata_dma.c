@@ -5,8 +5,8 @@
 #include <drivers/ata_dma.h>
 #include <kernel/bus/pci.h>
 #include <kernel/cpu/asm.h>
-#include <kernel/mem/mm.h>
-#include <kernel/mem/paging.h>
+#include <kernel/mm/mm.h>
+#include <kernel/mm/paging.h>
 #include <stdio.h>
 
 #define OFFSET_COMMAND 0x00

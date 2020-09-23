@@ -8,9 +8,6 @@
 #include <stdint.h>
 #include <kernel/cpu/cpu.h>
 
-void cpuinfo(cpuinfo_t *info);
-int has_long_mode();
-
 uintptr_t get_eip();
 uintptr_t get_esp();
 uintptr_t get_ebp();

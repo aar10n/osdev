@@ -7,10 +7,12 @@
 #include <string.h>
 
 #include <kernel/acpi.h>
+#include <kernel/cpu/apic.h>
 #include <kernel/cpu/asm.h>
-#include <kernel/mem/heap.h>
-#include <kernel/mem/mm.h>
-#include <kernel/mem/paging.h>
+#include <kernel/cpu/ioapic.h>
+#include <kernel/mm/heap.h>
+#include <kernel/mm/mm.h>
+#include <kernel/mm/paging.h>
 
 #define get_header(ptr) ((acpi_header_t *) ptr)
 
@@ -23,10 +25,10 @@ const char *sig_rsdp = "RSD PTR ";
 const char *sig_madt = "APIC";
 const char *sig_rsdt = "RSDT";
 
-static cpu_core_t cores[256] = {};
-static ioapic_t ioapics[16] = {};
+static core_desc_t cores[256] = {};
+static ioapic_desc_t ioapics[16] = {};
 
-extern uintptr_t initial_directory;
+// extern uintptr_t initial_directory;
 pde_t *initial_pd = NULL;
 
 //
@@ -99,15 +101,14 @@ locate_rsdp:
 // Multiple APIC Description Table
 
 system_info_t *iterate_madt(acpi_madt_t *madt) {
-  cpuinfo_t cpu_info;
-  cpuinfo(&cpu_info);
+  cpu_info_t cpu_info;
+  get_cpu_info(&cpu_info);
 
   system_info_t *info = kmalloc(sizeof(system_info_t));
-  info->bsp_id = cpu_info.ebx.local_apic_id;
   info->apic_base = madt->local_apic_addr;
+  info->bsp_id = cpu_info.ebx.local_apic_id;
   info->core_count = 0;
   info->ioapic_count = 0;
-  info->cores = NULL;
 
   uint32_t length = madt->length - sizeof(acpi_madt_t);
   acpi_madt_entry_t *entry = (void *) (madt + 1);
@@ -115,17 +116,35 @@ system_info_t *iterate_madt(acpi_madt_t *madt) {
   kprintf("\nMultiple APIC Description Table\n");
   kprintf("-------------------------------\n");
 
+  memset(cores, 0, sizeof(cores));
+  memset(ioapics, 0, sizeof(ioapics));
+
+  uint8_t max_apic_id = 0;
   uint8_t core_count = 0;
   uint8_t ioapic_count = 0;
-  source_override_t *last_override = NULL;
+  irq_source_t *last_source = NULL;
   while (length > 0) {
     if (entry->type == MADT_ENTRY_LOCAL_APIC) {
       madt_entry_local_apic_t *e = (void *) entry;
       core_count++;
 
+      uint32_t version = *((uint32_t *) 0xFEE00030);
+
+      apic_desc_t *apic = kmalloc(sizeof(apic_desc_t));
+      apic->id = e->apic_id;
+      apic->version = version & 0xFF;
+      apic->max_lvt = (version >> 16) & 0xFF;
+      apic->flags.bsp = e->apic_id == info->bsp_id;
+      apic->flags.enabled = apic->flags.bsp && 1;
+      apic->flags.has_eoi_supress = (version >> 24) & 1;
+
       uint8_t id = e->apic_id;
-      cores[id].local_apic_id = id;
-      cores[id].processor_id = e->processor_id;
+      cores[id].id = e->processor_id;
+      cores[id].local_apic = apic;
+
+      if (id > max_apic_id) {
+        max_apic_id = id;
+      }
 
       kprintf("Processor Local APIC\n");
       kprintf("  Processor ID: %d\n", e->processor_id);
@@ -135,10 +154,16 @@ system_info_t *iterate_madt(acpi_madt_t *madt) {
       madt_entry_io_apic_t *e = (void *) entry;
       ioapic_count++;
 
+      *((uint32_t *) (e->io_apic_addr + IOREGSEL)) = IOAPIC_REG_VERSION;
+      uint32_t version = *((uint32_t *) (e->io_apic_addr + IOREGWIN));
+
       uint8_t id = e->io_apic_id;
-      ioapics[id].ioapic_id = id;
-      ioapics[id].ioapic_addr = e->io_apic_addr;
-      ioapics[id].interrupt_base = e->interrupt_base;
+      ioapics[id].id = id;
+      ioapics[id].version = version & 0xFF;
+      ioapics[id].max_rentry = (version >> 16) & 0xFF;
+      ioapics[id].address = e->io_apic_addr;
+      ioapics[id].base = e->interrupt_base;
+      ioapics[id].sources = NULL;
 
       kprintf("I/O APIC\n");
       kprintf("  APIC ID: %d\n", e->io_apic_id);
@@ -147,19 +172,19 @@ system_info_t *iterate_madt(acpi_madt_t *madt) {
     } else if (entry->type == MADT_ENTRY_ISO) {
       madt_entry_iso_t *e = (void *) entry;
 
-      source_override_t *override = kmalloc(sizeof(source_override_t));
-      override->source_irq = e->irq_source;
-      override->system_interrupt = e->sys_interrupt;
-      override->flags = e->flags;
-      override->next = NULL;
+      irq_source_t *source = kmalloc(sizeof(irq_source_t));
+      source->source_irq = e->irq_source;
+      source->dest_interrupt = e->sys_interrupt;
+      source->flags = e->flags;
+      source->next = NULL;
 
-      if (last_override != NULL) {
-        last_override->next = override;
+      if (last_source != NULL) {
+        last_source->next = source;
       } else {
-        ioapics[0].overrides = override;
+        ioapics[0].sources = source;
       }
 
-      last_override = override;
+      last_source = source;
 
       kprintf("Interrupt Source Override\n");
       kprintf("  Bus Source: %d\n", e->bus_source);
@@ -182,11 +207,11 @@ system_info_t *iterate_madt(acpi_madt_t *madt) {
     entry = (acpi_madt_entry_t *) ((uintptr_t) entry + entry->length);
   }
 
-  cpu_core_t *sys_cores = kmalloc(core_count * sizeof(cpu_core_t));
-  memcpy(sys_cores, cores, core_count * sizeof(cpu_core_t));
+  core_desc_t *sys_cores = kmalloc(core_count * sizeof(core_desc_t));
+  memcpy(sys_cores, cores, core_count * sizeof(core_desc_t));
 
-  ioapic_t *sys_ioapics = kmalloc(ioapic_count * sizeof(ioapic_t));
-  memcpy(sys_ioapics, ioapics, ioapic_count * sizeof(ioapic_t));
+  ioapic_desc_t *sys_ioapics = kmalloc(ioapic_count * sizeof(ioapic_desc_t));
+  memcpy(sys_ioapics, ioapics, ioapic_count * sizeof(ioapic_desc_t));
 
   info->core_count = core_count;
   info->cores = sys_cores;
@@ -227,7 +252,7 @@ void *locate_header(acpi_rsdt_t *rsdt, const char *signature) {
 }
 
 system_info_t *acpi_get_sysinfo() {
-  initial_pd = (pde_t *) &initial_directory;
+  // initial_pd = (pde_t *) &initial_directory;
 
   acpi_rsdp_t *rsdp = locate_rsdp();
   acpi_rsdt_t *rsdt = (void *) rsdp->rsdt_addr;
