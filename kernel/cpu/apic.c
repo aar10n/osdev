@@ -11,8 +11,6 @@
 #include <kernel/cpu/rtc.h>
 #include <kernel/mm/mm.h>
 
-extern uintptr_t ap_start;
-extern uintptr_t ap_end;
 uintptr_t apic_base = 0xFEE000F0;
 
 static uint32_t apic_read(uint32_t reg) {
@@ -29,23 +27,21 @@ static void apic_write(uint32_t reg, uint32_t value) {
 
 //
 
-void svr_handler(registers_t regs) {
-  kprintf("[apic] spurious interrupt\n");
-}
-
-//
-
-void apic_init(uintptr_t local_apic_base) {
-  apic_base = local_apic_base;
-
-  // copy smp trampoline code to low memory
-  uintptr_t dest = phys_to_virt(SMPBOOT_START);
-  memcpy((void *) dest, &ap_start, (uintptr_t) &ap_end -  (uintptr_t)&ap_start);
-
-  // ensure apic is enabled
+void apic_init() {
+  // ensure the apic is enabled
   uint32_t svr = apic_read(APIC_REG_SVR);
   apic_write(APIC_REG_SVR, svr | (1 << 8));
 
+
+
+  apic_send_eoi();
+}
+
+void apic_smp_init() {
+  // // copy smp trampoline code to low memory
+  // uintptr_t dest = phys_to_virt(SMPBOOT_START);
+  // memcpy((void *) dest, &ap_start, (uintptr_t) &ap_end - (uintptr_t)&ap_start);
+  //
   // uint32_t dfr = 0x00FFFFFF;
   // apic_write(APIC_REG_DFR, dfr);
 
@@ -75,8 +71,6 @@ void apic_init(uintptr_t local_apic_base) {
   //   }
   //   attempt++;
   // }
-
-  apic_send_eoi();
 }
 
 void apic_send_eoi() {

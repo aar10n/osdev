@@ -35,24 +35,18 @@
 #include <kernel/time.h>
 
 void main(multiboot_info_t *mbinfo) {
-  multiboot_info_t *mb = kmalloc(sizeof(multiboot_info_t));
-  memcpy(mb, mbinfo, sizeof(multiboot_header_t));
-
   install_idt();
   install_gdt();
 
-  pic_disable();
+  pic_remap(0x20, 0x28);
 
-  // this is what messes up the multiboot header
-  system_info_t *sys_info = acpi_get_sysinfo();
-
-  apic_init(sys_info->apic_base);
-  ioapic_init(sys_info);
-
-  ioapic_set_irq(0, 8, 0, IRQ8);
-  ioapic_set_irq(0, 1, 0, IRQ1);
-  // ioapic_set_mask(0, 1, 0);
-  // ioapic_set_mask(0, 8, 0);
+  // system_info_t *sys_info = acpi_get_sysinfo();
+  //
+  // apic_init();
+  // ioapic_init(sys_info);
+  //
+  // ioapic_set_irq(0, 8, 0, IRQ8);
+  // ioapic_set_irq(0, 1, 0, IRQ1);
 
   enable_interrupts();
   // rtc_init(RTC_MODE_TIMER);

@@ -28,9 +28,6 @@ const char *sig_rsdt = "RSDT";
 static core_desc_t cores[256] = {};
 static ioapic_desc_t ioapics[16] = {};
 
-// extern uintptr_t initial_directory;
-pde_t *initial_pd = NULL;
-
 //
 
 int is_signature(const char *buf, const char *sig, uint32_t len) {
@@ -70,7 +67,7 @@ acpi_rsdp_t *locate_rsdp() {
   kprintf("[acpi] locating rsdp...\n");
 
   // lets first try finding it in the first KiB of the ebda
-  uint8_t *ebda_base = (uint8_t *) phys_to_virt(EBDA_START);
+  uint8_t *ebda_base = (uint8_t *) EBDA_START;
   int upper_bound = 1024;
 locate_rsdp:
   for (int i = 0; i < upper_bound; i++) {
@@ -89,7 +86,7 @@ locate_rsdp:
 
   if (upper_bound == 1024) {
     // if that didn't work, lets look in the larger region
-    ebda_base = (uint8_t *) phys_to_virt(RSDP_REGION_START);
+    ebda_base = (uint8_t *) RSDP_REGION_START;
     upper_bound = RSDP_REGION_SIZE;
     goto locate_rsdp;
   }

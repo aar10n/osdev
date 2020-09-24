@@ -41,8 +41,8 @@ section .text
 
 global start
 start:
-;  mov ecx, (initial_directory - KERNEL_BASE)
-  mov ecx, (kernel_directory - KERNEL_BASE)
+  mov ecx, (initial_directory - KERNEL_BASE)
+;  mov ecx, (kernel_directory - KERNEL_BASE)
   mov cr3, ecx      ; Load the page directory
 
   mov ecx, cr4      ;
@@ -83,24 +83,33 @@ align 4096
 ; memory. This is only used until we configure our proper
 ; paging scheme, at which point we switch over to use
 ; the _kernel_directory
-;global initial_directory
-;initial_directory:
-;  %assign i 0
-;  %rep 1024
-;  %if i == KERNEL_PAGE
-;    dd 0b10000011
-;  %else
-;    dd (i << 22) | 0b10000011
-;  %endif
-;  %assign i i + 1
-;  %endrep
+global initial_directory
+initial_directory:
+  %assign i 0
+  %rep 1024
+  %if i == 768
+    dd 0b10000011
+  %else
+    dd (i << 22) | 0b10000011
+  %endif
+  %assign i i + 1
+  %endrep
 
 global kernel_directory
 kernel_directory:
-  dd 0b10000011                       ; 4MB Identity Map
-  times (KERNEL_PAGE - 1) dd 0        ; Page Directory Entries
-  dd 0b10000011                       ; 4MB Kernel Area
-  times (1024 - KERNEL_PAGE - 1) dd 0 ; Page Directory Entries
+  %assign i 0
+  %rep 1024
+  %if i == 768
+    dd 0b10000011
+  %else
+    dd (i << 22) | 0b10000011
+  %endif
+  %assign i i + 1
+  %endrep
+;  dd 0b10000011                       ; 4MB Identity Map
+;  times (KERNEL_PAGE - 1) dd 0        ; Page Directory Entries
+;  dd 0b10000011                       ; 4MB Kernel Area
+;  times (1024 - KERNEL_PAGE - 1) dd 0 ; Page Directory Entries
 
 global first_page_table
 first_page_table:

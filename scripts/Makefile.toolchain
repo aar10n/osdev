@@ -5,11 +5,11 @@
 TOOLCHAIN =
 QEMU =
 
-CFLAGS +=
-CXXFLAGS +=
+CFLAGS += -ffreestanding -Wall -Wextra
+CXXFLAGS += $(CFLAGS) -fno-rtti -fno-exceptions
 ASFLAGS +=
 NASMFLAGS +=
-LDFLAGS +=
+LDFLAGS += -Tlinker.ld
 QEMUFLAGS +=
 
 
@@ -29,18 +29,18 @@ ifeq ($(TARGET),default)
 else ifeq ($(TARGET),i386)
 	TOOLCHAIN = i386-elf-
 	QEMU = qemu-system-i386
-	CFLAGS += -ffreestanding -m32 -Wall -Wextra
-	CXXFLAGS += $(CFLAGS) -fno-rtti -fno-exceptions
+	CFLAGS += -m32
+	CXXFLAGS +=
 	ASFLAGS += -march=i386 -mtune=i386 --32
-	NASMFLAGS += -g -f elf32
+	NASMFLAGS += -f elf32
 	LDFLAGS +=
 else ifeq ($(TARGET),i686)
 	TOOLCHAIN = i686-elf-
 	QEMU = qemu-system-x86_64
-	CFLAGS += -ffreestanding -m32
-	CXXFLAGS += $(CFLAGS) -fno-rtti -fno-exceptions
+	CFLAGS += -m32
+	CXXFLAGS +=
 	ASFLAGS += -march=i686 -mtune=i686 --32
-	NASMFLAGS += -g -f elf32
+	NASMFLAGS += -f elf32
 	LDFLAGS +=
 else
     $(error unknown target $(TARGET))

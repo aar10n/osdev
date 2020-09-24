@@ -65,7 +65,7 @@
 
 //
 
-void apic_init(uintptr_t apic_base);
+void apic_init();
 void apic_send_eoi();
 
 #endif

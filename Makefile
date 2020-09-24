@@ -5,10 +5,10 @@ TARGET = i686
 BUILD = build
 BUILD_DIR = $(BUILD)/$(NAME)
 
-CFLAGS  += -g -Wall -Wextra
-LDFLAGS += -T linker.ld
+CFLAGS  += -g
+LDFLAGS +=
 ASFLAGS +=
-NASMFLAGS +=
+NASMFLAGS += -g
 
 INCLUDE = -Iinclude -Ilib -Ilibc
 

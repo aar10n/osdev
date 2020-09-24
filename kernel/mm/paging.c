@@ -11,8 +11,8 @@
 #include <kernel/mm/paging.h>
 #include <kernel/panic.h>
 
-// extern uintptr_t initial_directory;
-
+extern uintptr_t initial_directory;
+pde_t *initial_pd;
 extern uintptr_t kernel_directory;
 pde_t *kernel_pd;
 
@@ -93,26 +93,27 @@ pde_t *clone_page_directory(const pde_t *src) {
 //
 
 void paging_init() {
+  initial_pd = (pde_t *) &initial_directory;
   kernel_pd = (pde_t *) &kernel_directory;
-  first_pt = (pde_t *) &first_page_table;
+  first_pt = (pte_t *) &first_page_table;
 
   // Identity map the first 4mb except for the very first page
   // this ensures that any null pointer accesses cause a page
   // fault
-  for (int i = 1; i < 1024; i++) {
-    first_pt[i] = (i << 22) | PE_READ_WRITE | PE_PRESENT;
-  }
+  // for (int i = 1; i < 1024; i++) {
+  //   first_pt[i] = (i << 22) | PE_READ_WRITE | PE_PRESENT;
+  // }
 
-  kernel_pd[0] = virt_to_phys(first_pt) | PE_PRESENT | PE_READ_WRITE;
+  // kernel_pd[0] = virt_to_phys(first_pt) | PE_PRESENT | PE_READ_WRITE;
 
   // Recursively map the last entry in the page directory
   // to itself. This makes it very easy to access the page
   // directory at any time.
   kernel_pd[1023] = virt_to_phys(kernel_pd) | PE_READ_WRITE | PE_PRESENT;
 
-  // Map the kernel (i.e first 4MB of the physical address space) to 3GB
+  // // Map the kernel (i.e first 4MB of the physical address space) to 3GB
   int kernel_page = addr_to_pde(kernel_start);
-  kernel_pd[kernel_page] = 0 | PDE_PAGE_SIZE | PE_PRESENT;
+  // kernel_pd[kernel_page] = 0 | PDE_PAGE_SIZE | PE_PRESENT;
 
   // Map in the last 1GB ram as kernel space
   for (int i = kernel_page + 1; i < 1023; i++) {
@@ -122,7 +123,7 @@ void paging_init() {
   }
 
   // finally swap to the kernel page directory
-  // set_page_directory(virt_to_phys(&kernel_directory));
+  set_page_directory(virt_to_phys(&kernel_directory));
 }
 
 /* ----- Map Page Frame ----- */
