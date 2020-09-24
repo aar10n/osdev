@@ -3,7 +3,7 @@
 #
 
 # kernel
-kernel +=
+kernel += kernel.c
 
 
 # kernel-y

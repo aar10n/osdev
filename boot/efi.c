@@ -1,5 +1,5 @@
 //
-// Created by Aaron Gill-Braun on 2020-09-23.
+// Created by Aaron Gill-Braun on 2020-09-24.
 //
 
 #include <efi.h>
@@ -13,13 +13,12 @@ EFIAPI EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable
   ST = SystemTable;
 
   /* Say hi */
-  Status = ST->ConOut->OutputString(ST->ConOut, L"Hello World\n\r");
+  Status = ST->ConOut->OutputString(ST->ConOut, (CHAR16 *) L"Hello World\n\r");
   if (EFI_ERROR(Status))
     return Status;
 
   /* Now wait for a keystroke before continuing, otherwise your
      message will flash off the screen before you see it.
-
      First, we need to empty the console input buffer to flush
      out any keystrokes entered before this point */
   Status = ST->ConIn->Reset(ST->ConIn, FALSE);

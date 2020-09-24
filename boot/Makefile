@@ -2,7 +2,9 @@
 # Boot Makefile
 #
 
-# boot specific flags
+CC-boot = clang
+LD-boot = clang
+
 CFLAGS-boot = $(CFLAGS) \
 	-target x86_64-unknown-windows \
 	-fshort-wchar -mno-red-zone

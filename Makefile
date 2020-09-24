@@ -28,7 +28,12 @@ INCLUDE = -Iinclude -Ilib -Ilibc \
 #			-device ide-hd,drive=disk,bus=ahci.0 \
 #			-drive file=$(BUILD)/osdev.iso,media=cdrom
 
-QEMUFLAGS = -bios scripts/OVMF-DEBUG.fd -usb \
+QEMUFLAGS = -usb \
+	-drive if=pflash,format=raw,unit=0,file=scripts/OVMF_CODE_DEBUG.fd,readonly=on \
+  	-drive if=pflash,format=raw,unit=1,file=scripts/OVMF_VARS_DEBUG.fd \
+	-global isa-debugcon.iobase=0x402 \
+	-debugcon file:$(BUILD)/uefi_debug.log \
+	-serial file:$(BUILD)/stdio \
 	-drive file=$(BUILD)/osdev.img,id=boot,format=raw,if=none \
 	-device usb-storage,drive=boot
 
@@ -39,14 +44,18 @@ include scripts/Makefile.toolchain
 #  Targets  #
 # --------- #
 
-targets = boot kernel drivers lib libc
+targets = boot kernel # drivers lib libc
 
 # include the makefiles of all targets
 include $(foreach t,$(targets),$t/Makefile)
 
+
 # --------- #
 #  Targets  #
 # --------- #
+
+test:
+	@echo $(call program,boot/efi.c,CC)
 
 all: $(BUILD)/osdev.img
 
@@ -57,7 +66,7 @@ debug: $(BUILD)/osdev.img
 	$(QEMU) -s -S $(QEMUFLAGS) &
 	$(GDB) -w \
 		-ex "target remote localhost:1234" \
-		-ex "add-symbol $(BUILD)/osdev.bin"
+		-ex "add-symbol $(BUILD)/osdev.elf"
 
 run-debug: $(BUILD)/osdev.img
 	$(QEMU) -s -S $(QEMUFLAGS) &
@@ -66,6 +75,7 @@ run-debug: $(BUILD)/osdev.img
 clean:
 	rm -f $(BUILD)/*.img
 	rm -f $(BUILD)/*.efi
+	rm -f $(BUILD)/*.elf
 	rm -rf $(BUILD_DIR)
 	mkdir $(BUILD_DIR)
 	$(MAKE) -C tools clean
@@ -97,11 +107,12 @@ $(BUILD)/osdev.img: $(BUILD)/bootx64.efi
 
 # EFI boot code
 $(BUILD)/bootx64.efi: $(boot-y) # $(libc-y) $(lib-y)
-	$(LD) $(call flags,$<,LDFLAGS) $^ -o $@
+	$(call program,$<,LD) $(call flags,$<,LDFLAGS) $^ -o $@
 
 # Kernel code
 $(BUILD)/kernel.elf: $(kernel-y) # $(drivers-y) $(libc-y) $(lib-y)
-	$(LD) $(call flags,$<,LDFLAGS) $^ -o $@
+	$(call program,$<,LD) $(call flags,$<,LDFLAGS) $^ -o $@
+
 
 # External Data
 
@@ -117,19 +128,18 @@ $(BUILD)/initrd.img: $(BUILD)/initrd
 
 $(BUILD_DIR)/%_c.o: %.c
 	@mkdir -p $(@D)
-	$(CC) $(INCLUDE) $(call flags,$<,CFLAGS) -c $< -o $@
+	$(call program,$<,CC) $(call flags,$<,INCLUDE) $(call flags,$<,CFLAGS) -c $< -o $@
 
 $(BUILD_DIR)/%_cpp.o: %.cpp
 	@mkdir -p $(@D)
-	$(CXX) $(INCLUDE) $(call flags,$<,CXXFLAGS) -c $< -o $@
+	$(call program,$<,CXX) $(call flags,$<,INCLUDE) $(call flags,$<,CXXFLAGS) -c $< -o $@
 
 $(BUILD_DIR)/%_s.o: %.s
 	@mkdir -p $(@D)
-	$(AS) $(call flags,$<,ASFLAGS) $< -o $@
+	$(call program,$<,AS) $(call flags,$<,ASFLAGS) $< -o $@
 
 $(BUILD_DIR)/%_asm.o: %.asm
 	@mkdir -p $(@D)
-	$(NASM) $(call flags,$<,NASMFLAGS) $< -o $@
-
+	$(call program,$<,NASM) $(call flags,$<,NASMFLAGS) $< -o $@
 
 -include *.d
