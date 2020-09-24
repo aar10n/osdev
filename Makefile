@@ -10,20 +10,28 @@ LDFLAGS +=
 ASFLAGS +=
 NASMFLAGS += -g
 
-INCLUDE = -Iinclude -Ilib -Ilibc
+#INCLUDE = -Iinclude -Ilib -Ilibc
+INCLUDE = -Ithird-party/gnu-efi/inc \
+	-Ithird-party/gnu-efi/inc/x86_64 \
+	-Ithird-party/gnu-efi/inc/protocol
 
-QEMUFLAGS = -usb \
-			-vga std \
-			-cpu Nehalem \
-			-smp cores=1,threads=2 \
-			-m 256M \
-			-rtc base=localtime,clock=host \
-			-serial file:$(BUILD)/stdio \
-			-drive file=$(BUILD)/disk.img,format=raw,if=ide \
-			-drive file=$(BUILD)/disk.img,format=raw,if=none,id=disk \
-			-device ahci,id=ahci \
-			-device ide-hd,drive=disk,bus=ahci.0 \
-			-drive file=$(BUILD)/osdev.iso,media=cdrom
+#QEMUFLAGS = -usb \
+#			-vga std \
+#			-cpu Nehalem \
+#			-smp cores=1,threads=2 \
+#			-m 256M \
+#			-rtc base=localtime,clock=host \
+#			-serial file:$(BUILD)/stdio \
+#			-drive file=$(BUILD)/disk.img,format=raw,if=ide \
+#			-drive file=$(BUILD)/disk.img,format=raw,if=none,id=disk \
+#			-device ahci,id=ahci \
+#			-device ide-hd,drive=disk,bus=ahci.0 \
+#			-drive file=$(BUILD)/osdev.iso,media=cdrom
+
+QEMUFLAGS = -bios OVMF.fd -usb \
+	-drive file=$(BUILD)/fat.img,id=boot,format=raw,if=none \
+	-device usb-storage,drive=boot
+
 
 include scripts/Makefile.toolchain
 
@@ -31,23 +39,28 @@ include scripts/Makefile.toolchain
 #  Targets  #
 # --------- #
 
-targets = kernel drivers fs lib libc
+#targets = kernel drivers fs lib libc
 
 # include the makefiles of all targets
-include $(foreach t, $(targets), $(t)/Makefile)
+#include $(foreach t, $(targets), $(t)/Makefile)
 
 # generate a list of all source objects by applying the
 # `objects` function to each list of target sources
-obj-y = $(foreach t, $(targets), \
-			$(call objects, $($(t)), $(BUILD_DIR)/$(t)))
+#obj-y = $(foreach t, $(targets), \
+#			$(call objects, $($(t)), $(BUILD_DIR)/$(t)))
+
+obj-y = $(BUILD_DIR)/hello_c.o $(BUILD_DIR)/data_c.o
 
 # --------- #
 #  Targets  #
 # --------- #
 
-all: $(BUILD)/osdev.iso
+all: $(BUILD)/fat.img
 
-run: $(BUILD)/osdev.iso $(BUILD)/disk.img
+#run: $(BUILD)/osdev.iso $(BUILD)/disk.img
+#	$(QEMU) $(QEMUFLAGS)
+
+run: $(BUILD)/fat.img
 	$(QEMU) $(QEMUFLAGS)
 
 run-bochs: $(BUILD)/osdev.iso $(BUILD)/disk.img
@@ -92,6 +105,17 @@ ramdisk: initrd $(BUILD)/initrd.img
 # -------------- #
 
 # Kernel
+
+$(BUILD)/BOOTX64.EFI: $(obj-y)
+	$(LD) $(LDFLAGS) $^ -o $@
+
+$(BUILD)/fat.img: $(BUILD)/BOOTX64.EFI
+	dd if=/dev/zero of=$@ bs=1k count=1440
+	mformat -i $@ -f 1440 ::
+	mmd -i $@ ::/EFI
+	mmd -i $@ ::/EFI/BOOT
+	mcopy -i $@ $< ::/EFI/BOOT
+
 
 $(BUILD)/osdev.iso: $(BUILD)/osdev.bin $(BUILD)/initrd.img grub.cfg
 	mkdir -p $(BUILD)/iso/boot/grub

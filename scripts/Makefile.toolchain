@@ -3,61 +3,75 @@
 #
 
 TOOLCHAIN =
-QEMU =
+QEMU = qemu-system-x86_64
 
-CFLAGS += -ffreestanding -Wall -Wextra
+CFLAGS += -target x86_64-unknown-windows -ffreestanding -Wall -Wextra -fshort-wchar -mno-red-zone
 CXXFLAGS += $(CFLAGS) -fno-rtti -fno-exceptions
 ASFLAGS +=
 NASMFLAGS +=
-LDFLAGS += -Tlinker.ld
+LDFLAGS += -target x86_64-unknown-windows -nostdlib -Wl,-entry:efi_main -Wl,-subsystem:efi_application -fuse-ld=lld-link
 QEMUFLAGS +=
 
+#CFLAGS += -ffreestanding -Wall -Wextra
+#CXXFLAGS += $(CFLAGS) -fno-rtti -fno-exceptions
+#ASFLAGS +=
+#NASMFLAGS +=
+#LDFLAGS += -Tlinker.ld
+#QEMUFLAGS +=
 
-ifndef TARGET
-	TARGET = default
-endif
 
-# Target
-ifeq ($(TARGET),default)
-	TOOLCHAIN =
-	QEMU =
-	CFLAGS +=
-	CXXFLAGS +=
-	ASFLAGS +=
-	NASMFLAGS +=
-	LDFLAGS +=
-else ifeq ($(TARGET),i386)
-	TOOLCHAIN = i386-elf-
-	QEMU = qemu-system-i386
-	CFLAGS += -m32
-	CXXFLAGS +=
-	ASFLAGS += -march=i386 -mtune=i386 --32
-	NASMFLAGS += -f elf32
-	LDFLAGS +=
-else ifeq ($(TARGET),i686)
-	TOOLCHAIN = i686-elf-
-	QEMU = qemu-system-x86_64
-	CFLAGS += -m32
-	CXXFLAGS +=
-	ASFLAGS += -march=i686 -mtune=i686 --32
-	NASMFLAGS += -f elf32
-	LDFLAGS +=
-else
-    $(error unknown target $(TARGET))
-endif
+#ifndef TARGET
+#	TARGET = default
+#endif
+
+## Target
+#ifeq ($(TARGET),default)
+#	TOOLCHAIN =
+#	QEMU =
+#	CFLAGS +=
+#	CXXFLAGS +=
+#	ASFLAGS +=
+#	NASMFLAGS +=
+#	LDFLAGS +=
+#else ifeq ($(TARGET),i386)
+#	TOOLCHAIN = i386-elf-
+#	QEMU = qemu-system-i386
+#	CFLAGS += -m32
+#	CXXFLAGS +=
+#	ASFLAGS += -march=i386 -mtune=i386 --32
+#	NASMFLAGS += -f elf32
+#	LDFLAGS +=
+#else ifeq ($(TARGET),i686)
+#	TOOLCHAIN = i686-elf-
+#	QEMU = qemu-system-x86_64
+#	CFLAGS += -m32
+#	CXXFLAGS +=
+#	ASFLAGS += -march=i686 -mtune=i686 --32
+#	NASMFLAGS += -f elf32
+#	LDFLAGS +=
+#else
+#    $(error unknown target $(TARGET))
+#endif
 
 CXX_STD = -std=c++20
 C_STD = -std=c11
 
 # Programs
-CXX = $(TOOLCHAIN)g++ $(CXX_STD)
-CC  = $(TOOLCHAIN)gcc $(C_STD)
-LD  = $(TOOLCHAIN)ld
-AR  = $(TOOLCHAIN)ar
-AS	= $(TOOLCHAIN)as
-NASM = nasm
+#CXX = $(TOOLCHAIN)g++ $(CXX_STD)
+#CC  = $(TOOLCHAIN)gcc $(C_STD)
+#LD  = $(TOOLCHAIN)ld
+#AR  = $(TOOLCHAIN)ar
+#AS	= $(TOOLCHAIN)as
+#NASM = nasm
 
-GDB = $(TOOLCHAIN)gdb
+CC = clang
+CXX = clang++
+LD = clang
+AR = llvm-ar
+AS = llvm-as
+nasm = nasm
+
+GDB = lldb
 MKRESCUE = $(TOOLCHAIN)grub-mkrescue
 
 # Helpers
