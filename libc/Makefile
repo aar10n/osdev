@@ -21,3 +21,8 @@ libc += stdlib/stdlib.c
 
 # libc/string
 libc += string/string.c
+
+
+
+# libc-y
+libc-y = $(call objects,libc,$(BUILD_DIR))

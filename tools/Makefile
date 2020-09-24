@@ -1,6 +1,5 @@
 NAME = tools
 VERSION = 1.0
-TARGET = default
 
 BUILD = ../build
 BUILD_DIR = $(BUILD)/$(NAME)

@@ -2,83 +2,72 @@
 # Compiler toolchain options
 #
 
-TOOLCHAIN =
 QEMU = qemu-system-x86_64
-
-CFLAGS += -target x86_64-unknown-windows -ffreestanding -Wall -Wextra -fshort-wchar -mno-red-zone
-CXXFLAGS += $(CFLAGS) -fno-rtti -fno-exceptions
-ASFLAGS +=
-NASMFLAGS +=
-LDFLAGS += -target x86_64-unknown-windows -nostdlib -Wl,-entry:efi_main -Wl,-subsystem:efi_application -fuse-ld=lld-link
-QEMUFLAGS +=
-
-#CFLAGS += -ffreestanding -Wall -Wextra
-#CXXFLAGS += $(CFLAGS) -fno-rtti -fno-exceptions
-#ASFLAGS +=
-#NASMFLAGS +=
-#LDFLAGS += -Tlinker.ld
-#QEMUFLAGS +=
-
-
-#ifndef TARGET
-#	TARGET = default
-#endif
-
-## Target
-#ifeq ($(TARGET),default)
-#	TOOLCHAIN =
-#	QEMU =
-#	CFLAGS +=
-#	CXXFLAGS +=
-#	ASFLAGS +=
-#	NASMFLAGS +=
-#	LDFLAGS +=
-#else ifeq ($(TARGET),i386)
-#	TOOLCHAIN = i386-elf-
-#	QEMU = qemu-system-i386
-#	CFLAGS += -m32
-#	CXXFLAGS +=
-#	ASFLAGS += -march=i386 -mtune=i386 --32
-#	NASMFLAGS += -f elf32
-#	LDFLAGS +=
-#else ifeq ($(TARGET),i686)
-#	TOOLCHAIN = i686-elf-
-#	QEMU = qemu-system-x86_64
-#	CFLAGS += -m32
-#	CXXFLAGS +=
-#	ASFLAGS += -march=i686 -mtune=i686 --32
-#	NASMFLAGS += -f elf32
-#	LDFLAGS +=
-#else
-#    $(error unknown target $(TARGET))
-#endif
 
 CXX_STD = -std=c++20
 C_STD = -std=c11
-
-# Programs
-#CXX = $(TOOLCHAIN)g++ $(CXX_STD)
-#CC  = $(TOOLCHAIN)gcc $(C_STD)
-#LD  = $(TOOLCHAIN)ld
-#AR  = $(TOOLCHAIN)ar
-#AS	= $(TOOLCHAIN)as
-#NASM = nasm
 
 CC = clang
 CXX = clang++
 LD = clang
 AR = llvm-ar
 AS = llvm-as
-nasm = nasm
+NASM = nasm
 
-GDB = lldb
-MKRESCUE = $(TOOLCHAIN)grub-mkrescue
+GDB = gdb
 
-# Helpers
+CFLAGS += -Wall -Wextra -MMD -ffreestanding -nostdlib
+CXXFLAGS += $(CFLAGS) -fno-rtti -fno-exceptions
+ASFLAGS +=
+NASMFLAGS +=
+LDFLAGS += -nostdlib
+QEMUFLAGS +=
 
-# Generates a list of objects from a list of sources
-objects = $(patsubst %.c,$(2)/%_c.o, \
-		  $(patsubst %.cpp,$(2)/%_cpp.o, \
-		  $(patsubst %.s,$(2)/%_s.o, \
-		  $(patsubst %.asm,$(2)/%_asm.o, \
-		  $(1)))))
+
+ifndef TARGET
+	TARGET = x86_64
+endif
+
+# Target
+ifeq ($(TARGET),x86_64)
+	CFLAGS +=
+	CXXFLAGS +=
+	ASFLAGS +=
+	NASMFLAGS +=
+	LDFLAGS +=
+else
+    $(error unknown target $(TARGET))
+endif
+
+#
+# Helpers Functions
+#
+
+file_dir = $(strip $(filter-out .,$(patsubst %/, %,$(dir $(1)))))
+build_file_dir = $(call file_dir,$(subst $2/,,$1))
+unobject = $(patsubst %_c.o,%.c,$(patsubst %_cpp.o,%.c,\
+			$(patsubst %_s.o,%.s,$(patsubst %_asm.o,%.asm, $1))))
+
+get_flags_debug = $(if $(strip $2),$3-$2 $3-$1,$3 $3-$1)
+get_flags = $(if $($(strip $2)),$($3-$2) $($3-$1),$($3) $($3-$1))
+get_file = $(call build_file_dir,$1,$(BUILD_DIR))/$(call unobject,$(notdir $1))
+
+# Returns a list of object files in the form of
+# <name>_<extension>.o to prevent issues caused
+# by having two files of the same name but use
+# different extensions.
+objects = $(patsubst %.c,$2/$1/%_c.o,\
+		  $(patsubst %.cpp,$2/$1/%_cpp.o,\
+		  $(patsubst %.s,$2/$1/%_s.o,\
+		  $(patsubst %.asm,$2/$1/%_asm.o,\
+		  $($1)))))
+
+#target-objects = $(foreach t,$1,$(call objects, $($t), $2/$t))
+
+# Returns the correct flags for compiling a given
+# file. All files are compiled with the default flags
+# for their corresponding compiler, but these can be
+# overriden on a per-file or per-directory basis.
+# Directory specific flags override the default flags,
+# whereas file specific flags do not.
+flags = $(call get_flags,$(call get_file,$1),$(call file_dir,$(call get_file,$1)),$2)
