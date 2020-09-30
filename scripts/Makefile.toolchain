@@ -22,11 +22,11 @@ OBJCOPY = $(TOOLCHAIN)objcopy
 
 GDB = $(TOOLCHAIN)gdb
 
-CFLAGS += -MMD -Wall -Werror -ffreestanding -fno-stack-protector -nostdlib
+CFLAGS += -gdwarf -Wall -m64 -ffreestanding -nostdlib -mcmodel=kernel -mno-red-zone -fno-stack-protector -MMD
 CXXFLAGS += $(CFLAGS) -fno-rtti -fno-exceptions
 ASFLAGS +=
-NASMFLAGS +=
-LDFLAGS += -nostdlib
+NASMFLAGS += -gdwarf -f elf64
+LDFLAGS += -m elf_x86_64 -Tlinker.ld -nostdlib -z max-page-size=0x1000
 QEMUFLAGS +=
 
 
@@ -44,42 +44,3 @@ ifeq ($(TARGET),x86_64)
 else
     $(error unknown target $(TARGET))
 endif
-
-#
-# Helpers Functions
-#
-
-file_dir = $(strip $(filter-out .,$(patsubst %/, %,$(dir $(1)))))
-build_file_dir = $(call file_dir,$(subst $(BUILD_DIR)/,,$1))
-unobject = $(patsubst %_c.o,%.c,$(patsubst %_cpp.o,%.c,\
-			$(patsubst %_s.o,%.s,$(patsubst %_asm.o,%.asm, $1))))
-
-get_flags_debug = $(if $(strip $($3-$2)),$3-$2 $3-$1,$3 $3-$1)
-get_program = $(if $(strip $($2-$1)),$($2-$1),$($2))
-get_flags = $(if $(strip $($3-$2)),$($3-$2) $($3-$1),$($3) $($3-$1))
-get_file = $(call build_file_dir,$1)/$(call unobject,$(notdir $1))
-
-# Returns a list of object files in the form of
-# <name>_<extension>.o to prevent issues caused
-# by having two files of the same name but use
-# different extensions.
-objects = $(patsubst %.c,$2/$1/%_c.o,\
-		  $(patsubst %.cpp,$2/$1/%_cpp.o,\
-		  $(patsubst %.s,$2/$1/%_s.o,\
-		  $(patsubst %.asm,$2/$1/%_asm.o,\
-		  $($1)))))
-
-target-objects = $(foreach t,$1,$(call objects,$t,$2))
-
-# Returns the correct flags for compiling a given
-# file. All files are compiled with the default flags
-# for their corresponding compiler, but these can be
-# overriden on a per-file or per-directory basis.
-# Directory specific flags override the default flags,
-# whereas file specific flags do not.
-flags = $(call get_flags,$(call get_file,$1),$(call file_dir,$(call get_file,$1)),$2)
-
-# Gets the program for a given file. This allows the
-# default programs to be overidden on a per-directory
-# basis.
-program = $(call get_program,$(call file_dir,$(call get_file,$1)),$2)

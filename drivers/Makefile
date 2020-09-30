@@ -8,4 +8,4 @@ drivers +=
 
 
 # drivers-y
-drivers-y = $(call objects,drivers,$(BUILD_DIR))
+drivers-y = $(call objects,drivers,$(BUILD_DIR)/drivers)

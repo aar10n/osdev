@@ -8,4 +8,4 @@ lib += hash_table.c \
 
 
 # lib-y
-lib-y = $(call objects,lib,$(BUILD_DIR))
+lib-y = $(call objects,lib,$(BUILD_DIR)/lib)

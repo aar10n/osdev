@@ -7,8 +7,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include <drivers/screen.h>
-#include <drivers/serial.h>
 #include <stdbool.h>
 #include <math.h>
 
@@ -724,13 +722,13 @@ void kprintf(const char *format, ...) {
   va_start(valist, format);
   ksnprintf_internal(str, PRINTF_BUFFER_SIZE, true, format, &valist);
   va_end(valist);
-  kputs(str);
-  serial_write(COM1, str);
+  // kputs(str);
+  // serial_write(COM1, str);
 }
 
 void kvfprintf(const char *format, va_list args) {
   static char str[PRINTF_BUFFER_SIZE];
   ksnprintf_internal(str, PRINTF_BUFFER_SIZE, true, format, &args);
-  kputs(str);
-  serial_write(COM1, str);
+  // kputs(str);
+  // serial_write(COM1, str);
 }

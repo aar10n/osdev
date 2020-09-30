@@ -5,46 +5,37 @@ TARGET = x86_64
 BUILD = build
 BUILD_DIR = $(BUILD)/$(NAME)
 
-CFLAGS  += -g
+CFLAGS  +=
 LDFLAGS +=
 ASFLAGS +=
-NASMFLAGS += -g
+NASMFLAGS +=
 
-INCLUDE = -Iinclude -Ilib -Ilibc \
-	-Ithird-party/gnu-efi/inc \
-	-Ithird-party/gnu-efi/inc/x86_64 \
-	-Ithird-party/gnu-efi/inc/protocol
+INCLUDE = -Iinclude -Ilib -Ilibc
 
-#QEMUFLAGS = -usb \
-#			-vga std \
-#			-cpu Nehalem \
-#			-smp cores=1,threads=2 \
-#			-m 256M \
-#			-rtc base=localtime,clock=host \
-#			-serial file:$(BUILD)/stdio \
-#			-drive file=$(BUILD)/disk.img,format=raw,if=ide \
-#			-drive file=$(BUILD)/disk.img,format=raw,if=none,id=disk \
-#			-device ahci,id=ahci \
-#			-device ide-hd,drive=disk,bus=ahci.0 \
-#			-drive file=$(BUILD)/osdev.iso,media=cdrom
-
-QEMUFLAGS = -usb \
-	-drive if=pflash,format=raw,unit=0,file=scripts/OVMF_CODE_DEBUG.fd,readonly=on \
-  	-drive if=pflash,format=raw,unit=1,file=scripts/OVMF_VARS_DEBUG.fd \
+QEMUFLAGS = \
+	-bios scripts/OVMF-DEBUG.fd \
+	-no-reboot \
+	-no-shutdown \
 	-global isa-debugcon.iobase=0x402 \
+	-cpu Nehalem \
+	-smp cores=2,threads=4 \
+	-machine q35 \
+	-m 128M \
 	-debugcon file:$(BUILD)/uefi_debug.log \
 	-serial file:$(BUILD)/stdio \
 	-drive file=$(BUILD)/osdev.img,id=boot,format=raw,if=none \
-	-device usb-storage,drive=boot
+	-device usb-storage,drive=boot \
+	-usb
 
 
 include scripts/Makefile.toolchain
+include scripts/Makefile.util
 
 # --------- #
 #  Targets  #
 # --------- #
 
-targets = boot kernel # drivers lib libc
+targets = boot kernel libc # drivers lib
 
 # include the makefiles of all targets
 include $(foreach t,$(targets),$t/Makefile)
@@ -54,19 +45,16 @@ include $(foreach t,$(targets),$t/Makefile)
 #  Targets  #
 # --------- #
 
-test:
-	@echo $(call program,boot/efi.c,CC)
-
 all: $(BUILD)/osdev.img
 
 run: $(BUILD)/osdev.img
-	$(QEMU) $(QEMUFLAGS)
+	$(QEMU) $(QEMUFLAGS) -monitor stdio
 
 debug: $(BUILD)/osdev.img
 	$(QEMU) -s -S $(QEMUFLAGS) &
 	$(GDB) -w \
 		-ex "target remote localhost:1234" \
-		-ex "add-symbol $(BUILD)/osdev.elf"
+		-ex "add-symbol $(BUILD)/kernel.elf"
 
 run-debug: $(BUILD)/osdev.img
 	$(QEMU) -s -S $(QEMUFLAGS) &
@@ -97,21 +85,29 @@ ramdisk: initrd $(BUILD)/initrd.img
 # -------------- #
 
 # USB bootable image
-$(BUILD)/osdev.img: $(BUILD)/bootx64.efi
+$(BUILD)/osdev.img: $(BUILD)/bootx64.efi $(BUILD)/kernel.elf config.ini
 	dd if=/dev/zero of=$@ bs=1k count=1440
 	mformat -i $@ -f 1440 ::
 	mmd -i $@ ::/EFI
 	mmd -i $@ ::/EFI/boot
-	mmd -i $@ ::/EFI/osdev
 	mcopy -i $@ $(BUILD)/bootx64.efi ::/EFI/boot
+	mcopy -i $@ config.ini ::/EFI/boot
+	mcopy -i $@ $(BUILD)/kernel.elf ::/EFI
 
-# EFI boot code
-$(BUILD)/bootx64.efi: $(boot-y) # $(libc-y) $(lib-y)
-	$(call program,$<,LD) $(call flags,$<,LDFLAGS) $^ -o $@
+# EFI Bootloader
+$(BUILD)/bootx64.efi: $(BUILD)/loader.dll
+	cd third-party/edk2 && source edksetup.sh && \
+	cd ../../ && GenFw -e UEFI_APPLICATION -o $@ $^
 
-# Kernel code
-$(BUILD)/kernel.elf: $(kernel-y) # $(drivers-y) $(libc-y) $(lib-y)
-	$(call program,$<,LD) $(call flags,$<,LDFLAGS) $^ -o $@
+$(BUILD)/loader.dll: $(boot-y)
+	lld-link /OUT:$@ /NOLOGO /NODEFAULTLIB /ALIGN:32 /FILEALIGN:32 \
+		/SECTION:.xdata,D /SECTION:.pdata,D /Machine:X64 /ENTRY:_ModuleEntryPoint \
+		/SUBSYSTEM:EFI_BOOT_SERVICE_DRIVER /DLL /MERGE:.rdata=.data \
+		/debug /lldmap @scripts/loader-libs.lst $^
+
+# Kernel
+$(BUILD)/kernel.elf: $(kernel-y) # $(libc-y) # $(drivers-y) $(lib-y)
+	$(call toolchain,$<,LD) $(call flags,$<,LDFLAGS) $^ -o $@
 
 
 # External Data
@@ -126,20 +122,20 @@ $(BUILD)/initrd.img: $(BUILD)/initrd
 #  Compilation Rules  #
 # ------------------- #
 
-$(BUILD_DIR)/%_c.o: %.c
+$(BUILD_DIR)/%.c.o: %.c
 	@mkdir -p $(@D)
-	$(call program,$<,CC) $(call flags,$<,INCLUDE) $(call flags,$<,CFLAGS) -c $< -o $@
+	$(call toolchain,$<,CC) $(call flags,$<,INCLUDE) $(call flags,$<,CFLAGS) -c $< -o $@
 
-$(BUILD_DIR)/%_cpp.o: %.cpp
+$(BUILD_DIR)/%.cpp.o: %.cpp
 	@mkdir -p $(@D)
-	$(call program,$<,CXX) $(call flags,$<,INCLUDE) $(call flags,$<,CXXFLAGS) -c $< -o $@
+	$(call toolchain,$<,CXX) $(call flags,$<,INCLUDE) $(call flags,$<,CXXFLAGS) -c $< -o $@
 
-$(BUILD_DIR)/%_s.o: %.s
+$(BUILD_DIR)/%.s.o: %.s
 	@mkdir -p $(@D)
-	$(call program,$<,AS) $(call flags,$<,ASFLAGS) $< -o $@
+	$(call toolchain,$<,AS) $(call flags,$<,ASFLAGS) $< -o $@
 
-$(BUILD_DIR)/%_asm.o: %.asm
+$(BUILD_DIR)/%.asm.o: %.asm
 	@mkdir -p $(@D)
-	$(call program,$<,NASM) $(call flags,$<,NASMFLAGS) $< -o $@
+	$(call toolchain,$<,NASM) $(call flags,$<,NASMFLAGS) $< -o $@
 
 -include *.d

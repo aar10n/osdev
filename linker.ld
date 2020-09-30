@@ -1,31 +1,25 @@
-ENTRY(start)
+ENTRY(entry)
 
-kernel = 0x00100000;
-offset = 0xC0000000;
+kernel = 0xFFFFFFFF80000000;
 
 SECTIONS {
-  . = kernel + offset;
+  . = kernel;
 
   kernel_image_start = .;
-  .text : AT(ADDR(.text) - offset) {
-    *(.multiboot)
-    kernel_text_start = .;
+  .text : AT(ADDR(.text) - kernel) {
     *(.text)
-    kernel_text_end = .;
   }
-  .rodata ALIGN(4K) : AT(ADDR(.rodata) - offset) {
+  .rodata ALIGN(4K) : AT(ADDR(.rodata) - kernel) {
     *(.rodata)
   }
-  .data ALIGN(4K) : AT(ADDR(.data) - offset) {
-    kernel_data_start = .;
+  .data ALIGN(4K) : AT(ADDR(.data) - kernel) {
     *(.data)
-    kernel_data_end = .;
   }
-  .bss : AT(ADDR(.bss) - offset) {
-    kernel_bss_start = .;
-    *(COMMON)
+  .eh_frame ALIGN(4K) : AT(ADDR(.eh_frame) - kernel) {
+    *(.eh_frame)
+  }
+  .bss : AT(ADDR(.bss) - kernel) {
     *(.bss)
-    kernel_bss_end = .;
   }
   kernel_image_end = .;
 }

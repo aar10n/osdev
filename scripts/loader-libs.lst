@@ -1,0 +1,12 @@
+third-party/edk2/Build/App/RELEASE_CLANGPDB/X64/AppPkg/Loader/OUTPUT/AutoGen.obj
+third-party/edk2/Build/App/RELEASE_CLANGPDB/X64/MdePkg/Library/BaseLib/BaseLib/OUTPUT/BaseLib.lib
+third-party/edk2/Build/App/RELEASE_CLANGPDB/X64/MdePkg/Library/BaseMemoryLib/BaseMemoryLib/OUTPUT/BaseMemoryLib.lib
+third-party/edk2/Build/App/RELEASE_CLANGPDB/X64/MdePkg/Library/BaseDebugLibNull/BaseDebugLibNull/OUTPUT/BaseDebugLibNull.lib
+third-party/edk2/Build/App/RELEASE_CLANGPDB/X64/MdePkg/Library/BasePcdLibNull/BasePcdLibNull/OUTPUT/BasePcdLibNull.lib
+third-party/edk2/Build/App/RELEASE_CLANGPDB/X64/MdePkg/Library/UefiBootServicesTableLib/UefiBootServicesTableLib/OUTPUT/UefiBootServicesTableLib.lib
+third-party/edk2/Build/App/RELEASE_CLANGPDB/X64/MdePkg/Library/UefiMemoryAllocationLib/UefiMemoryAllocationLib/OUTPUT/UefiMemoryAllocationLib.lib
+third-party/edk2/Build/App/RELEASE_CLANGPDB/X64/MdePkg/Library/BasePrintLib/BasePrintLib/OUTPUT/BasePrintLib.lib
+third-party/edk2/Build/App/RELEASE_CLANGPDB/X64/MdePkg/Library/UefiRuntimeServicesTableLib/UefiRuntimeServicesTableLib/OUTPUT/UefiRuntimeServicesTableLib.lib
+third-party/edk2/Build/App/RELEASE_CLANGPDB/X64/MdePkg/Library/UefiDevicePathLib/UefiDevicePathLib/OUTPUT/UefiDevicePathLib.lib
+third-party/edk2/Build/App/RELEASE_CLANGPDB/X64/MdePkg/Library/UefiApplicationEntryPoint/UefiApplicationEntryPoint/OUTPUT/UefiApplicationEntryPoint.lib
+third-party/edk2/Build/App/RELEASE_CLANGPDB/X64/MdePkg/Library/UefiLib/UefiLib/OUTPUT/UefiLib.lib

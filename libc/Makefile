@@ -5,10 +5,6 @@
 # libc
 libc += libgen.c
 
-# libc/builtins
-libc += builtins/divdi3.s \
-	builtins/udivdi3.s
-
 # libc/math
 libc += math/math.c
 
@@ -23,6 +19,5 @@ libc += stdlib/stdlib.c
 libc += string/string.c
 
 
-
 # libc-y
-libc-y = $(call objects,libc,$(BUILD_DIR))
+libc-y = $(call objects,libc,$(BUILD_DIR)/libc)
