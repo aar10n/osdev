@@ -31,4 +31,7 @@
 [LibraryClasses]
   UefiApplicationEntryPoint
   UefiLib
+  CpuLib
+  UefiCpuLib
+  MpInitLib
 

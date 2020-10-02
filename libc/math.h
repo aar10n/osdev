@@ -19,15 +19,10 @@
 #define M_SQRT2 1.41421356237309504880    /* sqrt(2) */
 #define M_SQRT1_2 0.70710678118654752440  /* 1/sqrt(2) */
 
-int abs(int j);
 int log2(unsigned int v);
 unsigned int next_pow2(unsigned int v);
 
 double pow(double x, double y);
 double fmod(double x, double y);
-int imax(int x, int y);
-unsigned int umax(unsigned int x, unsigned int y);
-int imin(int x, int y);
-int umin(unsigned int x, unsigned int y);
 
 #endif // LIBC_MATH_H

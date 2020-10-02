@@ -12,7 +12,7 @@
 
 #include <Video.h>
 
-#define CheckStatus(Status) \
+#define CHECK_STATUS(Status) \
   if (EFI_ERROR(Status)){ \
     return Status; \
   } \
@@ -34,32 +34,32 @@ EFI_STATUS EFIAPI VideoSet(UINT32 X, UINT32 Y, EFI_HANDLE *VideoDevice) {
       &NumHandles,
       &GfxDevices
   );
-  CheckStatus(Status);
+  CHECK_STATUS(Status);
 
   for (UINTN Index = 0; Index < NumHandles; Index ++) {
     EFI_HANDLE Handle = GfxDevices[Index];
     Status = HandleProtocol(Handle, &gEfiGraphicsOutputProtocolGuid, (void **) &Graphics);
-    CheckStatus(Status);
+    CHECK_STATUS(Status);
 
-    Print(L"\n--- Graphics Device %d ---\n", Index);
-    Print(L"Current mode: %d\n", Graphics->Mode->Mode);
-    Print(L"Framebuffer base: 0x%p\n", Graphics->Mode->FrameBufferBase);
-    Print(L"Framebuffer size: %u\n", Graphics->Mode->FrameBufferSize);
-    Print(L"Max mode: %d\n", Graphics->Mode->MaxMode);
-    Print(L"\n");
+    // Print(L"\n--- Graphics Device %d ---\n", Index);
+    // Print(L"Current mode: %d\n", Graphics->Mode->Mode);
+    // Print(L"Framebuffer base: 0x%p\n", Graphics->Mode->FrameBufferBase);
+    // Print(L"Framebuffer size: %u\n", Graphics->Mode->FrameBufferSize);
+    // Print(L"Max mode: %d\n", Graphics->Mode->MaxMode);
+    // Print(L"\n");
 
     for (UINT32 Mode = 0; Mode < Graphics->Mode->MaxMode; Mode++) {
       UINTN GfxInfoSize;
       EFI_GRAPHICS_OUTPUT_MODE_INFORMATION *Info;
       Status = Graphics->QueryMode(Graphics, Mode, &GfxInfoSize, &Info);
-      CheckStatus(Status);
+      CHECK_STATUS(Status);
 
-      Print(L"Mode %d\n", Mode);
-      Print(L"  Horizontal Resolution: %u\n", Info->HorizontalResolution);
-      Print(L"  Vertical Resolution: %u\n", Info->VerticalResolution);
-      Print(L"  Pixel Format: %u\n", Info->PixelFormat);
-      Print(L"  Pixel Bitmask: %u\n", Info->PixelInformation);
-      Print(L"  Pixels Per Scanline: %u\n", Info->PixelsPerScanLine);
+      // Print(L"Mode %d\n", Mode);
+      // Print(L"  Horizontal Resolution: %u\n", Info->HorizontalResolution);
+      // Print(L"  Vertical Resolution: %u\n", Info->VerticalResolution);
+      // Print(L"  Pixel Format: %u\n", Info->PixelFormat);
+      // Print(L"  Pixel Bitmask: %u\n", Info->PixelInformation);
+      // Print(L"  Pixels Per Scanline: %u\n", Info->PixelsPerScanLine);
 
       if (Info->HorizontalResolution == X && Info->VerticalResolution == Y) {
         Status = Graphics->SetMode(Graphics, Mode);

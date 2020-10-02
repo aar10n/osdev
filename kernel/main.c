@@ -2,38 +2,29 @@
 // Created by Aaron Gill-Braun on 2020-09-24.
 //
 
-// #include <string.h>
-#include <kernel/io.h>
+#include <base.h>
 #include <boot.h>
+#include <stdio.h>
 
-int is_transmit_empty(int port) {
-  return inb(port + 5) & 0x20;
-}
+#include <cpu/cpu.h>
+#include <mm/mm.h>
 
-void init_serial(int port) {
-  outb(port + 1, 0x00); // Disable all interrupts
-  outb(port + 3, 0x80); // Enable DLAB (set baud rate divisor)
-  outb(port + 0, 0x03); // Set divisor to 3 (lo byte) 38400 baud
-  outb(port + 1, 0x00); //                  (hi byte)
-  outb(port + 3, 0x03); // 8 bits, no parity, one stop bit
-  outb(port + 2, 0xC7); // Enable FIFO, clear them, with 14-byte threshold
-  outb(port + 4, 0x0B); // IRQs enabled, RTS/DSR set
-}
+#include <drivers/serial.h>
 
-void serial_write_char(int port, char a) {
-  while (is_transmit_empty(port) == 0);
-
-  outb(port, a);
-}
-
-void serial_write(int port, char *s) {
-  while (*s) {
-    serial_write_char(port, *s);
-    s++;
-  }
-}
+uintptr_t kernel_phys;
 
 void main(boot_info_t *info) {
-  init_serial(0x3F8);
-  serial_write(0x3F8, "Hello, world!");
+  kernel_phys = info->kernel_phys;
+
+  serial_init(COM1);
+  kprintf("Kernel loaded!\n");
+
+  // uint64_t entry = virt_addr(511, 510, 0, 0);
+  // kprintf("Testing: %p\n", KERNEL_VA);
+  // uint64_t one = 0xFFFFFF8000000000;
+  // uint64_t two = 0xFFFFFFFF80000000;
+  // kprintf("Index: %d | %d\n", pml4_index(one), pdpt_index(one));
+  // kprintf("Index: %d | %d\n", pml4_index(one), pdpt_index(two));
+  // kprintf("Boot info: %p\n", info);
+  // enable_sse();
 }

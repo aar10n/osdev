@@ -22,7 +22,9 @@ OBJCOPY = $(TOOLCHAIN)objcopy
 
 GDB = $(TOOLCHAIN)gdb
 
-CFLAGS += -gdwarf -Wall -m64 -ffreestanding -nostdlib -mcmodel=kernel -mno-red-zone -fno-stack-protector -MMD
+CFLAGS += -gdwarf -Wall -m64 -ffreestanding -nostdlib \
+	-mcmodel=large -mno-red-zone -fno-stack-protector -MMD \
+	-fno-omit-frame-pointer
 CXXFLAGS += $(CFLAGS) -fno-rtti -fno-exceptions
 ASFLAGS +=
 NASMFLAGS += -gdwarf -f elf64

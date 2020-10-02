@@ -6,7 +6,7 @@ CC-boot = clang
 LD-boot = lld-link
 
 INCLUDE-boot = \
-	-Iinclude \
+	-Iinclude/ \
 	-Iinclude/boot \
 	-Ithird-party/edk2/MdePkg/Include \
 	-Ithird-party/edk2/MdePkg/Include/X64 \

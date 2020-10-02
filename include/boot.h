@@ -8,18 +8,12 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <Uefi.h>
-
-
-#define KERNEL_VA 0xFFFFFFFF80000000
-
-
 // Contains definitions for the data structures given
 // to the kernel by the bootloader. The data structures
 // include information about system memory, devices
 
 // Memory map
-#define MEMORY_NONE     0
+#define MEMORY_UNKNOWN  0
 #define MEMORY_RESERVED 1
 #define MEMORY_FREE     2
 #define MEMORY_ACPI     3
@@ -37,24 +31,29 @@ typedef struct {
   uint32_t type;
   uintptr_t phys_addr;
   size_t size;
+} memory_region_t;
+
+typedef struct {
+  size_t mem_total;
+  size_t mmap_size;
+  memory_region_t *mmap;
 } memory_map_t;
 
 // The full boot structure
 
 typedef struct {
-  uint8_t magic[4];         // 'BOOT' magic
+  uint8_t magic[4];      // 'BOOT' magic
+  uintptr_t kernel_phys; // the kernel physical address
   // memory info
-  size_t mem_total;         // the total amount of physical memory
-  memory_map_t *mmap;       // the memory map array
-  size_t mmap_size;         // the size of the memory map
+  memory_map_t *mem_map; // the memory map array
   // framebuffer info
-  uintptr_t fb_ptr;         // framebuffer pointer
-  size_t fb_size;           // framebuffer size
-  uint32_t fb_width;        // framebuffer width
-  uint32_t fb_height;       // framebuffer height
-  uint32_t fb_pps;          // frambuffer pixels per scanline
+  uintptr_t fb_ptr;      // framebuffer pointer
+  size_t fb_size;        // framebuffer size
+  uint32_t fb_width;     // framebuffer width
+  uint32_t fb_height;    // framebuffer height
+  uint32_t fb_pps;       // frambuffer pixels per scanline
   // misc info
-  EFI_RUNTIME_SERVICES *rt; // a pointer to the EFI runtime services
+  uintptr_t rt;          // a pointer to the EFI runtime services
 } boot_info_t;
 
 #endif

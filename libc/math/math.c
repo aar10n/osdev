@@ -11,11 +11,6 @@ static const char log2_lookup[256] = {
   LT(6), LT(7), LT(7), LT(7), LT(7), LT(7), LT(7), LT(7), LT(7),
 };
 
-
-int abs(int j) {
-  return j < 0 ? -j : j;
-}
-
 int log2(unsigned int v) {
   unsigned int r;
   register unsigned int t, tt;
@@ -54,20 +49,4 @@ double pow(double x, double y) {
 
 double fmod(double x, double y) {
   return x - ((int) x / y) * y;
-}
-
-int imax(int x, int y) {
-  return x > y ? x : y;
-}
-
-unsigned int umax(unsigned int x, unsigned int y) {
-  return x > y ? x : y;
-}
-
-int imin(int x, int y) {
-  return x > y ? y : x;
-}
-
-int umin(unsigned int x, unsigned int y) {
-  return x > y ? y : x;
 }

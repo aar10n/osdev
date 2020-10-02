@@ -3,7 +3,7 @@
 #
 
 # drivers
-drivers +=
+drivers += serial.c
 
 
 

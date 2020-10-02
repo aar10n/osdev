@@ -2,13 +2,17 @@
 // Created by Aaron Gill-Braun on 2020-08-31.
 //
 
+#include <base.h>
+#include <stdbool.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
-#include <stdbool.h>
 #include <math.h>
+
+#include <kernel/panic.h>
+
+#include <drivers/serial.h>
 
 typedef enum {
   START,
@@ -93,7 +97,7 @@ int char2digit(char c, int r) {
 
 //
 
-int ntoa_signed(char *buf, int value, int base, fmt_options_t *opts) {
+int ntoa_signed(char *buf, long long value, int base, fmt_options_t *opts) {
   const char *lookup = opts->is_uppercase ? "0123456789ABCDEF" : "0123456789abcdef";
 
   int index = 0;
@@ -110,7 +114,7 @@ int ntoa_signed(char *buf, int value, int base, fmt_options_t *opts) {
   }
 }
 
-int ntoa_unsigned(char *buf, unsigned value, int base, fmt_options_t *opts) {
+int ntoa_unsigned(char *buf, unsigned long long value, int base, fmt_options_t *opts) {
   const char *lookup = opts->is_uppercase ? "0123456789ABCDEF" : "0123456789abcdef";
 
   int index = 0;
@@ -159,7 +163,7 @@ int apply_prefix(char *buf, bool negative, fmt_options_t *opts) {
 //
 
 
-int _ntoa(char *buf, unsigned value, int base, fmt_options_t *opts) {
+int _ntoa(char *buf, unsigned long long value, int base, fmt_options_t *opts) {
   int prefix_len = 0;
   int padding_len = 0;
   int number_len = 0;
@@ -168,9 +172,9 @@ int _ntoa(char *buf, unsigned value, int base, fmt_options_t *opts) {
   static char prefix[16];
   if (opts->is_signed) {
     // signed number
-    number_len = ntoa_signed(number, abs((int) value), base, opts);
+    number_len = ntoa_signed(number, (long long) value, base, opts);
     // prefix options
-    prefix_len = apply_prefix(prefix, ((int) value) < 0, opts);
+    prefix_len = apply_prefix(prefix, value < 0, opts);
   } else {
     // unsigned number
     number_len = ntoa_unsigned(number, value, base, opts);
@@ -184,7 +188,7 @@ int _ntoa(char *buf, unsigned value, int base, fmt_options_t *opts) {
 
   // calculate padding
   uint32_t total_len = opts->width - (number_len + prefix_len);
-  padding_len = imax(total_len, 0);
+  padding_len = max(total_len, 0);
 
   // | space padding - prefix - zero padding - number - right padding |
   int index = 0;
@@ -268,13 +272,13 @@ int _ftoa(char *buf, double value, fmt_options_t *opts) {
 
     int whole = (int) value;
     double tmp = (value - whole) * pow10[prec];
-    unsigned long frac = (unsigned long) tmp;
-    diff = tmp - frac;
+    unsigned long long frac = (unsigned long long) tmp;
+    diff = tmp - (double) frac;
 
     if (diff > 0.5) {
       ++frac;
       // handle rollover, e.g. case 0.99 with prec 1 is 1.0
-      if (frac >= pow10[prec]) {
+      if ((double) frac >= pow10[prec]) {
         frac = 0;
         ++whole;
       }
@@ -362,9 +366,9 @@ int _atoi(const char *str, int base) {
   while (str[index]) {
     char ch = str[index];
     if (ch >= '0' && ch <= '9') {
-      int column = len - (index + 1);
+      int column = (int) len - (index + 1);
       int digit = char2digit(ch, 10);
-      value += digit * pow(base, column);
+      value += digit * (int) pow(base, column);
     } else {
       return -1;
     }
@@ -395,9 +399,12 @@ int parse_int(char *dest, const char *str) {
   return n;
 }
 
-int ksnprintf_internal(char *str, size_t size, bool limit, const char *format, va_list *valist) {
+int ksnprintf_internal(char *str, size_t size, bool limit, const char *format, va_list args) {
+  va_list valist;
+  va_copy(valist, args);
+
   char const *fmt_ptr = format;
-  char buffer[128];
+  static char buffer[128];
 
   int n = 0;
   fmt_options_t opts = {};
@@ -484,12 +491,25 @@ int ksnprintf_internal(char *str, size_t size, bool limit, const char *format, v
       continue;
     } else if (state == LENGTH) {
       switch (ch) {
-        case 'h':
-          opts.length = *(fmt_ptr + 1) == 'h' ? L_CHAR : L_SHORT;
+        case 'h': {
+          if (*(fmt_ptr + 1) == 'h') {
+            opts.length = L_CHAR;
+            fmt_ptr++;
+          } else {
+            opts.length = L_SHORT;
+          }
           break;
-        case 'l':
-          opts.length = *(fmt_ptr + 1) == 'l' ? L_LONGLONG : L_LONG;
+        }
+        case 'l': {
+          if (*(fmt_ptr + 1) == 'l') {
+            opts.length = L_LONGLONG;
+            fmt_ptr++;
+          } else {
+            opts.length = L_LONG;
+          }
           break;
+
+        }
         case 'L':
           opts.length = L_LONGDOUBLE;
           break;
@@ -513,7 +533,7 @@ int ksnprintf_internal(char *str, size_t size, bool limit, const char *format, v
         case 'd':
         case 'i': {
           opts.is_signed = true;
-          int value = va_arg(*valist, int);
+          int value = va_arg(valist, int);
           format_len = _ntoa(buffer, value, 10, &opts);
           break;
         }
@@ -524,8 +544,8 @@ int ksnprintf_internal(char *str, size_t size, bool limit, const char *format, v
         case 'x':
         case 'X': {
           if (ch == 'p') {
-            // %#x
             opts.alt_form = true;
+            opts.length = L_LONGLONG;
             ch = 'x';
           } else if (ch == 'X') {
             opts.is_uppercase = true;
@@ -538,8 +558,13 @@ int ksnprintf_internal(char *str, size_t size, bool limit, const char *format, v
                      ch == 'X' ? 16 :
                      10;
 
-          unsigned value = va_arg(*valist, unsigned);
-          format_len = _ntoa(buffer, value, base, &opts);
+          unsigned long long value;
+          if (opts.length == L_LONGLONG) {
+            value = va_arg(valist, unsigned long long);
+            format_len = _ntoa(buffer, value, base, &opts);
+          } else {
+            value = va_arg(valist, unsigned);
+          }
           break;
         }
         case 'e':
@@ -553,33 +578,33 @@ int ksnprintf_internal(char *str, size_t size, bool limit, const char *format, v
           }
 
           // double (in decimal notation)
-          double value = va_arg(*valist, double);
+          double value = va_arg(valist, double);
           format_len = _ftoa(buffer, value, &opts);
           break;
         }
         case 'g':
         case 'G':
           // double (in f/F or e/E notation)
-          break;
         case 'a':
         case 'A':
           // double (in hex notation)
+          panic("Format specifier '%c' not supported\n", ch);
           break;
         case 'c': {
-          char value = va_arg(*valist, int);
+          char value = va_arg(valist, int);
           buffer[0] = value;
           format_len = 1;
           break;
         }
         case 's': {
-          char *value = va_arg(*valist, char *);
+          char *value = va_arg(valist, char *);
           int len = strlen(value);
           memcpy(buffer, value, len);
           format_len = len;
           break;
         }
         case 'n': {
-          int *value = va_arg(*valist, int *);
+          int *value = va_arg(valist, int *);
           *value = n;
           break;
         }
@@ -631,13 +656,13 @@ int ksnprintf_internal(char *str, size_t size, bool limit, const char *format, v
 int ksnprintf(char *str, size_t n, const char *format, ...) {
   va_list valist;
   va_start(valist, format);
-  int vn = ksnprintf_internal(str, n, true, format, &valist);
+  int vn = ksnprintf_internal(str, n, true, format, valist);
   va_end(valist);
   return vn;
 }
 
 int kvsnprintf(char *str, size_t n, const char *format, va_list args) {
-  int vn = ksnprintf_internal(str, n, true, format, &args);
+  int vn = ksnprintf_internal(str, n, true, format, args);
   return vn;
 }
 
@@ -651,13 +676,13 @@ int kvsnprintf(char *str, size_t n, const char *format, va_list args) {
 int ksprintf(char *str, const char *format, ...) {
   va_list valist;
   va_start(valist, format);
-  int n = ksnprintf_internal(str, -1, false, format, &valist);
+  int n = ksnprintf_internal(str, -1, false, format, valist);
   va_end(valist);
   return n;
 }
 
 int kvsprintf(char *str, const char *format, va_list args) {
-  int n = ksnprintf_internal(str, -1, false, format, &args);
+  int n = ksnprintf_internal(str, -1, false, format, args);
   return n;
 }
 
@@ -720,15 +745,15 @@ void kprintf(const char *format, ...) {
   static char str[PRINTF_BUFFER_SIZE];
   va_list valist;
   va_start(valist, format);
-  ksnprintf_internal(str, PRINTF_BUFFER_SIZE, true, format, &valist);
+  ksnprintf_internal(str, PRINTF_BUFFER_SIZE, true, format, valist);
   va_end(valist);
   // kputs(str);
-  // serial_write(COM1, str);
+  serial_write(COM1, str);
 }
 
 void kvfprintf(const char *format, va_list args) {
   static char str[PRINTF_BUFFER_SIZE];
-  ksnprintf_internal(str, PRINTF_BUFFER_SIZE, true, format, &args);
+  ksnprintf_internal(str, PRINTF_BUFFER_SIZE, true, format, args);
   // kputs(str);
-  // serial_write(COM1, str);
+  serial_write(COM1, str);
 }

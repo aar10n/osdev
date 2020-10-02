@@ -10,7 +10,7 @@ LDFLAGS +=
 ASFLAGS +=
 NASMFLAGS +=
 
-INCLUDE = -Iinclude -Ilib -Ilibc
+INCLUDE = -Iinclude -Iinclude/kernel -Ilib -Ilibc
 
 QEMUFLAGS = \
 	-bios scripts/OVMF-DEBUG.fd \
@@ -20,13 +20,12 @@ QEMUFLAGS = \
 	-cpu Nehalem \
 	-smp cores=2,threads=4 \
 	-machine q35 \
-	-m 128M \
+	-m 256M \
 	-debugcon file:$(BUILD)/uefi_debug.log \
 	-serial file:$(BUILD)/stdio \
 	-drive file=$(BUILD)/osdev.img,id=boot,format=raw,if=none \
 	-device usb-storage,drive=boot \
 	-usb
-
 
 include scripts/Makefile.toolchain
 include scripts/Makefile.util
@@ -35,7 +34,7 @@ include scripts/Makefile.util
 #  Targets  #
 # --------- #
 
-targets = boot kernel libc # drivers lib
+targets = boot kernel drivers libc # lib
 
 # include the makefiles of all targets
 include $(foreach t,$(targets),$t/Makefile)
@@ -106,7 +105,7 @@ $(BUILD)/loader.dll: $(boot-y)
 		/debug /lldmap @scripts/loader-libs.lst $^
 
 # Kernel
-$(BUILD)/kernel.elf: $(kernel-y) # $(libc-y) # $(drivers-y) $(lib-y)
+$(BUILD)/kernel.elf: $(kernel-y) $(libc-y) $(drivers-y) # $(lib-y)
 	$(call toolchain,$<,LD) $(call flags,$<,LDFLAGS) $^ -o $@
 
 
