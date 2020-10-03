@@ -14,7 +14,9 @@
 #include <Protocol/LoadedImage.h>
 #include <Protocol/SimpleFileSystem.h>
 #include <Protocol/Smbios.h>
+#include <Guid/Acpi.h>
 #include <Guid/FileInfo.h>
+#include <Guid/SmBios.h>
 
 #include <Config.h>
 #include <Memory.h>
@@ -40,7 +42,7 @@
 
 #define LABEL(L) L:
 
-typedef __attribute__((sysv_abi)) void (*KERNEL_ENTRY)(UINT64 StackPtr, boot_info_t *BootInfo);
+typedef __attribute__((sysv_abi)) void (*KERNEL_ENTRY)(UINT64 StackPtr, UINT64 BootInfo);
 
 BOOLEAN PostExitBootServices = FALSE;
 
@@ -279,12 +281,15 @@ EFI_STATUS EFIAPI ReadElf(
         FoundFirst = TRUE;
       }
 
+      // Print(L"--> Allocating PAGE_DESCRIPTOR\n");
       PAGE_DESCRIPTOR *Segment = AllocateRuntimePool(sizeof(PAGE_DESCRIPTOR));
       CHECK_NULL(Segment);
 
+      // Print(L"Size: %u (%d pages)\n", ProgramHdr->p_memsz, EFI_SIZE_TO_PAGES(ProgramHdr->p_memsz));
+
       Segment->VirtAddr = ProgramHdr->p_vaddr;
-      Segment->PhysAddr = (ProgramHdr->p_vaddr - KERNEL_VA);
-      Segment->NumPages = ALIGN_VALUE(ProgramHdr->p_memsz, EFI_PAGE_SIZE) >> 12;
+      Segment->PhysAddr = (ProgramHdr->p_vaddr - KERNEL_OFFSET);
+      Segment->NumPages = EFI_SIZE_TO_PAGES(ProgramHdr->p_memsz);
       Segment->Flags = (ProgramHdr->p_flags & PF_W) ? 0b11 : 0b1; // Read/Write
       Segment->Next = NULL;
 
@@ -295,7 +300,7 @@ EFI_STATUS EFIAPI ReadElf(
       }
       Last = Segment;
 
-      LoadedSize += ProgramHdr->p_memsz;
+      LoadedSize += ALIGN_VALUE(ProgramHdr->p_memsz, EFI_PAGE_SIZE);
       ProgramHdr = (Elf64_Phdr *) ((UINTN) ProgramHdr + ElfHdr->e_phentsize);
     }
   }
@@ -303,7 +308,6 @@ EFI_STATUS EFIAPI ReadElf(
   *Entry = ElfHdr->e_entry;
   *Size = LoadedSize;
   *PageLayout = First;
-
   return EFI_SUCCESS;
 }
 
@@ -331,7 +335,7 @@ EFI_STATUS EFIAPI LoadElf(void *ElfImage, UINT64 Address) {
       UINTN ZerosCount;
 
       FileSegment = (void *) ((UINTN) ElfImage + ProgramHdr->p_offset);
-      MemSegment = (void *) (Address + (ProgramHdr->p_vaddr - (KERNEL_VA + KERNEL_PA)));
+      MemSegment = (void *) (Address + (ProgramHdr->p_vaddr - (KERNEL_OFFSET + KERNEL_PA)));
       CopyMem(MemSegment, FileSegment, ProgramHdr->p_filesz);
 
       // Zero uninitialized data sections
@@ -349,7 +353,7 @@ EFI_STATUS EFIAPI LoadElf(void *ElfImage, UINT64 Address) {
 }
 
 //
-// Smbios Info
+// System Information
 //
 
 EFI_STATUS EFIAPI SmbiosGetProcessorCount(UINTN *ProcessorCount) {
@@ -388,6 +392,32 @@ EFI_STATUS EFIAPI SmbiosGetProcessorCount(UINTN *ProcessorCount) {
   *ProcessorCount = Count;
   return EFI_SUCCESS;
 }
+
+EFI_STATUS EFIAPI ProbeSystemConfigTable(void **AcpiTable, void **SmbiosTable) {
+  UINTN Found = 0;
+  EFI_GUID AcpiGuid = EFI_ACPI_TABLE_GUID;
+  EFI_GUID SmbiosGuid = SMBIOS_TABLE_GUID;
+  EFI_CONFIGURATION_TABLE *ConfigTable = gST->ConfigurationTable;
+  for (UINTN Index = 0; Index < gST->NumberOfTableEntries; Index++) {
+    EFI_CONFIGURATION_TABLE *Entry = &(ConfigTable[Index]);
+
+    if (CompareGuid(&(Entry->VendorGuid), &AcpiGuid)) {
+      *AcpiTable = Entry->VendorTable;
+      Found++;
+    } else if (CompareGuid(&(Entry->VendorGuid), &SmbiosGuid)) {
+      *SmbiosTable = Entry->VendorTable;
+      Found++;
+    }
+
+    if (Found == 2) {
+      break;
+    }
+  }
+
+  return EFI_SUCCESS;
+}
+
+
 
 //
 // Protocol Initialization
@@ -560,17 +590,31 @@ EFI_STATUS EFIAPI UefiMain(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable
   Status = CreateKernelMemoryMap(&Mmap, &KernelMmap);
   CHECK_STATUS(Status);
 
+  UINTN ProcessorCount;
+  Status = SmbiosGetProcessorCount(&ProcessorCount);
+  CHECK_STATUS(Status);
 
-  /* -------- Kernel + Info Region -------- */
+  /* -------------------------------------- */
+  /*            Reserved Regions            */
+  /* -------------------------------------- */
   UINTN KernelSizeAligned = ALIGN_VALUE(KernelSize, EFI_PAGE_SIZE);
-  UINTN InfoSizeAligned = ALIGN_VALUE(sizeof(boot_info_t) + sizeof(memory_map_t) +
-                                      KernelMmap->mmap_size, EFI_PAGE_SIZE);
+  UINTN InfoSize = ALIGN_VALUE(sizeof(boot_info_t) + sizeof(memory_map_t) +
+                               KernelMmap->mmap_capacity, EFI_PAGE_SIZE);
+  UINTN PageTablesSize = EFI_PAGES_TO_SIZE(RESERVED_TABLES);
 
-  UINTN KernelRegionSize = KernelSizeAligned + InfoSizeAligned +
-    EFI_PAGES_TO_SIZE(RESERVED_TABLES);
+  // Kernel Region
+  UINTN KernelRegionSize = KernelSizeAligned + InfoSize + PageTablesSize;
+  // Reserved Region
+  UINTN ReservedRegionSize = KERNEL_RESERVED - KernelRegionSize;
+  // Stack Region
+  UINTN StackRegionSize = ProcessorCount * (STACK_SIZE + EFI_PAGE_SIZE);
 
-  Print(L"[Loader] Kernel size: %u\n", KernelSize);
+  Print(L"[Loader] Kernel size: %u (%d pages)\n", KernelSizeAligned, EFI_SIZE_TO_PAGES(KernelSizeAligned));
+  Print(L"[Loader] Boot info size: %u (%d pages)\n", InfoSize, EFI_SIZE_TO_PAGES(InfoSize));
+  Print(L"[Loader] Page tables size: %u (%d pages)\n", PageTablesSize, EFI_SIZE_TO_PAGES(PageTablesSize));
+  Print(L"[Loader] Reserved size: %u (%d pages)\n", ReservedRegionSize, EFI_SIZE_TO_PAGES(ReservedRegionSize));
 
+  /* --------- Kernel Region --------- */
   UINT64 KernelAddress = KERNEL_PA;
   Status = LocateMemoryRegion(
     AtAddress,
@@ -580,26 +624,67 @@ EFI_STATUS EFIAPI UefiMain(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable
   );
   CHECK_STATUS(Status);
 
-  // Create page descriptors for info
+  // Create page descriptors for the info and page tables
   PAGE_DESCRIPTOR *InfoPages = MakePageDescriptor(
-    KERNEL_VA + KernelSizeAligned,
+    KERNEL_OFFSET + KernelAddress + KernelSizeAligned,
     KernelAddress + KernelSizeAligned,
-    EFI_SIZE_TO_PAGES(InfoSizeAligned),
-    2 // Present | Read/Write
+    EFI_SIZE_TO_PAGES(InfoSize + PageTablesSize),
+    0b11 // Present | Read/Write
   );
   CHECK_NULL(InfoPages);
   AddPageDescriptor(KernelPages, InfoPages);
 
-  /* -------- Kernel Stack Region -------- */
-  UINTN ProcessorCount;
-  Status = SmbiosGetProcessorCount(&ProcessorCount);
+  /* --------- Kernel Reserved Region --------- */
+  UINT64 ReservedAddress = KERNEL_PA + KernelRegionSize;
+  Status = LocateMemoryRegion(
+    AtAddress,
+    KernelMmap,
+    ReservedRegionSize,
+    &ReservedAddress
+  );
   CHECK_STATUS(Status);
 
-  Print(L"[Loader] Allocating %d stack spaces\n", ProcessorCount);
+  // Since the reserved region is a lot larger try to use
+  // 2 MiB pages if possible
+  UINT64 ReservedPtr = ReservedAddress;
+  UINTN NumReservedPages = EFI_SIZE_TO_PAGES(ReservedRegionSize);
+  while (NumReservedPages > 0) {
+    UINT64 Next2MBBoundary = ALIGN_VALUE(ReservedPtr, SIZE_2MB);
+    BOOLEAN Is2MBAligned = ReservedPtr == Next2MBBoundary;
 
-  // Allocate a stack for each cpu with an additional
-  // zero page at the end of each stack
-  UINTN StackRegionSize = ProcessorCount * (STACK_SIZE + EFI_PAGE_SIZE);
+    PAGE_DESCRIPTOR *ReservedPages;
+    if (Is2MBAligned && NumReservedPages >= TABLE_LENGTH) {
+      UINTN NumPages = NumReservedPages / TABLE_LENGTH;
+      // Make a 2MB Page
+      ReservedPages = MakePageDescriptor(
+        KERNEL_OFFSET + ReservedPtr,
+        ReservedPtr,
+        NumPages,
+        0b10000011 // Present | Read/Write | Page Size
+      );
+
+      ReservedPtr += NumPages * SIZE_2MB;
+      NumReservedPages -= NumPages * TABLE_LENGTH;
+    } else {
+      // Make 4MB Pages
+      UINTN NumPages = EFI_SIZE_TO_PAGES(Next2MBBoundary - ReservedPtr);
+      ReservedPages = MakePageDescriptor(
+        KERNEL_OFFSET + ReservedPtr,
+        ReservedPtr,
+        NumPages,
+        0b11 // Present | Read/Write
+      );
+
+      ReservedPtr += EFI_PAGES_TO_SIZE(NumPages);
+      NumReservedPages -= NumPages;
+    }
+
+    CHECK_NULL(ReservedPages);
+    AddPageDescriptor(KernelPages, ReservedPages);
+  }
+
+  /* -------- Kernel Stack Region -------- */
+  Print(L"[Loader] Allocating %d stack spaces\n", ProcessorCount);
 
   UINT64 StackAddressBase;
   Status = LocateMemoryRegion(
@@ -651,12 +736,23 @@ EFI_STATUS EFIAPI UefiMain(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable
 
   /* ----------------------------------- */
 
-  // PrintKernelMemoryMap(KernelMmap);
-  // PrintPageDescriptors(KernelPages);
+  PrintPageDescriptors(KernelPages);
+  PrintKernelMemoryMap(KernelMmap);
 
   UINT64 BootInfoAddress = KernelAddress + KernelSizeAligned;
   UINT64 MemoryMapAddress = BootInfoAddress + sizeof(boot_info_t);
-  UINT64 PML4Address = KernelAddress + KernelSizeAligned + InfoSizeAligned;
+  UINT64 PML4Address = BootInfoAddress + InfoSize;
+
+  // Print(L"Boot info address: 0x%p\n", BootInfoAddress);
+  // Print(L"Memory map address: 0x%p\n", MemoryMapAddress);
+  // Print(L"PML4 address: 0x%p\n", PML4Address);
+  // Print(L"Reserved address: 0x%p\n", ReservedAddress);
+
+  // Get system info table pointers
+  void *AcpiTable = NULL;
+  void *SmbiosTable = NULL;
+  Status = ProbeSystemConfigTable(&AcpiTable, &SmbiosTable);
+  CHECK_STATUS(Status);
 
   Print(L"[Loader] Exiting boot services\n");
   gBS->ExitBootServices(ImageHandle, Mmap.MapKey);
@@ -680,12 +776,12 @@ EFI_STATUS EFIAPI UefiMain(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable
   // Move the memory map to a better spot
   memory_map_t *MemoryMap = (memory_map_t *) MemoryMapAddress;
   memory_region_t *Regions = (memory_region_t *) (MemoryMapAddress + sizeof(memory_map_t));
-  CopyMem(Regions, KernelMmap->mmap, KernelMmap->mmap_size);
+  CopyMem(Regions, KernelMmap->mmap, KernelMmap->mmap_capacity);
   MemoryMap->mem_total = KernelMmap->mem_total;
   MemoryMap->mmap_size = KernelMmap->mmap_size;
   MemoryMap->mmap = Regions;
 
-  // Create the boot_info_t struct
+  // Populate the boot_info_t struct
   boot_info_t *BootInfo = (boot_info_t *) BootInfoAddress;
 
   BootInfo->magic[0] = BOOT_MAGIC0;
@@ -694,6 +790,9 @@ EFI_STATUS EFIAPI UefiMain(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable
   BootInfo->magic[3] = BOOT_MAGIC3;
 
   BootInfo->mem_map = MemoryMap;
+  BootInfo->pml4 = PML4Address;
+  BootInfo->resrv_start = ReservedAddress;
+  BootInfo->resrv_size = ReservedRegionSize;
 
   BootInfo->fb_ptr = Graphics->Mode->FrameBufferBase;
   BootInfo->fb_size = Graphics->Mode->FrameBufferSize;
@@ -701,7 +800,9 @@ EFI_STATUS EFIAPI UefiMain(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable
   BootInfo->fb_height = Graphics->Mode->Info->VerticalResolution;
   BootInfo->fb_pps = Graphics->Mode->Info->PixelsPerScanLine;
 
-  BootInfo->rt = (uintptr_t) gST->RuntimeServices;
+  BootInfo->efi_rt = (UINT64) gST->RuntimeServices;
+  BootInfo->acpi = (UINT64) AcpiTable;
+  BootInfo->smbios = (UINT64) SmbiosTable;
 
   //
 
@@ -710,7 +811,7 @@ EFI_STATUS EFIAPI UefiMain(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable
   KERNEL_ENTRY Entry = (KERNEL_ENTRY) KernelEntry;
 
   Print(L"[Loader] Loading kernel\n");
-  Entry(StackVirtualTop, BootInfo);
+  Entry(StackVirtualTop, BootInfoAddress + KERNEL_OFFSET);
 
   // We should not get here
   ErrorPrint(L"[Loader] Fatal Error\n");

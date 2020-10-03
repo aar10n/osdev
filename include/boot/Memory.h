@@ -9,11 +9,12 @@
 #include <stdint.h>
 
 #define KERNEL_PA 0x100000
-#define KERNEL_VA 0xFFFFFF8000000000
+#define KERNEL_OFFSET 0xFFFFFF8000000000
 #define STACK_VA 0xFFFFFFA000000000
 #define STACK_SIZE 0x4000 // 16 KiB
+#define KERNEL_RESERVED 0x300000 // 3 MiB
 // The number of pre-allocated tables for paging
-#define RESERVED_TABLES 6
+#define RESERVED_TABLES 8
 #define TABLE_LENGTH 512
 
 #define NEXT_TABLE(Table) \
@@ -33,6 +34,7 @@ typedef struct _PAGE_DESCRIPTOR {
   UINT64 PhysAddr;
   UINTN NumPages;
   UINT16 Flags;
+  BOOLEAN Size2MiB;
   struct _PAGE_DESCRIPTOR *Next;
 } PAGE_DESCRIPTOR;
 

@@ -16,11 +16,8 @@ SECTIONS {
   .data ALIGN(4K) : AT(ADDR(.data)) {
     *(.data)
   }
-  .bss : AT(ADDR(.bss)) {
+  .bss ALIGN(4K) : AT(ADDR(.bss)) {
     *(.bss)
-  }
-  .eh_frame ALIGN(4K) : AT(ADDR(.eh_frame)) {
-    *(.eh_frame)
   }
   kernel_image_end = .;
 }

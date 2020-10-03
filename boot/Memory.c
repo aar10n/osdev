@@ -12,12 +12,12 @@
 
 #include <Memory.h>
 
+#define MMAP_SIZE 1024
+
 #define PT_OFFSET(a) (((a) >> 12) & 0x1FF)
 #define PDT_OFFSET(a) (((a) >> 21) & 0x1FF)
 #define PDPT_OFFSET(a) (((a) >> 30) & 0x1FF)
 #define PML4_OFFSET(a) (((a) >> 39) & 0x1FF)
-
-#define MMAP_SIZE 1024
 
 extern BOOLEAN PostExitBootServices;
 
@@ -166,7 +166,7 @@ EFI_STATUS EFIAPI CreateKernelMemoryMap(IN EFI_MEMORY_MAP *Mmap, OUT memory_map_
 
   // Allocate for worst case scenario of a 1:1 number
   // of memory_map_t structs to EFI_MEMORY_DESCRIPTORs
-  memory_map_t *MemoryMap = AllocatePool(sizeof(memory_map_t) + Size);
+  memory_map_t *MemoryMap = AllocateZeroPool(sizeof(memory_map_t) + Size);
   memory_region_t *KernelMap = (memory_region_t *) ((UINTN) MemoryMap + sizeof(memory_map_t));
   if (KernelMap == NULL) {
     return EFI_OUT_OF_RESOURCES;
@@ -224,6 +224,7 @@ EFI_STATUS EFIAPI CreateKernelMemoryMap(IN EFI_MEMORY_MAP *Mmap, OUT memory_map_
 
   MemoryMap->mem_total = TotalMem;
   MemoryMap->mmap_size = RealMapSize;
+  MemoryMap->mmap_capacity = Size;
   MemoryMap->mmap = KernelMap;
 
   *KernelMapPtr = MemoryMap;
@@ -237,6 +238,8 @@ UINT64 EFIAPI SplitMemoryRegion(
   IN UINTN RegionSize,
   IN UINT64 Offset
 ) {
+  ASSERT(MemoryMap->mmap_size < MemoryMap->mmap_capacity);
+
   memory_region_t *Mmap = MemoryMap->mmap;
 
   UINT64 Pointer = (UINT64) Region;
@@ -261,6 +264,7 @@ UINT64 EFIAPI SplitMemoryRegion(
     (Region + 1)->phys_addr = OldEnd - RegionSize;
     (Region + 1)->size = RegionSize;
 
+    MemoryMap->mmap_size += sizeof(memory_region_t);
     return (Region + 1)->phys_addr;
   } else if (PlacementType == LowestAddress) {
     // v region
@@ -275,6 +279,7 @@ UINT64 EFIAPI SplitMemoryRegion(
     (Region + 1)->phys_addr = OldStart + RegionSize;
     (Region + 1)->size = OldSize - RegionSize;
 
+    MemoryMap->mmap_size += sizeof(memory_region_t);
     return Region->phys_addr;
   } else if (PlacementType == AtAddress) {
     //    v region start
@@ -288,6 +293,8 @@ UINT64 EFIAPI SplitMemoryRegion(
       (Region + 1)->type = MEMORY_RESERVED;
       (Region + 1)->phys_addr = Address;
       (Region + 1)->size = RegionSize;
+
+      MemoryMap->mmap_size += sizeof(memory_region_t);
     } else if (Address == Region->phys_addr) {
       CopyMem(Region + 1, Region, MemoryMapEnd - Pointer);
       // region block
@@ -297,6 +304,8 @@ UINT64 EFIAPI SplitMemoryRegion(
       (Region + 1)->type = OldType;
       (Region + 1)->phys_addr = OldStart + RegionSize;
       (Region + 1)->size = OldSize - RegionSize;
+
+      MemoryMap->mmap_size += sizeof(memory_region_t);
     } else {
       // split both
       CopyMem(Region + 2, Region, MemoryMapEnd - Pointer);
@@ -313,6 +322,8 @@ UINT64 EFIAPI SplitMemoryRegion(
       (Region + 2)->type = OldType;
       (Region + 2)->phys_addr = (Address + RegionSize);
       (Region + 2)->size = OldEnd - (Address + RegionSize);
+
+      MemoryMap->mmap_size += sizeof(memory_region_t) * 2;
     }
 
     return Address;
@@ -354,7 +365,7 @@ EFI_STATUS EFIAPI LocateMemoryRegion(
       } else if (PlacementType == AtAddress) {
         if (*Address >= Ptr->phys_addr && *Address < PtrEnd) {
           if (RegionEnd > PtrEnd) {
-            ErrorPrint(L"[Loader] Unable to load kernel at 0x%p\n", *Address);
+            ErrorPrint(L"[Loader] Unable to find region at 0x%p\n", *Address);
             return EFI_NOT_FOUND;
           }
 
@@ -368,7 +379,7 @@ EFI_STATUS EFIAPI LocateMemoryRegion(
   }
 
   if (Region == NULL) {
-    ErrorPrint(L"[Loader] Failed to find kernel placement\n");
+    ErrorPrint(L"[Loader] Failed to find region\n");
     return EFI_NOT_FOUND;
   }
 
@@ -419,13 +430,19 @@ void EFIAPI AddPageDescriptor(PAGE_DESCRIPTOR *List, PAGE_DESCRIPTOR *Descriptor
 
 void EFIAPI WalkPageTables(UINT64 VirtAddr, UINT64 PhysAddr, UINT16 Flags, UINT64 *Parent, UINT8 Level) {
   // Print(L"--- Walking Level %d ---\n", Level);
-  ASSERT(Level >= 4 && Level < 0);
+  ASSERT(Level <= 4 && Level < 0);
 
   UINTN Shift = 12 + ((Level - 1) * 9);
   UINTN Index = (VirtAddr >> Shift) & 0x1FF;
 
   if (Level == 1) {
-    // Print(L"Adding table entry at index %d (level %d)\n", Index, Level);
+    // Page Size 4KB
+    // Print(L"Adding 4KB page at index %d\n", Index);
+    Parent[Index] = PhysAddr | Flags;
+    return;
+  } else if (Level == 2 && (Flags & (1 << 7))) {
+    // Page Size 2MB
+    // Print(L"Adding 2MB page at index %d\n", Index);
     Parent[Index] = PhysAddr | Flags;
     return;
   }
@@ -468,6 +485,7 @@ void EFIAPI CreatePageTables(UINT64 Address, PAGE_DESCRIPTOR *Descriptors) {
   PAGE_DESCRIPTOR *Desc = Descriptors;
   while (Desc) {
     // Print(L"----- Descriptor -----\n");
+    // Print(L"  Number of pages: %d\n", Desc->NumPages);
     for (UINTN Page = 0; Page < Desc->NumPages; Page++) {
       UINT64 VirtAddr = Desc->VirtAddr + (EFI_PAGES_TO_SIZE(Page));
       UINT64 PhysAddr = Desc->PhysAddr + (EFI_PAGES_TO_SIZE(Page));
@@ -550,13 +568,15 @@ void EFIAPI PrintKernelMemoryMap(memory_map_t *MemoryMap) {
 void EFIAPI PrintPageDescriptors(PAGE_DESCRIPTOR *Descriptors) {
   PAGE_DESCRIPTOR *Desc = Descriptors;
   while (Desc != NULL) {
-    CHAR16 *ReadWrite = Desc->Flags & 2 ? L"Read/Write" : L"Read";
+    CHAR16 *Present = Desc->Flags & 1 ? L"P" : L" ";
+    CHAR16 *Read = Desc->Flags & 2 ? L"RW" : L" ";
+    CHAR16 *PageSize = Desc->Flags & (1 << 7) ? L"PS" : L" ";
 
     Print(L"Descriptor:\n");
     Print(L"  Physical address: 0x%p\n", Desc->PhysAddr);
     Print(L"  Virtual address: 0x%p\n", Desc->VirtAddr);
     Print(L"  Number of pages: %d\n", Desc->NumPages);
-    Print(L"  Flags: %s\n", ReadWrite);
+    Print(L"  Flags: %s %s %s (%d)\n", Present, Read, PageSize, Desc->Flags);
 
     Desc = Desc->Next;
   }

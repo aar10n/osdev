@@ -36,6 +36,7 @@ typedef struct {
 typedef struct {
   size_t mem_total;
   size_t mmap_size;
+  size_t mmap_capacity;
   memory_region_t *mmap;
 } memory_map_t;
 
@@ -46,14 +47,19 @@ typedef struct {
   uintptr_t kernel_phys; // the kernel physical address
   // memory info
   memory_map_t *mem_map; // the memory map array
+  uintptr_t pml4;        // pointer to the pml4 page table
+  uintptr_t resrv_start; // pointer to start of reserved kernel region
+  size_t resrv_size;     // the size of reserved kernel area
   // framebuffer info
   uintptr_t fb_ptr;      // framebuffer pointer
   size_t fb_size;        // framebuffer size
   uint32_t fb_width;     // framebuffer width
   uint32_t fb_height;    // framebuffer height
   uint32_t fb_pps;       // frambuffer pixels per scanline
-  // misc info
-  uintptr_t rt;          // a pointer to the EFI runtime services
+  // system info
+  uintptr_t efi_rt;      // a pointer to the EFI runtime services
+  uintptr_t acpi;        // a pointer to the ACPI RDSP (if present)
+  uintptr_t smbios;      // a pointer to the Smbios entry table (if present)
 } boot_info_t;
 
 #endif
