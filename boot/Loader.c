@@ -736,8 +736,8 @@ EFI_STATUS EFIAPI UefiMain(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable
 
   /* ----------------------------------- */
 
-  PrintPageDescriptors(KernelPages);
-  PrintKernelMemoryMap(KernelMmap);
+  // PrintPageDescriptors(KernelPages);
+  // PrintKernelMemoryMap(KernelMmap);
 
   UINT64 BootInfoAddress = KernelAddress + KernelSizeAligned;
   UINT64 MemoryMapAddress = BootInfoAddress + sizeof(boot_info_t);
@@ -789,20 +789,25 @@ EFI_STATUS EFIAPI UefiMain(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable
   BootInfo->magic[2] = BOOT_MAGIC2;
   BootInfo->magic[3] = BOOT_MAGIC3;
 
+  BootInfo->kernel_phys = KernelAddress;
+  BootInfo->num_cores = ProcessorCount;
+
   BootInfo->mem_map = MemoryMap;
   BootInfo->pml4 = PML4Address;
-  BootInfo->resrv_start = ReservedAddress;
-  BootInfo->resrv_size = ReservedRegionSize;
+  BootInfo->reserved_base = ReservedAddress;
+  BootInfo->reserved_size = ReservedRegionSize;
 
-  BootInfo->fb_ptr = Graphics->Mode->FrameBufferBase;
+  BootInfo->fb_base = Graphics->Mode->FrameBufferBase;
   BootInfo->fb_size = Graphics->Mode->FrameBufferSize;
   BootInfo->fb_width = Graphics->Mode->Info->HorizontalResolution;
   BootInfo->fb_height = Graphics->Mode->Info->VerticalResolution;
-  BootInfo->fb_pps = Graphics->Mode->Info->PixelsPerScanLine;
+  BootInfo->fb_pixels_per_scanline = Graphics->Mode->Info->PixelsPerScanLine;
+  BootInfo->fb_pixel_format = Graphics->Mode->Info->PixelFormat;
+  BootInfo->fb_pixel_info = *((pixel_bitmask_t *) &Graphics->Mode->Info->PixelInformation);
 
-  BootInfo->efi_rt = (UINT64) gST->RuntimeServices;
-  BootInfo->acpi = (UINT64) AcpiTable;
-  BootInfo->smbios = (UINT64) SmbiosTable;
+  BootInfo->runtime_services = (UINT64) gST->RuntimeServices;
+  BootInfo->acpi_table = (UINT64) AcpiTable;
+  BootInfo->smbios_table = (UINT64) SmbiosTable;
 
   //
 

@@ -15,29 +15,28 @@
 
 // 8 bytes
 typedef struct chunk {
-  uint16_t magic;     // magic number
+  uint16_t magic;   // magic number
   uint8_t size : 7; // chunk size in the form of 2^n
-  uint8_t free : 1; // is chunk free
+  uint8_t free : 1; // is chunk used
   // when chunk is used
   union {
     uint8_t size : 7; // last chunk size in form of 2^n
-    uint8_t free : 1; // is last chunk free
+    uint8_t free : 1; // is last chunk used
   } last;
-  // when chunk is free
-  struct chunk *next;     // a pointer to the next free chunk
+  // when chunk is used
+  struct chunk *next;     // a pointer to the next used chunk
 } chunk_t;
 
 typedef struct heap {
-  page_t *source;       // the source of the heap memory
+  // page_t *source;       // the source of the heap memory
   uintptr_t start_addr; // the heap base address
   uintptr_t end_addr;   // the heap end address
   size_t size;          // the size of the heap
   chunk_t *last_chunk;  // the last created chunk
-  chunk_t *chunks;      // a linked list of free chunks
+  chunk_t *chunks;      // a linked list of used chunks
 } heap_t;
 
 void kheap_init();
-heap_t *create_heap(uintptr_t base_addr, size_t size);
 
 void *kmalloc(size_t size);
 void kfree(void *ptr);

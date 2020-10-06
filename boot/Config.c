@@ -69,13 +69,13 @@ EFI_STATUS EFIAPI HashMapSet(INI_VARIABLE *Variable) {
     if (AsciiStrCmp(Bucket->Variable->Key, Variable->Key) == 0) {
       // replace a key
 
-      // free the old value
+      // used the old value
       FreePool(Bucket->Variable->Value);
 
       // point at new value
       Bucket->Variable->Value = Variable->Value;
 
-      // free the passed in name and struct
+      // used the passed in name and struct
       FreePool(Variable->Key);
       FreePool(Variable);
 
