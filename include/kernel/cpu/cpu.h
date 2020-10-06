@@ -2,33 +2,38 @@
 // Created by Aaron Gill-Braun on 2020-08-25.
 //
 
-#ifndef INCLUDE_KERNEL_CPU_CPU_H
-#define INCLUDE_KERNEL_CPU_CPU_H
+#ifndef KERNEL_CPU_CPU_H
+#define KERNEL_CPU_CPU_H
 
 #include <stdint.h>
+#include <base.h>
 
-typedef struct {
+typedef struct packed {
+  uint16_t apic_id;
+  uint16_t vec_no;
+  uint16_t err_code;
+} cpu_err_t;
+
+typedef struct packed {
+  uint16_t apic_id;
+  uint16_t vec_no;
+  uint16_t int_no;
+} cpu_int_t;
+
+typedef struct packed {
+  uint64_t rip, rflags;
+  uint16_t cs, ds, es, fs, gs, ss;
   // general registers
-  uint32_t eax;
-  uint32_t ebx;
-  uint32_t ecx;
-  uint32_t edx;
-  uint32_t esi;
-  uint32_t edi;
-  uint32_t esp;
-  uint32_t ebp;
+  uint64_t rax, rbx, rcx, rdx;
+  uint64_t rdi, rsi, rsp, rbp;
+  // extended registers
+  uint64_t r8, r9, r10, r11;
+  uint64_t r12, r13, r14, r15;
   // control registers
-  uint32_t cr0;
-  uint32_t cr2;
-  uint32_t cr3;
-  uint32_t cr4;
-} cpu_t;
-
-typedef struct {
-  uint32_t ds;                                     // Data segment selector
-  uint32_t edi, esi, ebp, esp, ebx, edx, ecx, eax; // Pushed by pusha
-  uint32_t int_no, err_code;                       // Interrupt number and error code
-  uint32_t eip, cs, eflags, useresp, ss;           // Pushed by the processor automatically
+  uint64_t cr0, cr2, cr3, cr4;
+  // debug registers
+  uint64_t dr0, dr1, dr2, dr3;
+  uint64_t dr6, dr7;
 } registers_t;
 
 // CPUID Information
@@ -154,11 +159,11 @@ typedef struct {
   apic_desc_t *local_apic;
 } core_desc_t;
 
-typedef struct interrupt_source {
+typedef struct irq_source {
   uint8_t source_irq;
   uint8_t dest_interrupt;
   uint8_t flags;
-  struct interrupt_source *next;
+  struct irq_source *next;
 } irq_source_t;
 
 typedef struct {
@@ -183,8 +188,8 @@ typedef struct {
 void disable_interrupts();
 void enable_interrupts();
 
+void load_idt(void *idt);
 void get_cpu_info(cpu_info_t *info);
-
 void enable_sse();
 
 #endif
