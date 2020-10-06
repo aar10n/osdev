@@ -3,8 +3,13 @@
 #
 
 # lib
-lib += hash_table.c \
+lib += bitmap.c \
+	hash_table.c \
 	segment_tree.c
+
+# lib/asm
+
+lib += asm/bitmap.asm
 
 
 # lib-y
