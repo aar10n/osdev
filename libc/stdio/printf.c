@@ -67,8 +67,8 @@ typedef union double_raw {
 // Buffers
 #define PRINTF_BUFFER_SIZE 1024
 
-#define NTOA_BUFFER_SIZE 32
-#define FTOA_BUFFER_SIZE 32
+#define NTOA_BUFFER_SIZE 64
+#define FTOA_BUFFER_SIZE 64
 
 static const double pow10[] = {
   1, 10, 100, 1000, 10000, 100000,
@@ -110,6 +110,7 @@ int ntoa_signed(char *buf, long long value, int base, fmt_options_t *opts) {
       value /= base;
       index++;
     }
+
     return index;
   }
 }
@@ -172,9 +173,9 @@ int _ntoa(char *buf, unsigned long long value, int base, fmt_options_t *opts) {
   static char prefix[16];
   if (opts->is_signed) {
     // signed number
-    number_len = ntoa_signed(number, (long long) value, base, opts);
+    number_len = ntoa_signed(number, abs((long long) value), base, opts);
     // prefix options
-    prefix_len = apply_prefix(prefix, value < 0, opts);
+    prefix_len = apply_prefix(prefix, (long long) value < 0, opts);
   } else {
     // unsigned number
     number_len = ntoa_unsigned(number, value, base, opts);
@@ -533,7 +534,13 @@ int ksnprintf_internal(char *str, size_t size, bool limit, const char *format, v
         case 'd':
         case 'i': {
           opts.is_signed = true;
-          int value = va_arg(valist, int);
+
+          long long int value;
+          if (opts.length == L_LONGLONG) {
+            value = va_arg(valist, long long int);
+          } else {
+            value = va_arg(valist, int);
+          }
           format_len = _ntoa(buffer, value, 10, &opts);
           break;
         }
@@ -561,10 +568,10 @@ int ksnprintf_internal(char *str, size_t size, bool limit, const char *format, v
           unsigned long long value;
           if (opts.length == L_LONGLONG) {
             value = va_arg(valist, unsigned long long);
-            format_len = _ntoa(buffer, value, base, &opts);
           } else {
             value = va_arg(valist, unsigned);
           }
+          format_len = _ntoa(buffer, value, base, &opts);
           break;
         }
         case 'e':
