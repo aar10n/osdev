@@ -221,7 +221,6 @@ EFI_STATUS EFIAPI CreateKernelMemoryMap(IN EFI_MEMORY_MAP *Mmap, OUT memory_map_
   }
 
   UINTN RealMapSize = RealNumEntries * sizeof(memory_map_t);
-
   MemoryMap->mem_total = TotalMem;
   MemoryMap->mmap_size = RealMapSize;
   MemoryMap->mmap_capacity = Size;
@@ -428,6 +427,7 @@ void EFIAPI AddPageDescriptor(PAGE_DESCRIPTOR *List, PAGE_DESCRIPTOR *Descriptor
 
 //
 
+UINTN NumTablesUsed = 1;
 void EFIAPI WalkPageTables(UINT64 VirtAddr, UINT64 PhysAddr, UINT16 Flags, UINT64 *Parent, UINT8 Level) {
   // Print(L"--- Walking Level %d ---\n", Level);
   ASSERT(Level <= 4 && Level < 0);
@@ -435,14 +435,7 @@ void EFIAPI WalkPageTables(UINT64 VirtAddr, UINT64 PhysAddr, UINT16 Flags, UINT6
   UINTN Shift = 12 + ((Level - 1) * 9);
   UINTN Index = (VirtAddr >> Shift) & 0x1FF;
 
-  if (Level == 1) {
-    // Page Size 4KB
-    // Print(L"Adding 4KB page at index %d\n", Index);
-    Parent[Index] = PhysAddr | Flags;
-    return;
-  } else if (Level == 2 && (Flags & (1 << 7))) {
-    // Page Size 2MB
-    // Print(L"Adding 2MB page at index %d\n", Index);
+  if (Level == 1 || (Level == 2 && (Flags & (1 << 7)))) {
     Parent[Index] = PhysAddr | Flags;
     return;
   }
@@ -455,7 +448,7 @@ void EFIAPI WalkPageTables(UINT64 VirtAddr, UINT64 PhysAddr, UINT16 Flags, UINT6
     // Adding new table
     UINTN TableSize = (TABLE_LENGTH * sizeof(UINT64));
     UINTN NumTables = (NextTable - (UINT64) PML4) / TableSize;
-    ASSERT(NumTables < RESERVED_TABLES);
+    ASSERT(NumTables < (RESERVED_TABLES - 2));
 
     Table = (UINT64 *) NextTable;
     PageTables[Offset + Index] = Table;
@@ -500,7 +493,6 @@ void EFIAPI CreatePageTables(UINT64 Address, PAGE_DESCRIPTOR *Descriptors) {
       // Print(L"  Flags: %d\n", Desc->Flags);
 
       WalkPageTables(VirtAddr, PhysAddr, Desc->Flags, PML4, 4);
-
     }
     // Print(L"------------------------\n");
 

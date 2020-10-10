@@ -774,16 +774,17 @@ EFI_STATUS EFIAPI UefiMain(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable
   Print(L"[Loader] Done!\n");
 
   // Move the memory map to a better spot
-  memory_map_t *MemoryMap = (memory_map_t *) MemoryMapAddress;
-  memory_region_t *Regions = (memory_region_t *) (MemoryMapAddress + sizeof(memory_map_t));
+  memory_map_t *MemoryMap = (memory_map_t *) (KERNEL_OFFSET + MemoryMapAddress);
+  memory_region_t *Regions = (memory_region_t *) (KERNEL_OFFSET +
+    MemoryMapAddress + sizeof(memory_map_t));
   CopyMem(Regions, KernelMmap->mmap, KernelMmap->mmap_capacity);
   MemoryMap->mem_total = KernelMmap->mem_total;
   MemoryMap->mmap_size = KernelMmap->mmap_size;
+  MemoryMap->mmap_capacity = KernelMmap->mmap_capacity;
   MemoryMap->mmap = Regions;
 
   // Populate the boot_info_t struct
-  boot_info_t *BootInfo = (boot_info_t *) BootInfoAddress;
-
+  boot_info_t *BootInfo = (boot_info_t *) (KERNEL_OFFSET + BootInfoAddress);
   BootInfo->magic[0] = BOOT_MAGIC0;
   BootInfo->magic[1] = BOOT_MAGIC1;
   BootInfo->magic[2] = BOOT_MAGIC2;
@@ -793,8 +794,8 @@ EFI_STATUS EFIAPI UefiMain(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable
   BootInfo->num_cores = ProcessorCount;
 
   BootInfo->mem_map = MemoryMap;
-  BootInfo->pml4 = PML4Address;
-  BootInfo->reserved_base = ReservedAddress;
+  BootInfo->pml4 = KERNEL_OFFSET + PML4Address;
+  BootInfo->reserved_base = KERNEL_OFFSET + ReservedAddress;
   BootInfo->reserved_size = ReservedRegionSize;
 
   BootInfo->fb_base = Graphics->Mode->FrameBufferBase;
@@ -816,7 +817,7 @@ EFI_STATUS EFIAPI UefiMain(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable
   KERNEL_ENTRY Entry = (KERNEL_ENTRY) KernelEntry;
 
   Print(L"[Loader] Loading kernel\n");
-  Entry(StackVirtualTop, BootInfoAddress + KERNEL_OFFSET);
+  Entry(StackVirtualTop, (UINT64) BootInfo);
 
   // We should not get here
   ErrorPrint(L"[Loader] Fatal Error\n");
