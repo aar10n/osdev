@@ -9,44 +9,54 @@
 #include <boot.h>
 #include <bitmap.h>
 
-#define KERNEL_OFFSET 0xFFFFFF8000100000
-#define STACK_VA 0xFFFFFFA000000000
+#define virt_to_phys(x) ((x) - KERNEL_OFFSET)
+#define phys_to_virt(x) (KERNEL_OFFSET + (x))
 
+#define get_virt_addr(l4, l3, l2, l1) \
+  ((0xFFFFULL << 48) | ((l4) << 39) | ((l3) << 30) | \
+   ((l2) << 21) | ((l1) << 12))
 
+#define get_virt_addr_partial(index, level) \
+  ((index) << (12 + (((level) - 1) * 9)))
+
+#define page_level_to_shift(level) \
+  (12 + (((level) - 1) * 9))
+
+// Zone boundaries
 #define Z_LOW_MAX    0x100000    // 1MB
 #define Z_DMA_MAX    0x1000000   // 16MB
 #define Z_NORMAL_MAX 0x100000000 // 4GB
 
-#define virt_to_phys(x) (((x) + kernel_phys) - KERNEL_OFFSET)
-#define phys_to_virt(x) (KERNEL_OFFSET - (kernel_phys - (x)))
-
-// Page related
-
+// Page related definitions
 #define PAGE_SIZE 0x1000
 #define PAGE_SHIFT 12
-#define PAGE_MASK 0xFFF
+#define PAGE_FLAGS_MASK 0xFFF
 
 #define PAGE_SIZE_2MB 0x200000
 #define PAGE_SHIFT_2MB 21
+#define PAGE_SIZE_1GB 0x40000000
+#define PAGE_SHIFT_1GB 30
 
 #define PAGES_TO_SIZE(pages) ((pages) << PAGE_SHIFT)
-#define SIZE_TO_PAGES(size) (((size) >> PAGE_SHIFT) + (((size) & PAGE_MASK) ? 1 : 0))
+#define SIZE_TO_PAGES(size) (((size) >> PAGE_SHIFT) + (((size) & PAGE_FLAGS_MASK) ? 1 : 0))
 
 #define PT_INDEX(a) (((a) >> 12) & 0x1FF)
 #define PDT_INDEX(a) (((a) >> 21) & 0x1FF)
 #define PDPT_INDEX(a) (((a) >> 30) & 0x1FF)
 #define PML4_INDEX(a) (((a) >> 39) & 0x1FF)
 
-// Flags
-
-#define PAGE_WRITE 0x1
-#define PAGE_USER 0x2
-#define PAGE_WRITE_THROUGH 0x4
-#define PAGE_CACHE_DISABLE 0x8
-// fail if page of requested zone not available
-#define ASSERT_ZONE 0x10
-
-//
+// page entry flags
+#define PE_PRESENT 0x01
+#define PE_WRITE 0x02
+#define PE_USER 0x04
+#define PE_WRITE_THROUGH 0x08
+#define PE_CACHE_DISABLE 0x10
+#define PE_SIZE 0x80
+#define PE_GLOBAL 0x100
+// additional mm_alloc_page flags
+#define PE_2MB_SIZE 0x200
+#define PE_1GB_SIZE 0x400
+#define PE_ASSERT_ZONE 0x800
 
 typedef enum {
   ZONE_LOW,
@@ -57,20 +67,25 @@ typedef enum {
 } zone_type_t;
 
 typedef struct page {
-  uint64_t frame;
+  uint64_t frame;  // the address of this page
+  uint64_t *entry; // when mapped points to the page entry
   union {
     uint16_t raw;
     struct {
-      uint16_t present : 1;
-      uint16_t write : 1;
-      uint16_t user : 1;
-      uint16_t write_through : 1;
-      uint16_t cache_disable : 1;
-      uint16_t zone : 2;
-      uint16_t reserved : 9;
+      uint16_t present : 1;       // page is present
+      uint16_t write : 1;         // read/read-write
+      uint16_t user : 1;          // supervisor/user
+      uint16_t write_through : 1; // page writeback caching policy
+      uint16_t cache_disable : 1; // page caching is disabled
+      uint16_t : 2;               // reserved
+      uint16_t page_size : 1;     // extended page size
+      uint16_t global : 1;        // global page
+      uint16_t page_size_2mb : 1; // page is a 2mb page
+      uint16_t page_size_1gb : 1; // page is a 1gb page
+      uint16_t zone : 2;          // the zone that contains this page
+      uint16_t reserved : 3;
     };
   } flags;
-  uint16_t reserved;
   struct page *next;
 } page_t;
 
@@ -81,6 +96,7 @@ typedef struct memory_zone {
   bitmap_t *pages;
   struct memory_zone *next;
 } memory_zone_t;
+
 
 void mm_init();
 page_t *mm_alloc_page(zone_type_t zone_type, uint16_t flags);

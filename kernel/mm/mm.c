@@ -8,6 +8,7 @@
 
 #include <mm/mm.h>
 #include <mm/heap.h>
+#include <string.h>
 
 static memory_zone_t *zones[ZONE_MAX];
 static bool did_initialize = false;
@@ -37,6 +38,19 @@ static zone_type_t get_next_zone(zone_type_t zone) {
   }
 }
 
+static uintptr_t get_zone_limit(zone_type_t zone) {
+  switch (zone) {
+    case ZONE_LOW:
+      return Z_LOW_MAX;
+    case ZONE_DMA:
+      return Z_DMA_MAX;
+    case ZONE_NORMAL:
+      return Z_NORMAL_MAX;
+    default:
+      return UINT64_MAX;
+  }
+}
+
 static const char *get_zone_name(zone_type_t zone) {
   switch (zone) {
     case ZONE_LOW:
@@ -52,9 +66,32 @@ static const char *get_zone_name(zone_type_t zone) {
   }
 }
 
+static bool does_cross_zone(memory_region_t *region) {
+  zone_type_t start = get_zone_type(region->phys_addr);
+  zone_type_t end = get_zone_type(region->phys_addr + region->size);
+  return start != end;
+}
+
+static void apply_page_flags(page_t *page, uint16_t flags) {
+  kassert(!(flags & PE_SIZE));
+  bool is_alt_size = (flags & PE_2MB_SIZE) || (flags & PE_1GB_SIZE);
+
+  page->flags.present = 0;
+  page->flags.write = (flags & PE_WRITE) != 0;
+  page->flags.user = (flags & PE_USER) != 0;
+  page->flags.write_through = (flags & PE_WRITE_THROUGH) != 0;
+  page->flags.cache_disable = (flags & PE_CACHE_DISABLE) != 0;
+  page->flags.page_size = is_alt_size;
+  page->flags.global = (flags & PE_GLOBAL) != 0;
+  page->flags.page_size_2mb = (flags & PE_2MB_SIZE) != 0;
+  page->flags.page_size_1gb = (flags & PE_1GB_SIZE) != 0;
+  page->flags.reserved = 0;
+}
+
 //
 
 void mm_init() {
+  kprintf("[mm] initializing physical memory manager\n");
   memory_map_t *mem = boot_info->mem_map;
 
   memory_zone_t *last = NULL;
@@ -65,14 +102,34 @@ void mm_init() {
       continue;
     }
 
+    zone_type_t zone_type = get_zone_type(region->phys_addr);
+    if (does_cross_zone(region)) {
+      kprintf("[mm] splitting region at zone limit\n");
+
+      // split the current region at the zone limit
+      uintptr_t limit = get_zone_limit(zone_type);
+
+      // split the memory map
+      kassert(mem->mmap_size < mem->mmap_capacity);
+      uintptr_t mmap_end = (uintptr_t) mem->mmap + mem->mmap_size;
+      memmove(region + 1, region, mmap_end - (uintptr_t) region);
+
+      size_t old_size = region->size;
+      region->size = limit - region->phys_addr - 1;
+      (region + 1)->phys_addr = limit;
+      (region + 1)->size = old_size - region->size;
+
+      continue;
+    }
+
     memory_zone_t *zone = kmalloc(sizeof(memory_zone_t));
-    zone->type = get_zone_type(region->phys_addr);
+    zone->type = zone_type;
     zone->base_addr = region->phys_addr;
     zone->size = region->size;
 
     size_t size = max((region->size / PAGE_SIZE) / 64, 1) * sizeof(uint64_t);
-    kprintf("size: %d\n", size);
-    kprintf("region->size: %u\n", region->size);
+    // kprintf("size: %d\n", size);
+    // kprintf("region->size: %u\n", region->size);
     uint64_t *map = kmalloc(size);
 
     bitmap_t *bitmap = kmalloc(sizeof(bitmap_t));
@@ -103,6 +160,7 @@ void mm_init() {
   }
 
   did_initialize = true;
+  kprintf("[mm] done!\n");
 }
 
 page_t *mm_alloc_page(zone_type_t zone_type, uint16_t flags) {
@@ -112,11 +170,11 @@ page_t *mm_alloc_page(zone_type_t zone_type, uint16_t flags) {
   memory_zone_t *zone = zones[zone_type];
   while (!zone || zone->pages->free == 0) {
     if (!zone || !zone->next) {
-      if (flags & ASSERT_ZONE) {
+      if (flags & PE_ASSERT_ZONE) {
         panic("panic - failed to allocate page in %s\n", get_zone_name(zone_type));
       }
 
-      kprintf("[memory] Trying another zone\n");
+      kprintf("[memory] trying another zone\n");
 
       zone_type_t next_zone = get_next_zone(zone ? zone->type : zone_type);
       if (next_zone == ZONE_MAX) {
@@ -135,14 +193,10 @@ page_t *mm_alloc_page(zone_type_t zone_type, uint16_t flags) {
 
   page_t *page = kmalloc(sizeof(page_t));
   page->frame = frame;
-  page->reserved = 0;
-  page->next = 0;
+  page->entry = NULL;
+  page->next = NULL;
 
-  page->flags.raw = 0;
-  page->flags.write = (flags & PAGE_WRITE) != 0;
-  page->flags.user = (flags & PAGE_USER) != 0;
-  page->flags.write_through = (flags & PAGE_WRITE_THROUGH) != 0;
-  page->flags.cache_disable = (flags & PAGE_CACHE_DISABLE) != 0;
+  apply_page_flags(page, flags);
   page->flags.zone = zone->type;
 
   return page;
