@@ -30,3 +30,21 @@ enable_sse:
   or rdx, 1 << 9     ; set the OSXMMEXCPT bit
   mov cr4, rdx
   ret
+
+global load_idt
+load_idt:
+  lidt [rdi]
+  ret
+
+; TLB
+
+global tlb_invlpg
+tlb_invlpg:
+  invlpg [rdi]
+  ret
+
+global tlb_flush
+tlb_flush:
+  mov rax, cr3
+  mov cr3, rax
+  ret

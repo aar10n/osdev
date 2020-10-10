@@ -192,4 +192,7 @@ void load_idt(void *idt);
 void get_cpu_info(cpu_info_t *info);
 void enable_sse();
 
+void tlb_invlpg(uint64_t addr);
+void tlb_flush();
+
 #endif

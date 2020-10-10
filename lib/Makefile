@@ -5,7 +5,7 @@
 # lib
 lib += bitmap.c \
 	hash_table.c \
-	segment_tree.c
+	interval_tree.c
 
 # lib/asm
 

@@ -8,13 +8,6 @@
 #include "boot.h"
 #include <stdint.h>
 
-#define KERNEL_PA 0x100000
-#define KERNEL_OFFSET 0xFFFFFF8000000000
-#define STACK_VA 0xFFFFFFA000000000
-#define STACK_SIZE 0x4000 // 16 KiB
-#define KERNEL_RESERVED 0x300000 // 3 MiB
-// The number of pre-allocated tables for paging
-#define RESERVED_TABLES 8
 #define TABLE_LENGTH 512
 
 #define NEXT_TABLE(Table) \

@@ -3,14 +3,13 @@
 //
 
 #include "hash_table.h"
-#include <kernel/mm/heap.h>
 #include <stdio.h>
 
-#define _malloc(s) \
-  kmalloc(s);
-
-#define _free(ptr) \
-  kfree(ptr);
+#ifndef _malloc
+#include <mm/heap.h>
+#define _malloc(size) kmalloc(size)
+#define _free(ptr) kfree(ptr)
+#endif
 
 #define for_in(item, map) \
   map_entry_t *item;      \
