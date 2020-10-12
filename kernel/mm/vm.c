@@ -16,7 +16,7 @@
 
 static uint64_t *pml4;
 static uint64_t *temp_dir;
-static intvl_node_t *tree;
+static intvl_tree_t *tree;
 
 //
 
@@ -38,6 +38,28 @@ static inline uint16_t get_index(uintptr_t virt_addr, uint16_t offset, uint16_t 
 
 //
 
+uintptr_t find_free_address(size_t size) {
+  uintptr_t start = 0;
+  bool found = false;
+
+  intvl_node_t *node;
+  intvl_iter_t *iter = intvl_iter_tree(tree);
+  while ((node = intvl_iter_next(iter))) {
+    if (node->interval.start - start >= size) {
+      found = true;
+      break;
+    }
+    start = node->interval.end;
+  }
+
+  if (!found) {
+    panic("[vm] no free address space");
+  }
+  return start;
+}
+
+//
+
 uint64_t *get_table(uintptr_t virt_addr, uint16_t level) {
   uintptr_t addr = get_virt_addr(R_ENTRY, R_ENTRY, R_ENTRY, R_ENTRY);
   for (int i = 1; i < 5 - level; i++) {
@@ -52,14 +74,14 @@ uint64_t *map_page(uintptr_t virt_addr, uintptr_t phys_addr, uint16_t flags) {
   uint16_t offset = (flags & PE_1GB_SIZE) ? 3 :
                     (flags & PE_2MB_SIZE) ? 2 : 1;
 
-  kprintf("--- map page ---\n");
-  kprintf("pml4[%d][%d][%d][%d] -> %d\n\n",
-          get_index(virt_addr, offset, 4), get_index(virt_addr, offset, 3),
-          get_index(virt_addr, offset, 2), get_index(virt_addr, offset, 1),
-          get_index(virt_addr, offset, 0));
-  kprintf("virt_addr: %p\n", virt_addr);
-  kprintf("phys_addr: %p\n", phys_addr);
-  kprintf("flags: %d\n", flags);
+  // kprintf("--- map page ---\n");
+  // kprintf("pml4[%d][%d][%d][%d] -> %d\n\n",
+  //         get_index(virt_addr, offset, 4), get_index(virt_addr, offset, 3),
+  //         get_index(virt_addr, offset, 2), get_index(virt_addr, offset, 1),
+  //         get_index(virt_addr, offset, 0));
+  // kprintf("virt_addr: %p\n", virt_addr);
+  // kprintf("phys_addr: %p\n", phys_addr);
+  // kprintf("flags: %d\n", flags);
 
   uintptr_t addr = get_virt_addr(R_ENTRY, R_ENTRY, R_ENTRY, R_ENTRY);
   uint64_t *table = ((uint64_t *) addr);
@@ -67,10 +89,10 @@ uint64_t *map_page(uintptr_t virt_addr, uintptr_t phys_addr, uint16_t flags) {
     int level = 5 - i;
     uint16_t index = get_index(virt_addr, offset, level);
 
-    kprintf("level %d | index %d (%d)\n", i, index, level);
+    // kprintf("level %d | index %d (%d)\n", i, index, level);
     if (table[index] == 0) {
       // allocate new page table
-      kprintf("allocating new table (level %d)\n", level);
+      // kprintf("allocating new table (level %d)\n", level);
 
       page_t *page = alloc_page(PE_WRITE);
       page->flags.present = 1;
@@ -84,7 +106,7 @@ uint64_t *map_page(uintptr_t virt_addr, uintptr_t phys_addr, uint16_t flags) {
       area->pages = page;
 
       interval_t interval = {area->base, area->base + area->size};
-      tree_add_interval(tree, interval, area);
+      intvl_tree_insert(tree, interval, area);
 
       // temporarily map the page to zero it
       temp_dir[TEMP_ENTRY] = page->frame | PE_WRITE | PE_PRESENT;
@@ -98,16 +120,16 @@ uint64_t *map_page(uintptr_t virt_addr, uintptr_t phys_addr, uint16_t flags) {
     addr <<= 9;
     addr |= (0xFFFFUL << 48) | get_virt_addr_partial(index, 1);
     table = ((uint64_t *) addr);
-    kprintf("pml4[%d][%d][%d][%d]\n",
-            PML4_INDEX(addr), PDPT_INDEX(addr),
-            PDT_INDEX(addr), PT_INDEX(addr));
+    // kprintf("pml4[%d][%d][%d][%d]\n",
+    //         PML4_INDEX(addr), PDPT_INDEX(addr),
+    //         PDT_INDEX(addr), PT_INDEX(addr));
   }
 
-  kprintf("final addr: %p\n", addr);
+  // kprintf("final addr: %p\n", addr);
 
   // final offset into table
   uint16_t index = get_index(virt_addr, offset, 0);
-  kprintf("final index: %d\n", index);
+  // kprintf("final index: %d\n", index);
   table[index] = phys_addr | flags;
   return table + index;
 }
@@ -132,61 +154,33 @@ void vm_init() {
   temp_dir = get_table(TEMP_PAGE, 1);
 
   // create the interval tree
-  tree = create_interval_tree(0, UINT64_MAX);
+  tree = create_intvl_tree();
+
+  // null page
+  intvl_tree_insert(tree, intvl(0, PAGE_SIZE), NULL);
+
+  // non-canonical address space
+  intvl_tree_insert(tree, intvl(LOW_HALF_END + 1, HIGH_HALF_START), NULL);
 
   // recursively mapped region
   uintptr_t recurs_start = get_virt_addr(R_ENTRY, 0, 0, 0);
   uintptr_t recurs_end = get_virt_addr(R_ENTRY, 511L, 511L, 511L);
-
-  vm_area_t *recurs_area = kmalloc(sizeof(vm_area_t));
-  recurs_area->base = recurs_start;
-  recurs_area->size = recurs_end - recurs_start;
-  recurs_area->pages = NULL;
-
-  interval_t recursive = { recurs_start, recurs_end };
-  tree_add_interval(tree, recursive, recurs_area);
+  intvl_tree_insert(tree, intvl(recurs_start, recurs_end), NULL);
 
   // temporary page space
-  vm_area_t *temp_area = kmalloc(sizeof(vm_area_t));
-  temp_area->base = TEMP_PAGE;
-  temp_area->size = PAGE_SIZE - 1;
-  temp_area->pages = NULL;
-
-  interval_t temp = { TEMP_PAGE, TEMP_PAGE + PAGE_SIZE - 1 };
-  tree_add_interval(tree, temp, temp_area);
+  interval_t temp = { TEMP_PAGE, HIGH_HALF_END };
+  intvl_tree_insert(tree, temp, NULL);
 
   // virtual kernel space
-  vm_area_t *kernel_area = kmalloc(sizeof(vm_area_t));
-  kernel_area->base = KERNEL_VA;
-  kernel_area->size = KERNEL_RESERVED;
-  kernel_area->pages = NULL;
-
-  interval_t kernel = { KERNEL_VA, KERNEL_VA + KERNEL_RESERVED };
-  tree_add_interval(tree, kernel, kernel_area);
+  uintptr_t kernel_start = KERNEL_VA;
+  uintptr_t kernel_end = KERNEL_VA + KERNEL_RESERVED;
+  intvl_tree_insert(tree, intvl(kernel_start, kernel_end), NULL);
 
   // virtual stack space
   uint64_t stack_size = boot_info->num_cores * (STACK_SIZE + 1);
-  vm_area_t *stack_area = kmalloc(sizeof(vm_area_t));
-  stack_area->base = STACK_VA - stack_size;
-  stack_area->size = stack_size;
-  stack_area->pages = NULL;
-
-  interval_t stack = { STACK_VA - stack_size, STACK_VA };
-  tree_add_interval(tree, stack, stack_area);
-
-  // uintptr_t virt_addr = 0xFFFFFFC000000000;
-  // uint16_t offset = 2;
-  // kprintf("pml4[%d][%d][%d][%d] -> %d\n",
-  //         get_index(virt_addr, offset, 4), get_index(virt_addr, offset, 3),
-  //         get_index(virt_addr, offset, 2), get_index(virt_addr, offset, 1),
-  //         get_index(virt_addr, offset, 0));
-  //
-  // kprintf("index 4: %d\n", get_index(virt_addr, offset, 4));
-  // kprintf("index 3: %d\n", get_index(virt_addr, offset, 3));
-  // kprintf("index 2: %d\n", get_index(virt_addr, offset, 2));
-  // kprintf("index 1: %d\n", get_index(virt_addr, offset, 1));
-  // kprintf("index 0: %d\n", get_index(virt_addr, offset, 0));
-  // kprintf("\n");
+  uintptr_t stack_start = STACK_VA - stack_size;
+  uintptr_t stack_end = STACK_VA;
+  intvl_tree_insert(tree, intvl(stack_start, stack_end), NULL);
 
   // virtual framebuffer space
   vm_map_vaddr(
@@ -210,22 +204,15 @@ void *vm_map_page(page_t *page) {
     current = page->next;
   }
 
-
-  interval_t interval = tree_find_free_interval(tree, len);
-  if (IS_ERROR_INTERVAL(interval)) {
-    panic("[vm_map_page] failed to map page - no free address\n");
-  }
-
-  interval.end = interval.start + len;
+  uintptr_t address = find_free_address(len);
   vm_area_t *area = kmalloc(sizeof(vm_area_t));
-  area->base = interval.start;
+  area->base = address;
   area->size = len;
   area->pages = page;
-
-  tree_add_interval(tree, interval, area);
+  intvl_tree_insert(tree, intvl(address, address + len), area);
 
   current = page;
-  uintptr_t virt_addr = interval.start;
+  uintptr_t virt_addr = address;
   while (current) {
     page->flags.present = 1;
     uint64_t *entry = map_page(virt_addr, page->frame, page->flags.raw);
@@ -235,45 +222,41 @@ void *vm_map_page(page_t *page) {
     virt_addr += page_to_size(current);
   }
 
-  return (void *) interval.start;
+  return (void *) address;
 }
 
 /**
  * Maps the specified region to an available virtual address.
  */
 void *vm_map_addr(uintptr_t phys_addr, size_t len, uint16_t flags) {
-  interval_t interval = tree_find_free_interval(tree, len);
-  if (IS_ERROR_INTERVAL(interval)) {
-    panic("[vm_map_addr] failed to map address - no free address\n");
-  }
-
-  interval.end = interval.start + len;
+  uintptr_t addresss = find_free_address(len);
   vm_area_t *area = kmalloc(sizeof(vm_area_t));
-  area->base = interval.start;
+  area->base = addresss;
   area->size = len;
   area->pages = NULL;
+  intvl_tree_insert(tree, intvl(addresss, len), area);
 
-  tree_add_interval(tree, interval, area);
-  vm_map_vaddr(interval.start, phys_addr, len, flags | PE_PRESENT);
+  vm_map_vaddr(addresss, phys_addr, len, flags | PE_PRESENT);
 
-  return (void *) interval.start;
+  return (void *) addresss;
 }
 
 /**
  * Maps the given virtual address to the specified region.
  */
 void *vm_map_vaddr(uintptr_t virt_addr, uintptr_t phys_addr, size_t len, uint16_t flags) {
-  interval_t interval = {virt_addr, virt_addr + len };
+  interval_t interval = intvl(virt_addr, virt_addr + len);
+  intvl_node_t *existing = intvl_tree_search(tree, interval);
+  if (existing) {
+    panic("[vm] failed to map address - already in use\n");
+  }
 
   vm_area_t *area = kmalloc(sizeof(vm_area_t));
   area->base = interval.start;
   area->size = len;
   area->pages = NULL;
 
-  bool success = tree_add_interval(tree, interval, area);
-  if (!success) {
-    panic("[vm_map_vaddr] failed to map address - already in use\n");
-  }
+  intvl_tree_insert(tree, interval, area);
 
   // add table entry
   size_t remaining = len;
