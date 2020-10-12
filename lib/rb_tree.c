@@ -16,6 +16,12 @@
 #define _free(ptr) kfree(ptr)
 #endif
 
+#define callback(cb, args...) \
+  if (cb) {                   \
+    cb(args);                 \
+  }                           \
+  NULL
+
 static inline rb_node_t *minimum(rb_tree_t *tree, rb_node_t *x) {
   while (x->left != tree->nil) {
     x = x->left;
@@ -26,6 +32,8 @@ static inline rb_node_t *minimum(rb_tree_t *tree, rb_node_t *x) {
 // Operations
 
 void rotate_left(rb_tree_t *tree, rb_node_t *x) {
+  callback(tree->events.pre_rotate, tree, x, x->right);
+
   rb_node_t *y = x->right;
   x->right = y->left;
   if (y->left != tree->nil) {
@@ -42,9 +50,13 @@ void rotate_left(rb_tree_t *tree, rb_node_t *x) {
   }
   y->left = x;
   x->parent = y;
+
+  callback(tree->events.post_rotate, tree, x, y);
 }
 
 void rotate_right(rb_tree_t *tree, rb_node_t *x) {
+  callback(tree->events.pre_rotate, tree, x, x->left);
+
   rb_node_t *y = x->left;
   x->left = y->right;
   if (y->right != tree->nil) {
@@ -61,6 +73,21 @@ void rotate_right(rb_tree_t *tree, rb_node_t *x) {
   }
   y->right = x;
   x->parent = y;
+
+  callback(tree->events.post_rotate, tree, x, y);
+}
+
+void replace_node(rb_tree_t *tree, rb_node_t *u, rb_node_t *v) {
+  callback(tree->events.replace_node, tree, u, v);
+
+  if (u->parent == tree->nil) {
+    tree->root = v;
+  } else if (u == u->parent->left) {
+    u->parent->left = v;
+  } else {
+    u->parent->right = v;
+  }
+  v->parent = u->parent;
 }
 
 //
@@ -114,6 +141,8 @@ void insert_fixup(rb_tree_t *tree, rb_node_t *z) {
 }
 
 void insert_node(rb_tree_t *tree, rb_node_t *z) {
+  callback(tree->events.pre_insert_node, tree, z);
+
   rb_node_t *x = tree->root;
   rb_node_t *y = tree->nil;
 
@@ -139,6 +168,8 @@ void insert_node(rb_tree_t *tree, rb_node_t *z) {
   z->left = tree->nil;
   z->right = tree->nil;
 
+  callback(tree->events.post_insert_node, tree, z);
+
   // repair the tree
   insert_fixup(tree, z);
 }
@@ -146,18 +177,6 @@ void insert_node(rb_tree_t *tree, rb_node_t *z) {
 //
 // Deletion
 //
-
-void replace_node(rb_tree_t *tree, rb_node_t *u, rb_node_t *v) {
-  if (u->parent == tree->nil) {
-    tree->root = v;
-  } else if (u == u->parent->left) {
-    u->parent->left = v;
-  } else {
-    u->parent->right = v;
-  }
-  v->parent = u->parent;
-  _free(u);
-}
 
 void delete_fixup(rb_tree_t *tree, rb_node_t *x) {
   rb_node_t *w;
@@ -226,6 +245,8 @@ void delete_fixup(rb_tree_t *tree, rb_node_t *x) {
 }
 
 void delete_node(rb_tree_t *tree, rb_node_t *z) {
+  callback(tree->events.pre_delete_node, tree, z);
+
   rb_node_t *x;
   rb_node_t *y = z;
   rb_color_t orig_color = y->color;
@@ -254,40 +275,12 @@ void delete_node(rb_tree_t *tree, rb_node_t *z) {
     y->color = z->color;
   }
 
+  callback(tree->events.post_delete_node, tree, z, x);
+
   if (orig_color == BLACK) {
     // repair the tree
     delete_fixup(tree, x);
   }
-}
-
-//
-// Debugging
-//
-
-uint64_t validate_node(rb_tree_t *tree, rb_node_t *z, uint64_t count) {
-  if (z->color == RED) {
-    if (z->left->color != BLACK || z->right->color != BLACK) {
-      panic("[rb] validation failed: "
-            "node (key = %lld) violates property 4\n",
-            z->key);
-    }
-  } else if (z == tree->nil) {
-    if (z->color != BLACK) {
-      panic("[rb] validation failed: "
-            "leaf (nil) node violates property 3\n");
-    }
-    return count + 1;
-  }
-
-  uint64_t new_count = z->color == BLACK ? count + 1 : count;
-  uint64_t a = validate_node(tree, z->left, new_count);
-  uint64_t b = validate_node(tree, z->right, new_count);
-  if (a != b) {
-    panic("[rb] validation failed: "
-          "tree (key = %lld) violates property 5\n",
-          z->key);
-  }
-  return new_count;
 }
 
 //
@@ -304,6 +297,15 @@ rb_tree_t *create_rb_tree() {
   rb_tree_t *tree = _malloc(sizeof(rb_tree_t));
   tree->root = nil;
   tree->nil = nil;
+
+  tree->events.pre_rotate = NULL;
+  tree->events.post_rotate = NULL;
+  tree->events.pre_insert_node = NULL;
+  tree->events.post_insert_node = NULL;
+  tree->events.pre_delete_node = NULL;
+  tree->events.post_delete_node = NULL;
+  tree->events.replace_node = NULL;
+
   return tree;
 }
 
