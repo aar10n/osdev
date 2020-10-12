@@ -48,9 +48,18 @@ typedef struct rb_tree {
   } events;
 } rb_tree_t;
 
+typedef struct {
+  rb_tree_t *tree;
+  rb_node_t *next;
+  bool has_next;
+} rb_iter_t;
+
 rb_tree_t *create_rb_tree();
 rb_node_t *rb_tree_search(rb_tree_t *tree, uint64_t key);
 void rb_tree_insert(rb_tree_t *tree, uint64_t key, void *data);
 void rb_tree_delete(rb_tree_t *tree, uint64_t key);
+
+rb_iter_t *rb_iter_tree(rb_tree_t *tree);
+rb_node_t *rb_iter_next(rb_iter_t *iter);
 
 #endif

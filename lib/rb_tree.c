@@ -344,4 +344,58 @@ void rb_tree_delete(rb_tree_t *tree, uint64_t key) {
   }
 
   delete_node(tree, node);
+  _free(node->data);
+  _free(node);
+}
+
+//
+
+rb_iter_t *rb_iter_tree(rb_tree_t *tree) {
+  rb_iter_t *iter = _malloc(sizeof(rb_iter_t));
+  iter->tree = tree;
+  iter->next = NULL;
+  iter->has_next = true;
+
+  // get first (leftmost) node
+  rb_node_t *next = tree->root;
+  while (next->left != tree->nil) {
+    next = next->left;
+  }
+
+  iter->next = next;
+  return iter;
+}
+
+rb_node_t *rb_iter_next(rb_iter_t *iter) {
+  if (!iter->has_next) {
+    return NULL;
+  }
+
+  rb_tree_t *tree = iter->tree;
+  rb_node_t *node = iter->next;
+  rb_node_t *next = iter->next;
+
+  if (next->right != tree->nil) {
+    next = next->right;
+    while (next->left != tree->nil) {
+      next = next->left;
+    }
+
+    iter->next = next;
+    iter->has_next = next != tree->nil;
+    return node;
+  }
+
+  while (true) {
+    if (next->parent == tree->nil) {
+      iter->next = NULL;
+      iter->has_next = false;
+      return node;
+    } else if (next->parent->left == next) {
+      iter->next = next->parent;
+      iter->has_next = next != tree->nil;
+      return node;
+    }
+    next = next->parent;
+  }
 }
