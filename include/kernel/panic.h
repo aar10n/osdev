@@ -5,6 +5,8 @@
 #ifndef KERNEL_PANIC_H
 #define KERNEL_PANIC_H
 
+#include <base.h>
+
 #define PANIC(msg, args...) \
   panic("kernel panic: " msg ", file %s, line %d\n", ##args, __FILE__, __LINE__);
 
@@ -16,6 +18,6 @@
   if (!(expression)) \
     panic("assertion failed: " msg ", file %s, line %d\n", ##args, __FILE__, __LINE__);
 
-_Noreturn void panic(const char *fmt, ...);
+noreturn void panic(const char *fmt, ...);
 
 #endif

@@ -8,33 +8,23 @@
 #include <stdint.h>
 #include <base.h>
 
+// state of the cpu and registers following an interrupt
 typedef struct packed {
-  uint16_t apic_id;
-  uint16_t vec_no;
-  uint16_t err_code;
-} cpu_err_t;
-
-typedef struct packed {
-  uint16_t apic_id;
-  uint16_t vec_no;
-  uint16_t int_no;
-} cpu_int_t;
-
-typedef struct packed {
-  uint64_t rip, rflags;
-  uint16_t cs, ds, es, fs, gs, ss;
+  uint64_t apic_id;
   // general registers
   uint64_t rax, rbx, rcx, rdx;
-  uint64_t rdi, rsi, rsp, rbp;
+  uint64_t rdi, rsi, rbp;
   // extended registers
-  uint64_t r8, r9, r10, r11;
-  uint64_t r12, r13, r14, r15;
+  uint64_t r8, r9, r12, r13;
+  uint64_t r14, r15;
   // control registers
   uint64_t cr0, cr2, cr3, cr4;
-  // debug registers
-  uint64_t dr0, dr1, dr2, dr3;
-  uint64_t dr6, dr7;
-} registers_t;
+  // interrupt information
+  uint64_t int_no;
+  uint64_t err_code;
+  // pushed by the cpu
+  uint64_t rip, cs, rflags, rsp, ss;
+} cpu_state_t;
 
 // CPUID Information
 
@@ -184,13 +174,16 @@ typedef struct {
   ioapic_desc_t *ioapics;
 } system_info_t;
 
-// Cpu Functions
-void disable_interrupts();
-void enable_interrupts();
+// cpu Functions
+void cli();
+void sti();
 
-void load_idt(void *idt);
 void get_cpu_info(cpu_info_t *info);
 void enable_sse();
+
+void load_gdt(void *gdtr);
+void load_idt(void *idtr);
+void flush_gdt();
 
 void tlb_invlpg(uint64_t addr);
 void tlb_flush();

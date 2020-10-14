@@ -14,6 +14,7 @@
 #define packed __attribute ((packed))
 #define aligned(val) __attribute((aligned(val)))
 
+#define static_assert(expr) _Static_assert(expr, "")
 
 #define align(v, a) ((v) + (((a) - (v)) & ((a) - 1)))
 #define align_ptr(p, a) ((void *) (align((uintptr_t)(p), (a))))

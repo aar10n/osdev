@@ -1,11 +1,12 @@
-global disable_interrupts
-disable_interrupts:
+global cli
+cli:
   cli
   ret
 
-global enable_interrupts
-enable_interrupts:
+global sti
+sti:
   sti
+  ret
 
 ; cpuid: eax = 1
 global get_cpu_info
@@ -31,10 +32,44 @@ enable_sse:
   mov cr4, rdx
   ret
 
+global read_gdt
+read_gdt:
+  sgdt [rdi]
+  ret
+
+global load_gdt
+load_gdt:
+  lgdt [rdi]
+  ret
+
 global load_idt
 load_idt:
   lidt [rdi]
   ret
+
+global flush_gdt
+flush_gdt:
+  push rbp
+  mov rbp, rsp
+
+  mov ax, 0x10
+  mov ds, ax
+  mov es, ax
+  mov fs, ax
+  mov gs, ax
+
+  lea rax, [rel .flush]
+
+  ; set up the stack frame so we can call
+  ; iretq to set our new cs register value
+  push qword 0x10 ; new ss
+  push rbp        ; rsp
+  pushfq          ; flags
+  push qword 0x08 ; new cs
+  push rax        ; rip
+  iretq
+.flush:
+  pop rbp
 
 ; TLB
 
