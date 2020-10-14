@@ -174,7 +174,7 @@ typedef struct {
   ioapic_desc_t *ioapics;
 } system_info_t;
 
-// cpu Functions
+// cpu functions
 void cli();
 void sti();
 
