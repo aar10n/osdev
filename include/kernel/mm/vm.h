@@ -28,9 +28,17 @@ typedef struct vm_area {
   page_t *pages;
 } vm_area_t;
 
+typedef enum {
+  AT_ADDRESS,
+  ABOVE_ADDRESS
+} vm_search_type_t;
+
 void vm_init();
 void *vm_map_page(page_t *page);
 void *vm_map_addr(uintptr_t phys_addr, size_t len, uint16_t flags);
 void *vm_map_vaddr(uintptr_t virt_addr, uintptr_t phys_addr, size_t len, uint16_t flags);
+
+vm_area_t *vm_get_vm_area(uintptr_t address);
+bool vm_find_free_area(vm_search_type_t search_type, uintptr_t *addr, size_t len);
 
 #endif

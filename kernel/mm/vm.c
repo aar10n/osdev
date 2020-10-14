@@ -38,24 +38,18 @@ static inline uint16_t get_index(uintptr_t virt_addr, uint16_t offset, uint16_t 
 
 //
 
-uintptr_t find_free_address(size_t size) {
-  uintptr_t start = 0;
-  bool found = false;
-
+bool find_free_address(uintptr_t *addr, size_t size) {
+  uintptr_t start = *addr;
   intvl_node_t *node;
   intvl_iter_t *iter = intvl_iter_tree(tree);
   while ((node = intvl_iter_next(iter))) {
-    if (node->interval.start - start >= size) {
-      found = true;
-      break;
+    if (node->interval.start > start && node->interval.start - start >= size) {
+      *addr = start;
+      return true;
     }
     start = node->interval.end;
   }
-
-  if (!found) {
-    panic("[vm] no free address space");
-  }
-  return start;
+  return false;
 }
 
 //
@@ -141,7 +135,7 @@ void vm_init() {
   pml4 = (uint64_t *) boot_info->pml4;
 
   // clear the mappings needed by uefi
-  // pml4[0] = 0;
+  pml4[0] = 0;
   // recursive pml4
   pml4[R_ENTRY] = virt_to_phys((uintptr_t) pml4) | 0b11;
 
@@ -204,7 +198,12 @@ void *vm_map_page(page_t *page) {
     current = page->next;
   }
 
-  uintptr_t address = find_free_address(len);
+  uintptr_t address = 0;
+  bool success = find_free_address(&address, len);
+  if (!success) {
+    panic("[vm] no free address space");
+  }
+
   vm_area_t *area = kmalloc(sizeof(vm_area_t));
   area->base = address;
   area->size = len;
@@ -229,16 +228,21 @@ void *vm_map_page(page_t *page) {
  * Maps the specified region to an available virtual address.
  */
 void *vm_map_addr(uintptr_t phys_addr, size_t len, uint16_t flags) {
-  uintptr_t addresss = find_free_address(len);
+  uintptr_t address = 0;
+  bool success = find_free_address(&address, len);
+  if (!success) {
+    panic("[vm] no free address space");
+  }
+
   vm_area_t *area = kmalloc(sizeof(vm_area_t));
-  area->base = addresss;
+  area->base = address;
   area->size = len;
   area->pages = NULL;
-  intvl_tree_insert(tree, intvl(addresss, len), area);
+  intvl_tree_insert(tree, intvl(address, len), area);
 
-  vm_map_vaddr(addresss, phys_addr, len, flags | PE_PRESENT);
+  vm_map_vaddr(address, phys_addr, len, flags | PE_PRESENT);
 
-  return (void *) addresss;
+  return (void *) address;
 }
 
 /**
@@ -279,4 +283,36 @@ void *vm_map_vaddr(uintptr_t virt_addr, uintptr_t phys_addr, size_t len, uint16_
   }
 
   return (void *) interval.start;
+}
+
+/**
+ * Returns the vm_area struct associated with the given
+ * address, or NULL if one does not exist.
+ */
+vm_area_t *vm_get_vm_area(uintptr_t address) {
+  intvl_node_t *node = intvl_tree_search(tree, intvl(address, address + 1));
+  if (node == NULL) {
+    return NULL;
+  }
+  return node->data;
+}
+
+/**
+ * Looks for an available address space of the given size
+ * using the provided search parameters. If no such address
+ * could be found, `false` is returned and `addr` is undefined.
+ */
+bool vm_find_free_area(vm_search_type_t search_type, uintptr_t *addr, size_t len) {
+  uintptr_t orig_addr = *addr;
+  uintptr_t address = *addr;
+  bool success = find_free_address(&address, len);
+  if (!success) {
+    return false;
+  }
+
+  if (search_type == AT_ADDRESS && address != orig_addr) {
+    return false;
+  }
+  *addr = address;
+  return true;
 }
