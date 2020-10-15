@@ -22,6 +22,8 @@
 #define HIGH_HALF_START 0xFFFF800000000000
 #define HIGH_HALF_END 0xFFFFFFFFFFFFFFFF
 
+#define MMIO_AREA_START 0xFFFFFFFFF8000000
+
 typedef struct vm_area {
   uintptr_t base;
   size_t size;
@@ -29,9 +31,10 @@ typedef struct vm_area {
 } vm_area_t;
 
 typedef enum {
-  AT_ADDRESS,
-  ABOVE_ADDRESS
-} vm_search_type_t;
+  EXACTLY,
+  ABOVE,
+  BELOW,
+} vm_search_t;
 
 void vm_init();
 void *vm_map_page(page_t *page);
@@ -39,6 +42,6 @@ void *vm_map_addr(uintptr_t phys_addr, size_t len, uint16_t flags);
 void *vm_map_vaddr(uintptr_t virt_addr, uintptr_t phys_addr, size_t len, uint16_t flags);
 
 vm_area_t *vm_get_vm_area(uintptr_t address);
-bool vm_find_free_area(vm_search_type_t search_type, uintptr_t *addr, size_t len);
+bool vm_find_free_area(vm_search_t search_type, uintptr_t *addr, size_t len);
 
 #endif

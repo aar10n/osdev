@@ -38,22 +38,6 @@ static inline uint16_t get_index(uintptr_t virt_addr, uint16_t offset, uint16_t 
 
 //
 
-bool find_free_address(uintptr_t *addr, size_t size) {
-  uintptr_t start = *addr;
-  intvl_node_t *node;
-  intvl_iter_t *iter = intvl_iter_tree(tree);
-  while ((node = intvl_iter_next(iter))) {
-    if (node->interval.start > start && node->interval.start - start >= size) {
-      *addr = start;
-      return true;
-    }
-    start = node->interval.end;
-  }
-  return false;
-}
-
-//
-
 uint64_t *get_table(uintptr_t virt_addr, uint16_t level) {
   uintptr_t addr = get_virt_addr(R_ENTRY, R_ENTRY, R_ENTRY, R_ENTRY);
   for (int i = 1; i < 5 - level; i++) {
@@ -134,8 +118,6 @@ void vm_init() {
   kprintf("[vm] initializing virtual memory manager\n");
   pml4 = (uint64_t *) boot_info->pml4;
 
-  // clear the mappings needed by uefi
-  pml4[0] = 0;
   // recursive pml4
   pml4[R_ENTRY] = virt_to_phys((uintptr_t) pml4) | 0b11;
 
@@ -150,39 +132,41 @@ void vm_init() {
   // create the interval tree
   tree = create_intvl_tree();
 
-  // null page
-  intvl_tree_insert(tree, intvl(0, PAGE_SIZE), NULL);
+  //
+  // Virtual Address Space Layout
+  //
 
+  // null page (fault on null reference)
+  intvl_tree_insert(tree, intvl(0, PAGE_SIZE), NULL);
   // non-canonical address space
   intvl_tree_insert(tree, intvl(LOW_HALF_END + 1, HIGH_HALF_START), NULL);
-
   // recursively mapped region
   uintptr_t recurs_start = get_virt_addr(R_ENTRY, 0, 0, 0);
   uintptr_t recurs_end = get_virt_addr(R_ENTRY, 511L, 511L, 511L);
   intvl_tree_insert(tree, intvl(recurs_start, recurs_end), NULL);
-
   // temporary page space
   interval_t temp = { TEMP_PAGE, HIGH_HALF_END };
   intvl_tree_insert(tree, temp, NULL);
-
   // virtual kernel space
   uintptr_t kernel_start = KERNEL_VA;
   uintptr_t kernel_end = KERNEL_VA + KERNEL_RESERVED;
   intvl_tree_insert(tree, intvl(kernel_start, kernel_end), NULL);
-
   // virtual stack space
   uint64_t stack_size = boot_info->num_cores * (STACK_SIZE + 1);
   uintptr_t stack_start = STACK_VA - stack_size;
   uintptr_t stack_end = STACK_VA;
   intvl_tree_insert(tree, intvl(stack_start, stack_end), NULL);
 
-  // virtual framebuffer space
+  // framebuffer
   vm_map_vaddr(
     FRAMEBUFFER_VA,
     boot_info->fb_base,
     boot_info->fb_size,
     PE_WRITE | PE_PRESENT
   );
+
+  // finally clear the uefi mappings
+  pml4[0] = 0;
 
   kprintf("[vm] done!\n");
 }
@@ -199,7 +183,7 @@ void *vm_map_page(page_t *page) {
   }
 
   uintptr_t address = 0;
-  bool success = find_free_address(&address, len);
+  bool success = vm_find_free_area(ABOVE, &address, len);
   if (!success) {
     panic("[vm] no free address space");
   }
@@ -228,8 +212,9 @@ void *vm_map_page(page_t *page) {
  * Maps the specified region to an available virtual address.
  */
 void *vm_map_addr(uintptr_t phys_addr, size_t len, uint16_t flags) {
+  len = align(len, PAGE_SIZE);
   uintptr_t address = 0;
-  bool success = find_free_address(&address, len);
+  bool success = vm_find_free_area(ABOVE, &address, len);
   if (!success) {
     panic("[vm] no free address space");
   }
@@ -249,8 +234,9 @@ void *vm_map_addr(uintptr_t phys_addr, size_t len, uint16_t flags) {
  * Maps the given virtual address to the specified region.
  */
 void *vm_map_vaddr(uintptr_t virt_addr, uintptr_t phys_addr, size_t len, uint16_t flags) {
+  len = align(len, PAGE_SIZE);
   interval_t interval = intvl(virt_addr, virt_addr + len);
-  intvl_node_t *existing = intvl_tree_search(tree, interval);
+  intvl_node_t *existing = intvl_tree_find(tree, interval);
   if (existing) {
     panic("[vm] failed to map address - already in use\n");
   }
@@ -266,7 +252,7 @@ void *vm_map_vaddr(uintptr_t virt_addr, uintptr_t phys_addr, size_t len, uint16_
   size_t remaining = len;
   while (remaining > 0) {
     size_t size = PAGE_SIZE;
-    uint16_t cur_flags = flags;
+    uint16_t cur_flags = flags | PE_PRESENT;
     if (remaining >= PAGE_SIZE_1GB) {
       size = PAGE_SIZE_1GB;
       cur_flags |= PE_SIZE | PE_1GB_SIZE;
@@ -290,7 +276,7 @@ void *vm_map_vaddr(uintptr_t virt_addr, uintptr_t phys_addr, size_t len, uint16_
  * address, or NULL if one does not exist.
  */
 vm_area_t *vm_get_vm_area(uintptr_t address) {
-  intvl_node_t *node = intvl_tree_search(tree, intvl(address, address + 1));
+  intvl_node_t *node = intvl_tree_find(tree, intvl(address, address + 1));
   if (node == NULL) {
     return NULL;
   }
@@ -302,17 +288,45 @@ vm_area_t *vm_get_vm_area(uintptr_t address) {
  * using the provided search parameters. If no such address
  * could be found, `false` is returned and `addr` is undefined.
  */
-bool vm_find_free_area(vm_search_type_t search_type, uintptr_t *addr, size_t len) {
-  uintptr_t orig_addr = *addr;
-  uintptr_t address = *addr;
-  bool success = find_free_address(&address, len);
-  if (!success) {
-    return false;
+bool vm_find_free_area(vm_search_t search_type, uintptr_t *addr, size_t size) {
+  uintptr_t ptr = *addr;
+
+  interval_t interval = intvl(ptr, ptr + size);
+  intvl_node_t *closest = intvl_tree_find_closest(tree, interval);
+  if (search_type == EXACTLY) {
+    if (overlaps(interval, closest->interval)) {
+      return false;
+    }
+    return true;
   }
 
-  if (search_type == AT_ADDRESS && address != orig_addr) {
-    return false;
+  rb_iter_type_t iter_type;
+  if (search_type == ABOVE) {
+    iter_type = FORWARD;
+  } else {
+    iter_type = REVERSE;
   }
-  *addr = address;
-  return true;
+
+  rb_node_t *node;
+  rb_iter_t *iter = rb_tree_make_iter(tree->tree, closest->node, iter_type);
+  while ((node = rb_iter_next(iter))) {
+    intvl_node_t *data = node->data;
+    interval_t i = data->interval;
+
+    if (search_type == ABOVE) {
+      if (i.start > ptr && i.start - ptr >= size) {
+        *addr = ptr;
+        return true;
+      }
+      ptr = i.end;
+    } else {
+      if (i.end < ptr && ptr - i.end >= size) {
+        *addr = ptr;
+        return true;
+      }
+      ptr = i.start - 1;
+    }
+  }
+  return false;
 }
+

@@ -98,7 +98,7 @@ intvl_node_t *intvl_tree_find(intvl_tree_t *tree, interval_t interval) {
 
   rb_node_t *node = rb->root;
   while (node != rb->nil && !overlaps(i, get_interval(node))) {
-    if (node->left != rb->nil && get_max(node->left) >= i.start) {
+    if (node->left != rb->nil && get_max(node->left) > i.start) {
       node = node->left;
     } else {
       node = node->right;
