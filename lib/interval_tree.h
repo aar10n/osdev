@@ -8,13 +8,8 @@
 #include <base.h>
 #include <rb_tree.h>
 
-#define NULL_SET ((interval_t){ UINT64_MAX, 0 })
-
 #define intvl(start, end) \
   ((interval_t){ start, end })
-
-#define is_null_set(i) \
-  ((i).start == UINT64_MAX && (i).end == 0)
 
 typedef struct interval {
   uint64_t start;

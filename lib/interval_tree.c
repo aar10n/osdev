@@ -16,6 +16,12 @@
 #define _free(ptr) kfree(ptr)
 #endif
 
+
+#define NULL_SET ((interval_t){ UINT64_MAX, 0 })
+
+#define is_null_set(i) \
+  ((i).start == UINT64_MAX && (i).end == 0)
+
 static inline interval_t intersection(interval_t i, interval_t j) {
   if (j.start > i.end || i.start > j.end) {
     return NULL_SET;
@@ -110,10 +116,12 @@ rb_node_t *interval_search(rb_tree_t *tree, interval_t i) {
 
 intvl_tree_t *create_intvl_tree() {
   rb_tree_t *rb_tree = create_rb_tree();
-  rb_tree->events.post_rotate = post_rotate_callback;
-  rb_tree->events.post_insert_node = post_insert_callback;
-  rb_tree->events.post_delete_node = post_delete_callback;
-  rb_tree->events.replace_node = replace_node_callback;
+  rb_tree_events_t *events = kmalloc(sizeof(rb_tree_events_t));
+  events->post_rotate = post_rotate_callback;
+  events->post_insert_node = post_insert_callback;
+  events->post_delete_node = post_delete_callback;
+  events->replace_node = replace_node_callback;
+  rb_tree->events = events;
 
   intvl_tree_t *tree = _malloc(sizeof(intvl_tree_t));
   tree->tree = rb_tree;
@@ -139,7 +147,7 @@ void intvl_tree_delete(intvl_tree_t *tree, interval_t interval) {
 //
 
 intvl_iter_t *intvl_iter_tree(intvl_tree_t *tree) {
-  return rb_iter_tree(tree->tree);
+  return rb_tree_iter(tree->tree);
 }
 
 intvl_node_t *intvl_iter_next(intvl_iter_t *iter) {
