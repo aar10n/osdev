@@ -40,7 +40,7 @@
   }                     \
   NULL
 
-#define LABEL(L) L:
+#define label(L) L:
 
 typedef __attribute__((sysv_abi)) void (*KERNEL_ENTRY)(UINT64 StackPtr, UINT64 BootInfo);
 
@@ -548,7 +548,7 @@ EFI_STATUS EFIAPI UefiMain(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable
 
   /* -------- Kernel Loading -------- */
 
-  LABEL(LoadKernel)
+  label(LoadKernel)
   Status = LocateFile(Root, FileName, &File);
   if (EFI_ERROR(Status)) {
     ErrorPrint(L"[Loader] Failed to locate file %s\n", FileName);

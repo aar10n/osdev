@@ -12,13 +12,14 @@
 // to the kernel by the bootloader. The data structures
 // include information about system memory, devices
 
-#define KERNEL_PA 0x100000
-#define KERNEL_VA 0xFFFFFF8000100000
-#define KERNEL_OFFSET 0xFFFFFF8000000000
-#define STACK_VA 0xFFFFFFA000000000
+#define KERNEL_PA      0x100000
+#define KERNEL_VA      0xFFFFFF8000100000
+#define KERNEL_OFFSET  0xFFFFFF8000000000
+#define STACK_VA       0xFFFFFFA000000000
 #define FRAMEBUFFER_VA 0xFFFFFFC000000000
+#define MMIO_BASE_VA   0xFFFFFFFFF8000000
 
-#define STACK_SIZE 0x4000 // 16 KiB
+#define STACK_SIZE      0x8000 // 16 KiB
 #define KERNEL_RESERVED 0x300000 // 3 MiB
 #define RESERVED_TABLES 8 // Number of preallocated tables
 

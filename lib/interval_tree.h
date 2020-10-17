@@ -17,7 +17,7 @@
   ((i).start == UINT64_MAX && (i).end == 0)
 
 #define intersection(i, j) \
-  (((j).start > (i).end) || ((i).start > (j).end) ? \
+  (((j).start >= (i).end) || ((i).start >= (j).end) ? \
     NULL_SET : intvl(max(i.start, j.start), min(i.end, j.end)))
 
 #define overlaps(i, j) \

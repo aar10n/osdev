@@ -22,8 +22,6 @@
 #define HIGH_HALF_START 0xFFFF800000000000
 #define HIGH_HALF_END 0xFFFFFFFFFFFFFFFF
 
-#define MMIO_AREA_START 0xFFFFFFFFF8000000
-
 typedef struct vm_area {
   uintptr_t base;
   size_t size;

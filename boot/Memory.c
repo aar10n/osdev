@@ -95,6 +95,7 @@ UINT32 EFIAPI GetKernelMemoryType(EFI_MEMORY_TYPE MemoryType) {
     case EfiBootServicesData:
     case EfiConventionalMemory:
       return MEMORY_FREE;
+    case EfiACPIMemoryNVS:
     case EfiACPIReclaimMemory:
       return MEMORY_ACPI;
     case EfiMemoryMappedIO:
