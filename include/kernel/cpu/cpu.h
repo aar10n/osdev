@@ -8,24 +8,6 @@
 #include <stdint.h>
 #include <base.h>
 
-// state of the cpu and registers following an interrupt
-typedef struct packed {
-  uint64_t apic_id;
-  // general registers
-  uint64_t rax, rbx, rcx, rdx;
-  uint64_t rdi, rsi, rbp;
-  // extended registers
-  uint64_t r8, r9, r12, r13;
-  uint64_t r14, r15;
-  // control registers
-  uint64_t cr0, cr2, cr3, cr4;
-  // interrupt information
-  uint64_t int_no;
-  uint64_t err_code;
-  // pushed by the cpu
-  uint64_t rip, cs, rflags, rsp, ss;
-} cpu_state_t;
-
 // CPUID Information
 
 // cpuid: eax = 1
@@ -151,7 +133,7 @@ typedef struct {
 
 typedef struct irq_source {
   uint8_t source_irq;
-  uint8_t dest_interrupt;
+  uint8_t dest_int;
   uint8_t flags;
   struct irq_source *next;
 } irq_source_t;
@@ -160,13 +142,15 @@ typedef struct {
   uint8_t id;
   uint8_t version;
   uint8_t max_rentry;
-  uint32_t address;
-  uint32_t base;
+  uintptr_t phys_addr;
+  uintptr_t virt_addr;
+  uint8_t int_base;
   irq_source_t *sources;
 } ioapic_desc_t;
 
 typedef struct {
-  uintptr_t apic_base;
+  uintptr_t apic_phys_addr;
+  uintptr_t apic_virt_addr;
   uint8_t bsp_id;
   uint8_t core_count;
   uint8_t ioapic_count;

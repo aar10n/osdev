@@ -54,6 +54,7 @@ flush_gdt:
 
   mov ax, 0x10
   mov ds, ax
+  mov ax, 0x00
   mov es, ax
   mov fs, ax
   mov gs, ax
