@@ -120,19 +120,25 @@ intvl_node_t *intvl_tree_find_closest(intvl_tree_t *tree, interval_t interval) {
     }
 
     closest = node;
-    uint64_t diff = i.start < get_interval(node).start ?
-                    udiff(i.end, get_interval(node).start) :
-                    udiff(i.start, get_interval(node).end);
-
-    uint64_t ldiff = udiff(get_max(node->left), i.start);
-    uint64_t rdiff = udiff(get_min(node->right), i.end);
-    if (diff <= ldiff && diff <= rdiff) {
-      // current node is closest
-      break;
-    } else if (ldiff <= rdiff) {
-      node = node->left;
+    if (overlaps(i, get_interval(node->left))) {
+      return node->left->data;
+    } else if (overlaps(i, get_interval(node->right))) {
+      return node->right->data;
     } else {
-      node = node->right;
+      uint64_t diff = i.start < get_interval(node).start ?
+                      udiff(i.end, get_interval(node).start) :
+                      udiff(i.start, get_interval(node).end);
+
+      uint64_t ldiff = udiff(get_max(node->left), i.start);
+      uint64_t rdiff = udiff(get_min(node->right), i.end);
+      if (diff <= ldiff && diff <= rdiff) {
+        // current node is closest
+        break;
+      } else if (ldiff <= rdiff) {
+        node = node->left;
+      } else {
+        node = node->right;
+      }
     }
   }
 

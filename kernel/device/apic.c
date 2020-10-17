@@ -2,7 +2,7 @@
 // Created by Aaron Gill-Braun on 2020-10-14.
 //
 
-#include <acpi.h>
+#include <system.h>
 #include <stdio.h>
 #include <vectors.h>
 #include <device/apic.h>

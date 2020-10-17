@@ -6,11 +6,11 @@
 #define KERNEL_ACPI_H
 
 #include <base.h>
-#include <cpu/cpu.h>
+#include <system.h>
 
 // common acpi header
 #define acpi_header            \
-  struct {                     \
+  struct packed {              \
     char signature[4];         \
     uint32_t length;           \
     uint8_t revision;          \
@@ -21,6 +21,16 @@
     uint32_t creator_id;       \
     uint32_t creator_revision; \
   }
+
+typedef struct packed {
+  uint8_t address_space_id; // 0 = RAM | 1 = MMIO
+  uint8_t reg_bit_width;
+  uint8_t reg_bit_offset;
+  uint8_t reserved;
+  uint64_t address;
+} acpi_address_t;
+static_assert(sizeof(acpi_address_t) == 12);
+
 
 /* ------ Root System Description Pointer ------ */
 
@@ -117,7 +127,16 @@ typedef struct packed {
   uint64_t phys_addr; // 64-bit lapic address
 } madt_entry_lapic_ao_t;
 
-extern system_info_t *system_info;
+/* ------ HPET Description Table ------ */
+
+typedef struct packed {
+  acpi_header;
+  uint32_t hpet_block_id;
+  acpi_address_t base_addr;
+  uint8_t hpet_number;
+  uint16_t min_clock_tick;
+  uint8_t pg_prot_oem_attr;
+} acpi_hpetdt_t;
 
 void acpi_init();
 

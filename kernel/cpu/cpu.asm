@@ -32,11 +32,6 @@ enable_sse:
   mov cr4, rdx
   ret
 
-global read_gdt
-read_gdt:
-  sgdt [rdi]
-  ret
-
 global load_gdt
 load_gdt:
   lgdt [rdi]

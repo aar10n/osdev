@@ -307,25 +307,29 @@ bool vm_find_free_area(vm_search_t search_type, uintptr_t *addr, size_t size) {
     iter_type = REVERSE;
   }
 
-  rb_node_t *node;
+  rb_node_t *node = NULL;
+  rb_node_t *last = NULL;
   rb_iter_t *iter = rb_tree_make_iter(tree->tree, closest->node, iter_type);
   while ((node = rb_iter_next(iter))) {
-    intvl_node_t *data = node->data;
-    interval_t i = data->interval;
+    interval_t i = ((intvl_node_t *) node->data)->interval;
+    interval_t j = last ? ((intvl_node_t *) last->data)->interval : i;
 
+    bool contig = contiguous(i, j);
     if (search_type == ABOVE) {
-      if (i.start > ptr && i.start - ptr >= size) {
+      if (!contig && i.start > ptr && i.start - ptr >= size) {
         *addr = ptr;
         return true;
       }
       ptr = i.end;
     } else {
-      if (i.end < ptr && ptr - i.end >= size) {
+      if (!contig && i.end < ptr && ptr - i.end >= size) {
         *addr = ptr;
         return true;
       }
       ptr = i.start - 1;
     }
+
+    last = node;
   }
   return false;
 }

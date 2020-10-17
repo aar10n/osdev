@@ -20,6 +20,9 @@
   (((j).start >= (i).end) || ((i).start >= (j).end) ? \
     NULL_SET : intvl(max(i.start, j.start), min(i.end, j.end)))
 
+#define contiguous(i, j) \
+  (!overlaps(i, j) && (((j).start == (i).end) || ((i).start == (j).end)))
+
 #define overlaps(i, j) \
   (!is_null_set(intersection(i, j)))
 

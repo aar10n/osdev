@@ -2,7 +2,7 @@
 // Created by Aaron Gill-Braun on 2020-10-14.
 //
 
-#include <acpi.h>
+#include <system.h>
 #include <panic.h>
 #include <string.h>
 #include <stdio.h>
@@ -74,32 +74,32 @@ void ioapic_init() {
     irq_source_t *sources = ioapics[i].sources;
     irq_source_t *source = sources;
 
-    memset(premapped, 0, sizeof(premapped));
-    while (source) {
-      if (ioapics[i].int_base >= source->dest_int) {
-        source = source->next;
-        continue;
-      }
-
-      uint8_t vector = source->source_irq + 32;
-
-      uint8_t active_low = (source->flags & 2) != 0;
-      uint8_t trigger = (source->flags & 8) != 0;
-
-      ioapic_rentry_t rentry = ioapic_rentry(
-        vector, IOAPIC_FIXED, IOAPIC_PHYSICAL, IOAPIC_IDLE,
-        active_low, 0, trigger, 1, 1
-      );
-
-      // source -> dest
-      uint8_t index = get_rentry_index(source->dest_int);
-      ioapic_write(ioapic.id, index, rentry.raw_lower);
-      ioapic_write(ioapic.id, index + 1, rentry.raw_upper);
-      premapped[source->source_irq] = true;
-      kprintf("[ioapic] IRQ %d -> Pin %d\n", source->source_irq, source->dest_int);
-
-      source = source->next;
-    }
+    // memset(premapped, 0, sizeof(premapped));
+    // while (source) {
+    //   if (ioapics[i].int_base >= source->dest_int) {
+    //     source = source->next;
+    //     continue;
+    //   }
+    //
+    //   uint8_t vector = source->source_irq + 32;
+    //
+    //   uint8_t active_low = (source->flags & 2) != 0;
+    //   uint8_t trigger = (source->flags & 8) != 0;
+    //
+    //   ioapic_rentry_t rentry = ioapic_rentry(
+    //     vector, IOAPIC_FIXED, IOAPIC_PHYSICAL, IOAPIC_IDLE,
+    //     active_low, 0, trigger, 1, 1
+    //   );
+    //
+    //   // source -> dest
+    //   uint8_t index = get_rentry_index(source->dest_int);
+    //   ioapic_write(ioapic.id, index, rentry.raw_lower);
+    //   ioapic_write(ioapic.id, index + 1, rentry.raw_upper);
+    //   premapped[source->source_irq] = true;
+    //   kprintf("[ioapic] IRQ %d -> Pin %d\n", source->source_irq, source->dest_int);
+    //
+    //   source = source->next;
+    // }
 
     for (int j = ioapic.int_base; j < ioapic.max_rentry; j++) {
       uint8_t index = get_rentry_index(j);

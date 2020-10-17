@@ -110,54 +110,6 @@ typedef struct {
   } edx;
 } cpu_info_t;
 
-// System Information
-
-// logical core
-
-typedef struct {
-  uint8_t id;
-  uint8_t version;
-  uint8_t max_lvt;
-  struct {
-    uint8_t enabled : 1;
-    uint8_t bsp : 1;
-    uint8_t has_eoi_supress : 1;
-    uint8_t reserved : 5;
-  } flags;
-} apic_desc_t;
-
-typedef struct {
-  uint8_t id;
-  apic_desc_t *local_apic;
-} core_desc_t;
-
-typedef struct irq_source {
-  uint8_t source_irq;
-  uint8_t dest_int;
-  uint8_t flags;
-  struct irq_source *next;
-} irq_source_t;
-
-typedef struct {
-  uint8_t id;
-  uint8_t version;
-  uint8_t max_rentry;
-  uintptr_t phys_addr;
-  uintptr_t virt_addr;
-  uint8_t int_base;
-  irq_source_t *sources;
-} ioapic_desc_t;
-
-typedef struct {
-  uintptr_t apic_phys_addr;
-  uintptr_t apic_virt_addr;
-  uint8_t bsp_id;
-  uint8_t core_count;
-  uint8_t ioapic_count;
-  core_desc_t *cores;
-  ioapic_desc_t *ioapics;
-} system_info_t;
-
 // cpu functions
 void cli();
 void sti();
