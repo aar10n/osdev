@@ -53,7 +53,7 @@ extern exception_handler
     jmp exception_handler
   %else
     push %1
-    call interrupt_handler
+    jmp interrupt_handler
     iretq
   %endif
   times IDT_STUB_SIZE - ($ - %%start) db 0
@@ -78,7 +78,7 @@ interrupt_handler:
   pushall
   cld
 
-  mov byte edi, [rsp]
+  mov rdi, [rsp + 72]
   call irq_handler
 
   popall
