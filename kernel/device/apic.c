@@ -5,24 +5,97 @@
 #include <system.h>
 #include <stdio.h>
 #include <vectors.h>
+#include <cpu/cpu.h>
 #include <device/apic.h>
+#include <device/pit.h>
+
+static uintptr_t apic_base;
+static uint64_t cpu_clock;
+static uint32_t apic_clock;
 
 static inline uint32_t apic_read(apic_reg_t reg) {
-  uintptr_t addr = APIC_BASE_VA + reg;
+  uintptr_t addr = apic_base + reg;
   volatile uint32_t *apic = (uint32_t *) addr;
   return *apic;
 }
 
 static inline void apic_write(apic_reg_t reg, uint32_t value) {
-  uintptr_t addr = APIC_BASE_VA + reg;
+  uintptr_t addr = apic_base + reg;
   volatile uint32_t *apic = (uint32_t *) addr;
   *apic = value;
+}
+
+static inline apic_reg_lvt_timer_t apic_read_timer() {
+  apic_reg_lvt_timer_t timer = { .raw = apic_read(APIC_LVT_TIMER) };
+  return timer;
+}
+
+static inline void apic_write_timer(apic_reg_lvt_timer_t timer) {
+  apic_write(APIC_LVT_TIMER, timer.raw);
+}
+
+//
+
+void apic_get_cpu_clock() {
+  kprintf("[apic] determining cpu clock speed\n");
+
+  uint64_t ms = 5;
+  uint64_t t0, t1, min;
+
+  min = UINT64_MAX;
+  for (int i = 0; i < 5; i++) {
+    t0 = read_tsc();
+    pit_mdelay(ms);
+    t1 = read_tsc();
+
+    uint64_t diff = t1 - t0;
+    if (diff < min) {
+      min = diff;
+    }
+  }
+
+  cpu_clock = min * (MS_PER_SEC / ms);
+
+  double freq = cpu_clock / 1e6;
+  kprintf("[apic] detected %.1f MHz cpu clock\n", freq);
+}
+
+void apic_get_timer_clock() {
+  kprintf("[apic] determining timer clock speed\n");
+  apic_reg_lvt_timer_t timer = apic_read_timer();
+  timer.mask = APIC_MASK;
+  timer.timer_mode = APIC_ONE_SHOT;
+
+  apic_reg_div_config_t div = apic_reg_div_config(APIC_DIVIDE_1);
+  apic_write(APIC_DIVIDE_CONFIG, div.raw);
+
+  uint64_t ms = 5;
+  uint32_t t0, t1, min;
+
+  t0 = UINT32_MAX;
+  min = UINT32_MAX;
+  for (int i = 0; i < 5; i++) {
+    apic_write(APIC_INITIAL_COUNT, t0);
+    pit_mdelay(ms);
+    t1 = apic_read(APIC_CURRENT_COUNT);
+
+    uint32_t diff = t0 - t1;
+    if (diff < min) {
+      min = diff;
+    }
+  }
+
+  apic_clock = min * (MS_PER_SEC / ms);
+
+  double freq = apic_clock / 1e6;
+  kprintf("[apic] detected %.1f MHz timer clock\n", freq);
 }
 
 //
 
 void apic_init() {
   kprintf("[apic] initializing\n");
+  apic_base = system_info->apic_virt_addr;
 
   apic_reg_tpr_t tpr = apic_reg_tpr(0, 0);
   apic_write(APIC_TPR, tpr.raw);
@@ -34,12 +107,12 @@ void apic_init() {
   apic_write(APIC_DFR, dfr.raw);
 
   apic_reg_lvt_timer_t timer = apic_reg_lvt_timer(
-    VECTOR_APIC_TIMER, APIC_IDLE, 1, APIC_ONE_SHOT
+    VECTOR_APIC_TIMER, APIC_IDLE, APIC_MASK, APIC_ONE_SHOT
   );
   apic_write(APIC_LVT_TIMER, timer.raw);
 
   apic_reg_lvt_lint_t lint = apic_reg_lvt_lint(
-    0, APIC_FIXED, APIC_IDLE, 0, 1, 0, APIC_LEVEL
+    0, APIC_FIXED, APIC_IDLE, 0, APIC_MASK, 0, APIC_LEVEL
   );
 
   lint.vector = VECTOR_APIC_LINT0;
@@ -50,8 +123,34 @@ void apic_init() {
   apic_reg_svr_t svr = apic_reg_svr(VECTOR_APIC_SPURIOUS, 1, 0);
   apic_write(APIC_SVR, svr.raw);
 
+  // synchronize apic timer clock
+  apic_get_cpu_clock();
+  apic_get_timer_clock();
+
   apic_send_eoi();
   kprintf("[apic] done!\n");
+}
+
+void apic_udelay(uint64_t us) {
+  apic_reg_lvt_timer_t timer = apic_read_timer();
+  timer.timer_mode = APIC_ONE_SHOT;
+  timer.mask = APIC_MASK;
+  apic_write_timer(timer);
+  while (us > 0) {
+    kprintf("loop\n");
+    uint32_t val = min(us, US_PER_SEC);
+    uint32_t count = apic_clock / (US_PER_SEC / val);
+    apic_write(APIC_INITIAL_COUNT, count);
+
+    while (apic_read(APIC_CURRENT_COUNT) != 0) {
+      cpu_pause();
+    }
+    us -= val;
+  }
+}
+
+void apic_mdelay(uint64_t ms) {
+  apic_udelay(ms * 1000);
 }
 
 void apic_send_eoi() {

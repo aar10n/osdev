@@ -11,8 +11,6 @@
 #define IA32_APIC_BASE_BSP    0x100
 #define IA32_APIC_BASE_ENABLE 0x800
 
-#define APIC_BASE_VA 0xFFFFFFFFF8000000
-
 /* --------- Enumerations ---------*/
 
 typedef enum {
@@ -37,7 +35,6 @@ typedef enum {
   APIC_INITIAL_COUNT = 0x380,
   APIC_CURRENT_COUNT = 0x390,
   APIC_DIVIDE_CONFIG = 0x3E0,
-  APIC_REG_END       = 0x400
 } apic_reg_t;
 
 #define APIC_FIXED        0
@@ -71,6 +68,18 @@ typedef enum {
 
 #define APIC_CLUSTER_MODEL 0x0
 #define APIC_FLAT_MODEL    0xF
+
+#define APIC_UNMASK 0
+#define APIC_MASK   1
+
+#define APIC_DIVIDE_2   0
+#define APIC_DIVIDE_4   1
+#define APIC_DIVIDE_8   2
+#define APIC_DIVIDE_16  3
+#define APIC_DIVIDE_32  4
+#define APIC_DIVIDE_64  5
+#define APIC_DIVIDE_128 6
+#define APIC_DIVIDE_1   7
 
 /* --------- Registers ---------*/
 
@@ -257,6 +266,8 @@ static_assert(sizeof(apic_reg_svr_t) == sizeof(uint32_t));
 
 
 void apic_init();
+void apic_udelay(uint64_t us);
+void apic_mdelay(uint64_t ms);
 void apic_send_eoi();
 
 #endif

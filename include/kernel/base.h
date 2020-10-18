@@ -14,10 +14,10 @@
 // General Definitions
 //
 
-#define reserved8 uint8_t : 8
-#define reserved16 uint16_t : 16
-#define reserved32 uint32_t : 32
-#define reserved64 uint64_t : 64
+#define MS_PER_SEC 1000
+#define US_PER_SEC 1000000
+#define NS_PER_SEC 1000000000
+#define FS_PER_SEC 1000000000000000
 
 //
 // General Macros

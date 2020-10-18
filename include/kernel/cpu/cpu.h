@@ -114,6 +114,8 @@ typedef struct {
 void cli();
 void sti();
 
+uint64_t read_tsc();
+
 void get_cpu_info(cpu_info_t *info);
 void enable_sse();
 

@@ -65,6 +65,7 @@ typedef struct {
     };
   } block_id;
   uint8_t number;
+  uint16_t min_clock_tick;
   uintptr_t phys_addr;
   uintptr_t virt_addr;
 } hpet_desc_t;

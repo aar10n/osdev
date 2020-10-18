@@ -8,6 +8,15 @@ sti:
   sti
   ret
 
+global read_tsc
+read_tsc:
+  rdtsc
+  mov cl, 32
+  shl rdx, cl
+  or rax, rdx
+  ret
+
+
 ; cpuid: eax = 1
 global get_cpu_info
 get_cpu_info:
