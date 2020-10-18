@@ -115,7 +115,7 @@ void ioapic_init() {
       ioapic_write(ioapic.id, index, rentry.raw_lower);
       ioapic_write(ioapic.id, index + 1, rentry.raw_upper);
 
-      kprintf("[ioapic] IRQ %d -> Pin %d\n", j, j);
+      // kprintf("[ioapic] IRQ %d -> Pin %d\n", j, j);
     }
   }
 

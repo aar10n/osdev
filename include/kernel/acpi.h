@@ -135,7 +135,7 @@ typedef struct packed {
   acpi_address_t base_addr;
   uint8_t hpet_number;
   uint16_t min_clock_tick;
-  uint8_t pg_prot_oem_attr;
+  uint8_t page_protection;
 } acpi_hpetdt_t;
 
 void acpi_init();

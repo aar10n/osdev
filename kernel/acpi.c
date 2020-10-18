@@ -123,7 +123,7 @@ void get_apic_info(system_info_t *info, acpi_madt_t *madt) {
       }
       vm_map_vaddr(virt_addr, phys_addr, ioapic_mmio_size, PE_WRITE);
 
-      *((uint32_t *) (virt_addr + IOREGSEL)) = IOAPIC_REG_VERSION;
+      *((uint32_t *) (virt_addr + IOREGSEL)) = IOAPIC_VERSION;
       uint32_t version = *((uint32_t *) (virt_addr + IOREGWIN));
 
       uint8_t id = e->io_apic_id;
@@ -224,6 +224,7 @@ void get_hpet_info(system_info_t *info, acpi_hpetdt_t *hpetdt) {
   hpet_desc_t *hpet = kmalloc(sizeof(hpet_desc_t));
   hpet->block_id.raw = hpetdt->hpet_block_id;
   hpet->number = hpetdt->hpet_number;
+  hpet->min_clock_tick = hpetdt->min_clock_tick;
   hpet->phys_addr = hpetdt->base_addr.address;
   hpet->virt_addr = virt_addr;
 
@@ -276,8 +277,8 @@ void acpi_init() {
     size_t size = align(region->size, PAGE_SIZE);
 
     vm_map_vaddr(virt_addr, region->phys_addr, size, 0);
-    kprintf("[acpi] mapped region (%p -> %p)\n",
-            region->phys_addr, virt_addr);
+    // kprintf("[acpi] mapped region (%p -> %p)\n",
+    //         region->phys_addr, virt_addr);
 
     mapped_count++;
     region++;

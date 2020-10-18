@@ -12,13 +12,13 @@
 #define IOREGWIN 0x10
 
 #define get_rentry_index(irq) \
-  (0x10 + ((irq) * 2))
+  (IOAPIC_RENTRY_BASE + ((irq) * 2))
 
 typedef enum {
-  IOAPIC_REG_ID      = 0x00,
-  IOAPIC_REG_VERSION = 0x01,
-  IOAPIC_REG_ARB_ID  = 0x02,
-  IOAPIC_REG_END     = 0x40
+  IOAPIC_ID          = 0x00,
+  IOAPIC_VERSION     = 0x01,
+  IOAPIC_ARB_ID      = 0x02,
+  IOAPIC_RENTRY_BASE = 0x10
 } ioapic_reg_t;
 
 #define IOAPIC_FIXED        0

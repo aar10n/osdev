@@ -248,25 +248,25 @@ EFI_STATUS EFIAPI ReadElf(
     }
   }
 
-  Print(L"ELF Header:\n");
-  Print(L"  Magic: 0x7F 0x45 0x4C 0x46\n");
-  Print(L"  Class: ELF64 (%d)\n", ElfHdr->e_ident[EI_CLASS]);
-  Print(L"  Data: %d\n", ElfHdr->e_ident[EI_DATA]);
-  Print(L"  Version: %d\n", ElfHdr->e_ident[EI_VERSION]);
-  Print(L"  OS/ABI: %d\n", ElfHdr->e_ident[EI_OSABI]);
-  Print(L"  ABI Version: %d\n", ElfHdr->e_ident[EI_ABIVERSION]);
-  Print(L"  Type: %d\n", ElfHdr->e_type);
-  Print(L"  Machine: %d\n", ElfHdr->e_machine);
-  Print(L"  Entry point address: 0x%p\n", ElfHdr->e_entry);
-  Print(L"  Start of program headers: %u\n", ElfHdr->e_phoff);
-  Print(L"  Start of section headers: %u\n", ElfHdr->e_shoff);
-  Print(L"  Flags: 0x%x\n", ElfHdr->e_flags);
-  Print(L"  Size of this header: %u\n", ElfHdr->e_ehsize);
-  Print(L"  Size of program headers: %u\n", ElfHdr->e_phentsize);
-  Print(L"  Number of program headers: %d\n", ElfHdr->e_phnum);
-  Print(L"  Size of section headers: %u\n", ElfHdr->e_shentsize);
-  Print(L"  Number of section headers: %d\n", ElfHdr->e_shnum);
-  Print(L"  Section header string table index: %u\n", ElfHdr->e_shstrndx);
+  // Print(L"ELF Header:\n");
+  // Print(L"  Magic: 0x7F 0x45 0x4C 0x46\n");
+  // Print(L"  Class: ELF64 (%d)\n", ElfHdr->e_ident[EI_CLASS]);
+  // Print(L"  Data: %d\n", ElfHdr->e_ident[EI_DATA]);
+  // Print(L"  Version: %d\n", ElfHdr->e_ident[EI_VERSION]);
+  // Print(L"  OS/ABI: %d\n", ElfHdr->e_ident[EI_OSABI]);
+  // Print(L"  ABI Version: %d\n", ElfHdr->e_ident[EI_ABIVERSION]);
+  // Print(L"  Type: %d\n", ElfHdr->e_type);
+  // Print(L"  Machine: %d\n", ElfHdr->e_machine);
+  // Print(L"  Entry point address: 0x%p\n", ElfHdr->e_entry);
+  // Print(L"  Start of program headers: %u\n", ElfHdr->e_phoff);
+  // Print(L"  Start of section headers: %u\n", ElfHdr->e_shoff);
+  // Print(L"  Flags: 0x%x\n", ElfHdr->e_flags);
+  // Print(L"  Size of this header: %u\n", ElfHdr->e_ehsize);
+  // Print(L"  Size of program headers: %u\n", ElfHdr->e_phentsize);
+  // Print(L"  Number of program headers: %d\n", ElfHdr->e_phnum);
+  // Print(L"  Size of section headers: %u\n", ElfHdr->e_shentsize);
+  // Print(L"  Number of section headers: %d\n", ElfHdr->e_shnum);
+  // Print(L"  Section header string table index: %u\n", ElfHdr->e_shstrndx);
 
   BOOLEAN FoundFirst = FALSE;
 
@@ -380,6 +380,7 @@ EFI_STATUS EFIAPI SmbiosGetProcessorCount(UINTN *CoreCount, UINTN *ThreadCount) 
     // Print(L"  Type: %d\n", Info->ProcessorType);
     // Print(L"  Family: %d\n", Info->ProcessorFamily);
     // Print(L"  Id: %u\n", Info->ProcessorId);
+    // Print(L"  External clock: %d\n", Info->ExternalClock);
     // Print(L"  Max speed: %d\n", Info->MaxSpeed);
     // Print(L"  Current speed: %d\n", Info->CurrentSpeed);
     // Print(L"  Status: %d\n", Info->Status);
