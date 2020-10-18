@@ -26,6 +26,7 @@
 #include <ElfCommon.h>
 
 #define MAX_INFO_SIZE 1024
+#define EFI_MAIN __attribute((used)) EFIAPI
 
 #define CHECK_STATUS(Status) \
   if (EFI_ERROR(Status)){ \
@@ -356,13 +357,15 @@ EFI_STATUS EFIAPI LoadElf(void *ElfImage, UINT64 Address) {
 // System Information
 //
 
-EFI_STATUS EFIAPI SmbiosGetProcessorCount(UINTN *ProcessorCount) {
+// Determines the number of physical cores and threads in the system
+EFI_STATUS EFIAPI SmbiosGetProcessorCount(UINTN *CoreCount, UINTN *ThreadCount) {
   EFI_STATUS Status;
   EFI_SMBIOS_HANDLE Handle = 0xFFFE;
   SMBIOS_TYPE Type = EFI_SMBIOS_TYPE_PROCESSOR_INFORMATION;
   EFI_SMBIOS_TABLE_HEADER *Header;
-  UINTN Count = 0;
 
+  UINTN Cores = 0;
+  UINTN Threads = 0;
   while (TRUE) {
     Status = Smbios->GetNext(Smbios, &Handle, &Type, &Header, NULL);
     if (Status == EFI_NOT_FOUND) {
@@ -385,11 +388,12 @@ EFI_STATUS EFIAPI SmbiosGetProcessorCount(UINTN *ProcessorCount) {
     // Print(L"  Thread count: %d\n", Info->ThreadCount);
     // Print(L"  Characteristics: %d\n", Info->ProcessorCharacteristics);
 
-    Count += Info->ThreadCount;
+    Cores += Info->CoreCount;
+    Threads += Info->ThreadCount;
   }
 
-
-  *ProcessorCount = Count;
+  *CoreCount = Cores;
+  *ThreadCount = Threads;
   return EFI_SUCCESS;
 }
 
@@ -463,7 +467,7 @@ EFI_STATUS EFIAPI InitSmbiosProtocol() {
 // Main
 //
 
-EFI_STATUS EFIAPI UefiMain(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable) {
+EFI_STATUS EFI_MAIN UefiMain(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable) {
   DebugPrintEnabled();
 
   EFI_STATUS Status;
@@ -590,8 +594,8 @@ EFI_STATUS EFIAPI UefiMain(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable
   Status = CreateKernelMemoryMap(&Mmap, &KernelMmap);
   CHECK_STATUS(Status);
 
-  UINTN ProcessorCount;
-  Status = SmbiosGetProcessorCount(&ProcessorCount);
+  UINTN CoreCount, ThreadCount;
+  Status = SmbiosGetProcessorCount(&CoreCount, &ThreadCount);
   CHECK_STATUS(Status);
 
   /* -------------------------------------- */
@@ -607,7 +611,8 @@ EFI_STATUS EFIAPI UefiMain(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable
   // Reserved Region
   UINTN ReservedRegionSize = KERNEL_RESERVED - KernelRegionSize;
   // Stack Region
-  UINTN StackRegionSize = ProcessorCount * (STACK_SIZE + EFI_PAGE_SIZE);
+  UINTN LogicalCores = CoreCount * ThreadCount;
+  UINTN StackRegionSize = LogicalCores * (STACK_SIZE + EFI_PAGE_SIZE);
 
   Print(L"[Loader] Kernel size: %u (%d pages)\n", KernelSizeAligned, EFI_SIZE_TO_PAGES(KernelSizeAligned));
   Print(L"[Loader] Boot info size: %u (%d pages)\n", InfoSize, EFI_SIZE_TO_PAGES(InfoSize));
@@ -684,7 +689,7 @@ EFI_STATUS EFIAPI UefiMain(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable
   }
 
   /* -------- Kernel Stack Region -------- */
-  Print(L"[Loader] Allocating %d stack spaces\n", ProcessorCount);
+  Print(L"[Loader] Allocating %d stack spaces\n", LogicalCores);
 
   UINT64 StackAddressBase;
   Status = LocateMemoryRegion(
@@ -699,7 +704,7 @@ EFI_STATUS EFIAPI UefiMain(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable
 
   PAGE_DESCRIPTOR *StackPages = NULL;
   PAGE_DESCRIPTOR *StackPagesLast = NULL;
-  for (UINTN Index = 0; Index < ProcessorCount; Index++) {
+  for (UINTN Index = 0; Index < LogicalCores; Index++) {
     UINT64 Offset = Index * (EFI_PAGE_SIZE + STACK_SIZE);
 
     // Since we're allocating the stack from the bottom up,
@@ -791,7 +796,8 @@ EFI_STATUS EFIAPI UefiMain(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable
   BootInfo->magic[3] = BOOT_MAGIC3;
 
   BootInfo->kernel_phys = KernelAddress;
-  BootInfo->num_cores = ProcessorCount;
+  BootInfo->num_cores = CoreCount;
+  BootInfo->num_threads = ThreadCount;
 
   BootInfo->mem_map = MemoryMap;
   BootInfo->pml4 = KERNEL_OFFSET + PML4Address;

@@ -152,7 +152,8 @@ void vm_init() {
   uintptr_t kernel_end = KERNEL_VA + KERNEL_RESERVED;
   intvl_tree_insert(tree, intvl(kernel_start, kernel_end), NULL);
   // virtual stack space
-  uint64_t stack_size = boot_info->num_cores * (STACK_SIZE + 1);
+  uint64_t logical_cores = boot_info->num_cores * boot_info->num_threads;
+  uint64_t stack_size = logical_cores * (STACK_SIZE + 1);
   uintptr_t stack_start = STACK_VA - stack_size;
   uintptr_t stack_end = STACK_VA;
   intvl_tree_insert(tree, intvl(stack_start, stack_end), NULL);

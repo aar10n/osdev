@@ -13,15 +13,16 @@
 // include information about system memory, devices
 
 #define KERNEL_PA      0x100000
-#define KERNEL_VA      0xFFFFFF8000100000
 #define KERNEL_OFFSET  0xFFFFFF8000000000
+#define KERNEL_VA      0xFFFFFF8000100000
 #define STACK_VA       0xFFFFFFA000000000
 #define FRAMEBUFFER_VA 0xFFFFFFC000000000
 #define MMIO_BASE_VA   0xFFFFFFFFF8000000
+#define PERCPU_BASE_VA
 
 #define STACK_SIZE      0x8000 // 16 KiB
 #define KERNEL_RESERVED 0x300000 // 3 MiB
-#define RESERVED_TABLES 8 // Number of preallocated tables
+#define RESERVED_TABLES 8 // Number of preallocated page tables
 
 // Memory map
 #define MEMORY_UNKNOWN  0
@@ -70,7 +71,8 @@ typedef struct {
 typedef struct {
   uint8_t magic[4];                // 'BOOT' magic
   uintptr_t kernel_phys;           // the kernel physical address
-  uint8_t num_cores;               // the number of logical cores
+  uint8_t num_cores;               // the number of physical cores
+  uint16_t num_threads;            // the number of threads
   // memory info
   memory_map_t *mem_map;           // the memory map array
   uintptr_t pml4;                  // pointer to the pml4 page table
