@@ -54,7 +54,7 @@ static_assert(sizeof(percpu_t) <= PERCPU_RESERVED);
 #define percpu_struct() \
   ((percpu_t *) percpu_get(self))
 
-static always_inline purefn percpu_t *percpu() {
+static always_inline _pure_ percpu_t *percpu() {
   uintptr_t ptr = percpu_get(self);
   return (percpu_t *) ptr;
 }
