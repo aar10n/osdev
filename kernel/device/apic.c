@@ -156,3 +156,8 @@ void apic_mdelay(uint64_t ms) {
 void apic_send_eoi() {
   apic_write(APIC_EOI, 0);
 }
+
+uint8_t apic_get_id() {
+  apic_reg_id_t id = { .raw = apic_read(APIC_ID) };
+  return id.id;
+}

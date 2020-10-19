@@ -1,3 +1,7 @@
+GSBASE_MSR        equ 0xC0000101
+KERNEL_GSBASE_MSR equ 0xC0000102
+
+
 global cli
 cli:
   cli
@@ -8,6 +12,8 @@ sti:
   sti
   ret
 
+; Registers
+
 global read_tsc
 read_tsc:
   rdtsc
@@ -16,30 +22,60 @@ read_tsc:
   or rax, rdx
   ret
 
+global read_msr
+read_msr:
+  mov ecx, edi
+  rdmsr
 
-; cpuid: eax = 1
-global get_cpu_info
-get_cpu_info:
-  mov eax, 0x1        ; 1 for cpu info
-  cpuid
-  mov [rdi], eax      ; cpuinfo->eax
-  mov [rdi + 4], ebx  ; cpuinfo->ebx
-  mov [rdi + 8], ecx  ; cpuinfo->ecx
-  mov [rdi + 12], edx ; cpuinfo->edx
+  mov cl, 32
+  shl rdx, cl
+  or rax, rdx
   ret
 
-global enable_sse
-enable_sse:
-  mov rdx, cr0
-  and rdx, ~(1 << 2) ; clear the EM bit
-  or rdx, 1 << 1     ; set the MP bit
-  mov cr0, rdx
+global write_msr
+write_msr:
+  mov rax, rsi
+  mov rdx, rsi
+  mov cl, 32
+  shr rdx, cl
 
-  mov rdx, cr4
-  or rdx, 1 << 8     ; set the OSFXSR bit
-  or rdx, 1 << 9     ; set the OSXMMEXCPT bit
-  mov cr4, rdx
+  mov ecx, edi
+  wrmsr
   ret
+
+
+global read_gsbase
+read_gsbase:
+  mov rdi, GSBASE_MSR
+  call read_msr
+  ret
+
+global write_gsbase
+write_gsbase:
+  mov rsi, rdi
+  mov rdi, GSBASE_MSR
+  call write_msr
+  ret
+
+global read_kernel_gsbase
+read_kernel_gsbase:
+  mov rdi, KERNEL_GSBASE_MSR
+  call read_msr
+  ret
+
+global write_kernel_gsbase
+write_kernel_gsbase:
+  mov rsi, rdi
+  mov rdi, KERNEL_GSBASE_MSR
+  call write_msr
+  ret
+
+global swapgs
+swapgs:
+  swapgs
+  ret
+
+; GDT/IDT
 
 global load_gdt
 load_gdt:
@@ -87,4 +123,19 @@ global tlb_flush
 tlb_flush:
   mov rax, cr3
   mov cr3, rax
+  ret
+
+; SSE
+
+global enable_sse
+enable_sse:
+  mov rdx, cr0
+  and rdx, ~(1 << 2) ; clear the EM bit
+  or rdx, 1 << 1     ; set the MP bit
+  mov cr0, rdx
+
+  mov rdx, cr4
+  or rdx, 1 << 8     ; set the OSFXSR bit
+  or rdx, 1 << 9     ; set the OSXMMEXCPT bit
+  mov cr4, rdx
   ret

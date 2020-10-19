@@ -99,7 +99,7 @@ exception_handler:
 section .data
 
 exception_msg.1: db "!!!! Exception Type - %s !!!!", 10
-                 db "CPU Id: %d | Exception Code: %d | Exception Data: %#X", 10, 0
+                 db "CPU Id: %d | Exception Code: %d | Exception Data: %#X", 10
                  db "RIP = %016X, RFLAGS = %016X", 10, 0
 exception_msg.2: db "------------------------- GENERAL REGISTERS --------------------------", 10
                  db "RAX = %016X, RBX = %016X, RCX = %016X", 10

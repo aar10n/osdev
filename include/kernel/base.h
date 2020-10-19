@@ -10,9 +10,13 @@
 #include <stdbool.h>
 #include <boot.h>
 
+typedef uint64_t clock_t;
+
 //
 // General Definitions
 //
+
+#define PAGE_SIZE 0x1000
 
 #define MS_PER_SEC 1000
 #define US_PER_SEC 1000000

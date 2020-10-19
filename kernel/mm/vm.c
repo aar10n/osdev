@@ -179,7 +179,7 @@ void *vm_map_page(page_t *page) {
   size_t len = 0;
   page_t *current = page;
   while (current) {
-    len += PAGE_SIZE;
+    len += page_to_size(current);
     current = page->next;
   }
 
@@ -189,6 +189,21 @@ void *vm_map_page(page_t *page) {
     panic("[vm] no free address space");
   }
 
+  return vm_map_page_vaddr(address, page);
+}
+
+/**
+ * Maps a physical page to the specified virtual address.
+ */
+void *vm_map_page_vaddr(uintptr_t virt_addr, page_t *page) {
+  uintptr_t address = virt_addr;
+  size_t len = 0;
+  page_t *current = page;
+  while (current) {
+    len += page_to_size(current);
+    current = page->next;
+  }
+
   vm_area_t *area = kmalloc(sizeof(vm_area_t));
   area->base = address;
   area->size = len;
@@ -196,14 +211,13 @@ void *vm_map_page(page_t *page) {
   intvl_tree_insert(tree, intvl(address, address + len), area);
 
   current = page;
-  uintptr_t virt_addr = address;
   while (current) {
     page->flags.present = 1;
     uint64_t *entry = map_page(virt_addr, page->frame, page->flags.raw);
     page->entry = entry;
 
-    current = current->next;
     virt_addr += page_to_size(current);
+    current = current->next;
   }
 
   return (void *) address;

@@ -13,6 +13,8 @@
 #include <device/apic.h>
 #include <device/ioapic.h>
 
+#include <cpuid.h>
+
 #define get_header(ptr) ((acpi_header_t *) ptr)
 
 const char *sig_rsdp = "RSD PTR ";
@@ -65,11 +67,14 @@ void get_apic_info(system_info_t *info, acpi_madt_t *madt) {
     panic("[acpi] could not find apic information");
   }
 
-  cpu_info_t cpu_info;
-  get_cpu_info(&cpu_info);
+  uint32_t a, b, c, d;
+  if (!__get_cpuid(1, &a, &b, &c, &d)) {
+    panic("[acpi] cpuid failed");
+  }
+
 
   info->apic_phys_addr = madt->apic_phys_addr;
-  info->bsp_id = cpu_info.ebx.local_apic_id;
+  info->bsp_id = (b >> 24) & 0xFF;
   info->core_count = 0;
   info->ioapic_count = 0;
 

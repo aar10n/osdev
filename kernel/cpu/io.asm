@@ -1,5 +1,5 @@
 ;
-; Related I/O and Register Functions
+; I/O Port Functions
 ;
 
 ; output data to port - byte

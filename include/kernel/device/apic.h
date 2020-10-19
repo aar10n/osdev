@@ -84,6 +84,14 @@ typedef enum {
 /* --------- Registers ---------*/
 
 typedef union {
+  uint32_t raw;
+  struct {
+    uint32_t : 24;
+    uint32_t id : 8;
+  };
+} apic_reg_id_t;
+
+typedef union {
   uint64_t raw;
   struct {
     uint64_t vector : 8;
@@ -252,6 +260,7 @@ typedef union packed {
     .vector = vec, .enabled = en, .focus = f \
   })
 
+static_assert(sizeof(apic_reg_id_t) == sizeof(uint32_t));
 static_assert(sizeof(apic_reg_icr_t) == sizeof(uint64_t));
 static_assert(sizeof(apic_reg_lvt_timer_t) == sizeof(uint32_t));
 static_assert(sizeof(apic_reg_lvt_perfc_t) == sizeof(uint32_t));
@@ -269,5 +278,6 @@ void apic_init();
 void apic_udelay(uint64_t us);
 void apic_mdelay(uint64_t ms);
 void apic_send_eoi();
+uint8_t apic_get_id();
 
 #endif
