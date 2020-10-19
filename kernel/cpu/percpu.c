@@ -67,9 +67,9 @@ void percpu_init_cpu() {
   swapgs();
 
   percpu_t *area = (void *) ptr;
-  kprintf("ptr: %p\n", ptr);
   area->apic_id = id;
   area->current = NULL;
   area->self = ptr;
+  area->test = 0xDEADBEEF;
 }
 

@@ -15,6 +15,7 @@ typedef struct {
   uint64_t apic_id;
   process_t *current;
   uintptr_t self;
+  uint32_t test;
 } percpu_t;
 
 static_assert(sizeof(percpu_t) <= PERCPU_RESERVED);
@@ -44,19 +45,21 @@ static_assert(sizeof(percpu_t) <= PERCPU_RESERVED);
     int64_t: __percpu_set("q", var, val), uint64_t: __percpu_set("q", var, val), \
     default: __percpu_set("q", var, val))
 
-#define percpu_addr(var) \
+#define percpu_ptr(var) \
   ({                     \
     uintptr_t p = percpu_get(self) + offsetof(percpu_t, var); \
     ((__percpu_type(var) *) p); \
   })
 
-#define currentp (percpu_process())
+#define percpu_struct() \
+  ((percpu_t *) percpu_get(self))
 
-static always_inline purefn process_t *percpu_process() {
-  process_t *current;
-  asm ("mov %%gs:0, %0" : "=r" (current));
-  return current;
+static always_inline purefn percpu_t *percpu() {
+  uintptr_t ptr = percpu_get(self);
+  return (percpu_t *) ptr;
 }
+
+#define PERCPU (percpu())
 
 
 void percpu_init();
