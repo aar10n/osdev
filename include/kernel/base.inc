@@ -1,8 +1,51 @@
 ;
 ;
-; General Purpose Assembly Macros
+; Common Assembly Macros
 ;
 ;
+
+; General Constants
+%define KERNEL_OFFSET 0xFFFFFF8000000000
+%define KERNEL_CS 0x08
+
+%define APIC_BASE_VA 0xFFFFFFFFF8000000
+%define APIC_REG_ID  0x20
+%define APIC_REG_EOI 0x0B0
+
+%define COM1 0x3F8
+
+; Percpu Constants
+%define PERCPU_ID 0x0
+%define PERCPU_CURRENT 0x8
+%define current gs:PERCPU_CURRENT
+
+; Process Constants
+%define PROC_PID 0x0
+%define PROC_CTX 0x8
+
+; Process Context
+%define CTX_RAX    0x00
+%define CTX_RBX    0x08
+%define CTX_RCX    0x10
+%define CTX_RDX    0x18
+%define CTX_RDI    0x20
+%define CTX_RSI    0x28
+%define CTX_RBP    0x30
+%define CTX_R8     0x38
+%define CTX_R9     0x40
+%define CTX_R10    0x48
+%define CTX_R11    0x50
+%define CTX_R12    0x58
+%define CTX_R13    0x60
+%define CTX_R14    0x68
+%define CTX_R15    0x70
+
+%define CTX_RIP    0x78
+%define CTX_CS     0x80
+%define CTX_RFLAGS 0x88
+%define CTX_RSP    0x90
+%define CTX_SS     0x98
+
 
 ;
 ; Arrays

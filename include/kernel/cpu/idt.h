@@ -9,7 +9,6 @@
 #include <base.h>
 #include <cpu/cpu.h>
 
-#define KERNEL_CS 0x08
 #define IDT_GATES 256
 #define IDT_STUB_SIZE 32
 

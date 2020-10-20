@@ -10,6 +10,9 @@
 void cli();
 void sti();
 
+uint64_t cli_save();
+void sti_restore(uint64_t rflags);
+
 uint64_t read_tsc();
 
 uint64_t read_msr(uint32_t msr);

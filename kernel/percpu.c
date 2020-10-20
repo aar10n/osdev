@@ -2,14 +2,13 @@
 // Created by Aaron Gill-Braun on 2020-10-04.
 //
 
-#include <cpu/percpu.h>
 #include <device/apic.h>
 #include <mm/mm.h>
 #include <mm/vm.h>
 
 #include <stdio.h>
-#include <process.h>
 #include <string.h>
+#include <percpu.h>
 
 #include <stdatomic.h>
 
@@ -32,7 +31,7 @@ void percpu_init() {
     page_t *last = NULL;
     size_t remaining = PERCPU_RESERVED;
     while (remaining > 0) {
-      page_t *page = mm_alloc_page(ZONE_LOW, PE_WRITE | PE_GLOBAL);
+      page_t *page = mm_alloc_page(ZONE_LOW, PE_WRITE);
       if (last == NULL) {
         pages = page;
       } else {
@@ -67,9 +66,9 @@ void percpu_init_cpu() {
   swapgs();
 
   percpu_t *area = (void *) ptr;
-  area->apic_id = id;
-  area->current = NULL;
+  area->id = id;
   area->self = ptr;
-  area->test = 0xDEADBEEF;
+  area->current = NULL;
+  area->scheduler = NULL;
 }
 

@@ -18,7 +18,7 @@ QEMUFLAGS = \
 	-no-shutdown \
 	-global isa-debugcon.iobase=0x402 \
 	-cpu Nehalem \
-	-smp cores=2,threads=4 \
+	-smp cores=2,threads=2 \
 	-machine q35 \
 	-m 256M \
 	-debugcon file:$(BUILD)/uefi_debug.log \
@@ -34,7 +34,7 @@ include scripts/Makefile.util
 #  Targets  #
 # --------- #
 
-targets = boot kernel drivers libc # lib
+targets = boot kernel drivers libc lib
 
 # include the makefiles of all targets
 include $(foreach t,$(targets),$t/Makefile)
@@ -56,7 +56,7 @@ debug: $(BUILD)/osdev.img
 		-ex "add-symbol $(BUILD)/kernel.elf"
 
 run-debug: $(BUILD)/osdev.img
-	$(QEMU) -s -S $(QEMUFLAGS) &
+	$(QEMU) -s -S $(QEMUFLAGS) -monitor telnet:127.0.0.1:55555,server,nowait &
 
 .PHONY: clean
 clean:
@@ -105,7 +105,7 @@ $(BUILD)/loader.dll: $(boot-y)
 		/debug /lldmap @scripts/loader-libs.lst $^
 
 # Kernel
-$(BUILD)/kernel.elf: $(kernel-y) $(libc-y) $(drivers-y) # $(lib-y)
+$(BUILD)/kernel.elf: $(kernel-y) $(libc-y) $(drivers-y) $(lib-y)
 	$(call toolchain,$<,LD) $(call flags,$<,LDFLAGS) $^ -o $@
 
 
@@ -121,6 +121,8 @@ $(BUILD)/initrd.img: $(BUILD)/initrd
 #  Compilation Rules  #
 # ------------------- #
 
+-include *.d
+
 $(BUILD_DIR)/%.c.o: %.c
 	@mkdir -p $(@D)
 	$(call toolchain,$<,CC) $(call flags,$<,INCLUDE) $(call flags,$<,CFLAGS) -c $< -o $@
@@ -131,10 +133,8 @@ $(BUILD_DIR)/%.cpp.o: %.cpp
 
 $(BUILD_DIR)/%.s.o: %.s
 	@mkdir -p $(@D)
-	$(call toolchain,$<,AS) $(call flags,$<,ASFLAGS) $< -o $@
+	$(call toolchain,$<,AS) $(call flags,$<,INCLUDE) $(call flags,$<,ASFLAGS) $< -o $@
 
 $(BUILD_DIR)/%.asm.o: %.asm
 	@mkdir -p $(@D)
-	$(call toolchain,$<,NASM) $(call flags,$<,NASMFLAGS) $< -o $@
-
--include *.d
+	$(call toolchain,$<,NASM) $(call flags,$<,INCLUDE) $(call flags,$<,NASMFLAGS) $< -o $@

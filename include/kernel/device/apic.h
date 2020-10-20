@@ -275,6 +275,7 @@ static_assert(sizeof(apic_reg_svr_t) == sizeof(uint32_t));
 
 
 void apic_init();
+void apic_init_timer(uint64_t frequency);
 void apic_udelay(uint64_t us);
 void apic_mdelay(uint64_t ms);
 void apic_send_eoi();

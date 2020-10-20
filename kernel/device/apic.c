@@ -3,6 +3,7 @@
 //
 
 #include <system.h>
+#include <panic.h>
 #include <stdio.h>
 #include <vectors.h>
 #include <cpu/cpu.h>
@@ -10,8 +11,8 @@
 #include <device/pit.h>
 
 static uintptr_t apic_base;
-static uint64_t cpu_clock;
-static uint32_t apic_clock;
+static uint64_t cpu_clock;  // ticks per second
+static uint32_t apic_clock; // ticks per second
 
 static inline uint32_t apic_read(apic_reg_t reg) {
   uintptr_t addr = apic_base + reg;
@@ -55,6 +56,7 @@ void apic_get_cpu_clock() {
   }
 
   cpu_clock = min * (MS_PER_SEC / ms);
+  kprintf("[apic] cpu clock ticks per second: %u\n", cpu_clock);
 
   double freq = cpu_clock / 1e6;
   kprintf("[apic] detected %.1f MHz cpu clock\n", freq);
@@ -86,6 +88,7 @@ void apic_get_timer_clock() {
   }
 
   apic_clock = min * (MS_PER_SEC / ms);
+  kprintf("[apic] apic clock ticks per second: %u\n", apic_clock);
 
   double freq = apic_clock / 1e6;
   kprintf("[apic] detected %.1f MHz timer clock\n", freq);
@@ -129,6 +132,22 @@ void apic_init() {
 
   apic_send_eoi();
   kprintf("[apic] done!\n");
+}
+
+void apic_init_timer(uint64_t frequency) {
+  kassert(frequency <= US_PER_SEC);
+  uint32_t us = US_PER_SEC / frequency;
+  uint32_t count = apic_clock / (US_PER_SEC / us);
+
+  apic_reg_div_config_t div = apic_reg_div_config(APIC_DIVIDE_1);
+  apic_write(APIC_DIVIDE_CONFIG, div.raw);
+  apic_write(APIC_INITIAL_COUNT, count);
+
+  apic_reg_lvt_timer_t timer = apic_read_timer();
+  timer.timer_mode = APIC_PERIODIC;
+  timer.mask = APIC_UNMASK;
+  timer.vector = VECTOR_APIC_TIMER;
+  apic_write_timer(timer);
 }
 
 void apic_udelay(uint64_t us) {

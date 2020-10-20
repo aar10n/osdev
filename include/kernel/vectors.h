@@ -6,12 +6,11 @@
 #define KERNEL_VECTORS_H
 
 // Priority 0xF - Highest priority
-#define VECTOR_TIMER_IRQ     0xF0
+#define VECTOR_APIC_TIMER    0x40
 #define VECTOR_CPU_HLT_IPI   0xF1
 #define VECTOR_APIC_SPURIOUS 0xFF
 
 // Priority 0x4 - APIC vectors
-#define VECTOR_APIC_TIMER    0x40
 #define VECTOR_APIC_THERMAL  0x41
 #define VECTOR_APIC_PERFC    0x42
 #define VECTOR_APIC_LINT0    0x43

@@ -1,6 +1,7 @@
 GSBASE_MSR        equ 0xC0000101
 KERNEL_GSBASE_MSR equ 0xC0000102
 
+; Interrupts
 
 global cli
 cli:
@@ -11,6 +12,20 @@ global sti
 sti:
   sti
   ret
+
+global cli_save
+cli_save:
+  pushfq
+  pop rax
+  cli
+  ret
+
+global sti_restore
+sti_restore:
+  push rdi
+  popfq
+  ret
+
 
 ; Registers
 

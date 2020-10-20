@@ -6,16 +6,17 @@
 #define KERNEL_CPU_PERCPU_H
 
 #include <base.h>
+#include <scheduler.h>
 #include <process.h>
 #include <cpu/cpu.h>
 
 #define PERCPU_RESERVED PAGE_SIZE
 
 typedef struct {
-  uint64_t apic_id;
+  uint64_t id;
   process_t *current;
   uintptr_t self;
-  uint32_t test;
+  schedl_t *scheduler;
 } percpu_t;
 
 static_assert(sizeof(percpu_t) <= PERCPU_RESERVED);
@@ -54,7 +55,7 @@ static_assert(sizeof(percpu_t) <= PERCPU_RESERVED);
 #define percpu_struct() \
   ((percpu_t *) percpu_get(self))
 
-static always_inline _pure_ percpu_t *percpu() {
+static always_inline __pure percpu_t *percpu() {
   uintptr_t ptr = percpu_get(self);
   return (percpu_t *) ptr;
 }
