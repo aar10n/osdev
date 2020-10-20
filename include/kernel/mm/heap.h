@@ -38,9 +38,9 @@ typedef struct heap {
 
 void kheap_init();
 
-void *kmalloc(size_t size) malloc_like;
+void *kmalloc(size_t size) __malloc_like;
 void kfree(void *ptr);
-void *kcalloc(size_t nmemb, size_t size) malloc_like;
-void *krealloc(void *ptr, size_t size) malloc_like;
+void *kcalloc(size_t nmemb, size_t size) __malloc_like;
+void *krealloc(void *ptr, size_t size) __malloc_like;
 
 #endif

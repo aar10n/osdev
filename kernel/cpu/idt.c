@@ -16,7 +16,7 @@ idt_handler_t idt_handlers[IDT_GATES];
 
 //
 
-_used void irq_handler(uint8_t vector) {
+__used void irq_handler(uint8_t vector) {
   idt_handler_t handler = idt_handlers[vector];
   if (handler) {
     handler();

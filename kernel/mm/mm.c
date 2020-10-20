@@ -91,7 +91,7 @@ static void apply_page_flags(page_t *page, uint16_t flags) {
 //
 
 void mm_init() {
-  kprintf("[mm] initializing physical memory manager\n");
+  kprintf("[mm] initializing\n");
   memory_map_t *mem = boot_info->mem_map;
 
   memory_zone_t *last = NULL;

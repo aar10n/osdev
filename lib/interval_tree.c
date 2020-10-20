@@ -129,8 +129,14 @@ intvl_node_t *intvl_tree_find_closest(intvl_tree_t *tree, interval_t interval) {
                       udiff(i.end, get_interval(node).start) :
                       udiff(i.start, get_interval(node).end);
 
-      uint64_t ldiff = udiff(get_max(node->left), i.start);
-      uint64_t rdiff = udiff(get_min(node->right), i.end);
+      uint64_t ldiff = min(
+        udiff(get_min(node->left), i.start),
+        udiff(get_max(node->left), i.end)
+      );
+      uint64_t rdiff = min(
+        udiff(get_min(node->right), i.start),
+        udiff(get_max(node->right), i.end)
+      );
       if (diff <= ldiff && diff <= rdiff) {
         // current node is closest
         break;

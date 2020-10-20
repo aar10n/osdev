@@ -17,6 +17,7 @@ typedef uint64_t clock_t;
 //
 
 #define PAGE_SIZE 0x1000
+#define KERNEL_CS 0x08
 
 #define MS_PER_SEC 1000
 #define US_PER_SEC 1000000
@@ -47,37 +48,35 @@ typedef uint64_t clock_t;
   asm volatile("pause":::"memory");
 
 //
-// GCC Extension Shorthands
+// Compiler Attributes
 //
 
 #define noreturn _Noreturn
 #define packed __attribute((packed))
 #define noinline __attribute((noinline))
 #define always_inline inline __attribute((always_inline))
-#define weak __attribute((weak))
-#define _unused __attribute((unused))
-#define _used __attribute((used))
-#define likely(expr) __builtin_expect((expr), 1)
-#define unlikely(expr) __builtin_expect((expr), 0)
-
-#define constfn __attribute((const))
-#define coldfn __attribute((cold))
-#define hotfn __attribute((hot))
-#define interruptfn __attribute((interrupt))
-#define flattenfn __attribute((flatten))
-#define purefn __attribute((pure))
-
-#define deprecated __attribute((deprecated))
 #define aligned(val) __attribute((aligned(val)))
-#define ifunc(resolver) __attribute((ifunc(resolver)))
-#define malloc_like __attribute((malloc))
-#define printf_like(i, j) __attribute((format(printf, i, j)))
-#define section(name) __attribute((section(name)))
-#define visibility(level) __attribute((visibility(level)))
+#define deprecated __attribute((deprecated))
 #define warn_unused_result __attribute((warn_unused_result))
 
+#define __weak __attribute((weak))
+#define __unused __attribute((unused))
+#define __used __attribute((used))
+#define __likely(expr) __builtin_expect((expr), 1)
+#define __unlikely(expr) __builtin_expect((expr), 0)
 
-extern uintptr_t kernel_phys;
+#define __cold __attribute((cold))
+#define __hot __attribute((hot))
+#define __interrupt __attribute((interrupt))
+#define __flatten __attribute((flatten))
+#define __pure __attribute((pure))
+
+#define __ifunc(resolver) __attribute((ifunc(resolver)))
+#define __malloc_like __attribute((malloc))
+#define __printf_like(i, j) __attribute((format(printf, i, j)))
+#define __section(name) __attribute((section(name)))
+
+
 extern boot_info_t *boot_info;
 
 #endif

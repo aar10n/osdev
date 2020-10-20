@@ -67,11 +67,6 @@ void pit_interrupt_handler() {
 
 //
 
-
-void pit_init() {
-  idt_hook(VECTOR_TIMER_IRQ, pit_interrupt_handler);
-}
-
 void pit_mdelay(uint64_t ms) {
   uint8_t val = pit_control(0, PIT_MODE_0, PIT_ACCESS_WORD, PIT_CHANNEL_2);
   outb(PIT_CONTROL, val);
