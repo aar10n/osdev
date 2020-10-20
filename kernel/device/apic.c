@@ -10,6 +10,9 @@
 #include <device/apic.h>
 #include <device/pit.h>
 
+#define ms_to_count(ms) (apic_clock / (US_PER_SEC / ((ms) * 1000)))
+#define us_to_count(us) (apic_clock / (US_PER_SEC / (us)))
+
 static uintptr_t apic_base;
 static uint64_t cpu_clock;  // ticks per second
 static uint32_t apic_clock; // ticks per second
@@ -67,6 +70,7 @@ void apic_get_timer_clock() {
   apic_reg_lvt_timer_t timer = apic_read_timer();
   timer.mask = APIC_MASK;
   timer.timer_mode = APIC_ONE_SHOT;
+  apic_write_timer(timer);
 
   apic_reg_div_config_t div = apic_reg_div_config(APIC_DIVIDE_1);
   apic_write(APIC_DIVIDE_CONFIG, div.raw);
@@ -134,20 +138,38 @@ void apic_init() {
   kprintf("[apic] done!\n");
 }
 
-void apic_init_timer(uint64_t frequency) {
-  kassert(frequency <= US_PER_SEC);
-  uint32_t us = US_PER_SEC / frequency;
-  uint32_t count = apic_clock / (US_PER_SEC / us);
-
+void apic_init_periodic(uint64_t ms) {
   apic_reg_div_config_t div = apic_reg_div_config(APIC_DIVIDE_1);
   apic_write(APIC_DIVIDE_CONFIG, div.raw);
-  apic_write(APIC_INITIAL_COUNT, count);
 
   apic_reg_lvt_timer_t timer = apic_read_timer();
   timer.timer_mode = APIC_PERIODIC;
   timer.mask = APIC_UNMASK;
   timer.vector = VECTOR_APIC_TIMER;
   apic_write_timer(timer);
+
+  apic_write(APIC_INITIAL_COUNT, ms_to_count(ms));
+}
+
+void apic_init_oneshot(uint64_t ms) {
+  apic_reg_div_config_t div = apic_reg_div_config(APIC_DIVIDE_1);
+  apic_write(APIC_DIVIDE_CONFIG, div.raw);
+
+  apic_reg_lvt_timer_t timer = apic_read_timer();
+  timer.timer_mode = APIC_ONE_SHOT;
+  timer.mask = APIC_UNMASK;
+  apic_write_timer(timer);
+
+  apic_write(APIC_INITIAL_COUNT, ms_to_count(ms));
+}
+
+void apic_oneshot(uint64_t ms) {
+  kassert(ms <= MS_PER_SEC);
+  apic_write(APIC_INITIAL_COUNT, ms == 0 ? 0 : ms_to_count(ms));
+}
+
+void apic_interrupt() {
+  apic_write(APIC_CURRENT_COUNT, 0);
 }
 
 void apic_udelay(uint64_t us) {

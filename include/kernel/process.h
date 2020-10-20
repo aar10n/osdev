@@ -16,36 +16,6 @@ typedef enum {
   SLEEPING,
 } proc_state_t;
 
-// typedef struct {
-//   // pushed by us
-//   uint64_t rax;
-//   uint64_t rcx;
-//   uint64_t rdx;
-//   uint64_t rdi;
-//   uint64_t rsi;
-//   uint64_t r8;
-//   uint64_t r9;
-//   uint64_t r10;
-//   uint64_t r11;
-//   // pushed by cpu
-//   uint64_t rip;
-//   uint64_t cs;
-//   uint64_t rflags;
-//   uint64_t rsp;
-//   uint64_t ss;
-// } irq_context_t;
-//
-// typedef struct {
-//   uint64_t rbx;
-//   uint64_t r12;
-//   uint64_t r13;
-//   uint64_t r14;
-//   uint64_t r15;
-//   uint64_t rbp;
-//   uint64_t rsp;
-// } proc_context_t;
-//
-
 typedef struct {
   // standard irq saved
   uint64_t rax;    // 0x00
@@ -74,7 +44,8 @@ typedef struct {
 typedef struct process {
   uint64_t pid;
   context_t *ctx;
-  uint8_t cpu_id;
+  uint8_t cpu;
+  uint8_t policy;
   uint8_t priority;
   clock_t runtime;
   proc_state_t state;
@@ -82,5 +53,6 @@ typedef struct process {
 } process_t;
 
 void kthread_create(void (*func)());
+void print_debug_process(process_t *process);
 
 #endif

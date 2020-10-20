@@ -21,8 +21,9 @@ uint64_t alloc_pid() {
 void process_init(process_t *process) {
   process->pid = alloc_pid();
   process->ctx = NULL;
-  process->cpu_id = PERCPU->id;
-  process->priority = 0;
+  process->cpu = PERCPU->id;
+  process->policy = POLICY_MLFQ;
+  process->priority = process->pid;
   process->runtime = 0;
   process->state = READY;
   process->next = NULL;
@@ -50,5 +51,15 @@ void kthread_create(void (*func)()) {
   process_t *process = kmalloc(sizeof(process_t));
   process_init(process);
   process->ctx = ctx;
-  schedl_schedule(process);
+  schedule(process);
+}
+
+void print_debug_process(process_t *process) {
+  kprintf("process:\n");
+  kprintf("  pid: %llu\n", process->pid);
+  kprintf("  cpu: %d\n", process->cpu);
+  kprintf("  policy: %d\n", process->policy);
+  kprintf("  priority: %d\n", process->priority);
+  kprintf("  runtime: %llu\n", process->runtime);
+  kprintf("  state: %d\n", process->state);
 }

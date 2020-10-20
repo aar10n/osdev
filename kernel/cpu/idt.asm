@@ -7,9 +7,8 @@
 extern irq_handler
 extern exception_handler
 
-extern schedl_tick
+extern schedl_schedule
 extern schedl_cleanup
-extern schedl_log
 
 %define IDT_STUB_SIZE 32
 %define IDT_GATES 256
@@ -120,58 +119,40 @@ context_switch:
   swapgs_if_needed
   pushall
 
-  call schedl_tick
+  call schedl_schedule      ; get the next process
+  mov rbx, rax              ; new process
+  mov rdx, current          ; old process
 
-  mov rbx, rax      ; new process
-  mov rdx, current  ; old process
-
-  ; check if old process is null
-  cmp rdx, 0
-  jz .2
-  ; check if both processes are the same
-  cmp rbx, rdx
-  je .3
+  cmp rdx, 0                ; check if old process is null
+  jz .2                     ; if so skip saving context
+  cmp rbx, rdx              ; check if process didn't change
+  je .3                     ; if so skip to the end
 
   ; save old context
   mov rsi, rsp              ; context stack
   mov rdi, [rdx + PROC_CTX] ; context pointer
 
   xor ecx, ecx              ; register offset
-.1: ; copy stack
-;  pop qword [rdi + rcx * 8]
-  mov r8, [rsi + rcx * 8]   ; source
-  mov [rdi + rcx * 8], r8   ; dest
+.1:                         ; save context loop
+  pop qword [rdi + rcx * 8] ; save irq pushed register
   inc ecx
   cmp ecx, 20
   jl .1
 
-;  mov [rdi + CTX_RBX], rbx
-;  mov [rdi + CTX_R12], r12
-;  mov [rdi + CTX_R13], r13
-;  mov [rdi + CTX_R14], r14
-;  mov [rdi + CTX_R15], r15
-;  mov [rdi + CTX_RBP], rbp
-;  mov [rdi + CTX_RSP], rsp
-;  sub rdi, PROC_CTX ; proc struct
-
-  mov rdi, current ; cleanup old process
-  call schedl_cleanup
+  mov rdi, current
+  call schedl_cleanup       ; cleanup the old process
 
 .2:
-  ; check if new process is null
-  and rbx, rbx
-  jz .3
+  and rbx, rbx              ; check if new process is null
+  jz .3                     ; if so skip to end
 
-  mov current, rbx ; current = next
-  call schedl_log
-
-  ; restore from new context stack
-  mov rsp, [rbx + PROC_CTX]
+  mov current, rbx          ; current = next
+  mov rsp, [rbx + PROC_CTX] ; restore from process stack frame
 
 .3:
   popall
   swapgs_if_needed
 
-  ; send eoi
+  ; send apic eoi
   mov dword [APIC_BASE_VA + APIC_REG_EOI], 0
   iretq
