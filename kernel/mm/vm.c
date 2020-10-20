@@ -29,6 +29,10 @@ static inline size_t page_to_size(page_t *page) {
   return PAGE_SIZE;
 }
 
+static inline uint16_t page_to_flags(page_t *page) {
+  return page->flags.raw & 0xFFF;
+}
+
 static inline uint16_t get_index(uintptr_t virt_addr, uint16_t offset, uint16_t level) {
   if (level > 4 - offset) {
     return R_ENTRY;
@@ -49,6 +53,7 @@ uint64_t *get_table(uintptr_t virt_addr, uint16_t level) {
 }
 
 uint64_t *map_page(uintptr_t virt_addr, uintptr_t phys_addr, uint16_t flags) {
+  flags &= 0xFFF;
   uint16_t offset = (flags & PE_1GB_SIZE) ? 3 :
                     (flags & PE_2MB_SIZE) ? 2 : 1;
 
@@ -71,9 +76,12 @@ uint64_t *map_page(uintptr_t virt_addr, uintptr_t phys_addr, uint16_t flags) {
     if (table[index] == 0) {
       // allocate new page table
       // kprintf("allocating new table (level %d)\n", level);
+      // kprintf("[vm] allocating page table\n");
 
-      page_t *page = alloc_page(PE_WRITE);
+      page_t *page = mm_alloc_page(ZONE_LOW, PE_WRITE);
       page->flags.present = 1;
+
+      // kprintf("[vm] page table: %p\n", page->frame);
 
       uint64_t *new_table = get_table(virt_addr, level);
       uintptr_t new_table_ptr = (uintptr_t) new_table;
@@ -109,17 +117,22 @@ uint64_t *map_page(uintptr_t virt_addr, uintptr_t phys_addr, uint16_t flags) {
   uint16_t index = get_index(virt_addr, offset, 0);
   // kprintf("final index: %d\n", index);
   table[index] = phys_addr | flags;
+
+  // kprintf("[vm] %p -> %p\n", phys_addr, virt_addr);
+
+  tlb_flush();
   return table + index;
 }
 
 //
 
 void vm_init() {
-  kprintf("[vm] initializing virtual memory manager\n");
+  kprintf("[vm] initializing\n");
   pml4 = (uint64_t *) boot_info->pml4;
 
   // recursive pml4
   pml4[R_ENTRY] = virt_to_phys((uintptr_t) pml4) | 0b11;
+  tlb_flush();
 
   // setup the page table for temporary mappings
   uintptr_t dir1 = virt_to_phys(boot_info->reserved_base - (2 * PAGE_SIZE));
@@ -128,6 +141,7 @@ void vm_init() {
   get_table(TEMP_PAGE, 3)[511] = dir1 | PE_WRITE | PE_PRESENT;
   get_table(TEMP_PAGE, 2)[511] = dir2 | PE_WRITE | PE_PRESENT;
   temp_dir = get_table(TEMP_PAGE, 1);
+  tlb_flush();
 
   // create the interval tree
   tree = create_intvl_tree();
@@ -168,6 +182,7 @@ void vm_init() {
 
   // finally clear the uefi mappings
   pml4[0] = 0;
+  tlb_flush();
 
   kprintf("[vm] done!\n");
 }
@@ -213,7 +228,7 @@ void *vm_map_page_vaddr(uintptr_t virt_addr, page_t *page) {
   current = page;
   while (current) {
     page->flags.present = 1;
-    uint64_t *entry = map_page(virt_addr, page->frame, page->flags.raw);
+    uint64_t *entry = map_page(virt_addr, page->frame, page_to_flags(page));
     page->entry = entry;
 
     virt_addr += page_to_size(current);
