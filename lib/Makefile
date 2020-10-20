@@ -3,9 +3,8 @@
 #
 
 # lib
-lib += bitmap.c \
-	hash_table.c \
-	interval_tree.c \
+lib += bitmap.c hash_table.c \
+	interval_tree.c lock.c \
 	rb_tree.c
 
 # lib/asm
