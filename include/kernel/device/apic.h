@@ -10,6 +10,7 @@
 #define IA32_APIC_BASE_MSR    0x1B
 #define IA32_APIC_BASE_BSP    0x100
 #define IA32_APIC_BASE_ENABLE 0x800
+#define IA32_TSC_DEADLINE_MSR 0x6E0
 
 /* --------- Enumerations ---------*/
 

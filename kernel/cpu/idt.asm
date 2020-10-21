@@ -6,6 +6,7 @@
 
 extern irq_handler
 extern exception_handler
+extern timer_handler
 
 extern schedl_schedule
 extern schedl_cleanup
@@ -13,41 +14,7 @@ extern schedl_cleanup
 %define IDT_STUB_SIZE 32
 %define IDT_GATES 256
 
-%macro pushall 0
-  push r15
-  push r14
-  push r13
-  push r12
-  push r11
-  push r10
-  push r9
-  push r8
-  push rbp
-  push rsi
-  push rdi
-  push rdx
-  push rcx
-  push rbx
-  push rax
-%endmacro
 
-%macro popall 0
-  pop rax
-  pop rbx
-  pop rcx
-  pop rdx
-  pop rdi
-  pop rsi
-  pop rbp
-  pop r8
-  pop r9
-  pop r10
-  pop r11
-  pop r12
-  pop r13
-  pop r14
-  pop r15
-%endmacro
 
 %macro swapgs_if_needed 0
   cmp word [rsp + 8], KERNEL_CS
@@ -95,19 +62,32 @@ interrupt_handler:
   add rsp, 8
   swapgs_if_needed
   sub rsp, 8
-  pushall
+  pushcaller
   cld
 
   mov rdi, [rsp + 72]
   call irq_handler
 
-  popall
+  popcaller
   add rsp, 8
   swapgs_if_needed
   iretq
 
 global ignore_irq
 ignore_irq:
+  iretq
+
+; ---------------------- ;
+;     Timer Handling     ;
+; ---------------------- ;
+
+global hpet_handler
+hpet_handler:
+  pushcaller
+  call timer_handler
+  popcaller
+  ; send apic eoi
+  mov dword [APIC_BASE_VA + APIC_REG_EOI], 0
   iretq
 
 ; ---------------------- ;
