@@ -51,6 +51,9 @@ typedef struct {
 typedef struct rb_tree {
   rb_node_t *root;
   rb_node_t *nil;
+  rb_node_t *min;
+  rb_node_t *max;
+  size_t nodes;
 
   // optional events
   rb_tree_events_t *events;

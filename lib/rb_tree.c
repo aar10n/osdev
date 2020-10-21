@@ -304,6 +304,9 @@ rb_tree_t *create_rb_tree() {
   rb_tree_t *tree = _malloc(sizeof(rb_tree_t));
   tree->root = nil;
   tree->nil = nil;
+  tree->min = nil;
+  tree->max = nil;
+  tree->nodes = 0;
   tree->events = NULL;
 
   return tree;
@@ -356,6 +359,15 @@ void rb_tree_insert(rb_tree_t *tree, uint64_t key, void *data) {
   node->right = tree->nil;
 
   insert_node(tree, node);
+  if (tree->nodes == 0) {
+    tree->min = node;
+    tree->max = node;
+  } else if (node->key < tree->min->key) {
+    tree->min = node;
+  } else if (node->key >= tree->max->key) {
+    tree->max = node;
+  }
+  tree->nodes++;
 }
 
 void rb_tree_delete(rb_tree_t *tree, uint64_t key) {
@@ -365,12 +377,24 @@ void rb_tree_delete(rb_tree_t *tree, uint64_t key) {
   }
 
   delete_node(tree, node);
+  if (tree->nodes == 1) {
+    tree->min = tree->nil;
+    tree->max = tree->nil;
+  } else if (node == tree->min) {
+    if (tree->nodes == 2) {
+      tree->min = tree->max;
+    } else {
+      tree->min = node->parent;
+    }
+  } else if (node == tree->max) {
+    tree->max = node->parent;
+  }
+  tree->nodes--;
   _free(node->data);
   _free(node);
 }
 
 // Iterators
-
 
 rb_iter_t *rb_tree_make_iter(rb_tree_t *tree, rb_node_t *next, rb_iter_type_t type) {
   rb_iter_t *iter = _malloc(sizeof(rb_iter_t));
@@ -381,23 +405,14 @@ rb_iter_t *rb_tree_make_iter(rb_tree_t *tree, rb_node_t *next, rb_iter_type_t ty
   return iter;
 }
 
-
 rb_iter_t *rb_tree_iter(rb_tree_t *tree) {
-  // get first (leftmost) node
-  rb_node_t *next = tree->root;
-  while (next->left != tree->nil) {
-    next = next->left;
-  }
-  return rb_tree_make_iter(tree, next, FORWARD);
+  // start at first (leftmost) node
+  return rb_tree_make_iter(tree, tree->min, FORWARD);
 }
 
 rb_iter_t *rb_tree_iter_reverse(rb_tree_t *tree) {
-  // get last (rightmost) node
-  rb_node_t *next = tree->root;
-  while (next->right != tree->nil) {
-    next = next->right;
-  }
-  return rb_tree_make_iter(tree, next, REVERSE);
+  // start at last (rightmost) node
+  return rb_tree_make_iter(tree, tree->max, REVERSE);
 }
 
 rb_node_t *rb_iter_next(rb_iter_t *iter) {
