@@ -357,7 +357,10 @@ void rb_tree_insert(rb_tree_t *tree, uint64_t key, void *data) {
   node->parent = tree->nil;
   node->left = tree->nil;
   node->right = tree->nil;
+  rb_tree_insert_node(tree, node);
+}
 
+void rb_tree_insert_node(rb_tree_t *tree, rb_node_t *node) {
   insert_node(tree, node);
   if (tree->nodes == 0) {
     tree->min = node;
@@ -375,7 +378,10 @@ void rb_tree_delete(rb_tree_t *tree, uint64_t key) {
   if (node == NULL) {
     return;
   }
+  rb_tree_delete_node(tree, node);
+}
 
+void rb_tree_delete_node(rb_tree_t *tree, rb_node_t *node) {
   delete_node(tree, node);
   if (tree->nodes == 1) {
     tree->min = tree->nil;

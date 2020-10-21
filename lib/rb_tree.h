@@ -70,7 +70,9 @@ rb_tree_t *create_rb_tree();
 rb_node_t *rb_tree_find(rb_tree_t *tree, uint64_t key);
 rb_node_t *rb_tree_find_closest(rb_tree_t *tree, uint64_t key);
 void rb_tree_insert(rb_tree_t *tree, uint64_t key, void *data);
+void rb_tree_insert_node(rb_tree_t *tree, rb_node_t *node);
 void rb_tree_delete(rb_tree_t *tree, uint64_t key);
+void rb_tree_delete_node(rb_tree_t *tree, rb_node_t *node);
 
 rb_iter_t *rb_tree_make_iter(rb_tree_t *tree, rb_node_t *next, rb_iter_type_t type);
 rb_iter_t *rb_tree_iter(rb_tree_t *tree);
