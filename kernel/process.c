@@ -4,15 +4,15 @@
 
 #include <process.h>
 #include <percpu.h>
-#include <stdatomic.h>
 #include <string.h>
+#include <atomic.h>
 
 #include <mm/heap.h>
 #include <mm/mm.h>
 #include <mm/vm.h>
 #include <stdio.h>
 
-static _Atomic uint64_t __pid = 0;
+static uint64_t __pid = 0;
 
 uint64_t alloc_pid() {
   return atomic_fetch_add(&__pid, 1);

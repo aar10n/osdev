@@ -9,8 +9,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <percpu.h>
-
-#include <stdatomic.h>
+#include <atomic.h>
 
 // this is only ever accessed with atomic operations
 static uintptr_t next_area = PERCPU_BASE_VA + PAGE_SIZE;

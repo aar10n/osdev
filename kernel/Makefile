@@ -5,7 +5,7 @@
 # kernel
 kernel += entry.asm acpi.c main.c \
 	panic.c percpu.c process.c \
-	scheduler.c
+	scheduler.c timer.c
 
 # kernel/cpu
 kernel += cpu/cpu.asm cpu/idt.asm \

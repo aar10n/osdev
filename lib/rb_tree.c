@@ -373,15 +373,15 @@ void rb_tree_insert_node(rb_tree_t *tree, rb_node_t *node) {
   tree->nodes++;
 }
 
-void rb_tree_delete(rb_tree_t *tree, uint64_t key) {
+void *rb_tree_delete(rb_tree_t *tree, uint64_t key) {
   rb_node_t *node = rb_tree_find(tree, key);
   if (node == NULL) {
-    return;
+    return NULL;
   }
-  rb_tree_delete_node(tree, node);
+  return rb_tree_delete_node(tree, node);
 }
 
-void rb_tree_delete_node(rb_tree_t *tree, rb_node_t *node) {
+void *rb_tree_delete_node(rb_tree_t *tree, rb_node_t *node) {
   delete_node(tree, node);
   if (tree->nodes == 1) {
     tree->min = tree->nil;
@@ -396,8 +396,9 @@ void rb_tree_delete_node(rb_tree_t *tree, rb_node_t *node) {
     tree->max = node->parent;
   }
   tree->nodes--;
-  _free(node->data);
+  void *data = node->data;
   _free(node);
+  return data;
 }
 
 // Iterators
