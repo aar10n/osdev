@@ -6,11 +6,16 @@
 #define KERNEL_TIMER_H
 
 #include <base.h>
+#include <lock.h>
+#include <rb_tree.h>
+
+#define EVENTS (PERCPU->events)
 
 typedef void (*timer_cb_t)(void *);
 
 typedef struct timer {
   uint64_t id;
+  uint8_t cpu;
   clock_t expiry;
   timer_cb_t callback;
   void *data;
