@@ -6,21 +6,32 @@
 #define LIB_LOCK_H
 
 #include <base.h>
-#include <stdatomic.h>
+#include <atomic.h>
 
 // rentrant spinlock
 typedef struct {
-  volatile atomic_flag locked;
-  uint64_t rflags;
+  volatile uint8_t locked;
   uint64_t locked_by;
   uint64_t lock_count;
+  uint64_t rflags;
 } spinlock_t;
-
-// #define
 
 void spin_init(spinlock_t *lock);
 void spin_lock(spinlock_t *lock);
 void spin_unlock(spinlock_t *lock);
 bool spin_trylock(spinlock_t *lock);
+
+// read/write spinlock
+typedef struct {
+  volatile uint8_t locked;
+  volatile uint64_t reader_count;
+  uint64_t rflags;
+} rw_spinlock_t;
+
+void spinrw_init(rw_spinlock_t *lock);
+void spinrw_aquire_read(rw_spinlock_t *lock);
+void spinrw_release_read(rw_spinlock_t *lock);
+void spinrw_aquire_write(rw_spinlock_t *lock);
+void spinrw_release_write(rw_spinlock_t *lock);
 
 #endif

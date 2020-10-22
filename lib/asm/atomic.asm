@@ -25,3 +25,17 @@ __atomic_fetch_add8:
   mov eax, esi
   lock xadd byte [rdi], al
   ret
+
+global __atomic_bit_test_and_set
+__atomic_bit_test_and_set:
+  lock bts word [rdi]
+  xor rax, rax
+  adc rax, 0
+  ret
+
+global __atomic_bit_test_and_reset
+__atomic_bit_test_and_reset:
+  lock btr word [rdi]
+  xor rax, rax
+  adc rax, 0
+  ret

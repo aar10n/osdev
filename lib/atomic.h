@@ -25,6 +25,11 @@
     default: 4\
   )
 
+#define atomic_bit_test_and_set(ptr) \
+  __atomic_bit_test_and_set((uint8_t *)(ptr))
+
+#define atomic_bit_test_and_reset(ptr) \
+  __atomic_bit_test_and_reset((uint8_t *)(ptr))
 
 
 #endif
