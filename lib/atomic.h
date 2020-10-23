@@ -16,15 +16,6 @@
     uint64_t: __atomic_fetch_add64  \
   )(ptr, val))
 
-#define test(ptr, val) \
-  _Generic((ptr),\
-    uint8_t*: 0, \
-    uint16_t*: 1, \
-    uint32_t*: 2, \
-    uint64_t*: 3, \
-    default: 4\
-  )
-
 #define atomic_bit_test_and_set(ptr) \
   __atomic_bit_test_and_set((uint8_t *)(ptr))
 

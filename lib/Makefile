@@ -5,7 +5,7 @@
 # lib
 lib += atomic.c bitmap.c \
 	hash_table.c interval_tree.c \
-	lock.c rb_tree.c
+	lock.c queue.c rb_tree.c ringbuf.c
 
 # lib/asm
 
