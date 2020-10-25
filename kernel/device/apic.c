@@ -29,6 +29,12 @@ static inline void apic_write(apic_reg_t reg, uint32_t value) {
   *apic = value;
 }
 
+static inline volatile uint32_t *apic_reg_ptr(apic_reg_t reg) {
+  uintptr_t addr = apic_base + reg;
+  volatile uint32_t *ptr = (uint32_t *) addr;
+  return ptr;
+}
+
 static inline apic_reg_lvt_timer_t apic_read_timer() {
   apic_reg_lvt_timer_t timer = { .raw = apic_read(APIC_LVT_TIMER) };
   return timer;
@@ -38,9 +44,21 @@ static inline void apic_write_timer(apic_reg_lvt_timer_t timer) {
   apic_write(APIC_LVT_TIMER, timer.raw);
 }
 
+static inline apic_reg_icr_t apic_read_icr() {
+  apic_reg_icr_t icr;
+  icr.raw_low = apic_read(APIC_ICR_LOW);
+  icr.raw_high = apic_read(APIC_ICR_HIGH);
+  return icr;
+}
+
+static inline void apic_write_icr(apic_reg_icr_t icr) {
+  apic_write(APIC_ICR_LOW, icr.raw_low);
+  apic_write(APIC_ICR_HIGH, icr.raw_high);
+}
+
 //
 
-void apic_get_cpu_clock() {
+void get_cpu_clock() {
   kprintf("[apic] determining cpu clock speed\n");
 
   uint64_t ms = 5;
@@ -65,7 +83,7 @@ void apic_get_cpu_clock() {
   kprintf("[apic] detected %.1f MHz cpu clock\n", freq);
 }
 
-void apic_get_timer_clock() {
+void get_apic_clock() {
   kprintf("[apic] determining timer clock speed\n");
   apic_reg_lvt_timer_t timer = apic_read_timer();
   timer.mask = APIC_MASK;
@@ -98,7 +116,21 @@ void apic_get_timer_clock() {
   kprintf("[apic] detected %.1f MHz timer clock\n", freq);
 }
 
+void poll_icr_status() {
+  volatile uint32_t *low = apic_reg_ptr(APIC_ICR_LOW);
+  while (apic_icr_status(*low)) {
+    // if icr is pending poll until it finishes
+    cpu_pause();
+  }
+}
+
 //
+
+uint8_t apic_get_id() {
+  apic_reg_id_t id = { .raw = apic_read(APIC_ID) };
+  return id.id;
+}
+
 
 void apic_init() {
   kprintf("[apic] initializing\n");
@@ -130,9 +162,8 @@ void apic_init() {
   apic_reg_svr_t svr = apic_reg_svr(VECTOR_APIC_SPURIOUS, 1, 0);
   apic_write(APIC_SVR, svr.raw);
 
-  // synchronize apic timer clock
-  apic_get_cpu_clock();
-  apic_get_timer_clock();
+  get_cpu_clock();
+  get_apic_clock();
 
   apic_send_eoi();
   kprintf("[apic] done!\n");
@@ -188,11 +219,34 @@ void apic_mdelay(uint64_t ms) {
   apic_udelay(ms * 1000);
 }
 
-void apic_send_eoi() {
-  apic_write(APIC_EOI, 0);
+void apic_self_ipi(uint8_t mode, uint8_t vector) {
+  poll_icr_status();
+  apic_reg_icr_t icr = apic_reg_icr(
+    vector, mode, APIC_DEST_PHYSICAL, APIC_IDLE,
+    APIC_ASSERT, APIC_LEVEL, APIC_DEST_SELF, 0
+  );
+  apic_write_icr(icr);
 }
 
-uint8_t apic_get_id() {
-  apic_reg_id_t id = { .raw = apic_read(APIC_ID) };
-  return id.id;
+void apic_broadcast_ipi(uint8_t mode, uint8_t shorthand, uint8_t vector) {
+  poll_icr_status();
+  apic_reg_icr_t icr = apic_reg_icr(
+    vector, mode, APIC_DEST_PHYSICAL, APIC_IDLE,
+    APIC_ASSERT, APIC_LEVEL, shorthand, 0
+  );
+  apic_write_icr(icr);
+}
+
+void apic_target_ipi(uint8_t mode, uint8_t dest_mode, uint8_t dest, uint8_t vector) {
+  poll_icr_status();
+  apic_reg_icr_t icr = apic_reg_icr(
+    vector, mode, dest_mode, APIC_IDLE,
+    APIC_ASSERT, APIC_LEVEL, APIC_DEST_TARGET,
+    dest
+  );
+  apic_write_icr(icr);
+}
+
+void apic_send_eoi() {
+  apic_write(APIC_EOI, 0);
 }

@@ -69,7 +69,7 @@ typedef enum {
 #define APIC_START_UP     6
 #define APIC_ExtINT       7
 
-#define APIC_DEST_NONE          0
+#define APIC_DEST_TARGET        0
 #define APIC_DEST_SELF          1
 #define APIC_DEST_ALL_INCL_SELF 2
 #define APIC_DEST_ALL_EXCL_SELF 3
@@ -77,7 +77,7 @@ typedef enum {
 #define APIC_DEST_PHYSICAL 0
 #define APIC_DEST_LOGICAL  1
 
-#define APIC_IDLE         0
+#define APIC_IDLE    0
 #define APIC_PENDING 1
 
 #define APIC_DEASSERT 0
@@ -118,6 +118,10 @@ typedef union {
 typedef union {
   uint64_t raw;
   struct {
+    uint32_t raw_low;
+    uint32_t raw_high;
+  };
+  struct {
     uint64_t vector : 8;
     uint64_t deliv_mode : 3;
     uint64_t dest_mode : 1;
@@ -132,10 +136,13 @@ typedef union {
   };
 } apic_reg_icr_t;
 #define apic_reg_icr(vec, dm, sm, s, lvl, tm, dsh, dst)  \
-  ((apic_reg_lint_t){       \
+  ((apic_reg_icr_t){       \
     .vector = vec, .deliv_mode = dm, .dest_mode = sm, .deliv_status = s, \
     .level = lvl, .trigger_mode = tm, .dest_shorthand = dsh, .dest = dst \
   })
+#define apic_icr_status(low) \
+  (((low) >> 12) & 1)
+
 
 typedef union {
   uint32_t raw;
@@ -297,6 +304,7 @@ static_assert(sizeof(apic_reg_tpr_t) == sizeof(uint32_t));
 static_assert(sizeof(apic_reg_ppr_t) == sizeof(uint32_t));
 static_assert(sizeof(apic_reg_svr_t) == sizeof(uint32_t));
 
+uint8_t apic_get_id();
 
 void apic_init();
 void apic_init_periodic(uint64_t ms);
@@ -305,6 +313,9 @@ void apic_oneshot(uint64_t ms);
 void apic_udelay(uint64_t us);
 void apic_mdelay(uint64_t ms);
 void apic_send_eoi();
-uint8_t apic_get_id();
+
+void apic_self_ipi(uint8_t mode, uint8_t vector);
+void apic_broadcast_ipi(uint8_t mode, uint8_t shorthand, uint8_t vector);
+void apic_target_ipi(uint8_t mode, uint8_t dest_mode, uint8_t dest, uint8_t vector);
 
 #endif
