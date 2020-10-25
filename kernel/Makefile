@@ -3,7 +3,7 @@
 #
 
 # kernel
-kernel += entry.asm context.asm \
+kernel += entry.asm sched.asm \
 	acpi.c main.c panic.c percpu.c \
 	process.c scheduler.c timer.c
 

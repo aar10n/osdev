@@ -26,7 +26,6 @@ sti_restore:
   popfq
   ret
 
-
 ; Registers
 
 global read_tsc

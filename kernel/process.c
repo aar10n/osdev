@@ -78,4 +78,14 @@ void print_debug_process(process_t *process) {
   kprintf("  cpu: %d\n", process->cpu_id);
   kprintf("  policy: %d\n", process->policy);
   kprintf("  priority: %d\n", process->priority);
+  kprintf("  stats:\n");
+  kprintf("    last run start: %llu\n", process->stats.last_run_start);
+  kprintf("    last run end: %llu\n", process->stats.last_run_end);
+  kprintf("    run time: %llu\n", process->stats.run_time);
+  kprintf("    idle time: %llu\n", process->stats.idle_time);
+  kprintf("    sleep time: %llu\n", process->stats.sleep_time);
+  kprintf("    run count: %llu\n", process->stats.run_count);
+  kprintf("    block count: %llu\n", process->stats.block_count);
+  kprintf("    sleep count: %llu\n", process->stats.sleep_count);
+  kprintf("    yield count: %llu\n", process->stats.yield_count);
 }
