@@ -27,7 +27,7 @@ CFLAGS += -gdwarf -Wall -m64 -ffreestanding -nostdlib \
 	-fno-omit-frame-pointer
 CXXFLAGS += $(CFLAGS) -fno-rtti -fno-exceptions
 ASFLAGS += -gdwarf-5
-NASMFLAGS += -gdwarf -f elf64
+NASMFLAGS += -f elf64 -g -F dwarf
 LDFLAGS += -m elf_x86_64 -Tlinker.ld -nostdlib -z max-page-size=0x1000
 QEMUFLAGS +=
 

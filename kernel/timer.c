@@ -25,12 +25,12 @@ static inline uint64_t alloc_id() {
 }
 
 void timer_handler() {
+  kprintf("timer irq!\n");
   timer_t *timer = tree->min->data;
   clock_t expiry = timer->expiry;
   if (lock.locked || timer->cpu != PERCPU->id) {
     return;
   }
-  kprintf("timer irq!\n");
 
   label(dispatch);
   timer->callback(timer->data);

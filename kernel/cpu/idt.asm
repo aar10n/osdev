@@ -1,5 +1,5 @@
 ;
-; Interrupt Handling Code
+; Interrupt Handling
 ;
 
 %include "base.inc"
@@ -8,13 +8,10 @@ extern irq_handler
 extern exception_handler
 extern timer_handler
 
-extern schedl_schedule
-extern schedl_cleanup
+extern sched_tick
 
 %define IDT_STUB_SIZE 32
 %define IDT_GATES 256
-
-
 
 %macro swapgs_if_needed 0
   cmp word [rsp + 8], KERNEL_CS
@@ -77,10 +74,6 @@ global ignore_irq
 ignore_irq:
   iretq
 
-; ---------------------- ;
-;     Timer Handling     ;
-; ---------------------- ;
-
 global hpet_handler
 hpet_handler:
   pushcaller
@@ -90,49 +83,10 @@ hpet_handler:
   mov dword [APIC_BASE_VA + APIC_REG_EOI], 0
   iretq
 
-; ---------------------- ;
-;   Context Switching    ;
-; ---------------------- ;
-
-global context_switch
-context_switch:
-  swapgs_if_needed
-  pushall
-
-  call schedl_schedule      ; get the next process
-  mov rbx, rax              ; new process
-  mov rdx, current          ; old process
-
-  cmp rdx, 0                ; check if old process is null
-  jz .2                     ; if so skip saving context
-  cmp rbx, rdx              ; check if process didn't change
-  je .3                     ; if so skip to the end
-
-  ; save old context
-  mov rsi, rsp              ; context stack
-  mov rdi, [rdx + PROC_CTX] ; context pointer
-
-  xor ecx, ecx              ; register offset
-.1:                         ; save context loop
-  pop qword [rdi + rcx * 8] ; save irq pushed register
-  inc ecx
-  cmp ecx, 20
-  jl .1
-
-  mov rdi, current
-  call schedl_cleanup       ; cleanup the old process
-
-.2:
-  and rbx, rbx              ; check if new process is null
-  jz .3                     ; if so skip to end
-
-  mov current, rbx          ; current = next
-  mov rsp, [rbx + PROC_CTX] ; restore from process stack frame
-
-.3:
-  popall
-  swapgs_if_needed
-
-  ; send apic eoi
+global tick_handler
+tick_handler:
   mov dword [APIC_BASE_VA + APIC_REG_EOI], 0
+  pushall
+  call sched_tick
+  popall
   iretq

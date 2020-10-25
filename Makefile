@@ -8,19 +8,19 @@ BUILD_DIR = $(BUILD)/$(NAME)
 CFLAGS  +=
 LDFLAGS +=
 ASFLAGS +=
-NASMFLAGS +=
+NASMFLAGS += -g
 
 INCLUDE = -Iinclude -Iinclude/kernel -Ilib -Ilibc
 
 QEMUFLAGS = \
-	-bios scripts/OVMF-DEBUG.fd \
-	-no-reboot \
-	-no-shutdown \
-	-global isa-debugcon.iobase=0x402 \
 	-cpu Nehalem \
 	-smp cores=2,threads=2 \
 	-machine q35 \
 	-m 256M \
+	-no-reboot \
+	-no-shutdown \
+	-bios scripts/OVMF-DEBUG.fd \
+	-global isa-debugcon.iobase=0x402 \
 	-debugcon file:$(BUILD)/uefi_debug.log \
 	-serial file:$(BUILD)/stdio \
 	-drive file=$(BUILD)/osdev.img,id=boot,format=raw,if=none \
@@ -121,7 +121,7 @@ $(BUILD)/initrd.img: $(BUILD)/initrd
 #  Compilation Rules  #
 # ------------------- #
 
--include *.d
+include $(wildcard *.d)
 
 $(BUILD_DIR)/%.c.o: %.c
 	@mkdir -p $(@D)

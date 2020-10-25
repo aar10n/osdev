@@ -151,7 +151,7 @@ void apic_init_periodic(uint64_t ms) {
   apic_write(APIC_INITIAL_COUNT, ms_to_count(ms));
 }
 
-void apic_init_oneshot(uint64_t ms) {
+void apic_init_oneshot() {
   apic_reg_div_config_t div = apic_reg_div_config(APIC_DIVIDE_1);
   apic_write(APIC_DIVIDE_CONFIG, div.raw);
 
@@ -159,17 +159,11 @@ void apic_init_oneshot(uint64_t ms) {
   timer.timer_mode = APIC_ONE_SHOT;
   timer.mask = APIC_UNMASK;
   apic_write_timer(timer);
-
-  apic_write(APIC_INITIAL_COUNT, ms_to_count(ms));
 }
 
 void apic_oneshot(uint64_t ms) {
   kassert(ms <= MS_PER_SEC);
   apic_write(APIC_INITIAL_COUNT, ms == 0 ? 0 : ms_to_count(ms));
-}
-
-void apic_interrupt() {
-  apic_write(APIC_CURRENT_COUNT, 0);
 }
 
 void apic_udelay(uint64_t us) {

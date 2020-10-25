@@ -3,6 +3,7 @@
 //
 
 #include <scheduler.h>
+#include <timer.h>
 #include <percpu.h>
 #include <panic.h>
 #include <lock.h>
@@ -16,276 +17,258 @@
 #include <string.h>
 
 extern void context_switch();
+extern void tick_handler();
+extern void switch_context(process_t *process);
 
-runqueue_t *rq_create() {
-  runqueue_t *rq = kmalloc(sizeof(runqueue_t));
+static process_t **ptable = NULL;
+static size_t ptable_size = 0;
+
+//
+// Runqueue Management
+//
+
+rqueue_t *rq_create() {
+  rqueue_t *rq = kmalloc(sizeof(rqueue_t));
   rq->count = 0;
-  rq->head = NULL;
-  rq->tail = NULL;
+  rq->front = NULL;
+  rq->back = NULL;
   spin_init(&rq->lock);
   return rq;
 }
 
-void rq_enqueue(runqueue_t *rq, process_t *process) {
+void rq_enqueue(rqueue_t *rq, process_t *process) {
   spin_lock(&rq->lock);
   // ----------------
   if (rq->count == 0) {
-    rq->head = process;
-    rq->tail = process;
+    rq->front = process;
+    rq->back = process;
   } else {
-    rq->tail->next = process;
-    rq->tail = process;
+    process->prev = rq->back;
+    rq->back->next = process;
+    rq->back = process;
   }
   rq->count++;
-  process->next = NULL;
   // ----------------
   spin_unlock(&rq->lock);
 }
 
-process_t *rq_dequeue(runqueue_t *rq) {
+void rq_enqueue_front(rqueue_t *rq, process_t *process) {
+  spin_lock(&rq->lock);
+  // ----------------
+  if (rq->count == 0) {
+    rq->front = process;
+    rq->back = process;
+  } else {
+    rq->front->prev = process;
+    process->next = rq->front;
+    rq->front = process;
+  }
+  rq->count++;
+  // ----------------
+  spin_unlock(&rq->lock);
+}
+
+process_t *rq_dequeue(rqueue_t *rq) {
   if (rq->count == 0) {
     return NULL;
   }
 
   spin_lock(&rq->lock);
   // ----------------
-  process_t *process = rq->head;
+  process_t *process = rq->front;
   if (rq->count == 1) {
-    rq->head = NULL;
-    rq->tail = NULL;
+    rq->front = NULL;
+    rq->back = NULL;
   } else {
-    rq->head = rq->head->next;
+    rq->front->prev = NULL;
+    rq->front = process->next;
   }
-  rq->count--;
   process->next = NULL;
+  process->prev = NULL;
+  rq->count--;
   // ----------------
   spin_unlock(&rq->lock);
   return process;
 }
 
-//
-// Multilevel Feedback Queue
-//
-
-mlfq_t *mlfq_init(uint8_t id) {
-  mlfq_t *self = kmalloc(sizeof(mlfq_t));
-  self->id = id;
-  self->status = MLFQ_STATUS_NONE;
-  self->process_count = 0;
-  for (int i = 0; i < MLFQ_LEVELS; i++) {
-    mlfq_queue_t *level = &(self->levels[i]);
-    level->level = i;
-    level->quantum = MLFQ_QUANTUM(i);
-    level->queue = rq_create();
-  }
-
-  return self;
-}
-
-void mlfq_enqueue(mlfq_t *self, process_t *process) {
-  kassert(process->policy == self->id);
-  process->priority = 0;
-  mlfq_queue_t *level = &(self->levels[0]);
-  rq_enqueue(level->queue, process);
-  self->process_count++;
-}
-
-//
-
-process_t *mlfq_schedule(mlfq_t *self) {
-  // kprintf("[schedl] mlfq: schedule\n");
-  if (self->process_count == 0) {
-    return 0;
-  }
-
-  mlfq_queue_t *level = NULL;
-  process_t *next = NULL;
-  for (int i = 0; i < MLFQ_LEVELS; i++) {
-    level = &(self->levels[i]);
-    if (level->queue->count > 0) {
-      next = rq_dequeue(level->queue);
-      // kprintf("[schedl] mlfq: switching to pid %d\n", next->pid);
-      break;
-    }
-  }
-
-  if (!level || !next) {
-    return NULL;
-  }
-
-  next->state = RUNNING;
-  apic_oneshot(level->quantum);
-  return next;
-}
-
-void mlfq_cleanup(mlfq_t *self, process_t *process) {
-  // kprintf("[schedl] mlfq: cleanup\n");
-  mlfq_queue_t *level = NULL;
-  if (self->status == MLFQ_STATUS_YIELDED) {
-    // same priority since the task yielded before the quantum ended
-    level = &(self->levels[process->priority]);
+void rq_remove(rqueue_t *rq, process_t *process) {
+  spin_lock(&rq->lock);
+  if (process == rq->front) {
+    process->next->prev = NULL;
+    rq->front = process->next;
+  } else if (process == rq->back) {
+    process->prev->next = NULL;
+    rq->back = process->prev;
   } else {
-    // lower the priority since it used up the entire quantum
-    uint8_t new_level = min(process->priority + 1, MLFQ_LEVELS - 1);
-    level = &(self->levels[new_level]);
-    process->priority = new_level;
+    process->next->prev = process->prev;
+    process->prev->next = process->next;
   }
-
-  process->state = READY;
-  rq_enqueue(level->queue, process);
-  self->status = MLFQ_STATUS_FINISHED;
-}
-
-void mlfq_preempt(mlfq_t *self, process_t *process) {
-  kassert(process->policy == self->id);
-  kprintf("[schedl] mlfq: preempt\n");
-
-  // if the current process is from the same policy, only preempt if
-  // it has a lower priority than the process. Otherwise, preempt it
-  // if it is from any other policy.
-  process_t *current = PERCPU->current;
-  if (current->policy == self->id && current->priority >= process->priority) {
-    // do not preempt
-    mlfq_queue_t *level = &(self->levels[process->priority]);
-    rq_enqueue(level->queue, process);
-  } else {
-    // preempt
-    mlfq_queue_t *level = &(self->levels[0]);
-    rq_enqueue(level->queue, process);
-    self->status = MLFQ_STATUS_YIELDED;
-    apic_oneshot(0);
-  }
-}
-
-void mlfq_yield(mlfq_t *self, process_t *process) {
-  // kprintf("[schedl] mlfq: yield (pid %d)\n", process->pid);
-  self->status = MLFQ_STATUS_YIELDED;
-  apic_interrupt(); // preempt the task
-}
-
-// Debugging
-
-void mlfq_print_stats(mlfq_t *self) {
-  kprintf("[schedl] mlfq: print stats\n");
-  for (int i = 0; i < MLFQ_LEVELS; i++) {
-    mlfq_queue_t *level = &(self->levels[i]);
-    kprintf("--- level: %d ---\n", i);
-    if (level->queue->count == 0) {
-      continue;
-    }
-
-    process_t *process = level->queue->head;
-    while (process) {
-      print_debug_process(process);
-      process = process->next;
-    }
-  }
+  process->next = NULL;
+  process->prev = NULL;
+  rq->count--;
+  spin_unlock(&rq->lock);
 }
 
 //
 // Core Scheduling
 //
 
-__used process_t *schedl_schedule() {
-  // kprintf("[schedl] schedule\n");
+void sched_schedule() {
+  clock_t now = timer_now();
+  process_t *current = CURRENT;
+  kprintf("[sched] schedule\n");
 
-  uint64_t last_quantum = read_tsc() - SCHEDULER->last_dispatch;
-  SCHEDULER->runtime += last_quantum;
-  if (PERCPU->current) {
-    PERCPU->current->runtime += last_quantum;
+  if (current) {
+    current->stats.last_run_end = now;
+    current->stats.run_time += now - current->stats.last_run_start;
   }
 
-  for (int i = 0; i < SCHEDULER->num_policies; i++) {
-    schedl_policy_t *policy = &(SCHEDULER->policies[i]);
-    if (policy->penalty < policy->rollover) {
-      policy->penalty++;
-      process_t *next = policy->schedule(policy->self);
-      if (next != NULL) {
-        next->state = RUNNING;
-        return next;
-      }
-    } else if (i == SCHEDULER->num_policies - 1) {
-      // kprintf("[schedl] resetting penalties\n");
-      // the last element had a rollover so reset all
-      // penalties and reschedule again
-      for (int j = 0; j < SCHEDULER->num_policies; j++) {
-        SCHEDULER->policies[j].penalty = 0;
-      }
-      return schedl_schedule();
+  process_t *process = NULL;
+  rqueue_t *rq = NULL;
+  for (int i = 0; i < SCHED_QUEUES; i++) {
+    rq = SCHEDULER->queues[i];
+    if (rq->count > 0) {
+      process = rq_dequeue(rq);
+      break;
     }
   }
-  return PERCPU->current;
+
+  if (current && current->status == PROC_READY) {
+    if (process) {
+      rq = SCHEDULER->queues[current->priority];
+      rq_enqueue(rq, current);
+    } else {
+      process = current;
+    }
+  } else if (process == NULL) {
+    // idle task
+    kprintf("[sched] idling...\n");
+    process = SCHEDULER->idle;
+  }
+
+  process->status = PROC_RUNNING;
+  process->stats.run_count++;
+  process->stats.idle_time += now - process->stats.last_run_end;
+  process->stats.last_run_start = timer_now();
+  switch_context(process);
 }
 
-__used void schedl_cleanup(process_t *process) {
-  // kprintf("[schedl] cleanup\n");
-  kassert(process->policy < SCHEDULER->num_policies);
-  schedl_policy_t *policy = &(SCHEDULER->policies[process->policy]);
-  process->state = READY;
-  policy->cleanup(policy->self, process);
-  SCHEDULER->last_dispatch = read_tsc();
+void sched_tick() {
+  kprintf("[sched] tick\n");
+  // whole time slice was used
+  process_t *current = CURRENT;
+  if (current) {
+    uint8_t new_prior = min(current->priority + 1, SCHED_QUEUES - 1);
+    current->priority = new_prior;
+    current->status = PROC_READY;
+  }
+  sched_schedule();
+}
+
+noreturn void sched_idle() {
+  while (true) {
+    cpu_hlt();
+  }
+}
+
+void sched_preempt(process_t *process) {
+  // only part of time slice was used
+  process->status = PROC_READY;
+  process_t *current = CURRENT;
+  rqueue_t *rq = SCHEDULER->queues[process->priority];
+  if (process->priority < current->priority) {
+    kprintf("[sched] preempting with pid %llu\n", process->pid);
+    rq_enqueue_front(rq, process);
+    sched_schedule();
+  } else {
+    rq_enqueue(rq, process);
+  }
+}
+
+void sched_unblock(process_t *process) {
+  kprintf("[sched] pid %llu: unblock\n", process->pid);
+  rq_remove(SCHEDULER->blocked, process);
+  sched_preempt(process);
+}
+
+void sched_wakeup(process_t *process) {
+  kprintf("[sched] pid %llu: wakeup\n", process->pid);
+  sched_preempt(process);
 }
 
 //
+// Scheduler API
+//
 
-static schedl_policy_t policies[] = {
-  SCHEDULER_POLICY(POLICY_MLFQ, MLFQ_ROLLOVER, mlfq)
-};
-#define NUM_POLICIES (sizeof(policies) / sizeof(schedl_policy_t))
+void sched_init() {
+  kprintf("[sched] initializing\n");
+  scheduler_t *sched = kmalloc(sizeof(scheduler_t));
+  sched->cpu_id = PERCPU->id;
+  sched->idle = create_process(sched_idle);
+  sched->blocked = rq_create();
+  for (int i = 0; i < SCHED_QUEUES; i++) {
+    sched->queues[i] = rq_create();
+  }
+  SCHEDULER = sched;
 
-void schedl_init() {
-  kassert(PERCPU->scheduler == NULL);
-  kprintf("[schedl] initializing\n");
+  idt_gate_t gate = gate((uintptr_t) tick_handler, KERNEL_CS, 0, INTERRUPT_GATE, 0, 1);
+  idt_set_gate(VECTOR_APIC_TIMER, gate);
 
-  schedl_entity_t *schedl = kmalloc(sizeof(schedl_entity_t));
-  schedl->cpu = PERCPU->id;
-  schedl->runtime = 0;
-  schedl->num_policies = NUM_POLICIES;
-  schedl->policies = kmalloc(sizeof(policies));
-  memcpy(schedl->policies, policies, sizeof(policies));
-
-  // call the `init` function of each policy
-  for (int i = 0; i < NUM_POLICIES; i++) {
-    schedl_policy_t *policy = &(schedl->policies[i]);
-    policy->self = policy->init(policy->id);
+  if (ptable == NULL) {
+    ptable = kmalloc(sizeof(process_t *) * PTABLE_SIZE);
+    ptable_size = PTABLE_SIZE;
   }
 
-  PERCPU->current = NULL;
-  PERCPU->scheduler = schedl;
-
-  idt_gate_t timer_gate = gate((uintptr_t)context_switch, KERNEL_CS, 0, INTERRUPT_GATE, 0, 1);
-  idt_set_gate(VECTOR_APIC_TIMER, timer_gate);
-  kprintf("[schedl] done\n");
-  apic_init_oneshot(INITIAL_QUANTUM);
-  SCHEDULER->start_time = read_tsc();
-  SCHEDULER->last_dispatch = read_tsc();
+  apic_init_periodic(SCHED_QUANTUM);
+  kprintf("[sched] done!\n");
 }
 
-void schedule(process_t *process) {
-  kassert(process->policy < NUM_POLICIES);
-  kprintf("[schedl] scheduling process (pid %u)\n", process->pid, process->policy);
-
-  schedl_policy_t *policy = &(SCHEDULER->policies[process->policy]);
-  policy->enqueue(policy->self, process);
-}
-
-void yield() {
-  process_t *process = PERCPU->current;
-  kassert(process != NULL);
-  kassert(process->policy < SCHEDULER->num_policies);
-  schedl_policy_t *policy = &(SCHEDULER->policies[process->policy]);
-  policy->yield(policy->self, process);
-}
-
-// Debugging
-
-void schedl_print_stats() {
-  kprintf("[schedl] print stats\n");
-  kprintf("\n--- running process ---\n");
-  print_debug_process(PERCPU->current);
-
-  for (int i = 0; i < NUM_POLICIES; i++) {
-    schedl_policy_t *policy = &(SCHEDULER->policies[i]);
-    policy->print_stats(policy->self);
+process_t *sched_get_process(uint64_t pid) {
+  if (pid > ptable_size) {
+    return NULL;
   }
+  return ptable[pid];
+}
+
+void sched_enqueue(process_t *process) {
+  rqueue_t *rq = SCHEDULER->queues[process->priority];
+  rq_enqueue(rq, process);
+  ptable[process->pid] = process;
+}
+
+void sched_block() {
+  kprintf("[sched] pid %llu: block\n", CURRENT->pid);
+  process_t *current = CURRENT;
+  current->status = PROC_BLOCKED;
+  current->stats.block_count++;
+  rq_enqueue(SCHEDULER->blocked, current);
+  sched_schedule();
+}
+
+void sched_sleep(uint64_t ns) {
+  kprintf("[sched] pid %llu: sleep\n", CURRENT->pid);
+  process_t *current = CURRENT;
+  current->status = PROC_SLEEPING;
+  current->stats.sleep_count++;
+  current->stats.sleep_time += ns;
+
+  create_timer(timer_now() + ns, (void *) sched_wakeup, current);
+  sched_schedule();
+}
+
+void sched_yield() {
+  kprintf("[sched] pid %llu: yield\n", CURRENT->pid);
+  process_t *current = CURRENT;
+  current->status = PROC_READY;
+  current->stats.yield_count++;
+  sched_schedule();
+}
+
+void sched_terminate() {
+  kprintf("[sched] pid %llu: terminate\n", CURRENT->pid);
+  process_t *current = CURRENT;
+  current->status = PROC_KILLED;
+  ptable[current->pid] = NULL;
+  CURRENT = NULL;
+  sched_schedule();
 }

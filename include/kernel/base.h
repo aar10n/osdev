@@ -47,6 +47,9 @@ typedef uint64_t clock_t;
 #define cpu_pause() \
   asm volatile("pause":::"memory");
 
+#define cpu_hlt() \
+  asm volatile("hlt");
+
 //
 // Compiler Attributes
 //

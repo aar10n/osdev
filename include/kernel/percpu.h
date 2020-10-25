@@ -16,7 +16,7 @@ typedef struct {
   uint64_t id;
   process_t *current;
   uintptr_t self;
-  schedl_entity_t *scheduler;
+  scheduler_t *scheduler;
 } percpu_t;
 
 static_assert(sizeof(percpu_t) <= PERCPU_RESERVED);

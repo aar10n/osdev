@@ -24,27 +24,18 @@
 %define PROC_CTX 0x8
 
 ; Process Context
-%define CTX_RAX    0x00
-%define CTX_RBX    0x08
-%define CTX_RCX    0x10
-%define CTX_RDX    0x18
-%define CTX_RDI    0x20
-%define CTX_RSI    0x28
-%define CTX_RBP    0x30
-%define CTX_R8     0x38
-%define CTX_R9     0x40
-%define CTX_R10    0x48
-%define CTX_R11    0x50
-%define CTX_R12    0x58
-%define CTX_R13    0x60
-%define CTX_R14    0x68
-%define CTX_R15    0x70
+%define CTX_RBX    0x00
+%define CTX_RBP    0x08
+%define CTX_R12    0x10
+%define CTX_R13    0x18
+%define CTX_R14    0x20
+%define CTX_R15    0x28
 
-%define CTX_RIP    0x78
-%define CTX_CS     0x80
-%define CTX_RFLAGS 0x88
-%define CTX_RSP    0x90
-%define CTX_SS     0x98
+%define CTX_RIP    0x30
+%define CTX_CS     0x38
+%define CTX_RFLAGS 0x40
+%define CTX_RSP    0x48
+%define CTX_SS     0x50
 
 
 ; Saved registers
@@ -108,6 +99,29 @@
   pop r11
 %endmacro
 
+%macro pushcallee 0
+  push r15
+  push r14
+  push r13
+  push r12
+  push rbp
+  push rbx
+%endmacro
+
+%macro popcallee 0
+  pop rbx
+  pop rbp
+  pop r12
+  pop r13
+  pop r14
+  pop r15
+%endmacro
+
+%macro retz 0
+  jnz %%skip
+  ret
+%%skip:
+%endmacro
 
 ;
 ; Arrays
@@ -171,7 +185,6 @@
 ;
 ; Calling C Code
 ;
-
 
 %macro ccall 1 ; alignment
   %push @ccall_ctx

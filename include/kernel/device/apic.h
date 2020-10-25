@@ -38,6 +38,29 @@ typedef enum {
   APIC_DIVIDE_CONFIG = 0x3E0,
 } apic_reg_t;
 
+typedef enum {
+  APIC_ID_MSR            = 0x802,
+  APIC_VERSION_MSR       = 0x803,
+  APIC_TPR_MSR           = 0x808,
+  APIC_PPR_MSR           = 0x80A,
+  APIC_EOI_MSR           = 0x80B,
+  APIC_LDR_MSR           = 0x80D,
+  APIC_SVR_MSR           = 0x80F,
+  APIC_ESR_MSR           = 0x828,
+  APIC_LVT_CMCI_MSR      = 0x82F,
+  APIC_ICR_MSR           = 0x830,
+  APIC_LVT_TIMER_MSR     = 0x832,
+  APIC_LVT_THERMAL_MSR   = 0x833,
+  APIC_LVT_PERFC_MSR     = 0x834,
+  APIC_LVT_LINT0_MSR     = 0x835,
+  APIC_LVT_LINT1_MSR     = 0x836,
+  APIC_LVT_ERROR_MSR     = 0x837,
+  APIC_INITIAL_COUNT_MSR = 0x838,
+  APIC_CURRENT_COUNT_MSR = 0x839,
+  APIC_TIMER_DCR_MSR     = 0x83E,
+  APIC_SELF_IPI_MSR      = 0x83F,
+} apicx2_reg_t;
+
 #define APIC_FIXED        0
 #define APIC_LOWEST_PRIOR 1
 #define APIC_SMI          2
@@ -122,8 +145,8 @@ typedef union {
     uint32_t deliv_status : 1;
     uint32_t : 3;
     uint32_t mask : 1;
-    uint32_t timer_mode : 1;
-    uint32_t : 14;
+    uint32_t timer_mode : 2;
+    uint32_t : 13;
   };
 } apic_reg_lvt_timer_t;
 #define apic_reg_lvt_timer(vec, ds, m, md)  \
@@ -277,9 +300,8 @@ static_assert(sizeof(apic_reg_svr_t) == sizeof(uint32_t));
 
 void apic_init();
 void apic_init_periodic(uint64_t ms);
-void apic_init_oneshot(uint64_t ms);
+void apic_init_oneshot();
 void apic_oneshot(uint64_t ms);
-void apic_interrupt();
 void apic_udelay(uint64_t us);
 void apic_mdelay(uint64_t ms);
 void apic_send_eoi();
