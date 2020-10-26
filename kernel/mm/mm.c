@@ -5,10 +5,11 @@
 #include <base.h>
 #include <panic.h>
 #include <stdio.h>
+#include <string.h>
+#include <lock.h>
 
 #include <mm/mm.h>
 #include <mm/heap.h>
-#include <string.h>
 
 static memory_zone_t *zones[ZONE_MAX];
 static bool did_initialize = false;
@@ -201,10 +202,12 @@ page_t *mm_alloc_page(zone_type_t zone_type, uint16_t flags) {
     }
   }
 
+  lock(zone->lock);
   index_t frame_index = bitmap_get_free(zone->pages);
   bitmap_set(zone->pages, frame_index);
-  uint64_t frame = zone->base_addr + PAGES_TO_SIZE(frame_index);
+  unlock(zone->lock);
 
+  uint64_t frame = zone->base_addr + PAGES_TO_SIZE(frame_index);
   page_t *page = kmalloc(sizeof(page_t));
   page->frame = frame;
   page->entry = NULL;
@@ -212,7 +215,6 @@ page_t *mm_alloc_page(zone_type_t zone_type, uint16_t flags) {
 
   apply_page_flags(page, flags);
   page->flags.zone = zone->type;
-
   return page;
 }
 
@@ -227,6 +229,7 @@ page_t *mm_alloc_frame(uintptr_t frame, uint16_t flags) {
     }
   }
 
+  lock(zone->lock);
   index_t index = SIZE_TO_PAGES(frame - zone->base_addr);
   if (bitmap_get(zone->pages, index)) {
     if (!(flags & PE_FORCE)) {
@@ -237,6 +240,7 @@ page_t *mm_alloc_frame(uintptr_t frame, uint16_t flags) {
     }
   }
   bitmap_set(zone->pages, index);
+  unlock(zone->lock);
 
   page_t *page = kmalloc(sizeof(page_t));
   page->frame = frame;
@@ -251,8 +255,10 @@ page_t *mm_alloc_frame(uintptr_t frame, uint16_t flags) {
 void mm_free_page(page_t *page) {
   while (page) {
     memory_zone_t *zone = zones[page->flags.zone];
+    lock(zone->lock);
     index_t index = SIZE_TO_PAGES(page->frame - zone->base_addr);
     bitmap_clear(zone->pages, index);
+    unlock(zone->lock);
 
     page_t *next = page->next;
     kfree(page);

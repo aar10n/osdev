@@ -65,10 +65,10 @@ typedef union double_raw {
 } double_raw_t;
 
 // Buffers
-#define PRINTF_BUFFER_SIZE 1024
-
-#define NTOA_BUFFER_SIZE 64
-#define FTOA_BUFFER_SIZE 64
+#define BUFFER_SIZE 512
+#define TEMP_BUFFER_SIZE 32
+#define NTOA_BUFFER_SIZE 32
+#define FTOA_BUFFER_SIZE 32
 
 static const double pow10[] = {
   1, 10, 100, 1000, 10000, 100000,
@@ -169,8 +169,8 @@ int _ntoa(char *buf, unsigned long long value, int base, fmt_options_t *opts) {
   int padding_len = 0;
   int number_len = 0;
 
-  static char number[NTOA_BUFFER_SIZE];
-  static char prefix[16];
+  char number[NTOA_BUFFER_SIZE];
+  char prefix[16];
   if (opts->is_signed) {
     // signed number
     number_len = ntoa_signed(number, abs((long long) value), base, opts);
@@ -230,8 +230,8 @@ int _ntoa(char *buf, unsigned long long value, int base, fmt_options_t *opts) {
 }
 
 int _ftoa(char *buf, double value, fmt_options_t *opts) {
-  static char fnumber[FTOA_BUFFER_SIZE];
-  static char fprefix[16];
+  char fnumber[FTOA_BUFFER_SIZE];
+  char fprefix[16];
 
   int prefix_len = 0;
   int padding_len = 0;
@@ -405,7 +405,7 @@ int ksnprintf_internal(char *str, size_t size, bool limit, const char *format, v
   va_copy(valist, args);
 
   char const *fmt_ptr = format;
-  static char buffer[128];
+  char buffer[TEMP_BUFFER_SIZE];
 
   int n = 0;
   fmt_options_t opts = {};
@@ -449,7 +449,7 @@ int ksnprintf_internal(char *str, size_t size, bool limit, const char *format, v
       fmt_ptr++;
       continue;
     } else if (state == WIDTH) {
-      static char width[4];
+      char width[4];
       if (ch >= '1' && ch <= '9') {
         int count = parse_int(width, fmt_ptr);
         fmt_ptr += count;
@@ -468,7 +468,7 @@ int ksnprintf_internal(char *str, size_t size, bool limit, const char *format, v
       state = PRECISION;
       continue;
     } else if (state == PRECISION) {
-      static char prec[4];
+      char prec[4];
       if (ch == '.') {
         fmt_ptr++;
         ch = *fmt_ptr;
@@ -749,18 +749,18 @@ int kvsprintf(char *str, const char *format, va_list args) {
  *   '%' - A '%' literal
  */
 void kprintf(const char *format, ...) {
-  static char str[PRINTF_BUFFER_SIZE];
+  char str[BUFFER_SIZE];
   va_list valist;
   va_start(valist, format);
-  ksnprintf_internal(str, PRINTF_BUFFER_SIZE, true, format, valist);
+  ksnprintf_internal(str, BUFFER_SIZE, true, format, valist);
   va_end(valist);
   // kputs(str);
   serial_write(COM1, str);
 }
 
 void kvfprintf(const char *format, va_list args) {
-  static char str[PRINTF_BUFFER_SIZE];
-  ksnprintf_internal(str, PRINTF_BUFFER_SIZE, true, format, args);
+  char str[BUFFER_SIZE];
+  ksnprintf_internal(str, BUFFER_SIZE, true, format, args);
   // kputs(str);
   serial_write(COM1, str);
 }

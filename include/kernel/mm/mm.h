@@ -8,6 +8,7 @@
 #include <base.h>
 #include <boot.h>
 #include <bitmap.h>
+#include <lock.h>
 
 #define virt_to_phys(x) ((x) - KERNEL_OFFSET)
 #define phys_to_virt(x) (KERNEL_OFFSET + (x))
@@ -96,6 +97,7 @@ typedef struct memory_zone {
   uintptr_t base_addr;
   size_t size;
   bitmap_t *pages;
+  spinlock_t lock;
   struct memory_zone *next;
 } memory_zone_t;
 
