@@ -6,6 +6,7 @@
 #define KERNEL_MM_HEAP_H
 
 #include <mm/mm.h>
+#include <lock.h>
 
 #define CHUNK_MIN_SIZE 8
 #define CHUNK_MAX_SIZE 8192

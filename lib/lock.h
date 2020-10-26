@@ -8,6 +8,9 @@
 #include <base.h>
 #include <atomic.h>
 
+#define lock(L) spin_lock(&L)
+#define unlock(L) spin_unlock(&L)
+
 // rentrant spinlock
 typedef struct {
   volatile uint8_t locked;

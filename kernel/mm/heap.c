@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <math.h>
+#include <lock.h>
 
 #include <base.h>
 #include <panic.h>
@@ -15,6 +16,7 @@
 #include <mm/mm.h>
 
 static heap_t *kheap = NULL;
+static spinlock_t kheap_lock;
 
 //
 
@@ -82,6 +84,7 @@ void kheap_init() {
   kheap->size = heap_size;
   kheap->chunks = NULL;
   kheap->last_chunk = NULL;
+  spin_init(&kheap_lock);
 }
 
 // ----- kmalloc -----
@@ -98,6 +101,8 @@ void *kmalloc(size_t size) {
     return NULL;
   }
 
+  lock(kheap_lock);
+
   // otherwise proceed with the normal allocation
   size_t aligned = next_pow2(max(size, CHUNK_MIN_SIZE));
   // kprintf("kmalloc\n");
@@ -109,7 +114,6 @@ void *kmalloc(size_t size) {
   // a new chunk in the unmanaged heap memory.
   if (kheap->chunks) {
     // kprintf("[kmalloc] searching used chunks\n");
-
     chunk_t *chunk = NULL;
     chunk_t *chunk_last = NULL;
 
@@ -143,6 +147,8 @@ void *kmalloc(size_t size) {
       }
       chunk->next = NULL;
       // return pointer to user data
+
+      unlock(kheap_lock);
       return (void *) chunk + sizeof(chunk_t);
     }
   }
@@ -181,6 +187,7 @@ void *kmalloc(size_t size) {
   // kprintf("[kmalloc] new chunk data at %p\n", chunk_start + sizeof(chunk_t));
 
   kheap->last_chunk = chunk;
+  unlock(kheap_lock);
   return (void *) chunk_start + sizeof(chunk_t);
 }
 
@@ -192,6 +199,8 @@ void kfree(void *ptr) {
     kprintf("[kfree] invalid pointer\n");
     return;
   }
+
+  lock(kheap_lock);
 
   chunk_t *chunk = get_chunk(ptr);
   chunk_t *next_chunk = get_next_chunk(chunk);
@@ -207,6 +216,7 @@ void kfree(void *ptr) {
   }
 
   kheap->chunks = chunk;
+  unlock(kheap_lock);
 }
 
 // ----- kcalloc -----
@@ -252,6 +262,7 @@ void *krealloc(void *ptr, size_t size) {
     return NULL;
   }
 
+  lock(kheap_lock);
   size_t aligned = next_pow2(max(size, CHUNK_MIN_SIZE));
   chunk_t *chunk = get_chunk(ptr);
   size_t old_size = 1 << chunk->size;
@@ -264,6 +275,7 @@ void *krealloc(void *ptr, size_t size) {
 
   if (aligned <= old_size) {
     // kprintf("[krealloc] no changes needed\n");
+    unlock(kheap_lock);
     return ptr;
   }
 
@@ -277,6 +289,8 @@ void *krealloc(void *ptr, size_t size) {
       // there is space so all we have to do is change the
       // chunk size and return the same pointer.
       chunk->size = log2(aligned);
+
+      unlock(kheap_lock);
       return ptr;
     }
   }
@@ -336,6 +350,7 @@ void *krealloc(void *ptr, size_t size) {
     // kprintf("[krealloc] expansion complete\n");
 
     chunk->size = log2(old_size + next_size);
+    unlock(kheap_lock);
     return ptr;
   }
 
@@ -346,11 +361,13 @@ void *krealloc(void *ptr, size_t size) {
 
   void *new_ptr = kmalloc(aligned);
   if (new_ptr == NULL) {
+    unlock(kheap_lock);
     return NULL;
   }
 
   // kprintf("[krealloc] freeing old chunk\n");
   memcpy(new_ptr, ptr, old_size);
   kfree(ptr);
+  unlock(kheap_lock);
   return new_ptr;
 }
