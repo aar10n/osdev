@@ -6,14 +6,12 @@
 #define KERNEL_MM_VM_H
 
 #include <mm/mm.h>
+#include <interval_tree.h>
 
-#define entry_to_table(entry) \
-  ((uint64_t *) phys_to_virt((entry) & 0xFFFFFFFFFF000))
-
-#define entry_to_addr(entry) \
-  ((entry) & (~0xFFF))
+#define VM (PERCPU->vm)
 
 #define R_ENTRY 510ULL
+#define K_ENTRY 511ULL
 #define TEMP_ENTRY 511L
 #define TEMP_PAGE 0xFFFFFFFFFFFFF000
 
@@ -21,6 +19,12 @@
 #define LOW_HALF_END 0x00007FFFFFFFFFFF
 #define HIGH_HALF_START 0xFFFF800000000000
 #define HIGH_HALF_END 0xFFFFFFFFFFFFFFFF
+
+typedef struct {
+  uint64_t *pml4;
+  intvl_tree_t *tree;
+  uint64_t *temp_dir;
+} vm_t;
 
 typedef struct vm_area {
   uintptr_t base;

@@ -8,6 +8,7 @@
 #include <base.h>
 #include <scheduler.h>
 #include <process.h>
+#include <mm/vm.h>
 #include <cpu/cpu.h>
 
 #define PERCPU_SIZE PAGE_SIZE
@@ -17,6 +18,7 @@ typedef struct {
   process_t *current;
   uintptr_t self;
   scheduler_t *scheduler;
+  vm_t *vm;
 } percpu_t;
 
 static_assert(sizeof(percpu_t) <= PERCPU_SIZE);

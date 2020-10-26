@@ -106,12 +106,9 @@ flush_gdt:
   push rbp
   mov rbp, rsp
 
-  mov ax, 0x10
-  mov ds, ax
   mov ax, 0x00
+  mov ds, ax
   mov es, ax
-  mov fs, ax
-  mov gs, ax
 
   lea rax, [rel .flush]
 

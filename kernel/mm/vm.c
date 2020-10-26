@@ -6,6 +6,7 @@
 #include <panic.h>
 #include <string.h>
 #include <stdio.h>
+#include <percpu.h>
 
 #include <cpu/cpu.h>
 #include <mm/mm.h>
@@ -14,9 +15,9 @@
 
 #include <interval_tree.h>
 
-static uint64_t *pml4;
-static uint64_t *temp_dir;
-static intvl_tree_t *tree;
+// static uint64_t *pml4;
+// static uint64_t *temp_dir;
+// static intvl_tree_t *tree;
 
 //
 
@@ -92,10 +93,10 @@ uint64_t *map_page(uintptr_t virt_addr, uintptr_t phys_addr, uint16_t flags) {
       area->pages = page;
 
       interval_t interval = {area->base, area->base + area->size};
-      intvl_tree_insert(tree, interval, area);
+      intvl_tree_insert(VM->tree, interval, area);
 
       // temporarily map the page to zero it
-      temp_dir[TEMP_ENTRY] = page->frame | PE_WRITE | PE_PRESENT;
+      VM->temp_dir[TEMP_ENTRY] = page->frame | PE_WRITE | PE_PRESENT;
       tlb_flush();
       memset((void *) TEMP_PAGE, 0, PAGE_SIZE);
 
@@ -128,7 +129,13 @@ uint64_t *map_page(uintptr_t virt_addr, uintptr_t phys_addr, uint16_t flags) {
 
 void vm_init() {
   kprintf("[vm] initializing\n");
-  pml4 = (uint64_t *) boot_info->pml4;
+  vm_t *vm = kmalloc(sizeof(vm_t));
+  vm->pml4 = (uint64_t *) boot_info->pml4;
+  vm->tree = create_intvl_tree();
+  vm->temp_dir = NULL;
+  VM = vm;
+
+  uint64_t *pml4 = vm->pml4;
 
   // recursive pml4
   pml4[R_ENTRY] = virt_to_phys((uintptr_t) pml4) | 0b11;
@@ -140,37 +147,34 @@ void vm_init() {
 
   get_table(TEMP_PAGE, 3)[511] = dir1 | PE_WRITE | PE_PRESENT;
   get_table(TEMP_PAGE, 2)[511] = dir2 | PE_WRITE | PE_PRESENT;
-  temp_dir = get_table(TEMP_PAGE, 1);
+  VM->temp_dir = get_table(TEMP_PAGE, 1);
   tlb_flush();
-
-  // create the interval tree
-  tree = create_intvl_tree();
 
   //
   // Virtual Address Space Layout
   //
 
   // null page (fault on null reference)
-  intvl_tree_insert(tree, intvl(0, PAGE_SIZE), NULL);
+  intvl_tree_insert(VM->tree, intvl(0, PAGE_SIZE), NULL);
   // non-canonical address space
-  intvl_tree_insert(tree, intvl(LOW_HALF_END + 1, HIGH_HALF_START), NULL);
+  intvl_tree_insert(VM->tree, intvl(LOW_HALF_END + 1, HIGH_HALF_START), NULL);
   // recursively mapped region
   uintptr_t recurs_start = get_virt_addr(R_ENTRY, 0, 0, 0);
-  uintptr_t recurs_end = get_virt_addr(R_ENTRY, 511L, 511L, 511L);
-  intvl_tree_insert(tree, intvl(recurs_start, recurs_end), NULL);
+  uintptr_t recurs_end = get_virt_addr(R_ENTRY, K_ENTRY, K_ENTRY, K_ENTRY);
+  intvl_tree_insert(VM->tree, intvl(recurs_start, recurs_end), NULL);
   // temporary page space
   interval_t temp = { TEMP_PAGE, HIGH_HALF_END };
-  intvl_tree_insert(tree, temp, NULL);
+  intvl_tree_insert(VM->tree, temp, NULL);
   // virtual kernel space
   uintptr_t kernel_start = KERNEL_VA;
   uintptr_t kernel_end = KERNEL_VA + KERNEL_RESERVED;
-  intvl_tree_insert(tree, intvl(kernel_start, kernel_end), NULL);
+  intvl_tree_insert(VM->tree, intvl(kernel_start, kernel_end), NULL);
   // virtual stack space
   uint64_t logical_cores = boot_info->num_cores * boot_info->num_threads;
   uint64_t stack_size = logical_cores * (STACK_SIZE + 1);
   uintptr_t stack_start = STACK_VA - stack_size;
   uintptr_t stack_end = STACK_VA;
-  intvl_tree_insert(tree, intvl(stack_start, stack_end), NULL);
+  intvl_tree_insert(VM->tree, intvl(stack_start, stack_end), NULL);
 
   // framebuffer
   vm_map_vaddr(
@@ -204,7 +208,7 @@ void *vm_create_tables() {
   memset(low_pdpt, 0, PAGE_SIZE);
 
   ap_pml4[0] = (((uintptr_t) low_pdpt_page->frame) | PE_WRITE | PE_PRESENT);
-  ap_pml4[PML4_INDEX(KERNEL_VA)] = pml4[PML4_INDEX(KERNEL_VA)];
+  ap_pml4[K_ENTRY] = VM->pml4[K_ENTRY];
 
   // first 1gb identity mapped
   low_pdpt[0] = (0 | PE_SIZE | PE_WRITE | PE_PRESENT);
@@ -247,7 +251,7 @@ void *vm_map_page_vaddr(uintptr_t virt_addr, page_t *page) {
   area->base = address;
   area->size = len;
   area->pages = page;
-  intvl_tree_insert(tree, intvl(address, address + len), area);
+  intvl_tree_insert(VM->tree, intvl(address, address + len), area);
 
   current = page;
   while (current) {
@@ -277,7 +281,7 @@ void *vm_map_addr(uintptr_t phys_addr, size_t len, uint16_t flags) {
   area->base = address;
   area->size = len;
   area->pages = NULL;
-  intvl_tree_insert(tree, intvl(address, len), area);
+  intvl_tree_insert(VM->tree, intvl(address, len), area);
 
   vm_map_vaddr(address, phys_addr, len, flags | PE_PRESENT);
   return (void *) address;
@@ -289,7 +293,7 @@ void *vm_map_addr(uintptr_t phys_addr, size_t len, uint16_t flags) {
 void *vm_map_vaddr(uintptr_t virt_addr, uintptr_t phys_addr, size_t len, uint16_t flags) {
   len = align(len, PAGE_SIZE);
   interval_t interval = intvl(virt_addr, virt_addr + len);
-  intvl_node_t *existing = intvl_tree_find(tree, interval);
+  intvl_node_t *existing = intvl_tree_find(VM->tree, interval);
   if (existing) {
     panic("[vm] failed to map address - already in use\n");
   }
@@ -299,7 +303,7 @@ void *vm_map_vaddr(uintptr_t virt_addr, uintptr_t phys_addr, size_t len, uint16_
   area->size = len;
   area->pages = NULL;
 
-  intvl_tree_insert(tree, interval, area);
+  intvl_tree_insert(VM->tree, interval, area);
 
   // add table entry
   size_t remaining = len;
@@ -329,7 +333,7 @@ void *vm_map_vaddr(uintptr_t virt_addr, uintptr_t phys_addr, size_t len, uint16_
  * address, or `NULL` if one does not exist.
  */
 vm_area_t *vm_get_vm_area(uintptr_t address) {
-  intvl_node_t *node = intvl_tree_find(tree, intvl(address, address + 1));
+  intvl_node_t *node = intvl_tree_find(VM->tree, intvl(address, address + 1));
   if (node == NULL) {
     return NULL;
   }
@@ -345,7 +349,7 @@ bool vm_find_free_area(vm_search_t search_type, uintptr_t *addr, size_t size) {
   uintptr_t ptr = *addr;
 
   interval_t interval = intvl(ptr, ptr + size);
-  intvl_node_t *closest = intvl_tree_find_closest(tree, interval);
+  intvl_node_t *closest = intvl_tree_find_closest(VM->tree, interval);
   if (search_type == EXACTLY) {
     if (overlaps(interval, closest->interval)) {
       return false;
@@ -362,7 +366,7 @@ bool vm_find_free_area(vm_search_t search_type, uintptr_t *addr, size_t size) {
 
   rb_node_t *node = NULL;
   rb_node_t *last = NULL;
-  rb_iter_t *iter = rb_tree_make_iter(tree->tree, closest->node, iter_type);
+  rb_iter_t *iter = rb_tree_make_iter(VM->tree->tree, closest->node, iter_type);
   while ((node = rb_iter_next(iter))) {
     interval_t i = ((intvl_node_t *) node->data)->interval;
     interval_t j = last ? ((intvl_node_t *) last->data)->interval : i;
