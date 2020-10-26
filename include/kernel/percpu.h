@@ -10,7 +10,7 @@
 #include <process.h>
 #include <cpu/cpu.h>
 
-#define PERCPU_RESERVED PAGE_SIZE
+#define PERCPU_SIZE PAGE_SIZE
 
 typedef struct {
   uint64_t id;
@@ -19,7 +19,7 @@ typedef struct {
   scheduler_t *scheduler;
 } percpu_t;
 
-static_assert(sizeof(percpu_t) <= PERCPU_RESERVED);
+static_assert(sizeof(percpu_t) <= PERCPU_SIZE);
 
 // https://github.com/a-darwish/cuteOS
 #define __percpu(var) (((percpu_t *) NULL)->var)
@@ -55,6 +55,7 @@ static_assert(sizeof(percpu_t) <= PERCPU_RESERVED);
 #define percpu_struct() \
   ((percpu_t *) percpu_get(self))
 
+// encourage the compiler to heavily cache the value
 static always_inline __pure percpu_t *percpu() {
   uintptr_t ptr = percpu_get(self);
   return (percpu_t *) ptr;

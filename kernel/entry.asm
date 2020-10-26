@@ -8,6 +8,9 @@ entry:
   xor rbp, rbp
 
   mov rdi, rsi ; boot_info pointer
+
+  cld
+  cli
   call main    ; call the kernel
 .hang:
   hlt
@@ -20,6 +23,8 @@ ap_entry:
   mov rsp, rsi ; stack pointer
   mov rbp, rsp
 
+  cld
+  cli
   call ap_main ; call the kernel
 .hang:
   hlt

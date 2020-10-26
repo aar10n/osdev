@@ -428,7 +428,6 @@ void EFIAPI AddPageDescriptor(PAGE_DESCRIPTOR *List, PAGE_DESCRIPTOR *Descriptor
 
 //
 
-UINTN NumTablesUsed = 1;
 void EFIAPI WalkPageTables(UINT64 VirtAddr, UINT64 PhysAddr, UINT16 Flags, UINT64 *Parent, UINT8 Level) {
   // Print(L"--- Walking Level %d ---\n", Level);
   ASSERT(Level <= 4 && Level < 0);

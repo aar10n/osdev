@@ -655,11 +655,11 @@ EFI_STATUS EFI_MAIN UefiMain(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTab
   UINT64 ReservedPtr = ReservedAddress;
   UINTN NumReservedPages = EFI_SIZE_TO_PAGES(ReservedRegionSize);
   while (NumReservedPages > 0) {
-    UINT64 Next2MBBoundary = ALIGN_VALUE(ReservedPtr, SIZE_2MB);
-    BOOLEAN Is2MBAligned = ReservedPtr == Next2MBBoundary;
+    UINT64 Next2MbBoundary = ALIGN_VALUE(ReservedPtr, SIZE_2MB);
+    BOOLEAN Is2MbAligned = ReservedPtr == Next2MbBoundary;
 
     PAGE_DESCRIPTOR *ReservedPages;
-    if (Is2MBAligned && NumReservedPages >= TABLE_LENGTH) {
+    if (Is2MbAligned && NumReservedPages >= TABLE_LENGTH) {
       UINTN NumPages = NumReservedPages / TABLE_LENGTH;
       // Make a 2MB Page
       ReservedPages = MakePageDescriptor(
@@ -673,7 +673,7 @@ EFI_STATUS EFI_MAIN UefiMain(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTab
       NumReservedPages -= NumPages * TABLE_LENGTH;
     } else {
       // Make 4MB Pages
-      UINTN NumPages = EFI_SIZE_TO_PAGES(Next2MBBoundary - ReservedPtr);
+      UINTN NumPages = EFI_SIZE_TO_PAGES(Next2MbBoundary - ReservedPtr);
       ReservedPages = MakePageDescriptor(
         KERNEL_OFFSET + ReservedPtr,
         ReservedPtr,

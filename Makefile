@@ -19,8 +19,7 @@ QEMUFLAGS = \
 	-m 256M \
 	-no-reboot \
    	-no-shutdown \
-	-drive if=pflash,format=raw,readonly,file=scripts/OVMF_CODE.fd \
-	-drive if=pflash,format=raw,file=scripts/OVMF_VARS.fd \
+	-bios scripts/OVMF-DEBUG.fd \
 	-global isa-debugcon.iobase=0x402 \
 	-debugcon file:$(BUILD)/uefi_debug.log \
 	-serial file:$(BUILD)/stdio \

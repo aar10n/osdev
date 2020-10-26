@@ -22,7 +22,7 @@ extern void smpboot_end();
 extern gdt_desc_t gdt_desc;
 extern idt_desc_t idt_desc;
 
-int smp_wake_core(uint8_t id, smp_data_t *data) {
+int smp_boot_core(uint8_t id, smp_data_t *data) {
   apic_send_ipi(APIC_INIT, APIC_DEST_PHYSICAL, id, 0);
   apic_mdelay(10);
 
@@ -51,8 +51,8 @@ int smp_wake_core(uint8_t id, smp_data_t *data) {
 void smp_init() {
   page_t *code_page = mm_alloc_frame(SMPBOOT_START, PE_WRITE | PE_FORCE);
   page_t *data_page = mm_alloc_frame(SMPDATA_START, PE_WRITE | PE_FORCE);
-  void *code_ptr = vm_map_page_vaddr(SMPBOOT_START, code_page);
-  void *data_ptr = vm_map_page_vaddr(SMPDATA_START, data_page);
+  void *code_ptr = vm_map_page(code_page);
+  void *data_ptr = vm_map_page(data_page);
 
   memset(code_ptr, 0, PAGE_SIZE);
   memset(data_ptr, 0, PAGE_SIZE);
@@ -60,8 +60,7 @@ void smp_init() {
   // startup APs one-by-one
   size_t smpboot_size = smpboot_end - smpboot_start;
   kassert(smpboot_size < PAGE_SIZE);
-  kprintf("[smp] trampoline address: %p\n", smpboot_start);
-  kprintf("[smp] trampoline size: %u\n", smpboot_size);
+  kassert(sizeof(smp_data_t) < PAGE_SIZE);
   memcpy(code_ptr, smpboot_start, smpboot_size);
 
   uintptr_t pml4 = (uintptr_t) vm_create_tables();
@@ -82,7 +81,7 @@ void smp_init() {
     };
 
     memcpy(data_ptr, &data, sizeof(smp_data_t));
-    int status = smp_wake_core(id, data_ptr);
+    int status = smp_boot_core(id, data_ptr);
     if (status != AP_SUCCESS) {
       kprintf("[smp] failed to boot CPU#%d\n", id);
     } else {

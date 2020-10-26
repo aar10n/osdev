@@ -214,7 +214,6 @@ void apic_udelay(uint64_t us) {
   timer.mask = APIC_MASK;
   apic_write_timer(timer);
   while (us > 0) {
-    kprintf("loop\n");
     uint32_t val = min(us, US_PER_SEC);
     uint32_t count = apic_clock / (US_PER_SEC / val);
     apic_write(APIC_INITIAL_COUNT, count);

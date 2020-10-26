@@ -16,7 +16,6 @@
 #define KERNEL_OFFSET  0xFFFFFF8000000000
 #define KERNEL_VA      0xFFFFFF8000100000
 #define STACK_VA       0xFFFFFFA000000000
-#define PERCPU_BASE_VA 0xFFFFFFA000001000
 #define FRAMEBUFFER_VA 0xFFFFFFC000000000
 #define MMIO_BASE_VA   0xFFFFFFFFF8000000
 
@@ -79,7 +78,7 @@ typedef struct {
   // memory info
   memory_map_t *mem_map;           // the memory map array
   uintptr_t pml4;                  // pointer to the pml4 page table
-  uintptr_t reserved_base;         // pointer to start of reserved kernel region
+  uintptr_t reserved_base;         // pointer to start of reserved kernel area
   size_t reserved_size;            // the size of reserved kernel area
   // framebuffer info
   uintptr_t fb_base;               // framebuffer base pointer

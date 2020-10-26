@@ -18,29 +18,39 @@ global exception_handler
 exception_handler:
   cld
 
-  sub rsp, 48
+  sub rsp, 56
   mov [rsp + 0], rdi
   mov [rsp + 8], rsi
   mov [rsp + 16], rdx
   mov [rsp + 24], rcx
   mov [rsp + 32], r8
   mov [rsp + 40], r9
+  mov [rsp + 48], rax
+
+  ; get apic id
+  push rbx
+  mov eax, 1
+  cpuid
+  shr rbx, 24
+  and rbx, 0xFF
+  mov rax, rbx
+  pop rbx
 
   mov rdx, exceptions
-  mov rcx, qword [rsp + 48] ; vector
+  mov rcx, qword [rsp + 56] ; vector
 
   mov rdi, exception_msg.1 ; format string
   mov rsi, [rdx + rcx * 8] ; exception name
-  mov rdx, 0               ; apic id
-  mov rcx, [rsp + 48]      ; vector
-  mov r8, [rsp + 56]       ; error code
-  mov r9, [rsp + 64]       ; rip
-  push qword [rsp + 80]    ; rflags
+  mov rdx, rax             ; apic id
+  mov rcx, rcx             ; vector
+  mov r8, [rsp + 64]       ; error code
+  mov r9, [rsp + 72]       ; rip
+  push qword [rsp + 88]    ; rflags
   call kprintf
   add rsp, 8
 
   mov rdi, exception_msg.2 ; format string
-  mov rsi, rax             ; rax
+  mov rsi, [rsp + 48]      ; rax
   mov rdx, rbx             ; rbx
   mov rcx, [rsp + 24]      ; rcx
   mov r8, [rsp + 16]       ; rdx
@@ -64,12 +74,12 @@ exception_handler:
   add rsp, 24
 
   mov rdi, exception_msg.4 ; format string
-  mov rsi, [rsp + 72]      ; cs
+  mov rsi, [rsp + 80]      ; cs
   mov rdx, ds              ; ds
   mov rcx, es              ; es
   mov r8, fs               ; fs
   mov r9, gs               ; gs
-  push qword [rsp + 96]    ; ss
+  push qword [rsp + 104]   ; ss
   call kprintf
   sub rsp, 8
 
