@@ -20,6 +20,9 @@
 #define FRAMEBUFFER_VA 0xFFFFFFC000000000
 #define MMIO_BASE_VA   0xFFFFFFFFF8000000
 
+#define SMPBOOT_START  0x0000
+#define SMPDATA_START  0x1000
+
 #define STACK_SIZE      0x8000 // 16 KiB
 #define KERNEL_RESERVED 0x300000 // 3 MiB
 #define RESERVED_TABLES 8 // Number of preallocated page tables

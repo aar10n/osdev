@@ -52,8 +52,8 @@ static inline apic_reg_icr_t apic_read_icr() {
 }
 
 static inline void apic_write_icr(apic_reg_icr_t icr) {
-  apic_write(APIC_ICR_LOW, icr.raw_low);
   apic_write(APIC_ICR_HIGH, icr.raw_high);
+  apic_write(APIC_ICR_LOW, icr.raw_low);
 }
 
 //
@@ -131,10 +131,21 @@ uint8_t apic_get_id() {
   return id.id;
 }
 
+uint8_t apic_get_version() {
+  apic_reg_version_t version = { .raw = apic_read(APIC_VERSION) };
+  return version.version;
+}
+
 
 void apic_init() {
   kprintf("[apic] initializing\n");
   apic_base = system_info->apic_virt_addr;
+
+  apic_reg_id_t id = { .raw = apic_read(APIC_ID) };
+  kprintf("[apic] id: %d\n", id.id);
+  apic_reg_version_t version = { .raw = apic_read(APIC_VERSION) };
+  kprintf("[apic] version: 0x%X\n", version.version);
+  kprintf("[apic] max lvt: %d\n", version.max_lvt_entry);
 
   apic_reg_tpr_t tpr = apic_reg_tpr(0, 0);
   apic_write(APIC_TPR, tpr.raw);
@@ -146,7 +157,7 @@ void apic_init() {
   apic_write(APIC_DFR, dfr.raw);
 
   apic_reg_lvt_timer_t timer = apic_reg_lvt_timer(
-    VECTOR_APIC_TIMER, APIC_IDLE, APIC_MASK, APIC_ONE_SHOT
+    VECTOR_SCHED_TIMER, APIC_IDLE, APIC_MASK, APIC_ONE_SHOT
   );
   apic_write(APIC_LVT_TIMER, timer.raw);
 
@@ -176,7 +187,7 @@ void apic_init_periodic(uint64_t ms) {
   apic_reg_lvt_timer_t timer = apic_read_timer();
   timer.timer_mode = APIC_PERIODIC;
   timer.mask = APIC_UNMASK;
-  timer.vector = VECTOR_APIC_TIMER;
+  timer.vector = VECTOR_SCHED_TIMER;
   apic_write_timer(timer);
 
   apic_write(APIC_INITIAL_COUNT, ms_to_count(ms));
@@ -219,30 +230,34 @@ void apic_mdelay(uint64_t ms) {
   apic_udelay(ms * 1000);
 }
 
-void apic_self_ipi(uint8_t mode, uint8_t vector) {
+void apic_send_ipi(uint8_t mode, uint8_t dest_mode, uint8_t dest, uint8_t vector) {
   poll_icr_status();
-  apic_reg_icr_t icr = apic_reg_icr(
-    vector, mode, APIC_DEST_PHYSICAL, APIC_IDLE,
-    APIC_ASSERT, APIC_LEVEL, APIC_DEST_SELF, 0
+  apic_reg_icr_t icr;
+  icr.raw = 0;
+  icr = apic_reg_icr(
+    vector, mode, dest_mode, APIC_IDLE,
+    APIC_ASSERT, APIC_EDGE, APIC_DEST_TARGET,
+    dest
   );
   apic_write_icr(icr);
 }
 
 void apic_broadcast_ipi(uint8_t mode, uint8_t shorthand, uint8_t vector) {
   poll_icr_status();
-  apic_reg_icr_t icr = apic_reg_icr(
+  apic_reg_icr_t icr;
+  icr.raw = 0;
+  icr = apic_reg_icr(
     vector, mode, APIC_DEST_PHYSICAL, APIC_IDLE,
-    APIC_ASSERT, APIC_LEVEL, shorthand, 0
+    APIC_ASSERT, APIC_EDGE, shorthand, 0
   );
   apic_write_icr(icr);
 }
 
-void apic_target_ipi(uint8_t mode, uint8_t dest_mode, uint8_t dest, uint8_t vector) {
+void apic_self_ipi(uint8_t mode, uint8_t vector) {
   poll_icr_status();
   apic_reg_icr_t icr = apic_reg_icr(
-    vector, mode, dest_mode, APIC_IDLE,
-    APIC_ASSERT, APIC_LEVEL, APIC_DEST_TARGET,
-    dest
+    vector, mode, APIC_DEST_PHYSICAL, APIC_IDLE,
+    APIC_ASSERT, APIC_EDGE, APIC_DEST_SELF, 0
   );
   apic_write_icr(icr);
 }

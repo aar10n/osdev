@@ -7,10 +7,16 @@
 ; General Constants
 %define KERNEL_OFFSET 0xFFFFFF8000000000
 %define KERNEL_CS 0x08
+%define SMPBOOT_START 0x0000
+%define SMPDATA_START 0x1000
 
-%define APIC_BASE_VA 0xFFFFFFFFF8000000
-%define APIC_REG_ID  0x20
-%define APIC_REG_EOI 0x0B0
+%define APIC_BASE_VA  0xFFFFFFFFF8000000
+%define APIC_REG_ID   0x20
+%define APIC_REG_EOI  0x0B0
+
+%define IA32_EFER_MSR 0x0C0000080
+%define FS_BASE_MSR   0xC0000100
+%define GS_BASE_MSR   0xC0000101
 
 %define COM1 0x3F8
 
@@ -37,6 +43,10 @@
 %define CTX_RSP    0x48
 %define CTX_SS     0x50
 
+; Smpboot Data
+%define SMP_STATUS 0x00
+%define SMP_PML4   0x04
+%define SMP_STACK  0x08
 
 ; Saved registers
 %macro pushall 0

@@ -3,9 +3,9 @@
 #
 
 # kernel
-kernel += entry.asm sched.asm \
-	acpi.c main.c panic.c percpu.c \
-	process.c scheduler.c timer.c
+kernel += entry.asm sched.asm smpboot.asm \
+	acpi.c main.c panic.c percpu.c process.c \
+	scheduler.c smpboot.c timer.c
 
 # kernel/cpu
 kernel += cpu/cpu.asm cpu/idt.asm \

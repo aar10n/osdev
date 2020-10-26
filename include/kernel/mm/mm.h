@@ -56,7 +56,9 @@
 // additional mm_alloc_page flags
 #define PE_2MB_SIZE 0x200
 #define PE_1GB_SIZE 0x400
-#define PE_ASSERT_ZONE 0x800
+// special flags
+#define PE_ASSERT   0x800
+#define PE_FORCE    0x1000
 
 typedef enum {
   ZONE_LOW,
@@ -100,6 +102,7 @@ typedef struct memory_zone {
 
 void mm_init();
 page_t *mm_alloc_page(zone_type_t zone_type, uint16_t flags);
+page_t *mm_alloc_frame(uintptr_t frame, uint16_t flags);
 void mm_free_page(page_t *page);
 
 #define alloc_page(flags) mm_alloc_page(ZONE_NORMAL, flags)

@@ -116,6 +116,17 @@ typedef union {
 } apic_reg_id_t;
 
 typedef union {
+  uint32_t raw;
+  struct {
+    uint32_t version : 8;
+    uint32_t : 8;
+    uint32_t max_lvt_entry : 8;
+    uint32_t can_suppress_eoi : 1;
+    uint32_t : 7;
+  };
+} apic_reg_version_t;
+
+typedef union {
   uint64_t raw;
   struct {
     uint32_t raw_low;
@@ -292,6 +303,7 @@ typedef union packed {
   })
 
 static_assert(sizeof(apic_reg_id_t) == sizeof(uint32_t));
+static_assert(sizeof(apic_reg_version_t) == sizeof(uint32_t));
 static_assert(sizeof(apic_reg_icr_t) == sizeof(uint64_t));
 static_assert(sizeof(apic_reg_lvt_timer_t) == sizeof(uint32_t));
 static_assert(sizeof(apic_reg_lvt_perfc_t) == sizeof(uint32_t));
@@ -305,6 +317,7 @@ static_assert(sizeof(apic_reg_ppr_t) == sizeof(uint32_t));
 static_assert(sizeof(apic_reg_svr_t) == sizeof(uint32_t));
 
 uint8_t apic_get_id();
+uint8_t apic_get_version();
 
 void apic_init();
 void apic_init_periodic(uint64_t ms);
@@ -314,8 +327,8 @@ void apic_udelay(uint64_t us);
 void apic_mdelay(uint64_t ms);
 void apic_send_eoi();
 
-void apic_self_ipi(uint8_t mode, uint8_t vector);
+void apic_send_ipi(uint8_t mode, uint8_t dest_mode, uint8_t dest, uint8_t vector);
 void apic_broadcast_ipi(uint8_t mode, uint8_t shorthand, uint8_t vector);
-void apic_target_ipi(uint8_t mode, uint8_t dest_mode, uint8_t dest, uint8_t vector);
+void apic_self_ipi(uint8_t mode, uint8_t vector);
 
 #endif

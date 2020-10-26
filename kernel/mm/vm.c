@@ -188,6 +188,30 @@ void vm_init() {
 }
 
 /**
+ * Creates page tables with startup mappings for a booting ap.
+ */
+void *vm_create_tables() {
+  // since these tables are also used when switching
+  // from protected to long mode, the tables need to
+  // be within the first 4GB of ram.
+  page_t *ap_pml4_page = mm_alloc_page(ZONE_NORMAL, PE_WRITE | PE_ASSERT);
+  page_t *low_pdpt_page = mm_alloc_page(ZONE_NORMAL, PE_WRITE | PE_ASSERT);
+
+  uint64_t *ap_pml4 = vm_map_page(ap_pml4_page);
+  uint64_t *low_pdpt = vm_map_page(low_pdpt_page);
+
+  memset(ap_pml4, 0, PAGE_SIZE);
+  memset(low_pdpt, 0, PAGE_SIZE);
+
+  ap_pml4[0] = (((uintptr_t) low_pdpt_page->frame) | PE_WRITE | PE_PRESENT);
+  ap_pml4[PML4_INDEX(KERNEL_VA)] = pml4[PML4_INDEX(KERNEL_VA)];
+
+  // first 1gb identity mapped
+  low_pdpt[0] = (0 | PE_SIZE | PE_WRITE | PE_PRESENT);
+  return (void *) ap_pml4_page->frame;
+}
+
+/**
  * Maps a physical page or pages to an available virtual address.
  */
 void *vm_map_page(page_t *page) {
@@ -256,7 +280,6 @@ void *vm_map_addr(uintptr_t phys_addr, size_t len, uint16_t flags) {
   intvl_tree_insert(tree, intvl(address, len), area);
 
   vm_map_vaddr(address, phys_addr, len, flags | PE_PRESENT);
-
   return (void *) address;
 }
 
@@ -303,7 +326,7 @@ void *vm_map_vaddr(uintptr_t virt_addr, uintptr_t phys_addr, size_t len, uint16_
 
 /**
  * Returns the vm_area struct associated with the given
- * address, or NULL if one does not exist.
+ * address, or `NULL` if one does not exist.
  */
 vm_area_t *vm_get_vm_area(uintptr_t address) {
   intvl_node_t *node = intvl_tree_find(tree, intvl(address, address + 1));

@@ -213,7 +213,7 @@ void sched_init() {
   SCHEDULER = sched;
 
   idt_gate_t gate = gate((uintptr_t) tick_handler, KERNEL_CS, 0, INTERRUPT_GATE, 0, 1);
-  idt_set_gate(VECTOR_APIC_TIMER, gate);
+  idt_set_gate(VECTOR_SCHED_TIMER, gate);
 
   if (ptable == NULL) {
     ptable = kmalloc(sizeof(process_t *) * PTABLE_SIZE);

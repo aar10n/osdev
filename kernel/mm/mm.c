@@ -88,6 +88,17 @@ static void apply_page_flags(page_t *page, uint16_t flags) {
   page->flags.reserved = 0;
 }
 
+void mark_page_reserved(uintptr_t frame) {
+  zone_type_t zone_type = get_zone_type(frame);
+  memory_zone_t *zone = zones[zone_type];
+  if (zone == NULL) {
+    return;
+  }
+
+  index_t index = SIZE_TO_PAGES(frame);
+  bitmap_set(zone->pages, index);
+}
+
 //
 
 void mm_init() {
@@ -159,6 +170,9 @@ void mm_init() {
     region++;
   }
 
+  mark_page_reserved(SMPBOOT_START);
+  mark_page_reserved(SMPDATA_START);
+
   did_initialize = true;
   kprintf("[mm] done!\n");
 }
@@ -170,7 +184,7 @@ page_t *mm_alloc_page(zone_type_t zone_type, uint16_t flags) {
   memory_zone_t *zone = zones[zone_type];
   while (!zone || zone->pages->free == 0) {
     if (!zone || !zone->next) {
-      if (flags & PE_ASSERT_ZONE) {
+      if (flags & PE_ASSERT) {
         panic("panic - failed to allocate page in %s\n", get_zone_name(zone_type));
       }
 
@@ -199,6 +213,38 @@ page_t *mm_alloc_page(zone_type_t zone_type, uint16_t flags) {
   apply_page_flags(page, flags);
   page->flags.zone = zone->type;
 
+  return page;
+}
+
+page_t *mm_alloc_frame(uintptr_t frame, uint16_t flags) {
+  zone_type_t zone_type = get_zone_type(frame);
+  memory_zone_t *zone = zones[zone_type];
+  if (!zone) {
+    if (flags & PE_ASSERT) {
+      panic("panic - physical frame %p does not exist", frame);
+    } else {
+      return NULL;
+    }
+  }
+
+  index_t index = SIZE_TO_PAGES(frame - zone->base_addr);
+  if (bitmap_get(zone->pages, index)) {
+    if (!(flags & PE_FORCE)) {
+      if (flags & PE_ASSERT) {
+        panic("panic - physical frame %p is not available", frame);
+      }
+      return NULL;
+    }
+  }
+  bitmap_set(zone->pages, index);
+
+  page_t *page = kmalloc(sizeof(page_t));
+  page->frame = frame;
+  page->entry = NULL;
+  page->next = NULL;
+
+  apply_page_flags(page, flags);
+  page->flags.zone = zone->type;
   return page;
 }
 

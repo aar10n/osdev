@@ -14,12 +14,13 @@ INCLUDE = -Iinclude -Iinclude/kernel -Ilib -Ilibc
 
 QEMUFLAGS = \
 	-cpu Nehalem \
-	-smp cores=2,threads=2 \
+	-smp cores=2,threads=2,sockets=1 \
 	-machine q35 \
 	-m 256M \
 	-no-reboot \
-	-no-shutdown \
-	-bios scripts/OVMF-DEBUG.fd \
+   	-no-shutdown \
+	-drive if=pflash,format=raw,readonly,file=scripts/OVMF_CODE.fd \
+	-drive if=pflash,format=raw,file=scripts/OVMF_VARS.fd \
 	-global isa-debugcon.iobase=0x402 \
 	-debugcon file:$(BUILD)/uefi_debug.log \
 	-serial file:$(BUILD)/stdio \
