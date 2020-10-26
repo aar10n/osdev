@@ -1,4 +1,4 @@
-extern main
+extern kmain
 extern ap_main
 
 global entry
@@ -11,7 +11,7 @@ entry:
 
   cld
   cli
-  call main    ; call the kernel
+  call kmain   ; call the kernel
 .hang:
   hlt
   jmp .hang    ; hang

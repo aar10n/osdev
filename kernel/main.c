@@ -3,28 +3,59 @@
 //
 
 #include <base.h>
-#include <boot.h>
 #include <stdio.h>
 
-#include <cpu/cpu.h>
+#include <cpu/gdt.h>
+#include <cpu/idt.h>
+
 #include <mm/mm.h>
+#include <mm/vm.h>
+#include <mm/heap.h>
+
+#include <acpi.h>
+#include <percpu.h>
+#include <smpboot.h>
+#include <timer.h>
+#include <scheduler.h>
 
 #include <drivers/serial.h>
 
-uintptr_t kernel_phys;
+#include <device/apic.h>
+#include <device/ioapic.h>
+#include <device/pic.h>
 
-void main(boot_info_t *info) {
-  kernel_phys = info->kernel_phys;
+boot_info_t *boot_info;
+
+__used void kmain(boot_info_t *info) {
+  boot_info = info;
 
   serial_init(COM1);
-  kprintf("Kernel loaded!\n");
+  kprintf("[kernel] initializing\n");
 
-  // uint64_t entry = virt_addr(511, 510, 0, 0);
-  // kprintf("Testing: %p\n", KERNEL_VA);
-  // uint64_t one = 0xFFFFFF8000000000;
-  // uint64_t two = 0xFFFFFFFF80000000;
-  // kprintf("Index: %d | %d\n", pml4_index(one), pdpt_index(one));
-  // kprintf("Index: %d | %d\n", pml4_index(one), pdpt_index(two));
-  // kprintf("Boot info: %p\n", info);
-  // enable_sse();
+  percpu_init();
+  percpu_init_cpu();
+
+  setup_gdt();
+  setup_idt();
+
+  kheap_init();
+  mm_init();
+  vm_init();
+
+  acpi_init();
+
+  pic_init();
+  apic_init();
+  ioapic_init();
+
+  smp_init();
+
+  timer_init();
+  sched_init();
+
+  kprintf("[kernel] done!\n");
+}
+
+__used void ap_main() {
+  kprintf("Hello from another core!\n");
 }

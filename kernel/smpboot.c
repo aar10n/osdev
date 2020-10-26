@@ -4,7 +4,6 @@
 
 #include <smpboot.h>
 #include <system.h>
-#include <percpu.h>
 #include <cpu/gdt.h>
 #include <cpu/idt.h>
 #include <mm/mm.h>
@@ -91,8 +90,4 @@ void smp_init() {
   }
 
   kprintf("[smp] done!\n");
-}
-
-void ap_main() {
-  kprintf("Hello from another core!\n");
 }
