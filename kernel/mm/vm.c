@@ -130,16 +130,25 @@ uint64_t *map_page(uintptr_t virt_addr, uintptr_t phys_addr, uint16_t flags) {
 void vm_init() {
   kprintf("[vm] initializing\n");
   vm_t *vm = kmalloc(sizeof(vm_t));
-  vm->pml4 = (uint64_t *) boot_info->pml4;
   vm->tree = create_intvl_tree();
   vm->temp_dir = NULL;
   VM = vm;
 
-  uint64_t *pml4 = vm->pml4;
-
-  // recursive pml4
-  pml4[R_ENTRY] = virt_to_phys((uintptr_t) pml4) | 0b11;
-  tlb_flush();
+  uint64_t *pml4 = NULL;
+  if (IS_BSP) {
+    pml4 = (uint64_t *) boot_info->pml4;
+    vm->pml4 = pml4;
+    // only the bsp has to set up recursive pml4 mappings
+    // because the AP kernel tables come pre-setup as
+    // recursive page tables
+    pml4[R_ENTRY] = virt_to_phys((uintptr_t) pml4) | PE_WRITE | PE_PRESENT;
+    tlb_flush();
+  } else {
+    // for the APs we can get the virtual address of the
+    // pml4 through the recursive mappings
+    pml4 = get_table(0, 4);
+    vm->pml4 = pml4;
+  }
 
   // setup the page table for temporary mappings
   uintptr_t dir1 = virt_to_phys(boot_info->reserved_base - PAGES_TO_SIZE(2));
@@ -147,7 +156,7 @@ void vm_init() {
 
   get_table(TEMP_PAGE, 3)[511] = dir1 | PE_WRITE | PE_PRESENT;
   get_table(TEMP_PAGE, 2)[511] = dir2 | PE_WRITE | PE_PRESENT;
-  VM->temp_dir = get_table(TEMP_PAGE, 1);
+  vm->temp_dir = get_table(TEMP_PAGE, 1);
   tlb_flush();
 
   //
@@ -155,26 +164,26 @@ void vm_init() {
   //
 
   // null page (fault on null reference)
-  intvl_tree_insert(VM->tree, intvl(0, PAGE_SIZE), NULL);
+  intvl_tree_insert(vm->tree, intvl(0, PAGE_SIZE), NULL);
   // non-canonical address space
-  intvl_tree_insert(VM->tree, intvl(LOW_HALF_END + 1, HIGH_HALF_START), NULL);
+  intvl_tree_insert(vm->tree, intvl(LOW_HALF_END + 1, HIGH_HALF_START), NULL);
   // recursively mapped region
   uintptr_t recurs_start = get_virt_addr(R_ENTRY, 0, 0, 0);
   uintptr_t recurs_end = get_virt_addr(R_ENTRY, K_ENTRY, K_ENTRY, K_ENTRY);
-  intvl_tree_insert(VM->tree, intvl(recurs_start, recurs_end), NULL);
+  intvl_tree_insert(vm->tree, intvl(recurs_start, recurs_end), NULL);
   // temporary page space
   interval_t temp = { TEMP_PAGE, HIGH_HALF_END };
-  intvl_tree_insert(VM->tree, temp, NULL);
+  intvl_tree_insert(vm->tree, temp, NULL);
   // virtual kernel space
   uintptr_t kernel_start = KERNEL_VA;
   uintptr_t kernel_end = KERNEL_VA + KERNEL_RESERVED;
-  intvl_tree_insert(VM->tree, intvl(kernel_start, kernel_end), NULL);
+  intvl_tree_insert(vm->tree, intvl(kernel_start, kernel_end), NULL);
   // virtual stack space
   uint64_t logical_cores = boot_info->num_cores * boot_info->num_threads;
   uint64_t stack_size = logical_cores * (STACK_SIZE + 1);
   uintptr_t stack_start = STACK_VA - stack_size;
   uintptr_t stack_end = STACK_VA;
-  intvl_tree_insert(VM->tree, intvl(stack_start, stack_end), NULL);
+  intvl_tree_insert(vm->tree, intvl(stack_start, stack_end), NULL);
 
   // framebuffer
   vm_map_vaddr(
@@ -184,7 +193,8 @@ void vm_init() {
     PE_WRITE | PE_PRESENT
   );
 
-  // finally clear the uefi mappings
+  // finally clear the uefi or bsp created
+  // identity mappings
   pml4[0] = 0;
   tlb_flush();
 
@@ -192,9 +202,9 @@ void vm_init() {
 }
 
 /**
- * Creates page tables with startup mappings for a booting ap.
+ * Creates kernel page tables for an AP.
  */
-void *vm_create_tables() {
+void *vm_create_ap_tables() {
   // since these tables are also used when switching
   // from protected to long mode, the tables need to
   // be within the first 4GB of ram.
@@ -208,7 +218,9 @@ void *vm_create_tables() {
   memset(low_pdpt, 0, PAGE_SIZE);
 
   ap_pml4[0] = (((uintptr_t) low_pdpt_page->frame) | PE_WRITE | PE_PRESENT);
-  ap_pml4[K_ENTRY] = VM->pml4[K_ENTRY];
+  ap_pml4[K_ENTRY] = VM->pml4[K_ENTRY]; // copy bsp upper tables
+  // recursive pml4
+  ap_pml4[R_ENTRY] = ap_pml4_page->frame | PE_WRITE | PE_PRESENT;
 
   // first 1gb identity mapped
   low_pdpt[0] = (0 | PE_SIZE | PE_WRITE | PE_PRESENT);

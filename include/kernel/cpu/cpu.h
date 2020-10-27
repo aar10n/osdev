@@ -28,6 +28,8 @@ void load_gdt(void *gdtr);
 void load_idt(void *idtr);
 void flush_gdt();
 
+uint64_t *read_cr3();
+void write_cr3(uint64_t *cr3);
 void tlb_invlpg(uint64_t addr);
 void tlb_flush();
 

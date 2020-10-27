@@ -39,7 +39,7 @@ typedef enum {
 } vm_search_t;
 
 void vm_init();
-void *vm_create_tables();
+void *vm_create_ap_tables();
 void *vm_map_page(page_t *page);
 void *vm_map_page_vaddr(uintptr_t virt_addr, page_t *page);
 void *vm_map_addr(uintptr_t phys_addr, size_t len, uint16_t flags);

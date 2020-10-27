@@ -62,7 +62,7 @@ void smp_init() {
   kassert(sizeof(smp_data_t) < PAGE_SIZE);
   memcpy(code_ptr, smpboot_start, smpboot_size);
 
-  uintptr_t pml4 = (uintptr_t) vm_create_tables();
+  uintptr_t pml4 = (uintptr_t) vm_create_ap_tables();
   uintptr_t stack_ptr = STACK_VA - STACK_SIZE - PAGE_SIZE;
   for (int i = 0; i < system_info->core_count; i++) {
     core_desc_t core = system_info->cores[i];

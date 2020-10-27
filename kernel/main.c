@@ -26,14 +26,58 @@
 
 boot_info_t *boot_info;
 
+noreturn void fibonacci() {
+  uint64_t t1, t2, next;
+
+  t1 = 0;
+  t2 = 1;
+  for (int i = 1; i < 30; i++) {
+    kprintf("[pid %d] %d\n", PERCPU->current->pid, t1);
+    next = t1 + t2;
+    t1 = t2;
+    t2 = next;
+
+    uint64_t count = 0;
+    while (count < 1000000) {
+      cpu_pause();
+      count++;
+    }
+  }
+
+  kprintf("[pid %d] >>> done! <<<\n", PERCPU->current->pid);
+  print_debug_process(PERCPU->current);
+  sched_terminate();
+  while (true)
+    cpu_pause();
+}
+
+noreturn void counter() {
+  uint64_t count = 0;
+  for (uint64_t i = 0; i <= 50000000; i++) {
+    if (i % 1000000 == 0) {
+      kprintf("[pid %d] count %llu\n", PERCPU->current->pid, i);
+      count++;
+      sched_yield();
+    }
+    cpu_pause();
+  }
+
+  kprintf("[pid %d] >>> done! <<<\n", PERCPU->current->pid);
+  cli();
+  print_debug_process(PERCPU->current);
+  cpu_hlt();
+  while (true) {
+    cpu_pause();
+  }
+}
+
 __used void kmain(boot_info_t *info) {
   boot_info = info;
+  percpu_init();
+  enable_sse();
 
   serial_init(COM1);
   kprintf("[kernel] initializing\n");
-
-  percpu_init();
-  percpu_init_cpu();
 
   setup_gdt();
   setup_idt();
@@ -50,12 +94,31 @@ __used void kmain(boot_info_t *info) {
 
   smp_init();
 
-  timer_init();
-  sched_init();
-
+  // timer_init();
+  // sched_init();
+  // sched_enqueue(create_process(fibonacci));
+  // sched_enqueue(create_process(counter));
   kprintf("[kernel] done!\n");
 }
 
 __used void ap_main() {
-  kprintf("Hello from another core!\n");
+  percpu_init();
+  enable_sse();
+
+  kprintf("[CPU#%d] initializing\n", PERCPU->id);
+
+  setup_gdt();
+  setup_idt();
+
+  vm_init();
+  apic_init();
+
+  for (int i = 0; i < 10; i++) {
+    kprintf("[CPU#%d] Hello, world!\n", PERCPU->id);
+    uint64_t count = 0;
+    while (count < 1000000) {
+      cpu_pause();
+      count++;
+    }
+  }
 }

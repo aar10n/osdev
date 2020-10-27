@@ -123,7 +123,18 @@ flush_gdt:
 .flush:
   pop rbp
 
-; TLB
+; Paging
+
+global read_cr3
+read_cr3:
+  mov rax, cr3
+  ret
+
+global write_cr3
+write_cr3:
+  mov cr3, rdi
+  ret
+
 
 global tlb_invlpg
 tlb_invlpg:
