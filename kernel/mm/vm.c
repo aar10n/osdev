@@ -43,6 +43,15 @@ static inline uint16_t get_index(uintptr_t virt_addr, uint16_t offset, uint16_t 
 
 //
 
+uint64_t *get_table_from_index(uint16_t index, uint16_t level) {
+  uintptr_t addr = get_virt_addr(R_ENTRY, R_ENTRY, R_ENTRY, R_ENTRY);
+  for (int i = 1; i < 5 - level; i++) {
+    addr <<= 9;
+    addr |= (0xFFFFUL << 48) | get_virt_addr_partial(index, 1);
+  }
+  return (uint64_t *) addr;
+}
+
 uint64_t *get_table(uintptr_t virt_addr, uint16_t level) {
   uintptr_t addr = get_virt_addr(R_ENTRY, R_ENTRY, R_ENTRY, R_ENTRY);
   for (int i = 1; i < 5 - level; i++) {
@@ -53,6 +62,7 @@ uint64_t *get_table(uintptr_t virt_addr, uint16_t level) {
   return (uint64_t *) addr;
 }
 
+// recursively maps a physical address to a virtual address
 uint64_t *map_page(uintptr_t virt_addr, uintptr_t phys_addr, uint16_t flags) {
   flags &= 0xFFF;
   uint16_t offset = (flags & PE_1GB_SIZE) ? 3 :
@@ -143,21 +153,23 @@ void vm_init() {
     // recursive page tables
     pml4[R_ENTRY] = virt_to_phys((uintptr_t) pml4) | PE_WRITE | PE_PRESENT;
     tlb_flush();
+
+    // setup the page table for temporary mappings
+    uintptr_t dir1 = virt_to_phys(boot_info->reserved_base - PAGES_TO_SIZE(2));
+    uintptr_t dir2 = virt_to_phys(boot_info->reserved_base - PAGES_TO_SIZE(1));
+
+    get_table(TEMP_PAGE, 3)[511] = dir1 | PE_WRITE | PE_PRESENT;
+    get_table(TEMP_PAGE, 2)[511] = dir2 | PE_WRITE | PE_PRESENT;
+    vm->temp_dir = get_table(TEMP_PAGE, 1);
+    tlb_flush();
   } else {
     // for the APs we can get the virtual address of the
-    // pml4 through the recursive mappings
+    // pml4 and temp_dir through the recursive mappings
     pml4 = get_table(0, 4);
     vm->pml4 = pml4;
+    vm->temp_dir = get_table(TEMP_PAGE, 1);
+    tlb_flush();
   }
-
-  // setup the page table for temporary mappings
-  uintptr_t dir1 = virt_to_phys(boot_info->reserved_base - PAGES_TO_SIZE(2));
-  uintptr_t dir2 = virt_to_phys(boot_info->reserved_base - PAGES_TO_SIZE(1));
-
-  get_table(TEMP_PAGE, 3)[511] = dir1 | PE_WRITE | PE_PRESENT;
-  get_table(TEMP_PAGE, 2)[511] = dir2 | PE_WRITE | PE_PRESENT;
-  vm->temp_dir = get_table(TEMP_PAGE, 1);
-  tlb_flush();
 
   //
   // Virtual Address Space Layout
@@ -193,8 +205,7 @@ void vm_init() {
     PE_WRITE | PE_PRESENT
   );
 
-  // finally clear the uefi or bsp created
-  // identity mappings
+  // finally clear the uefi or bsp created identity mappings
   pml4[0] = 0;
   tlb_flush();
 
@@ -210,18 +221,36 @@ void *vm_create_ap_tables() {
   // be within the first 4GB of ram.
   page_t *ap_pml4_page = mm_alloc_page(ZONE_NORMAL, PE_WRITE | PE_ASSERT);
   page_t *low_pdpt_page = mm_alloc_page(ZONE_NORMAL, PE_WRITE | PE_ASSERT);
+  page_t *high_pdpt_page = mm_alloc_page(ZONE_NORMAL, PE_WRITE | PE_ASSERT);
+  page_t *temp_pdt_page = mm_alloc_page(ZONE_NORMAL, PE_WRITE | PE_ASSERT);
+  page_t *temp_pt_page = mm_alloc_page(ZONE_NORMAL, PE_WRITE | PE_ASSERT);
 
   uint64_t *ap_pml4 = vm_map_page(ap_pml4_page);
   uint64_t *low_pdpt = vm_map_page(low_pdpt_page);
+  uint64_t *high_pdpt = vm_map_page(high_pdpt_page);
+  uint64_t *high_pdt = vm_map_page(temp_pdt_page);
+  uint64_t *high_pt = vm_map_page(temp_pt_page);
 
   memset(ap_pml4, 0, PAGE_SIZE);
   memset(low_pdpt, 0, PAGE_SIZE);
+  memset(high_pdpt, 0, PAGE_SIZE);
+  memset(high_pdt, 0, PAGE_SIZE);
+  memset(high_pt, 0, PAGE_SIZE);
 
   ap_pml4[0] = (((uintptr_t) low_pdpt_page->frame) | PE_WRITE | PE_PRESENT);
-  ap_pml4[K_ENTRY] = VM->pml4[K_ENTRY]; // copy bsp upper tables
+
+  // copy over higher half kernel mappings
+  uint64_t *kernel_pdpt = (void *) get_virt_addr(R_ENTRY, R_ENTRY, R_ENTRY, K_ENTRY);
+  high_pdpt[PDPT_INDEX(KERNEL_VA)] = kernel_pdpt[PDPT_INDEX(KERNEL_VA)];
+  high_pdpt[PDPT_INDEX(STACK_VA - 1)] = kernel_pdpt[PDPT_INDEX(STACK_VA - 1)];
+  // use new temp dir and temp pt
+  high_pdpt[PDPT_INDEX(TEMP_PAGE)] = temp_pdt_page->frame | PE_WRITE | PE_PRESENT;
+  high_pdt[PDT_INDEX(TEMP_PAGE)] = temp_pt_page->frame | PE_WRITE | PE_PRESENT;
+
   // recursive pml4
   ap_pml4[R_ENTRY] = ap_pml4_page->frame | PE_WRITE | PE_PRESENT;
-
+  // high mappings
+  ap_pml4[K_ENTRY] = high_pdpt_page->frame | PE_WRITE | PE_PRESENT;
   // first 1gb identity mapped
   low_pdpt[0] = (0 | PE_SIZE | PE_WRITE | PE_PRESENT);
   return (void *) ap_pml4_page->frame;

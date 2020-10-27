@@ -73,8 +73,7 @@ typedef struct {
 // System Information
 
 typedef struct {
-  uintptr_t apic_phys_addr;
-  uintptr_t apic_virt_addr;
+  uintptr_t apic_base;
   uint8_t bsp_id;
   // logical cores
   uint8_t core_count;

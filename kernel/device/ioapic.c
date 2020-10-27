@@ -4,9 +4,11 @@
 
 #include <system.h>
 #include <panic.h>
+#include <percpu.h>
 #include <string.h>
 #include <stdio.h>
 #include <device/ioapic.h>
+#include <mm/vm.h>
 
 static uint8_t ioapic_count = 0;
 static ioapic_desc_t *ioapics;
@@ -68,54 +70,44 @@ void ioapic_init() {
     return;
   }
 
+  kprintf("[ioapic] mapping ioapics\n");
   for (int i = 0; i < ioapic_count; i++) {
-    ioapic_desc_t ioapic = ioapics[i];
+    ioapic_desc_t *ioapic = &(ioapics[i]);
 
-    irq_source_t *sources = ioapics[i].sources;
-    irq_source_t *source = sources;
-
-    // memset(premapped, 0, sizeof(premapped));
-    // while (source) {
-    //   if (ioapics[i].int_base >= source->dest_int) {
-    //     source = source->next;
-    //     continue;
-    //   }
-    //
-    //   uint8_t vector = source->source_irq + 32;
-    //
-    //   uint8_t active_low = (source->flags & 2) != 0;
-    //   uint8_t trigger = (source->flags & 8) != 0;
-    //
-    //   ioapic_rentry_t rentry = ioapic_rentry(
-    //     vector, IOAPIC_FIXED, IOAPIC_PHYSICAL, IOAPIC_IDLE,
-    //     active_low, 0, trigger, 1, 1
-    //   );
-    //
-    //   // source -> dest
-    //   uint8_t index = get_rentry_index(source->dest_int);
-    //   ioapic_write(ioapic.id, index, rentry.raw_lower);
-    //   ioapic_write(ioapic.id, index + 1, rentry.raw_upper);
-    //   premapped[source->source_irq] = true;
-    //   kprintf("[ioapic] IRQ %d -> Pin %d\n", source->source_irq, source->dest_int);
-    //
-    //   source = source->next;
-    // }
-
-    for (int j = ioapic.int_base; j < ioapic.max_rentry; j++) {
-      uint8_t index = get_rentry_index(j);
-      if (premapped[j] == true) {
-        continue;
+    if (IS_BSP) {
+      uintptr_t virt_addr = MMIO_BASE_VA;
+      if (!vm_find_free_area(ABOVE, &virt_addr, PAGE_SIZE)) {
+        panic("[acpi] failed to map ioapic");
       }
+      vm_map_vaddr(virt_addr, ioapic->phys_addr, PAGE_SIZE, PE_WRITE);
+      ioapic->virt_addr = virt_addr;
 
-      ioapic_rentry_t rentry = ioapic_rentry(
-        j + 32, IOAPIC_FIXED, IOAPIC_PHYSICAL, IOAPIC_IDLE,
-        IOAPIC_ACTIVE_HIGH, 0, IOAPIC_EDGE, 1, 0
-      );
+      uint32_t version = ioapic_read(ioapic->id, IOAPIC_VERSION);
+      ioapic->version = version & 0xFF;
+      ioapic->max_rentry = (version >> 16) & 0xFF;
 
-      ioapic_write(ioapic.id, index, rentry.raw_lower);
-      ioapic_write(ioapic.id, index + 1, rentry.raw_upper);
+      for (int j = ioapic->int_base; j < ioapic->max_rentry; j++) {
+        uint8_t index = get_rentry_index(j);
+        if (premapped[j] == true) {
+          continue;
+        }
 
-      // kprintf("[ioapic] IRQ %d -> Pin %d\n", j, j);
+        ioapic_rentry_t rentry = ioapic_rentry(
+          j + 32, IOAPIC_FIXED, IOAPIC_PHYSICAL, IOAPIC_IDLE,
+          IOAPIC_ACTIVE_HIGH, 0, IOAPIC_EDGE, 1, 0
+        );
+
+        ioapic_write(ioapic->id, index, rentry.raw_lower);
+        ioapic_write(ioapic->id, index + 1, rentry.raw_upper);
+
+        // kprintf("[ioapic] IRQ %d -> Pin %d\n", j, j);
+      }
+    } else {
+      uintptr_t virt_addr = ioapic->virt_addr;
+      if (!vm_find_free_area(EXACTLY, &virt_addr, PAGE_SIZE)) {
+        panic("[acpi] failed to map ioapic");
+      }
+      vm_map_vaddr(virt_addr, ioapic->phys_addr, PAGE_SIZE, PE_WRITE);
     }
   }
 

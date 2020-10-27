@@ -20,6 +20,10 @@
 #define HIGH_HALF_START 0xFFFF800000000000
 #define HIGH_HALF_END 0xFFFFFFFFFFFFFFFF
 
+#define entry_to_table(entry) \
+  ((uint64_t *) phys_to_virt((entry) & 0xFFFFFFFFFF000))
+
+
 typedef struct {
   uint64_t *pml4;
   intvl_tree_t *tree;

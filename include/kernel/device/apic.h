@@ -12,6 +12,8 @@
 #define IA32_APIC_BASE_ENABLE 0x800
 #define IA32_TSC_DEADLINE_MSR 0x6E0
 
+#define APIC_BASE_PA 0xFEE00000
+
 /* --------- Enumerations ---------*/
 
 typedef enum {

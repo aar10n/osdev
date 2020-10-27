@@ -73,7 +73,7 @@ void get_apic_info(system_info_t *info, acpi_madt_t *madt) {
   }
 
 
-  info->apic_phys_addr = madt->apic_phys_addr;
+  info->apic_base = madt->apic_phys_addr;
   info->bsp_id = (b >> 24) & 0xFF;
   info->core_count = 0;
   info->ioapic_count = 0;
@@ -119,24 +119,12 @@ void get_apic_info(system_info_t *info, acpi_madt_t *madt) {
       offset = sizeof(madt_entry_io_apic_t);
       ioapic_count++;
 
-      kprintf("[acpi] mapping ioapic\n");
-      uintptr_t phys_addr = e->io_apic_addr;
-      uintptr_t virt_addr = MMIO_BASE_VA + PAGE_SIZE;
-      size_t ioapic_mmio_size = PAGE_SIZE;
-      if (!vm_find_free_area(ABOVE, &virt_addr, ioapic_mmio_size)) {
-        panic("[acpi] failed to map ioapic");
-      }
-      vm_map_vaddr(virt_addr, phys_addr, ioapic_mmio_size, PE_WRITE);
-
-      *((uint32_t *) (virt_addr + IOREGSEL)) = IOAPIC_VERSION;
-      uint32_t version = *((uint32_t *) (virt_addr + IOREGWIN));
-
       uint8_t id = e->io_apic_id;
       ioapics[id].id = id;
-      ioapics[id].version = version & 0xFF;
-      ioapics[id].max_rentry = (version >> 16) & 0xFF;
-      ioapics[id].phys_addr = phys_addr;
-      ioapics[id].virt_addr = virt_addr;
+      ioapics[id].version = 0;
+      ioapics[id].max_rentry = 0;
+      ioapics[id].phys_addr = e->io_apic_addr;
+      ioapics[id].virt_addr = 0;
       ioapics[id].int_base = e->interrupt_base;
       ioapics[id].sources = NULL;
 
@@ -177,7 +165,7 @@ void get_apic_info(system_info_t *info, acpi_madt_t *madt) {
     } else if (entry->type == MADT_ENTRY_LAPIC_AO) {
       madt_entry_lapic_ao_t *e = (void *) entry;
       offset = sizeof(madt_entry_lapic_ao_t);
-      info->apic_phys_addr = e->phys_addr;
+      info->apic_base = e->phys_addr;
 
       // kprintf("Local APIC Address Override\n");
       // kprintf("  APIC Address: %p\n", e->phys_addr);
@@ -190,17 +178,6 @@ void get_apic_info(system_info_t *info, acpi_madt_t *madt) {
     entry = (acpi_madt_entry_t *) ((uintptr_t) entry + offset);
     length -= offset;
   }
-
-  // map apic registers into virtual address space
-  kprintf("[acpi] mapping local apic\n");
-  uintptr_t phys_addr = info->apic_phys_addr;
-  uintptr_t virt_addr = MMIO_BASE_VA;
-  size_t apic_mmio_size = PAGE_SIZE;
-  if (!vm_find_free_area(EXACTLY, &virt_addr, apic_mmio_size)) {
-    panic("[acpi] failed to map local apic");
-  }
-  vm_map_vaddr(virt_addr, phys_addr, apic_mmio_size, PE_WRITE);
-  info->apic_virt_addr = virt_addr;
 
   info->core_count = core_count;
   info->cores = cores;

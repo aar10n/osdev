@@ -112,6 +112,7 @@ __used void ap_main() {
 
   vm_init();
   apic_init();
+  ioapic_init();
 
   for (int i = 0; i < 10; i++) {
     kprintf("[CPU#%d] Hello, world!\n", PERCPU->id);
@@ -121,4 +122,6 @@ __used void ap_main() {
       count++;
     }
   }
+
+  kprintf("[CPU#%d] done!\n", PERCPU->id);
 }

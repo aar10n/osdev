@@ -5,10 +5,12 @@
 #include <system.h>
 #include <panic.h>
 #include <stdio.h>
+#include <percpu.h>
 #include <vectors.h>
 #include <cpu/cpu.h>
 #include <device/apic.h>
 #include <device/pit.h>
+#include <mm/vm.h>
 
 #define ms_to_count(ms) (apic_clock / (US_PER_SEC / ((ms) * 1000)))
 #define us_to_count(us) (apic_clock / (US_PER_SEC / (us)))
@@ -139,7 +141,29 @@ uint8_t apic_get_version() {
 
 void apic_init() {
   kprintf("[apic] initializing\n");
-  apic_base = system_info->apic_virt_addr;
+
+  // map apic registers into virtual address space
+  kprintf("[apic] mapping local apic\n");
+  if (IS_BSP) {
+    uintptr_t phys_addr = system_info->apic_base;
+    uintptr_t virt_addr = MMIO_BASE_VA;
+    size_t apic_mmio_size = PAGE_SIZE;
+    if (!vm_find_free_area(ABOVE, &virt_addr, apic_mmio_size)) {
+      panic("[apic] failed to map local apic");
+    }
+    vm_map_vaddr(virt_addr, phys_addr, apic_mmio_size, PE_WRITE);
+    apic_base = virt_addr;
+  } else {
+    // for APs we can just use the same virtual address
+    // as the BSP because it makes things easier
+    uintptr_t phys_addr = APIC_BASE_PA;
+    uintptr_t virt_addr = apic_base;
+    vm_map_vaddr(virt_addr, phys_addr, PAGE_SIZE, PE_WRITE);
+  }
+
+  // ensure the apic is enabled
+  uint64_t apic_msr = read_msr(IA32_APIC_BASE_MSR);
+  write_msr(IA32_APIC_BASE_MSR, apic_msr | (1 << 11));
 
   apic_reg_id_t id = { .raw = apic_read(APIC_ID) };
   kprintf("[apic] id: %d\n", id.id);
