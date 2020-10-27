@@ -3,6 +3,7 @@
 //
 
 #include <stdio.h>
+#include <percpu.h>
 #include <cpu/cpu.h>
 #include <cpu/idt.h>
 
@@ -10,14 +11,10 @@
 
 extern uintptr_t idt_stubs;
 
-idt_gate_t idt[IDT_GATES];
-idt_desc_t idt_desc;
-idt_handler_t idt_handlers[IDT_GATES];
-
 //
 
 __used void irq_handler(uint8_t vector) {
-  idt_handler_t handler = idt_handlers[vector];
+  idt_handler_t handler = IDT_HANDLERS[vector];
   if (handler) {
     handler();
   }
@@ -27,31 +24,34 @@ __used void irq_handler(uint8_t vector) {
 
 void setup_idt() {
   uintptr_t offset = (uintptr_t) &idt_stubs;
+  idt_t *idt_struct = &(PERCPU->idt);
+
+  idt_gate_t *idt = idt_struct->idt;
   for (int i = 0; i < IDT_GATES; i++) {;
     idt_gate_t gate = gate(offset, KERNEL_CS, 0, INTERRUPT_GATE, 0, 1);
     idt[i] = gate;
     offset += IDT_STUB_SIZE;
   }
 
-  idt_desc.limit = sizeof(idt) - 1;
-  idt_desc.base = (uint64_t) &idt;
-  load_idt(&idt_desc);
+  idt_struct->desc.limit = sizeof(idt_struct->idt)- 1;
+  idt_struct->desc.base = (uint64_t) &idt_struct->idt;
+  load_idt(&(idt_struct->desc));
 }
 
 void idt_set_gate(uint8_t vector, idt_gate_t gate) {
-  idt[vector] = gate;
+  IDT[vector] = gate;
 }
 
 void idt_hook(uint8_t vector, idt_handler_t handler) {
-  if (idt_handlers[vector] != NULL) {
+  if (IDT_HANDLERS[vector] != NULL) {
     kprintf("[idt] overriding handler on vector %d\n", vector);
   }
-  idt_handlers[vector] = handler;
+  IDT_HANDLERS[vector] = handler;
 }
 
 void idt_unhook(uint8_t vector) {
-  if (idt_handlers[vector] == NULL) {
+  if (IDT_HANDLERS[vector] == NULL) {
     kprintf("[idt] no handler to unhook on vector %d\n", vector);
   }
-  idt_handlers[vector] = NULL;
+  IDT_HANDLERS[vector] = NULL;
 }

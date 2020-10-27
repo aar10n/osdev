@@ -8,10 +8,11 @@
 #include <base.h>
 #include <scheduler.h>
 #include <process.h>
-#include <mm/vm.h>
 #include <cpu/cpu.h>
+#include <cpu/idt.h>
+#include <mm/vm.h>
 
-#define PERCPU_SIZE PAGE_SIZE
+#define PERCPU_SIZE PAGES_TO_SIZE(2)
 
 typedef struct {
   uint64_t id;
@@ -19,6 +20,7 @@ typedef struct {
   uintptr_t self;
   scheduler_t *scheduler;
   vm_t *vm;
+  idt_t idt;
 } percpu_t;
 
 static_assert(sizeof(percpu_t) <= PERCPU_SIZE);
@@ -64,9 +66,9 @@ static always_inline __pure percpu_t *percpu() {
 }
 
 #define PERCPU (percpu())
+#define IS_BSP (PERCPU->id == boot_info->bsp_id)
 
 
 void percpu_init();
-void percpu_init_cpu();
 
 #endif

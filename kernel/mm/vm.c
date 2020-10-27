@@ -142,8 +142,8 @@ void vm_init() {
   tlb_flush();
 
   // setup the page table for temporary mappings
-  uintptr_t dir1 = virt_to_phys(boot_info->reserved_base - (2 * PAGE_SIZE));
-  uintptr_t dir2 = virt_to_phys(boot_info->reserved_base - PAGE_SIZE);
+  uintptr_t dir1 = virt_to_phys(boot_info->reserved_base - PAGES_TO_SIZE(2));
+  uintptr_t dir2 = virt_to_phys(boot_info->reserved_base - PAGES_TO_SIZE(1));
 
   get_table(TEMP_PAGE, 3)[511] = dir1 | PE_WRITE | PE_PRESENT;
   get_table(TEMP_PAGE, 2)[511] = dir2 | PE_WRITE | PE_PRESENT;

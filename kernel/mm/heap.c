@@ -76,6 +76,10 @@ static inline chunk_t *get_next_chunk(chunk_t *chunk) {
 // ----- heap creation -----
 
 void kheap_init() {
+  // reserve tables for virtual allocator
+  boot_info->reserved_base += PAGES_TO_SIZE(2);
+  boot_info->reserved_size -= PAGES_TO_SIZE(2);
+
   size_t heap_size = boot_info->reserved_size - sizeof(heap_t);
 
   kheap = (heap_t *) boot_info->reserved_base;

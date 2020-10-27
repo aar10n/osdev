@@ -3,8 +3,11 @@
 //
 
 #include <string.h>
+#include <lock.h>
 #include <cpu/io.h>
 #include <drivers/serial.h>
+
+static spinlock_t serial_lock;
 
 void serial_init(int port) {
   outb(port + 1, 0x00); // Disable all interrupts
@@ -22,7 +25,9 @@ void serial_write_char(int port, char a) {
 }
 
 void serial_write(int port, char *s) {
+  lock(serial_lock);
   for (int i = 0; i < strlen(s); i++) {
     serial_write_char(port, s[i]);
   }
+  unlock(serial_lock);
 }

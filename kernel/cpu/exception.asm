@@ -13,11 +13,11 @@
 ; vector
 
 extern kprintf
-extern serial_write
+extern stdio_lock
+extern stdio_unlock
+
 global exception_handler
 exception_handler:
-  cld
-
   sub rsp, 56
   mov [rsp + 0], rdi
   mov [rsp + 8], rsi
@@ -26,6 +26,9 @@ exception_handler:
   mov [rsp + 32], r8
   mov [rsp + 40], r9
   mov [rsp + 48], rax
+
+  ; global lock
+  call stdio_lock
 
   ; get apic id
   push rbx
@@ -101,6 +104,7 @@ exception_handler:
   call kprintf
   add rsp, 8
 
+  call stdio_unlock
 .hang:
   pause
   jmp .hang
@@ -113,7 +117,7 @@ exception_msg.1: db "!!!! Exception Type - %s !!!!", 10
                  db "RIP = %016X, RFLAGS = %016X", 10, 0
 exception_msg.2: db "------------------------- GENERAL REGISTERS --------------------------", 10
                  db "RAX = %016X, RBX = %016X, RCX = %016X", 10
-                 db "RDX = %016X, RSI = %016X, RDI = %016X", 10
+                 db "RDX = %016X, RDI = %016X, RSI = %016X", 10
                  db "RSP = %016X, RBP = %016X", 10, 0
 exception_msg.3: db "------------------------- EXTENDED REGISTERS -------------------------", 10
                  db "R8  = %016X, R9  = %016X, R10 = %016X", 10
@@ -128,6 +132,8 @@ exception_msg.5: db "------------------------- CONTROL REGISTERS ---------------
 exception_msg.6: db "-------------------------- DEBUG REGISTERS ---------------------------", 10
                  db "DR0 = %016X, DR1 = %016X, DR2 = %016X", 10
                  db "DR3 = %016X, DR6 = %016X, DR7 = %016X", 10, 0
+
+test_msg: db "Hello, world!", 10, 0
 
 exceptions: array
   string "Division By Zero"

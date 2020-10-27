@@ -18,4 +18,7 @@ int kvsprintf(char *str, const char *format, va_list args);
 int ksnprintf(char *str, size_t n, const char *format, ...);
 int kvsnprintf(char *str, size_t n, const char *format, va_list args);
 
+void stdio_lock();
+void stdio_unlock();
+
 #endif // LIBC_STDIO_H

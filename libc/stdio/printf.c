@@ -9,10 +9,17 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+#include <lock.h>
 
 #include <kernel/panic.h>
-
 #include <drivers/serial.h>
+
+static spinlock_t lock = {
+  .locked = 0,
+  .lock_count = 0,
+  .locked_by = 0,
+  .rflags = 0,
+};
 
 typedef enum {
   START,
@@ -754,13 +761,30 @@ void kprintf(const char *format, ...) {
   va_start(valist, format);
   ksnprintf_internal(str, BUFFER_SIZE, true, format, valist);
   va_end(valist);
+
+  lock(lock);
   // kputs(str);
   serial_write(COM1, str);
+  unlock(lock);
 }
 
 void kvfprintf(const char *format, va_list args) {
   char str[BUFFER_SIZE];
   ksnprintf_internal(str, BUFFER_SIZE, true, format, args);
+
+  lock(lock);
   // kputs(str);
   serial_write(COM1, str);
+  unlock(lock);
+}
+
+
+// Global locking
+
+void stdio_lock() {
+  lock(lock);
+}
+
+void stdio_unlock() {
+  unlock(lock);
 }

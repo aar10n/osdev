@@ -599,6 +599,10 @@ EFI_STATUS EFI_MAIN UefiMain(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTab
   Status = SmbiosGetProcessorCount(&CoreCount, &ThreadCount);
   CHECK_STATUS(Status);
 
+  UINTN BspId;
+  Status = MpServices->WhoAmI(MpServices, &BspId);
+  CHECK_STATUS(Status);
+
   /* -------------------------------------- */
   /*            Reserved Regions            */
   /* -------------------------------------- */
@@ -797,6 +801,7 @@ EFI_STATUS EFI_MAIN UefiMain(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTab
   BootInfo->magic[3] = BOOT_MAGIC3;
 
   BootInfo->kernel_phys = KernelAddress;
+  BootInfo->bsp_id = BspId;
   BootInfo->num_cores = CoreCount;
   BootInfo->num_threads = ThreadCount;
 

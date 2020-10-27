@@ -24,7 +24,7 @@
 
 #define STACK_SIZE      0x8000 // 16 KiB
 #define KERNEL_RESERVED 0x300000 // 3 MiB
-#define RESERVED_TABLES 8 // Number of preallocated page tables
+#define RESERVED_TABLES 6 // Number of preallocated page tables
 
 // Memory map
 #define MEMORY_UNKNOWN  0
@@ -73,6 +73,7 @@ typedef struct {
 typedef struct {
   uint8_t magic[4];                // 'BOOT' magic
   uintptr_t kernel_phys;           // the kernel physical address
+  uint8_t bsp_id;                  // boot processor id
   uint8_t num_cores;               // the number of physical cores
   uint16_t num_threads;            // the number of threads
   // memory info
