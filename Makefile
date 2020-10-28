@@ -10,11 +10,11 @@ LDFLAGS +=
 ASFLAGS +=
 NASMFLAGS += -g
 
-INCLUDE = -Iinclude -Iinclude/kernel -Ilib -Ilibc
+INCLUDE = -Iinclude -Iinclude/kernel -Iinclude/fs -Ilib -Ilibc
 
 QEMUFLAGS = \
 	-cpu Nehalem \
-	-smp cores=2,threads=2,sockets=1 \
+	-smp cores=1,threads=2,sockets=1 \
 	-machine q35 \
 	-m 256M \
 	-no-reboot \
@@ -34,7 +34,7 @@ include scripts/Makefile.util
 #  Targets  #
 # --------- #
 
-targets = boot kernel drivers libc lib
+targets = boot kernel fs drivers libc lib
 
 # include the makefiles of all targets
 include $(foreach t,$(targets),$t/Makefile)
@@ -105,7 +105,7 @@ $(BUILD)/loader.dll: $(boot-y)
 		/debug /lldmap @scripts/loader-libs.lst $^
 
 # Kernel
-$(BUILD)/kernel.elf: $(kernel-y) $(libc-y) $(drivers-y) $(lib-y)
+$(BUILD)/kernel.elf: $(kernel-y) $(fs-y) $(libc-y) $(drivers-y) $(lib-y)
 	$(call toolchain,$<,LD) $(call flags,$<,LDFLAGS) $^ -o $@
 
 
