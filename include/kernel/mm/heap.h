@@ -32,7 +32,9 @@ typedef struct heap {
   // page_t *source;       // the source of the heap memory
   uintptr_t start_addr; // the heap base address
   uintptr_t end_addr;   // the heap end address
+  uintptr_t max_addr;   // the largest allocated address
   size_t size;          // the size of the heap
+  size_t used;          // the total number of bytes used
   chunk_t *last_chunk;  // the last created chunk
   chunk_t *chunks;      // a linked list of used chunks
 } heap_t;

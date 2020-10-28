@@ -155,11 +155,14 @@ void vm_init() {
     tlb_flush();
 
     // setup the page table for temporary mappings
-    uintptr_t dir1 = virt_to_phys(boot_info->reserved_base - PAGES_TO_SIZE(2));
-    uintptr_t dir2 = virt_to_phys(boot_info->reserved_base - PAGES_TO_SIZE(1));
+    uint64_t *dir1 = (void *) (boot_info->reserved_base - PAGES_TO_SIZE(2));
+    uint64_t *dir2 = (void *) (boot_info->reserved_base - PAGES_TO_SIZE(1));
 
-    get_table(TEMP_PAGE, 3)[511] = dir1 | PE_WRITE | PE_PRESENT;
-    get_table(TEMP_PAGE, 2)[511] = dir2 | PE_WRITE | PE_PRESENT;
+    memset(dir1, 0, PAGE_SIZE);
+    memset(dir2, 0, PAGE_SIZE);
+
+    get_table(TEMP_PAGE, 3)[511] = virt_to_phys((uintptr_t) dir1) | PE_WRITE | PE_PRESENT;
+    get_table(TEMP_PAGE, 2)[511] = virt_to_phys((uintptr_t) dir2) | PE_WRITE | PE_PRESENT;
     vm->temp_dir = get_table(TEMP_PAGE, 1);
     tlb_flush();
   } else {

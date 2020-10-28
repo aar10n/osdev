@@ -19,7 +19,6 @@ extern void smpboot_start();
 extern void smpboot_end();
 
 extern gdt_desc_t gdt_desc;
-extern idt_desc_t idt_desc;
 
 int smp_boot_core(uint8_t id, smp_data_t *data) {
   apic_send_ipi(APIC_INIT, APIC_DEST_PHYSICAL, id, 0);

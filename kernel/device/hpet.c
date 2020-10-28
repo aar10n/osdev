@@ -6,6 +6,7 @@
 #include <panic.h>
 #include <system.h>
 #include <device/hpet.h>
+#include <mm/vm.h>
 
 uintptr_t hpet_base;
 uint64_t hpet_clock;
@@ -36,7 +37,17 @@ void hpet_init() {
     // TODO: Use alternative
     panic("[hpet] no hpet present\n");
   }
-  hpet_base = system_info->hpet->virt_addr;
+
+  kprintf("[hpet] mapping hpet\n");
+  uintptr_t phys_addr = system_info->hpet->phys_addr;
+  uintptr_t virt_addr = MMIO_BASE_VA;
+  if (!vm_find_free_area(ABOVE, &virt_addr, PAGE_SIZE)) {
+    panic("[hpet] failed to map hpet");
+  }
+
+  vm_map_vaddr(virt_addr, phys_addr, PAGE_SIZE, PE_WRITE);
+  system_info->hpet->virt_addr = virt_addr;
+  hpet_base = virt_addr;
 
   hpet_reg_id_t id = { .raw = hpet_read(HPET_ID) };
   hpet_clock = id.clock_period / 1000000; // fs -> ns

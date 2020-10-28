@@ -10,6 +10,7 @@
 #include <atomic.h>
 #include <cpuid.h>
 #include <panic.h>
+#include <stdio.h>
 
 // this is only ever accessed with atomic operations
 static uintptr_t next_area;
@@ -41,6 +42,8 @@ void percpu_init_cpu() {
   area->id = id;
   area->self = ptr;
   areas[id] = area;
+
+  kprintf("percpu area: %p\n", area);
 }
 
 void percpu_init() {
@@ -49,16 +52,14 @@ void percpu_init() {
     uint64_t logical_cores = boot_info->num_cores * boot_info->num_threads;
     uintptr_t paddr = boot_info->reserved_base;
 
+    next_area = boot_info->reserved_base;
     for (int i = 0; i < logical_cores; i++) {
       void *area = (void *) paddr;
       memset(area, 0, PERCPU_SIZE);
       paddr += PERCPU_SIZE;
+      boot_info->reserved_base += PERCPU_SIZE;
+      boot_info->reserved_size -= PERCPU_SIZE;
     }
-
-    next_area = boot_info->reserved_base;
-    boot_info->reserved_base += PERCPU_SIZE;
-    boot_info->reserved_size -= PERCPU_SIZE;
-
     percpu_initialized = true;
   }
 

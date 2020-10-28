@@ -194,22 +194,12 @@ void get_hpet_info(system_info_t *info, acpi_hpetdt_t *hpetdt) {
     info->hpet = NULL;
   }
 
-  kprintf("[acpi] mapping hpet\n");
-  uintptr_t phys_addr = hpetdt->base_addr.address;
-  uintptr_t virt_addr = MMIO_BASE_VA;
-  size_t hpet_mmio_size = PAGE_SIZE;
-  if (!vm_find_free_area(ABOVE, &virt_addr, hpet_mmio_size)) {
-    panic("[acpi] failed to map hpet");
-  }
-  vm_map_vaddr(virt_addr, phys_addr, hpet_mmio_size, PE_WRITE);
-
   hpet_desc_t *hpet = kmalloc(sizeof(hpet_desc_t));
   hpet->block_id.raw = hpetdt->hpet_block_id;
   hpet->number = hpetdt->hpet_number;
   hpet->min_clock_tick = hpetdt->min_clock_tick;
   hpet->phys_addr = hpetdt->base_addr.address;
-  hpet->virt_addr = virt_addr;
-
+  hpet->virt_addr = 0;
   info->hpet = hpet;
 }
 
