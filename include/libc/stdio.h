@@ -8,6 +8,7 @@
 #include <base.h>
 #include <stdarg.h>
 #include <stddef.h>
+#include <errno.h>
 
 void kprintf(const char *format, ...);
 void kvfprintf(const char *format, va_list args);

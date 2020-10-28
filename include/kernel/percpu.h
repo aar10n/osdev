@@ -18,6 +18,7 @@ typedef struct {
   uint64_t id;
   process_t *current;
   uintptr_t self;
+  int errno;
   scheduler_t *scheduler;
   vm_t *vm;
   idt_t idt;
@@ -66,6 +67,8 @@ static always_inline __pure percpu_t *percpu() {
 }
 
 #define PERCPU (percpu())
+#define current_process (percpu()->current)
+
 #define IS_BSP (PERCPU->id == boot_info->bsp_id)
 
 

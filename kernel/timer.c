@@ -26,7 +26,7 @@ static inline uint64_t alloc_id() {
 
 void timer_handler() {
   kprintf("timer irq!\n");
-  timer_t *timer = tree->min->data;
+  timer_event_t *timer = tree->min->data;
   clock_t expiry = timer->expiry;
   if (lock.locked || timer->cpu != PERCPU->id) {
     return;
@@ -64,7 +64,7 @@ void timer_init() {
 }
 
 void create_timer(clock_t ns, timer_cb_t callback, void *data) {
-  timer_t *timer = kmalloc(sizeof(timer_t));
+  timer_event_t *timer = kmalloc(sizeof(timer_event_t));
   timer->id = alloc_id();
   timer->cpu = PERCPU->id;
   timer->expiry = ns;
@@ -85,7 +85,7 @@ void timer_print_debug() {
   rb_iter_t *iter = rb_tree_iter(tree);
   rb_node_t *node;
   while ((node = rb_iter_next(iter))) {
-    kprintf("timer %d | %s\n", node->key, ((timer_t *) node->data)->data);
+    kprintf("timer %d | %s\n", node->key, ((timer_event_t *) node->data)->data);
   }
   kfree(iter);
   spinrw_release_read(&lock);

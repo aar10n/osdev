@@ -19,7 +19,7 @@ typedef struct timer {
   clock_t expiry;
   timer_cb_t callback;
   void *data;
-} timer_t;
+} timer_event_t;
 
 uint64_t timer_now();
 

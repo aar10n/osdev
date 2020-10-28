@@ -5,12 +5,8 @@
 #ifndef INCLUDE_BASE_H
 #define INCLUDE_BASE_H
 
-#include <stdint.h>
-#include <stddef.h>
-#include <stdbool.h>
+#include <types.h>
 #include <boot.h>
-
-typedef uint64_t clock_t;
 
 //
 // General Definitions

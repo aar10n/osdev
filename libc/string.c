@@ -1,6 +1,9 @@
 #include <stddef.h>
 #include <string.h>
 
+extern const char *errno_str[];
+
+
 int memcmp(const void *str1, const void *str2, size_t count) {
   const unsigned char *s1 = str1;
   const unsigned char *s2 = str2;
@@ -94,4 +97,10 @@ void reverse(char *s) {
     s[i] = s[j];
     s[j] = ch;
   }
+}
+
+//
+
+const char *strerror(int errnum) {
+  return errno_str[errnum];
 }
