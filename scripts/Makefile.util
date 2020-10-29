@@ -25,7 +25,7 @@ objects = $(patsubst %,$2/%.o,$($1))
 
 debug-objects = $(patsubst %,$2/%.o.debug,$($1))
 
-# Returns a of source files from given a list of objects.
+# Returns a list of source files from a given list of objects.
 # This function takes only a single argument, which is the list
 # of object files.
 sources = $(patsubst %.o,%,$1)

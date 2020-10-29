@@ -44,7 +44,7 @@ include $(foreach t,$(targets),$t/Makefile)
 #  Targets  #
 # --------- #
 
-all: $(BUILD)/osdev.img
+all: $(BUILD)/osdev.img tools
 
 run: $(BUILD)/osdev.img
 	$(QEMU) $(QEMUFLAGS) -monitor stdio

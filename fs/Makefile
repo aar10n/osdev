@@ -3,10 +3,7 @@
 #
 
 # fs
-fs += fs.c
-
-# fs/initrd
-fs += initrd/initrd.c
+fs += fs.c ramdisk.c vfs.c
 
 
 fs-y = $(call objects,fs,$(BUILD_DIR)/fs)

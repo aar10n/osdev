@@ -7,14 +7,7 @@ BUILD_DIR = $(BUILD)/$(NAME)
 CFLAGS  = -g -Wall -Wextra
 INCLUDE =
 
-include ../scripts/Makefile.toolchain
-
-# Generates a list of objects from a list of sources
-objects = $(patsubst %.c,$(BUILD_DIR)/%_c.o, \
-		  $(patsubst %.cpp,$(BUILD_DIR)/%_cpp.o, \
-		  $(patsubst %.s,$(BUILD_DIR)/%_s.o, \
-		  $(patsubst %.asm,$(BUILD_DIR)/%_asm.o, \
-		  $(1)))))
+include ../scripts/Makefile.util
 
 # --------- #
 #  Sources  #
@@ -30,7 +23,7 @@ initrd = \
 	initrd/read.c \
 	initrd/write.c
 
-initrd-y = $(call objects,$(initrd))
+initrd-y = $(call objects,initrd,$(BUILD_DIR))
 
 # --------- #
 #  Targets  #
@@ -42,6 +35,7 @@ help:
 	@echo "==============="
 	@echo "  ext2 	- Interact with ext2 file systems"
 	@echo "  initrd - Generate ramdisk file systems"
+	@echo $(initrd-y)
 
 all: ext2 initrd
 
@@ -66,18 +60,18 @@ $(BUILD)/initrd: $(initrd-y)
 
 # Compilation rules
 
-$(BUILD_DIR)/%_c.o: %.c
+$(BUILD_DIR)/%.c.o: %.c
 	@mkdir -p $(@D)
 	$(CC) $(INCLUDE) $(CFLAGS) -c $< -o $@
 
-$(BUILD_DIR)/%_cpp.o: %.cpp
+$(BUILD_DIR)/%.cpp.o: %.cpp
 	@mkdir -p $(@D)
 	$(CXX) $(INCLUDE) $(CXXFLAGS) -c $< -o $@
 
-$(BUILD_DIR)/%_s.o: %.s
+$(BUILD_DIR)/%.s.o: %.s
 	@mkdir -p $(@D)
 	$(AS) $(ASFLAGS) $< -o $@
 
-$(BUILD_DIR)/%_asm.o: %.asm
+$(BUILD_DIR)/%.asm.o: %.asm
 	@mkdir -p $(@D)
 	$(NASM) $(NASMFLAGS) $< -o $@
