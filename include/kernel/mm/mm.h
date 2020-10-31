@@ -33,9 +33,9 @@
 #define PAGE_SHIFT 12
 #define PAGE_FLAGS_MASK 0xFFF
 
-#define PAGE_SIZE_2MB 0x200000
+#define PAGE_SIZE_2MB 0x200000ULL
 #define PAGE_SHIFT_2MB 21
-#define PAGE_SIZE_1GB 0x40000000
+#define PAGE_SIZE_1GB 0x40000000ULL
 #define PAGE_SHIFT_1GB 30
 
 #define PAGES_TO_SIZE(pages) ((pages) << PAGE_SHIFT)
@@ -103,11 +103,11 @@ typedef struct memory_zone {
 
 
 void mm_init();
-page_t *mm_alloc_page(zone_type_t zone_type, uint16_t flags);
+page_t *mm_alloc_pages(zone_type_t zone_type, size_t count, uint16_t flags);
 page_t *mm_alloc_frame(uintptr_t frame, uint16_t flags);
 void mm_free_page(page_t *page);
 
-#define alloc_page(flags) mm_alloc_page(ZONE_NORMAL, flags)
+#define alloc_page(flags) mm_alloc_pages(ZONE_NORMAL, 1, flags)
 #define free_page(page) mm_free_page(page)
 
 #endif

@@ -30,7 +30,7 @@ void process_init(process_t *process) {
 process_t *create_process(void (*func)()) {
   kprintf("[process] creating process\n");
   // allocate a process stack
-  page_t *page = mm_alloc_page(ZONE_NORMAL, PE_WRITE);
+  page_t *page = alloc_page(PE_WRITE);
   void *stack = vm_map_page(page);
   memset(stack, 0, PAGE_SIZE);
 
@@ -52,7 +52,7 @@ process_t *create_process(void (*func)()) {
 void kthread_create(void (*func)()) {
   kprintf("[process] creating thread\n");
   // allocate a process stack
-  page_t *page = mm_alloc_page(ZONE_NORMAL, PE_WRITE);
+  page_t *page = alloc_page(PE_WRITE);
   void *stack = vm_map_page(page);
   memset(stack, 0, PAGE_SIZE);
 

@@ -107,7 +107,7 @@ void map_set_(map_base_t *map, char *key, void *value, size_t size) {
   unsigned hash = map->hasher(key);
   unsigned index = hash % map->capacity;
 
-  size_t key_size = strlen(key);
+  size_t key_size = strlen(key) + 1;
 
   map_entry_t *entry = _malloc(sizeof(map_entry_t));
 
@@ -120,6 +120,7 @@ void map_set_(map_base_t *map, char *key, void *value, size_t size) {
   entry->value = tmp_value;
 
   if (map->items[index]) {
+    kprintf("[hash_table] collision\n");
     map_entry_t *curr = map->items[index];
     while (curr) {
       unsigned curr_hash = map->hasher(curr->key);

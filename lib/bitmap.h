@@ -21,7 +21,8 @@ bool bitmap_set(bitmap_t *bmp, index_t index);
 bool bitmap_clear(bitmap_t *bmp, index_t index);
 bool bitmap_assign(bitmap_t *bmp, index_t index, bool v);
 index_t bitmap_get_free(bitmap_t *bmp);
-index_t bitmap_get_nfree(bitmap_t *bmp, uint8_t n);
-index_t bitmap_get_set_nfree(bitmap_t *bmp, uint8_t n);
+index_t bitmap_get_nfree(bitmap_t *bmp, size_t n);
+index_t bitmap_get_set_nfree(bitmap_t *bmp, size_t n);
+ssize_t bitmap_clear_n(bitmap_t *bmp, index_t index, size_t n);
 
 #endif

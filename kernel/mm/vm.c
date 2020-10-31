@@ -89,7 +89,7 @@ uint64_t *map_page(uintptr_t virt_addr, uintptr_t phys_addr, uint16_t flags) {
       // kprintf("allocating new table (level %d)\n", level);
       // kprintf("[vm] allocating page table\n");
 
-      page_t *page = mm_alloc_page(ZONE_LOW, PE_WRITE);
+      page_t *page = mm_alloc_pages(ZONE_LOW, 1, PE_WRITE);
       page->flags.present = 1;
 
       // kprintf("[vm] page table: %p\n", page->frame);
@@ -222,11 +222,11 @@ void *vm_create_ap_tables() {
   // since these tables are also used when switching
   // from protected to long mode, the tables need to
   // be within the first 4GB of ram.
-  page_t *ap_pml4_page = mm_alloc_page(ZONE_NORMAL, PE_WRITE | PE_ASSERT);
-  page_t *low_pdpt_page = mm_alloc_page(ZONE_NORMAL, PE_WRITE | PE_ASSERT);
-  page_t *high_pdpt_page = mm_alloc_page(ZONE_NORMAL, PE_WRITE | PE_ASSERT);
-  page_t *temp_pdt_page = mm_alloc_page(ZONE_NORMAL, PE_WRITE | PE_ASSERT);
-  page_t *temp_pt_page = mm_alloc_page(ZONE_NORMAL, PE_WRITE | PE_ASSERT);
+  page_t *ap_pml4_page = alloc_page(PE_WRITE | PE_ASSERT);
+  page_t *low_pdpt_page = alloc_page(PE_WRITE | PE_ASSERT);
+  page_t *high_pdpt_page = alloc_page(PE_WRITE | PE_ASSERT);
+  page_t *temp_pdt_page = alloc_page(PE_WRITE | PE_ASSERT);
+  page_t *temp_pt_page = alloc_page(PE_WRITE | PE_ASSERT);
 
   uint64_t *ap_pml4 = vm_map_page(ap_pml4_page);
   uint64_t *low_pdpt = vm_map_page(low_pdpt_page);
@@ -267,7 +267,7 @@ void *vm_map_page(page_t *page) {
   page_t *current = page;
   while (current) {
     len += page_to_size(current);
-    current = page->next;
+    current = current->next;
   }
 
   uintptr_t address = 0;
@@ -288,7 +288,7 @@ void *vm_map_page_vaddr(uintptr_t virt_addr, page_t *page) {
   page_t *current = page;
   while (current) {
     len += page_to_size(current);
-    current = page->next;
+    current = current->next;
   }
 
   vm_area_t *area = kmalloc(sizeof(vm_area_t));

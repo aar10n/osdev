@@ -178,12 +178,12 @@ void mm_init() {
   kprintf("[mm] done!\n");
 }
 
-page_t *mm_alloc_page(zone_type_t zone_type, uint16_t flags) {
+page_t *mm_alloc_pages(zone_type_t zone_type, size_t count, uint16_t flags) {
   kassert(did_initialize);
   kassert(zone_type < ZONE_MAX);
 
   memory_zone_t *zone = zones[zone_type];
-  while (!zone || zone->pages->free == 0) {
+  while (!zone || zone->pages->free < count) {
     if (!zone || !zone->next) {
       if (flags & PE_ASSERT) {
         panic("panic - failed to allocate page in %s\n", get_zone_name(zone_type));
@@ -203,19 +203,56 @@ page_t *mm_alloc_page(zone_type_t zone_type, uint16_t flags) {
   }
 
   lock(zone->lock);
-  index_t frame_index = bitmap_get_free(zone->pages);
-  bitmap_set(zone->pages, frame_index);
+  index_t frame_index;
+  if (count == 1) {
+    // common case - fastest
+    frame_index = bitmap_get_free(zone->pages);
+    bitmap_set(zone->pages, frame_index);
+  } else {
+    // less common case - slower
+    frame_index = bitmap_get_set_nfree(zone->pages, count);
+  }
   unlock(zone->lock);
 
-  uint64_t frame = zone->base_addr + PAGES_TO_SIZE(frame_index);
-  page_t *page = kmalloc(sizeof(page_t));
-  page->frame = frame;
-  page->entry = NULL;
-  page->next = NULL;
+  bool use_2mb_pages = flags & PE_2MB_SIZE;
+  bool use_1gb_pages = flags & PE_1GB_SIZE;
+  bool use_large_pages = use_2mb_pages | use_1gb_pages;
+  bool force = flags & PE_FORCE;
 
-  apply_page_flags(page, flags);
-  page->flags.zone = zone->type;
-  return page;
+  page_t *first = NULL;
+  page_t *last = NULL;
+  uint64_t frame = zone->base_addr + PAGES_TO_SIZE(frame_index);
+  while (count > 0) {
+    page_t *page = kmalloc(sizeof(page_t));
+    page->frame = frame;
+    page->entry = NULL;
+    page->next = NULL;
+    apply_page_flags(page, flags);
+    page->flags.zone = zone->type;
+
+    if (count >= SIZE_TO_PAGES(PAGE_SIZE_2MB) && (use_large_pages || !force)) {
+      page->flags.raw |= PE_SIZE | PE_2MB_SIZE;
+      frame += PAGE_SIZE_2MB;
+    } else if (count >= SIZE_TO_PAGES(PAGE_SIZE_1GB) && (use_large_pages || !force)) {
+      page->flags.raw |= PE_SIZE | PE_1GB_SIZE;
+      frame += PAGE_SIZE_1GB;
+    } else {
+      page->flags.page_size = 0;
+      page->flags.page_size_2mb = 0;
+      page->flags.page_size_1gb = 0;
+      frame += PAGE_SIZE;
+    }
+
+    if (first == NULL) {
+      first = page;
+      last = page;
+    } else {
+      last->next = page;
+      page = last;
+    }
+  }
+
+  return first;
 }
 
 page_t *mm_alloc_frame(uintptr_t frame, uint16_t flags) {
@@ -255,9 +292,20 @@ page_t *mm_alloc_frame(uintptr_t frame, uint16_t flags) {
 void mm_free_page(page_t *page) {
   while (page) {
     memory_zone_t *zone = zones[page->flags.zone];
+    size_t num_4k_pages = 1;
+    if (page->flags.page_size && page->flags.page_size_2mb) {
+      num_4k_pages = SIZE_TO_PAGES(PAGE_SIZE_2MB);
+    } else if (page->flags.page_size && page->flags.page_size_1gb) {
+      num_4k_pages = SIZE_TO_PAGES(PAGE_SIZE_1GB);
+    }
+
     lock(zone->lock);
     index_t index = SIZE_TO_PAGES(page->frame - zone->base_addr);
-    bitmap_clear(zone->pages, index);
+    if (num_4k_pages == 1) {
+      bitmap_clear(zone->pages, index);
+    } else {
+      bitmap_clear_n(zone->pages, index, num_4k_pages);
+    }
     unlock(zone->lock);
 
     page_t *next = page->next;
