@@ -68,7 +68,6 @@ static always_inline __pure percpu_t *percpu() {
 
 #define PERCPU (percpu())
 #define current_process (percpu()->current)
-
 #define IS_BSP (PERCPU->id == boot_info->bsp_id)
 
 

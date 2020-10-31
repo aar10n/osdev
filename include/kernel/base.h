@@ -4,6 +4,8 @@
 
 #ifndef INCLUDE_BASE_H
 #define INCLUDE_BASE_H
+#define _KERNEL_
+
 
 #include <types.h>
 #include <boot.h>

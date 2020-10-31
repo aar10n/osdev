@@ -24,7 +24,10 @@ QEMUFLAGS = \
 	-debugcon file:$(BUILD)/uefi_debug.log \
 	-serial file:$(BUILD)/stdio \
 	-drive file=$(BUILD)/osdev.img,id=boot,format=raw,if=none \
+	-drive file=$(BUILD)/disk.img,id=disk,format=raw,if=none \
+	-device ahci,id=ahci \
 	-device usb-storage,drive=boot \
+	-device ide-hd,drive=disk,bus=ahci.0 \
 	-usb
 
 include scripts/Makefile.toolchain

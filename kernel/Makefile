@@ -7,6 +7,9 @@ kernel += entry.asm sched.asm smpboot.asm \
 	acpi.c main.c panic.c percpu.c process.c \
 	scheduler.c smpboot.c timer.c
 
+# kernel/bus
+kernel += bus/pci.c
+
 # kernel/cpu
 kernel += cpu/cpu.asm cpu/idt.asm \
 	cpu/io.asm cpu/exception.asm \
