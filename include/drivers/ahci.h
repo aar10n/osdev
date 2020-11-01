@@ -381,6 +381,7 @@ typedef struct {
 } ahci_slot_t;
 
 typedef struct {
+  dev_t id;
   int num;
   int type;
   hba_port_t *port;
@@ -397,7 +398,7 @@ typedef struct {
 
 
 void ahci_init();
-ssize_t ahci_read(int port_num, uintptr_t lba, uint32_t count, uintptr_t buf);
-ssize_t ahci_write(int port_num, uintptr_t lba, uint32_t count, uintptr_t buf);
+ssize_t ahci_read(dev_t dev, uintptr_t lba, uint32_t count, uintptr_t buf);
+ssize_t ahci_write(dev_t dev, uintptr_t lba, uint32_t count, uintptr_t buf);
 
 #endif

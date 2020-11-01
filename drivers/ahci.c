@@ -13,8 +13,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <vectors.h>
-
-ahci_dev_t *ahci;
+#include <dev.h>
 
 typedef enum {
   DEVICE_TO_HOST, // read
@@ -78,21 +77,22 @@ void port_command_stop(hba_port_t *port) {
 
 //
 
-ahci_port_t *port_init(hba_reg_mem_t *mem, int port_num) {
+ahci_port_t *port_init(ahci_dev_t *controller, int port_num) {
+  hba_reg_mem_t *mem = controller->mem;
   hba_port_t *port = &(mem->ports[port_num]);
 
   int type = get_port_type(port);
-  ahci_port_t *sata_port = kmalloc(sizeof(ahci_port_t));
-  sata_port->num = port_num;
-  sata_port->type = type;
-  sata_port->port = port;
-  sata_port->fis = NULL;
-  sata_port->slots = NULL;
+  ahci_port_t *ahci_port = kmalloc(sizeof(ahci_port_t));
+  ahci_port->num = port_num;
+  ahci_port->type = type;
+  ahci_port->port = port;
+  ahci_port->fis = NULL;
+  ahci_port->slots = NULL;
   if (type != AHCI_DEV_SATA) {
-    return sata_port;
+    return ahci_port;
   }
 
-  kprintf("[sata] initializing port %d\n", port_num);
+  kprintf("[ahci] initializing port %d\n", port_num);
 
   port_command_stop(port);
 
@@ -108,7 +108,7 @@ ahci_port_t *port_init(hba_reg_mem_t *mem, int port_num) {
   port->fis_base = fis_page->frame;
   memset(fis, 0, PAGE_SIZE);
 
-  sata_port->fis = fis;
+  ahci_port->fis = fis;
 
   port->sata_error = 1;
   port->int_status = 0;
@@ -116,7 +116,7 @@ ahci_port_t *port_init(hba_reg_mem_t *mem, int port_num) {
 
   // command tables
   size_t num_slots = mem->host_cap.num_cmd_slots;
-  kprintf("[sata] port %d: %d slots\n", port_num, num_slots);
+  kprintf("[ahci] port %d: %d slots\n", port_num, num_slots);
   ahci_slot_t **slots = kmalloc(sizeof(ahci_slot_t *) * num_slots);
   hba_cmd_header_t *headers = (void *) cmd_list;
   for (int i = 0; i < num_slots; i++) {
@@ -137,32 +137,36 @@ ahci_port_t *port_init(hba_reg_mem_t *mem, int port_num) {
     slots[i] = slot;
   }
 
-  sata_port->slots = slots;
+  ahci_port->slots = slots;
   port_command_start(port);
 
   port->int_status = 0;
   port->int_enable = 0xFFFFFFFF;
-  return sata_port;
+  return ahci_port;
 }
 
-void sata_probe_ports(hba_reg_mem_t *abar) {
-  for (int i = 0; i < abar->host_cap.num_ports; i++) {
-    if (!(abar->port_implemented & (1 << i))) {
-      continue;
-    }
+void ahci_discover(ahci_dev_t *controller) {
+  kprintf("[ahci] discovering devices...\n");
+  hba_reg_mem_t *hba_mem = controller->mem;
 
-    hba_port_t *port = &(abar->ports[i]);
-    int type = get_port_type(port);
+  int num_ports = hba_mem->host_cap.num_ports;
+  ahci_port_t **ports = kmalloc(sizeof(ahci_port_t *) * num_ports);
+  for (int i = 0; i < num_ports; i++) {
+    int type = get_port_type(&(hba_mem->ports[i]));
     if (type == AHCI_DEV_SATA) {
       kprintf("[ahci] found SATA drive on port %d\n", i);
-    } else if (type == AHCI_DEV_SATAPI) {
-      kprintf("[ahci] found SATAPI drive on port %d\n", i);
-    } else if (type == AHCI_DEV_SEMB) {
-      kprintf("[ahci] found SEMB drive on port %d\n", i);
-    } else if (type == AHCI_DEV_PM) {
-      kprintf("[ahci] found PM drive on port %d\n", i);
+
+      ahci_port_t *port = port_init(controller, i);
+      ports[i] = port;
+      // register sata drive
+      dev_t id = device_register(AHCI_STORAGE_DEVICE, controller->id, "SATA Drive", NULL, port);
+      port->id = id;
+    } else {
+      ports[i] = NULL;
     }
   }
+
+  controller->ports = ports;
 }
 
 ssize_t transfer_dma(direction_t dir, ahci_port_t *ahci_port, uintptr_t lba, size_t count, uintptr_t buf) {
@@ -178,13 +182,11 @@ ssize_t transfer_dma(direction_t dir, ahci_port_t *ahci_port, uintptr_t lba, siz
   cmd->prdt_length = ((count - 1) >> 4) + 1;
 
   hba_cmd_table_t *table = ahci_slot->table;
-  kprintf("cmd->prdt_length: %d\n", cmd->prdt_length);
   memset(table->prdt, 0, cmd->prdt_length * sizeof(hba_prdt_entry_t));
 
   // create as many 8k entries as we can
   for (int i = 0; i < cmd->prdt_length - 1; i++) {
     uint32_t byte_count = (16 * 512) - 1;
-    kprintf("[ahci] byte count: %d\n", byte_count);
     table->prdt[i].data_base = buf;
     table->prdt[i].byte_count = byte_count;
     table->prdt[i].ioc = 0;
@@ -257,6 +259,7 @@ ssize_t transfer_dma(direction_t dir, ahci_port_t *ahci_port, uintptr_t lba, siz
 //
 
 void ahci_init() {
+  kprintf("[ahci] initializing\n");
   pci_device_t *pci = pci_locate_device(
     PCI_STORAGE_CONTROLLER,
     PCI_SERIAL_ATA_CONTROLLER
@@ -269,31 +272,46 @@ void ahci_init() {
   void *ahci_base = vm_map_addr(bar5.mem.addr_start, mmio_size, PE_WRITE);
 
   hba_reg_mem_t *hba_mem = ahci_base;
-  sata_probe_ports(hba_mem);
-
-  int num_ports = hba_mem->host_cap.num_ports;
-  ahci_port_t **ports = kmalloc(sizeof(ahci_port_t *) * num_ports);
-  for (int i = 0; i < hba_mem->host_cap.num_ports; i++) {
-    ports[i] = port_init(hba_mem, i);
-  }
 
   ahci_dev_t *dev = kmalloc(sizeof(ahci_dev_t));
-  dev->id = 0;
+  // register the ahci controller
+  dev_t id = device_register(AHCI_STORAGE_CONTROLLER, 0, "SATA Controller", pci, dev);
+  dev->id = id;
   dev->mem = hba_mem;
-  dev->ports = ports;
   dev->pci = pci;
-  ahci = dev;
+
+  // discover drives
+  ahci_discover(dev);
 
   ioapic_set_irq(0, 11, VECTOR_SATA_IRQ);
   idt_hook(VECTOR_SATA_IRQ, interrupt_handler);
+  kprintf("[ahci] done!\n");
 }
 
-ssize_t ahci_read(int port_num, uintptr_t lba, uint32_t count, uintptr_t buf) {
-  ahci_port_t *port = ahci->ports[port_num];
+ssize_t ahci_read(dev_t dev, uintptr_t lba, uint32_t count, uintptr_t buf) {
+  device_t *device = device_get(dev);
+  if (device == NULL) {
+    kprintf("[ahci] invalid device id\n");
+    return -1;
+  } else if (device->type != AHCI_STORAGE_DEVICE) {
+    kprintf("[ahci] device is not a SATA drive\n");
+    return -1;
+  }
+
+  ahci_port_t *port = device->data;
   return transfer_dma(DEVICE_TO_HOST, port, lba, count, buf);
 }
 
-ssize_t ahci_write(int port_num, uintptr_t lba, uint32_t count, uintptr_t buf) {
-  ahci_port_t *port = ahci->ports[port_num];
+ssize_t ahci_write(dev_t dev, uintptr_t lba, uint32_t count, uintptr_t buf) {
+  device_t *device = device_get(dev);
+  if (device == NULL) {
+    kprintf("[ahci] invalid device id\n");
+    return -1;
+  } else if (device->type != AHCI_STORAGE_DEVICE) {
+    kprintf("[ahci] device is not a SATA drive\n");
+    return -1;
+  }
+
+  ahci_port_t *port = device->data;
   return transfer_dma(HOST_TO_DEVICE, port, lba, count, buf);
 }
