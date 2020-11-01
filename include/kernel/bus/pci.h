@@ -205,6 +205,9 @@ typedef struct {
 
 /* --------------- Public Functions --------------- */
 
+uint32_t pci_read(uint32_t addr, uint8_t offset);
+void pci_write(uint32_t addr, uint8_t offset, uint32_t value);
+
 int pci_probe_device(pci_device_t *device, pci_callback_t callback, void *context);
 int pci_probe_bus(uint8_t bus, pci_callback_t callback, void *context);
 void pci_probe_busses(pci_callback_t callback, void *context);

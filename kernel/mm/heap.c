@@ -110,9 +110,7 @@ void *kmalloc(size_t size) {
 
   // otherwise proceed with the normal allocation
   size_t aligned = next_pow2(max(size, CHUNK_MIN_SIZE));
-  // kprintf("kmalloc\n");
-  // kprintf("size: %u\n", size);
-  // kprintf("aligned: %u\n", aligned);
+  // kprintf("kmalloc | %u bytes\n", aligned);
 
   // first search for the best fitting chunk in the list
   // of available chunks. If one is not found, we will

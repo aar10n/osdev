@@ -108,6 +108,7 @@ page_t *mm_alloc_frame(uintptr_t frame, uint16_t flags);
 void mm_free_page(page_t *page);
 
 #define alloc_page(flags) mm_alloc_pages(ZONE_NORMAL, 1, flags)
+#define alloc_pages(count, flags) mm_alloc_pages(ZONE_NORMAL, count, flags)
 #define free_page(page) mm_free_page(page)
 
 #endif

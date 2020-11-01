@@ -233,14 +233,17 @@ page_t *mm_alloc_pages(zone_type_t zone_type, size_t count, uint16_t flags) {
     if (count >= SIZE_TO_PAGES(PAGE_SIZE_2MB) && (use_large_pages || !force)) {
       page->flags.raw |= PE_SIZE | PE_2MB_SIZE;
       frame += PAGE_SIZE_2MB;
+      count -= SIZE_TO_PAGES(PAGE_SIZE_2MB);
     } else if (count >= SIZE_TO_PAGES(PAGE_SIZE_1GB) && (use_large_pages || !force)) {
       page->flags.raw |= PE_SIZE | PE_1GB_SIZE;
       frame += PAGE_SIZE_1GB;
+      count -= SIZE_TO_PAGES(PAGE_SIZE_1GB);
     } else {
       page->flags.page_size = 0;
       page->flags.page_size_2mb = 0;
       page->flags.page_size_1gb = 0;
       frame += PAGE_SIZE;
+      count--;
     }
 
     if (first == NULL) {
@@ -248,7 +251,7 @@ page_t *mm_alloc_pages(zone_type_t zone_type, size_t count, uint16_t flags) {
       last = page;
     } else {
       last->next = page;
-      page = last;
+      last = page;
     }
   }
 
