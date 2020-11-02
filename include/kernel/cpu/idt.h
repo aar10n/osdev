@@ -8,9 +8,9 @@
 #include <base.h>
 #include <cpu/cpu.h>
 
-#define IDT (PERCPU->idt.idt)
-#define IDT_DESC (PERCPU->idt.desc)
-#define IDT_HANDLERS (PERCPU->idt.handlers)
+#define IDT (PERCPU->idt->idt)
+#define IDT_DESC (PERCPU->idt->desc)
+#define IDT_HANDLERS (PERCPU->idt->handlers)
 
 #define IDT_GATES 256
 #define IDT_STUB_SIZE 32
@@ -49,10 +49,10 @@ typedef struct packed {
   uint64_t base;
 } idt_desc_t;
 
-typedef struct {
-  idt_desc_t desc;
+typedef struct idt {
   idt_gate_t idt[IDT_GATES];
   idt_handler_t handlers[IDT_GATES];
+  idt_desc_t desc;
 } idt_t;
 
 

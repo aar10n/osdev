@@ -20,7 +20,7 @@
 #define HIGH_HALF_START 0xFFFF800000000000
 #define HIGH_HALF_END 0xFFFFFFFFFFFFFFFF
 
-typedef struct {
+typedef struct vm {
   uint64_t *pml4;
   intvl_tree_t *tree;
   uint64_t *temp_dir;

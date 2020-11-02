@@ -115,12 +115,12 @@ void rq_remove(rqueue_t *rq, process_t *process) {
 
 void sched_schedule() {
   clock_t now = timer_now();
-  process_t *current = CURRENT;
+  process_t * curr = current;
   kprintf("[sched] schedule\n");
 
-  if (current) {
-    current->stats.last_run_end = now;
-    current->stats.run_time += now - current->stats.last_run_start;
+  if (curr) {
+    curr->stats.last_run_end = now;
+    curr->stats.run_time += now - curr->stats.last_run_start;
   }
 
   process_t *process = NULL;
@@ -133,12 +133,12 @@ void sched_schedule() {
     }
   }
 
-  if (current && current->status == PROC_READY) {
+  if (curr && curr->status == PROC_READY) {
     if (process) {
-      rq = SCHEDULER->queues[current->priority];
-      rq_enqueue(rq, current);
+      rq = SCHEDULER->queues[curr->priority];
+      rq_enqueue(rq, curr);
     } else {
-      process = current;
+      process = curr;
     }
   } else if (process == NULL) {
     // idle task
@@ -156,11 +156,11 @@ void sched_schedule() {
 void sched_tick() {
   kprintf("[sched] tick\n");
   // whole time slice was used
-  process_t *current = CURRENT;
-  if (current) {
-    uint8_t new_prior = min(current->priority + 1, SCHED_QUEUES - 1);
-    current->priority = new_prior;
-    current->status = PROC_READY;
+  process_t * curr = current;
+  if (curr) {
+    uint8_t new_prior = min(curr->priority + 1, SCHED_QUEUES - 1);
+    curr->priority = new_prior;
+    curr->status = PROC_READY;
   }
   sched_schedule();
 }
@@ -174,9 +174,9 @@ noreturn void sched_idle() {
 void sched_preempt(process_t *process) {
   // only part of time slice was used
   process->status = PROC_READY;
-  process_t *current = CURRENT;
+  process_t * curr = current;
   rqueue_t *rq = SCHEDULER->queues[process->priority];
-  if (process->priority < current->priority) {
+  if (process->priority < curr->priority) {
     kprintf("[sched] preempting with pid %llu\n", process->pid);
     rq_enqueue_front(rq, process);
     sched_schedule();
@@ -238,39 +238,39 @@ void sched_enqueue(process_t *process) {
 }
 
 void sched_block() {
-  kprintf("[sched] pid %llu: block\n", CURRENT->pid);
-  process_t *current = CURRENT;
-  current->status = PROC_BLOCKED;
-  current->stats.block_count++;
-  rq_enqueue(SCHEDULER->blocked, current);
+  kprintf("[sched] pid %llu: block\n", current->pid);
+  process_t * curr = current;
+  curr->status = PROC_BLOCKED;
+  curr->stats.block_count++;
+  rq_enqueue(SCHEDULER->blocked, curr);
   sched_schedule();
 }
 
 void sched_sleep(uint64_t ns) {
-  kprintf("[sched] pid %llu: sleep\n", CURRENT->pid);
-  process_t *current = CURRENT;
-  current->status = PROC_SLEEPING;
-  current->stats.sleep_count++;
-  current->stats.sleep_time += ns;
+  kprintf("[sched] pid %llu: sleep\n", current->pid);
+  process_t * curr = current;
+  curr->status = PROC_SLEEPING;
+  curr->stats.sleep_count++;
+  curr->stats.sleep_time += ns;
 
-  create_timer(timer_now() + ns, (void *) sched_wakeup, current);
+  create_timer(timer_now() + ns, (void *) sched_wakeup, curr);
   sched_schedule();
 }
 
 void sched_yield() {
-  kprintf("[sched] pid %llu: yield\n", CURRENT->pid);
-  process_t *current = CURRENT;
-  current->status = PROC_READY;
-  current->stats.yield_count++;
+  kprintf("[sched] pid %llu: yield\n", current->pid);
+  process_t * curr = current;
+  curr->status = PROC_READY;
+  curr->stats.yield_count++;
   sched_schedule();
 }
 
 void sched_terminate() {
-  kprintf("[sched] pid %llu: terminate\n", CURRENT->pid);
-  process_t *current = CURRENT;
-  current->status = PROC_KILLED;
-  ptable[current->pid] = NULL;
-  CURRENT = NULL;
+  kprintf("[sched] pid %llu: terminate\n", current->pid);
+  process_t * curr = current;
+  curr->status = PROC_KILLED;
+  ptable[curr->pid] = NULL;
+  current = NULL;
   sched_schedule();
 }
 
@@ -280,8 +280,8 @@ void sched_print_stats() {
   cli();
 
   kprintf("===== scheduler stats =====\n");
-  kprintf("current pid: %llu\n", CURRENT->pid);
-  print_debug_process(CURRENT);
+  kprintf("current pid: %llu\n", current->pid);
+  print_debug_process(current);
 
   rqueue_t *rq;
   process_t *process;

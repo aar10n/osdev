@@ -38,6 +38,7 @@ typedef struct {
   hasher_t hasher;     // hash function
   size_t size;         // total number of items
   size_t capacity;     // number of buckets
+  double load_factor;  // acceptable load factor
   map_entry_t **items; // map entries
 } map_base_t;
 

@@ -24,7 +24,7 @@ QEMUFLAGS = \
 	-debugcon file:$(BUILD)/uefi_debug.log \
 	-serial file:$(BUILD)/stdio \
 	-drive file=$(BUILD)/osdev.img,id=boot,format=raw,if=none \
-	-drive file=$(BUILD)/osdev.img,id=disk,format=raw,if=none \
+	-drive file=$(BUILD)/fat.img,id=disk,format=raw,if=none \
 	-device ahci,id=ahci \
 	-device usb-storage,drive=boot \
 	-device ide-hd,drive=disk,bus=ahci.0 \
@@ -87,7 +87,7 @@ ramdisk: initrd $(BUILD)/initrd.img
 # -------------- #
 
 # USB bootable image
-$(BUILD)/osdev.img: $(BUILD)/bootx64.efi $(BUILD)/kernel.elf config.ini
+$(BUILD)/osdev.img: $(BUILD)/bootx64.efi $(BUILD)/kernel.elf config.ini $(BUILD)/fat.img
 	dd if=/dev/zero of=$@ bs=1k count=1440
 	mformat -i $@ -f 1440 ::
 	mmd -i $@ ::/EFI
@@ -113,6 +113,12 @@ $(BUILD)/kernel.elf: $(kernel-y) $(fs-y) $(libc-y) $(drivers-y) $(lib-y)
 
 
 # External Data
+
+$(BUILD)/fat.img:
+	dd if=/dev/zero of=$@ bs=1k count=1440
+	mformat -i $@ -f 1440 ::
+	echo "Hello, world! I am a file with some text" > $(BUILD)/file.txt
+	mcopy -i $@ $(BUILD)/file.txt ::/hello.txt
 
 $(BUILD)/disk.img:
 	scripts/create-disk.sh $@

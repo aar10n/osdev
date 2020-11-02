@@ -6,9 +6,9 @@
 #define INCLUDE_BASE_H
 #define _KERNEL_
 
-
 #include <types.h>
 #include <boot.h>
+#include <percpu.h>
 
 //
 // General Definitions

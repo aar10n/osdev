@@ -2,17 +2,24 @@
 // Created by Aaron Gill-Braun on 2020-10-04.
 //
 
+
 #ifndef KERNEL_CPU_PERCPU_H
 #define KERNEL_CPU_PERCPU_H
 
-#include <base.h>
-#include <scheduler.h>
-#include <process.h>
-#include <cpu/cpu.h>
-#include <cpu/idt.h>
-#include <mm/vm.h>
+// Since this file is included in `base.h`, we run into
+// problems if we also include `base.h` in this file.
+// The include guards should allow us to do it but for
+// some reason it isn't working... so this file must not
+// include anything that includes `base.h`.
 
-#define PERCPU_SIZE PAGES_TO_SIZE(2)
+#include <types.h>
+
+#define PERCPU_SIZE (4096 * 4)
+
+typedef struct process process_t;
+typedef struct vm vm_t;
+typedef struct scheduler scheduler_t;
+typedef struct idt idt_t;
 
 typedef struct {
   uint64_t id;
@@ -21,10 +28,9 @@ typedef struct {
   int errno;
   scheduler_t *scheduler;
   vm_t *vm;
-  idt_t idt;
+  idt_t *idt;
 } percpu_t;
-
-static_assert(sizeof(percpu_t) <= PERCPU_SIZE);
+_Static_assert(sizeof(percpu_t) <= 4096, "");
 
 // https://github.com/a-darwish/cuteOS
 #define __percpu(var) (((percpu_t *) NULL)->var)
@@ -61,14 +67,14 @@ static_assert(sizeof(percpu_t) <= PERCPU_SIZE);
   ((percpu_t *) percpu_get(self))
 
 // encourage the compiler to heavily cache the value
-static always_inline __pure percpu_t *percpu() {
+static inline __attribute((always_inline)) __attribute((pure)) percpu_t *percpu() {
   uintptr_t ptr = percpu_get(self);
   return (percpu_t *) ptr;
 }
 
 #define PERCPU (percpu())
-#define current_process (percpu()->current)
 #define IS_BSP (PERCPU->id == boot_info->bsp_id)
+#define current (percpu()->current)
 
 
 void percpu_init();

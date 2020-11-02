@@ -17,7 +17,7 @@
 //
 
 #define SCHEDULER (PERCPU->scheduler)
-#define CURRENT (PERCPU->current)
+#define CURRENT (PERCPU->curr)
 
 #define SCHED_QUANTUM 1000
 #define PTABLE_SIZE 2048
@@ -32,7 +32,7 @@ typedef struct {
   spinlock_t lock;
 } rqueue_t;
 
-typedef struct {
+typedef struct scheduler {
   uint64_t cpu_id;
   process_t *idle;
   rqueue_t *queues[SCHED_QUEUES];

@@ -31,6 +31,7 @@ void map_init_(map_base_t *map) {
   memset(map, 0, sizeof(map_base_t));
   !map->hasher && (map->hasher = default_hasher);
   !map->capacity && (map->capacity = INITIAL_MAP_SIZE);
+  !map->load_factor && (map->load_factor = LOAD_FACTOR);
   map->items = _malloc(map->capacity * sizeof(map_entry_t *));
   map->size = 0;
 }

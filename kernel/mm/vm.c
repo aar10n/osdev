@@ -264,10 +264,10 @@ void *vm_create_ap_tables() {
  */
 void *vm_map_page(page_t *page) {
   size_t len = 0;
-  page_t *current = page;
-  while (current) {
-    len += page_to_size(current);
-    current = current->next;
+  page_t * curr = page;
+  while (curr) {
+    len += page_to_size(curr);
+    curr = curr->next;
   }
 
   uintptr_t address = 0;
@@ -285,10 +285,10 @@ void *vm_map_page(page_t *page) {
 void *vm_map_page_vaddr(uintptr_t virt_addr, page_t *page) {
   uintptr_t address = virt_addr;
   size_t len = 0;
-  page_t *current = page;
-  while (current) {
-    len += page_to_size(current);
-    current = current->next;
+  page_t * curr = page;
+  while (curr) {
+    len += page_to_size(curr);
+    curr = curr->next;
   }
 
   vm_area_t *area = kmalloc(sizeof(vm_area_t));
@@ -297,14 +297,14 @@ void *vm_map_page_vaddr(uintptr_t virt_addr, page_t *page) {
   area->pages = page;
   intvl_tree_insert(VM->tree, intvl(address, address + len), area);
 
-  current = page;
-  while (current) {
-    current->flags.present = 1;
-    uint64_t *entry = map_page(virt_addr, current->frame, page_to_flags(current));
-    current->entry = entry;
+  curr = page;
+  while (curr) {
+    curr->flags.present = 1;
+    uint64_t *entry = map_page(virt_addr, curr->frame, page_to_flags(curr));
+    curr->entry = entry;
 
-    virt_addr += page_to_size(current);
-    current = current->next;
+    virt_addr += page_to_size(curr);
+    curr = curr->next;
   }
 
   return (void *) address;

@@ -24,7 +24,7 @@ __used void irq_handler(uint8_t vector) {
 
 void setup_idt() {
   uintptr_t offset = (uintptr_t) &idt_stubs;
-  idt_t *idt_struct = &(PERCPU->idt);
+  idt_t *idt_struct = PERCPU->idt;
 
   idt_gate_t *idt = idt_struct->idt;
   for (int i = 0; i < IDT_GATES; i++) {;
