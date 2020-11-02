@@ -38,15 +38,6 @@
 #define HBA_CTRL_INT_ENABLE  (1 << 1)
 #define HBA_CTRL_AHCI_ENABLE (1 << 31)
 
-#define chs(c, h, s) \
-  ((chs_tuple_t){ c, h, s })
-
-typedef struct {
-  uint16_t c;
-  uint8_t h;
-  uint8_t s;
-} chs_tuple_t;
-
 typedef enum {
   ATA_CMD_READ_DMA_EXT = 0x25,
   ATA_CMD_READ_DMA_QUEUED = 0x26,
@@ -96,7 +87,7 @@ typedef struct packed {
 
   // dword 3
   uint32_t count_low : 8;    // count register 7:0
-  uint32_t count_high : 8;   // rount register 15:8
+  uint32_t count_high : 8;   // count register 15:8
   uint32_t icc : 8;          // isochronous command completion
   uint32_t control : 8;      // control register
 
@@ -309,18 +300,21 @@ typedef volatile struct packed {
 typedef struct packed {
   // 0x00
   fis_dma_setup_t dma_setup_fis; // DMA setup FIS
+  uint8_t padding1[4];           // padding
   // 0x20
   fis_pio_setup_t pio_setup_fis; // PIO setup FIS
+  uint8_t padding2[12];          // padding
   // 0x40
   fis_reg_d2h_t d2h_fis;         // device to host FIS
+  uint8_t padding3[4];           // padding
   // 0x58
   uint64_t sdb_fis;              // set device bits FIS
   // 0x60
-  uint8_t u_fis[64];             // ????
+  uint8_t unknown_fis[64];       // unknown FIS (???)
   // 0xA0
   uint8_t reserved[96];          // reserved
 } hba_fis_t;
-
+static_assert(sizeof(hba_fis_t) == 256);
 
 // command header
 typedef struct packed {

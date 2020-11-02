@@ -29,8 +29,8 @@ device_t *device_get(dev_t id) {
   return NULL;
 }
 
-dev_t device_register(dev_type_t type, dev_t parent_id, const char *name,
-                      pci_device_t *pci, void *data) {
+dev_t device_register(dev_type_t type, dev_subtype_t subtype, dev_t parent_id,
+                      const char *name, pci_device_t *pci, void *data) {
 
   device_t *device = kmalloc(sizeof(device_t));
   device_t *parent = NULL;
@@ -44,6 +44,7 @@ dev_t device_register(dev_type_t type, dev_t parent_id, const char *name,
 
   device->id = alloc_id();
   device->type = type;
+  device->subtype = subtype;
   device->name = name;
   device->pci = pci;
   device->data = data;

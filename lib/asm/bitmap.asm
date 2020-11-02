@@ -79,6 +79,12 @@ __bsf8:
   bsf ax, di ; bit scan forward
   ret
 
+; uint8_t __bsf32(uint32_t dword)
+global __bsf32
+__bsf32:
+  bsf rax, rdi ; bit scan forward
+  ret
+
 ; uint8_t __bsf64(uint64_t qword)
 global __bsf64
 __bsf64:

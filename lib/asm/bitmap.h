@@ -17,6 +17,7 @@ uint8_t __btr8(uint8_t *byte, uint8_t bit);
 uint8_t __btr64(uint64_t *qword, uint8_t bit);
 
 uint8_t __bsf8(uint8_t byte);
+uint8_t __bsf32(uint32_t dword);
 uint8_t __bsf64(uint64_t qword);
 
 uint8_t __bsr8(uint8_t byte);

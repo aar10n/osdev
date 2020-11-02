@@ -19,7 +19,7 @@
 #define VECTOR_APIC_THERMAL  0x40
 
 // Priority 0x3 - External interrupts
-#define VECTOR_SATA_IRQ      0x31
+#define VECTOR_AHCI_IRQ      0x31
 #define VECTOR_KEYBOARD_IRQ  0x30
 
 // Priority 0x2 - Lowest priorty

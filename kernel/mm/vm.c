@@ -299,9 +299,9 @@ void *vm_map_page_vaddr(uintptr_t virt_addr, page_t *page) {
 
   current = page;
   while (current) {
-    page->flags.present = 1;
-    uint64_t *entry = map_page(virt_addr, page->frame, page_to_flags(page));
-    page->entry = entry;
+    current->flags.present = 1;
+    uint64_t *entry = map_page(virt_addr, current->frame, page_to_flags(current));
+    current->entry = entry;
 
     virt_addr += page_to_size(current);
     current = current->next;
