@@ -3,7 +3,17 @@
 #
 
 # fs
-fs += fs.c ramdisk.c vfs.c
+fs += device.c dirent.c file.c \
+	fs.c inode.c path.c stat.c
 
+# fs/fat
+fs += fat/fat.c fat/fat12.c \
+	fat/fat16.c fat/fat32.c
+
+# fs/proc
+fs += proc/proc.c
+
+# fs/ramfs
+fs += ramfs/ramfs.c
 
 fs-y = $(call objects,fs,$(BUILD_DIR)/fs)

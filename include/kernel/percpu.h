@@ -5,6 +5,7 @@
 
 #ifndef KERNEL_CPU_PERCPU_H
 #define KERNEL_CPU_PERCPU_H
+#define __PERCPU___
 
 // Since this file is included in `base.h`, we run into
 // problems if we also include `base.h` in this file.
@@ -17,18 +18,20 @@
 #define PERCPU_SIZE (4096 * 4)
 
 typedef struct process process_t;
+typedef struct file_table file_table_t;
 typedef struct vm vm_t;
 typedef struct scheduler scheduler_t;
 typedef struct idt idt_t;
 
 typedef struct {
-  uint64_t id;
   process_t *current;
+  ino_t id;
   uintptr_t self;
   int errno;
+  file_table_t *files;
   scheduler_t *scheduler;
-  vm_t *vm;
   idt_t *idt;
+  vm_t *vm;
 } percpu_t;
 _Static_assert(sizeof(percpu_t) <= 4096, "");
 

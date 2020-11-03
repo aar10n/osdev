@@ -21,8 +21,8 @@
 %define COM1 0x3F8
 
 ; Percpu Constants
-%define PERCPU_ID 0x0
-%define PERCPU_CURRENT 0x8
+%define PERCPU_CURRENT 0x0
+%define PERCPU_ID 0x8
 %define current gs:PERCPU_CURRENT
 
 ; Process Constants

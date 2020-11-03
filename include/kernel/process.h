@@ -6,6 +6,7 @@
 #define KERNEL_PROCESS_H
 
 #include <base.h>
+#include <fs.h>
 
 #define DEFAULT_RFLAGS 0x246
 #define PROC_STACK_SIZE PAGE_SIZE
@@ -40,6 +41,8 @@ typedef struct process {
   uint8_t policy;
   uint8_t priority;
   proc_status_t status;
+  fs_node_t *pwd;
+  file_table_t *files;
   struct {
     clock_t last_run_start;
     clock_t last_run_end;

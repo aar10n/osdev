@@ -45,6 +45,9 @@ void *vm_map_page_vaddr(uintptr_t virt_addr, page_t *page);
 void *vm_map_addr(uintptr_t phys_addr, size_t len, uint16_t flags);
 void *vm_map_vaddr(uintptr_t virt_addr, uintptr_t phys_addr, size_t len, uint16_t flags);
 
+void vm_unmap_page(page_t *page);
+void vm_unmap_vaddr(uintptr_t virt_addr);
+
 vm_area_t *vm_get_vm_area(uintptr_t address);
 bool vm_find_free_area(vm_search_t search_type, uintptr_t *addr, size_t len);
 

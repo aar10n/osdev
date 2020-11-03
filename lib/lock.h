@@ -8,8 +8,31 @@
 #include <base.h>
 #include <atomic.h>
 
-#define lock(L) spin_lock(&L)
-#define unlock(L) spin_unlock(&L)
+#define lock(L) \
+  _Generic(L,   \
+    spinlock_t: spin_lock, \
+    rw_spinlock_t: spinrw_aquire_write, \
+    default: NULL \
+  )(&(L))
+
+#define unlock(L) \
+  _Generic(L,     \
+    spinlock_t: spin_unlock, \
+    rw_spinlock_t: spinrw_release_write, \
+    default: NULL                \
+  )(&(L))
+
+#define aquire(L) \
+  _Generic(L,     \
+    rw_spinlock_t: spinrw_aquire_read, \
+    default: NULL      \
+  )(&(L))
+
+#define release(L) \
+  _Generic(L,     \
+    rw_spinlock_t: spinrw_release_read, \
+    default: NULL      \
+  )(&(L))
 
 // rentrant spinlock
 typedef struct {

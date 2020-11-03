@@ -5,9 +5,9 @@
 #ifndef LIBC_ERRNO_H
 #define LIBC_ERRNO_H
 
-#include <percpu.h>
-
+#ifdef __PERCPU___
 #define errno (PERCPU->errno)
+#endif
 
 #define E2BIG 1            // Argument list too long.
 #define EACCES 2           // Permission denied.
@@ -64,31 +64,36 @@
 #define ENOSR 53           // No STREAM resources.
 #define ENOSTR 54          // Not a STREAM.
 #define ENOSYS 55          // Functionality not supported.
-#define ENOTCONN 56        // The socket is not connected.
-#define ENOTDIR 57         // Not a directory or a symbolic link to a directory.
-#define ENOTEMPTY 58       // Directory not empty.
-#define ENOTRECOVERABLE 59 // State not recoverable.
-#define ENOTSOCK 60        // Not a socket.
-#define ENOTSUP 61         // Not supported (may be the same value as [EOPNOTSUPP]).
-#define ENOTTY 62          // Inappropriate I/O control operation.
-#define ENXIO 63           // No such device or address.
-#define EOPNOTSUPP 64      // Operation not supported on socket (may be the same value as [ENOTSUP]).
-#define EOVERFLOW 65       // Value too large to be stored in data type.
-#define EOWNERDEAD 66      // Previous owner died.
-#define EPERM 67           // Operation not permitted.
-#define EPIPE 68           // Broken pipe.
-#define EPROTO 69          // Protocol error.
-#define EPROTONOSUPPORT 70 // Protocol not supported.
-#define EPROTOTYPE 71      // Protocol wrong type for socket.
-#define ERANGE 72          // Result too large.
-#define EROFS 73           // Read-only file system.
-#define ESPIPE 74          // Invalid seek.
-#define ESRCH 75           // No such process.
-#define ESTALE 76          // Reserved.
-#define ETIME 77           // Stream ioctl() timeout.
-#define ETIMEDOUT 78       // Connection timed out.
-#define ETXTBSY 79         // Text file busy.
-#define EWOULDBLOCK 80     // Operation would block (may be the same value as [EAGAIN]).
-#define EXDEV 81           // Cross-device link.
+#define ENOTBLK 56         // Block device required.
+#define ENOTCONN 57        // The socket is not connected.
+#define ENOTDIR 58         // Not a directory or a symbolic link to a directory.
+#define ENOTEMPTY 59       // Directory not empty.
+#define ENOTMNT 60         // Not a filesystem mount.
+#define ENOTRECOVERABLE 61 // State not recoverable.
+#define ENOTSOCK 62        // Not a socket.
+#define ENOTSUP 63         // Not supported (may be the same value as [EOPNOTSUPP]).
+#define ENOTTY 64          // Inappropriate I/O control operation.
+#define ENXIO 65           // No such device or address.
+#define EOPNOTSUPP 66      // Operation not supported on socket (may be the same value as [ENOTSUP]).
+#define EOVERFLOW 67       // Value too large to be stored in data type.
+#define EOWNERDEAD 68      // Previous owner died.
+#define EPERM 69           // Operation not permitted.
+#define EPIPE 70           // Broken pipe.
+#define EPROTO 71          // Protocol error.
+#define EPROTONOSUPPORT 72 // Protocol not supported.
+#define EPROTOTYPE 73      // Protocol wrong type for socket.
+#define ERANGE 74          // Result too large.
+#define EROFS 75           // Read-only file system.
+#define ESPIPE 76          // Invalid seek.
+#define ESRCH 77           // No such process.
+#define ESTALE 78          // Reserved.
+#define ETIME 79           // Stream ioctl() timeout.
+#define ETIMEDOUT 80       // Connection timed out.
+#define ETXTBSY 81         // Text file busy.
+#define EWOULDBLOCK 82     // Operation would block (may be the same value as [EAGAIN]).
+#define EXDEV 83           // Cross-device link.
+#define ERRNO_MAX 83
+
+const char *strerror(int errnum);
 
 #endif

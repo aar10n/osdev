@@ -13,9 +13,26 @@
 #include <stdio.h>
 #include <string.h>
 #include <vectors.h>
-#include <dev.h>
+#include <device.h>
 
 #include <asm/bitmap.h>
+
+//
+
+fs_controller_impl_t ahci_c_impl = {
+  ahci_controller_init
+};
+
+fs_device_impl_t ahci_d_impl = {
+  ahci_device_init,
+  ahci_read, ahci_write, ahci_release
+};
+
+fs_device_driver_t ahci_driver = {
+  .name = "ahci", .c_impl = &ahci_c_impl, .d_impl = &ahci_d_impl
+};
+
+//
 
 typedef enum {
   DEVICE_TO_HOST, // read
@@ -23,7 +40,7 @@ typedef enum {
 } direction_t;
 
 // support only one ahci controller for now
-ahci_dev_t *ahci_controller;
+ahci_controller_t *ahci_controller;
 
 
 void interrupt_handler() {
@@ -32,7 +49,7 @@ void interrupt_handler() {
   while (mem->int_status != 0) {
     int num = __bsf32(mem->int_status);
 
-    ahci_port_t *ahci_port = ahci_controller->ports[num];
+    ahci_device_t *ahci_port = ahci_controller->ports[num];
     hba_port_t *port = ahci_port->port;
 
     uint32_t int_status = port->int_status;
@@ -41,11 +58,6 @@ void interrupt_handler() {
 
     mem->int_status ^= 1 << num;
   }
-}
-
-bool is_ahci_drive(device_t *device) {
-  return device && device->type == STORAGE_DEVICE &&
-    device->subtype == AHCI_STORAGE_DEVICE;
 }
 
 int get_port_type(hba_port_t *port) {
@@ -99,12 +111,12 @@ void port_command_stop(hba_port_t *port) {
 
 //
 
-ahci_port_t *port_init(ahci_dev_t *controller, int port_num) {
+ahci_device_t *port_init(ahci_controller_t *controller, int port_num) {
   hba_reg_mem_t *mem = controller->mem;
   hba_port_t *port = &(mem->ports[port_num]);
 
   int type = get_port_type(port);
-  ahci_port_t *ahci_port = kmalloc(sizeof(ahci_port_t));
+  ahci_device_t *ahci_port = kmalloc(sizeof(ahci_device_t));
   ahci_port->num = port_num;
   ahci_port->type = type;
   ahci_port->port = port;
@@ -167,34 +179,38 @@ ahci_port_t *port_init(ahci_dev_t *controller, int port_num) {
   return ahci_port;
 }
 
-void ahci_discover(ahci_dev_t *controller) {
+fs_device_list_t *ahci_discover(ahci_controller_t *controller) {
   kprintf("[ahci] discovering devices...\n");
   hba_reg_mem_t *hba_mem = controller->mem;
 
+  fs_device_list_t *devices = NULL;
+
   int num_ports = hba_mem->host_cap.num_ports;
-  ahci_port_t **ports = kmalloc(sizeof(ahci_port_t *) * num_ports);
+  ahci_device_t **ports = kmalloc(sizeof(ahci_device_t *) * num_ports);
   for (int i = 0; i < num_ports; i++) {
     int type = get_port_type(&(hba_mem->ports[i]));
     if (type == AHCI_DEV_SATA) {
       kprintf("[ahci] found SATA drive on port %d\n", i);
 
-      ahci_port_t *port = port_init(controller, i);
+      ahci_device_t *port = port_init(controller, i);
       ports[i] = port;
-      // register sata drive
-      dev_t id = device_register(
-        STORAGE_DEVICE, AHCI_STORAGE_DEVICE, controller->id,
-        "SATA Drive", NULL, port
-      );
-      port->id = id;
+
+      fs_device_list_t *item = kmalloc(sizeof(fs_device_list_t));
+      item->data = port;
+      if (devices != NULL) {
+        devices->next = item;
+      }
+      devices = item;
     } else {
       ports[i] = NULL;
     }
   }
 
   controller->ports = ports;
+  return devices;
 }
 
-ssize_t transfer_dma(direction_t dir, ahci_port_t *ahci_port, uintptr_t lba, size_t count, uintptr_t buf) {
+ssize_t transfer_dma(direction_t dir, ahci_device_t *ahci_port, uintptr_t lba, size_t count, uintptr_t buf) {
   kassert(count <= 128);
   ahci_slot_t *ahci_slot = ahci_port->slots[0]; // TODO: pick a better slot
   hba_port_t *port = ahci_port->port;
@@ -294,15 +310,15 @@ ssize_t transfer_dma(direction_t dir, ahci_port_t *ahci_port, uintptr_t lba, siz
 
 //
 
-void ahci_init() {
+fs_controller_t *ahci_controller_init(dev_t id) {
   kprintf("[ahci] initializing\n");
   pci_device_t *pci = pci_locate_device(
     PCI_STORAGE_CONTROLLER,
     PCI_SERIAL_ATA_CONTROLLER
   );
   if (pci == NULL) {
-    kprintf("[ahci] no ahci controller found\n");
-    return;
+    errno = ENODEV;
+    return NULL;
   }
 
   kassert(pci->bar_count >= 6);
@@ -312,48 +328,84 @@ void ahci_init() {
   void *ahci_base = vm_map_addr(bar5.mem.addr_start, mmio_size, PE_WRITE);
 
   hba_reg_mem_t *hba_mem = ahci_base;
+  ahci_controller_t *controller = kmalloc(sizeof(ahci_controller_t));
 
-  ahci_dev_t *controller = kmalloc(sizeof(ahci_dev_t));
-  // register the ahci controller
-  dev_t id = device_register(
-    STORAGE_CONTROLLER, AHCI_STORAGE_CONTROLLER, 0,
-    "SATA Controller", pci, controller
-  );
   controller->id = id;
   controller->mem = hba_mem;
   controller->pci = pci;
-
-  // discover sata drives
-  ahci_discover(controller);
 
   // configure the global host control
   hba_mem->global_host_ctrl |= HBA_CTRL_AHCI_ENABLE;
   hba_mem->global_host_ctrl |= HBA_CTRL_INT_ENABLE;
 
-  ahci_controller = controller;
   ioapic_set_irq(0, pci->interrupt_line, VECTOR_AHCI_IRQ);
   idt_hook(VECTOR_AHCI_IRQ, interrupt_handler);
+
+  // discover devices
+  fs_device_list_t *devices = ahci_discover(controller);
+
+  fs_controller_t *fs_controller = kmalloc(sizeof(fs_controller_t));
+  fs_controller->id = id;
+  fs_controller->type = FS_STORAGE_CONTROLLER;
+  fs_controller->devices = devices;
+  fs_controller->impl = &ahci_c_impl;
+  fs_controller->driver = &ahci_driver;
+  fs_controller->data = NULL;
+
   kprintf("[ahci] done!\n");
+  return fs_controller;
 }
 
-ssize_t ahci_read(dev_t dev, uintptr_t lba, uint32_t count, uintptr_t buf) {
-  device_t *device = device_get(dev);
-  if (!is_ahci_drive(device)) {
-    kprintf("[ahci] invalid device\n");
-    return -1;
-  }
+fs_device_t *ahci_device_init(dev_t id, void *data, fs_controller_t *controller) {
+  ahci_device_t *device = data;
+  device->id = id;
 
-  ahci_port_t *port = device->data;
-  return transfer_dma(DEVICE_TO_HOST, port, lba, count, buf);
+  fs_device_t *fs_device = kmalloc(sizeof(fs_device_t));
+  fs_device->id = id;
+  fs_device->type = FS_STORAGE_DEVICE;
+  fs_device->data = data;
+  fs_device->controller = controller;
+  fs_device->impl = &ahci_d_impl;
+  return fs_device;
 }
 
-ssize_t ahci_write(dev_t dev, uintptr_t lba, uint32_t count, uintptr_t buf) {
-  device_t *device = device_get(dev);
-  if (!is_ahci_drive(device)) {
-    kprintf("[ahci] invalid device\n");
-    return -1;
-  }
+ssize_t ahci_read(fs_device_t *device, uint64_t lba, uint32_t count, void **buf) {
+  page_t *pages = mm_alloc_pages(ZONE_DMA, SIZE_TO_PAGES(count * 512) + 1, PE_WRITE);
+  void *ptr = vm_map_page(pages);
 
-  ahci_port_t *port = device->data;
-  return transfer_dma(HOST_TO_DEVICE, port, lba, count, buf);
+  // save a pointer to the page struct in the first
+  // page and return the page following the first
+  page_t **saved = ptr;
+  *saved = pages;
+
+  *buf = ptr + PAGE_SIZE;
+  ahci_device_t *port = device->data;
+  return transfer_dma(DEVICE_TO_HOST, port, lba, count, pages->next->frame);
 }
+
+ssize_t ahci_write(fs_device_t *device, uint64_t lba, uint32_t count, void **buf) {
+  page_t *pages = mm_alloc_pages(ZONE_DMA, SIZE_TO_PAGES(count * 512) + 1, PE_WRITE);
+  void *ptr = vm_map_page(pages);
+
+  // save a pointer to the page struct in the first
+  // page and return the page following the first
+  page_t **saved = ptr;
+  *saved = pages;
+
+  *buf = (void *)((uintptr_t) ptr + PAGE_SIZE);
+  ahci_device_t *port = device->data;
+  return transfer_dma(HOST_TO_DEVICE, port, lba, count, pages->next->frame);
+}
+
+int ahci_release(fs_device_t *device, void *buf) {
+  // retrieve the stored page struct pointer at the start
+  // of the page preceeding the transfer buffer
+  page_t **pages_ptr = (void *)((uintptr_t) buf - PAGE_SIZE);
+  page_t *pages = *pages_ptr;
+
+  vm_unmap_page(pages);
+  free_page(pages);
+  return 0;
+}
+
+//

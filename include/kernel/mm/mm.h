@@ -70,7 +70,8 @@ typedef enum {
 } zone_type_t;
 
 typedef struct page {
-  uint64_t frame;  // the address of this page
+  uint64_t frame;  // the physical address of this page
+  uint64_t addr;   // the virtual address of this page
   uint64_t *entry; // when mapped points to the page entry
   union {
     uint16_t raw;

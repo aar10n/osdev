@@ -9,6 +9,7 @@
 #include <types.h>
 #include <boot.h>
 #include <percpu.h>
+#include <errno.h>
 
 //
 // General Definitions

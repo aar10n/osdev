@@ -225,6 +225,7 @@ page_t *mm_alloc_pages(zone_type_t zone_type, size_t count, uint16_t flags) {
   while (count > 0) {
     page_t *page = kmalloc(sizeof(page_t));
     page->frame = frame;
+    page->addr = 0;
     page->entry = NULL;
     page->next = NULL;
     apply_page_flags(page, flags);
@@ -284,6 +285,7 @@ page_t *mm_alloc_frame(uintptr_t frame, uint16_t flags) {
 
   page_t *page = kmalloc(sizeof(page_t));
   page->frame = frame;
+  page->addr = 0;
   page->entry = NULL;
   page->next = NULL;
 

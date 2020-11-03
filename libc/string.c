@@ -99,8 +99,3 @@ void reverse(char *s) {
   }
 }
 
-//
-
-const char *strerror(int errnum) {
-  return errno_str[errnum];
-}

@@ -301,6 +301,7 @@ void *vm_map_page_vaddr(uintptr_t virt_addr, page_t *page) {
   while (curr) {
     curr->flags.present = 1;
     uint64_t *entry = map_page(virt_addr, curr->frame, page_to_flags(curr));
+    curr->addr = virt_addr;
     curr->entry = entry;
 
     virt_addr += page_to_size(curr);
@@ -371,6 +372,55 @@ void *vm_map_vaddr(uintptr_t virt_addr, uintptr_t phys_addr, size_t len, uint16_
 
   return (void *) interval.start;
 }
+
+//
+
+/**
+ * Unmaps a mapped physical page or pages.
+ */
+void vm_unmap_page(page_t *page) {
+  if (!page->flags.present) {
+    return;
+  }
+
+  interval_t intvl = intvl(page->addr, page->addr + 1);
+  intvl_node_t *intvl_node = intvl_tree_find(VM->tree, intvl);
+  if (intvl_node == NULL) {
+    panic("[vm] page is not mapped");
+  }
+
+  vm_area_t *area = intvl_node->data;
+  page_t *curr = page;
+  while (curr) {
+    *curr->entry &= ~PE_PRESENT;
+    page->flags.present = 0;
+    curr = curr->next;
+  }
+
+  kfree(area);
+  intvl_tree_delete(VM->tree, intvl);
+
+  tlb_flush();
+}
+
+/**
+ * Unamps a mapped virtual address.
+ */
+void vm_unmap_vaddr(uintptr_t virt_addr) {
+  interval_t intvl = intvl(virt_addr, virt_addr + 1);
+  intvl_node_t *intvl_node = intvl_tree_find(VM->tree, intvl);
+  if (intvl_node == NULL) {
+    panic("[vm] address is not mapped");
+  }
+
+  vm_area_t *area = intvl_node->data;
+  map_page(virt_addr, 0, 0);
+  intvl_tree_delete(VM->tree, intvl);
+  kfree(area);
+}
+
+
+//
 
 /**
  * Returns the vm_area struct associated with the given

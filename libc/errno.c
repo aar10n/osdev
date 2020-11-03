@@ -60,9 +60,11 @@ const char *errno_str[] = {
   [ENOSR] = "No STREAM resources",
   [ENOSTR] = "Not a STREAM",
   [ENOSYS] = "Functionality not supported",
+  [ENOTBLK] = "Block device required.",
   [ENOTCONN] = "The socket is not connected",
   [ENOTDIR] = "Not a directory or a symbolic link to a directory",
   [ENOTEMPTY] = "Directory not empty",
+  [ENOTMNT] = "Not a filesystem mount.",
   [ENOTRECOVERABLE] = "State not recoverable",
   [ENOTSOCK] = "Not a socket",
   [ENOTSUP] = "Not supported",
@@ -87,3 +89,10 @@ const char *errno_str[] = {
   [EWOULDBLOCK] = "Operation would block",
   [EXDEV] = "Cross-device link",
 };
+
+const char *strerror(int errnum) {
+  if (errnum < 0 || errnum > ERRNO_MAX) {
+    return (void *)0; // NULL
+  }
+  return errno_str[errnum];
+}
