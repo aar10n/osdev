@@ -2,20 +2,41 @@
 // Created by Aaron Gill-Braun on 2020-10-03.
 //
 
-#include "bitmap.h"
-#include "asm/bitmap.h"
+#include <bitmap.h>
+#include <asm/bitmap.h>
 
 #include <panic.h>
-#include <stdio.h>
+#include <mm/heap.h>
 
 #ifndef _assert
 #define _assert(expr) kassert((expr))
+#endif
+
+#ifndef _malloc
+#define _malloc(size) kmalloc(size)
+#define _free(ptr) kfree(ptr)
 #endif
 
 #define MAX_NUM 0xFFFFFFFFFFFFFFFF
 #define BIT_SIZE 64
 #define BYTE_SIZE 8
 
+
+bitmap_t *create_bitmap(size_t n) {
+  bitmap_t *bmp = _malloc(sizeof(bitmap_t));
+  bitmap_init(bmp, n);
+  return bmp;
+}
+
+void bitmap_init(bitmap_t *bmp, size_t n) {
+  size_t na = align(n, BIT_SIZE);
+  size_t bytes = na / BIT_SIZE;
+
+  bmp->map = _malloc(bytes / BYTE_SIZE);
+  bmp->size = bytes;
+  bmp->used = 0;
+  bmp->free = n;
+}
 
 /**
  * Returns the value of the bit at the specified index.
@@ -91,6 +112,30 @@ index_t bitmap_get_free(bitmap_t *bmp) {
   return -1;
 }
 
+index_t bitmap_get_set_free(bitmap_t *bmp) {
+  if (bmp->free == 0) {
+    return -1;
+  }
+
+  uint64_t *array = (uint64_t *) bmp->map;
+  for (size_t i = 0; i < (bmp->size / BYTE_SIZE); i++) {
+    uint64_t qw = array[i];
+    if (qw == MAX_NUM) {
+      // all bits set
+      continue;
+    } else if (qw == 0) {
+      // no bits set
+      bmp->map[i] = 1;
+      return i * BIT_SIZE;
+    }
+
+    size_t offset = __bsf64(~qw);
+    bmp->map[i] |= 1 << offset;
+    return (i * BIT_SIZE) + offset;
+  }
+  return -1;
+}
+
 /*
  * Returns the start index of the next region of `n` consecutive
  * 0 bits. If no such region could be found, `-1` is returned.
@@ -110,7 +155,7 @@ index_t bitmap_get_nfree(bitmap_t *bmp, size_t n) {
         // since it was inverted, all bits set to 1 means
         // it was 0 before and all bits are free.
         bmp->free -= n;
-        return i;
+        return i * BIT_SIZE;
       }
 
       uint8_t p = 0;
@@ -160,7 +205,7 @@ index_t bitmap_get_nfree(bitmap_t *bmp, size_t n) {
     if (n != -1) {
       bmp->free -= n;
     }
-    return index;
+    return index * BIT_SIZE;
   }
   return -1;
 }
@@ -185,7 +230,8 @@ index_t bitmap_get_set_nfree(bitmap_t *bmp, size_t n) {
         // since it was inverted, all bits set to 1 means
         // it was 0 before and all bits are free.
         bmp->free -= n;
-        return i;
+        bmp->map[i] |= (MAX_NUM >> (BIT_SIZE - n));
+        return i * BIT_SIZE;
       }
 
       uint8_t p = 0;
@@ -223,7 +269,7 @@ index_t bitmap_get_set_nfree(bitmap_t *bmp, size_t n) {
       } else {
         // last index
         bmp->map[index + i] = (0xFFFFFFFFFFFFFFFF >> (BIT_SIZE - remaining));
-        return index;
+        return index * BIT_SIZE;
       }
     }
   }
