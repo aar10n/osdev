@@ -8,277 +8,234 @@
 #include <dirent.h>
 #include <string.h>
 #include <mm/heap.h>
+#include <stdio.h>
 
 extern int count_slashes(char *str);
 extern int strip_trailing(char *str, size_t len, bool slashes);
 extern fs_node_map_t links;
 
-//
+const char *slash = "/";
+const char *dot = ".";
 
-char *path_basename(const char *path) {
+// path constants
+path_t path_null;
+path_t path_slash;
+path_t path_dot;
+
+
+void path_init_constants() {
+  path_null = (path_t) { NULL, 0, NULL, NULL };
+  path_slash = str_to_path(slash);
+  path_dot = str_to_path(dot);
+}
+
+// internal helpers
+
+int num_occurrences(path_t path, char c) {
+  int count = 0;
+  char *ptr = path.start;
+  while (ptr < path.end) {
+    if (*ptr == c) {
+      count++;
+    }
+    ptr++;
+  }
+  return count;
+}
+
+char *first_occurence(path_t path, char c) {
+  char *ptr = path.start;
+  while (*ptr != c && ptr < path.end) {
+    ptr++;
+  }
+
+  if (*ptr != c) {
+    return NULL;
+  }
+  return ptr;
+}
+
+path_t skip_over(path_t path, char c) {
+  char *ptr = path.start;
+  while (ptr < path.end && *ptr == c) {
+    ptr++;
+  }
+  return (path_t){ path.str, path.len, ptr, path.end };
+}
+
+path_t skip_until(path_t path, char c) {
+  char *ptr = path.start;
+  while (ptr < path.end && *ptr != c) {
+    ptr++;
+  }
+  return (path_t){ path.str, path.len, ptr, path.end };
+}
+
+path_t skip_over_reverse(path_t path, char c) {
+  char *ptr = path.end;
+  while (ptr > path.start && *(ptr - 1) == c) {
+    ptr--;
+  }
+  return (path_t){ path.str, path.len, path.start, ptr };
+}
+
+path_t skip_until_reverse(path_t path, char c) {
+  char *ptr = path.end;
+  while (ptr > path.start && *(ptr - 1) != c) {
+    ptr--;
+  }
+  return (path_t){ path.str, path.len, path.start, ptr };
+}
+
+// path_t operations
+
+path_t str_to_path(const char *path) {
   if (path == NULL) {
-    return ".";
+    return path_null;
   }
 
   size_t len = strlen(path);
-  if (len == 0) {
-    return ".";
-  }
+  return (path_t) { path, len, (char *) path, (char *) path + len };
+}
 
-  char *buffer = kmalloc(MAX_PATH);
-  strcpy(buffer, path);
+char *path_to_str(path_t path) {
+  size_t len = path.end - path.start;
+  char *str = kmalloc(len + 1);
+  memcpy(str, path.start, len);
+  str[len] = '\0';
+  return str;
+}
+
+//
+
+void pathcpy(char *dest, path_t path) {
+  size_t len = p_len(path);
+  memcpy(dest, path.start, len);
+  dest[len] = '\0';
+}
+
+int patheq(path_t path1, path_t path2) {
+  size_t len1 = p_len(path1);
+  size_t len2 = p_len(path2);
+  if (len1 < len2) return -1;
+  if (len1 > len2) return 1;
+  return memcmp(path1.start, path2.start, len1);
+}
+
+int pathcmp(path_t path1, path_t path2) {
+  size_t len = min(p_len(path1), p_len(path2));
+  return memcmp(path1.start, path2.start, len);
+}
+
+int pathcmp_s(path_t path, const char *str) {
+  size_t len = p_len(path);
+  return memcmp(path.start, str, len);
+}
+
+int patheq_s(path_t path, const char *str) {
+  size_t len1 = p_len(path);
+  size_t len2 = strlen(str);
+  if (len1 < len2) return -1;
+  if (len1 > len2) return 1;
+  return memcmp(path.start, str, len1);
+}
+
+//
+
+path_t path_dirname(path_t path) {
+  if (p_is_null(path) || path.len == 0 || p_len(path) == 0) {
+    return path_dot;
+  }
 
   // remove trailing slashes
-  len -= strip_trailing(buffer, len, true);
-
-  // count the total slashes
-  int slashes = count_slashes(buffer);
-  if (len == 0 || slashes == len) {
-    kfree(buffer);
-    return "/";
+  path = skip_over_reverse(path, '/');
+  // count remaining slashes
+  int slashes = num_occurrences(path, '/');
+  if (p_len(path) == 0 || p_len(path) == slashes) {
+    return path_slash;
   } else if (slashes == 0) {
-    return buffer;
+    return path_dot;
   }
 
-  // remove characters up to and including last slash
-  char *ptr = buffer;
+  // remove trailing non-slash characters
+  path = skip_until_reverse(path, '/');
+  // remove trailing slashes (again)
+  path = skip_over_reverse(path, '/');
+
+  if (p_len(path) == 0) {
+    return path_slash;
+  }
+
+  path.len = path.end - path.start;
+  return path;
+}
+
+path_t path_basename(path_t path) {
+  if (p_is_null(path) || path.len == 0 || p_len(path) == 0) {
+    return path_dot;
+  }
+
+  // remove any trailing slashes
+  path = skip_over_reverse(path, '/');
+  // count remaining slashes
+  int slashes = num_occurrences(path, '/');
+  if (p_len(path) == 0 || p_len(path) == slashes) {
+    return path_slash;
+  } else if (slashes == 0) {
+    return path;
+  }
+
+  // remove characters up to and including any last slashes
+  char *ptr = path.start;
   while (slashes > 0) {
     if (*ptr == '/') {
       slashes--;
     }
-
-    *ptr = '\0';
     ptr++;
   }
 
-  return ptr;
+  size_t len = path.end - ptr;
+  return (path_t){ path.str, len, ptr, path.end };
 }
 
-char *path_dirname(const char *path) {
-  if (path == NULL) {
-    return ".";
+path_t path_prefix(path_t path) {
+  if (pathcmp(path_slash, path) == 0) {
+    return path_slash;
   }
-
-  size_t len = strlen(path);
-  if (len == 0) {
-    return ".";
-  }
-
-  char *buffer = kmalloc(MAX_PATH);
-  strcpy(buffer, path);
-
-  // remove trailing slashes
-  len -= strip_trailing(buffer, len, true);
-
-  // count remaining slashes
-  int slashes = count_slashes(buffer);
-  if (len == 0 || slashes == len) {
-    kfree(buffer);
-    return "/";
-  } else if (slashes == 0) {
-    kfree(buffer);
-    return ".";
-  }
-
-  // remove trailing non-slash characters
-  len -= strip_trailing(buffer, len, false);
-
-  // remove trailing slashes (again)
-  len -= strip_trailing(buffer, len, true);
-
-  if (len == 0) {
-    kfree(buffer);
-    return "/";
-  }
-  return buffer;
+  return path_dot;
 }
 
-char *path_iter_next(path_iter_t *iter) {
-  if (iter->last) {
-    kfree(iter->last);
-  }
-
-  if (iter->ptr == NULL) {
-    return NULL;
-  } else if (iter->ptr == iter->path) {
-    if (iter->ptr[0] == '.' || iter->ptr[0] == '/') {
-      char *ptr = iter->ptr;
-      while (*ptr != '/') {
-        ptr++;
-      }
-
-      ptr++;
-      iter->ptr = ptr;
-
-      size_t len = iter->ptr - iter->path;
-      char *str = kmalloc(len + 1);
-      memcpy(str, iter->path, len);
-      str[len] = '\0';
-      return str;
-    }
-  } else if (*iter->ptr == '\0') {
-    iter->ptr = NULL;
-    return NULL;
-  }
-
-  char *ptr = iter->ptr;
-  char *next = kmalloc(MAX_FILE_NAME);
-
-  // skip any leading slashes
-  while (*ptr == '/') {
-    ptr++;
-  }
-
-  // copy until the next slash (or null)
-  char *dest = next;
-  while (*ptr && *ptr != '/') {
-    *dest = *ptr;
-    dest++;
-    ptr++;
-  }
-
-  if (!*ptr) {
-    iter->ptr = NULL;
-  } else {
-    iter->ptr = ptr;
-  }
-
-  iter->last = next;
-  return next;
+void path_print(path_t path) {
+  char str[p_len(path) + 1];
+  pathcpy(str, path);
+  kprintf("path: %s\n", str);
 }
 
 //
 
-fs_node_t *path_resolve_link(fs_node_t *node, int flags) {
-  if (!IS_IFLNK(node->mode)) {
-    return node;
+path_t path_next_part(path_t path) {
+  if (path.start >= path.str + path.len) {
+    return path_null;
   }
 
-  if (flags & O_NOFOLLOW) {
-    errno = ELOOP;
-    return NULL;
+  char *real_end = (char *) path.str + path.len;
+  if (path.start != path.str || path.end != real_end) {
+    path.start = path.end;
+    path.end = real_end;
   }
 
-  size_t lcount = 0;
-  while (IS_IFLNK(node->mode)) {
-    if (lcount >= MAX_SYMLINKS) {
-      // too many symbolic links encountered
-      errno = ELOOP;
-      return NULL;
-    }
+  // skip leading slashes
+  path = skip_over(path, '/');
+  // next part start ptr
+  char *start = path.start;
+  // skip until next slash (or end)
+  path = skip_until(path, '/');
+  // next part end ptr
+  char *end = path.start;
 
-    aquire(links.rwlock);
-    fs_node_t *linked = *map_get(&links.hash_table, node->iflnk.path);
-    release(links.rwlock);
-    if (linked) {
-      node = linked;
-      lcount++;
-    } else {
-      // dangling symbolic link
-      errno = ENOENT;
-      return NULL;
-    }
+  if (start >= real_end && end >= real_end) {
+    return path_null;
   }
 
-  return node;
-}
-
-fs_node_t *path_get_node(fs_node_t *root, const char *path, int flags) {
-  #define get_node_cleanup() \
-  kfree(dirname); kfree(basename); kfree(iter.last)
-
-  size_t path_len = strlen(path);
-  if (path_len > MAX_PATH) {
-    errno = ENAMETOOLONG;
-    return NULL;
-  }
-
-  char *dirname = path_dirname(path);
-  char *basename = path_basename(path);
-
-  path_iter_t iter = path_iter(dirname);
-  char *part;
-  fs_node_t *node = root;
-  while ((part = path_iter_next(&iter))) {
-    if (!IS_IFDIR(node->mode)) {
-      fs_node_t *resolved = path_resolve_link(node, flags);
-      if (!resolved) {
-        get_node_cleanup();
-        return NULL;
-      }
-
-      if (IS_IFDIR(resolved->mode)) {
-        node = resolved;
-      } else {
-        // part exists but it is not a directory
-        errno = ENOTDIR;
-        get_node_cleanup();
-        return NULL;
-      }
-    }
-
-    // look through directories children
-    fs_node_t *child = node->ifdir.first;
-    while (child) {
-      if (strcmp(child->name, part) == 0) {
-        break;
-      }
-      child = child->next;
-    }
-
-    if (child == NULL) {
-      // directory component does not exist
-      errno = ENOENT;
-      get_node_cleanup();
-      return NULL;
-    }
-
-    node = child;
-  }
-
-  // search last directory for child
-  while (node) {
-    if (strcmp(node->name, basename) == 0) {
-      break;
-    }
-    node = node->next;
-  }
-  get_node_cleanup();
-
-  if (node == NULL) {
-    errno = ENOENT;
-  }
-  return node;
-}
-
-char *path_from_node(fs_node_t *node) {
-  if (is_root(node)) {
-    return "/";
-  }
-
-  char *path = kmalloc(MAX_PATH);
-  char *ptr = path;
-  memset(path, 0, MAX_PATH);
-
-  while (!is_root(node)) {
-    int len = strlen(node->name);
-
-    // copy in reverse
-    for (int i = 0; i < len; i++) {
-      int c = len - i - 1;
-      *ptr = node->name[c];
-      ptr++;
-    }
-
-    *ptr = '/';
-    ptr++;
-
-    node = node->parent;
-  }
-
-  *ptr = '\0';
-
-  // reverse the path to get the final result
-  reverse(path);
-  return path;
+  return (path_t){ path.str, path.len, start, end };
 }

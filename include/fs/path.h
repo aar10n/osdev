@@ -8,21 +8,46 @@
 #include <base.h>
 #include <fs.h>
 
+#define p_len(path) \
+  ((path).end - (path).start)
+
+#define p_is_null(path) \
+  ((path).str == path_null.str)
+
+#define p_is_slash(path) \
+  ((path).str == path_slash.str)
+
+#define p_is_dot(path) \
+  ((path).str == path_slash.str)
+
+
 typedef struct {
-  const char *path;
-  char *ptr;
-  char *last;
-} path_iter_t;
+  const char *str;
+  size_t len;
+  char *start;
+  char *end;
+} path_t;
 
-#define path_iter(path) \
-  ((path_iter_t){ path, (char *) path, NULL })
+extern path_t path_null;
+extern path_t path_slash;
+extern path_t path_dot;
 
-char *path_basename(const char *path);
-char *path_dirname(const char *path);
-char *path_iter_next(path_iter_t *iter);
+void path_init_constants();
 
-fs_node_t *path_resolve_link(fs_node_t *node, int flags);
-fs_node_t *path_get_node(fs_node_t *root, const char *path, int flags);
-char *path_from_node(fs_node_t *node);
+path_t str_to_path(const char *path);
+char *path_to_str(path_t path);
+
+void pathcpy(char *dest, path_t path);
+int patheq(path_t path1, path_t path2);
+int pathcmp(path_t path1, path_t path2);
+int pathcmp_s(path_t path, const char *str);
+int patheq_s(path_t path, const char *str);
+
+path_t path_dirname(path_t path);
+path_t path_basename(path_t path);
+path_t path_prefix(path_t path);
+path_t path_next_part(path_t path);
+
+void path_print(path_t path);
 
 #endif
