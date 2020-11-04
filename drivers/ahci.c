@@ -197,6 +197,7 @@ fs_device_list_t *ahci_discover(ahci_controller_t *controller) {
 
       fs_device_list_t *item = kmalloc(sizeof(fs_device_list_t));
       item->data = port;
+      item->next = NULL;
       if (devices != NULL) {
         devices->next = item;
       }
@@ -226,7 +227,6 @@ ssize_t transfer_dma(direction_t dir, ahci_device_t *ahci_port, uintptr_t lba, s
 
   size_t max_prdt_entries = ((ahci_slot->table_length - sizeof(hba_cmd_table_t)) /
     sizeof(hba_prdt_entry_t)) + 1;
-  kprintf("max prdt entries: %d\n", max_prdt_entries);
   hba_cmd_table_t *table = ahci_slot->table;
   memset(table->prdt, 0, cmd->prdt_length * sizeof(hba_prdt_entry_t));
 

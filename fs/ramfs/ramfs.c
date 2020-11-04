@@ -31,6 +31,7 @@ inode_t *ramfs_alloc_inode(ramfs_t *ramfs) {
 
   bitmap_set(bmp, index);
   inode_t *inode = &(ramfs->inodes[index]);
+  memset(inode, 0, sizeof(inode_t));
   inode->ino = index;
   return inode;
 }
@@ -53,15 +54,6 @@ inode_t *ramfs_get_inode(ramfs_t *ramfs, ino_t ino) {
 
 //
 
-ramfs_file_t *ramfs_get_file(inode_t *inode) {
-  ramfs_file_t *file = (void *) inode->data;
-  if (file->mem_type == RAMFS_PAGE_BACKED) {
-    page_t *page = file->mem;
-    return (void *) page->addr;
-  }
-  return file;
-}
-
 ramfs_file_t *ramfs_alloc_file(inode_t *inode, ramfs_backing_mem_t backing, size_t size) {
   ramfs_file_t *file = kmalloc(sizeof(ramfs_file_t));
   file->mem_type = backing;
@@ -80,6 +72,19 @@ ramfs_file_t *ramfs_alloc_file(inode_t *inode, ramfs_backing_mem_t backing, size
   }
 
   inode->data = file;
+  return file;
+}
+
+ramfs_file_t *ramfs_get_file(inode_t *inode) {
+  ramfs_file_t *file = (void *) inode->data;
+  if (file == NULL) {
+    return NULL;
+  }
+
+  if (file->mem_type == RAMFS_PAGE_BACKED) {
+    page_t *page = file->mem;
+    return (void *) page->addr;
+  }
   return file;
 }
 
@@ -292,10 +297,15 @@ ssize_t ramfs_read(fs_t *fs, inode_t *inode, off_t offset, size_t nbytes, void *
 
 ssize_t ramfs_write(fs_t *fs, inode_t *inode, off_t offset, size_t nbytes, void *buf) {
   ramfs_file_t *file = ramfs_get_file(inode);
+  if (file == NULL) {
+    ramfs_backing_mem_t backing = (offset + nbytes) > (PAGE_SIZE / 4) ?
+      RAMFS_PAGE_BACKED : RAMFS_HEAP_BACKED;
+
+    file = ramfs_alloc_file(inode, backing, nbytes);
+  }
 
   if (offset >= file->size) {
-    errno = EOVERFLOW;
-    return -1;
+    ramfs_resize_file(inode, file->size + align(offset - file->size, PAGE_SIZE));
   }
 
   if (offset + nbytes > file->size) {

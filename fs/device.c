@@ -40,7 +40,7 @@ int fs_discover_devices() {
     return 0;
   }
 
-  kprintf("[fs:devices] discovering devices\n");
+  kprintf("[devices] discovering devices\n");
 
   dev_t dev_id = alloc_device_id();
   for (int i = 0; i < __driver_id; i++) {
@@ -50,7 +50,7 @@ int fs_discover_devices() {
     }
 
     fs_device_driver_t *driver = &(drivers[i]);
-    kprintf("[fs:devices] %s: discovering\n", driver->name);
+    kprintf("[devices] %s: discovering\n", driver->name);
 
     fs_controller_t *controller = driver->c_impl->init(dev_id);
     if (controller == NULL) {
@@ -94,13 +94,14 @@ int fs_discover_devices() {
 
       devices[id] = *device;
       devices[id].type = FS_STORAGE_DEVICE;
-      kprintf("[fs:device] %s: device registered (%d)\n", driver->name, id);
+      kprintf("[device] %s: device registered (%d)\n", driver->name, id);
+      item = item->next;
     }
 
     dev_id = alloc_device_id();
   }
 
-  kprintf("[fs:devices] done!\n");
+  kprintf("[devices] done!\n");
   return 0;
 }
 

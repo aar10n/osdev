@@ -97,7 +97,27 @@ char *path_iter_next(path_iter_t *iter) {
   if (iter->last) {
     kfree(iter->last);
   }
+
   if (iter->ptr == NULL) {
+    return NULL;
+  } else if (iter->ptr == iter->path) {
+    if (iter->ptr[0] == '.' || iter->ptr[0] == '/') {
+      char *ptr = iter->ptr;
+      while (*ptr != '/') {
+        ptr++;
+      }
+
+      ptr++;
+      iter->ptr = ptr;
+
+      size_t len = iter->ptr - iter->path;
+      char *str = kmalloc(len + 1);
+      memcpy(str, iter->path, len);
+      str[len] = '\0';
+      return str;
+    }
+  } else if (*iter->ptr == '\0') {
+    iter->ptr = NULL;
     return NULL;
   }
 

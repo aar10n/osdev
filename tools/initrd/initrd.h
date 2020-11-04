@@ -5,6 +5,13 @@
 #ifndef INITRD_INITRD_H
 #define INITRD_INITRD_H
 
+#ifdef _KERNEL_
+#include <base.h>
+#else
+#include <stddef.h>
+#include <stdint.h>
+#endif
+
 #define INITRD_MAGIC 0xBAE0
 
 // File type

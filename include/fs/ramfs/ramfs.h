@@ -34,6 +34,8 @@ typedef struct {
   size_t max_inodes;
 } ramfs_t;
 
+extern fs_driver_t ramfs_driver;
+
 
 fs_t *ramfs_mount(dev_t dev, fs_node_t *mount);
 int ramfs_unmount(fs_t *fs, fs_node_t *mount);

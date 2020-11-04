@@ -7,11 +7,11 @@
 #include <mm/heap.h>
 
 file_t *__create_file() {
-  file_t *file = kmalloc(sizeof(file_t *));
+  file_t *file = kmalloc(sizeof(file_t));
   file->fd = -1;
   file->flags = -1;
   file->offset = 0;
-  spin_init(&file->lock);
+  spinrw_init(&file->lock);
   return file;
 }
 

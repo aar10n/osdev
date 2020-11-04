@@ -13,11 +13,18 @@
 #include <inode.h>
 #include <dirent.h>
 #include <path.h>
+#include <device.h>
 #include <process.h>
+
+#include <ramfs/ramfs.h>
+#include <drivers/ahci.h>
 
 #include <asm/bitmap.h>
 #include <hash_table.h>
 #include <murmur3.h>
+
+// #define FILES (current->files)
+#define FILES (PERCPU->files)
 
 fs_node_t *root = NULL;
 inode_table_t *inodes;
@@ -151,6 +158,8 @@ inode_t *create_inode(fs_node_t *parent, mode_t mode) {
   fs_t *fs = parent->fs;
   inode_t *inode = fs->impl->create(fs, mode);
   if (inode) {
+    inode->impl = parent->fs->impl;
+    inode->mode = mode;
     __cache_inode(inodes, inode->ino, inode);
   }
   return inode;
@@ -195,6 +204,8 @@ int validate_open_flags(fs_node_t *node, int flags) {
 //
 
 void fs_init() {
+  kprintf("[fs] initializing...\n");
+
   // create the filesystem root
   root = kmalloc(sizeof(fs_node_t));
   root->inode = 0;
@@ -220,6 +231,16 @@ void fs_init() {
   cache.hash_table.map.load_factor = LOAD_FACTOR;
   map_init(&cache.hash_table);
   spinrw_init(&cache.rwlock);
+
+  fs_register_device_driver(ahci_driver);
+  fs_discover_devices();
+
+  fs_t *fs = ramfs_mount(-1, root);
+  add_child(root, fs->root);
+
+  FILES = __create_file_table();
+
+  kprintf("[fs] done!\n");
 }
 
 //
@@ -272,7 +293,6 @@ int fs_mount(fs_driver_t *driver, fs_node_t *device, const char *path) {
   }
 
   mount->dev = dev->id;
-  mount->ifmnt.instance = instance;
   return 0;
 }
 
@@ -287,7 +307,7 @@ int fs_unmount(const char *path) {
     return -1;
   }
 
-  fs_t *instance = mount->ifmnt.instance;
+  fs_t *instance = mount->fs;
 
   // sync all data before unmounting
   if (instance->driver->impl->sync(instance) == -1) {
@@ -364,10 +384,12 @@ int fs_open(const char *filename, int flags, mode_t mode) {
     add_child(parent, node);
   }
 
-  inode_t *inode = __fetch_inode(inodes, node->inode);
+  inode_t *inode = get_inode(node);
+  if (inode == NULL) {
+    return -1;
+  }
 
-  // file_table_t *files = current->files;
-  file_table_t *files = PERCPU->files;
+  file_table_t *files = FILES;
   file_t *file = __create_file();
 
   lock(files->lock);
@@ -389,12 +411,12 @@ int fs_open(const char *filename, int flags, mode_t mode) {
 }
 
 int fs_close(int fd) {
-  // file_table_t *files = current->files;
-  file_table_t *files = PERCPU->files;
+  file_table_t *files = FILES;
 
   lock(files->lock);
   rb_node_t *node = rb_tree_find(files->files, fd);
   if (node == NULL) {
+    unlock(files->lock);
     errno = EBADF;
     return -1;
   }
@@ -409,15 +431,100 @@ int fs_close(int fd) {
 //
 
 ssize_t fs_read(int fd, void *buf, size_t nbytes) {
+  file_table_t *files = FILES;
 
+  lock(files->lock);
+  rb_node_t *node = rb_tree_find(files->files, fd);
+  if (node == NULL) {
+    unlock(files->lock);
+    errno = EBADF;
+    return -1;
+  }
+  file_t *file = node->data;
+  unlock(files->lock);
+
+  //
+
+  inode_t *inode = get_inode(file->node);
+  if (inode == NULL) {
+    return -1;
+  }
+
+  aquire(file->lock);
+  lock(inode->lock);
+  ssize_t nread = inode->impl->read(file->node->fs, inode, file->offset, nbytes, buf);
+  unlock(inode->lock);
+  release(file->lock);
+
+  return nread;
 }
 
 ssize_t fs_write(int fd, void *buf, size_t nbytes) {
+  file_table_t *files = FILES;
 
+  lock(files->lock);
+  rb_node_t *node = rb_tree_find(files->files, fd);
+  if (node == NULL) {
+    unlock(files->lock);
+    errno = EBADF;
+    return -1;
+  }
+  file_t *file = node->data;
+  unlock(files->lock);
+
+  //
+
+  inode_t *inode = get_inode(file->node);
+  if (inode == NULL) {
+    return -1;
+  }
+
+  aquire(file->lock);
+  lock(inode->lock);
+  ssize_t nwritten = inode->impl->write(file->node->fs, inode, file->offset, nbytes, buf);
+  unlock(inode->lock);
+  release(file->lock);
+
+  return nwritten;
 }
 
-off_t fs_lseek(int fd, off_t offset, int base) {
+off_t fs_lseek(int fd, off_t offset, int whence) {
+  file_table_t *files = FILES;
 
+  lock(files->lock);
+  rb_node_t *node = rb_tree_find(files->files, fd);
+  if (node == NULL) {
+    unlock(files->lock);
+    errno = EBADF;
+    return -1;
+  }
+  file_t *file = node->data;
+  unlock(files->lock);
+
+  if (IS_IFIFO(file->node->mode)) {
+    errno = ESPIPE;
+    return -1;
+  }
+
+  inode_t *inode = get_inode(file->node);
+  if (inode == NULL) {
+    return -1;
+  }
+
+  off_t pos;
+  if (whence == SEEK_SET) {
+    pos = offset;
+  } else if (whence == SEEK_CUR) {
+    pos = file->offset + offset;
+  } else if (whence == SEEK_END) {
+    pos = inode->size + offset;
+  } else {
+    errno = EINVAL;
+    return -1;
+  }
+
+  file->offset = pos;
+  return 0;
 }
 
 //

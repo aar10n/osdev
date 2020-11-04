@@ -32,13 +32,18 @@
 #define O_TRUNC     0x010000
 #define O_TTY_INIT  0x020000
 
+// Seek constants
+#define SEEK_SET 1
+#define SEEK_CUR 2
+#define SEEK_END 3
+
 typedef struct fs_node fs_node_t;
 
 typedef struct file {
   int fd;
   int flags;
   off_t offset;
-  spinlock_t lock;
+  rw_spinlock_t lock;
   fs_node_t *node;
 } file_t;
 

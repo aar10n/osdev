@@ -90,7 +90,6 @@ typedef struct fs_node {
     struct { // V_IFCHR
     } ifchr;
     struct { // V_IFMNT
-      fs_t *instance;
       fs_node_t *shadow;
     } ifmnt;
   };
@@ -117,7 +116,7 @@ int fs_close(int fd);
 
 ssize_t fs_read(int fd, void *buf, size_t nbytes);
 ssize_t fs_write(int fd, void *buf, size_t nbytes);
-off_t fs_lseek(int fd, off_t offset, int base);
+off_t fs_lseek(int fd, off_t offset, int whence);
 
 int fs_link(const char *path1, const char *path2);
 int fs_unlink(const char *path);
