@@ -14,14 +14,15 @@ typedef struct fs fs_t;
 typedef struct fs_device fs_device_t;
 typedef struct path path_t;
 typedef struct inode inode_t;
+typedef struct dirent dirent_t;
 
 // A node in the virtual filesystem
 typedef struct fs_node {
-  ino_t inode;  // inode
-  dev_t dev;    // device
-  mode_t mode;  // file mode
-  char *name;   // file name
-  fs_t *fs;     // containing filesystem
+  ino_t inode;      // inode
+  dev_t dev;        // device
+  mode_t mode;      // file mode
+  dirent_t *dirent; // the directory entry for the file
+  fs_t *fs;         // containing filesystem
   struct fs_node *parent;
   struct fs_node *next;
   struct fs_node *prev;
@@ -69,16 +70,16 @@ fs_node_table_t *create_node_table();
 fs_node_map_t *create_node_map();
 
 void vfs_init();
-fs_node_t *vfs_create_node();
+fs_node_t *vfs_create_node(fs_node_t *parent, mode_t mode);
 fs_node_t *vfs_create_node_from_inode(inode_t *inode);
 
 fs_node_t *vfs_get_node(path_t path, int flags);
 fs_node_t *vfs_find_child(fs_node_t *parent, path_t name);
 fs_node_t *vfs_resolve_link(fs_node_t *node, int flags);
-void vfs_add_device(fs_device_t *device);
-void vfs_add_node(fs_node_t *parent, fs_node_t *child);
-void vfs_remove_node(fs_node_t *node);
-void vfs_swap_node(fs_node_t *orig_node, fs_node_t *new_node);
+int vfs_add_device(fs_device_t *device);
+int vfs_add_node(fs_node_t *parent, fs_node_t *child, char *name);
+int vfs_remove_node(fs_node_t *node);
+int vfs_swap_node(fs_node_t *orig_node, fs_node_t *new_node);
 
 char *vfs_path_from_node(fs_node_t *node);
 

@@ -21,7 +21,7 @@
 // #define PWD (current->pwd)
 #define PWD (PERCPU->pwd)
 
-static ino_t vfs_ino = 0;
+static ino_t vfs_ino = 1;
 
 fs_t *root_fs = NULL;
 fs_node_t *fs_root = NULL;
@@ -143,27 +143,42 @@ void vfs_init() {
   fs_root = root_fs->root;
   fs_root->mode = S_IFDIR;
 
-  fs_root->name = "/";
+  dirent_t *root_dirent = kmalloc(sizeof(dirent_t));
+  root_dirent->inode = fs_root->inode;
+  strcpy(root_dirent->name, "/");
+  fs_root->dirent = root_dirent;
 
   // `/dev` directory
-  fs_node_t *dev_dir = vfs_create_node();
-  dev_dir->mode |= S_IFDIR;
-  dev_dir->name = "dev";
-  dev_dir->fs = root_fs;
-  dev_dir->ifdir.first = NULL;
-  dev_dir->ifdir.last = NULL;
-
-  vfs_add_node(fs_root, dev_dir);
+  fs_node_t *dev_dir = vfs_create_node(fs_root, S_IFDIR);
+  int result = vfs_add_node(fs_root, dev_dir, "dev");
+  if (result < 0) {
+    panic("failed to create directory: /dev | %s", strerror(errno));
+  }
 }
 
 
-fs_node_t *vfs_create_node() {
+// fs_node_t *vfs_create_node() {
+//   fs_node_t *node = kmalloc(sizeof(fs_node_t));
+//   memset(node, 0, sizeof(fs_node_t));
+//
+//   ino_t ino = atomic_fetch_add(&vfs_ino, 1);
+//   node->inode = ino;
+//   node->dev = 0;
+//   return node;
+// }
+
+fs_node_t *vfs_create_node(fs_node_t *parent, mode_t mode) {
+  inode_t *inode = parent->fs->impl->create(parent->fs, mode);
+  if (inode == NULL) {
+    return NULL;
+  }
+
   fs_node_t *node = kmalloc(sizeof(fs_node_t));
   memset(node, 0, sizeof(fs_node_t));
-
-  ino_t ino = atomic_fetch_add(&vfs_ino, 1);
-  node->inode = ino;
-  node->dev = 0;
+  node->inode = inode->ino;
+  node->dev = inode->dev;
+  node->fs = parent->fs;
+  node->mode = mode;
   return node;
 }
 
@@ -246,7 +261,7 @@ fs_node_t *vfs_find_child(fs_node_t *parent, path_t name) {
 
   fs_node_t *child = parent->ifdir.first;
   while (child) {
-    if (pathcmp_s(name, child->name) == 0) {
+    if (pathcmp_s(name, child->dirent->name) == 0) {
       return child;
     }
     child = child->next;
@@ -307,28 +322,38 @@ fs_node_t *vfs_resolve_link(fs_node_t *node, int flags) {
   return node;
 }
 
-
-void vfs_add_device(fs_device_t *device) {
-  char *name = kmalloc(16);
-  ksprintf(name, "disk%d", device->id);
-
+int vfs_add_device(fs_device_t *device) {
   fs_node_t *dev_dir = vfs_get_node(str_to_path("/dev"), 0);
   if (dev_dir == NULL) {
     panic("[vfs] /dev: %s", strerror(errno));
   }
 
-  fs_node_t *dev = vfs_create_node();
-  dev->mode = S_IFBLK;
-  dev->name = name;
-  dev->fs = dev_dir->fs;
+  fs_node_t *dev = vfs_create_node(dev_dir, S_IFBLK);
   dev->ifblk.device = device;
 
-  vfs_add_node(dev_dir, dev);
+  char name[MAX_FILE_NAME];
+  ksprintf(name, "disk%d", device->id);
+  return vfs_add_node(dev_dir, dev, name);
 }
 
-void vfs_add_node(fs_node_t *parent, fs_node_t *child) {
-  kassert(IS_IFDIR(parent->mode));
+int vfs_add_node(fs_node_t *parent, fs_node_t *child, char *name) {
+  if (parent == NULL || child == NULL) {
+    return -1;
+  }
 
+  kassert(IS_IFDIR(parent->mode));
+  inode_t *parent_inode = inode_get(parent);
+  inode_t *inode = inode_get(child);
+  if (parent_inode == NULL || inode == NULL) {
+    return -1;
+  }
+
+  dirent_t *dirent = child->fs->impl->link(child->fs, inode, parent_inode, name);
+  if (dirent == NULL) {
+    return -1;
+  }
+
+  child->dirent = dirent;
   child->parent = parent;
   if (parent->ifdir.last == NULL) {
     parent->ifdir.first = child;
@@ -338,9 +363,20 @@ void vfs_add_node(fs_node_t *parent, fs_node_t *child) {
     parent->ifdir.last->next = child;
     parent->ifdir.last = child;
   }
+  return 0;
 }
 
-void vfs_remove_node(fs_node_t *node) {
+int vfs_remove_node(fs_node_t *node) {
+  inode_t *inode = inode_get(node);
+  if (inode == NULL) {
+    return -1;
+  }
+
+  int result = node->fs->impl->unlink(node->fs, inode, node->dirent);
+  if (result < 0) {
+    return -1;
+  }
+
   // cleans up all external references to the node
   if (node->prev) {
     node->prev->next = node->next;
@@ -357,9 +393,30 @@ void vfs_remove_node(fs_node_t *node) {
   char *node_path = vfs_path_from_node(node);
   remove_link(node_path);
   kfree(node_path);
+  return 0;
 }
 
-void vfs_swap_node(fs_node_t *orig_node, fs_node_t *new_node) {
+int vfs_swap_node(fs_node_t *orig_node, fs_node_t *new_node) {
+  inode_t *parent_inode = inode_get(orig_node->parent);
+  inode_t *orig_inode = inode_get(orig_node);
+  inode_t *new_inode = inode_get(new_node);
+  if (parent_inode == NULL || orig_inode == NULL || new_inode == NULL) {
+    return -1;
+  }
+
+  dirent_t *dirent = new_node->fs->impl->link(
+    new_node->fs, new_inode, parent_inode, orig_node->dirent->name
+  );
+  if (dirent == NULL) {
+    return -1;
+  }
+  new_node->dirent = dirent;
+
+  int result = orig_node->fs->impl->unlink(orig_node->fs, orig_inode, orig_node->dirent);
+  if (result < 0) {
+    return -1;
+  }
+
   new_node->parent = orig_node->parent;
   new_node->prev = orig_node->prev;
   new_node->next = orig_node->next;
@@ -379,6 +436,7 @@ void vfs_swap_node(fs_node_t *orig_node, fs_node_t *new_node) {
   char *node_path = vfs_path_from_node(orig_node);
   remove_link(node_path);
   kfree(node_path);
+  return 0;
 }
 
 //
@@ -393,12 +451,12 @@ char *vfs_path_from_node(fs_node_t *node) {
   memset(path, 0, MAX_PATH);
 
   while (!is_root(node)) {
-    int len = strlen(node->name);
+    int len = strlen(node->dirent->name);
 
     // copy in reverse
     for (int i = 0; i < len; i++) {
       int c = len - i - 1;
-      *ptr = node->name[c];
+      *ptr = node->dirent->name[c];
       ptr++;
     }
 

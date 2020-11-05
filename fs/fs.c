@@ -31,15 +31,6 @@
 void fs_init() {
   kprintf("[fs] initializing...\n");
 
-  // create the filesystem root
-  fs_root = kmalloc(sizeof(fs_node_t));
-  fs_root->inode = 0;
-  fs_root->dev = -1;
-  fs_root->mode = S_IFDIR | S_IRUSR | S_IRGRP | S_IROTH;
-  fs_root->name = "/";
-  fs_root->parent = NULL;
-  fs_root->next = fs_root;
-
   path_init();
   vfs_init();
 
@@ -54,6 +45,7 @@ void fs_init() {
 //
 
 int fs_mount(fs_driver_t *driver, const char *device, const char *path) {
+  kprintf("[fs] mount\n");
   fs_node_t *dev_node = vfs_get_node(str_to_path(device), 0);
   if (dev_node == NULL) {
     return -1;
@@ -72,17 +64,17 @@ int fs_mount(fs_driver_t *driver, const char *device, const char *path) {
   }
 
   fs_device_t *dev = dev_node->ifblk.device;
-  fs_node_t *mount = vfs_create_node();
+  fs_node_t *mount = vfs_create_node(parent, S_IFMNT);
   mount->dev = dev->id;
+  mount->ifmnt.shadow = NULL;
 
   path_t basename = path_basename(p);
-  mount->name = path_to_str(basename);
-  mount->mode = S_IFMNT;
-  mount->ifmnt.shadow = NULL;
+  char name[p_len(basename)];
+  pathcpy(name, basename);
 
   fs_node_t *child = vfs_find_child(parent, basename);
   if (child == NULL) {
-    vfs_add_node(parent, mount);
+    vfs_add_node(parent, mount, name);
   } else {
     vfs_swap_node(child, mount);
   }
@@ -98,6 +90,7 @@ int fs_mount(fs_driver_t *driver, const char *device, const char *path) {
 }
 
 int fs_unmount(const char *path) {
+  kprintf("[fs] unmount\n");
   fs_node_t *mount = vfs_get_node(str_to_path(path), 0);
   if (mount == NULL) {
     return -1;
@@ -132,7 +125,7 @@ int fs_unmount(const char *path) {
 //
 
 int fs_open(const char *filename, int flags, mode_t mode) {
-  // fs_node_t *node = path_get_node(fs_root, filename, flags);
+  kprintf("[fs] open\n");
   fs_node_t *node = vfs_get_node(str_to_path(filename), flags);
   if (node == NULL && (errno != ENOENT && flags & O_CREAT)) {
     return -1;
@@ -153,17 +146,20 @@ int fs_open(const char *filename, int flags, mode_t mode) {
 
     mode |= (flags & O_DIRECTORY) ? S_IFDIR : S_IFREG;
 
+    inode_t *parent_inode = inode_get(parent);
     inode = inode_create(parent->fs, mode);
-    if (inode == NULL) {
+    if (parent_inode == NULL || inode == NULL) {
       return -1;
     }
 
     path_t basename = path_basename(path);
+    char name[p_len(basename) + 1];
+    pathcpy(name, basename);
+
     node = vfs_create_node_from_inode(inode);
-    node->name = path_to_str(basename);
     node->fs = parent->fs;
 
-    vfs_add_node(parent, node);
+    vfs_add_node(parent, node, name);
   } else {
     inode = inode_get(node);
     if (inode == NULL) {
@@ -178,6 +174,7 @@ int fs_open(const char *filename, int flags, mode_t mode) {
 }
 
 int fs_close(int fd) {
+  kprintf("[fs] close\n");
   file_t *file = file_get(fd);
   if (file == NULL) {
     return -1;
@@ -189,6 +186,7 @@ int fs_close(int fd) {
 //
 
 ssize_t fs_read(int fd, void *buf, size_t nbytes) {
+  kprintf("[fs] read\n");
   file_t *file = file_get(fd);
   if (file == NULL) {
     return -1;
@@ -210,10 +208,12 @@ ssize_t fs_read(int fd, void *buf, size_t nbytes) {
   unlock(inode->lock);
   release(file->lock);
 
+  file->offset += nread;
   return nread;
 }
 
 ssize_t fs_write(int fd, void *buf, size_t nbytes) {
+  kprintf("[fs] write\n");
   file_t *file = file_get(fd);
   if (file == NULL) {
     return -1;
@@ -231,10 +231,12 @@ ssize_t fs_write(int fd, void *buf, size_t nbytes) {
   unlock(inode->lock);
   release(file->lock);
 
+  file->offset += nwritten;
   return nwritten;
 }
 
 off_t fs_lseek(int fd, off_t offset, int whence) {
+  kprintf("[fs] lseek\n");
   file_t *file = file_get(fd);
   if (file == NULL) {
     return -1;
@@ -269,59 +271,59 @@ off_t fs_lseek(int fd, off_t offset, int whence) {
 //
 
 int fs_link(const char *path1, const char *path2) {
-
+  kprintf("[fs] link\n");
 }
 
 int fs_unlink(const char *path) {
-
+  kprintf("[fs] unlink\n");
 }
 
 int fs_symlink(const char *path1, const char *path2) {
-
+  kprintf("[fs] symlink\n");
 }
 
 int fs_rename(const char *oldfile, const char *newfile) {
-
+  kprintf("[fs] rename\n");
 }
 
 int fs_chmod(const char *path, mode_t mode) {
-
+  kprintf("[fs] chmod\n");
 }
 
 int fs_chown(const char *path, uid_t owner, gid_t group) {
-
+  kprintf("[fs] chown\n");
 }
 
 //
 
 int fs_opendir(const char *filename) {
-
+  kprintf("[fs] opendir\n");
 }
 
 int fs_closedir(int fd) {
-
+  kprintf("[fs] closedir\n");
 }
 
 int fs_mkdir(const char *path, mode_t mode) {
-
+  kprintf("[fs] mkdir\n");
 }
 
 int fs_chdir(const char *path) {
-
+  kprintf("[fs] chdir\n");
 }
 
 //
 
 dirent_t *fs_readdir(int fd) {
-
+  kprintf("[fs] readdir\n");
 }
 
 long fs_telldir(int fd) {
-
+  kprintf("[fs] telldir\n");
 }
 
 void fs_seekdir(int fd, long loc) {
-
+  kprintf("[fs] seekdir\n");
 }
 
 

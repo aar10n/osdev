@@ -6,6 +6,7 @@
 #include <mm/heap.h>
 #include <mm/mm.h>
 #include <mm/vm.h>
+#include <stdio.h>
 
 fs_impl_t ramfs_impl = {
   ramfs_mount, ramfs_unmount,
@@ -61,8 +62,10 @@ ramfs_file_t *ramfs_alloc_file(inode_t *inode, ramfs_backing_mem_t backing, size
   if (backing == RAMFS_PAGE_BACKED) {
     size = align(size, PAGE_SIZE);
     page_t *pages = alloc_pages(SIZE_TO_PAGES(size), PE_WRITE);
-    void *mem = vm_map_page(pages);
-    file->mem = mem;
+    void *addr = vm_map_page(pages);
+    memset(addr, 0, size);
+
+    file->mem = pages;
     file->size = size;
     file->used = 0;
   } else {
@@ -80,12 +83,19 @@ ramfs_file_t *ramfs_get_file(inode_t *inode) {
   if (file == NULL) {
     return NULL;
   }
+  return file;
+}
+
+void *ramfs_get_file_backing(ramfs_file_t *file) {
+  if (file == NULL) {
+    return NULL;
+  }
 
   if (file->mem_type == RAMFS_PAGE_BACKED) {
     page_t *page = file->mem;
     return (void *) page->addr;
   }
-  return file;
+  return file->mem;
 }
 
 void ramfs_resize_file(inode_t *inode, size_t new_size) {
@@ -94,7 +104,7 @@ void ramfs_resize_file(inode_t *inode, size_t new_size) {
   if (file->size < new_size) {
     // optimization - free unneeded memory
     file->size = new_size;
-  } else if (file->size == new_size) {
+  } else if (file->size >= new_size) {
     return;
   }
 
@@ -141,18 +151,25 @@ void ramfs_free_file(inode_t *inode) {
 
 dirent_t *ramfs_add_dirent(inode_t *parent, ino_t ino, char *name) {
   ramfs_file_t *file = ramfs_get_file(parent);
+  if (file == NULL) {
+    file = ramfs_alloc_file(parent, RAMFS_HEAP_BACKED, 1024);
+    if (file == NULL) {
+      return NULL;
+    }
+  }
+
   size_t remaining = file->size - file->used;
   if (remaining < sizeof(dirent_t)) {
     ramfs_resize_file(parent, file->size + 1024);
   }
 
-  dirent_t *dir = file->mem;
+  dirent_t *dir = ramfs_get_file_backing(file);
   while (dir->name[0] != 0) {
     dir++;
   }
 
   dir->inode = ino;
-  memcpy(dir->name, name, MAX_FILE_NAME);
+  strcpy(dir->name, name);
 
   file->used += sizeof(dirent_t);
   return dir;
@@ -169,6 +186,7 @@ int ramfs_remove_dirent(inode_t *parent, dirent_t *dirent) {
 //
 
 fs_t *ramfs_mount(dev_t dev, fs_node_t *mount) {
+  kprintf("[ramfs] mount\n");
   // allocate some space for the filesystem
   page_t *pages = alloc_pages(1, PE_2MB_SIZE | PE_WRITE);
   void *mem = vm_map_page(pages);
@@ -189,8 +207,20 @@ fs_t *ramfs_mount(dev_t dev, fs_node_t *mount) {
 
   // root node
   inode_t *inode = ramfs_alloc_inode(ramfs);
-  fs_node_t *root = vfs_create_node_from_inode(inode);
-  root->name = "/";
+  if (inode == NULL) {
+    kfree(map);
+    kfree(ramfs);
+    return NULL;
+  }
+
+  // allocate root directory space
+  ramfs_alloc_file(inode, RAMFS_HEAP_BACKED, 1024);
+
+  fs_node_t *root = kmalloc(sizeof(fs_node_t));
+  root->inode = inode->ino;
+  root->dev = inode->dev;
+  root->mode = inode->mode;
+  root->parent = mount;
 
   // filesystem struct
   fs_t *fs = kmalloc(sizeof(fs_t));
@@ -205,6 +235,7 @@ fs_t *ramfs_mount(dev_t dev, fs_node_t *mount) {
 }
 
 int ramfs_unmount(fs_t *fs, fs_node_t *mount) {
+  kprintf("[ramfs] unmount\n");
   // in-memory filesystems dont support being unmounted
   errno = ENOTSUP;
   return -1;
@@ -213,6 +244,7 @@ int ramfs_unmount(fs_t *fs, fs_node_t *mount) {
 //
 
 inode_t *ramfs_locate(fs_t *fs, ino_t ino) {
+  kprintf("[ramfs] locate\n");
   ramfs_t *ramfs = fs->data;
   if (ino > ramfs->max_inodes) {
     errno = EINVAL;
@@ -228,6 +260,7 @@ inode_t *ramfs_locate(fs_t *fs, ino_t ino) {
 }
 
 inode_t *ramfs_create(fs_t *fs, mode_t mode) {
+  kprintf("[ramfs] create\n");
   ramfs_t *ramfs = fs->data;
   inode_t *inode = ramfs_alloc_inode(ramfs);
   if (inode == NULL) {
@@ -243,6 +276,7 @@ inode_t *ramfs_create(fs_t *fs, mode_t mode) {
 }
 
 int ramfs_remove(fs_t *fs, inode_t *inode) {
+  kprintf("[ramfs] remove\n");
   ramfs_t *ramfs = fs->data;
 
   // free file data memory
@@ -252,13 +286,16 @@ int ramfs_remove(fs_t *fs, inode_t *inode) {
 }
 
 dirent_t *ramfs_link(fs_t *fs, inode_t *inode, inode_t *parent, char *name) {
+  kprintf("[ramfs] link\n");
   ramfs_t *ramfs = fs->data;
+
   dirent_t *dirent = ramfs_add_dirent(parent, inode->ino, name);
   inode->nlink++;
   return dirent;
 }
 
 int ramfs_unlink(fs_t *fs, inode_t *inode, dirent_t *dirent) {
+  kprintf("[ramfs] unlink\n");
   ramfs_t *ramfs = fs->data;
   inode_t *parent = ramfs_get_inode(ramfs, dirent->inode);
   ramfs_remove_dirent(parent, dirent);
@@ -271,6 +308,7 @@ int ramfs_unlink(fs_t *fs, inode_t *inode, dirent_t *dirent) {
 }
 
 int ramfs_update(fs_t *fs, inode_t *inode) {
+  kprintf("[ramfs] update\n");
   // updates are already made to the inode and
   // nothing needs to be persisted to disk
   return 0;
@@ -279,22 +317,23 @@ int ramfs_update(fs_t *fs, inode_t *inode) {
 //
 
 ssize_t ramfs_read(fs_t *fs, inode_t *inode, off_t offset, size_t nbytes, void *buf) {
+  kprintf("[ramfs] write\n");
   ramfs_file_t *file = ramfs_get_file(inode);
 
   if (offset >= file->size) {
-    errno = EOVERFLOW;
-    return -1;
+    return 0;
   }
 
   off_t available = file->size - offset;
   ssize_t bytes = min(available, nbytes);
 
-  void *mem = (void *)((uintptr_t) file->mem + offset);
+  void *mem = (void *)((uintptr_t) ramfs_get_file_backing(file) + offset);
   memcpy(buf, mem, bytes);
   return bytes;
 }
 
 ssize_t ramfs_write(fs_t *fs, inode_t *inode, off_t offset, size_t nbytes, void *buf) {
+  kprintf("[ramfs] write\n");
   ramfs_file_t *file = ramfs_get_file(inode);
   if (file == NULL) {
     ramfs_backing_mem_t backing = (offset + nbytes) > (PAGE_SIZE / 4) ?
@@ -312,12 +351,13 @@ ssize_t ramfs_write(fs_t *fs, inode_t *inode, off_t offset, size_t nbytes, void 
     ramfs_resize_file(inode, new_size);
   }
 
-  void *mem = (void *)((uintptr_t) file->mem + offset);
+  void *mem = (void *)((uintptr_t) ramfs_get_file_backing(file) + offset);
   memcpy(mem, buf, nbytes);
   return nbytes;
 }
 
 int ramfs_sync(fs_t *fs) {
+  kprintf("[ramfs] sync\n");
   // everything is in memory so we dont actually
   // have to sync anything
   return 0;
