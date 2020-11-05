@@ -45,9 +45,9 @@
 #define IS_IFDIR(mode) ((mode) & S_IFDIR)
 #define IS_IFREG(mode) ((mode) & S_IFREG)
 
-
-
 typedef struct fs_impl fs_impl_t;
+typedef struct fs_node fs_node_t;
+typedef struct fs fs_t;
 
 typedef struct inode {
   ino_t ino;
@@ -67,10 +67,7 @@ typedef struct inode {
   blkcnt_t blocks;
 
   spinlock_t lock;
-
-  char *name;
   void *data;
-  fs_impl_t *impl;
 } inode_t;
 
 typedef struct inode_table {
@@ -78,11 +75,13 @@ typedef struct inode_table {
   spinlock_t lock;
 } inode_table_t;
 
-void __init_inode(inode_t *inode, ino_t ino, dev_t dev, mode_t mode);
-inode_t *__create_inode(ino_t ino, dev_t dev, mode_t mode);
-inode_table_t *__create_inode_table();
-inode_t *__fetch_inode(inode_table_t *table, ino_t ino);
-void __cache_inode(inode_table_t *table, ino_t ino, inode_t *inode);
-void __remove_inode(inode_table_t *table, ino_t ino);
+extern inode_table_t *inodes;
+
+
+inode_table_t *create_inode_table();
+inode_t *inode_get(fs_node_t *node);
+inode_t *inode_create(fs_t *fs, mode_t mode);
+int inode_delete(fs_t *fs, inode_t *inode);
+
 
 #endif

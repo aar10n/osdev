@@ -20,6 +20,7 @@
 typedef struct process process_t;
 typedef struct file_table file_table_t;
 typedef struct vm vm_t;
+typedef struct fs_node fs_node_t;
 typedef struct scheduler scheduler_t;
 typedef struct idt idt_t;
 
@@ -28,6 +29,7 @@ typedef struct {
   ino_t id;
   uintptr_t self;
   int errno;
+  fs_node_t *pwd;
   file_table_t *files;
   scheduler_t *scheduler;
   idt_t *idt;

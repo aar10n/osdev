@@ -6,7 +6,7 @@
 #define DRIVERS_AHCI_H
 
 #include <base.h>
-#include <fs.h>
+#include <device.h>
 #include <bus/pci.h>
 
 #define	SATA_SIG_ATA    0x00000101	// SATA drive
@@ -368,33 +368,32 @@ typedef struct packed {
 
 //
 
-typedef struct {
+typedef struct ahci_controller ahci_controller_t;
+
+
+typedef struct ahci_slot {
   int num;
   hba_cmd_header_t *header;
   hba_cmd_table_t *table;
   size_t table_length;
 } ahci_slot_t;
 
-typedef struct {
-  dev_t id;
+typedef struct ahci_device {
   int num;
   int type;
   hba_port_t *port;
   ahci_slot_t **slots;
   hba_fis_t *fis;
+  ahci_controller_t *controller;
 } ahci_device_t;
 
-typedef struct {
-  dev_t id;
+typedef struct ahci_controller {
   hba_reg_mem_t *mem;
   ahci_device_t **ports;
   pci_device_t *pci;
 } ahci_controller_t;
 
-extern fs_device_driver_t ahci_driver;
-
-fs_controller_t *ahci_controller_init(dev_t id);
-fs_device_t *ahci_device_init(dev_t id, void *data, fs_controller_t *controller);
+void ahci_init();
 ssize_t ahci_read(fs_device_t *device, uint64_t lba, uint32_t count, void **buf);
 ssize_t ahci_write(fs_device_t *device, uint64_t lba, uint32_t count, void **buf);
 int ahci_release(fs_device_t *device, void *buf);

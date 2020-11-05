@@ -6,12 +6,10 @@
 #define FS_FS_H
 
 #include <base.h>
+#include <dirent.h>
 #include <inode.h>
 #include <file.h>
-#include <dirent.h>
-#include <device.h>
-
-#include <hash_table.h>
+#include <vfs.h>
 
 #define MAX_PATH 1024
 #define MAX_SYMLINKS 40
@@ -22,7 +20,6 @@
 #define is_root(node) ((node)->parent == (node))
 
 typedef struct fs fs_t;
-typedef struct fs_node fs_node_t;
 
 /* Filesystem operations */
 typedef struct fs_impl {
@@ -60,60 +57,15 @@ typedef struct fs {
   fs_driver_t *driver; // corresponding fs driver
 } fs_t;
 
-// A node in the virtual filesystem
-typedef struct fs_node {
-  ino_t inode;  // inode
-  dev_t dev;    // device
-  mode_t mode;  // file mode
-  char *name;   // file name
-  fs_t *fs;     // containing filesystem
-  struct fs_node *parent;
-  struct fs_node *next;
-  struct fs_node *prev;
-  union {
-    struct { // V_IFREG
-    } ifreg;
-    struct { // V_IFDIR
-      struct fs_node *first;
-      struct fs_node *last;
-    } ifdir;
-    struct { // V_IFBLK
-      fs_device_t *device;
-    } ifblk;
-    struct { // V_IFSOCK
-    } ifsock;
-    struct { // V_IFLNK
-      char *path;
-    } iflnk;
-    struct { // V_IFIFO
-    } ififo;
-    struct { // V_IFCHR
-    } ifchr;
-    struct { // V_IFMNT
-      fs_node_t *shadow;
-    } ifmnt;
-  };
-} fs_node_t;
-
-typedef struct fs_node_map {
-  map_t(fs_node_t *) hash_table;
-  rw_spinlock_t rwlock;
-} fs_node_map_t;
-
-
 fs_node_t *__create_fs_node();
 
 void fs_init();
 
-int fs_mount(fs_driver_t *driver, fs_node_t *device, const char *path);
+int fs_mount(fs_driver_t *driver, const char *device, const char *path);
 int fs_unmount(const char *path);
-int fs_create(fs_node_t *parent, const char *name, mode_t mode);
-int fs_remove(fs_node_t *parent, const char *name);
 
-// system calls
 int fs_open(const char *filename, int flags, mode_t mode);
 int fs_close(int fd);
-
 ssize_t fs_read(int fd, void *buf, size_t nbytes);
 ssize_t fs_write(int fd, void *buf, size_t nbytes);
 off_t fs_lseek(int fd, off_t offset, int whence);

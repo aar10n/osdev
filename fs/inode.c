@@ -3,62 +3,71 @@
 //
 
 #include <inode.h>
+#include <fs.h>
 #include <mm/heap.h>
 
-void __init_inode(inode_t *inode, ino_t ino, dev_t dev, mode_t mode) {
-  inode->ino = ino;
-  inode->dev = dev;
-  inode->mode = mode;
+inode_table_t *inodes;
 
-  inode->nlink = 0;
-  inode->uid = 0;
-  inode->gid = 0;
-  inode->rdev = 0;
-  inode->size = 0;
-
-  inode->atime = 0;
-  inode->ctime = 0;
-  inode->mtime = 0;
-
-  inode->blksize = 0;
-  inode->blocks = 0;
-
-  spin_init(&inode->lock);
-
-  inode->name = NULL;
-  inode->impl = NULL;
-}
-
-inode_t *__create_inode(ino_t ino, dev_t dev, mode_t mode) {
-  inode_t *inode = kmalloc(sizeof(inode_t));
-  __init_inode(inode, ino, dev, mode);
-  return inode;
-}
-
-inode_table_t *__create_inode_table() {
+inode_table_t *create_inode_table() {
   inode_table_t *inode_table = kmalloc(sizeof(inode_table_t));
   inode_table->inodes = create_rb_tree();
   spin_init(&inode_table->lock);
   return inode_table;
 }
 
-inode_t *__fetch_inode(inode_table_t *table, ino_t ino) {
-  lock(table->lock);
-  rb_node_t *node = rb_tree_find(table->inodes, ino);
-  unlock(table->lock);
-  return node->data;
+inode_t *inode_get(fs_node_t *node) {
+  lock(inodes->lock);
+  rb_node_t *rb_node = rb_tree_find(inodes->inodes, node->inode);
+  unlock(inodes->lock);
+
+  if (rb_node) {
+    return rb_node->data;
+  }
+
+  // if the inode is not already cached we have
+  // to load it from the nodes backing filesystem
+  inode_t *inode = node->fs->impl->locate(node->fs, node->inode);
+  if (inode) {
+    lock(inodes->lock);
+    rb_tree_insert(inodes->inodes, inode->ino, inode);
+    unlock(inodes->lock);
+  }
+  return inode;
 }
 
-void __cache_inode(inode_table_t *table, ino_t ino, inode_t *inode) {
-  lock(table->lock);
-  rb_tree_insert(table->inodes, ino, inode);
-  unlock(table->lock);
+inode_t *inode_create(fs_t *fs, mode_t mode) {
+  inode_t *inode = fs->impl->create(fs, mode);
+  if (inode == NULL) {
+    return NULL;
+  }
+
+  inode->dev = 0;
+  inode->nlink = 0;
+  inode->uid = 0;
+  inode->gid = 0;
+  inode->rdev = 0;
+
+  inode->atime = 0;
+  inode->ctime = 0;
+  inode->mtime = 0;
+
+  spin_init(&inode->lock);
+
+  lock(inodes->lock);
+  rb_tree_insert(inodes->inodes, inode->ino, inode);
+  unlock(inodes->lock);
+
+  return inode;
 }
 
-void __remove_inode(inode_table_t *table, ino_t ino) {
-  lock(table->lock);
-  rb_tree_delete(table->inodes, ino);
-  unlock(table->lock);
+int inode_delete(fs_t *fs, inode_t *inode) {
+  int result = fs->impl->remove(fs, inode);
+  if (result < 0) {
+    return -1;
+  }
+
+  lock(inodes->lock);
+  rb_tree_delete(inodes->inodes, inode->ino);
+  unlock(inodes->lock);
+  return 0;
 }
-
-

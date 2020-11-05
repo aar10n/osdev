@@ -10,7 +10,7 @@ LDFLAGS +=
 ASFLAGS +=
 NASMFLAGS += -g
 
-INCLUDE = -Iinclude -Iinclude/kernel -Iinclude/fs -Iinclude/libc -Ilib
+INCLUDE = -Iinclude -Iinclude/kernel -Iinclude/fs -Ilib -Ilibc
 
 QEMUFLAGS = \
 	-cpu Nehalem \

@@ -3,16 +3,9 @@
 //
 
 #include <path.h>
-#include <fs.h>
-#include <file.h>
-#include <dirent.h>
 #include <string.h>
 #include <mm/heap.h>
 #include <stdio.h>
-
-extern int count_slashes(char *str);
-extern int strip_trailing(char *str, size_t len, bool slashes);
-extern fs_node_map_t links;
 
 const char *slash = "/";
 const char *dot = ".";
@@ -23,7 +16,7 @@ path_t path_slash;
 path_t path_dot;
 
 
-void path_init_constants() {
+void path_init() {
   path_null = (path_t) { NULL, 0, NULL, NULL };
   path_slash = str_to_path(slash);
   path_dot = str_to_path(dot);
@@ -31,7 +24,7 @@ void path_init_constants() {
 
 // internal helpers
 
-int num_occurrences(path_t path, char c) {
+int path_num_occurrences(path_t path, char c) {
   int count = 0;
   char *ptr = path.start;
   while (ptr < path.end) {
@@ -43,7 +36,7 @@ int num_occurrences(path_t path, char c) {
   return count;
 }
 
-char *first_occurence(path_t path, char c) {
+char *path_first_occurence(path_t path, char c) {
   char *ptr = path.start;
   while (*ptr != c && ptr < path.end) {
     ptr++;
@@ -55,7 +48,7 @@ char *first_occurence(path_t path, char c) {
   return ptr;
 }
 
-path_t skip_over(path_t path, char c) {
+path_t path_skip_over(path_t path, char c) {
   char *ptr = path.start;
   while (ptr < path.end && *ptr == c) {
     ptr++;
@@ -63,7 +56,7 @@ path_t skip_over(path_t path, char c) {
   return (path_t){ path.str, path.len, ptr, path.end };
 }
 
-path_t skip_until(path_t path, char c) {
+path_t path_skip_until(path_t path, char c) {
   char *ptr = path.start;
   while (ptr < path.end && *ptr != c) {
     ptr++;
@@ -71,7 +64,7 @@ path_t skip_until(path_t path, char c) {
   return (path_t){ path.str, path.len, ptr, path.end };
 }
 
-path_t skip_over_reverse(path_t path, char c) {
+path_t path_skip_over_reverse(path_t path, char c) {
   char *ptr = path.end;
   while (ptr > path.start && *(ptr - 1) == c) {
     ptr--;
@@ -79,7 +72,7 @@ path_t skip_over_reverse(path_t path, char c) {
   return (path_t){ path.str, path.len, path.start, ptr };
 }
 
-path_t skip_until_reverse(path_t path, char c) {
+path_t path_skip_until_reverse(path_t path, char c) {
   char *ptr = path.end;
   while (ptr > path.start && *(ptr - 1) != c) {
     ptr--;
@@ -115,6 +108,9 @@ void pathcpy(char *dest, path_t path) {
 }
 
 int patheq(path_t path1, path_t path2) {
+  if (p_is_null(path1)) return 1;
+  if (p_is_null(path2)) return -1;
+
   size_t len1 = p_len(path1);
   size_t len2 = p_len(path2);
   if (len1 < len2) return -1;
@@ -123,16 +119,27 @@ int patheq(path_t path1, path_t path2) {
 }
 
 int pathcmp(path_t path1, path_t path2) {
+  if (p_is_null(path1)) return 1;
+  if (p_is_null(path2)) return -1;
+
   size_t len = min(p_len(path1), p_len(path2));
   return memcmp(path1.start, path2.start, len);
 }
 
 int pathcmp_s(path_t path, const char *str) {
+  if (p_is_null(path)) {
+    return 1;
+  }
+
   size_t len = p_len(path);
   return memcmp(path.start, str, len);
 }
 
 int patheq_s(path_t path, const char *str) {
+  if (p_is_null(path)) {
+    return 1;
+  }
+
   size_t len1 = p_len(path);
   size_t len2 = strlen(str);
   if (len1 < len2) return -1;
@@ -148,9 +155,9 @@ path_t path_dirname(path_t path) {
   }
 
   // remove trailing slashes
-  path = skip_over_reverse(path, '/');
+  path = path_skip_over_reverse(path, '/');
   // count remaining slashes
-  int slashes = num_occurrences(path, '/');
+  int slashes = path_num_occurrences(path, '/');
   if (p_len(path) == 0 || p_len(path) == slashes) {
     return path_slash;
   } else if (slashes == 0) {
@@ -158,9 +165,9 @@ path_t path_dirname(path_t path) {
   }
 
   // remove trailing non-slash characters
-  path = skip_until_reverse(path, '/');
+  path = path_skip_until_reverse(path, '/');
   // remove trailing slashes (again)
-  path = skip_over_reverse(path, '/');
+  path = path_skip_over_reverse(path, '/');
 
   if (p_len(path) == 0) {
     return path_slash;
@@ -176,9 +183,9 @@ path_t path_basename(path_t path) {
   }
 
   // remove any trailing slashes
-  path = skip_over_reverse(path, '/');
+  path = path_skip_over_reverse(path, '/');
   // count remaining slashes
-  int slashes = num_occurrences(path, '/');
+  int slashes = path_num_occurrences(path, '/');
   if (p_len(path) == 0 || p_len(path) == slashes) {
     return path_slash;
   } else if (slashes == 0) {
@@ -205,6 +212,13 @@ path_t path_prefix(path_t path) {
   return path_dot;
 }
 
+path_t path_suffix(path_t path) {
+  if (*(path.end - 1) == '/') {
+    return path_slash;
+  }
+  return path_null;
+}
+
 void path_print(path_t path) {
   char str[p_len(path) + 1];
   pathcpy(str, path);
@@ -225,11 +239,11 @@ path_t path_next_part(path_t path) {
   }
 
   // skip leading slashes
-  path = skip_over(path, '/');
+  path = path_skip_over(path, '/');
   // next part start ptr
   char *start = path.start;
   // skip until next slash (or end)
-  path = skip_until(path, '/');
+  path = path_skip_until(path, '/');
   // next part end ptr
   char *end = path.start;
 

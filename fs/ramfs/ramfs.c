@@ -188,12 +188,8 @@ fs_t *ramfs_mount(dev_t dev, fs_node_t *mount) {
   ramfs->max_inodes = max_inodes;
 
   // root node
-  fs_node_t *root = __create_fs_node();
   inode_t *inode = ramfs_alloc_inode(ramfs);
-  __init_inode(inode, inode->ino, dev, S_IFDIR | S_IFMNT);
-
-  root->inode = inode->ino;
-  root->mode = inode->mode;
+  fs_node_t *root = vfs_create_node_from_inode(inode);
   root->name = "/";
 
   // filesystem struct
@@ -240,6 +236,9 @@ inode_t *ramfs_create(fs_t *fs, mode_t mode) {
   }
 
   inode->mode = mode;
+  inode->size = 0;
+  inode->blksize = 0;
+  inode->blocks = 0;
   return inode;
 }
 

@@ -8,8 +8,10 @@
 #include <base.h>
 #include <lock.h>
 #include <rb_tree.h>
+#include <bitmap.h>
 
 #define ACCESS_MODE_MASK 0x1F
+#define MAX_PROC_FILES 1024
 
 // Open file flags
 #define O_EXEC      0x000001
@@ -48,12 +50,14 @@ typedef struct file {
 } file_t;
 
 typedef struct file_table {
-  int next_fd;
+  bitmap_t *fds;
   rb_tree_t *files;
   spinlock_t lock;
 } file_table_t;
 
-file_t *__create_file();
-file_table_t *__create_file_table();
+file_table_t *create_file_table();
+file_t *file_get(int fd);
+file_t *file_create(fs_node_t *node, int flags);
+void file_delete(file_t *file);
 
 #endif
