@@ -10,7 +10,9 @@
 #include <rb_tree.h>
 
 // file types backed by inodes
-#define INODE_FILE_MASK (S_IFREG | S_IFDIR | S_IFLNK)
+#define I_TYPE_MASK 0xFFF0000
+#define I_PERM_MASK 0x000FFFF
+#define I_FILE_MASK (S_IFREG | S_IFDIR | S_IFLNK)
 
 #define S_IFMNT  0x0800000 // Filesystem mount.
 #define S_IFCHR  0x0400000 // Character special (tty).

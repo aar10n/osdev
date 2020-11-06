@@ -17,7 +17,7 @@ path_t path_dot;
 
 
 void path_init() {
-  path_null = (path_t) { NULL, 0, NULL, NULL };
+  path_null = (path_t) { NULL, 0, 0, NULL, NULL };
   path_slash = str_to_path(slash);
   path_dot = str_to_path(dot);
 }
@@ -53,7 +53,7 @@ path_t path_skip_over(path_t path, char c) {
   while (ptr < path.end && *ptr == c) {
     ptr++;
   }
-  return (path_t){ path.str, path.len, ptr, path.end };
+  return (path_t){ path.str, path.len, path.count, ptr, path.end };
 }
 
 path_t path_skip_until(path_t path, char c) {
@@ -61,7 +61,7 @@ path_t path_skip_until(path_t path, char c) {
   while (ptr < path.end && *ptr != c) {
     ptr++;
   }
-  return (path_t){ path.str, path.len, ptr, path.end };
+  return (path_t){ path.str, path.len, path.count, ptr, path.end };
 }
 
 path_t path_skip_over_reverse(path_t path, char c) {
@@ -69,7 +69,7 @@ path_t path_skip_over_reverse(path_t path, char c) {
   while (ptr > path.start && *(ptr - 1) == c) {
     ptr--;
   }
-  return (path_t){ path.str, path.len, path.start, ptr };
+  return (path_t){ path.str, path.len, path.count, path.start, ptr };
 }
 
 path_t path_skip_until_reverse(path_t path, char c) {
@@ -77,7 +77,7 @@ path_t path_skip_until_reverse(path_t path, char c) {
   while (ptr > path.start && *(ptr - 1) != c) {
     ptr--;
   }
-  return (path_t){ path.str, path.len, path.start, ptr };
+  return (path_t){ path.str, path.len, path.count, path.start, ptr };
 }
 
 // path_t operations
@@ -88,7 +88,7 @@ path_t str_to_path(const char *path) {
   }
 
   size_t len = strlen(path);
-  return (path_t) { path, len, (char *) path, (char *) path + len };
+  return (path_t) { path, len, 0, (char *) path, (char *) path + len };
 }
 
 char *path_to_str(path_t path) {
@@ -202,7 +202,7 @@ path_t path_basename(path_t path) {
   }
 
   size_t len = path.end - ptr;
-  return (path_t){ path.str, len, ptr, path.end };
+  return (path_t){ path.str, len, path.count, ptr, path.end };
 }
 
 path_t path_prefix(path_t path) {
@@ -233,7 +233,9 @@ path_t path_next_part(path_t path) {
   }
 
   char *real_end = (char *) path.str + path.len;
-  if (path.start != path.str || path.end != real_end) {
+  if (path.count == 0 && *path.start == '/') {
+    return (path_t){ path.str, path.len, path.count + 1, path.start, path.start + 1 };
+  } else if (path.count > 0) {
     path.start = path.end;
     path.end = real_end;
   }
@@ -251,5 +253,5 @@ path_t path_next_part(path_t path) {
     return path_null;
   }
 
-  return (path_t){ path.str, path.len, start, end };
+  return (path_t){ path.str, path.len, path.count + 1, start, end };
 }

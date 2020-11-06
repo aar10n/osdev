@@ -21,7 +21,12 @@
 // #define PWD (current->pwd)
 #define PWD (PERCPU->pwd)
 
-static ino_t vfs_ino = 1;
+// #define UID (current->uid)
+#define UID (PERCPU->uid)
+
+// #define GID (current->gid)
+#define GID (PERCPU->gid)
+
 
 fs_t *root_fs = NULL;
 fs_node_t *fs_root = NULL;
@@ -68,30 +73,6 @@ void remove_node(fs_node_t *node) {
 
 //
 
-fs_node_t *get_link(const char *path) {
-  aquire(links->rwlock);
-  fs_node_t **node = map_get(&links->hash_table, (char *) path);
-  release(links->rwlock);
-  if (node) {
-    return *node;
-  }
-  return NULL;
-}
-
-void add_link(const char *path, fs_node_t *node) {
-  lock(links->rwlock);
-  map_set(&links->hash_table, (char *) path, node);
-  unlock(links->rwlock);
-}
-
-void remove_link(const char *path) {
-  lock(links->rwlock);
-  map_delete(&links->hash_table, (char *) path);
-  unlock(links->rwlock);
-}
-
-//
-
 int validate_flags_for_node(fs_node_t *node, int flags) {
   if (flags & O_CREAT && flags & O_EXCL) {
     errno = EEXIST;
@@ -104,7 +85,7 @@ int validate_flags_for_node(fs_node_t *node, int flags) {
     errno = ENOTDIR;
     return -1;
   } else if ((!IS_IFDIR(node->mode) && flags & O_SEARCH) ||
-    (!IS_IFIFO(node->mode) && flags & O_RDWR)) {
+    (IS_IFIFO(node->mode) && flags & O_RDWR)) {
     errno = EINVAL;
     return -1;
   }
@@ -131,6 +112,12 @@ fs_node_map_t *create_node_map() {
   return map;
 }
 
+dirent_t *create_dirent(ino_t ino, const char *name) {
+  dirent_t *dirent = kmalloc(sizeof(dirent_t));
+  dirent->inode = ino;
+  strcpy(dirent->name, name);
+  return dirent;
+}
 
 //
 
@@ -143,53 +130,97 @@ void vfs_init() {
   fs_root = root_fs->root;
   fs_root->mode = S_IFDIR;
 
-  dirent_t *root_dirent = kmalloc(sizeof(dirent_t));
-  root_dirent->inode = fs_root->inode;
-  strcpy(root_dirent->name, "/");
-  fs_root->dirent = root_dirent;
+  fs_root->dirent = create_dirent(fs_root->inode, "/");
+  vfs_populate_dir_node(fs_root);
 
   // `/dev` directory
-  fs_node_t *dev_dir = vfs_create_node(fs_root, S_IFDIR);
-  int result = vfs_add_node(fs_root, dev_dir, "dev");
+  fs_node_t *dev = vfs_create_node(fs_root, S_IFDIR);
+  int result = vfs_add_node(fs_root, dev, "dev");
   if (result < 0) {
     panic("failed to create directory: /dev | %s", strerror(errno));
   }
 }
 
-
-// fs_node_t *vfs_create_node() {
-//   fs_node_t *node = kmalloc(sizeof(fs_node_t));
-//   memset(node, 0, sizeof(fs_node_t));
-//
-//   ino_t ino = atomic_fetch_add(&vfs_ino, 1);
-//   node->inode = ino;
-//   node->dev = 0;
-//   return node;
-// }
-
 fs_node_t *vfs_create_node(fs_node_t *parent, mode_t mode) {
-  inode_t *inode = parent->fs->impl->create(parent->fs, mode);
-  if (inode == NULL) {
+  if (__popcnt64(mode & I_TYPE_MASK) == 0) {
+    errno = EINVAL;
     return NULL;
   }
 
   fs_node_t *node = kmalloc(sizeof(fs_node_t));
   memset(node, 0, sizeof(fs_node_t));
+  inode_t *inode = parent->fs->impl->create(parent->fs, mode);
+  if (inode == NULL) {
+    kfree(node);
+    errno = ENOENT;
+    return NULL;
+  }
+
   node->inode = inode->ino;
   node->dev = inode->dev;
-  node->fs = parent->fs;
   node->mode = mode;
+  node->fs = parent->fs;
+  node->parent = parent;
+
+  if (mode & S_IFDIR) {
+    vfs_populate_dir_node(node);
+  }
+
   return node;
 }
 
-fs_node_t *vfs_create_node_from_inode(inode_t *inode) {
+fs_node_t *vfs_create_from_inode(fs_node_t *parent, inode_t *inode) {
   fs_node_t *node = kmalloc(sizeof(fs_node_t));
   memset(node, 0, sizeof(fs_node_t));
 
   node->inode = inode->ino;
   node->dev = inode->dev;
   node->mode = inode->mode;
+  node->dirent = NULL;
+  node->fs = parent->fs;
+  node->parent = parent;
+  node->next = NULL;
+  node->prev = NULL;
+
+  if (inode->mode & S_IFDIR) {
+    vfs_populate_dir_node(node);
+  }
+
   return node;
+}
+
+fs_node_t *vfs_copy_node(fs_node_t *node) {
+  fs_node_t *copy = kmalloc(sizeof(fs_node_t));
+  memcpy(copy, node, sizeof(fs_node_t));
+  return copy;
+}
+
+void vfs_populate_dir_node(fs_node_t *node) {
+  kassert(IS_IFDIR(node->mode));
+
+  // add entries for '.' and '..'
+  fs_node_t *dot = vfs_copy_node(node);
+  dot->dev = 0;
+  dot->fs = root_fs;
+  dot->parent = node;
+  dot->next = NULL;
+  dot->prev = NULL;
+  dot->dirent = create_dirent(node->inode, ".");
+
+  fs_node_t *parent = node->parent ? node->parent : node;
+  fs_node_t *dotdot = vfs_copy_node(parent);
+  dotdot->dev = 0;
+  dotdot->fs = root_fs;
+  dotdot->parent = node;
+  dotdot->next = NULL;
+  dotdot->prev = NULL;
+  dotdot->dirent = create_dirent(parent->inode, "..");
+
+  dot->next = dotdot;
+  dotdot->prev = dot;
+
+  node->ifdir.first = dot;
+  node->ifdir.last = dotdot;
 }
 
 fs_node_t *vfs_get_node(path_t path, int flags) {
@@ -198,24 +229,28 @@ fs_node_t *vfs_get_node(path_t path, int flags) {
     return NULL;
   }
 
-  fs_node_t *node;
-  path_t prefix = path_prefix(path);
-  if (pathcmp_s(prefix, "/") == 0) {
-    if (patheq_s(path, "/") == 0) {
-      return fs_root;
-    }
-    node = fs_root;
-  } else if (pathcmp_s(prefix, ".") == 0) {
-    if (patheq_s(path, ".")) {
-      return PWD;
-    }
-    node = PWD;
+  // handle simple case
+  if (patheq_s(path, "/") == 0) {
+    return fs_root;
+  } else if (patheq_s(path, ".") == 0) {
+    return PWD;
   }
 
-  path_t part = path_skip_over(path_dirname(path), '/');
+  fs_node_t *node = PWD;
+  path_t part = path_dirname(path);
   while (!p_is_null(part = path_next_part(part))) {
-    // check acl for `node`
+    if (patheq_s(part, "/") == 0) {
+      node = fs_root;
+      continue;
+    } else if (patheq_s(part, ".") == 0) {
+      // node = node;
+      continue;
+    } else if (patheq_s(part, "..") == 0) {
+      node = node->parent;
+      continue;
+    }
 
+    // check acl for `node`
     fs_node_t *child = vfs_find_child(node, part);
     if (child == NULL) {
       return NULL;
@@ -223,7 +258,7 @@ fs_node_t *vfs_get_node(path_t path, int flags) {
 
     // first resolve any links if needed
     if (IS_IFLNK(child->mode)) {
-      if (flags & O_NOFOLLOW) {
+      if (flags & O_NOFOLLOW && !(flags & V_NOFAIL)) {
         errno = ELOOP;
         return NULL;
       }
@@ -244,10 +279,33 @@ fs_node_t *vfs_get_node(path_t path, int flags) {
   }
 
   path_t name = path_basename(path);
+  if (patheq_s(name, ".") == 0) {
+    return node;
+  } else if (patheq_s(name, "..") == 0) {
+    return node->parent;
+  }
+
   fs_node_t *file = vfs_find_child(node, name);
   if (file == NULL) {
     errno = ENOENT;
     return NULL;
+  }
+
+  // first resolve any links if needed
+  if (IS_IFLNK(file->mode)) {
+    if (flags & O_NOFOLLOW) {
+      if (flags & V_NOFAIL) {
+        return file;
+      }
+      errno = ELOOP;
+      return NULL;
+    }
+
+    // resolve the link
+    file = vfs_resolve_link(file, flags);
+    if (file == NULL) {
+      return NULL;
+    }
   }
 
   if (validate_flags_for_node(file, flags) < 0) {
@@ -257,7 +315,10 @@ fs_node_t *vfs_get_node(path_t path, int flags) {
 }
 
 fs_node_t *vfs_find_child(fs_node_t *parent, path_t name) {
-  kassert(IS_IFDIR(parent->mode));
+  if (!IS_IFDIR(parent->mode)) {
+    errno = ENOTDIR;
+    return NULL;
+  }
 
   fs_node_t *child = parent->ifdir.first;
   while (child) {
@@ -288,7 +349,7 @@ fs_node_t *vfs_resolve_link(fs_node_t *node, int flags) {
       return NULL;
     }
 
-    fs_node_t *linked = get_link(node->iflnk.path);
+    fs_node_t *linked = vfs_get_link(node->iflnk.path);
     if (linked) {
       node = linked;
       lcount++;
@@ -314,7 +375,7 @@ fs_node_t *vfs_resolve_link(fs_node_t *node, int flags) {
       return NULL;
     }
 
-    add_link(path, linked);
+    vfs_add_link(path, linked);
     node = linked;
     lcount++;
   }
@@ -367,32 +428,53 @@ int vfs_add_node(fs_node_t *parent, fs_node_t *child, char *name) {
 }
 
 int vfs_remove_node(fs_node_t *node) {
-  inode_t *inode = inode_get(node);
-  if (inode == NULL) {
-    return -1;
+  while (node) {
+    if (strcmp(node->dirent->name, ".") != 0 ||
+      strcmp(node->dirent->name, "..") != 0) {
+      inode_t *inode = inode_get(node);
+      if (inode == NULL) {
+        return -1;
+      }
+
+      int result = node->fs->impl->unlink(node->fs, inode, node->dirent);
+      if (result < 0) {
+        return -1;
+      }
+    } else {
+      errno = EPERM;
+      return -1;
+    }
+
+    // cleans up all external references to the node
+    if (node->prev) {
+      node->prev->next = node->next;
+    }
+    if (node->next) {
+      node->next->prev = node->prev;
+    }
+
+    if (node->parent && node->parent->ifdir.first == node) {
+      node->parent->ifdir.first = node->next;
+    }
+
+    // break any links to this node
+    char *node_path = vfs_path_from_node(node);
+    vfs_remove_link(node_path);
+    kfree(node_path);
+
+    if (IS_IFDIR(node->mode)) {
+      int result = vfs_remove_node(node->ifdir.first);
+      if (result < 0) {
+        kfree(node);
+        return -1;
+      }
+    }
+
+    fs_node_t *next = node->next;
+    kfree(node);
+    node = next;
   }
 
-  int result = node->fs->impl->unlink(node->fs, inode, node->dirent);
-  if (result < 0) {
-    return -1;
-  }
-
-  // cleans up all external references to the node
-  if (node->prev) {
-    node->prev->next = node->next;
-  }
-  if (node->next) {
-    node->next->prev = node->prev;
-  }
-
-  if (node->parent && node->parent->ifdir.first == node) {
-    node->parent->ifdir.first = node->next;
-  }
-
-  // break any links to this node
-  char *node_path = vfs_path_from_node(node);
-  remove_link(node_path);
-  kfree(node_path);
   return 0;
 }
 
@@ -434,9 +516,33 @@ int vfs_swap_node(fs_node_t *orig_node, fs_node_t *new_node) {
 
   // break any links to this node
   char *node_path = vfs_path_from_node(orig_node);
-  remove_link(node_path);
+  vfs_remove_link(node_path);
   kfree(node_path);
   return 0;
+}
+
+//
+
+fs_node_t *vfs_get_link(const char *path) {
+  aquire(links->rwlock);
+  fs_node_t **node = map_get(&links->hash_table, (char *) path);
+  release(links->rwlock);
+  if (node) {
+    return *node;
+  }
+  return NULL;
+}
+
+void vfs_add_link(const char *path, fs_node_t *node) {
+  lock(links->rwlock);
+  map_set(&links->hash_table, (char *) path, node);
+  unlock(links->rwlock);
+}
+
+void vfs_remove_link(const char *path) {
+  lock(links->rwlock);
+  map_delete(&links->hash_table, (char *) path);
+  unlock(links->rwlock);
 }
 
 //
@@ -472,3 +578,4 @@ char *vfs_path_from_node(fs_node_t *node) {
   reverse(path);
   return path;
 }
+

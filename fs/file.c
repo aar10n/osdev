@@ -33,7 +33,6 @@ file_t *file_get(int fd) {
 }
 
 file_t *file_create(fs_node_t *node, int flags) {
-  percpu_t *pcpu = PERCPU;
   file_table_t *table = FILES;
   file_t *file = kmalloc(sizeof(file_t));
 
@@ -63,8 +62,24 @@ void file_delete(file_t *file) {
   file_table_t *table = FILES;
 
   lock(table->lock);
+  bitmap_clear(table->fds, file->fd);
   rb_tree_delete(table->files, file->fd);
   unlock(table->lock);
   kfree(file);
+}
+
+int file_exists(file_t *file) {
+  file_table_t *table = FILES;
+  lock(table->lock);
+  index_t index = bitmap_get(table->fds, file->fd);
+  rb_node_t *rb_node = rb_tree_find(table->files, file->fd);
+  unlock(table->lock);
+
+  if (index >= 0 && rb_node != NULL) {
+    return 0;
+  }
+
+  errno = EBADF;
+  return -1;
 }
 

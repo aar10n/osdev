@@ -26,7 +26,8 @@
 
 typedef struct path {
   const char *str;
-  size_t len;
+  uint16_t len;
+  uint16_t count;
   char *start;
   char *end;
 } path_t;

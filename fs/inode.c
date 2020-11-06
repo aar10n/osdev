@@ -6,6 +6,12 @@
 #include <fs.h>
 #include <mm/heap.h>
 
+// #define UID (current->uid)
+#define UID (PERCPU->uid)
+
+// #define GID (current->gid)
+#define GID (PERCPU->gid)
+
 inode_table_t *inodes;
 
 inode_table_t *create_inode_table() {
@@ -43,8 +49,8 @@ inode_t *inode_create(fs_t *fs, mode_t mode) {
 
   inode->dev = 0;
   inode->nlink = 0;
-  inode->uid = 0;
-  inode->gid = 0;
+  inode->uid = UID;
+  inode->gid = GID;
   inode->rdev = 0;
 
   inode->atime = 0;

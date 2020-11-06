@@ -12,6 +12,7 @@
 
 #define ACCESS_MODE_MASK 0x1F
 #define MAX_PROC_FILES 1024
+#define DIR_FILE_FLAGS (O_DIRECTORY | O_RDONLY)
 
 // Open file flags
 #define O_EXEC      0x000001
@@ -49,6 +50,9 @@ typedef struct file {
   fs_node_t *node;
 } file_t;
 
+typedef struct file FILE;
+typedef struct file DIR;
+
 typedef struct file_table {
   bitmap_t *fds;
   rb_tree_t *files;
@@ -59,5 +63,6 @@ file_table_t *create_file_table();
 file_t *file_get(int fd);
 file_t *file_create(fs_node_t *node, int flags);
 void file_delete(file_t *file);
+int file_exists(file_t *file);
 
 #endif

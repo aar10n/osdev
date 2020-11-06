@@ -29,6 +29,8 @@ typedef struct {
   ino_t id;
   uintptr_t self;
   int errno;
+  uid_t uid;
+  gid_t gid;
   fs_node_t *pwd;
   file_table_t *files;
   scheduler_t *scheduler;

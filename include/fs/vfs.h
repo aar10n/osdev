@@ -10,6 +10,9 @@
 #include <hash_table.h>
 #include <rb_tree.h>
 
+// Extended flags for controlling VFS functions
+#define V_NOFAIL 0x0100000 // Makes O_NOFOLLOW return the symlink instead of failing
+
 typedef struct fs fs_t;
 typedef struct fs_device fs_device_t;
 typedef struct path path_t;
@@ -71,7 +74,9 @@ fs_node_map_t *create_node_map();
 
 void vfs_init();
 fs_node_t *vfs_create_node(fs_node_t *parent, mode_t mode);
-fs_node_t *vfs_create_node_from_inode(inode_t *inode);
+fs_node_t *vfs_create_from_inode(fs_node_t *parent, inode_t *inode);
+fs_node_t *vfs_copy_node(fs_node_t *node);
+void vfs_populate_dir_node(fs_node_t *node);
 
 fs_node_t *vfs_get_node(path_t path, int flags);
 fs_node_t *vfs_find_child(fs_node_t *parent, path_t name);
@@ -80,6 +85,10 @@ int vfs_add_device(fs_device_t *device);
 int vfs_add_node(fs_node_t *parent, fs_node_t *child, char *name);
 int vfs_remove_node(fs_node_t *node);
 int vfs_swap_node(fs_node_t *orig_node, fs_node_t *new_node);
+
+fs_node_t *vfs_get_link(const char *path);
+void vfs_add_link(const char *path, fs_node_t *node);
+void vfs_remove_link(const char *path);
 
 char *vfs_path_from_node(fs_node_t *node);
 

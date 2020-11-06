@@ -77,13 +77,14 @@ int fs_rename(const char *oldfile, const char *newfile);
 int fs_chmod(const char *path, mode_t mode);
 int fs_chown(const char *path, uid_t owner, gid_t group);
 
-int fs_opendir(const char *filename);
-int fs_closedir(int fd);
+DIR *fs_opendir(const char *dirname);
+int fs_closedir(DIR *dirp);
+dirent_t *fs_readdir(DIR *dirp);
+void fs_seekdir(DIR *dirp, long loc);
+void fs_rewinddir(DIR *dirp);
+long fs_telldir(DIR *dirp);
+
 int fs_mkdir(const char *path, mode_t mode);
 int fs_chdir(const char *path);
-
-dirent_t *fs_readdir(int fd);
-long fs_telldir(int fd);
-void fs_seekdir(int fd, long loc);
 
 #endif

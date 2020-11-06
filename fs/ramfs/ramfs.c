@@ -300,10 +300,6 @@ int ramfs_unlink(fs_t *fs, inode_t *inode, dirent_t *dirent) {
   inode_t *parent = ramfs_get_inode(ramfs, dirent->inode);
   ramfs_remove_dirent(parent, dirent);
   inode->nlink--;
-
-  if (inode->nlink == 0) {
-    return ramfs_remove(fs, inode);
-  }
   return 0;
 }
 
