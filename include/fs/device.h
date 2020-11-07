@@ -29,6 +29,6 @@ extern fs_device_impl_t pseudo_impl;
 
 void fs_device_init();
 dev_t fs_register_device(void *data, fs_device_impl_t *impl);
-fs_device_t *fs_get_device(dev_t id);
+// dev_t fs_register_partition(fs_device_t *device, dev_t partition);
 
 #endif

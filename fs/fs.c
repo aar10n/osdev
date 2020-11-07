@@ -3,6 +3,7 @@
 //
 
 #include <fs.h>
+#include <vfs.h>
 #include <stdio.h>
 #include <panic.h>
 #include <mm/heap.h>
@@ -14,28 +15,7 @@
 #include <device.h>
 #include <process.h>
 
-// #define FILES (current->files)
-#define FILES (PERCPU->files)
-
-#define NOT_ERROR(expr) \
-  if ((expr) == -1) {   \
-    return -1;          \
-  } NULL
-
-#define NNOT_ERROR(expr) \
-  if ((expr) == -1) {    \
-    return NULL;         \
-  } NULL
-
-#define NOT_NULL(expr) \
-if ((expr) == NULL) {  \
-  return -1;           \
-} NULL
-
-#define NNOT_NULL(expr) \
-if ((expr) == NULL) {   \
-  return NULL;          \
-} NULL
+static dev_t __dev_id = 0;
 
 //
 // Filesystem API
@@ -75,8 +55,14 @@ int fs_mount(fs_driver_t *driver, const char *device, const char *path) {
   NOT_NULL(parent = vfs_get_node(path_dirname(p), O_DIRECTORY));
 
   fs_device_t *dev = dev_node->ifblk.device;
+
+  dev_t dev_id = atomic_fetch_add(&__dev_id, 1);
+  fs_device_t *copy = kmalloc(sizeof(fs_device_t));
+  memcpy(dev, copy, sizeof(fs_device_t));
+  copy->id = dev_id;
+
   fs_node_t *mount = vfs_create_node(parent, S_IFMNT);
-  mount->dev = dev->id;
+  mount->dev = dev_id;
   mount->ifmnt.shadow = NULL;
 
   path_t basename = path_basename(p);
@@ -90,7 +76,7 @@ int fs_mount(fs_driver_t *driver, const char *device, const char *path) {
     vfs_swap_node(child, mount);
   }
 
-  fs_t *instance = driver->impl->mount(mount->dev, mount);
+  fs_t *instance = driver->impl->mount(copy, mount);
   if (instance == NULL) {
     kfree(mount);
     return -1;
@@ -129,8 +115,6 @@ int fs_unmount(const char *path) {
   return 0;
 }
 
-//
-// Filesystem Syscalls
 //
 
 int fs_open(const char *filename, int flags, mode_t mode) {
@@ -331,13 +315,17 @@ int fs_symlink(const char *path1, const char *path2) {
 
 int fs_rename(const char *oldfile, const char *newfile) {
   kprintf("[fs] rename\n");
+
+  errno = ENOSYS;
+  return -1;
 }
 
 int fs_chmod(const char *path, mode_t mode) {
   kprintf("[fs] chmod\n");
   mode = mode & I_PERM_MASK;
 
-
+  errno = ENOSYS;
+  return -1;
 }
 
 int fs_chown(const char *path, uid_t owner, gid_t group) {
@@ -346,7 +334,8 @@ int fs_chown(const char *path, uid_t owner, gid_t group) {
     return 0;
   }
 
-
+  errno = ENOSYS;
+  return -1;
 }
 
 //
@@ -445,10 +434,34 @@ long fs_telldir(DIR *dirp) {
 
 int fs_mkdir(const char *path, mode_t mode) {
   kprintf("[fs] mkdir\n");
+
+  path_t p = str_to_path(path);
+  fs_node_t *parent;
+  NOT_NULL(parent = vfs_get_node(path_dirname(p), 0));
+
+  path_t basename = path_basename(p);
+  if (vfs_find_child(parent, basename) != NULL) {
+    errno = EEXIST;
+    return -1;
+  }
+
+  fs_node_t *dir;
+  mode = S_IFDIR | (mode & I_PERM_MASK);
+  NOT_NULL(dir = vfs_create_node(parent, mode));
+
+  char name[MAX_FILE_NAME];
+  pathcpy(name, basename);
+  if (vfs_add_node(parent, dir, name) < 0) {
+    vfs_remove_node(dir);
+    return -1;
+  }
+  return 0;
 }
 
 int fs_chdir(const char *path) {
   kprintf("[fs] chdir\n");
+  errno = ENOSYS;
+  return -1;
 }
 
 

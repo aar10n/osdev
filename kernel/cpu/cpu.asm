@@ -1,3 +1,4 @@
+FSBASE_MSR        equ 0xC0000100
 GSBASE_MSR        equ 0xC0000101
 KERNEL_GSBASE_MSR equ 0xC0000102
 
@@ -57,6 +58,19 @@ write_msr:
   wrmsr
   ret
 
+
+global read_fsbase
+read_fsbase:
+  mov rdi, FSBASE_MSR
+  call read_msr
+  ret
+
+global write_fsbase
+write_fsbase:
+  mov rsi, rdi
+  mov rdi, FSBASE_MSR
+  call write_msr
+  ret
 
 global read_gsbase
 read_gsbase:

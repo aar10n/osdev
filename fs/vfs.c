@@ -20,17 +20,14 @@
 
 // #define PWD (current->pwd)
 #define PWD (PERCPU->pwd)
-
 // #define UID (current->uid)
 #define UID (PERCPU->uid)
-
 // #define GID (current->gid)
 #define GID (PERCPU->gid)
 
 
 fs_t *root_fs = NULL;
 fs_node_t *fs_root = NULL;
-fs_node_map_t *nodes = NULL;
 fs_node_table_t *links = NULL;
 
 uint32_t hash(char *str) {
@@ -38,37 +35,6 @@ uint32_t hash(char *str) {
   uint32_t out;
   murmur_hash_x86_32(str, len, 0xDEADBEEF, &out);
   return out;
-}
-
-uint64_t pair(uint32_t a, uint32_t b) {
-  return (uint64_t) a << 32 | b;
-}
-
-//
-
-fs_node_t *get_node(ino_t ino, dev_t dev) {
-  uint64_t key = pair(ino, dev);
-  aquire(nodes->rwlock);
-  rb_node_t *node = rb_tree_find(nodes->tree, key);
-  release(nodes->rwlock);
-  if (node == NULL) {
-    return NULL;
-  }
-  return node->data;
-}
-
-void add_node(fs_node_t *node) {
-  uint64_t key = pair(node->inode, node->dev);
-  lock(nodes->rwlock);
-  rb_tree_insert(nodes->tree, key, node);
-  unlock(nodes->rwlock);
-}
-
-void remove_node(fs_node_t *node) {
-  uint64_t key = pair(node->inode, node->dev);
-  lock(nodes->rwlock);
-  rb_tree_delete(nodes->tree, key);
-  unlock(nodes->rwlock);
 }
 
 //
@@ -105,13 +71,6 @@ fs_node_table_t *create_node_table() {
   return table;
 }
 
-fs_node_map_t *create_node_map() {
-  fs_node_map_t *map = kmalloc(sizeof(fs_node_map_t));
-  map->tree = create_rb_tree();
-  spinrw_init(&map->rwlock);
-  return map;
-}
-
 dirent_t *create_dirent(ino_t ino, const char *name) {
   dirent_t *dirent = kmalloc(sizeof(dirent_t));
   dirent->inode = ino;
@@ -122,7 +81,6 @@ dirent_t *create_dirent(ino_t ino, const char *name) {
 //
 
 void vfs_init() {
-  nodes = create_node_map();
   links = create_node_table();
   inodes = create_inode_table();
 
@@ -195,6 +153,32 @@ fs_node_t *vfs_copy_node(fs_node_t *node) {
   return copy;
 }
 
+void vfs_free_node(fs_node_t *node) {
+  if (node == NULL) {
+    return;
+  }
+
+  // free children first
+  if (IS_IFDIR(node->mode)) {
+    fs_node_t *child = node->ifdir.first;
+    while (child) {
+      fs_node_t *next = child->next;
+      vfs_free_node(child);
+      child = next;
+    }
+  }
+
+  inode_t *inode = inode_get(node);
+  if (inode != NULL) {
+    node->fs->impl->unlink(node->fs, inode, node->dirent);
+    if (inode->nlink == 0) {
+      node->fs->impl->remove(node->fs, inode);
+    }
+  }
+
+  kfree(node);
+}
+
 void vfs_populate_dir_node(fs_node_t *node) {
   kassert(IS_IFDIR(node->mode));
 
@@ -222,6 +206,8 @@ void vfs_populate_dir_node(fs_node_t *node) {
   node->ifdir.first = dot;
   node->ifdir.last = dotdot;
 }
+
+//
 
 fs_node_t *vfs_get_node(path_t path, int flags) {
   if (path.len > MAX_PATH) {
@@ -428,53 +414,26 @@ int vfs_add_node(fs_node_t *parent, fs_node_t *child, char *name) {
 }
 
 int vfs_remove_node(fs_node_t *node) {
-  while (node) {
-    if (strcmp(node->dirent->name, ".") != 0 ||
-      strcmp(node->dirent->name, "..") != 0) {
-      inode_t *inode = inode_get(node);
-      if (inode == NULL) {
-        return -1;
-      }
-
-      int result = node->fs->impl->unlink(node->fs, inode, node->dirent);
-      if (result < 0) {
-        return -1;
-      }
-    } else {
-      errno = EPERM;
-      return -1;
-    }
-
-    // cleans up all external references to the node
-    if (node->prev) {
-      node->prev->next = node->next;
-    }
-    if (node->next) {
-      node->next->prev = node->prev;
-    }
-
-    if (node->parent && node->parent->ifdir.first == node) {
-      node->parent->ifdir.first = node->next;
-    }
-
-    // break any links to this node
-    char *node_path = vfs_path_from_node(node);
-    vfs_remove_link(node_path);
-    kfree(node_path);
-
-    if (IS_IFDIR(node->mode)) {
-      int result = vfs_remove_node(node->ifdir.first);
-      if (result < 0) {
-        kfree(node);
-        return -1;
-      }
-    }
-
-    fs_node_t *next = node->next;
-    kfree(node);
-    node = next;
+  if (node == NULL) {
+    return 0;
   }
 
+  // cleans up all external references to the node
+  if (node->prev) {
+    node->prev->next = node->next;
+  }
+  if (node->next) {
+    node->next->prev = node->prev;
+  }
+
+  if (node->parent && node->parent->ifdir.first == node) {
+    node->parent->ifdir.first = node->next;
+  }
+
+  // break any links to this node
+  char *node_path = vfs_path_from_node(node);
+  vfs_remove_link(node_path);
+  kfree(node_path);
   return 0;
 }
 

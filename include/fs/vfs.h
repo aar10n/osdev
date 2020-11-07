@@ -13,6 +13,30 @@
 // Extended flags for controlling VFS functions
 #define V_NOFAIL 0x0100000 // Makes O_NOFOLLOW return the symlink instead of failing
 
+// #define FILES (current->files)
+#define FILES (PERCPU->files)
+
+#define NOT_ERROR(expr) \
+  if ((expr) == -1) {   \
+    return -1;          \
+  } NULL
+
+#define NNOT_ERROR(expr) \
+  if ((expr) == -1) {    \
+    return NULL;         \
+  } NULL
+
+#define NOT_NULL(expr) \
+if ((expr) == NULL) {  \
+  return -1;           \
+} NULL
+
+#define NNOT_NULL(expr) \
+if ((expr) == NULL) {   \
+  return NULL;          \
+} NULL
+
+
 typedef struct fs fs_t;
 typedef struct fs_device fs_device_t;
 typedef struct path path_t;
@@ -59,23 +83,17 @@ typedef struct fs_node_table {
   rw_spinlock_t rwlock;
 } fs_node_table_t;
 
-typedef struct fs_node_map {
-  rb_tree_t *tree;
-  rw_spinlock_t rwlock;
-} fs_node_map_t;
-
 extern fs_node_t *fs_root;
-extern fs_node_map_t *nodes;
 extern fs_node_table_t *links;
 
 
 fs_node_table_t *create_node_table();
-fs_node_map_t *create_node_map();
 
 void vfs_init();
 fs_node_t *vfs_create_node(fs_node_t *parent, mode_t mode);
 fs_node_t *vfs_create_from_inode(fs_node_t *parent, inode_t *inode);
 fs_node_t *vfs_copy_node(fs_node_t *node);
+void vfs_free_node(fs_node_t *node);
 void vfs_populate_dir_node(fs_node_t *node);
 
 fs_node_t *vfs_get_node(path_t path, int flags);

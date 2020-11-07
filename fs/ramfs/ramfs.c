@@ -185,7 +185,7 @@ int ramfs_remove_dirent(inode_t *parent, dirent_t *dirent) {
 
 //
 
-fs_t *ramfs_mount(dev_t dev, fs_node_t *mount) {
+fs_t *ramfs_mount(fs_device_t *device, fs_node_t *mount) {
   kprintf("[ramfs] mount\n");
   // allocate some space for the filesystem
   page_t *pages = alloc_pages(1, PE_2MB_SIZE | PE_WRITE);
@@ -224,7 +224,7 @@ fs_t *ramfs_mount(dev_t dev, fs_node_t *mount) {
 
   // filesystem struct
   fs_t *fs = kmalloc(sizeof(fs_t));
-  fs->dev = dev;
+  fs->device = device;
   fs->root = root;
   fs->mount = mount;
   fs->data = ramfs;

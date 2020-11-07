@@ -18,6 +18,8 @@ uint64_t read_tsc();
 uint64_t read_msr(uint32_t msr);
 void write_msr(uint32_t msr, uint64_t value);
 
+uint64_t read_fsbase();
+void write_fsbase(uint64_t value);
 uint64_t read_gsbase();
 void write_gsbase(uint64_t value);
 uint64_t read_kernel_gsbase();

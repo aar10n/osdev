@@ -42,6 +42,15 @@
 
 typedef struct fs_node fs_node_t;
 
+typedef enum file_type {
+
+} file_type_t;
+
+/* A generic file-like object represented by a descriptor. */
+typedef struct fs_file {
+
+} fs_file_t;
+
 typedef struct file {
   int fd;
   int flags;

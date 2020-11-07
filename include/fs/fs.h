@@ -9,7 +9,6 @@
 #include <dirent.h>
 #include <inode.h>
 #include <file.h>
-#include <vfs.h>
 
 #define MAX_PATH 1024
 #define MAX_SYMLINKS 40
@@ -20,10 +19,11 @@
 #define is_root(node) ((node)->parent == (node))
 
 typedef struct fs fs_t;
+typedef struct fs_node fs_node_t;
 
 /* Filesystem operations */
 typedef struct fs_impl {
-  fs_t *(*mount)(dev_t dev, fs_node_t *mount);
+  fs_t *(*mount)(fs_device_t *device, fs_node_t *mount);
   int (*unmount)(fs_t *fs, fs_node_t *mount);
 
   inode_t *(*locate)(fs_t *fs, ino_t ino);
@@ -48,7 +48,7 @@ typedef struct fs_driver {
 
 /* A mounted filesystem instance */
 typedef struct fs {
-  dev_t dev;           // device id
+  fs_device_t *device; // fs device
   fs_node_t *mount;    // vfs mount node
   fs_node_t *root;     // fs root node
 
