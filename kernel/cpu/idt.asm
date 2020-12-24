@@ -63,6 +63,7 @@ interrupt_handler:
   cld
 
   mov rdi, [rsp + 72]
+  mov rsi, rsp
   call irq_handler
 
   popcaller

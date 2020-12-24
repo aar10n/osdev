@@ -37,6 +37,7 @@ typedef void (*rb_evt_post_insert_node_t)(rb_tree_t *tree, rb_node_t *z);
 typedef void (*rb_evt_pre_delete_node_t)(rb_tree_t *tree, rb_node_t *z);
 typedef void (*rb_evt_post_delete_node_t)(rb_tree_t *tree, rb_node_t *z, rb_node_t *x);
 typedef void (*rb_evt_replace_node_t)(rb_tree_t *tree, rb_node_t *u, rb_node_t *v);
+typedef void (*rb_evt_dup_node_t)(rb_tree_t *otree, rb_tree_t *ntree, rb_node_t *u, rb_node_t *v);
 
 typedef struct {
   rb_evt_pre_rotate_t pre_rotate;
@@ -46,6 +47,7 @@ typedef struct {
   rb_evt_pre_delete_node_t pre_delete_node;
   rb_evt_post_delete_node_t post_delete_node;
   rb_evt_replace_node_t replace_node;
+  rb_evt_dup_node_t duplicate_node;
 } rb_tree_events_t;
 
 typedef struct rb_tree {
@@ -67,6 +69,7 @@ typedef struct {
 } rb_iter_t;
 
 rb_tree_t *create_rb_tree();
+rb_tree_t *copy_rb_tree(rb_tree_t *tree);
 rb_node_t *rb_tree_find(rb_tree_t *tree, uint64_t key);
 rb_node_t *rb_tree_find_closest(rb_tree_t *tree, uint64_t key);
 void rb_tree_insert(rb_tree_t *tree, uint64_t key, void *data);

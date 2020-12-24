@@ -11,16 +11,16 @@
 #include <vectors.h>
 
 #include <mm/heap.h>
+#include <mm/vm.h>
 
 #include <cpu/idt.h>
 #include <device/apic.h>
 #include <string.h>
 
-extern void context_switch();
 extern void tick_handler();
-extern void switch_context(process_t *process);
+extern void switch_context(process_t *process, vm_t *vm);
 
-static process_t **ptable = NULL;
+static process_t *ptable[PTABLE_SIZE] = {};
 static size_t ptable_size = 0;
 
 //
@@ -37,8 +37,7 @@ rqueue_t *rq_create() {
 }
 
 void rq_enqueue(rqueue_t *rq, process_t *process) {
-  spin_lock(&rq->lock);
-  // ----------------
+  lock(rq->lock);
   if (rq->count == 0) {
     rq->front = process;
     rq->back = process;
@@ -48,13 +47,11 @@ void rq_enqueue(rqueue_t *rq, process_t *process) {
     rq->back = process;
   }
   rq->count++;
-  // ----------------
-  spin_unlock(&rq->lock);
+  unlock(rq->lock);
 }
 
 void rq_enqueue_front(rqueue_t *rq, process_t *process) {
-  spin_lock(&rq->lock);
-  // ----------------
+  lock(rq->lock);
   if (rq->count == 0) {
     rq->front = process;
     rq->back = process;
@@ -64,8 +61,7 @@ void rq_enqueue_front(rqueue_t *rq, process_t *process) {
     rq->front = process;
   }
   rq->count++;
-  // ----------------
-  spin_unlock(&rq->lock);
+  unlock(rq->lock);
 }
 
 process_t *rq_dequeue(rqueue_t *rq) {
@@ -73,8 +69,7 @@ process_t *rq_dequeue(rqueue_t *rq) {
     return NULL;
   }
 
-  spin_lock(&rq->lock);
-  // ----------------
+  lock(rq->lock);
   process_t *process = rq->front;
   if (rq->count == 1) {
     rq->front = NULL;
@@ -86,13 +81,12 @@ process_t *rq_dequeue(rqueue_t *rq) {
   process->next = NULL;
   process->prev = NULL;
   rq->count--;
-  // ----------------
-  spin_unlock(&rq->lock);
+  unlock(rq->lock);
   return process;
 }
 
 void rq_remove(rqueue_t *rq, process_t *process) {
-  spin_lock(&rq->lock);
+  lock(rq->lock);
   if (process == rq->front) {
     process->next->prev = NULL;
     rq->front = process->next;
@@ -106,7 +100,7 @@ void rq_remove(rqueue_t *rq, process_t *process) {
   process->next = NULL;
   process->prev = NULL;
   rq->count--;
-  spin_unlock(&rq->lock);
+  unlock(rq->lock);
 }
 
 //
@@ -115,7 +109,7 @@ void rq_remove(rqueue_t *rq, process_t *process) {
 
 void sched_schedule() {
   clock_t now = timer_now();
-  process_t * curr = current;
+  process_t *curr = current;
   kprintf("[sched] schedule\n");
 
   if (curr) {
@@ -150,13 +144,15 @@ void sched_schedule() {
   process->stats.run_count++;
   process->stats.idle_time += now - process->stats.last_run_end;
   process->stats.last_run_start = timer_now();
-  switch_context(process);
+
+  kprintf("[sched] pid: %d\n", process->pid);
+  switch_context(process, process->vm);
 }
 
 void sched_tick() {
   kprintf("[sched] tick\n");
   // whole time slice was used
-  process_t * curr = current;
+  process_t *curr = current;
   if (curr) {
     uint8_t new_prior = min(curr->priority + 1, SCHED_QUEUES - 1);
     curr->priority = new_prior;
@@ -174,7 +170,7 @@ noreturn void sched_idle() {
 void sched_preempt(process_t *process) {
   // only part of time slice was used
   process->status = PROC_READY;
-  process_t * curr = current;
+  process_t *curr = current;
   rqueue_t *rq = SCHEDULER->queues[process->priority];
   if (process->priority < curr->priority) {
     kprintf("[sched] preempting with pid %llu\n", process->pid);
@@ -204,7 +200,7 @@ void sched_init() {
   kprintf("[sched] initializing\n");
   scheduler_t *sched = kmalloc(sizeof(scheduler_t));
   sched->cpu_id = PERCPU->id;
-  sched->idle = create_process(sched_idle);
+  sched->idle = kthread_create(sched_idle);
   sched->idle->priority = 255;
   sched->blocked = rq_create();
   for (int i = 0; i < SCHED_QUEUES; i++) {
@@ -214,11 +210,6 @@ void sched_init() {
 
   idt_gate_t gate = gate((uintptr_t) tick_handler, KERNEL_CS, 0, INTERRUPT_GATE, 0, 1);
   idt_set_gate(VECTOR_SCHED_TIMER, gate);
-
-  if (ptable == NULL) {
-    ptable = kmalloc(sizeof(process_t *) * PTABLE_SIZE);
-    ptable_size = PTABLE_SIZE;
-  }
 
   apic_init_periodic(SCHED_QUANTUM);
   kprintf("[sched] done!\n");
@@ -239,7 +230,7 @@ void sched_enqueue(process_t *process) {
 
 void sched_block() {
   kprintf("[sched] pid %llu: block\n", current->pid);
-  process_t * curr = current;
+  process_t *curr = current;
   curr->status = PROC_BLOCKED;
   curr->stats.block_count++;
   rq_enqueue(SCHEDULER->blocked, curr);
@@ -248,7 +239,7 @@ void sched_block() {
 
 void sched_sleep(uint64_t ns) {
   kprintf("[sched] pid %llu: sleep\n", current->pid);
-  process_t * curr = current;
+  process_t *curr = current;
   curr->status = PROC_SLEEPING;
   curr->stats.sleep_count++;
   curr->stats.sleep_time += ns;
@@ -259,7 +250,7 @@ void sched_sleep(uint64_t ns) {
 
 void sched_yield() {
   kprintf("[sched] pid %llu: yield\n", current->pid);
-  process_t * curr = current;
+  process_t *curr = current;
   curr->status = PROC_READY;
   curr->stats.yield_count++;
   sched_schedule();
@@ -267,7 +258,7 @@ void sched_yield() {
 
 void sched_terminate() {
   kprintf("[sched] pid %llu: terminate\n", current->pid);
-  process_t * curr = current;
+  process_t *curr = current;
   curr->status = PROC_KILLED;
   ptable[curr->pid] = NULL;
   current = NULL;
@@ -277,7 +268,7 @@ void sched_terminate() {
 // Debugging
 
 void sched_print_stats() {
-  cli();
+  uint64_t rflags = cli_save();
 
   kprintf("===== scheduler stats =====\n");
   kprintf("current pid: %llu\n", current->pid);
@@ -303,5 +294,5 @@ void sched_print_stats() {
     process = process->next;
   }
 
-  sti();
+  sti_restore(rflags);
 }

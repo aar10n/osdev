@@ -4,8 +4,9 @@
 
 # kernel
 kernel += entry.asm sched.asm smpboot.asm \
-	acpi.c dev.c main.c panic.c percpu.c \
-	process.c scheduler.c smpboot.c timer.c
+	syscall.asm user.asm acpi.c loader.c main.c \
+	panic.c percpu.c process.c scheduler.c smpboot.c \
+	syscall.c timer.c
 
 # kernel/bus
 kernel += bus/pci.c

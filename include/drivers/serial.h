@@ -11,6 +11,6 @@
 #define COM4 0x2E8
 
 void serial_init(int port);
-void serial_write(int port, char *s);
+void serial_write(int port, const char *s);
 
 #endif

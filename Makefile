@@ -17,8 +17,6 @@ QEMUFLAGS = \
 	-smp cores=1,threads=2,sockets=1 \
 	-machine q35 \
 	-m 256M \
-	-no-reboot \
-   	-no-shutdown \
 	-bios scripts/OVMF-DEBUG.fd \
 	-global isa-debugcon.iobase=0x402 \
 	-debugcon file:$(BUILD)/uefi_debug.log \
@@ -37,7 +35,7 @@ include scripts/Makefile.util
 #  Targets  #
 # --------- #
 
-targets = boot kernel fs drivers libc lib
+targets = boot kernel fs drivers libc lib sys
 
 # include the makefiles of all targets
 include $(foreach t,$(targets),$t/Makefile)
@@ -87,7 +85,7 @@ ramdisk: initrd $(BUILD)/initrd.img
 # -------------- #
 
 # USB bootable image
-$(BUILD)/osdev.img: $(BUILD)/bootx64.efi $(BUILD)/kernel.elf config.ini $(BUILD)/fat.img
+$(BUILD)/osdev.img: $(BUILD)/bootx64.efi $(BUILD)/kernel.elf config.ini $(BUILD)/fat.img $(BUILD)/hello.elf
 	dd if=/dev/zero of=$@ bs=1k count=1440
 	mformat -i $@ -f 1440 ::
 	mmd -i $@ ::/EFI
@@ -95,6 +93,7 @@ $(BUILD)/osdev.img: $(BUILD)/bootx64.efi $(BUILD)/kernel.elf config.ini $(BUILD)
 	mcopy -i $@ $(BUILD)/bootx64.efi ::/EFI/boot
 	mcopy -i $@ config.ini ::/EFI/boot
 	mcopy -i $@ $(BUILD)/kernel.elf ::/EFI
+	mcopy -i $@ $(BUILD)/hello.elf ::/EFI
 
 # EFI Bootloader
 $(BUILD)/bootx64.efi: $(BUILD)/loader.dll
@@ -109,6 +108,10 @@ $(BUILD)/loader.dll: $(boot-y)
 
 # Kernel
 $(BUILD)/kernel.elf: $(kernel-y) $(fs-y) $(libc-y) $(drivers-y) $(lib-y)
+	$(call toolchain,$<,LD) $(call flags,$<,LDFLAGS) $^ -o $@
+
+## Program
+$(BUILD)/hello.elf: $(sys-y)
 	$(call toolchain,$<,LD) $(call flags,$<,LDFLAGS) $^ -o $@
 
 

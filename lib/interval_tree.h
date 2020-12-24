@@ -33,6 +33,11 @@ typedef struct interval {
 } interval_t;
 
 typedef struct {
+  void *(*copy_data)(void *data);
+} intvl_tree_events_t;
+
+typedef struct {
+  intvl_tree_events_t *events;
   rb_node_t *node;
   interval_t interval;
   uint64_t max;
@@ -40,13 +45,15 @@ typedef struct {
   void *data;
 } intvl_node_t;
 
-typedef struct {
+typedef struct intvl_tree {
   rb_tree_t *tree;
+  intvl_tree_events_t *events;
 } intvl_tree_t;
 
 typedef rb_iter_t intvl_iter_t;
 
 intvl_tree_t *create_intvl_tree();
+intvl_tree_t *copy_intvl_tree(intvl_tree_t *tree);
 intvl_node_t *intvl_tree_find(intvl_tree_t *tree, interval_t interval);
 intvl_node_t *intvl_tree_find_closest(intvl_tree_t *tree, interval_t interval);
 void intvl_tree_insert(intvl_tree_t *tree, interval_t interval, void *data);

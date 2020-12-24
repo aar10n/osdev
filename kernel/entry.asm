@@ -1,3 +1,5 @@
+%include "base.inc"
+
 extern kmain
 extern ap_main
 
@@ -8,6 +10,15 @@ entry:
   xor rbp, rbp
 
   mov rdi, rsi ; boot_info pointer
+
+  mov ecx, IA32_EFER_MSR
+  rdmsr
+  mov edx, (1 << 11)
+  not edx
+
+  or eax, 1
+  and eax, edx
+  wrmsr
 
   cld
   cli

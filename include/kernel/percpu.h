@@ -17,25 +17,25 @@
 
 #define PERCPU_SIZE (4096 * 4)
 
-typedef struct process process_t;
-typedef struct file_table file_table_t;
-typedef struct vm vm_t;
-typedef struct fs_node fs_node_t;
-typedef struct scheduler scheduler_t;
-typedef struct idt idt_t;
+struct process;
+struct file_table;
+struct vm;
+struct fs_node;
+struct scheduler;
+struct idt;
 
 typedef struct {
-  process_t *current;
+  struct process *current;
   ino_t id;
   uintptr_t self;
   int errno;
   uid_t uid;
   gid_t gid;
-  fs_node_t *pwd;
-  file_table_t *files;
-  scheduler_t *scheduler;
-  idt_t *idt;
-  vm_t *vm;
+  struct fs_node *pwd;
+  struct file_table *files;
+  struct scheduler *scheduler;
+  struct idt *idt;
+  struct vm *vm;
 } percpu_t;
 _Static_assert(sizeof(percpu_t) <= 4096, "");
 
@@ -80,6 +80,7 @@ static inline __attribute((always_inline)) __attribute((pure)) percpu_t *percpu(
 }
 
 #define PERCPU (percpu())
+#define ID (percpu()->id)
 #define IS_BSP (PERCPU->id == boot_info->bsp_id)
 #define current (percpu()->current)
 

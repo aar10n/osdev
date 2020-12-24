@@ -9,7 +9,7 @@
 #include <fs.h>
 
 #define DEFAULT_RFLAGS 0x246
-#define PROC_STACK_SIZE PAGE_SIZE
+#define PROC_STACK_SIZE 0x2000
 
 typedef enum {
   PROC_READY,
@@ -19,7 +19,10 @@ typedef enum {
   PROC_KILLED
 } proc_status_t;
 
+typedef struct vm vm_t;
+
 typedef struct {
+  uint64_t rax;    // 0x00
   uint64_t rbx;    // 0x00
   uint64_t rbp;    // 0x08
   uint64_t r12;    // 0x10
@@ -35,7 +38,8 @@ typedef struct {
 } context_t;
 
 typedef struct process {
-  uint64_t pid;
+  pid_t pid;
+  pid_t ppid;
   context_t *ctx;
   uint8_t cpu_id;
   uint8_t policy;
@@ -43,6 +47,7 @@ typedef struct process {
   proc_status_t status;
   fs_node_t *pwd;
   file_table_t *files;
+  vm_t *vm;
   struct {
     clock_t last_run_start;
     clock_t last_run_end;
@@ -59,8 +64,12 @@ typedef struct process {
   struct process *prev;
 } process_t;
 
-process_t *create_process(void (*func)());
-void kthread_create(void (*func)());
+process_t *kthread_create(void (*func)());
+pid_t process_fork(bool user);
+
+pid_t getpid();
+pid_t getppid();
+
 void print_debug_process(process_t *process);
 
 #endif

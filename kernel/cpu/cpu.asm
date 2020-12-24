@@ -115,6 +115,11 @@ load_idt:
   lidt [rdi]
   ret
 
+global load_tr
+load_tr:
+  ltr di
+  ret
+
 global flush_gdt
 flush_gdt:
   push rbp
@@ -137,7 +142,17 @@ flush_gdt:
 .flush:
   pop rbp
 
-; Paging
+; Control Registers
+
+global read_cr0
+read_cr0:
+  mov rax, cr0
+  ret
+
+global write_cr0
+write_cr0:
+  mov cr0, rdi
+  ret
 
 global read_cr3
 read_cr3:
@@ -149,6 +164,17 @@ write_cr3:
   mov cr3, rdi
   ret
 
+global read_cr4
+read_cr4:
+  mov rax, cr4
+  ret
+
+global write_cr4
+write_cr4:
+  mov cr4, rdi
+  ret
+
+; Paging/TLB
 
 global tlb_invlpg
 tlb_invlpg:
@@ -175,3 +201,18 @@ enable_sse:
   or rdx, 1 << 9     ; set the OSXMMEXCPT bit
   mov cr4, rdx
   ret
+
+; Syscalls
+
+global syscall
+syscall:
+  mov rax, rdi
+  syscall
+
+global sysret
+sysret:
+  mov rcx, rdi ; rip
+  mov rsp, rsi ; rsp
+  mov r11, 0   ; rflags
+;  push dword 0xDEADBEEF
+  o64 sysret

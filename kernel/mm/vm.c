@@ -7,19 +7,18 @@
 #include <string.h>
 #include <stdio.h>
 #include <percpu.h>
+#include <vectors.h>
 
 #include <cpu/cpu.h>
+#include <cpu/idt.h>
 #include <mm/mm.h>
 #include <mm/heap.h>
 #include <mm/vm.h>
 
 #include <interval_tree.h>
 
-// static uint64_t *pml4;
-// static uint64_t *temp_dir;
-// static intvl_tree_t *tree;
+extern void page_fault_handler();
 
-//
 
 static inline size_t page_to_size(page_t *page) {
   if (page->flags.page_size_2mb) {
@@ -41,28 +40,76 @@ static inline uint16_t get_index(uintptr_t virt_addr, uint16_t offset, uint16_t 
   return (virt_addr >> page_level_to_shift(level + offset)) & 0x1FF;
 }
 
-//
-
-uint64_t *get_table_from_index(uint16_t index, uint16_t level) {
-  uintptr_t addr = get_virt_addr(R_ENTRY, R_ENTRY, R_ENTRY, R_ENTRY);
-  for (int i = 1; i < 5 - level; i++) {
-    addr <<= 9;
-    addr |= (0xFFFFUL << 48) | get_virt_addr_partial(index, 1);
+static inline uint16_t fix_flags(uint16_t flags, uint16_t root, bool cow) {
+  if (root == U_ENTRY) {
+    if (cow) {
+      flags &= ~(PE_WRITE);
+    }
+    return flags | PE_USER;
   }
-  return (uint64_t *) addr;
+  return flags;
 }
+
+static inline void update_page_flags(page_t *page, uint16_t flags) {
+  bool is_alt_size = (flags & PE_2MB_SIZE) || (flags & PE_1GB_SIZE);
+
+  page->flags.raw = 0;
+  page->flags.present = (flags & PE_PRESENT) != 0;
+  page->flags.write = (flags & PE_WRITE) != 0;
+  page->flags.user = (flags & PE_USER) != 0;
+  page->flags.write_through = (flags & PE_WRITE_THROUGH) != 0;
+  page->flags.cache_disable = (flags & PE_CACHE_DISABLE) != 0;
+  page->flags.page_size = is_alt_size;
+  page->flags.global = (flags & PE_GLOBAL) != 0;
+  page->flags.executable = (flags & PE_EXEC) != 0;
+  page->flags.page_size_2mb = (flags & PE_2MB_SIZE) != 0;
+  page->flags.page_size_1gb = (flags & PE_1GB_SIZE) != 0;
+}
+
+//
 
 uint64_t *get_table(uintptr_t virt_addr, uint16_t level) {
   uintptr_t addr = get_virt_addr(R_ENTRY, R_ENTRY, R_ENTRY, R_ENTRY);
+  bool last_exists = true;
   for (int i = 1; i < 5 - level; i++) {
     uint16_t index = get_index(virt_addr, 1, 4 - i);
+
+    if (last_exists) {
+      uint64_t entry = ((uint64_t *) addr)[index];
+      if (entry & PE_SIZE) {
+        return (uint64_t *) addr;
+      } else if (entry == 0) {
+        last_exists = false;
+      }
+    }
+
     addr <<= 9;
     addr |= (0xFFFFUL << 48) | get_virt_addr_partial(index, 1);
   }
   return (uint64_t *) addr;
 }
 
-// recursively maps a physical address to a virtual address
+uintptr_t get_frame(uintptr_t virt_addr) {
+  uintptr_t addr = get_virt_addr(R_ENTRY, R_ENTRY, R_ENTRY, R_ENTRY);
+  for (int i = 1; i < 4; i++) {
+    uint16_t index = get_index(virt_addr, 1, 4 - i);
+
+    uint64_t entry = ((uint64_t *) addr)[index];
+    // kprintf("get_frame | entry: %#b\n", entry & PAGE_FLAGS_MASK);
+    if (entry & PE_SIZE) {
+      return entry & PAGE_FRAME_MASK;
+    }
+
+    addr <<= 9;
+    addr |= (0xFFFFUL << 48) | get_virt_addr_partial(index, 1);
+  }
+
+  uint16_t index = get_index(virt_addr, 1, 0);
+  uint64_t entry = ((uint64_t *) addr)[index];
+  // kprintf("last entry: %p | %#b\n", entry & PAGE_FRAME_MASK, entry & PAGE_FLAGS_MASK);
+  return entry & PAGE_FRAME_MASK;
+}
+
 uint64_t *map_page(uintptr_t virt_addr, uintptr_t phys_addr, uint16_t flags) {
   flags &= 0xFFF;
   uint16_t offset = (flags & PE_1GB_SIZE) ? 3 :
@@ -77,41 +124,33 @@ uint64_t *map_page(uintptr_t virt_addr, uintptr_t phys_addr, uint16_t flags) {
   // kprintf("phys_addr: %p\n", phys_addr);
   // kprintf("flags: %d\n", flags);
 
+  int root = -1;
   uintptr_t addr = get_virt_addr(R_ENTRY, R_ENTRY, R_ENTRY, R_ENTRY);
   uint64_t *table = ((uint64_t *) addr);
   for (int i = 1; i < 5; i++) {
     int level = 5 - i;
     uint16_t index = get_index(virt_addr, offset, level);
+    if (root == -1 && index != R_ENTRY) {
+      root = index;
+    }
 
     // kprintf("level %d | index %d (%d)\n", i, index, level);
-    if (table[index] == 0) {
+    if ((table[index] & PAGE_FRAME_MASK) == 0) {
       // allocate new page table
       // kprintf("allocating new table (level %d)\n", level);
       // kprintf("[vm] allocating page table\n");
 
-      page_t *page = mm_alloc_pages(ZONE_LOW, 1, PE_WRITE);
+      page_t *page = alloc_page(PE_WRITE);
       page->flags.present = 1;
 
       // kprintf("[vm] page table: %p\n", page->frame);
-
-      uint64_t *new_table = get_table(virt_addr, level);
-      uintptr_t new_table_ptr = (uintptr_t) new_table;
-
-      vm_area_t *area = kmalloc(sizeof(vm_area_t));
-      area->base = new_table_ptr;
-      area->size = PAGE_SIZE;
-      area->pages = page;
-
-      interval_t interval = {area->base, area->base + area->size};
-      intvl_tree_insert(VM->tree, interval, area);
-
       // temporarily map the page to zero it
       VM->temp_dir[TEMP_ENTRY] = page->frame | PE_WRITE | PE_PRESENT;
       tlb_flush();
       memset((void *) TEMP_PAGE, 0, PAGE_SIZE);
 
       // map the intermediate table
-      table[index] = page->frame | PE_WRITE | PE_PRESENT;
+      table[index] = page->frame | fix_flags(PE_WRITE | PE_PRESENT, root, false);
     }
 
     addr <<= 9;
@@ -127,7 +166,7 @@ uint64_t *map_page(uintptr_t virt_addr, uintptr_t phys_addr, uint16_t flags) {
   // final offset into table
   uint16_t index = get_index(virt_addr, offset, 0);
   // kprintf("final index: %d\n", index);
-  table[index] = phys_addr | flags;
+  table[index] = phys_addr | fix_flags(flags, root, false);
 
   // kprintf("[vm] %p -> %p\n", phys_addr, virt_addr);
 
@@ -135,14 +174,104 @@ uint64_t *map_page(uintptr_t virt_addr, uintptr_t phys_addr, uint16_t flags) {
   return table + index;
 }
 
+uint64_t *copy_table(const uint64_t *table, uint16_t level, uint16_t root) {
+  page_t *page = alloc_page(PE_WRITE);
+  uint64_t *new_table = vm_map_page_search(page, ABOVE, STACK_VA);
+  memset(new_table, 0, PAGE_SIZE);
+
+  uintptr_t base = (uintptr_t) table;
+  for (int i = 0; i < 512; i++) {
+    if (level == 4 && i == R_ENTRY) {
+      // skip the pml4 recursive entry
+      new_table[R_ENTRY] = 0;
+      continue;
+    } else if (level == 4 && i == K_ENTRY) {
+      new_table[K_ENTRY] = table[K_ENTRY];
+      continue;
+    }
+
+    if (level > 1 && (table[i] & PE_PRESENT)) {
+      uintptr_t next = (0xFFFFUL << 48) | (base << 9) | (i << 12);
+      // kprintf("%d (%d) | %p\n", level, i, next);
+
+      uint16_t new_root = level == 4 ? i : root;
+      uint64_t *copy = copy_table((uint64_t *) next, level - 1, new_root);
+      uint16_t page_flags = table[i] & PAGE_FLAGS_MASK;
+      if (page_flags & PE_SIZE) {
+        // even if we're not at the lowest level
+        // we treat larger page sizes as if they
+        // were a bottom level entry
+        uint64_t page_frame = table[i] & PAGE_FRAME_MASK;
+        new_table[i] = page_frame | fix_flags(page_flags, root, true);
+        // new_table[i] = table[i];
+        // kprintf("[mapping] %d (%d) | root: %d | frame: %p | flags: 0b%b\n", level, i, root,
+        //         new_table[i] & PAGE_FRAME_MASK, new_table[i] & PAGE_FLAGS_MASK);
+        continue;
+      }
+
+      uintptr_t frame = get_frame((uintptr_t) copy);
+      // new_table[i] = frame | fix_flags(page_flags, root, true);
+      new_table[i] = frame | page_flags;
+      // kprintf("[mapping] %d (%d) | root: %d | frame: %p | flags: 0b%b\n", level, i, root,
+      //         new_table[i] & PAGE_FRAME_MASK, new_table[i] & PAGE_FLAGS_MASK);
+    } else {
+      uint64_t page_frame = table[i] & PAGE_FRAME_MASK;
+      uint16_t page_flags = table[i] & PAGE_FLAGS_MASK;
+      // new_table[i] = table[i];
+      if (page_frame != 0) {
+        new_table[i] = page_frame | fix_flags(page_flags, root, true);
+      } else {
+        new_table[i] = table[i];
+      }
+      // new_table[i] = table[i];
+      // if ((new_table[i] & PAGE_FRAME_MASK) != 0) {
+        // kprintf("-> else\n");
+        // kprintf("[mapping] %d (%d) | root: %d | frame: %p | flags: 0b%b\n", level, i, root,
+        //         new_table[i] & PAGE_FRAME_MASK, new_table[i] & PAGE_FLAGS_MASK);
+      // }
+    }
+  }
+
+  return new_table;
+}
+
+void *duplicate_intvl_node(void *data) {
+  vm_area_t *area = data;
+  if (data == NULL) {
+    return NULL;
+  }
+
+  vm_area_t *new_area = kmalloc(sizeof(vm_area_t));
+  memcpy(new_area, area, sizeof(vm_area_t));
+  return new_area;
+}
+
+//
+
+int fault_handler(uintptr_t addr, uint32_t err) {
+  kprintf("[vm] page fault at %p (0b%b)\n", addr, err);
+  if (err & PF_PRESENT && err & PF_WRITE) {
+    // copy-on-write
+    return -1;
+  }
+  return -1;
+}
+
 //
 
 void vm_init() {
   kprintf("[vm] initializing\n");
   vm_t *vm = kmalloc(sizeof(vm_t));
+  intvl_tree_events_t *events = kmalloc(sizeof(intvl_tree_events_t));
+  events->copy_data = duplicate_intvl_node;
+
   vm->tree = create_intvl_tree();
+  vm->tree->events = events;
   vm->temp_dir = NULL;
   VM = vm;
+
+  idt_gate_t handler = gate((uintptr_t) page_fault_handler, KERNEL_CS, 0, INTERRUPT_GATE, 0, 1);
+  idt_set_gate(VECTOR_PAGE_FAULT, handler);
 
   uint64_t *pml4 = NULL;
   if (IS_BSP) {
@@ -180,6 +309,7 @@ void vm_init() {
 
   // null page (fault on null reference)
   intvl_tree_insert(vm->tree, intvl(0, PAGE_SIZE), NULL);
+
   // non-canonical address space
   intvl_tree_insert(vm->tree, intvl(LOW_HALF_END + 1, HIGH_HALF_START), NULL);
   // recursively mapped region
@@ -213,6 +343,23 @@ void vm_init() {
   tlb_flush();
 
   kprintf("[vm] done!\n");
+}
+
+/**
+ * Duplicates the current memory space.
+ */
+vm_t *vm_duplicate() {
+  uint64_t *pml4 = get_table((uintptr_t) VM->pml4, 4);
+  uint64_t *copy = copy_table(pml4, 4, -1);
+  uintptr_t copy_frame = get_frame((uintptr_t) copy);
+  copy[R_ENTRY] = copy_frame | PE_WRITE | PE_PRESENT;
+
+  vm_t *vm = kmalloc(sizeof(vm_t));
+  vm->tree = copy_intvl_tree(VM->tree);
+  vm->pml4 = copy;
+  vm->temp_dir = VM->temp_dir;
+
+  return vm;
 }
 
 /**
@@ -258,6 +405,18 @@ void *vm_create_ap_tables() {
   low_pdpt[0] = (0 | PE_SIZE | PE_WRITE | PE_PRESENT);
   return (void *) ap_pml4_page->frame;
 }
+
+void vm_swap_vmspace(vm_t *new_vm) {
+  if (VM->pml4 == new_vm->pml4) {
+    return;
+  }
+
+  uintptr_t frame = get_frame((uintptr_t) new_vm->pml4);
+  write_cr3(frame);
+  VM = new_vm;
+}
+
+
 
 /**
  * Maps a physical page or pages to an available virtual address.
@@ -309,6 +468,27 @@ void *vm_map_page_vaddr(uintptr_t virt_addr, page_t *page) {
   }
 
   return (void *) address;
+}
+
+/**
+ * Maps a physical page to an address dictated by the given
+ * search type and virtual address.
+ */
+void *vm_map_page_search(page_t *page, vm_search_t search_type, uintptr_t vaddr) {
+  size_t len = 0;
+  page_t * curr = page;
+  while (curr) {
+    len += page_to_size(curr);
+    curr = curr->next;
+  }
+
+  uintptr_t address = vaddr;
+  bool success = vm_find_free_area(search_type, &address, len);
+  if (!success) {
+    panic("[vm] no free address space");
+  }
+  kprintf("[vm] address: %p\n", address);
+  return vm_map_page_vaddr(address, page);
 }
 
 /**
@@ -375,6 +555,24 @@ void *vm_map_vaddr(uintptr_t virt_addr, uintptr_t phys_addr, size_t len, uint16_
 
 //
 
+void vm_update_page(page_t *page, uint16_t flags) {
+  update_page_flags(page, flags);
+  if (page->entry != NULL) {
+    *page->entry &= PAGE_FRAME_MASK;
+    *page->entry &= page_to_flags(page);
+  }
+}
+
+void vm_update_pages(page_t *page, uint16_t flags) {
+  while (page) {
+    vm_update_page(page, flags);
+    page = page->next;
+  }
+  tlb_flush();
+}
+
+//
+
 /**
  * Unmaps a mapped physical page or pages.
  */
@@ -423,11 +621,33 @@ void vm_unmap_vaddr(uintptr_t virt_addr) {
 //
 
 /**
+ * Returns the page struct for the given virtual address or
+ * `NULL` if one does not exist.
+ */
+page_t *vm_get_page(uintptr_t addr) {
+  vm_area_t *area = vm_get_vm_area(addr);
+  if (area == NULL || area->pages == NULL) {
+    return NULL;
+  }
+
+  page_t *page = area->pages;
+  while (page) {
+    if (addr >= page->addr && addr < page->addr + page_to_size(page)) {
+      // page contains the address
+      return page;
+    }
+
+    page = page->next;
+  }
+  return NULL;
+}
+
+/**
  * Returns the vm_area struct associated with the given
  * address, or `NULL` if one does not exist.
  */
-vm_area_t *vm_get_vm_area(uintptr_t address) {
-  intvl_node_t *node = intvl_tree_find(VM->tree, intvl(address, address + 1));
+vm_area_t *vm_get_vm_area(uintptr_t addr) {
+  intvl_node_t *node = intvl_tree_find(VM->tree, intvl(addr, addr + 1));
   if (node == NULL) {
     return NULL;
   }
@@ -485,3 +705,19 @@ bool vm_find_free_area(vm_search_t search_type, uintptr_t *addr, size_t size) {
   return false;
 }
 
+//
+// Debugging
+//
+
+void vm_print_debug_mappings() {
+  intvl_iter_t *iter = intvl_iter_tree(VM->tree);
+  intvl_node_t *node;
+
+  kprintf("====== Virtual Mappings ======\n");
+  while ((node = intvl_iter_next(iter))) {
+    interval_t i = node->interval;
+    kprintf("%018p - %018p | %llu\n", i.start, i.end, i.end - i.start);
+  }
+  kprintf("==============================\n");
+  kfree(iter);
+}

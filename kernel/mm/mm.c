@@ -77,6 +77,7 @@ static void apply_page_flags(page_t *page, uint16_t flags) {
   kassert(!(flags & PE_SIZE));
   bool is_alt_size = (flags & PE_2MB_SIZE) || (flags & PE_1GB_SIZE);
 
+  page->flags.raw = 0;
   page->flags.present = 0;
   page->flags.write = (flags & PE_WRITE) != 0;
   page->flags.user = (flags & PE_USER) != 0;
@@ -84,9 +85,9 @@ static void apply_page_flags(page_t *page, uint16_t flags) {
   page->flags.cache_disable = (flags & PE_CACHE_DISABLE) != 0;
   page->flags.page_size = is_alt_size;
   page->flags.global = (flags & PE_GLOBAL) != 0;
+  page->flags.executable = (flags & PE_EXEC) != 0;
   page->flags.page_size_2mb = (flags & PE_2MB_SIZE) != 0;
   page->flags.page_size_1gb = (flags & PE_1GB_SIZE) != 0;
-  page->flags.reserved = 0;
 }
 
 void mark_page_reserved(uintptr_t frame) {

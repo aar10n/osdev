@@ -2,15 +2,20 @@
 // Created by Aaron Gill-Braun on 2020-08-31.
 //
 
-#include <base.h>
 #include <stdbool.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
-#include <lock.h>
+#include <errno.h>
 
+extern void puts(const char *str);
+
+#ifdef __KERNEL__
+// kernelspace libc
+#include <base.h>
+#include <lock.h>
 #include <kernel/panic.h>
 #include <drivers/serial.h>
 
@@ -20,6 +25,15 @@ static spinlock_t lock = {
   .locked_by = 0,
   .rflags = 0,
 };
+#else
+// userspace libc
+#define max(a, b) (((a) > (b)) ? (a) : (b))
+#define abs(a) (((a) < 0) ? (-(a)) : (a))
+
+#define panic(str,...)
+#define lock(lock)
+#define unlock(lock)
+#endif
 
 typedef enum {
   START,
@@ -407,7 +421,7 @@ int parse_int(char *dest, const char *str) {
   return n;
 }
 
-int ksnprintf_internal(char *str, size_t size, bool limit, const char *format, va_list args) {
+int snprintf_internal(char *str, size_t size, bool limit, const char *format, va_list args) {
   va_list valist;
   va_copy(valist, args);
 
@@ -602,7 +616,6 @@ int ksnprintf_internal(char *str, size_t size, bool limit, const char *format, v
         case 'a':
         case 'A':
           // double (in hex notation)
-          panic("Format specifier '%c' not supported\n", ch);
           break;
         case 'c': {
           char value = va_arg(valist, int);
@@ -622,9 +635,14 @@ int ksnprintf_internal(char *str, size_t size, bool limit, const char *format, v
           *value = n;
           break;
         }
-        case 'm':
+        case 'm': {
           // glibc extension - print output of strerror(errno) [no argument]
+          const char *errstr = strerror(errno);
+          int len = strlen(errstr);
+          memcpy(buffer, errstr, len);
+          format_len = len;
           break;
+        }
         case '%':
           buffer[0] = '%';
           format_len = 1;
@@ -661,8 +679,8 @@ int ksnprintf_internal(char *str, size_t size, bool limit, const char *format, v
 //
 
 /*
- * ksnprintf - write formatted data to a sized buffer
- * ==================================================
+ * snprintf - write formatted data to a sized buffer
+ * =================================================
  *
  * ksnprintf(char *str, size_t n, const char *format, ...);
  *
@@ -670,13 +688,13 @@ int ksnprintf_internal(char *str, size_t size, bool limit, const char *format, v
 int ksnprintf(char *str, size_t n, const char *format, ...) {
   va_list valist;
   va_start(valist, format);
-  int vn = ksnprintf_internal(str, n, true, format, valist);
+  int vn = snprintf_internal(str, n, true, format, valist);
   va_end(valist);
   return vn;
 }
 
 int kvsnprintf(char *str, size_t n, const char *format, va_list args) {
-  int vn = ksnprintf_internal(str, n, true, format, args);
+  int vn = snprintf_internal(str, n, true, format, args);
   return vn;
 }
 
@@ -690,13 +708,13 @@ int kvsnprintf(char *str, size_t n, const char *format, va_list args) {
 int ksprintf(char *str, const char *format, ...) {
   va_list valist;
   va_start(valist, format);
-  int n = ksnprintf_internal(str, -1, false, format, valist);
+  int n = snprintf_internal(str, -1, false, format, valist);
   va_end(valist);
   return n;
 }
 
 int kvsprintf(char *str, const char *format, va_list args) {
-  int n = ksnprintf_internal(str, -1, false, format, args);
+  int n = snprintf_internal(str, -1, false, format, args);
   return n;
 }
 
@@ -759,27 +777,23 @@ void kprintf(const char *format, ...) {
   char str[BUFFER_SIZE];
   va_list valist;
   va_start(valist, format);
-  ksnprintf_internal(str, BUFFER_SIZE, true, format, valist);
+  snprintf_internal(str, BUFFER_SIZE, true, format, valist);
   va_end(valist);
 
   lock(lock);
-  // kputs(str);
-  serial_write(COM1, str);
+  puts(str);
   unlock(lock);
 }
 
 void kvfprintf(const char *format, va_list args) {
   char str[BUFFER_SIZE];
-  ksnprintf_internal(str, BUFFER_SIZE, true, format, args);
+  snprintf_internal(str, BUFFER_SIZE, true, format, args);
 
   lock(lock);
-  // kputs(str);
-  serial_write(COM1, str);
+  puts(str);
   unlock(lock);
 }
 
-
-// Global locking
 
 void stdio_lock() {
   lock(lock);

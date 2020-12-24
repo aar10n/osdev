@@ -22,8 +22,8 @@
 #include <Memory.h>
 #include <Video.h>
 
-#include <Elf64.h>
-#include <ElfCommon.h>
+#include <elf.h>
+#include <elf64.h>
 
 #define MAX_INFO_SIZE 1024
 #define EFI_MAIN __attribute((used)) EFIAPI
@@ -59,6 +59,8 @@ CHAR16 *DefaultKernelFile = L"/EFI/kernel.elf";
 // Buffers
 UINT8 *ConfigBuffer = NULL;
 UINT8 *KernelBuffer = NULL;
+UINT8 *ProgramBuffer = NULL;
+BOOLEAN ProgramLoaded = FALSE;
 
 //
 
@@ -196,7 +198,9 @@ EFI_STATUS EFIAPI LoadFile(
 
   FileSize = FileInfo->FileSize;
 
-  FileData = AllocateRuntimeZeroPool(FileSize);
+  UINTN Aligned = EFI_SIZE_TO_PAGES(FileSize);
+  FileData = AllocateAlignedRuntimePages(Aligned, EFI_PAGE_SIZE);
+  SetMem(FileData, Aligned, 0);
   if (FileData == NULL) {
     FreePool(FileInfo);
     return EFI_OUT_OF_RESOURCES;
@@ -474,6 +478,7 @@ EFI_STATUS EFI_MAIN UefiMain(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTab
   EFI_STATUS Status;
   CHAR16 *FileName;
   EFI_FILE_HANDLE File;
+  EFI_FILE_HANDLE ProgramFile;
 
   EFI_GUID LoadedImageGuid = EFI_LOADED_IMAGE_PROTOCOL_GUID;
 
@@ -585,6 +590,26 @@ EFI_STATUS EFI_MAIN UefiMain(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTab
   );
   CHECK_STATUS(Status);
 
+  /* -------- Program Loading -------- */
+  // this is temporary
+
+  UINTN ProgramBufferSize = 0;
+  CHAR16 *ProgramPath = L"/EFI/hello.elf";
+  Status = LocateFile(Root, ProgramPath, &ProgramFile);
+  if (EFI_ERROR(Status)) {
+    ErrorPrint(L"[Loader] Failed to locate file %s\n", ProgramPath);
+    ProgramLoaded = FALSE;
+  } else {
+    Status = LoadFile(ProgramFile, &ProgramBufferSize, &ProgramBuffer);
+    if (EFI_ERROR(Status)) {
+      ErrorPrint(L"[Loader] Failed to load file %s\n", ProgramPath);
+      ProgramLoaded = FALSE;
+    } else {
+      Print(L"[Loader] Program loaded\n");
+      ProgramLoaded = TRUE;
+    }
+  };
+
   // Memory Map
 
   EFI_MEMORY_MAP Mmap;
@@ -691,6 +716,29 @@ EFI_STATUS EFI_MAIN UefiMain(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTab
 
     CHECK_NULL(ReservedPages);
     AddPageDescriptor(KernelPages, ReservedPages);
+  }
+
+  // Program loading
+  // UINT64 ProgramAddress = KERNEL_PA;
+  if (ProgramLoaded) {
+    // Status = LocateMemoryRegion(
+    //   BelowAddress,
+    //   KernelMmap,
+    //   ALIGN_VALUE(ProgramBufferSize, EFI_PAGE_SIZE),
+    //   &ProgramAddress
+    // );
+    // CHECK_STATUS(Status);
+
+    // Print(L"[Loader] Program located at: 0x%p\n", ProgramAddress);
+
+    PAGE_DESCRIPTOR *ProgramPages = MakePageDescriptor(
+      PROGRAM_VA,
+      (UINT64) ProgramBuffer,
+      EFI_SIZE_TO_PAGES(ProgramBufferSize),
+      0b1 // Present
+    );
+    CHECK_NULL(ProgramPages);
+    AddPageDescriptor(KernelPages, ProgramPages);
   }
 
   /* -------- Kernel Stack Region -------- */

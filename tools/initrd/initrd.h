@@ -5,7 +5,7 @@
 #ifndef INITRD_INITRD_H
 #define INITRD_INITRD_H
 
-#ifdef _KERNEL_
+#ifdef __KERNEL__
 #include <base.h>
 #else
 #include <stddef.h>

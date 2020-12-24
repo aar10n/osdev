@@ -7,6 +7,7 @@
 
 #include <base.h>
 #include <cpu/cpu.h>
+#include <process.h>
 
 #define IDT (PERCPU->idt->idt)
 #define IDT_DESC (PERCPU->idt->desc)
@@ -39,10 +40,52 @@ typedef struct packed {
   uint64_t high_offset : 32; // high 32 bits of the isr address
   uint64_t : 32;             // reserved
 } idt_gate_t;
-
 static_assert(sizeof(idt_gate_t) == (sizeof(uint64_t) * 2));
 
-typedef void (*idt_handler_t)();
+typedef struct packed {
+  union {
+    uint64_t rax;
+    struct {
+      uint32_t     : 32;
+      uint32_t eax : 32;
+    };
+  };
+  union {
+    uint64_t rcx;
+    struct {
+      uint32_t     : 32;
+      uint32_t ecx : 32;
+    };
+  };
+  union {
+    uint64_t rdx;
+    struct {
+      uint32_t     : 32;
+      uint32_t edx : 32;
+    };
+  };
+  union {
+    uint64_t rdi;
+    struct {
+      uint32_t     : 32;
+      uint32_t edi : 32;
+    };
+  };
+  union {
+    uint64_t rsi;
+    struct {
+      uint32_t     : 32;
+      uint32_t esi : 32;
+    };
+  };
+  uint64_t r8;
+  uint64_t r9;
+  uint64_t r10;
+  uint64_t r11;
+} regs_t;
+static_assert(sizeof(regs_t) == (sizeof(uint64_t) * 9));
+
+typedef void (*idt_handler_t)(regs_t *regs);
 
 typedef struct packed {
   uint16_t limit;

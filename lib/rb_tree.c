@@ -4,6 +4,8 @@
 
 #include "rb_tree.h"
 
+#include <string.h>
+
 #ifndef _assert
 #include <panic.h>
 #define _assert(expr) kassert((expr))
@@ -12,6 +14,7 @@
 #ifndef _malloc
 #include <mm/heap.h>
 #include <stdio.h>
+
 #define _malloc(size) kmalloc(size)
 #define _free(ptr) kfree(ptr)
 #endif
@@ -292,6 +295,37 @@ void delete_node(rb_tree_t *tree, rb_node_t *z) {
 
 //
 
+rb_node_t *duplicate_node(rb_tree_t *tree, rb_tree_t *new_tree, rb_node_t *parent, rb_node_t *node) {
+  if (node == new_tree->nil) {
+    return new_tree->nil;
+  }
+
+  rb_node_t *copy = _malloc(sizeof(rb_node_t));
+  copy->key = node->key;
+  copy->data = NULL;
+  copy->color = node->color;
+  copy->left = duplicate_node(tree, new_tree, copy, node->left);
+  copy->right = duplicate_node(tree, new_tree, copy, node->right);
+  copy->parent = parent;
+
+  if (tree->events->duplicate_node) {
+    callback(duplicate_node, tree, new_tree, node, copy);
+  } else {
+    copy->data = node->data;
+  }
+
+  if (node == tree->min) {
+    new_tree->min = copy;
+  }
+  if (node == tree->max) {
+    new_tree->max = copy;
+  }
+  return copy;
+}
+
+
+//
+
 rb_tree_t *create_rb_tree() {
   rb_node_t *nil = _malloc(sizeof(rb_node_t));
   nil->key = 0;
@@ -311,6 +345,20 @@ rb_tree_t *create_rb_tree() {
 
   return tree;
 }
+
+rb_tree_t *copy_rb_tree(rb_tree_t *tree) {
+  rb_tree_t *new_tree = _malloc(sizeof(rb_tree_t));
+  new_tree->nil = tree->nil;
+  new_tree->min = tree->nil;
+  new_tree->max = tree->nil;
+  new_tree->nodes = tree->nodes;
+  new_tree->events = tree->events;
+
+  new_tree->root = duplicate_node(tree, new_tree, tree->nil, tree->root);
+  return new_tree;
+}
+
+//
 
 rb_node_t *rb_tree_find(rb_tree_t *tree, uint64_t key) {
   rb_node_t *node = tree->root;

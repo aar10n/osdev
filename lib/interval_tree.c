@@ -16,6 +16,13 @@
 #define _free(ptr) kfree(ptr)
 #endif
 
+#define callback(cb, args...) \
+  if (tree->events && tree->events->cb) {   \
+    tree->events->cb(args);                 \
+  }                                         \
+  NULL
+
+
 static inline interval_t get_interval(rb_node_t *node) {
   if (node == NULL || node->data == NULL) {
     return NULL_SET;
@@ -76,6 +83,23 @@ void replace_node_callback(rb_tree_t *tree, rb_node_t *u, rb_node_t *v) {
   vd->min = ud->min;
 }
 
+void duplicate_node_callback(rb_tree_t *tree, rb_tree_t *new_tree, rb_node_t *u, rb_node_t *v) {
+  if (u->data) {
+    intvl_node_t *ud = u->data;
+    intvl_node_t *vd = _malloc(sizeof(intvl_node_t));
+    vd->events = ud->events;
+    vd->node = v;
+    vd->interval = ud->interval;
+    vd->min = ud->min;
+    vd->max = ud->max;
+
+    if (ud->data && ud->events && ud->events->copy_data) {
+      vd->data = ud->events->copy_data(ud->data);
+    }
+    v->data = vd;
+  }
+}
+
 //
 
 intvl_tree_t *create_intvl_tree() {
@@ -85,12 +109,24 @@ intvl_tree_t *create_intvl_tree() {
   events->post_insert_node = post_insert_callback;
   events->post_delete_node = post_delete_callback;
   events->replace_node = replace_node_callback;
+  events->duplicate_node = duplicate_node_callback;
+
   rb_tree->events = events;
 
   intvl_tree_t *tree = _malloc(sizeof(intvl_tree_t));
   tree->tree = rb_tree;
+  tree->events = NULL;
   return tree;
 }
+
+intvl_tree_t *copy_intvl_tree(intvl_tree_t *tree) {
+  intvl_tree_t *new_tree = _malloc(sizeof(intvl_tree_t));
+  new_tree->tree = copy_rb_tree(tree->tree);
+  new_tree->events = tree->events;
+  return new_tree;
+}
+
+//
 
 intvl_node_t *intvl_tree_find(intvl_tree_t *tree, interval_t interval) {
   rb_tree_t *rb = tree->tree;
@@ -153,6 +189,7 @@ intvl_node_t *intvl_tree_find_closest(intvl_tree_t *tree, interval_t interval) {
 
 void intvl_tree_insert(intvl_tree_t *tree, interval_t interval, void *data) {
   intvl_node_t *node_data = _malloc(sizeof(intvl_node_t));
+  node_data->events = tree->events;
   node_data->interval = interval;
   node_data->data = data;
   rb_tree_insert(tree->tree, interval.start, node_data);

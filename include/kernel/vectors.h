@@ -10,6 +10,9 @@
 #define VECTOR_IPI_CPU_HLT   0xF2
 #define VECTOR_IPI_TEST      0xF0
 
+// Priority 0x80 - System calls
+#define VECTOR_SYSCALL       0x80
+
 // Priority 0x4 - Timer vectors
 #define VECTOR_SCHED_TIMER   0x45
 #define VECTOR_HPET_TIMER    0x44
@@ -27,5 +30,8 @@
 #define VECTOR_PIC_IRQ8      0x28
 #define VECTOR_PIC_IRQ7      0x27
 #define VECTOR_PIC_IRQ0      0x20
+
+// Exception Vectors
+#define VECTOR_PAGE_FAULT    0x0E
 
 #endif

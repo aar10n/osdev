@@ -24,10 +24,14 @@ void serial_write_char(int port, char a) {
   outb(port, a);
 }
 
-void serial_write(int port, char *s) {
+void serial_write(int port, const char *s) {
   lock(serial_lock);
   for (int i = 0; i < strlen(s); i++) {
     serial_write_char(port, s[i]);
   }
   unlock(serial_lock);
+}
+
+void puts(const char *str) {
+  serial_write(COM1, str);
 }

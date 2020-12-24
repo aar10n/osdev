@@ -70,6 +70,16 @@ int strcmp(const char *s1, const char *s2) {
   return *s1 - *s2;
 }
 
+int strncmp(const char *s1, const char *s2, size_t n) {
+  for (size_t i = 0; i < n; i++) {
+    if (*s1 != *s2) break;
+    s1++;
+    s2++;
+  }
+
+  return *s1 - *s2;
+}
+
 int strlen(const char *s) {
   int len = 0;
   while (*s != 0) {

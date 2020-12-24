@@ -4,6 +4,10 @@
 
 #include <errno.h>
 
+#ifndef __KERNEL__
+_Thread_local int errno = 0;
+#endif
+
 const char *errno_str[] = {
   [E2BIG] = "Argument list too long",
   [EACCES] = "Permission denied",

@@ -5,17 +5,60 @@
 #include <file.h>
 #include <rb_tree.h>
 #include <mm/heap.h>
+#include <string.h>
 
 // #define FILES (current->files)
 #define FILES (PERCPU->files)
+
+rb_tree_events_t *file_tree_events = NULL;
+
+
+void duplicate_file(rb_tree_t *tree, rb_tree_t *new_tree, rb_node_t *node, rb_node_t *new_node) {
+  file_t *file = node->data;
+  if (file == NULL) {
+    return;
+  }
+
+  file_t *copy = kmalloc(sizeof(file_t));
+  memcpy(copy, file, sizeof(file_t));
+  new_node->data = copy;
+}
+
 
 
 file_table_t *create_file_table() {
   file_table_t *table = kmalloc(sizeof(file_table_t));
   table->fds = create_bitmap(MAX_PROC_FILES);
   table->files = create_rb_tree();
+
+  if (file_tree_events == NULL) {
+    rb_tree_events_t *events = kmalloc(sizeof(rb_tree_events_t));
+    memset(events, 0, sizeof(rb_tree_events_t));
+    events->duplicate_node = duplicate_file;
+    file_tree_events = events;
+  }
+
+  table->files->events = file_tree_events;
   spin_init(&table->lock);
   return table;
+}
+
+file_table_t *copy_file_table(file_table_t *table) {
+  file_table_t *new_table = kmalloc(sizeof(file_table_t));
+
+  // copy the bitmap
+  bitmap_t *bmp = create_bitmap(MAX_PROC_FILES);
+  memcpy(bmp->map, table->fds->map, bmp->size);
+  bmp->free = table->fds->free;
+  bmp->used = table->fds->used;
+
+  // copy the reb-black tree
+  rb_tree_t *tree = copy_rb_tree(table->files);
+
+  new_table->fds = bmp;
+  new_table->files = tree;
+  spin_init(&new_table->lock);
+  return new_table;
 }
 
 file_t *file_get(int fd) {

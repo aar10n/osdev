@@ -32,6 +32,7 @@
 #define PAGE_SIZE 0x1000
 #define PAGE_SHIFT 12
 #define PAGE_FLAGS_MASK 0xFFF
+#define PAGE_FRAME_MASK 0xFFFFFFFFFFFFF000
 
 #define PAGE_SIZE_2MB 0x200000ULL
 #define PAGE_SHIFT_2MB 21
@@ -55,11 +56,12 @@
 #define PE_SIZE 0x80
 #define PE_GLOBAL 0x100
 // additional mm_alloc_page flags
-#define PE_2MB_SIZE 0x200
-#define PE_1GB_SIZE 0x400
+#define PE_EXEC     0x200
+#define PE_2MB_SIZE 0x400
+#define PE_1GB_SIZE 0x800
 // special flags
-#define PE_ASSERT   0x800
-#define PE_FORCE    0x1000
+#define PE_ASSERT   0x1000
+#define PE_FORCE    0x2000
 
 typedef enum {
   ZONE_LOW,
@@ -84,10 +86,11 @@ typedef struct page {
       uint16_t : 2;               // reserved
       uint16_t page_size : 1;     // extended page size
       uint16_t global : 1;        // global page
+      uint16_t executable : 1;    // page is executable
       uint16_t page_size_2mb : 1; // page is a 2mb page
       uint16_t page_size_1gb : 1; // page is a 1gb page
       uint16_t zone : 2;          // the zone that contains this page
-      uint16_t reserved : 3;
+      uint16_t : 2;               // reserved
     };
   } flags;
   struct page *next;

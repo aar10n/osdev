@@ -3,6 +3,7 @@
 ; ---------------------- ;
 
 %include "base.inc"
+%define PAGE_FAULT 14
 
 ; ss
 ; rsp
@@ -12,9 +13,29 @@
 ; error code
 ; vector
 
+extern fault_handler
 extern kprintf
 extern stdio_lock
 extern stdio_unlock
+
+global page_fault_handler
+page_fault_handler:
+  mov rsi, [rsp] ; error code
+  mov rdi, cr2   ; faulting address
+  call fault_handler
+  ; if fault_handler returns -1 it means the
+  ; fault couldn't be handled in a good way
+  ; so we should pass it onto the fatal
+  ; exception handler below
+  cmp rax, 0
+  je .done
+  mov rax, 0xE   ; page fault vector
+  push rax
+  jmp exception_handler
+
+.done:
+  add rsp, 8     ; skip the error code
+  iretq
 
 global exception_handler
 exception_handler:
@@ -114,24 +135,24 @@ section .data
 
 exception_msg.1: db "!!!! Exception Type - %s !!!!", 10
                  db "CPU Id: %d | Exception Code: %d | Exception Data: %#X", 10
-                 db "RIP = %016X, RFLAGS = %016X", 10, 0
+                 db "RIP = %016llX, RFLAGS = %016llX", 10, 0
 exception_msg.2: db "------------------------- GENERAL REGISTERS --------------------------", 10
-                 db "RAX = %016X, RBX = %016X, RCX = %016X", 10
-                 db "RDX = %016X, RDI = %016X, RSI = %016X", 10
-                 db "RSP = %016X, RBP = %016X", 10, 0
+                 db "RAX = %016llX, RBX = %016llX, RCX = %016llX", 10
+                 db "RDX = %016llX, RDI = %016llX, RSI = %016llX", 10
+                 db "RSP = %016llX, RBP = %016llX", 10, 0
 exception_msg.3: db "------------------------- EXTENDED REGISTERS -------------------------", 10
-                 db "R8  = %016X, R9  = %016X, R10 = %016X", 10
-                 db "R11 = %016X, R12 = %016X, R13 = %016X", 10
-                 db "R14 = %016X, R15 = %016X", 10, 0
+                 db "R8  = %016llX, R9  = %016llX, R10 = %016llX", 10
+                 db "R11 = %016llX, R12 = %016llX, R13 = %016llX", 10
+                 db "R14 = %016llX, R15 = %016llX", 10, 0
 exception_msg.4: db "------------------------- SEGMENT REGISTERS --------------------------", 10
-                 db "CS  = %016X, DS  = %016X, ES  = %016X", 10
-                 db "FS  = %016X, GS  = %016X, SS  = %016X", 10, 0
+                 db "CS  = %016llX, DS  = %016llX, ES  = %016llX", 10
+                 db "FS  = %016llX, GS  = %016llX, SS  = %016llX", 10, 0
 exception_msg.5: db "------------------------- CONTROL REGISTERS --------------------------", 10
-                 db "CR0 = %016X, CR2 = %016X, CR3 = %016X", 10
-                 db "CR4 = %016X", 10, 0
+                 db "CR0 = %016llX, CR2 = %016llX, CR3 = %016llX", 10
+                 db "CR4 = %016llX", 10, 0
 exception_msg.6: db "-------------------------- DEBUG REGISTERS ---------------------------", 10
-                 db "DR0 = %016X, DR1 = %016X, DR2 = %016X", 10
-                 db "DR3 = %016X, DR6 = %016X, DR7 = %016X", 10, 0
+                 db "DR0 = %016llX, DR1 = %016llX, DR2 = %016llX", 10
+                 db "DR3 = %016llX, DR6 = %016llX, DR7 = %016llX", 10, 0
 
 test_msg: db "Hello, world!", 10, 0
 

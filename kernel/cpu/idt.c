@@ -13,10 +13,10 @@ extern uintptr_t idt_stubs;
 
 //
 
-__used void irq_handler(uint8_t vector) {
+__used void irq_handler(uint8_t vector, regs_t *regs) {
   idt_handler_t handler = IDT_HANDLERS[vector];
   if (handler) {
-    handler();
+    handler(regs);
   }
   apic_send_eoi();
 }

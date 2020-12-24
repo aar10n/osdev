@@ -5,8 +5,10 @@
 #ifndef LIBC_ERRNO_H
 #define LIBC_ERRNO_H
 
-#ifdef __PERCPU___
+#ifdef __KERNEL__
 #define errno (PERCPU->errno)
+#else
+extern _Thread_local int errno;
 #endif
 
 #define E2BIG 1            // Argument list too long.

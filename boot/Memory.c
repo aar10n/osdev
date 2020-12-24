@@ -348,7 +348,7 @@ EFI_STATUS EFIAPI LocateMemoryRegion(
 
     if (Ptr->type == MEMORY_FREE && Ptr->size >= RegionSize) {
       if (PlacementType == HighestAddress) {
-        if (!Region || Ptr->phys_addr > Region->phys_addr) {
+        if (!Region || (Ptr->phys_addr > Region->phys_addr && Ptr->size >= RegionSize)) {
           Region = Ptr;
           Offset = PtrEnd - (Ptr->phys_addr + RegionSize);
         }
@@ -361,6 +361,16 @@ EFI_STATUS EFIAPI LocateMemoryRegion(
           Region = Ptr;
           Offset = 0;
           break;
+        }
+      } else if (PlacementType == BelowAddress) {
+        if (!Region || (Ptr->phys_addr > Region->phys_addr && Ptr->size >= RegionSize)) {
+          if (PtrEnd >= *Address) {
+            break;
+          }
+
+          PlacementType = AtAddress;
+          Region = Ptr;
+          Offset = PtrEnd - (Ptr->phys_addr + RegionSize);
         }
       } else if (PlacementType == AtAddress) {
         if (*Address >= Ptr->phys_addr && *Address < PtrEnd) {

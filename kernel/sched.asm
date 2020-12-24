@@ -5,6 +5,7 @@
 
 ; Saved registers
 %macro popcallee 0
+  pop rax
   pop rbx
   pop rbp
   pop r12
@@ -12,6 +13,8 @@
   pop r14
   pop r15
 %endmacro
+
+extern vm_swap_vmspace
 
 global switch_context
 switch_context:
@@ -28,6 +31,7 @@ switch_context:
   ; save old context
   pushfq
   mov rdx, [rdx + PROC_CTX]
+  mov [rdx + CTX_RAX], rax
   mov [rdx + CTX_RBX], rbx
   mov [rdx + CTX_RBP], rbp
   mov [rdx + CTX_R12], r12
@@ -43,8 +47,15 @@ switch_context:
   ; current = next
   mov current, rdi
 
+  ; switch virtual memory
+  push rdi
+  mov rdi, rsi
+  call vm_swap_vmspace
+  pop rdi
+
   ; restore new context
   mov rsp, [rdi + PROC_CTX]
   popcallee
-  sti
+
+;  sti
   iretq

@@ -4,7 +4,7 @@
 
 #ifndef INCLUDE_BASE_H
 #define INCLUDE_BASE_H
-#define _KERNEL_
+#define __KERNEL__
 
 #include <types.h>
 #include <boot.h>
@@ -16,7 +16,10 @@
 //
 
 #define PAGE_SIZE 0x1000
-#define KERNEL_CS 0x08
+
+#define KERNEL_CS 0x08ULL
+#define USER_DS   0x18ULL
+#define USER_CS   0x20ULL
 
 #define MS_PER_SEC 1000
 #define US_PER_SEC 1000000
@@ -29,6 +32,7 @@
 
 #define static_assert(expr) _Static_assert(expr, "")
 
+#define offset_ptr(p, c) ((void *)(((uint8_t *)p) + c))
 #define align(v, a) ((v) + (((a) - (v)) & ((a) - 1)))
 #define align_ptr(p, a) ((void *) (align((uintptr_t)(p), (a))))
 

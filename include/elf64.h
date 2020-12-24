@@ -31,7 +31,7 @@
 
 #include <stdint.h>
 
-#include "ElfCommon.h"
+#include "elf.h"
 
 /*
  * ELF definitions common to all 64-bit architectures.

@@ -42,14 +42,14 @@
 
 typedef struct fs_node fs_node_t;
 
-typedef enum file_type {
-
-} file_type_t;
-
-/* A generic file-like object represented by a descriptor. */
-typedef struct fs_file {
-
-} fs_file_t;
+// typedef enum file_type {
+//
+// } file_type_t;
+//
+// /* A generic file-like object represented by a descriptor. */
+// typedef struct fs_file {
+//
+// } fs_file_t;
 
 typedef struct file {
   int fd;
@@ -69,6 +69,7 @@ typedef struct file_table {
 } file_table_t;
 
 file_table_t *create_file_table();
+file_table_t *copy_file_table(file_table_t *table);
 file_t *file_get(int fd);
 file_t *file_create(fs_node_t *node, int flags);
 void file_delete(file_t *file);

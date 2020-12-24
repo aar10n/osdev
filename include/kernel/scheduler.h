@@ -20,7 +20,7 @@
 #define CURRENT (PERCPU->curr)
 
 #define SCHED_QUANTUM 1000
-#define PTABLE_SIZE 2048
+#define PTABLE_SIZE 1024
 #define SCHED_QUEUES  4
 
 //
@@ -43,9 +43,12 @@ typedef struct scheduler {
 void sched_init();
 process_t *sched_get_process(uint64_t pid);
 void sched_enqueue(process_t *process);
+void sched_schedule();
 void sched_block();
 void sched_sleep(uint64_t ns);
 void sched_yield();
 void sched_terminate();
+
+void sched_print_stats();
 
 #endif

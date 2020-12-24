@@ -30,18 +30,19 @@
 %define PROC_CTX 0x8
 
 ; Process Context
-%define CTX_RBX    0x00
-%define CTX_RBP    0x08
-%define CTX_R12    0x10
-%define CTX_R13    0x18
-%define CTX_R14    0x20
-%define CTX_R15    0x28
+%define CTX_RAX    0x00
+%define CTX_RBX    0x08
+%define CTX_RBP    0x10
+%define CTX_R12    0x18
+%define CTX_R13    0x20
+%define CTX_R14    0x28
+%define CTX_R15    0x30
 
-%define CTX_RIP    0x30
-%define CTX_CS     0x38
-%define CTX_RFLAGS 0x40
-%define CTX_RSP    0x48
-%define CTX_SS     0x50
+%define CTX_RIP    0x38
+%define CTX_CS     0x40
+%define CTX_RFLAGS 0x48
+%define CTX_RSP    0x50
+%define CTX_SS     0x58
 
 ; Smpboot Data
 %define SMP_STATUS 0x00

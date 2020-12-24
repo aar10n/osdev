@@ -35,6 +35,7 @@ typedef enum {
   HighestAddress, // Use the highest available region
   LowestAddress,  // Use the lowest available region
   AboveAddress,   // Use the next available region after address
+  BelowAddress,   // Use the closest available region before address
   AtAddress,      // Try to use the given region address
 } PLACEMENT_TYPE;
 
