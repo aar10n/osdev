@@ -2,11 +2,11 @@
 // Created by Aaron Gill-Braun on 2020-10-17.
 //
 
-#include <stdio.h>
 #include <panic.h>
 #include <system.h>
 #include <device/hpet.h>
 #include <mm/vm.h>
+#include <stdio.h>
 
 uintptr_t hpet_base;
 uint64_t hpet_clock;

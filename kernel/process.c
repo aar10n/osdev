@@ -72,15 +72,16 @@ pid_t process_fork(bool user) {
     kassert(parent != NULL);
   }
 
-  // // allocate a process stack
+  // allocate a process stack
   page_t *page = alloc_pages(SIZE_TO_PAGES(STACK_SIZE), user ? PE_USER : 0 | PE_WRITE);
   void *stack = vm_map_page_search(page, ABOVE, STACK_VA);
 
   memcpy(stack, (void *) STACK_VA - STACK_SIZE, STACK_SIZE);
   uintptr_t frame = (uintptr_t) __builtin_frame_address(0);
-  uintptr_t offset = STACK_VA - frame;
+  uintptr_t offset = frame - STACK_VA;
 
   uintptr_t rsp = (uintptr_t) stack + STACK_SIZE - offset;
+  // uintptr_t rsp = frame;
   kprintf("[process] rsp: %p\n", rsp);
 
   process_t *process = kmalloc(sizeof(process_t));

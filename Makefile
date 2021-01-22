@@ -57,7 +57,7 @@ debug: $(BUILD)/osdev.img
 		-ex "add-symbol $(BUILD)/kernel.elf"
 
 run-debug: $(BUILD)/osdev.img
-	$(QEMU) -s -S $(QEMUFLAGS) -monitor telnet:127.0.0.1:55555,server,nowait &
+	$(QEMU) -s -S $(QEMUFLAGS) -monitor telnet:127.0.0.1:55544,server,nowait &
 
 .PHONY: clean
 clean:

@@ -183,7 +183,7 @@ uint64_t *copy_table(const uint64_t *table, uint16_t level, uint16_t root) {
   for (int i = 0; i < 512; i++) {
     if (level == 4 && i == R_ENTRY) {
       // skip the pml4 recursive entry
-      new_table[R_ENTRY] = 0;
+      new_table[R_ENTRY] = page->frame | (table[i] & PAGE_FRAME_MASK);
       continue;
     } else if (level == 4 && i == K_ENTRY) {
       new_table[K_ENTRY] = table[K_ENTRY];

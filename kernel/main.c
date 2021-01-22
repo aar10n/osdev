@@ -108,7 +108,7 @@ noreturn void launch() {
   // launch child process
   pid_t parent = getpid();
   pid_t pid = process_fork(false);
-  sched_print_stats();
+  // sched_print_stats();
   if (pid == -1) {
     panic("failed to fork process");
   }
@@ -121,7 +121,12 @@ noreturn void launch() {
   // void *entry = NULL;
   // load_elf((void *) PROGRAM_VA, &entry);
 
+  uint64_t count = 0;
   while (true) {
+    if (count % 10000000 == 0) {
+      kprintf("[pid %d] count = %llu\n", current->pid, count);
+    }
+    count += 1 + current->pid;
     cpu_pause();
   }
 }

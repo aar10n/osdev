@@ -2,10 +2,10 @@
 // Created by Aaron Gill-Braun on 2020-08-25.
 //
 
-#include <stdio.h>
 #include <percpu.h>
 #include <cpu/cpu.h>
 #include <cpu/idt.h>
+#include <stdio.h>
 
 #include <device/apic.h>
 
