@@ -28,9 +28,7 @@ void fs_init() {
   vfs_init();
 
   fs_register_device(NULL, &pseudo_impl);
-
-  PERCPU->files = create_file_table();
-  PERCPU->pwd = fs_root;
+  current->pwd = fs_root;
 
   kprintf("[fs] done!\n");
 }
@@ -61,9 +59,9 @@ int fs_mount(fs_driver_t *driver, const char *device, const char *path) {
   memcpy(dev, copy, sizeof(fs_device_t));
   copy->id = dev_id;
 
-  fs_node_t *mount = vfs_create_node(parent, S_IFMNT);
+  fs_node_t *mount = vfs_create_node(parent, S_IFDIR | S_IFMNT);
   mount->dev = dev_id;
-  mount->ifmnt.shadow = NULL;
+  // mount->ifmnt.shadow = NULL;
 
   path_t basename = path_basename(p);
   char name[p_len(basename) + 1];
@@ -458,10 +456,14 @@ int fs_mkdir(const char *path, mode_t mode) {
   return 0;
 }
 
-int fs_chdir(const char *path) {
+int fs_chdir(const char *dirname) {
   kprintf("[fs] chdir\n");
-  errno = ENOSYS;
-  return -1;
+  int flags = DIR_FILE_FLAGS;
+  fs_node_t *node;
+  NOT_NULL(node = vfs_get_node(str_to_path(dirname), flags));
+
+  current->pwd = node;
+  return 0;
 }
 
 

@@ -13,8 +13,8 @@
 // Extended flags for controlling VFS functions
 #define V_NOFAIL 0x0100000 // Makes O_NOFOLLOW return the symlink instead of failing
 
-// #define FILES (current->files)
-#define FILES (PERCPU->files)
+#define FILES (current->files)
+// #define FILES (PERCPU->files)
 
 #define NOT_ERROR(expr) \
   if ((expr) == -1) {   \

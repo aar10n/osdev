@@ -18,12 +18,12 @@
 #include <ramfs/ramfs.h>
 
 
-// #define PWD (current->pwd)
-#define PWD (PERCPU->pwd)
-// #define UID (current->uid)
-#define UID (PERCPU->uid)
-// #define GID (current->gid)
-#define GID (PERCPU->gid)
+#define PWD (current->pwd)
+// #define PWD (PERCPU->pwd)
+#define UID (current->uid)
+// #define UID (PERCPU->uid)
+#define GID (current->gid)
+// #define GID (PERCPU->gid)
 
 
 fs_t *root_fs = NULL;
@@ -97,6 +97,10 @@ void vfs_init() {
   if (result < 0) {
     panic("failed to create directory: /dev | %s", strerror(errno));
   }
+}
+
+void vfs_init_proc(process_t *proc) {
+
 }
 
 fs_node_t *vfs_create_node(fs_node_t *parent, mode_t mode) {

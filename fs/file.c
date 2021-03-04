@@ -6,9 +6,7 @@
 #include <rb_tree.h>
 #include <mm/heap.h>
 #include <string.h>
-
-// #define FILES (current->files)
-#define FILES (PERCPU->files)
+#include <process.h>
 
 rb_tree_events_t *file_tree_events = NULL;
 
@@ -24,7 +22,7 @@ void duplicate_file(rb_tree_t *tree, rb_tree_t *new_tree, rb_node_t *node, rb_no
   new_node->data = copy;
 }
 
-
+//
 
 file_table_t *create_file_table() {
   file_table_t *table = kmalloc(sizeof(file_table_t));

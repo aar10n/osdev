@@ -206,7 +206,7 @@ enable_sse:
 
 global syscall
 syscall:
-  mov rax, rdi
+  mov rax, rdi ; code
   syscall
 
 global sysret

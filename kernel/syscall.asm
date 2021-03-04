@@ -1,3 +1,4 @@
+%include "base.inc"
 extern handle_syscall
 
 global syscall_handler:

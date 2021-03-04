@@ -5,12 +5,13 @@
 #include <inode.h>
 #include <fs.h>
 #include <mm/heap.h>
+#include <process.h>
 
-// #define UID (current->uid)
-#define UID (PERCPU->uid)
+#define UID (current->uid)
+// #define UID (PERCPU->uid)
 
-// #define GID (current->gid)
-#define GID (PERCPU->gid)
+#define GID (current->gid)
+// #define GID (PERCPU->gid)
 
 inode_table_t *inodes;
 

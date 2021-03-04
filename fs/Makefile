@@ -5,7 +5,7 @@
 # fs
 fs += acl.c device.c dirent.c \
 	file.c fs.c inode.c path.c \
-	stat.c vfs.c
+	stat.c utils.c vfs.c
 
 # fs/fat
 fs += fat/fat.c fat/fat12.c \
