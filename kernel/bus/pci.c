@@ -28,6 +28,7 @@
 struct locate_context {
   uint8_t device_class;
   uint8_t device_subclass;
+  int prog_if;
   pci_device_t **result;
 };
 
@@ -98,26 +99,36 @@ void pci_read_device_info(pci_device_t *device) {
 
     if (bar & 0x1) {
       // i/o space bar
-      size &= 0xFFFFFFFC;
-      uint32_t addr_start = bar & 0xFFFFFFFC;
-      uint32_t addr_end = addr_start + (~(size) + 1);
-
       bars[i].bar_type = 1;
-      bars[i].io.addr_start = addr_start;
-      bars[i].io.addr_end = addr_end;
+      bars[i].addr_type = 0;
+      bars[i].prefetch = 0;
+      bars[i].base_addr = bar & 0xFFFFFFFE;
+      bars[i].size = ~(size & 0xFFFFFFFE) + 1;
     } else {
       // memory space bar
-      size &= 0xFFFFFFF0;
-      uint8_t addr_type = (bar >> 1) & 0x3;
-      uint8_t prefetch = (bar >> 3) & 0x1;
-      uint32_t addr_start = bar & 0xFFFFFFF0;
-      uint32_t addr_end = addr_start + (~(size) + 1);
-
       bars[i].bar_type = 0;
-      bars[i].mem.addr_type = addr_type;
-      bars[i].mem.prefetch = prefetch;
-      bars[i].mem.addr_start = addr_start;
-      bars[i].mem.addr_end = addr_end;
+      bars[i].addr_type = (bar >> 1) & 0x3;
+      bars[i].prefetch = (bar >> 4) & 0x1;
+
+      if (bars[i].addr_type == 2) {
+        // 64-bit memory bar
+        offset += 4;
+
+        uint32_t bar2 = pci_read(addr, offset);
+        pci_write(addr, offset, 0xFFFFFFFF);
+        uint32_t size2 = pci_read(addr, offset);
+        pci_write(addr, offset, bar2);
+
+        bars[i].base_addr = ((bar & 0xFFFFFFF0) + (((uint64_t) bar2 & 0xFFFFFFFFF) << 32));
+        kprintf("size 1: %u (%u) | size 2: %u (%u)\n", size,  size2);
+        bars[i].size = ~((size & 0xFFFFFFF0) | ((uint64_t) size2) << 32) + 1;
+
+        memset(&(bars[i + 1]), 0, sizeof(pci_bar_t));
+        i++;
+      } else {
+        bars[i].base_addr = bar & 0xFFFFFFF0;
+        bars[i].size = ~(size & 0xFFFFFFF0) + 1;
+      }
     }
   }
 
@@ -154,7 +165,7 @@ int pci_probe_device(pci_device_t *device, pci_callback_t callback, void *contex
   pci_read_device_info(device);
   if (is_device_valid(device)) {
     // check if device is pci-to-pci bridge
-    if (device->class_code == PCI_BRIDGE && device->subclass_code == PCI_PCI_BRIDGE) {
+    if (device->class_code == PCI_BRIDGE_DEVICE && device->subclass_code == PCI_PCI_BRIDGE) {
       uint32_t addr = device_config_address(device);
       uint32_t reg6 = pci_read(addr, 0x18);
       uint8_t secondary_bus = (reg6 >> 8) & 0xFF;
@@ -179,14 +190,13 @@ int pci_probe_device(pci_device_t *device, pci_callback_t callback, void *contex
       for (int i = 1; i < 8; i++) {
         pci_device_t *func = pci_alloc_device_t(device->bus, device->device, i);
         int result = pci_probe_device(func, callback, context);
-        if (result == PCI_PROBE_STOP) {
+        if (!is_device_valid(func)) {
+          pci_free_device_t(func);
+          continue;
+        } else if (result == PCI_PROBE_STOP) {
           return PCI_PROBE_STOP;
         }
 
-        if (!is_device_valid(func)) {
-          pci_free_device_t(func);
-          break;
-        };
 
         last->next = func;
         last = func;
@@ -245,7 +255,8 @@ int pci_locate_device_cb(pci_device_t *device, void *context) {
   struct locate_context *ctx = context;
 
   if (device->class_code == ctx->device_class &&
-      device->subclass_code == ctx->device_subclass) {
+      device->subclass_code == ctx->device_subclass &&
+      (ctx->prog_if >= 0 ? device->prog_if == ctx->prog_if : true)) {
     kprintf("device located!\n");
     *ctx->result = device;
     return PCI_PROBE_STOP;
@@ -253,9 +264,9 @@ int pci_locate_device_cb(pci_device_t *device, void *context) {
   return PCI_PROBE_CONTINUE;
 }
 
-pci_device_t *pci_locate_device(uint8_t device_class, uint8_t device_subclass) {
+pci_device_t *pci_locate_device(uint8_t device_class, uint8_t device_subclass, int prog_if) {
   pci_device_t *result;
-  struct locate_context ctx = { device_class, device_subclass, &result };
+  struct locate_context ctx = { device_class, device_subclass, prog_if, &result };
   pci_probe_busses(pci_locate_device_cb, &ctx);
   return *ctx.result;
 }
@@ -322,7 +333,6 @@ void pci_print_debug_device(pci_device_t *device) {
           device->device_id);
 
   kprintf("  Prog IF: 0x%X\n", device->prog_if);
-
   if (device->interrupt_pin > 0) {
     kprintf("  IRQ %d, pin %c\n", device->interrupt_line, device->interrupt_pin + 64);
   }
@@ -331,23 +341,23 @@ void pci_print_debug_device(pci_device_t *device) {
     pci_bar_t bar = device->bars[i];
 
     if (bar.bar_type == 1) {
-      kprintf("  BAR%d: I/O at %#x [%#x]\n", i, bar.io.addr_start, bar.io.addr_end - 1);
+      kprintf("  BAR%d: I/O at %#x [%#x]\n", i, bar.base_addr, (bar.base_addr + bar.size) - 1);
     } else {
-      if (bar.mem.addr_start == 0) {
+      if (bar.base_addr == 0) {
         continue;
       }
 
-      const char *prefetch = bar.mem.prefetch ? "prefetchable" : "\b";
+      const char *prefetch = bar.prefetch ? " prefetchable" : "";
       const char *addr_type;
-      switch (bar.mem.addr_type) {
+      switch (bar.addr_type) {
         case 0: addr_type = "32"; break;
         case 1: addr_type = "16"; break;
         case 2: addr_type = "64"; break;
         default: addr_type = "32";
       }
 
-      kprintf("  BAR%d: %s bit %s memory at %p [%p]\n",
-              i, addr_type, prefetch, bar.mem.addr_start, bar.mem.addr_end - 1);
+      kprintf("  BAR%d: %s-bit%s memory at %p [%p]\n",
+              i, addr_type, prefetch, bar.base_addr, (bar.base_addr + bar.size) - 1);
     }
   }
 }

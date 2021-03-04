@@ -294,18 +294,16 @@ void ahci_init() {
   kprintf("[ahci] initializing\n");
   pci_device_t *pci = pci_locate_device(
     PCI_STORAGE_CONTROLLER,
-    PCI_SERIAL_ATA_CONTROLLER
+    PCI_SERIAL_ATA_CONTROLLER,
+    -1
   );
   if (pci == NULL) {
     kprintf("[ahci] no ahci controller\n");
     return;
   }
 
-  kassert(pci->bar_count >= 6);
-  pci_bar_t bar5 = pci->bars[5];
-
-  size_t mmio_size = bar5.mem.addr_end - bar5.mem.addr_start;
-  void *ahci_base = vm_map_addr(bar5.mem.addr_start, mmio_size, PE_WRITE);
+  size_t mmio_size = pci->bars[5].size;
+  void *ahci_base = vm_map_addr(pci->bars[5].base_addr, mmio_size, PE_WRITE);
 
   hba_reg_mem_t *hba_mem = ahci_base;
   ahci_controller_t *controller = kmalloc(sizeof(ahci_controller_t));

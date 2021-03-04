@@ -9,7 +9,7 @@ kernel += entry.asm sched.asm smpboot.asm \
 	syscall.c timer.c
 
 # kernel/bus
-kernel += bus/pci.c
+kernel += bus/pci.c bus/pcie.c
 
 # kernel/cpu
 kernel += cpu/cpu.asm cpu/idt.asm \
@@ -20,8 +20,11 @@ kernel += cpu/cpu.asm cpu/idt.asm \
 kernel += device/apic.c device/hpet.c \
 	device/ioapic.c device/pic.c device/pit.c
 
-#kernel/mm
+# kernel/mm
 kernel += mm/heap.c mm/mm.c mm/vm.c
+
+# kernel/usb
+kernel += usb/ehci.c usb/xhci.c
 
 
 # kernel-y

@@ -26,6 +26,9 @@ QEMUFLAGS = \
 	-device ahci,id=ahci \
 	-device usb-storage,drive=boot \
 	-device ide-hd,drive=disk,bus=ahci.0 \
+	-device qemu-xhci,id=xhci \
+	-device usb-kbd \
+	-device usb-mouse \
 	-usb
 
 include scripts/Makefile.toolchain
