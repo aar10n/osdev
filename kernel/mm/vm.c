@@ -1,3 +1,4 @@
+#include <acpi.h>
 //
 // Created by Aaron Gill-Braun on 2020-10-03.
 //
@@ -43,6 +44,7 @@ static inline uint16_t get_index(uintptr_t virt_addr, uint16_t offset, uint16_t 
 static inline uint16_t fix_flags(uint16_t flags, uint16_t root, bool cow) {
   if (root == U_ENTRY) {
     if (cow) {
+      kprintf("setting page to read only\n");
       flags &= ~(PE_WRITE);
     }
     return flags | PE_USER;
@@ -248,10 +250,13 @@ void *duplicate_intvl_node(void *data) {
 
 //
 
-int fault_handler(uintptr_t addr, uint32_t err) {
+__used int fault_handler(uintptr_t addr, uint32_t err) {
   kprintf("[vm] page fault at %p (0b%b)\n", addr, err);
-  if (err & PF_PRESENT && err & PF_WRITE) {
+  // kprintf("err: %d | err: %d\n", err & PF_PRESENT);
+  if (err & PF_WRITE) {
     // copy-on-write
+    kprintf("[vm] copy on write\n");
+
     return -1;
   }
   return -1;
@@ -309,7 +314,6 @@ void vm_init() {
 
   // null page (fault on null reference)
   intvl_tree_insert(vm->tree, intvl(0, PAGE_SIZE), NULL);
-
   // non-canonical address space
   intvl_tree_insert(vm->tree, intvl(LOW_HALF_END + 1, HIGH_HALF_START), NULL);
   // recursively mapped region

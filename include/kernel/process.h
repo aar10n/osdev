@@ -45,6 +45,8 @@ typedef struct process {
   uint8_t policy;
   uint8_t priority;
   proc_status_t status;
+  uid_t uid;
+  gid_t gid;
   fs_node_t *pwd;
   file_table_t *files;
   vm_t *vm;
@@ -65,6 +67,7 @@ typedef struct process {
 } process_t;
 
 process_t *kthread_create(void (*func)());
+process_t *kthread_create_idle(void (*func)());
 pid_t process_fork(bool user);
 
 pid_t getpid();

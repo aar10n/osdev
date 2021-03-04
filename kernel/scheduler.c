@@ -200,7 +200,7 @@ void sched_init() {
   kprintf("[sched] initializing\n");
   scheduler_t *sched = kmalloc(sizeof(scheduler_t));
   sched->cpu_id = PERCPU->id;
-  sched->idle = kthread_create(sched_idle);
+  sched->idle = kthread_create_idle(sched_idle);
   sched->idle->priority = 255;
   sched->blocked = rq_create();
   for (int i = 0; i < SCHED_QUEUES; i++) {
@@ -271,8 +271,10 @@ void sched_print_stats() {
   uint64_t rflags = cli_save();
 
   kprintf("===== scheduler stats =====\n");
-  kprintf("current pid: %llu\n", current->pid);
-  print_debug_process(current);
+  kprintf("current pid: %llu\n", current ? current->pid : -1);
+  if (current) {
+    print_debug_process(current);
+  }
 
   rqueue_t *rq;
   process_t *process;
