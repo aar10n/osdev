@@ -2,6 +2,7 @@
 // Created by Aaron Gill-Braun on 2020-10-14.
 //
 
+#include <base.h>
 #include <string.h>
 #include <stdio.h>
 
@@ -15,12 +16,15 @@
 
 #include <cpuid.h>
 
+#include <bus/pcie.h>
+
 #define get_header(ptr) ((acpi_header_t *) ptr)
 
 const char *sig_rsdp = "RSD PTR ";
 
 const char *sig_hpet = "HPET";
 const char *sig_madt = "APIC";
+const char *sig_mcfg = "MCFG";
 const char *sig_rsdt = "RSDT";
 const char *sig_xsdt = "XSDT";
 
@@ -203,6 +207,30 @@ void get_hpet_info(system_info_t *info, acpi_hpetdt_t *hpetdt) {
   info->hpet = hpet;
 }
 
+// MCFG Table
+
+void get_mcfg_info(system_info_t *info, acpi_mcfg_t *mcfg) {
+  mcfg_entry_t *entries = mcfg->entries;
+  uint32_t num_entries = (mcfg->length - sizeof(acpi_mcfg_t)) / sizeof(mcfg_entry_t);
+
+  for (int i = 0; i < num_entries; i++) {
+    mcfg_entry_t entry = entries[i];
+    kprintf("--- entry %d ---\n", i);
+    kprintf("base_addr: %p\n", entry.base_addr);
+    kprintf("segment: %d\n", entry.segment);
+    kprintf("bus_start: %d\n", entry.bus_start);
+    kprintf("bus_end: %d\n", entry.bus_end);
+
+    pcie_desc_t *pcie = kmalloc(sizeof(pcie_desc_t));
+    pcie->phys_addr = entry.base_addr;
+    pcie->virt_addr = 0;
+    pcie->bus_start = entry.bus_start;
+    pcie->bus_end = entry.bus_end;
+    info->pcie = pcie;
+    break;
+  }
+}
+
 //
 
 void *locate_header(const char *signature) {
@@ -279,6 +307,9 @@ void acpi_init() {
 
   acpi_hpetdt_t *hpet = locate_header(sig_hpet);
   get_hpet_info(system_info, hpet);
+
+  acpi_mcfg_t *mcfg = locate_header(sig_mcfg);
+  get_mcfg_info(system_info, mcfg);
 
   kprintf("[acpi] done!\n");
 }

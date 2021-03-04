@@ -138,6 +138,22 @@ typedef struct packed {
   uint8_t page_protection;
 } acpi_hpetdt_t;
 
+/* ------ MCFG Table ------ */
+
+typedef struct packed {
+  uint64_t base_addr;
+  uint16_t segment;
+  uint8_t bus_start;
+  uint8_t bus_end;
+  uint32_t reserved;
+} mcfg_entry_t;
+
+typedef struct packed {
+  acpi_header;
+  uint64_t reserved;
+  mcfg_entry_t entries[];
+} acpi_mcfg_t;
+
 void acpi_init();
 
 #endif

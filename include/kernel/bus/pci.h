@@ -10,8 +10,15 @@
 #define PCI_CONFIG_ADDR 0xCF8
 #define PCI_CONFIG_DATA 0xCFC
 
+// Device Classes
+#define PCI_STORAGE_CONTROLLER    0x01
+#define PCI_NETWORK_CONTROLLER    0x02
+#define PCI_DISPLAY_CONTROLLER    0x03
+#define PCI_BRIDGE_DEVICE         0x06
+#define PCI_BASE_PERIPHERAL       0x08
+#define PCI_SERIAL_BUS_CONTROLLER 0x0C
+
 // Mass Storage Controllers
-#define PCI_STORAGE_CONTROLLER 0x01 // class
 #define PCI_SCSI_BUS_CONTROLLER 0x00
 #define PCI_IDE_CONTROLLER 0x01
 #define PCI_FLOPPY_DISK_CONTROLLER 0x02
@@ -19,18 +26,23 @@
 #define PCI_SERIAL_ATA_CONTROLLER 0x06
 
 // Network Controllers
-#define PCI_NETWORK_CONTROLLER 0x02 // class
 #define PCI_ETHERNET_CONTROLLER 0x00
 
 // Display Controllers
-#define PCI_DISPLAY_CONTROLLER 0x03 // class
 #define PCI_VGA_CONTROLLER 0x00
 
 // Bridge Devices
-#define PCI_BRIDGE 0x06 // class
 #define PCI_HOST_BRIDGE 0x00
 #define PCI_ISA_BRIDGE 0x01
 #define PCI_PCI_BRIDGE 0x04
+
+// Serial Bus Controllers
+#define PCI_USB_CONTROLLER 0x03
+
+#define USB_PROG_IF_UHCI 0x00
+#define USB_PROG_IF_OHCI 0x10
+#define USB_PROG_IF_EHCI 0x20 // USB2
+#define USB_PROG_IF_XHCI 0x30 // USB3
 
 
 /* --------------- PCI Registers --------------- */
@@ -108,19 +120,13 @@ typedef union {
 
 /* --------------- PCI Structures --------------- */
 
-typedef union {
-  uint32_t bar_type : 1;      // bar type - 0 = memory, 1 = i/o
-  struct {
-    uint32_t addr_type : 2;   // address type - 0 = 32-bit, 1 = 16-bit, 2 = 64-bit
-    uint32_t prefetch : 1;    // prefetchable memory
-    uint32_t addr_start : 32; // start address
-    uint32_t addr_end;        // end address
-  } mem; // memory bar
-  struct {
-    uint32_t reserved : 1;    // reserved
-    uint32_t addr_start : 30; // start address
-    uint32_t addr_end;        // end address
-  } io; // io bar
+typedef struct {
+  uint32_t bar_type : 1;  // bar type - 0 = memory, 1 = i/o
+  uint32_t addr_type : 2; // address type (memory only)
+  uint32_t prefetch : 1;  // prefetchable (memory only)
+  uint32_t : 28;          // reserved
+  uint64_t base_addr;     // base address
+  uint64_t size;          // size
 } pci_bar_t;
 
 typedef struct pci_device {
@@ -212,7 +218,7 @@ int pci_probe_device(pci_device_t *device, pci_callback_t callback, void *contex
 int pci_probe_bus(uint8_t bus, pci_callback_t callback, void *context);
 void pci_probe_busses(pci_callback_t callback, void *context);
 void pci_enumerate_busses();
-pci_device_t *pci_locate_device(uint8_t device_class, uint8_t device_subclass);
+pci_device_t *pci_locate_device(uint8_t device_class, uint8_t device_subclass, int prog_if);
 
 void pci_print_debug_device(pci_device_t *device);
 

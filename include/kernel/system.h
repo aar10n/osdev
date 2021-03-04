@@ -70,6 +70,16 @@ typedef struct {
   uintptr_t virt_addr;
 } hpet_desc_t;
 
+// PCIE Descriptor
+
+typedef struct {
+  uintptr_t phys_addr;
+  uintptr_t virt_addr;
+  uint32_t segment;
+  uint8_t bus_start;
+  uint8_t bus_end;
+} pcie_desc_t;
+
 // System Information
 
 typedef struct {
@@ -83,6 +93,8 @@ typedef struct {
   ioapic_desc_t *ioapics;
   // hpet
   hpet_desc_t *hpet;
+  // pcie
+  pcie_desc_t *pcie;
 } system_info_t;
 
 extern system_info_t *system_info;
