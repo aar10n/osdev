@@ -6,7 +6,7 @@
 #include <system.h>
 #include <device/hpet.h>
 #include <mm/vm.h>
-#include <stdio.h>
+#include <printf.h>
 
 uintptr_t hpet_base;
 uint64_t hpet_clock;

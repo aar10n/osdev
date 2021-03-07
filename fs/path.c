@@ -5,7 +5,7 @@
 #include <path.h>
 #include <string.h>
 #include <mm/heap.h>
-#include <stdio.h>
+#include <printf.h>
 
 const char *slash = "/";
 const char *dot = ".";

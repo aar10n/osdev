@@ -6,7 +6,7 @@
 #include <mm/heap.h>
 #include <mm/mm.h>
 #include <mm/vm.h>
-#include <stdio.h>
+#include <printf.h>
 
 fs_impl_t ramfs_impl = {
   ramfs_mount, ramfs_unmount,

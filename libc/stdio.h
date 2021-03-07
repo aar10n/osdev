@@ -5,23 +5,4 @@
 #ifndef LIBC_STDIO_H
 #define LIBC_STDIO_H
 
-#include <stdarg.h>
-#include <stddef.h>
-#include <errno.h>
-
-
-#ifdef __KERNEL__
-void kprintf(const char *format, ...);
-void kvfprintf(const char *format, va_list args);
-
-int ksprintf(char *str, const char *format, ...);
-int kvsprintf(char *str, const char *format, va_list args);
-
-int ksnprintf(char *str, size_t n, const char *format, ...);
-int kvsnprintf(char *str, size_t n, const char *format, va_list args);
-
-void stdio_lock();
-void stdio_unlock();
-#endif
-
 #endif // LIBC_STDIO_H

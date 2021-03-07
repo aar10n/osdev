@@ -7,7 +7,7 @@
 #include <percpu.h>
 #include <panic.h>
 #include <lock.h>
-#include <stdio.h>
+#include <printf.h>
 #include <vectors.h>
 
 #include <mm/heap.h>

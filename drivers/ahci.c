@@ -10,7 +10,7 @@
 #include <mm/vm.h>
 #include <mm/heap.h>
 #include <panic.h>
-#include <stdio.h>
+#include <printf.h>
 #include <string.h>
 #include <vectors.h>
 #include <device.h>

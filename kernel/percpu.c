@@ -11,7 +11,7 @@
 #include <atomic.h>
 #include <cpuid.h>
 #include <panic.h>
-#include <stdio.h>
+#include <printf.h>
 
 // this is only ever accessed with atomic operations
 static uintptr_t next_area;

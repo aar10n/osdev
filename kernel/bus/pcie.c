@@ -4,7 +4,7 @@
 
 #include <bus/pcie.h>
 #include <mm/vm.h>
-#include <stdio.h>
+#include <printf.h>
 #include <panic.h>
 #include <system.h>
 

@@ -4,7 +4,7 @@
 
 #include <base.h>
 #include <string.h>
-#include <stdio.h>
+#include <printf.h>
 
 #include <acpi.h>
 #include <panic.h>

@@ -3,9 +3,10 @@
 #
 
 # lib
-lib += atomic.c bitmap.c hash_table.c \
-	interval_tree.c lock.c murmur3.c \
-	queue.c rb_tree.c ringbuf.c
+lib += atomic.c bitmap.c format.c \
+	hash_table.c interval_tree.c \
+	lock.c murmur3.c queue.c rb_tree.c \
+	ringbuf.c
 
 # lib/asm
 

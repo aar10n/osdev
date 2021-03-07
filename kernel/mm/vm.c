@@ -6,7 +6,7 @@
 #include <base.h>
 #include <panic.h>
 #include <string.h>
-#include <stdio.h>
+#include <printf.h>
 #include <percpu.h>
 #include <vectors.h>
 

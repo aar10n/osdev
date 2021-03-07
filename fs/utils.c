@@ -4,7 +4,7 @@
 
 #include <fs/utils.h>
 #include <fs.h>
-#include <stdio.h>
+#include <printf.h>
 #include <mm/heap.h>
 
 // These functions are for debugging/development purposes

@@ -14,7 +14,7 @@
 #include <fs.h>
 #include <panic.h>
 
-#include <stdio.h>
+#include <printf.h>
 
 static uint64_t __pid = 0;
 

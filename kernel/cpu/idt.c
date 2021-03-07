@@ -5,7 +5,7 @@
 #include <percpu.h>
 #include <cpu/cpu.h>
 #include <cpu/idt.h>
-#include <stdio.h>
+#include <printf.h>
 
 #include <device/apic.h>
 

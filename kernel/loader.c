@@ -8,7 +8,7 @@
 #include <mm/vm.h>
 #include <elf.h>
 #include <elf64.h>
-#include <stdio.h>
+#include <printf.h>
 #include <string.h>
 
 

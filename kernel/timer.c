@@ -12,7 +12,7 @@
 #include <device/hpet.h>
 
 #include <rb_tree.h>
-#include <stdio.h>
+#include <printf.h>
 #include <lock.h>
 
 extern void hpet_handler();

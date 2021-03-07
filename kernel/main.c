@@ -3,7 +3,7 @@
 //
 
 #include <base.h>
-#include <stdio.h>
+#include <printf.h>
 #include <panic.h>
 
 #include <cpu/cpu.h>
@@ -33,9 +33,6 @@
 #include <fs/proc/proc.h>
 #include <fs/utils.h>
 
-#include <usb/xhci.h>
-
-
 boot_info_t *boot_info;
 
 //
@@ -48,9 +45,7 @@ noreturn void launch() {
   kprintf("[pid %d] launch\n", ID);
   fs_init();
 
-  pci_enumerate_busses();
-
-  // xhci_init();
+  // pci_enumerate_busses();
 
   kprintf("[pid %d] done!\n", current->pid);
   while (true) {

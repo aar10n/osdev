@@ -4,7 +4,7 @@
 
 #include <base.h>
 #include <stdarg.h>
-#include <stdio.h>
+#include <printf.h>
 #include <cpu/cpu.h>
 #include <panic.h>
 

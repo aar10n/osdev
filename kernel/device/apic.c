@@ -4,7 +4,7 @@
 
 #include <system.h>
 #include <panic.h>
-#include <stdio.h>
+#include <printf.h>
 #include <percpu.h>
 #include <vectors.h>
 #include <cpu/cpu.h>

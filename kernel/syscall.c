@@ -4,7 +4,7 @@
 
 #include <syscall.h>
 #include <cpu/cpu.h>
-#include <stdio.h>
+#include <printf.h>
 #include <fs.h>
 
 extern void syscall_handler();

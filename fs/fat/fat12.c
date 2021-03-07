@@ -4,7 +4,7 @@
 
 #include <fat/fat.h>
 #include <fat/fat12.h>
-#include <stdio.h>
+#include <printf.h>
 
 
 uint32_t fat12_cluster_to_fat(fat_bpb_t *bpb, uint32_t n) {

@@ -3,7 +3,7 @@
 //
 
 #include "hash_table.h"
-#include <stdio.h>
+#include <printf.h>
 
 #ifndef _malloc
 #include <mm/heap.h>

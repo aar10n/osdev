@@ -4,7 +4,7 @@
 
 #include <fs.h>
 #include <vfs.h>
-#include <stdio.h>
+#include <printf.h>
 #include <panic.h>
 #include <mm/heap.h>
 #include <errno.h>

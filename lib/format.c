@@ -1,39 +1,18 @@
 //
-// Created by Aaron Gill-Braun on 2020-08-31.
+// Created by Aaron Gill-Braun on 2021-03-07.
 //
 
-#include <stdbool.h>
-#include <stdarg.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <math.h>
-#include <errno.h>
+#include <format.h>
 
-extern void puts(const char *str);
-
-#ifdef __KERNEL__
-// kernelspace libc
-#include <base.h>
-#include <lock.h>
-#include <kernel/panic.h>
-#include <drivers/serial.h>
-
-static spinlock_t lock = {
-  .locked = 0,
-  .lock_count = 0,
-  .locked_by = 0,
-  .rflags = 0,
-};
-#else
-// userspace libc
 #define max(a, b) (((a) > (b)) ? (a) : (b))
 #define abs(a) (((a) < 0) ? (-(a)) : (a))
 
-#define panic(str,...)
-#define lock(lock)
-#define unlock(lock)
-#endif
+extern void *memcpy(void *dest, const void *src, size_t len);
+extern void *memset(void *dest, int val, size_t len);
+extern double pow(double x, double y);
+extern void reverse(const char *str);
+extern int strlen(const char *s);
+
 
 typedef enum {
   START,
@@ -286,6 +265,7 @@ int _ftoa(char *buf, double value, fmt_options_t *opts) {
     if (!prec) {
       prec = 6;
     }
+
     // limit precision to 9, cause a prec >= 10 can lead to overflow errors
     while ((len < FTOA_BUFFER_SIZE) && (prec > 9)) {
       buf[len++] = '0';
@@ -311,7 +291,7 @@ int _ftoa(char *buf, double value, fmt_options_t *opts) {
     }
 
     unsigned int count = prec;
-    // now do fractional part, as an unsigned number
+    // do fractional part, as an unsigned number
     while (len < FTOA_BUFFER_SIZE) {
       --count;
       fnumber[len++] = (char) (48 + (frac % 10));
@@ -421,7 +401,11 @@ int parse_int(char *dest, const char *str) {
   return n;
 }
 
-int snprintf_internal(char *str, size_t size, bool limit, const char *format, va_list args) {
+//
+// Public Functions
+//
+
+int print_format(const char *format, char *str, size_t size, va_list args, bool limit) {
   va_list valist;
   va_copy(valist, args);
 
@@ -482,7 +466,7 @@ int snprintf_internal(char *str, size_t size, bool limit, const char *format, va
         if (count > 0 && *fmt_ptr == '$') {
           fmt_ptr++;
           opts.is_width_arg = true;
-          opts.width = atoi(width);
+          opts.width = _atoi(width, 10);
         }
       }
 
@@ -496,7 +480,7 @@ int snprintf_internal(char *str, size_t size, bool limit, const char *format, va
         if (ch >= '1' && ch <= '9') {
           int count = parse_int(prec, fmt_ptr);
           fmt_ptr += count;
-          opts.precision = atoi(prec);
+          opts.precision = _atoi(prec, 10);
         } else if (ch == '*') {
           fmt_ptr++;
           int count = parse_int(prec, fmt_ptr);
@@ -504,7 +488,7 @@ int snprintf_internal(char *str, size_t size, bool limit, const char *format, va
           if (count > 0 && *fmt_ptr == '$') {
             fmt_ptr++;
             opts.is_prec_arg = true;
-            opts.precision = atoi(prec);
+            opts.precision = _atoi(prec, 10);
           }
         }
       }
@@ -635,14 +619,6 @@ int snprintf_internal(char *str, size_t size, bool limit, const char *format, va
           *value = n;
           break;
         }
-        case 'm': {
-          // glibc extension - print output of strerror(errno) [no argument]
-          const char *errstr = strerror(errno);
-          int len = strlen(errstr);
-          memcpy(buffer, errstr, len);
-          format_len = len;
-          break;
-        }
         case '%':
           buffer[0] = '%';
           format_len = 1;
@@ -678,127 +654,3 @@ int snprintf_internal(char *str, size_t size, bool limit, const char *format, va
 //
 //
 
-/*
- * snprintf - write formatted data to a sized buffer
- * =================================================
- *
- * ksnprintf(char *str, size_t n, const char *format, ...);
- *
- */
-int ksnprintf(char *str, size_t n, const char *format, ...) {
-  va_list valist;
-  va_start(valist, format);
-  int vn = snprintf_internal(str, n, true, format, valist);
-  va_end(valist);
-  return vn;
-}
-
-int kvsnprintf(char *str, size_t n, const char *format, va_list args) {
-  int vn = snprintf_internal(str, n, true, format, args);
-  return vn;
-}
-
-/*
- * ksprintf - write formatted data to a buffer
- * ===========================================
- *
- * ksprintf(char *str, const char *format, ...);
- *
- */
-int ksprintf(char *str, const char *format, ...) {
-  va_list valist;
-  va_start(valist, format);
-  int n = snprintf_internal(str, -1, false, format, valist);
-  va_end(valist);
-  return n;
-}
-
-int kvsprintf(char *str, const char *format, va_list args) {
-  int n = snprintf_internal(str, -1, false, format, args);
-  return n;
-}
-
-/*
- * kprintf - write formatted data to standard output
- * =================================================
- *
- * kprintf(const char *format, ...);
- *
- * format: "%[flags][width][precision][length]<type>"
- *
- *
- * Flags
- *   '#' - Use alternate form for value. For 'x' and 'X' formatting,
- *         append "0x" to the value. For 'b' formatting, append "0b"
- *         to the value. For 'o' formatting, append "0" to the value.
- *   '0' - The value should be zero padded. If a width value is
- *         specified, pad with zeros instead of spaces
- *   '-' - Pad the value from the right side (default left)
- *   ' ' - If no signed is printed, insert a space before the value.
- *   '+' - Force add the '+' sign in front of positive numbers.
- *
- * Field Width
- *   An optional number specifying the minimum width of the
- *   converted value. If the converted value is smaller than
- *   the given width, it will be padded with spaces, or zeros
- *   if the '0' flag is used. By default the padding is from
- *   the left side, but can be changed with the '-' flag
- *
- * Precision
- * =========
- *
- * Field Length
- * ============
- *   'hh' - A char or unsigned char
- *   'h'  - A short int or unsigned short int
- *   'l'  - A long int or unsigned long int
- *   'll' - A long long int or unsigned long long int
- *   'z'  - A size_t or ssize_t
- *
- * Type Specifier
- * ==============
- *   'd' - Decimal
- *   'i' - Decimal
- *   'b' - Binary
- *   'o' - Octal
- *   'u' - Unsigned decimal
- *   'x' - Hexadecimal (lowercase)
- *   'X' - Hexadecimal (uppercase)
- *   'e' - Scientific notation (lowercase)
- *   'E' - Scientific notation (uppercase)
- *   'f' - Floating point (lowercase)
- *   'F' - Floating point (uppercase)
- *   'c' - Character
- *   's' - String
- *   'p' - Pointer address
- *   '%' - A '%' literal
- */
-void kprintf(const char *format, ...) {
-  char str[BUFFER_SIZE];
-  va_list valist;
-  va_start(valist, format);
-  snprintf_internal(str, BUFFER_SIZE, true, format, valist);
-  va_end(valist);
-
-  lock(lock);
-  puts(str);
-  unlock(lock);
-}
-
-void kvfprintf(const char *format, va_list args) {
-  char str[BUFFER_SIZE];
-  snprintf_internal(str, BUFFER_SIZE, true, format, args);
-
-  lock(lock);
-  puts(str);
-  unlock(lock);
-}
-
-
-void stdio_lock() {
-  lock(lock);
-}
-
-void stdio_unlock() {
-  unlock(lock);
-}

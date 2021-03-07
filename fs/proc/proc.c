@@ -3,7 +3,7 @@
 //
 
 #include <proc/proc.h>
-#include <stdio.h>
+#include <printf.h>
 
 fs_impl_t procfs_impl = {
   ramfs_mount, ramfs_unmount,

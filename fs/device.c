@@ -4,7 +4,7 @@
 
 #include <device.h>
 #include <atomic.h>
-#include <stdio.h>
+#include <printf.h>
 #include <vfs.h>
 #include <mm/heap.h>
 

@@ -6,7 +6,7 @@
 #include <panic.h>
 #include <percpu.h>
 #include <string.h>
-#include <stdio.h>
+#include <printf.h>
 #include <device/ioapic.h>
 #include <mm/vm.h>
 

@@ -9,7 +9,7 @@
 #include <mm/mm.h>
 #include <mm/vm.h>
 #include <device/apic.h>
-#include <stdio.h>
+#include <printf.h>
 #include <string.h>
 #include <panic.h>
 

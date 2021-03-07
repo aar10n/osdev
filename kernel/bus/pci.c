@@ -5,7 +5,7 @@
 #include <bus/pci.h>
 #include <bus/pci_tables.h>
 #include <cpu/io.h>
-#include <stdio.h>
+#include <printf.h>
 #include <string.h>
 #include <mm/heap.h>
 
@@ -120,7 +120,6 @@ void pci_read_device_info(pci_device_t *device) {
         pci_write(addr, offset, bar2);
 
         bars[i].base_addr = ((bar & 0xFFFFFFF0) + (((uint64_t) bar2 & 0xFFFFFFFFF) << 32));
-        kprintf("size 1: %u (%u) | size 2: %u (%u)\n", size,  size2);
         bars[i].size = ~((size & 0xFFFFFFF0) | ((uint64_t) size2) << 32) + 1;
 
         memset(&(bars[i + 1]), 0, sizeof(pci_bar_t));
@@ -131,7 +130,6 @@ void pci_read_device_info(pci_device_t *device) {
       }
     }
   }
-
   device->bars = bars;
 }
 

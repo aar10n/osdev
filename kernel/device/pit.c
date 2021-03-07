@@ -7,7 +7,7 @@
 #include <cpu/io.h>
 #include <cpu/idt.h>
 #include <device/pit.h>
-#include <stdio.h>
+#include <printf.h>
 
 #define PIT0_DATA   0x40
 #define PIT1_DATA   0x41

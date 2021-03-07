@@ -4,10 +4,10 @@
 
 #include <base.h>
 #include <panic.h>
-#include <stdio.h>
+#include <printf.h>
 #include <string.h>
 #include <lock.h>
-
+#include <printf.h>
 #include <mm/mm.h>
 #include <mm/heap.h>
 

@@ -11,7 +11,7 @@
 
 #ifndef _malloc
 #include <mm/heap.h>
-#include <stdio.h>
+#include <printf.h>
 #define _malloc(size) kmalloc(size)
 #define _free(ptr) kfree(ptr)
 #endif

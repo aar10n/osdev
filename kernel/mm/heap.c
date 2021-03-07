@@ -6,7 +6,7 @@
 #include <base.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <stdio.h>
+#include <printf.h>
 #include <string.h>
 #include <math.h>
 #include <lock.h>

@@ -13,7 +13,7 @@
 #include <asm/bitmap.h>
 #include <hash_table.h>
 #include <murmur3.h>
-#include <stdio.h>
+#include <printf.h>
 
 #include <ramfs/ramfs.h>
 

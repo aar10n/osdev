@@ -45,6 +45,12 @@
 #define USB_PROG_IF_XHCI 0x30 // USB3
 
 
+// Capability Types
+#define PCI_CAP_MSI      0x05
+#define PCI_CAP_MSIX     0x11
+
+
+
 /* --------------- PCI Registers --------------- */
 
 
