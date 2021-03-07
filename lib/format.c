@@ -3,15 +3,11 @@
 //
 
 #include <format.h>
+#include <string.h>
+#include <math.h>
 
 #define max(a, b) (((a) > (b)) ? (a) : (b))
 #define abs(a) (((a) < 0) ? (-(a)) : (a))
-
-extern void *memcpy(void *dest, const void *src, size_t len);
-extern void *memset(void *dest, int val, size_t len);
-extern double pow(double x, double y);
-extern void reverse(const char *str);
-extern int strlen(const char *s);
 
 
 typedef enum {
