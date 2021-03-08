@@ -216,7 +216,7 @@ void get_mcfg_info(system_info_t *info, acpi_mcfg_t *mcfg) {
   for (int i = 0; i < num_entries; i++) {
     mcfg_entry_t entry = entries[i];
     kprintf("--- entry %d ---\n", i);
-    kprintf("base_addr: %p\n", entry.base_addr);
+    kprintf("addr: %p\n", entry.base_addr);
     kprintf("segment: %d\n", entry.segment);
     kprintf("bus_start: %d\n", entry.bus_start);
     kprintf("bus_end: %d\n", entry.bus_end);

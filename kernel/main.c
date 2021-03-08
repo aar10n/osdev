@@ -33,6 +33,8 @@
 #include <fs/proc/proc.h>
 #include <fs/utils.h>
 
+#include <bus/pcie.h>
+
 boot_info_t *boot_info;
 
 //
@@ -45,7 +47,8 @@ noreturn void launch() {
   kprintf("[pid %d] launch\n", ID);
   fs_init();
 
-  // pci_enumerate_busses();
+  pcie_init();
+  pcie_discover();
 
   kprintf("[pid %d] done!\n", current->pid);
   while (true) {
@@ -106,13 +109,4 @@ __used void ap_main() {
   ioapic_init();
 
   kprintf("[CPU#%d] done!\n", ID);
-  // for (int i = 0; i < 10; i++) {
-  //   uint64_t count = 0;
-  //   while (count < 1000000) {
-  //     cpu_pause();
-  //     count++;
-  //   }
-  // }
-  //
-  // kprintf("[CPU#%d] done!\n", ID);
 }

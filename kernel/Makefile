@@ -11,7 +11,7 @@ kernel += entry.asm sched.asm smpboot.asm \
 	smpboot.c syscall.c timer.c
 
 # kernel/bus
-kernel += bus/pci.c bus/pcie.c
+kernel += bus/pci.c bus/pci_tables.c bus/pcie.c
 
 # kernel/cpu
 kernel += cpu/cpu.asm cpu/idt.asm \
