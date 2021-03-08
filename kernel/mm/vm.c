@@ -266,6 +266,7 @@ __used int fault_handler(uintptr_t addr, uint32_t err) {
 
 void vm_init() {
   kprintf("[vm] initializing\n");
+
   vm_t *vm = kmalloc(sizeof(vm_t));
   intvl_tree_events_t *events = kmalloc(sizeof(intvl_tree_events_t));
   events->copy_data = duplicate_intvl_node;
@@ -666,6 +667,13 @@ vm_area_t *vm_get_vm_area(uintptr_t addr) {
 bool vm_find_free_area(vm_search_t search_type, uintptr_t *addr, size_t size) {
   uintptr_t ptr = *addr;
 
+  int alignment = PAGE_SIZE;
+  if (size >= PAGE_SIZE_1GB) {
+    alignment = PAGE_SIZE_1GB;
+  } else if (size >= PAGE_SIZE_2MB) {
+    alignment = PAGE_SIZE_2MB;
+  }
+
   interval_t interval = intvl(ptr, ptr + size);
   intvl_node_t *closest = intvl_tree_find_closest(VM->tree, interval);
   if (search_type == EXACTLY) {
@@ -689,19 +697,22 @@ bool vm_find_free_area(vm_search_t search_type, uintptr_t *addr, size_t size) {
     interval_t i = ((intvl_node_t *) node->data)->interval;
     interval_t j = last ? ((intvl_node_t *) last->data)->interval : i;
 
+    // if two consequtive nodes are not contiguous in memory
+    // check that there is enough space between the them to
+    // fit the requested area.
     bool contig = contiguous(i, j);
     if (search_type == ABOVE) {
       if (!contig && i.start > ptr && i.start - ptr >= size) {
         *addr = ptr;
         return true;
       }
-      ptr = i.end;
+      ptr = align(i.end, alignment);
     } else {
       if (!contig && i.end < ptr && ptr - i.end >= size) {
         *addr = ptr;
         return true;
       }
-      ptr = i.start - 1;
+      ptr = align(i.start, alignment) - 1;
     }
 
     last = node;

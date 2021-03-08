@@ -32,14 +32,14 @@
 
 #define static_assert(expr) _Static_assert(expr, "")
 
-#define offset_ptr(p, c) ((void *)(((uint8_t *)p) + c))
+#define offset_ptr(p, c) ((void *)(((uint8_t *)(p)) + (c)))
 #define align(v, a) ((v) + (((a) - (v)) & ((a) - 1)))
 #define align_ptr(p, a) ((void *) (align((uintptr_t)(p), (a))))
 
 #define min(a, b) (((a) < (b)) ? (a) : (b))
 #define max(a, b) (((a) > (b)) ? (a) : (b))
 #define abs(a) (((a) < 0) ? (-(a)) : (a))
-#define diff(a, b) abs(a - b)
+#define diff(a, b) abs((a) - (b))
 #define udiff(a, b) (max(a, b) - min(a, b))
 
 #define label(lbl) lbl: NULL
