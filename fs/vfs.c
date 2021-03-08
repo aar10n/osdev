@@ -10,7 +10,7 @@
 #include <process.h>
 #include <panic.h>
 #include <mm/heap.h>
-#include <asm/bitmap.h>
+#include <asm/bits.h>
 #include <hash_table.h>
 #include <murmur3.h>
 #include <printf.h>

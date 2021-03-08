@@ -11,7 +11,6 @@
 #include <math.h>
 #include <lock.h>
 
-#include <base.h>
 #include <panic.h>
 #include <mm/heap.h>
 #include <mm/mm.h>

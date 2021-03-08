@@ -10,7 +10,7 @@ lib += atomic.c bitmap.c format.c \
 
 # lib/asm
 
-lib += asm/atomic.asm asm/bitmap.asm
+lib += asm/atomic.asm asm/bits.asm
 
 
 # lib-y

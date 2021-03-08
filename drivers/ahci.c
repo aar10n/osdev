@@ -15,7 +15,7 @@
 #include <vectors.h>
 #include <device.h>
 
-#include <asm/bitmap.h>
+#include <asm/bits.h>
 
 fs_device_impl_t ahci_impl = {
   ahci_read, ahci_write, ahci_release

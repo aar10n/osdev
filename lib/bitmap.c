@@ -3,7 +3,7 @@
 //
 
 #include <bitmap.h>
-#include <asm/bitmap.h>
+#include <asm/bits.h>
 
 #include <panic.h>
 #include <mm/heap.h>
