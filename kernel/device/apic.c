@@ -148,7 +148,7 @@ void apic_init() {
     uintptr_t phys_addr = system_info->apic_base;
     uintptr_t virt_addr = MMIO_BASE_VA;
     size_t apic_mmio_size = PAGE_SIZE;
-    if (!vm_find_free_area(ABOVE, &virt_addr, apic_mmio_size)) {
+    if (!vm_find_free_area(EXACTLY, &virt_addr, apic_mmio_size)) {
       panic("[apic] failed to map local apic");
     }
     vm_map_vaddr(virt_addr, phys_addr, apic_mmio_size, PE_WRITE);
