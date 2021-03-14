@@ -8,25 +8,25 @@
 #include <mm/mm.h>
 #include <lock.h>
 
-#define CHUNK_MIN_SIZE 8
-#define CHUNK_MAX_SIZE 8192
+#define CHUNK_MIN_SIZE   8
+#define CHUNK_MAX_SIZE   8192
+#define CHUNK_SIZE_ALIGN 8
+#define CHUNK_MIN_ALIGN  4
 
 #define CHUNK_MAGIC 0xABCD
 #define HOLE_MAGIC 0xFACE
 
-// 8 bytes
+// 16 bytes
 typedef struct chunk {
-  uint16_t magic;   // magic number
-  uint8_t size : 7; // chunk size in the form of 2^n
-  uint8_t free : 1; // is chunk used
-  // when chunk is used
-  union {
-    uint8_t size : 7; // last chunk size in form of 2^n
-    uint8_t free : 1; // is last chunk used
-  } last;
-  // when chunk is used
+  uint16_t magic;         // magic number
+  uint16_t size;          // chunk size
+  uint16_t prev_size;     // prev chunk size
+  uint16_t free : 1;      // chunk free/used
+  uint16_t prev_free : 1; // prev chunk free/used
+  uint16_t : 14;          // reserved
   struct chunk *next;     // a pointer to the next used chunk
 } chunk_t;
+static_assert(sizeof(chunk_t) == 16);
 
 typedef struct heap {
   // page_t *source;       // the source of the heap memory
@@ -42,6 +42,7 @@ typedef struct heap {
 void kheap_init();
 
 void *kmalloc(size_t size) __malloc_like;
+void *kmalloca(size_t size, size_t alignment) __malloc_like;
 void kfree(void *ptr);
 void *kcalloc(size_t nmemb, size_t size) __malloc_like;
 void *krealloc(void *ptr, size_t size) __malloc_like;

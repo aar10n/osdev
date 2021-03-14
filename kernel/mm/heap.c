@@ -15,6 +15,9 @@
 #include <mm/heap.h>
 #include <mm/mm.h>
 
+#define chunk_mem_start(c) (((uintptr_t)(c)) + sizeof(chunk_t))
+#define is_chunk_aligned(c, a) (chunk_mem_start(c) % (a) == 0)
+
 heap_t *kheap = NULL;
 static spinlock_t kheap_lock;
 
@@ -25,7 +28,7 @@ static inline uintptr_t next_chunk_start() {
     return kheap->start_addr;
   }
 
-  size_t size = 1 << kheap->last_chunk->size;
+  size_t size = kheap->last_chunk->size;
   return (uintptr_t) kheap->last_chunk + sizeof(chunk_t) + size;
 }
 
@@ -95,7 +98,13 @@ void kheap_init() {
 
 // ----- kmalloc -----
 
-void *kmalloc(size_t size) {
+void *__kmalloc(size_t size, size_t alignment, int flags) {
+  if (alignment == 0 || (alignment & (alignment - 1)) != 0) {
+    // invalid alignment given
+    kprintf("[kmalloc] invalid alignment given: %zu\n", alignment);
+    return NULL;
+  }
+
   if (size == 0) {
     return NULL;
   } else if (size > CHUNK_MAX_SIZE) {
@@ -109,8 +118,7 @@ void *kmalloc(size_t size) {
   lock(kheap_lock);
 
   // otherwise proceed with the normal allocation
-  size_t aligned = next_pow2(max(size, CHUNK_MIN_SIZE));
-  // kprintf("kmalloc | %u bytes\n", aligned);
+  size = align(max(size, CHUNK_MIN_SIZE), CHUNK_SIZE_ALIGN);
 
   // first search for the best fitting chunk in the list
   // of available chunks. If one is not found, we will
@@ -123,13 +131,18 @@ void *kmalloc(size_t size) {
     chunk_t *curr = kheap->chunks;
     chunk_t *last = NULL;
     while (curr) {
-      size_t chunk_size = 1 << curr->size;
-      if (chunk_size > aligned) {
-        if (!chunk || chunk_size < chunk->size) {
+      if (!is_chunk_aligned(curr, alignment)) {
+        last = curr;
+        curr = curr->next;
+        continue;
+      }
+
+      if (curr->size > size) {
+        if (!chunk || (curr->size < chunk->size)) {
           chunk = curr;
           chunk_last = last;
         }
-      } else if (chunk_size == aligned) {
+      } else if (curr->size == size) {
         // if current chunk is exact match use it right away
         chunk = curr;
         chunk_last = last;
@@ -141,7 +154,7 @@ void *kmalloc(size_t size) {
     }
 
     if (chunk) {
-      // kprintf("[kmalloc] used chunk found (size %d)\n", 1 << chunk->size);
+      // kprintf("[kmalloc] used chunk found (size %d)\n", chunk->size);
       // if a chunk was found remove it from the list
       if (chunk_last) {
         chunk_last->next = chunk->next;
@@ -149,21 +162,40 @@ void *kmalloc(size_t size) {
         kheap->chunks = chunk->next;
       }
       chunk->next = NULL;
-      // return pointer to user data
 
-      kheap->used += aligned + sizeof(chunk_t);
+      // return pointer to user data
+      kheap->used += size + sizeof(chunk_t);
       unlock(kheap_lock);
-      return (void *) chunk + sizeof(chunk_t);
+      return (void *) chunk_mem_start(chunk);
     }
   }
 
-  // kprintf("[kmalloc] creating new chunk\n");
 
+  // kprintf("[kmalloc] creating new chunk\n");
   // if we get this far it means that no existing chunk could
   // fit the requested size therefore a new chunk must be made.
+
+  // fix alignment of chunk memory
   uintptr_t chunk_start = next_chunk_start();
-  // kprintf("[kmalloc] chunk_start: %p\n", chunk_start);
-  uintptr_t chunk_end = chunk_start + sizeof(chunk_t) + aligned;
+  // uintptr_t mem_start = chunk_mem_start(chunk_start);
+  uintptr_t mem_start = chunk_start + sizeof(chunk_t);
+  uintptr_t mem_aligned = align(mem_start, alignment);
+  uintptr_t chunk_aligned = mem_aligned - sizeof(chunk_t);
+  if (mem_start != mem_aligned) {
+    // kprintf("[kmalloc] address not aligned to %d byte boundary\n", alignment);
+    // kprintf("[kmalloc] before: %p (header: %p)\n", mem_start, chunk_start);
+    // kprintf("[kmalloc] after: %p (header: %p)\n", mem_aligned, chunk_aligned);
+
+    size_t gap_size = chunk_aligned - chunk_start;
+    // kprintf("[kmalloc] gap size: %zu\n", gap_size);
+    if (gap_size < CHUNK_MIN_SIZE + sizeof(chunk_t)) {
+      // kprintf("[kmalloc] not enough space in alignment gap\n");
+    } else {
+      // kprintf("[kmalloc] create chunk in alignment gap\n");
+    }
+  }
+
+  uintptr_t chunk_end = mem_aligned + size;
   if (chunk_end > kheap->end_addr) {
     // if we've run out of unclaimed heap space, there is still
     // two more things we can do before signalling an error. First
@@ -174,27 +206,34 @@ void *kmalloc(size_t size) {
     panic("[kmalloc] panic - no available memory\n");
   }
 
-  chunk_t *chunk = (chunk_t *) chunk_start;
+  chunk_t *chunk = (chunk_t *) chunk_aligned;
   chunk->magic = CHUNK_MAGIC;
-  chunk->size = log2(aligned);
+  chunk->size = size & 0xFFFF;
   chunk->free = false;
+  chunk->prev_size = 0;
+  chunk->prev_free = false;
   if (kheap->last_chunk) {
     chunk_t *last = kheap->last_chunk;
-    chunk->last.size = last->size;
-    chunk->last.free = last->free;
-  } else {
-    chunk->last.size = 0;
-    chunk->last.free = false;
+    chunk->prev_size = last->size;
+    chunk->prev_free = last->free;
   }
 
-  // kprintf("[kmalloc] new chunk header at %p\n", chunk_start);
-  // kprintf("[kmalloc] new chunk data at %p\n", chunk_start + sizeof(chunk_t));
+  // kprintf("[kmalloc] new chunk header at %p\n", chunk_mem_start);
+  // kprintf("[kmalloc] new chunk data at %p\n", chunk_mem_start + sizeof(chunk_t));
 
-  kheap->used += aligned + sizeof(chunk_t);
+  // kheap->used += chunk_start
   kheap->max_addr = chunk_end;
   kheap->last_chunk = chunk;
   unlock(kheap_lock);
-  return (void *) chunk_start + sizeof(chunk_t);
+  return (void *) chunk_mem_start(chunk);
+}
+
+void *kmalloc(size_t size) {
+  return __kmalloc(size, CHUNK_MIN_ALIGN, 0);
+}
+
+void *kmalloca(size_t size, size_t alignment) {
+  return __kmalloc(size, alignment, 0);
 }
 
 // ----- kfree -----
