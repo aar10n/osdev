@@ -10,13 +10,17 @@
 
 #define PCIE_MMIO_SIZE 0x10000000 // 256 MiB
 
+#define ALLOC_MSI  0x1
+#define ALLOC_MSIX 0x2
+
 typedef struct pcie_bar {
   uint8_t num : 3;       // bar number
   uint8_t kind : 1;      // bar kind
   uint8_t type : 2;      // memory type
   uint8_t prefetch : 1;  // prefetchable
   uint8_t : 1;           // reserved
-  uint64_t addr;         // base address
+  uint64_t phys_addr;    // base physical address
+  uint64_t virt_addr;    // virtual address
   uint64_t size;         // memory size
   struct pcie_bar *next; // next bar
 } pcie_bar_t;
@@ -46,9 +50,9 @@ typedef struct pcie_device {
 
   pcie_bar_t *bars;
   pcie_cap_t *caps;
+  uintptr_t base_addr;
   struct pcie_device *next;
 } pcie_device_t;
-
 
 typedef struct pcie_list_head {
   uint8_t class_code;
@@ -157,10 +161,49 @@ typedef struct {
 } pcie_header_bridge_t;
 
 
+// PCI Capability Structs
+
+typedef struct {
+  // dword 0
+  uint32_t id : 8;
+  uint32_t next_ofst : 8;
+  uint32_t tbl_sz: 11;
+  uint32_t : 3;
+  uint32_t fn_mask : 1;
+  uint32_t en : 1;
+  // dword 1
+  uint32_t bir : 3;
+  uint32_t tbl_ofst : 29;
+  // dword 2
+  uint32_t pb_bir : 3;
+  uint32_t pb_ofst : 29;
+} pcie_cap_msix_t;
+
+// typedef struct {
+//   // dword 0
+//   uint32_t id : 8;
+//   uint32_t next_ofst : 8;
+//   uint32_t
+// } pcie_cap_msi_t;
+
+typedef volatile struct {
+  // dowrd 0 & 1
+  uint64_t msg_addr;
+  // dowrd 2
+  uint32_t msg_data;   // destination vector
+  // dword 3
+  uint32_t masked : 1;
+  uint32_t : 31;
+} pcie_msix_entry_t;
+
 void pcie_init();
 void pcie_discover();
 pcie_device_t *pcie_locate_device(uint8_t class_code, uint8_t subclass, int prog_if);
-pcie_bar_t *pcie_get_bar(pcie_device_t *device, int bar);
+pcie_bar_t *pcie_get_bar(pcie_device_t *device, int bar_num);
+void *pcie_get_cap(pcie_device_t *device, int cap_id);
+
+void pcie_enable_msi_vector(pcie_device_t *device, uint8_t index, uint8_t vector);
+void pcie_disable_msi_vector(pcie_device_t *device, uint8_t index);
 
 void pcie_print_device(pcie_device_t *device);
 

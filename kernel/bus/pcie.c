@@ -19,6 +19,10 @@
 #define is_io_bar_valid(b) (((b) & 0xFFFFFFFC) != 0)
 #define is_bar_valid(bar) (((bar) & 1) == 0 ? is_mem_bar_valid(bar) : is_io_bar_valid(bar))
 
+#define msi_msg_addr(cpu) (0xFEE00000 | (cpu << 12))
+#define msi_msg_data(vec, e, d) \
+  (((vec) & 0xFF) | ((e) == 1 ? 0 : (1 << 15)) | ((d) == 1 ? 0 : (1 << 14)))
+
 
 static pcie_list_head_t *devices[16] = {};
 
@@ -45,6 +49,7 @@ pcie_bar_t *get_device_bars(uint32_t *bar_ptr, int bar_count) {
 
       pcie_bar_t *bar = kmalloc(sizeof(pcie_bar_t));
       bar->num = i;
+      bar->virt_addr = 0;
       if ((v32 & 1) == 0) {
         // memory bar
         bar->kind = 0;
@@ -53,7 +58,7 @@ pcie_bar_t *get_device_bars(uint32_t *bar_ptr, int bar_count) {
         if (bar->type == 0) {
           // 32-bit bar
           *b32 = UINT32_MAX;
-          bar->addr = v32 & ~0xF;
+          bar->phys_addr = v32 & ~0xF;
           bar->size = ~(*b32 & ~0xF) + 1;
           bar->next = NULL;
           *b32 = v32;
@@ -63,7 +68,7 @@ pcie_bar_t *get_device_bars(uint32_t *bar_ptr, int bar_count) {
           uint64_t v64 = *b64;
 
           *b64 = UINT64_MAX;
-          bar->addr = v64 & ~0xF;
+          bar->phys_addr = v64 & ~0xF;
           bar->size = ~(*b64 & ~0xF) + 1;
           *b64 = v64;
 
@@ -76,7 +81,7 @@ pcie_bar_t *get_device_bars(uint32_t *bar_ptr, int bar_count) {
         bar->prefetch = 0;
 
         *b32 = UINT32_MAX;
-        bar->addr = v32 & ~0x3;
+        bar->phys_addr = v32 & ~0x3;
         bar->size = ~(*b32 & ~0x3) + 1;
         *b32 = v32;
       }
@@ -92,15 +97,17 @@ pcie_bar_t *get_device_bars(uint32_t *bar_ptr, int bar_count) {
   return first;
 }
 
-pcie_cap_t *get_device_caps(uint16_t *cap_ptr) {
+pcie_cap_t *get_device_caps(uintptr_t config_base, uint16_t cap_offset) {
+
   pcie_cap_t *first = NULL;
   pcie_cap_t *caps = NULL;
 
-  uint16_t *ptr = cap_ptr;
-  uint16_t *ptr_max = align_ptr(cap_ptr, 4096);
+  uint16_t *ptr = (void *)(config_base + cap_offset);
+  uint16_t *ptr_max = align_ptr(ptr, 4096);
   while (ptr < ptr_max) {
     uint8_t id = *ptr & 0xFF;
     uint8_t next = *ptr >> 8;
+
     if (next == 0 || id > 0x15) {
       break;
     } else if (id == 0) {
@@ -109,7 +116,7 @@ pcie_cap_t *get_device_caps(uint16_t *cap_ptr) {
 
     pcie_cap_t *cap = kmalloc(sizeof(pcie_cap_t));
     cap->id = id;
-    cap->offset = ptr - cap_ptr;
+    cap->offset = (uintptr_t) ptr - config_base;
     cap->next = NULL;
 
     if (caps != NULL) {
@@ -191,7 +198,8 @@ void pcie_discover() {
       dev->subsystem_vendor = config->subsys_vendor_id;
 
       dev->bars = get_device_bars(config->bars, 6);
-      dev->caps = get_device_caps(offset_ptr(header, config->cap_ptr));
+      dev->caps = get_device_caps((uintptr_t) header, config->cap_ptr);
+      dev->base_addr = (uintptr_t) header;
       dev->next = NULL;
 
       add_device(dev);
@@ -228,14 +236,97 @@ pcie_device_t *pcie_locate_device(uint8_t class_code, uint8_t subclass, int prog
   }
 }
 
-pcie_bar_t *pcie_get_bar(pcie_device_t *device, int bar) {
-  kassert(bar >= 0 && bar < 6);
+pcie_bar_t *pcie_get_bar(pcie_device_t *device, int bar_num) {
+  kassert(bar_num >= 0 && bar_num < 6);
 
-  pcie_bar_t *b = device->bars;
-  while (b && b->num != bar) {
-    b = b->next;
+  pcie_bar_t *bar = device->bars;
+  while (bar && bar->num != bar_num) {
+    bar = bar->next;
   }
-  return b;
+  return bar;
+}
+
+void *pcie_get_cap(pcie_device_t *device, int cap_id) {
+  pcie_cap_t *pci_cap = device->caps;
+  while (pci_cap != NULL) {
+    if (pci_cap->id == cap_id) {
+      break;
+    }
+    pci_cap = pci_cap->next;
+  }
+  if (pci_cap == NULL) {
+    return NULL;
+  }
+  return (void *)(device->base_addr + pci_cap->offset);
+}
+
+//
+
+// void pcie_enable_msi_vector(pcie_device_t *device, uint8_t index, uint8_t vector) {
+//   pcie_cap_msix_t *msi_cap = pcie_get_cap(device, PCI_CAP_MSI);
+//   if (msi_cap == NULL) {
+//     panic("[pcie] could not locate msi structure");
+//   }
+//
+//   uint16_t tbl_size = msi_cap->tbl_sz + 1;
+//   kassert(index < tbl_size);
+//
+//   pcie_bar_t *bar = pcie_get_bar(device, msix_cap->bir);
+//   if (bar->virt_addr == 0) {
+//     panic("[pcie] msix memory space not mapped");
+//   }
+//
+//   pcie_msix_entry_t *table = (void *)(bar->virt_addr + (msix_cap->tbl_ofst << 3));
+//   pcie_msix_entry_t *entry = &table[index];
+//   entry->msg_addr = msi_msg_addr(PERCPU->id);
+//   entry->msg_data = msi_msg_data(vector, 0, 0);
+//   entry->masked = 0;
+//
+//   msix_cap->en = 1;
+// }
+
+void pcie_enable_msi_vector(pcie_device_t *device, uint8_t index, uint8_t vector) {
+  pcie_cap_msix_t *msix_cap = pcie_get_cap(device, PCI_CAP_MSIX);
+  if (msix_cap == NULL) {
+    panic("[pcie] could not locate msix structure");
+  }
+
+  uint16_t tbl_size = msix_cap->tbl_sz + 1;
+  kassert(index < tbl_size);
+
+  pcie_bar_t *bar = pcie_get_bar(device, msix_cap->bir);
+  if (bar->virt_addr == 0) {
+    panic("[pcie] msix memory space not mapped");
+  }
+
+  pcie_msix_entry_t *table = (void *)(bar->virt_addr + (msix_cap->tbl_ofst << 3));
+  pcie_msix_entry_t *entry = &table[index];
+
+  kprintf("[pcie] cpu id = %d\n", PERCPU->id);
+
+  entry->msg_addr = msi_msg_addr(PERCPU->id);
+  entry->msg_data = msi_msg_data(vector, 0, 0);
+  entry->masked = 0;
+
+  msix_cap->en = 1;
+}
+
+void pcie_disable_msi_vector(pcie_device_t *device, uint8_t index) {
+  pcie_cap_msix_t *msix_cap = pcie_get_cap(device, PCI_CAP_MSIX);
+  if (msix_cap == NULL) {
+    panic("[pcie] could not locate msix structure");
+  }
+
+  uint16_t tbl_size = msix_cap->tbl_sz + 1;
+  kassert(index < tbl_size);
+
+  pcie_bar_t *bar = pcie_get_bar(device, msix_cap->bir);
+  if (bar->virt_addr == 0) {
+    panic("[pcie] msix memory space not mapped");
+  }
+
+  pcie_msix_entry_t *table = (void *)(bar->virt_addr + (msix_cap->tbl_ofst << 3));
+  table[index].masked = 0;
 }
 
 //
@@ -261,10 +352,10 @@ void pcie_print_device(pcie_device_t *device) {
 
     if (bar->kind == 0) {
       kprintf("    BAR%d: %s bit %smemory at %p [%p]\n",
-              bar->num, mem_type, prefetch, bar->addr, bar->addr + bar->size - 1);
+              bar->num, mem_type, prefetch, bar->phys_addr, bar->phys_addr + bar->size - 1);
     } else {
       kprintf("    BAR%d: I/O at %p [%p]\n",
-              bar->num, bar->addr, bar->addr + bar->size - 1);
+              bar->num, bar->phys_addr, bar->phys_addr + bar->size - 1);
     }
 
     bar = bar->next;
