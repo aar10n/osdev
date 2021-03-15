@@ -85,7 +85,12 @@ typedef struct packed {
 } regs_t;
 static_assert(sizeof(regs_t) == (sizeof(uint64_t) * 9));
 
-typedef void (*idt_handler_t)(regs_t *regs);
+typedef void (*idt_function_t)(uint8_t, void *);
+
+typedef struct {
+  idt_function_t fn;
+  void *data;
+} idt_handler_t;
 
 typedef struct packed {
   uint16_t limit;
@@ -101,7 +106,7 @@ typedef struct idt {
 
 void setup_idt();
 void idt_set_gate(uint8_t vector, idt_gate_t gate);
-void idt_hook(uint8_t vector, idt_handler_t handler);
-void idt_unhook(uint8_t vector);
+void idt_hook(uint8_t vector, idt_function_t fn, void *data);
+void *idt_unhook(uint8_t vector);
 
 #endif // KERNEL_CPU_IDT_H
