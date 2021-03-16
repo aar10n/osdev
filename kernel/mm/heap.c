@@ -65,7 +65,7 @@ static inline chunk_t *get_next_chunk(chunk_t *chunk) {
     return NULL;
   }
 
-  size_t size = chunk->magic == HOLE_MAGIC ? 0 : 1 << chunk->size;
+  size_t size = chunk->magic == HOLE_MAGIC ? 0 : chunk->size;
   void *next_ptr = (void *) chunk + size + (sizeof(chunk_t) * 2);
   chunk_t *next_chunk = get_chunk(next_ptr);
   if (is_valid_ptr(next_ptr)) {
@@ -170,7 +170,6 @@ void *__kmalloc(size_t size, size_t alignment, int flags) {
     }
   }
 
-
   // kprintf("[kmalloc] creating new chunk\n");
   // if we get this far it means that no existing chunk could
   // fit the requested size therefore a new chunk must be made.
@@ -210,12 +209,11 @@ void *__kmalloc(size_t size, size_t alignment, int flags) {
   chunk->magic = CHUNK_MAGIC;
   chunk->size = size & 0xFFFF;
   chunk->free = false;
-  chunk->prev_size = 0;
-  chunk->prev_free = false;
   if (kheap->last_chunk) {
     chunk_t *last = kheap->last_chunk;
     chunk->prev_size = last->size;
     chunk->prev_free = last->free;
+    last->next = chunk;
   }
 
   // kprintf("[kmalloc] new chunk header at %p\n", chunk_mem_start);
@@ -260,7 +258,7 @@ void kfree(void *ptr) {
     next_chunk->free = true;
   }
 
-  kheap->used -= (1 << chunk->size) + sizeof(chunk_t);
+  kheap->used -= (chunk->size) + sizeof(chunk_t);
   kheap->chunks = chunk;
   unlock(kheap_lock);
 }
@@ -311,7 +309,7 @@ void *krealloc(void *ptr, size_t size) {
   lock(kheap_lock);
   size_t aligned = next_pow2(max(size, CHUNK_MIN_SIZE));
   chunk_t *chunk = get_chunk(ptr);
-  size_t old_size = 1 << chunk->size;
+  size_t old_size = chunk->size;
 
   // kprintf("krealloc\n");
   // kprintf("ptr: %p\n", ptr);
@@ -351,7 +349,7 @@ void *krealloc(void *ptr, size_t size) {
   // one is available, and if the current size plus the next
   // chunks size would be enough to meet the requested size.
   chunk_t *next_chunk = get_next_chunk(chunk);
-  size_t next_size = next_chunk ? 1 << next_chunk->size : 0;
+  size_t next_size = next_chunk ? next_chunk->size : 0;
   if (next_chunk && next_chunk->free && old_size + next_size >= aligned) {
     // kprintf("[krealloc] expanding into next chunk\n");
 

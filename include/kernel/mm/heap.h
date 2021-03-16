@@ -47,4 +47,9 @@ void kfree(void *ptr);
 void *kcalloc(size_t nmemb, size_t size) __malloc_like;
 void *krealloc(void *ptr, size_t size) __malloc_like;
 
+// dirty hack until we have a better allocator for smaller
+// chunks of identity mapped memory
+#define heap_ptr_phys(ptr) ((uintptr_t)(ptr) - KERNEL_OFFSET)
+#define heap_ptr_virt(ptr) ((uintptr_t)(ptr) + KERNEL_OFFSET)
+
 #endif
