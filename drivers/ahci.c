@@ -31,7 +31,7 @@ typedef enum {
 ahci_controller_t *ahci_controller;
 
 
-void interrupt_handler() {
+void interrupt_handler(uint8_t vector, void *data) {
   hba_reg_mem_t *mem = ahci_controller->mem;
   // find ports that needs servicing
   while (mem->int_status != 0) {
@@ -315,7 +315,7 @@ void ahci_init() {
   hba_mem->global_host_ctrl |= HBA_CTRL_INT_ENABLE;
 
   ioapic_set_irq(0, pci->interrupt_line, VECTOR_AHCI_IRQ);
-  idt_hook(VECTOR_AHCI_IRQ, interrupt_handler);
+  idt_hook(VECTOR_AHCI_IRQ, interrupt_handler, NULL);
 
   ahci_discover(controller);
 

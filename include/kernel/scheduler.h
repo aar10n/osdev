@@ -45,7 +45,9 @@ process_t *sched_get_process(uint64_t pid);
 void sched_enqueue(process_t *process);
 void sched_schedule();
 void sched_block();
+void sched_unblock(process_t *process);
 void sched_sleep(uint64_t ns);
+void sched_wakeup(process_t *process);
 void sched_yield();
 void sched_terminate();
 

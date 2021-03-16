@@ -127,7 +127,7 @@ void sched_schedule() {
     }
   }
 
-  if (curr && curr->status == PROC_READY) {
+  if (curr && (curr->status == PROC_READY || curr->status == PROC_RUNNING)) {
     if (process) {
       rq = SCHEDULER->queues[curr->priority];
       rq_enqueue(rq, curr);
@@ -181,17 +181,6 @@ void sched_preempt(process_t *process) {
   }
 }
 
-void sched_unblock(process_t *process) {
-  kprintf("[sched] pid %llu: unblock\n", process->pid);
-  rq_remove(SCHEDULER->blocked, process);
-  sched_preempt(process);
-}
-
-void sched_wakeup(process_t *process) {
-  kprintf("[sched] pid %llu: wakeup\n", process->pid);
-  sched_preempt(process);
-}
-
 //
 // Scheduler API
 //
@@ -237,6 +226,12 @@ void sched_block() {
   sched_schedule();
 }
 
+void sched_unblock(process_t *process) {
+  kprintf("[sched] pid %llu: unblock\n", process->pid);
+  rq_remove(SCHEDULER->blocked, process);
+  sched_preempt(process);
+}
+
 void sched_sleep(uint64_t ns) {
   kprintf("[sched] pid %llu: sleep\n", current->pid);
   process_t *curr = current;
@@ -246,6 +241,11 @@ void sched_sleep(uint64_t ns) {
 
   create_timer(timer_now() + ns, (void *) sched_wakeup, curr);
   sched_schedule();
+}
+
+void sched_wakeup(process_t *process) {
+  kprintf("[sched] pid %llu: wakeup\n", process->pid);
+  sched_preempt(process);
 }
 
 void sched_yield() {
