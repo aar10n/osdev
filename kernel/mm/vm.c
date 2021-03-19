@@ -44,7 +44,7 @@ static inline uint16_t get_index(uintptr_t virt_addr, uint16_t offset, uint16_t 
 static inline uint16_t fix_flags(uint16_t flags, uint16_t root, bool cow) {
   if (root == U_ENTRY) {
     if (cow) {
-      kprintf("setting page to read only\n");
+      // kprintf("setting page to read only\n");
       flags &= ~(PE_WRITE);
     }
     return flags | PE_USER;
@@ -492,7 +492,7 @@ void *vm_map_page_search(page_t *page, vm_search_t search_type, uintptr_t vaddr)
   if (!success) {
     panic("[vm] no free address space");
   }
-  kprintf("[vm] address: %p\n", address);
+  // kprintf("[vm] address: %p\n", address);
   return vm_map_page_vaddr(address, page);
 }
 

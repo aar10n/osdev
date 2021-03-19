@@ -8,6 +8,7 @@
 #include <base.h>
 #include <process.h>
 #include <lock.h>
+#include <cpu/idt.h>
 
 // Scheduling Classes
 // ------------------
@@ -32,11 +33,20 @@ typedef struct {
   spinlock_t lock;
 } rqueue_t;
 
+// external singly linked process list that
+// doesn't use the pointers on the process
+// struct itself
+typedef struct proc_list {
+  process_t *proc;
+  struct proc_list *next;
+} proc_list_t;
+
 typedef struct scheduler {
   uint64_t cpu_id;
   process_t *idle;
   rqueue_t *queues[SCHED_QUEUES];
   rqueue_t *blocked;
+  proc_list_t *interrupts[IDT_GATES];
 } scheduler_t;
 
 
@@ -45,6 +55,7 @@ process_t *sched_get_process(uint64_t pid);
 void sched_enqueue(process_t *process);
 void sched_schedule();
 void sched_block();
+void sched_block_irq(uint8_t vector);
 void sched_unblock(process_t *process);
 void sched_sleep(uint64_t ns);
 void sched_wakeup(process_t *process);

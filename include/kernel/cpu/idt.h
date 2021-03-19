@@ -103,7 +103,6 @@ typedef struct idt {
   idt_desc_t desc;
 } idt_t;
 
-
 void setup_idt();
 void idt_set_gate(uint8_t vector, idt_gate_t gate);
 void idt_hook(uint8_t vector, idt_function_t fn, void *data);

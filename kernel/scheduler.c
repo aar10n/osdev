@@ -88,14 +88,22 @@ process_t *rq_dequeue(rqueue_t *rq) {
 void rq_remove(rqueue_t *rq, process_t *process) {
   lock(rq->lock);
   if (process == rq->front) {
-    process->next->prev = NULL;
+    if (process->next) {
+      process->next->prev = NULL;
+    }
     rq->front = process->next;
   } else if (process == rq->back) {
-    process->prev->next = NULL;
+    if (process->prev) {
+      process->prev->next = NULL;
+    }
     rq->back = process->prev;
   } else {
-    process->next->prev = process->prev;
-    process->prev->next = process->next;
+    if (process->next) {
+      process->next->prev = process->next;
+    }
+    if (process->prev) {
+      process->prev->next = process->next;
+    }
   }
   process->next = NULL;
   process->prev = NULL;
@@ -149,7 +157,8 @@ void sched_schedule() {
   switch_context(process, process->vm);
 }
 
-void sched_tick() {
+// called by the apic timer periodic interrupt
+__used void sched_tick() {
   kprintf("[sched] tick\n");
   // whole time slice was used
   process_t *curr = current;
@@ -161,6 +170,31 @@ void sched_tick() {
   sched_schedule();
 }
 
+// called whenever a 'hookable' interrupt occurs
+void sched_irq_hook(uint8_t vector) {
+  // uint64_t flags = cli_save();
+  proc_list_t *list = SCHEDULER->interrupts[vector];
+  if (list == NULL) {
+    return;
+  }
+
+  while (list) {
+    proc_list_t *next = list->next;
+    process_t *process = list->proc;
+
+    rqueue_t *rq = SCHEDULER->queues[process->priority];
+    rq_remove(SCHEDULER->blocked, process);
+    rq_enqueue(rq, process);
+
+    kfree(list);
+    list = next;
+  }
+
+  // sti_restore(flags);
+  sched_schedule();
+}
+
+
 noreturn void sched_idle() {
   while (true) {
     cpu_hlt();
@@ -168,7 +202,6 @@ noreturn void sched_idle() {
 }
 
 void sched_preempt(process_t *process) {
-  // only part of time slice was used
   process->status = PROC_READY;
   process_t *curr = current;
   rqueue_t *rq = SCHEDULER->queues[process->priority];
@@ -192,6 +225,7 @@ void sched_init() {
   sched->idle = kthread_create_idle(sched_idle);
   sched->idle->priority = 255;
   sched->blocked = rq_create();
+  memset(&sched->interrupts, 0, sizeof(proc_list_t *) * IDT_GATES);
   for (int i = 0; i < SCHED_QUEUES; i++) {
     sched->queues[i] = rq_create();
   }
@@ -223,6 +257,29 @@ void sched_block() {
   curr->status = PROC_BLOCKED;
   curr->stats.block_count++;
   rq_enqueue(SCHEDULER->blocked, curr);
+  sched_schedule();
+}
+
+void sched_block_irq(uint8_t vector) {
+  kprintf("[sched] pid %llu: block until irq %d\n", current->pid, vector);
+  process_t *curr = current;
+  curr->status = PROC_BLOCKED;
+  curr->stats.block_count++;
+  rq_enqueue(SCHEDULER->blocked, curr);
+
+  proc_list_t *new_item = kmalloc(sizeof(proc_list_t));
+  new_item->proc = curr;
+  new_item->next = NULL;
+
+  proc_list_t *proc_list = SCHEDULER->interrupts[vector];
+  if (proc_list == NULL) {
+    SCHEDULER->interrupts[vector] = new_item;
+  } else {
+    while (proc_list->next != NULL) {
+      proc_list = proc_list->next;
+    }
+    proc_list->next = new_item;
+  }
   sched_schedule();
 }
 

@@ -32,9 +32,9 @@ static xhci_dev_t *xhci;
 //
 
 void callback(uint8_t vector, void *data) {
-  xhci_dev_t *dev = data;
+  // xhci_dev_t *dev = data;
   kprintf(">>>>>> CALLBACK <<<<<<\n");
-  dev->op->usbsts.evt_int = 1;
+  // dev->op->usbsts.evt_int = 1;
 }
 
 //
@@ -145,12 +145,33 @@ void init_ports(xhci_dev_t *dev) {
   }
 }
 
+noreturn void xhci_event_loop(xhci_dev_t *dev) {
+  xhci_cap_regs_t *cap = dev->cap;
+  xhci_op_regs_t *op = dev->op;
+  xhci_rt_regs_t *rt = dev->rt;
+  xhci_db_reg_t *db = dev->db;
+  xhci_port_regs_t *ports = dev->ports;
 
+  while (true) {
+    sched_block_irq(0x32);
+
+    kprintf("[xhci] >>>>> an event occurred\n");
+    op->usbsts.evt_int = 1;
+    kprintf("[xhci] event acknowledged\n");
+  }
+}
 
 //
 
 void xhci_init() {
+  pid_t xhci_pid = process_fork(false);
+  if (getpid() != xhci_pid) {
+    return;
+  }
+
   cli();
+
+  kprintf("[xhci] pid: %d\n", getpid());
 
   pcie_device_t *device = pcie_locate_device(
     PCI_SERIAL_BUS_CONTROLLER,
@@ -266,11 +287,9 @@ void xhci_init() {
   // cmd_ring[0] = *((xhci_trb_t *) &testcmd);
   // db[0].target = 0;
 
-  kprintf("[xhci] sleeping for 2 seconds\n");
-  sched_sleep(2e+9);
-
-  sti();
-
   xhci->protocols = get_protocols(xhci);
   init_ports(xhci);
+
+  sti();
+  xhci_event_loop(xhci);
 }

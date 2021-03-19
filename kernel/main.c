@@ -34,6 +34,7 @@
 #include <fs/utils.h>
 
 #include <bus/pcie.h>
+#include <usb/xhci.h>
 
 boot_info_t *boot_info;
 
@@ -44,18 +45,34 @@ boot_info_t *boot_info;
 noreturn void launch() {
   // sti();
   cli();
+
+  pid_t root = getpid();
   kprintf("[pid %d] launch\n", ID);
   fs_init();
 
   pcie_init();
   pcie_discover();
 
+  // sti();
+
+  xhci_init();
+  // pid_t xhci_pid = process_fork(false);
+  // if (getpid() == xhci_pid) {
+  //
+  // }
+
+  sti();
+
   kprintf("[pid %d] done!\n", current->pid);
+
   while (true) {
-    cpu_pause();
+    if (getpid() == root) {
+      cpu_pause();
+    } else {
+      sched_yield();
+    }
   }
 }
-
 
 //
 // Kernel entry
@@ -73,6 +90,7 @@ __used void kmain(boot_info_t *info) {
   setup_idt();
 
   kheap_init();
+
   mm_init();
   vm_init();
 
@@ -91,7 +109,7 @@ __used void kmain(boot_info_t *info) {
   timer_init();
   sched_init();
   sched_enqueue(root);
-  sched_print_stats();
+  // sched_print_stats();
   sched_schedule();
 }
 

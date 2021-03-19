@@ -10,6 +10,7 @@
 #include <device/apic.h>
 
 extern uintptr_t idt_stubs;
+extern void sched_irq_hook(uint8_t vector);
 
 //
 
@@ -19,6 +20,7 @@ __used void irq_handler(uint8_t vector, regs_t *regs) {
     handler.fn(vector, handler.data);
   }
   apic_send_eoi();
+  sched_irq_hook(vector);
 }
 
 void setup_idt() {
@@ -53,8 +55,8 @@ void *idt_unhook(uint8_t vector) {
   if (IDT_HANDLERS[vector].fn == NULL) {
     kprintf("[idt] no handler to unhook on vector %d\n", vector);
   }
-  void *data = IDT_HANDLERS[vector].data;
+  void *ptr = IDT_HANDLERS[vector].data;
   IDT_HANDLERS[vector].fn = NULL;
   IDT_HANDLERS[vector].data = NULL;
-  return data;
+  return ptr;
 }
