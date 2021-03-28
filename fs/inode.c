@@ -7,10 +7,10 @@
 #include <mm/heap.h>
 #include <process.h>
 
-#define UID (current->uid)
+#define UID (current_process->uid)
 // #define UID (PERCPU->uid)
 
-#define GID (current->gid)
+#define GID (current_process->gid)
 // #define GID (PERCPU->gid)
 
 inode_table_t *inodes;
@@ -23,9 +23,9 @@ inode_table_t *create_inode_table() {
 }
 
 inode_t *inode_get(fs_node_t *node) {
-  lock(inodes->lock);
+  spin_lock(&inodes->lock);
   rb_node_t *rb_node = rb_tree_find(inodes->inodes, node->inode);
-  unlock(inodes->lock);
+  spin_unlock(&inodes->lock);
 
   if (rb_node) {
     return rb_node->data;
@@ -35,9 +35,9 @@ inode_t *inode_get(fs_node_t *node) {
   // to load it from the nodes backing filesystem
   inode_t *inode = node->fs->impl->locate(node->fs, node->inode);
   if (inode) {
-    lock(inodes->lock);
+    spin_lock(&inodes->lock);
     rb_tree_insert(inodes->inodes, inode->ino, inode);
-    unlock(inodes->lock);
+    spin_unlock(&inodes->lock);
   }
   return inode;
 }
@@ -60,9 +60,9 @@ inode_t *inode_create(fs_t *fs, mode_t mode) {
 
   spin_init(&inode->lock);
 
-  lock(inodes->lock);
+  spin_lock(&inodes->lock);
   rb_tree_insert(inodes->inodes, inode->ino, inode);
-  unlock(inodes->lock);
+  spin_unlock(&inodes->lock);
 
   return inode;
 }
@@ -73,8 +73,8 @@ int inode_delete(fs_t *fs, inode_t *inode) {
     return -1;
   }
 
-  lock(inodes->lock);
+  spin_lock(&inodes->lock);
   rb_tree_delete(inodes->inodes, inode->ino);
-  unlock(inodes->lock);
+  spin_unlock(&inodes->lock);
   return 0;
 }

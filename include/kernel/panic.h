@@ -18,6 +18,8 @@
   if (!(expression)) \
     panic("assertion failed: " msg ", file %s, line %d\n", ##args, __FILE__, __LINE__);
 
+#define unreachable kassertf(false, "unreachable")
+
 noreturn void panic(const char *fmt, ...);
 
 #endif

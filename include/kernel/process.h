@@ -20,6 +20,7 @@ typedef enum {
 } proc_status_t;
 
 typedef struct vm vm_t;
+typedef struct thread thread_t;
 
 typedef struct {
   uint64_t rax;    // 0x00
@@ -38,40 +39,32 @@ typedef struct {
 } context_t;
 
 typedef struct process {
-  pid_t pid;
-  pid_t ppid;
-  context_t *ctx;
-  uint8_t cpu_id;
-  uint8_t policy;
-  uint8_t priority;
-  proc_status_t status;
-  uid_t uid;
-  gid_t gid;
-  fs_node_t *pwd;
-  file_table_t *files;
-  vm_t *vm;
-  struct {
-    clock_t last_run_start;
-    clock_t last_run_end;
-    clock_t run_time;
-    clock_t idle_time;
-    clock_t sleep_time;
-    uint64_t run_count;
-    uint64_t block_count;
-    uint64_t sleep_count;
-    uint64_t yield_count;
-  } stats;
+  pid_t pid;           // process id
+  pid_t ppid;          // parent pid
+  vm_t *vm;            // virtual memory space
+
+  uid_t uid;           // user id
+  gid_t gid;           // group id
+  fs_node_t *pwd;      // process working directory
+  file_table_t *files; // open file table
+
+  thread_t *main;      // main thread (first)
+  thread_t *threads;   // pointer to thread group
 
   struct process *next;
   struct process *prev;
 } process_t;
 
+process_t *create_root_process(void (function)());
+pid_t fork();
+
 process_t *kthread_create(void (*func)());
 process_t *kthread_create_idle(void (*func)());
-pid_t process_fork(bool user);
+pid_t process_fork(bool process_user);
 
 pid_t getpid();
 pid_t getppid();
+id_t gettid();
 
 void print_debug_process(process_t *process);
 

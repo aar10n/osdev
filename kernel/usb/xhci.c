@@ -153,7 +153,7 @@ noreturn void xhci_event_loop(xhci_dev_t *dev) {
   xhci_port_regs_t *ports = dev->ports;
 
   while (true) {
-    sched_block_irq(0x32);
+    // sched_block_irq(0x32);
 
     kprintf("[xhci] >>>>> an event occurred\n");
     op->usbsts.evt_int = 1;
@@ -164,7 +164,7 @@ noreturn void xhci_event_loop(xhci_dev_t *dev) {
 //
 
 void xhci_init() {
-  pid_t xhci_pid = process_fork(false);
+  pid_t xhci_pid = fork(false);
   if (getpid() != xhci_pid) {
     return;
   }

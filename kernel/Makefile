@@ -5,10 +5,11 @@
 CFLAGS-kernel = $(CFLAGS) -fstrict-volatile-bitfields
 
 # kernel
-kernel += entry.asm sched.asm smpboot.asm \
-	syscall.asm user.asm acpi.c loader.c main.c \
+kernel += entry.asm sched.asm smpboot.asm syscall.asm \
+	thread.asm user.asm acpi.c loader.c main.c mutex.c \
 	panic.c percpu.c printf.c process.c scheduler.c \
-	smpboot.c syscall.c timer.c
+	signal.c smpboot.c spinlock.c syscall.c thread.c \
+	timer.c
 
 # kernel/bus
 kernel += bus/pci.c bus/pci_tables.c bus/pcie.c

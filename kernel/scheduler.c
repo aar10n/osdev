@@ -6,9 +6,9 @@
 #include <timer.h>
 #include <percpu.h>
 #include <panic.h>
-#include <lock.h>
 #include <printf.h>
 #include <vectors.h>
+#include <spinlock.h>
 
 #include <mm/heap.h>
 #include <mm/vm.h>
@@ -17,341 +17,388 @@
 #include <device/apic.h>
 #include <string.h>
 
+#define DISPATCH(policy, func, args...) \
+  (((SCHEDULER->policies[policy])->func)(SCHEDULER->policy_data[policy], ##args))
+#define REGISTER_POLICY(policy, impl) ({           \
+  SCHEDULER->policies[policy] = impl;              \
+  SCHEDULER->policy_data[policy] = (impl)->init(); \
+})
+
+#define IS_BLOCKED(thread) \
+  ((thread)->status == THREAD_BLOCKED || (thread)->status == THREAD_SLEEPING)
+
+#define IS_TERMINATED(thread) ((thread)->status == THREAD_TERMINATED)
+
+#define THREAD_QUEUE_ADD(queue, thread) {      \
+    if ((queue)->front == NULL) {              \
+      (queue)->front = (thread);               \
+      (queue)->back = (thread);                \
+    } else {                                   \
+      (queue)->back->next = (thread);          \
+      (thread)->prev = (queue)->back;          \
+      (queue)->back = (thread);                \
+    }                                          \
+  }
+
+#define THREAD_QUEUE_REMOVE(queue, thread) {   \
+    if ((thread) == (queue)->front)            \
+      (queue)->front = (thread)->next;         \
+    if ((thread) == (queue)->back)             \
+      (queue)->back = (thread)->prev;          \
+    if ((thread)->prev)                        \
+      (thread)->prev->next = (thread)->next;   \
+    if ((thread)->next)                        \
+      (thread)->next->prev = (thread)->prev;   \
+    (thread)->next = NULL;                     \
+    (thread)->prev = NULL;                     \
+  }
+
 extern void tick_handler();
-extern void switch_context(process_t *process, vm_t *vm);
+void thread_switch(thread_t *thread);
 
 static process_t *ptable[PTABLE_SIZE] = {};
 static size_t ptable_size = 0;
+static spinlock_t ptable_lock =  {
+  .locked = 0,
+  .locked_by = 0,
+  .lock_count = 0,
+};
+
+static inline bool is_valid_thread(thread_t *thread) {
+  return thread->ctx != NULL &&
+    thread->process != NULL &&
+    thread->policy < SCHED_POLICIES &&
+    thread->status == THREAD_READY;
+}
 
 //
-// Runqueue Management
+// Scheduling Policies
 //
 
-rqueue_t *rq_create() {
-  rqueue_t *rq = kmalloc(sizeof(rqueue_t));
-  rq->count = 0;
-  rq->front = NULL;
-  rq->back = NULL;
-  spin_init(&rq->lock);
-  return rq;
+// fixed priority round-robin
+
+void *fprr_init() {
+  policy_fprr_t *fprr = kmalloc(sizeof(policy_fprr_t));
+  memset(fprr, 0, sizeof(policy_fprr_t));
+  return fprr;
 }
 
-void rq_enqueue(rqueue_t *rq, process_t *process) {
-  lock(rq->lock);
-  if (rq->count == 0) {
-    rq->front = process;
-    rq->back = process;
-  } else {
-    process->prev = rq->back;
-    rq->back->next = process;
-    rq->back = process;
-  }
-  rq->count++;
-  unlock(rq->lock);
+int fprr_add_thread(void *self, thread_t *thread, sched_reason_t reason) {
+  policy_fprr_t *fprr = self;
+  uint8_t priority = max(thread->priority, FPRR_NUM_PRIORITIES - 1);
+  thread->priority = priority;
+
+  THREAD_QUEUE_ADD(&fprr->queues[priority], thread);
+  fprr->count++;
+  SCHEDULER->count++;
+  return 0;
 }
 
-void rq_enqueue_front(rqueue_t *rq, process_t *process) {
-  lock(rq->lock);
-  if (rq->count == 0) {
-    rq->front = process;
-    rq->back = process;
-  } else {
-    rq->front->prev = process;
-    process->next = rq->front;
-    rq->front = process;
-  }
-  rq->count++;
-  unlock(rq->lock);
+int fprr_remove_thread(void *self, thread_t *thread) {
+  policy_fprr_t *fprr = self;
+  uint8_t priority = thread->priority;
+
+  THREAD_QUEUE_REMOVE(&fprr->queues[priority], thread);
+  fprr->count--;
+  SCHEDULER->count--;
+  return 0;
 }
 
-process_t *rq_dequeue(rqueue_t *rq) {
-  if (rq->count == 0) {
+uint64_t fprr_get_thread_count(void *self) {
+  return ((policy_fprr_t *) self)->count;
+}
+
+thread_t *fprr_get_next_thread(void *self) {
+  policy_fprr_t *fprr = self;
+  if (fprr->count == 0) {
     return NULL;
   }
 
-  lock(rq->lock);
-  process_t *process = rq->front;
-  if (rq->count == 1) {
-    rq->front = NULL;
-    rq->back = NULL;
-  } else {
-    rq->front->prev = NULL;
-    rq->front = process->next;
+  for (int i = 0; i < FPRR_NUM_PRIORITIES; i++) {
+    thread_t *thread = fprr->queues[i].front;
+    if (thread == NULL) {
+      continue;
+    }
+
+    fprr_remove_thread(self, thread);
+    return thread;
   }
-  process->next = NULL;
-  process->prev = NULL;
-  rq->count--;
-  unlock(rq->lock);
-  return process;
+  return NULL;
 }
 
-void rq_remove(rqueue_t *rq, process_t *process) {
-  lock(rq->lock);
-  if (process == rq->front) {
-    if (process->next) {
-      process->next->prev = NULL;
-    }
-    rq->front = process->next;
-  } else if (process == rq->back) {
-    if (process->prev) {
-      process->prev->next = NULL;
-    }
-    rq->back = process->prev;
-  } else {
-    if (process->next) {
-      process->next->prev = process->next;
-    }
-    if (process->prev) {
-      process->prev->next = process->next;
-    }
+void fprr_update_self(void *self) {}
+
+
+sched_policy_t policy_fprr = {
+  .init = fprr_init,
+  .add_thread = fprr_add_thread,
+  .remove_thread = fprr_remove_thread,
+
+  .get_thread_count = fprr_get_thread_count,
+  .get_next_thread = fprr_get_next_thread,
+
+  .update_self = fprr_update_self,
+
+  .config = {
+    .can_change_priority = true
   }
-  process->next = NULL;
-  process->prev = NULL;
-  rq->count--;
-  unlock(rq->lock);
+};
+
+
+//
+// Scheduling
+//
+
+noreturn void *idle_task(void *arg) {
+  while (true) {
+    cpu_pause();
+  }
+}
+
+thread_status_t get_new_status(sched_reason_t reason) {
+  switch (reason) {
+    case BLOCKED: return THREAD_BLOCKED;
+    case PREEMPTED: return THREAD_READY;
+    case SLEEPING: return THREAD_SLEEPING;
+    case TERMINATED: return THREAD_TERMINATED;
+    case YIELDED: return THREAD_READY;
+    default: unreachable;
+  }
+}
+
+thread_t *get_next_thread() {
+  kprintf("[scheduler] getting next thread\n");
+  scheduler_t *sched = SCHEDULER;
+  if (sched->count == 0) {
+    return NULL;
+  }
+
+  label(find_thread);
+  thread_t *thread = NULL;
+  for (int i = 0; i < SCHED_POLICIES; i++) {
+    thread = DISPATCH(i, get_next_thread);
+    if (thread != NULL) break;
+  }
+
+  if (thread == NULL) {
+    return NULL;
+  }
+
+  // clean up thread if it has been terminated
+  if (thread->status == THREAD_TERMINATED) {
+    kprintf("[scheduler] cleaning up thread\n");
+    // do cleanup logic
+    if (sched->count == 0) {
+      return NULL;
+    }
+    goto find_thread;
+  } else if (thread->status != THREAD_READY) {
+    panic("[scheduler] next thread not ready");
+  }
+
+  return thread;
 }
 
 //
-// Core Scheduling
-//
 
-void sched_schedule() {
-  clock_t now = timer_now();
-  process_t *curr = current;
-  kprintf("[sched] schedule\n");
+void scheduler_sched(sched_reason_t reason) {
+  scheduler_t *sched = SCHEDULER;
+  thread_t *curr = current_thread;
 
-  if (curr) {
-    curr->stats.last_run_end = now;
-    curr->stats.run_time += now - curr->stats.last_run_start;
-  }
-
-  process_t *process = NULL;
-  rqueue_t *rq = NULL;
-  for (int i = 0; i < SCHED_QUEUES; i++) {
-    rq = SCHEDULER->queues[i];
-    if (rq->count > 0) {
-      process = rq_dequeue(rq);
-      break;
+  if (reason == PREEMPTED && curr->preempt_count > 0) {
+    if (sched->timer_event) {
+      sched->timer_event = false;
+      thread_switch(curr);
     }
-  }
-
-  if (curr && (curr->status == PROC_READY || curr->status == PROC_RUNNING)) {
-    if (process) {
-      rq = SCHEDULER->queues[curr->priority];
-      rq_enqueue(rq, curr);
-    } else {
-      process = curr;
-    }
-  } else if (process == NULL) {
-    // idle task
-    kprintf("[sched] idling...\n");
-    process = SCHEDULER->idle;
-  }
-
-  process->status = PROC_RUNNING;
-  process->stats.run_count++;
-  process->stats.idle_time += now - process->stats.last_run_end;
-  process->stats.last_run_start = timer_now();
-
-  kprintf("[sched] pid: %d\n", process->pid);
-  switch_context(process, process->vm);
-}
-
-// called by the apic timer periodic interrupt
-__used void sched_tick() {
-  kprintf("[sched] tick\n");
-  // whole time slice was used
-  process_t *curr = current;
-  if (curr) {
-    uint8_t new_prior = min(curr->priority + 1, SCHED_QUEUES - 1);
-    curr->priority = new_prior;
-    curr->status = PROC_READY;
-  }
-  sched_schedule();
-}
-
-// called whenever a 'hookable' interrupt occurs
-void sched_irq_hook(uint8_t vector) {
-  // uint64_t flags = cli_save();
-  proc_list_t *list = SCHEDULER->interrupts[vector];
-  if (list == NULL) {
     return;
   }
 
-  while (list) {
-    proc_list_t *next = list->next;
-    process_t *process = list->proc;
+  uint64_t count = sched->count;
 
-    rqueue_t *rq = SCHEDULER->queues[process->priority];
-    rq_remove(SCHEDULER->blocked, process);
-    rq_enqueue(rq, process);
-
-    kfree(list);
-    list = next;
-  }
-
-  // sti_restore(flags);
-  sched_schedule();
-}
-
-
-noreturn void sched_idle() {
-  while (true) {
-    cpu_hlt();
-  }
-}
-
-void sched_preempt(process_t *process) {
-  process->status = PROC_READY;
-  process_t *curr = current;
-  rqueue_t *rq = SCHEDULER->queues[process->priority];
-  if (process->priority < curr->priority) {
-    kprintf("[sched] preempting with pid %llu\n", process->pid);
-    rq_enqueue_front(rq, process);
-    sched_schedule();
+  kprintf("[scheduler] schedule\n");
+  if (curr == sched->idle) {
+    curr->status = THREAD_READY;
   } else {
-    rq_enqueue(rq, process);
+    curr->status = get_new_status(reason);
+    if (IS_BLOCKED(curr)) {
+      THREAD_QUEUE_ADD(&sched->blocked, curr);
+    } else if (!IS_TERMINATED(curr)) {
+      int result = DISPATCH(curr->policy, add_thread, curr, reason);
+      if (result != 0) {
+        panic("[scheduler] add_thread failed: %d", result);
+      }
+    }
   }
+
+  if (count == 0) {
+    // switch to idle thread
+    sched->timer_event = false;
+    kprintf("[scheduler] idling...\n");
+    curr->status = THREAD_READY;
+    if (curr != sched->idle) {
+      thread_switch(sched->idle);
+    }
+    return;
+  }
+
+  thread_t *next = get_next_thread();
+  if (next == NULL) {
+    panic("[scheduler] failed to get next thread");
+  }
+
+  kprintf("[scheduler] pid: %d | thread: %d\n", next->process->pid, next->tid);
+  sched->timer_event = false;
+  next->status = THREAD_RUNNING;
+  next->cpu_id = sched->cpu_id;
+  thread_switch(next);
+}
+
+void scheduler_tick() {
+  SCHEDULER->timer_event = true;
+  kprintf("[scheduler] tick\n");
+  scheduler_sched(PREEMPTED);
+}
+
+void scheduler_wakeup(thread_t *thread) {
+  kprintf("[scheduler] wakeup (%d:%d)\n", thread->process->pid, thread->tid);
+  scheduler_t *sched = SCHEDULER;
+  THREAD_QUEUE_REMOVE(&sched->blocked, thread);
+  DISPATCH(thread->policy, add_thread, thread, RESERVED);
+  thread->status = THREAD_READY;
+  scheduler_sched(PREEMPTED);
 }
 
 //
-// Scheduler API
-//
 
-void sched_init() {
-  kprintf("[sched] initializing\n");
+void scheduler_init(process_t *root) {
+  kprintf("[scheduler] initializing\n");
+
+  thread_t *idle = thread_alloc(root->threads->tid + 1, idle_task, NULL);
+  idle->process = root;
+  idle->priority = 255;
+  idle->policy = 255;
+
+  idle->g_next = root->threads;
+  root->threads->g_prev = idle;
+  root->threads = idle;
+
   scheduler_t *sched = kmalloc(sizeof(scheduler_t));
   sched->cpu_id = PERCPU->id;
-  sched->idle = kthread_create_idle(sched_idle);
-  sched->idle->priority = 255;
-  sched->blocked = rq_create();
-  memset(&sched->interrupts, 0, sizeof(proc_list_t *) * IDT_GATES);
-  for (int i = 0; i < SCHED_QUEUES; i++) {
-    sched->queues[i] = rq_create();
-  }
+  sched->count = 0;
+  sched->idle = idle;
+  sched->blocked.front = NULL;
+  sched->blocked.back = NULL;
+  sched->timer_event = false;
+
   SCHEDULER = sched;
+
+  REGISTER_POLICY(SCHED_DRIVER, &policy_fprr);
+  REGISTER_POLICY(SCHED_SYSTEM, &policy_fprr);
 
   idt_gate_t gate = gate((uintptr_t) tick_handler, KERNEL_CS, 0, INTERRUPT_GATE, 0, 1);
   idt_set_gate(VECTOR_SCHED_TIMER, gate);
 
-  apic_init_periodic(SCHED_QUANTUM);
-  kprintf("[sched] done!\n");
+  apic_init_periodic(SCHED_PERIOD);
+  kprintf("[scheduler] done!\n");
+
+  root->main->status = THREAD_RUNNING;
+  thread_switch(root->main);
 }
 
-process_t *sched_get_process(uint64_t pid) {
-  if (pid > ptable_size) {
+int scheduler_add(thread_t *thread) {
+  process_t *process = thread->process;
+  if (!is_valid_thread(thread)) {
+    return EINVAL;
+  }
+
+  int result = DISPATCH(thread->policy, add_thread, thread, RESERVED);
+  if (result != 0) {
+    return result;
+  }
+
+  spin_lock(&ptable_lock);
+  if (ptable_size == PTABLE_SIZE) {
+    panic("[scheduler] process table is full");
+  } else if (ptable[process->pid] == NULL) {
+    ptable[process->pid] = process;
+    ptable_size++;
+  }
+  spin_unlock(&ptable_lock);
+  return 0;
+}
+
+int scheduler_remove(thread_t *thread) {
+  scheduler_t *sched = SCHEDULER;
+
+  if (thread == current_thread) {
+    scheduler_sched(TERMINATED);
+    unreachable;
+  } else if (IS_BLOCKED(thread)) {
+    THREAD_QUEUE_REMOVE(&sched->blocked, thread);
+  } else {
+    DISPATCH(thread->policy, remove_thread, thread);
+  }
+  thread->status = THREAD_TERMINATED;
+  return 0;
+}
+
+int scheduler_block(thread_t *thread) {
+  bool reschedule = false;
+  if (thread->status == THREAD_RUNNING) {
+    reschedule = true;
+  } else if (thread->status == THREAD_READY) {
+    DISPATCH(thread->policy, remove_thread, thread);
+  } else {
+    return EINVAL;
+  }
+
+  thread->status = THREAD_BLOCKED;
+  if (reschedule) {
+    scheduler_sched(BLOCKED);
+  }
+  return 0;
+}
+
+int scheduler_unblock(thread_t *thread) {
+  if (thread->status != THREAD_BLOCKED) {
+    return EINVAL;
+  }
+
+  scheduler_t *sched = SCHEDULER;
+  THREAD_QUEUE_REMOVE(&sched->blocked, thread);
+  DISPATCH(thread->policy, add_thread, thread, RESERVED);
+  thread->status = THREAD_READY;
+  scheduler_sched(PREEMPTED);
+  return 0;
+}
+
+int scheduler_yield() {
+  scheduler_sched(YIELDED);
+  return 0;
+}
+
+int scheduler_sleep(uint64_t ns) {
+  thread_t *thread = current_thread;
+  create_timer(timer_now() + ns, (void *) scheduler_wakeup, thread);
+  scheduler_sched(SLEEPING);
+  return 0;
+}
+
+//
+
+sched_policy_t *scheduler_get_policy(uint8_t policy) {
+  if (policy > SCHED_POLICIES) {
     return NULL;
   }
-  return ptable[pid];
+  return SCHEDULER->policies[policy];
 }
 
-void sched_enqueue(process_t *process) {
-  rqueue_t *rq = SCHEDULER->queues[process->priority];
-  rq_enqueue(rq, process);
-  ptable[process->pid] = process;
+//
+
+void preempt_disable() {
+  current_thread->preempt_count++;
 }
 
-void sched_block() {
-  kprintf("[sched] pid %llu: block\n", current->pid);
-  process_t *curr = current;
-  curr->status = PROC_BLOCKED;
-  curr->stats.block_count++;
-  rq_enqueue(SCHEDULER->blocked, curr);
-  sched_schedule();
-}
-
-void sched_block_irq(uint8_t vector) {
-  kprintf("[sched] pid %llu: block until irq %d\n", current->pid, vector);
-  process_t *curr = current;
-  curr->status = PROC_BLOCKED;
-  curr->stats.block_count++;
-  rq_enqueue(SCHEDULER->blocked, curr);
-
-  proc_list_t *new_item = kmalloc(sizeof(proc_list_t));
-  new_item->proc = curr;
-  new_item->next = NULL;
-
-  proc_list_t *proc_list = SCHEDULER->interrupts[vector];
-  if (proc_list == NULL) {
-    SCHEDULER->interrupts[vector] = new_item;
-  } else {
-    while (proc_list->next != NULL) {
-      proc_list = proc_list->next;
-    }
-    proc_list->next = new_item;
-  }
-  sched_schedule();
-}
-
-void sched_unblock(process_t *process) {
-  kprintf("[sched] pid %llu: unblock\n", process->pid);
-  rq_remove(SCHEDULER->blocked, process);
-  sched_preempt(process);
-}
-
-void sched_sleep(uint64_t ns) {
-  kprintf("[sched] pid %llu: sleep\n", current->pid);
-  process_t *curr = current;
-  curr->status = PROC_SLEEPING;
-  curr->stats.sleep_count++;
-  curr->stats.sleep_time += ns;
-
-  create_timer(timer_now() + ns, (void *) sched_wakeup, curr);
-  sched_schedule();
-}
-
-void sched_wakeup(process_t *process) {
-  kprintf("[sched] pid %llu: wakeup\n", process->pid);
-  sched_preempt(process);
-}
-
-void sched_yield() {
-  kprintf("[sched] pid %llu: yield\n", current->pid);
-  process_t *curr = current;
-  curr->status = PROC_READY;
-  curr->stats.yield_count++;
-  sched_schedule();
-}
-
-void sched_terminate() {
-  kprintf("[sched] pid %llu: terminate\n", current->pid);
-  process_t *curr = current;
-  curr->status = PROC_KILLED;
-  ptable[curr->pid] = NULL;
-  current = NULL;
-  sched_schedule();
-}
-
-// Debugging
-
-void sched_print_stats() {
-  uint64_t rflags = cli_save();
-
-  kprintf("===== scheduler stats =====\n");
-  kprintf("current pid: %llu\n", current ? current->pid : -1);
-  if (current) {
-    print_debug_process(current);
-  }
-
-  rqueue_t *rq;
-  process_t *process;
-  for (int i = 0; i < SCHED_QUEUES; ++i) {
-    kprintf("---- level %d ----\n", i);
-    rq = SCHEDULER->queues[i];
-    process = rq->front;
-    while (process) {
-      print_debug_process(process);
-      process = process->next;
-    }
-  }
-
-  kprintf("---- blocked ----\n");
-  rq = SCHEDULER->blocked;
-  process = rq->front;
-  while (process) {
-    print_debug_process(process);
-    process = process->next;
-  }
-
-  sti_restore(rflags);
+void preempt_enable() {
+  current_thread->preempt_count--;
 }

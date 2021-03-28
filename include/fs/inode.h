@@ -6,7 +6,7 @@
 #define FS_INODE_H
 
 #include <base.h>
-#include <lock.h>
+#include <spinlock.h>
 #include <rb_tree.h>
 
 // file types backed by inodes

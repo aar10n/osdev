@@ -10,7 +10,7 @@
 #include <device/apic.h>
 
 extern uintptr_t idt_stubs;
-extern void sched_irq_hook(uint8_t vector);
+// extern void sched_irq_hook(uint8_t vector);
 
 //
 
@@ -20,7 +20,7 @@ __used void irq_handler(uint8_t vector, regs_t *regs) {
     handler.fn(vector, handler.data);
   }
   apic_send_eoi();
-  sched_irq_hook(vector);
+  // sched_irq_hook(vector);
 }
 
 void setup_idt() {

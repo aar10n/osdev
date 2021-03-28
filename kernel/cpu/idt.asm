@@ -8,7 +8,7 @@ extern irq_handler
 extern exception_handler
 extern timer_handler
 
-extern sched_tick
+extern scheduler_tick
 
 %define IDT_STUB_SIZE 32
 %define IDT_GATES 256
@@ -77,17 +77,17 @@ ignore_irq:
 
 global hpet_handler
 hpet_handler:
-  pushcaller
-  call timer_handler
-  popcaller
   ; send apic eoi
   mov dword [APIC_BASE_VA + APIC_REG_EOI], 0
+  pushall
+  call timer_handler
+  popall
   iretq
 
 global tick_handler
 tick_handler:
   mov dword [APIC_BASE_VA + APIC_REG_EOI], 0
   pushall
-  call sched_tick
+  call scheduler_tick
   popall
   iretq

@@ -6,7 +6,6 @@
 #include <panic.h>
 #include <printf.h>
 #include <string.h>
-#include <lock.h>
 #include <printf.h>
 #include <mm/mm.h>
 #include <mm/heap.h>
@@ -203,7 +202,7 @@ page_t *mm_alloc_pages(zone_type_t zone_type, size_t count, uint16_t flags) {
     }
   }
 
-  lock(zone->lock);
+  spin_lock(&zone->lock);
   index_t frame_index;
   if (count == 1) {
     // common case - fastest
@@ -213,7 +212,7 @@ page_t *mm_alloc_pages(zone_type_t zone_type, size_t count, uint16_t flags) {
     // less common case - slower
     frame_index = bitmap_get_set_nfree(zone->pages, count);
   }
-  unlock(zone->lock);
+  spin_unlock(&zone->lock);
 
   bool use_2mb_pages = flags & PE_2MB_SIZE;
   bool use_1gb_pages = flags & PE_1GB_SIZE;
@@ -271,7 +270,7 @@ page_t *mm_alloc_frame(uintptr_t frame, uint16_t flags) {
     }
   }
 
-  lock(zone->lock);
+  spin_lock(&zone->lock);
   index_t index = SIZE_TO_PAGES(frame - zone->base_addr);
   if (bitmap_get(zone->pages, index)) {
     if (!(flags & PE_FORCE)) {
@@ -282,7 +281,7 @@ page_t *mm_alloc_frame(uintptr_t frame, uint16_t flags) {
     }
   }
   bitmap_set(zone->pages, index);
-  unlock(zone->lock);
+  spin_unlock(&zone->lock);
 
   page_t *page = kmalloc(sizeof(page_t));
   page->frame = frame;
@@ -305,14 +304,14 @@ void mm_free_page(page_t *page) {
       num_4k_pages = SIZE_TO_PAGES(PAGE_SIZE_1GB);
     }
 
-    lock(zone->lock);
+    spin_lock(&zone->lock);
     index_t index = SIZE_TO_PAGES(page->frame - zone->base_addr);
     if (num_4k_pages == 1) {
       bitmap_clear(zone->pages, index);
     } else {
       bitmap_clear_n(zone->pages, index, num_4k_pages);
     }
-    unlock(zone->lock);
+    spin_unlock(&zone->lock);
 
     page_t *next = page->next;
     kfree(page);

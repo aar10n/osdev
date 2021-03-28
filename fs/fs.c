@@ -14,6 +14,7 @@
 #include <path.h>
 #include <device.h>
 #include <process.h>
+#include <atomic.h>
 
 static dev_t __dev_id = 0;
 
@@ -28,7 +29,7 @@ void fs_init() {
   vfs_init();
 
   fs_register_device(NULL, &pseudo_impl);
-  current->pwd = fs_root;
+  current_process->pwd = fs_root;
 
   kprintf("[fs] done!\n");
 }
@@ -173,11 +174,11 @@ ssize_t fs_read(int fd, void *buf, size_t nbytes) {
   }
 
   fs_t *fs = file->node->fs;
-  aquire(file->lock);
-  lock(inode->lock);
+  // aquire(file->lock);
+  spin_lock(&inode->lock);
   ssize_t nread = fs->impl->read(file->node->fs, inode, file->offset, nbytes, buf);
-  unlock(inode->lock);
-  release(file->lock);
+  spin_unlock(&inode->lock);
+  // release(file->lock);
 
   file->offset += nread;
   return nread;
@@ -191,11 +192,11 @@ ssize_t fs_write(int fd, void *buf, size_t nbytes) {
   NOT_NULL(inode = inode_get(file->node));
 
   fs_t *fs = file->node->fs;
-  aquire(file->lock);
-  lock(inode->lock);
+  // aquire(file->lock);
+  spin_lock(&inode->lock);
   ssize_t nwritten = fs->impl->write(file->node->fs, inode, file->offset, nbytes, buf);
-  unlock(inode->lock);
-  release(file->lock);
+  spin_unlock(&inode->lock);
+  // release(file->lock);
 
   file->offset += nwritten;
   return nwritten;
@@ -462,7 +463,7 @@ int fs_chdir(const char *dirname) {
   fs_node_t *node;
   NOT_NULL(node = vfs_get_node(str_to_path(dirname), flags));
 
-  current->pwd = node;
+  current_process->pwd = node;
   return 0;
 }
 

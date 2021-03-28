@@ -8,7 +8,7 @@
 #include <base.h>
 #include <boot.h>
 #include <bitmap.h>
-#include <lock.h>
+#include <spinlock.h>
 
 #define virt_to_phys(x) ((x) - KERNEL_OFFSET)
 #define phys_to_virt(x) (KERNEL_OFFSET + (x))

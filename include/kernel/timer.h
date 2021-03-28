@@ -6,7 +6,7 @@
 #define KERNEL_TIMER_H
 
 #include <base.h>
-#include <lock.h>
+#include <spinlock.h>
 #include <rb_tree.h>
 
 #define EVENTS (PERCPU->events)

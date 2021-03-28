@@ -15,4 +15,6 @@ uint8_t __atomic_fetch_add8(uint8_t *ptr, uint8_t value);
 uint8_t __atomic_bit_test_and_set(uint8_t *ptr);
 uint8_t __atomic_bit_test_and_reset(uint8_t *ptr);
 
+uint64_t __atomic_cmpxchg64(uint64_t *ptr, uint64_t value);
+
 #endif

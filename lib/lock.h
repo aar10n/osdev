@@ -35,7 +35,7 @@
   )(&(L))
 
 // rentrant spinlock
-typedef struct {
+typedef struct spinlock {
   volatile uint8_t locked;
   uint64_t locked_by;
   uint64_t lock_count;

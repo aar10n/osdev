@@ -18,11 +18,11 @@
 #include <ramfs/ramfs.h>
 
 
-#define PWD (current->pwd)
+#define PWD (current_process->pwd)
 // #define PWD (PERCPU->pwd)
-#define UID (current->uid)
+#define UID (current_process->uid)
 // #define UID (PERCPU->uid)
-#define GID (current->gid)
+#define GID (current_process->gid)
 // #define GID (PERCPU->gid)
 
 
@@ -67,7 +67,7 @@ fs_node_table_t *create_node_table() {
   table->hash_table.map.load_factor = LOAD_FACTOR;
   map_init(&table->hash_table);
 
-  spinrw_init(&table->rwlock);
+  // spinrw_init(&table->rwlock);
   return table;
 }
 
@@ -487,9 +487,9 @@ int vfs_swap_node(fs_node_t *orig_node, fs_node_t *new_node) {
 //
 
 fs_node_t *vfs_get_link(const char *path) {
-  aquire(links->rwlock);
+  // aquire(links->rwlock);
   fs_node_t **node = map_get(&links->hash_table, (char *) path);
-  release(links->rwlock);
+  // release(links->rwlock);
   if (node) {
     return *node;
   }
@@ -497,15 +497,15 @@ fs_node_t *vfs_get_link(const char *path) {
 }
 
 void vfs_add_link(const char *path, fs_node_t *node) {
-  lock(links->rwlock);
+  spin_lock(&links->rwlock);
   map_set(&links->hash_table, (char *) path, node);
-  unlock(links->rwlock);
+  spin_unlock(&links->rwlock);
 }
 
 void vfs_remove_link(const char *path) {
-  lock(links->rwlock);
+  spin_lock(&links->rwlock);
   map_delete(&links->hash_table, (char *) path);
-  unlock(links->rwlock);
+  spin_unlock(&links->rwlock);
 }
 
 //

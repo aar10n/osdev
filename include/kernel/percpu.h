@@ -17,22 +17,21 @@
 
 #define PERCPU_SIZE (4096 * 4)
 
+struct thread;
 struct process;
-struct file_table;
 struct vm;
-struct fs_node;
 struct scheduler;
 struct idt;
 
 typedef struct {
-  struct process *current;
-  ino_t id;
-  uintptr_t self;
+  ino_t id;                // this cpu's id
+  struct thread *thread;   // current thread
+  struct process *process; // current process
+  uintptr_t self;          // address of this struct
+  uint64_t rflags;         // cpu flags (on cli)
   int errno;
   uid_t uid;
   gid_t gid;
-  struct fs_node *pwd;
-  struct file_table *files;
   struct scheduler *scheduler;
   struct idt *idt;
   struct vm *vm;
@@ -82,7 +81,9 @@ static inline __attribute((always_inline)) __attribute((pure)) percpu_t *percpu(
 #define PERCPU (percpu())
 #define ID (percpu()->id)
 #define IS_BSP (PERCPU->id == boot_info->bsp_id)
-#define current (percpu()->current)
+// #define current (percpu()->current)
+#define current_process (percpu()->process)
+#define current_thread (percpu()->thread)
 
 
 void percpu_init();

@@ -6,7 +6,7 @@
 #define LIB_QUEUE_H
 
 #include <base.h>
-#include <lock.h>
+// #include <lock.h>
 
 #define QUEUE_SIZE 128
 

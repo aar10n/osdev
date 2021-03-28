@@ -5,6 +5,7 @@
 ;
 
 ; General Constants
+%define NULL 0
 %define KERNEL_OFFSET 0xFFFFFF8000000000
 %define KERNEL_STACK  0xFFFFFFA000000000
 %define KERNEL_CS 0x08
@@ -22,15 +23,21 @@
 %define COM1 0x3F8
 
 ; Percpu Constants
-%define PERCPU_CURRENT 0x0
-%define PERCPU_ID 0x8
-%define current gs:PERCPU_CURRENT
+%define PERCPU_ID       0x00
+%define PERCPU_THREAD   0x08
+%define PERCPU_PROCESS  0x10
+%define CURRENT_THREAD  gs:PERCPU_THREAD
+%define CURRENT_PROCESS gs:PERCPU_PROCESS
+
+; Thread Constants
+%define THREAD_ID       0x0
+%define THREAD_CTX      0x8
+%define THREAD_PROCESS  0x8
 
 ; Process Constants
-%define PROC_PID 0x0
-%define PROC_CTX 0x8
+%define PROCESS_ID      0x0
 
-; Process Context
+; Thread Context
 %define CTX_RAX    0x00
 %define CTX_RBX    0x08
 %define CTX_RBP    0x10

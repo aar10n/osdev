@@ -6,7 +6,7 @@
 #define FS_FILE_H
 
 #include <base.h>
-#include <lock.h>
+#include <spinlock.h>
 #include <rb_tree.h>
 #include <bitmap.h>
 
@@ -55,7 +55,7 @@ typedef struct file {
   int fd;
   int flags;
   off_t offset;
-  rw_spinlock_t lock;
+  spinlock_t lock;
   fs_node_t *node;
 } file_t;
 

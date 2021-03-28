@@ -13,7 +13,7 @@
 #endif
 
 #ifndef _malloc
-#include <mm/heap.h>
+// #include <mm/heap.h>
 #define _malloc(size) kmalloc(size)
 #define _free(ptr) kfree(ptr)
 #endif

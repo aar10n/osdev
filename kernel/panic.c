@@ -12,6 +12,7 @@
 noreturn void panic(const char *fmt, ...) {
   cli();
 
+  kprintf("PANIC: ");
   va_list valist;
   va_start(valist, fmt);
   kvfprintf(fmt, valist);

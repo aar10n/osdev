@@ -6,7 +6,7 @@
 #define LIB_ATOMIC_H
 
 #include <base.h>
-#include "asm/atomic.h"
+#include <asm/atomic.h>
 
 #define atomic_fetch_add(ptr, val)  \
   (_Generic((*ptr),                 \
@@ -22,5 +22,7 @@
 #define atomic_bit_test_and_reset(ptr) \
   __atomic_bit_test_and_reset((uint8_t *)(ptr))
 
+
+#define atomic_cmpxchg(ptr, val) __atomic_cmpxchg64((uint64_t *)(ptr), val)
 
 #endif

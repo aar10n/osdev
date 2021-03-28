@@ -39,3 +39,8 @@ __atomic_bit_test_and_reset:
   xor rax, rax
   adc rax, 0
   ret
+
+global __atomic_cmpxchg64
+__atomic_cmpxchg64:
+  mov rax, [rdi]
+  lock cmpxchg qword [rdi], rsi

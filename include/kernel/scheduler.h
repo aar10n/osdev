@@ -7,7 +7,7 @@
 
 #include <base.h>
 #include <process.h>
-#include <lock.h>
+#include <thread.h>
 #include <cpu/idt.h>
 
 // Scheduling Classes
@@ -20,48 +20,91 @@
 #define SCHEDULER (PERCPU->scheduler)
 #define CURRENT (PERCPU->curr)
 
-#define SCHED_QUANTUM 1000
-#define PTABLE_SIZE 1024
-#define SCHED_QUEUES  4
+#define SCHED_PERIOD   1000
+#define SCHED_POLICIES 2
+#define PTABLE_SIZE    1024
+#define SCHED_QUEUES   4
+
+typedef enum {
+  BLOCKED,
+  PREEMPTED,
+  RESERVED,
+  SLEEPING,
+  TERMINATED,
+  YIELDED,
+} sched_reason_t;
+
+typedef struct thread_queue {
+  thread_t *front;
+  thread_t *back;
+} thread_queue_t;
+
+// scheduling policies
+#define SCHED_DRIVER 0
+#define SCHED_SYSTEM 1
+
+typedef struct {
+  void *(*init)();
+  int (*add_thread)(void *self, thread_t *thread, sched_reason_t reason);
+  int (*remove_thread)(void *self, thread_t *thread);
+
+  uint64_t (*get_thread_count)(void *self);
+  thread_t *(*get_next_thread)(void *self);
+
+  void (*update_self)(void *self);
+
+  // properties
+  struct {
+    bool can_change_priority;
+  } config;
+} sched_policy_t;
+
+// fixed-priority round robin
+#define FPRR_NUM_PRIORITIES 3
+
+#define PRIORITY_HIGH   0
+#define PRIORITY_MEDIUM 1
+#define PRIORITY_LOW    2
+
+typedef struct {
+  uint64_t count;
+  thread_queue_t queues[3];
+} policy_fprr_t;
+
+// multi-level feedback queue
+#define MLFQ_NUM_QUEUES  4
+
+typedef struct {
+
+} policy_mlfq_t;
 
 //
 
-typedef struct {
-  size_t count;
-  process_t *front;
-  process_t *back;
-  spinlock_t lock;
-} rqueue_t;
-
-// external singly linked process list that
-// doesn't use the pointers on the process
-// struct itself
-typedef struct proc_list {
-  process_t *proc;
-  struct proc_list *next;
-} proc_list_t;
-
 typedef struct scheduler {
   uint64_t cpu_id;
-  process_t *idle;
-  rqueue_t *queues[SCHED_QUEUES];
-  rqueue_t *blocked;
-  proc_list_t *interrupts[IDT_GATES];
+  uint64_t count;
+  thread_t *idle;
+
+  thread_queue_t blocked;
+
+  sched_policy_t *policies[SCHED_POLICIES];
+  void *policy_data[SCHED_POLICIES];
+
+  bool timer_event;
 } scheduler_t;
 
 
-void sched_init();
-process_t *sched_get_process(uint64_t pid);
-void sched_enqueue(process_t *process);
-void sched_schedule();
-void sched_block();
-void sched_block_irq(uint8_t vector);
-void sched_unblock(process_t *process);
-void sched_sleep(uint64_t ns);
-void sched_wakeup(process_t *process);
-void sched_yield();
-void sched_terminate();
+void scheduler_init(process_t *root);
+int scheduler_add(thread_t *thread);
+int scheduler_remove(thread_t *thread);
+int scheduler_block(thread_t *thread);
+int scheduler_unblock(thread_t *thread);
+int scheduler_yield();
+int scheduler_sleep(uint64_t ns);
 
-void sched_print_stats();
+sched_policy_t *scheduler_get_policy(uint8_t policy);
+
+void preempt_disable();
+void preempt_enable();
 
 #endif

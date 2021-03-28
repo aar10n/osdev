@@ -42,36 +42,41 @@ boot_info_t *boot_info;
 // Kernel launch process
 //
 
-noreturn void launch() {
-  // sti();
-  cli();
+void *thread1(void *arg) {
+  kprintf("[pid %d:%d] thread routine\n", getpid(), gettid());
+  kprintf("inside thread 1\n");
+  thread_sleep(2e6); // 2 seconds
+  return (void *) 0x1234;
+}
 
-  pid_t root = getpid();
+void *thread2(void *arg) {
+  kprintf("[pid %d:%d] thread routine\n", getpid(), gettid());
+  kprintf("inside thread 2\n");
+  thread_sleep(1e6); // 1 second
+  return (void *) 0x5678;
+}
+
+void launch() {
+  sti();
+
   kprintf("[pid %d] launch\n", ID);
   fs_init();
 
   pcie_init();
   pcie_discover();
 
-  // sti();
+  thread_t *t1 = thread_create(thread1, NULL);
+  thread_t *t2 = thread_create(thread2, NULL);
+  kprintf("[pid %d:%d] joining threads\n", getpid(), gettid());
 
-  xhci_init();
-  // pid_t xhci_pid = process_fork(false);
-  // if (getpid() == xhci_pid) {
-  //
-  // }
+  void *ret1, *ret2;
+  thread_join(t1, &ret1);
+  thread_join(t2, &ret2);
 
-  sti();
+  kprintf("ret1: %p\n", ret1);
+  kprintf("ret2: %p\n", ret2);
 
-  kprintf("[pid %d] done!\n", current->pid);
-
-  while (true) {
-    if (getpid() == root) {
-      cpu_pause();
-    } else {
-      sched_yield();
-    }
-  }
+  kprintf("done!\n");
 }
 
 //
@@ -104,13 +109,10 @@ __used void kmain(boot_info_t *info) {
   // smp_init();
 
   // root process
-  process_t *root = kthread_create(launch);
+  process_t *root = create_root_process(launch);
 
   timer_init();
-  sched_init();
-  sched_enqueue(root);
-  // sched_print_stats();
-  sched_schedule();
+  scheduler_init(root);
 }
 
 __used void ap_main() {

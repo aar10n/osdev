@@ -42,6 +42,7 @@ void percpu_init_cpu() {
   memset(area, 0, sizeof(percpu_t));
   area->id = id;
   area->self = ptr;
+  area->rflags = 0;
   area->idt = (void *)((uintptr_t) area + PAGE_SIZE);
   areas[id] = area;
 
@@ -52,13 +53,13 @@ void percpu_init() {
   if (!percpu_initialized) {
     // allocate a percpu space for each logical core
     uint64_t logical_cores = boot_info->num_cores * boot_info->num_threads;
-    uintptr_t paddr = boot_info->reserved_base;
+    uintptr_t addr = boot_info->reserved_base;
 
     next_area = boot_info->reserved_base;
     for (int i = 0; i < logical_cores; i++) {
-      void *area = (void *) paddr;
+      void *area = (void *) addr;
       memset(area, 0, PERCPU_SIZE);
-      paddr += PERCPU_SIZE;
+      addr += PERCPU_SIZE;
       boot_info->reserved_base += PERCPU_SIZE;
       boot_info->reserved_size -= PERCPU_SIZE;
     }

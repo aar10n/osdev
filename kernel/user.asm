@@ -7,8 +7,8 @@ global user_start
 user_start:
 
 user_test:
-  mov dword [DATA], 0xDEADBEEF
-  push dword 0xDEADBEEF
+;  mov dword [DATA], 0xDEADBEEF
+;  push dword 0xDEADBEEF
   mov eax, 1
   mov ebx, 0
   syscall

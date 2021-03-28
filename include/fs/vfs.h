@@ -6,14 +6,14 @@
 #define FS_VFS_H
 
 #include <base.h>
-#include <lock.h>
 #include <hash_table.h>
 #include <rb_tree.h>
+#include <spinlock.h>
 
 // Extended flags for controlling VFS functions
 #define V_NOFAIL 0x0100000 // Makes O_NOFOLLOW return the symlink instead of failing
 
-#define FILES (current->files)
+#define FILES (current_process->files)
 // #define FILES (PERCPU->files)
 
 #define NOT_ERROR(expr) \
@@ -80,7 +80,7 @@ typedef struct fs_node {
 
 typedef struct fs_node_table {
   map_t(fs_node_t *) hash_table;
-  rw_spinlock_t rwlock;
+  spinlock_t rwlock;
 } fs_node_table_t;
 
 extern fs_node_t *fs_root;

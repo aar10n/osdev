@@ -61,9 +61,9 @@ file_table_t *copy_file_table(file_table_t *table) {
 
 file_t *file_get(int fd) {
   file_table_t *table = FILES;
-  lock(table->lock);
+  spin_lock(&table->lock);
   rb_node_t *rb_node = rb_tree_find(table->files, fd);
-  unlock(table->lock);
+  spin_unlock(&table->lock);
 
   if (rb_node) {
     return rb_node->data;
@@ -77,10 +77,10 @@ file_t *file_create(fs_node_t *node, int flags) {
   file_table_t *table = FILES;
   file_t *file = kmalloc(sizeof(file_t));
 
-  lock(table->lock);
+  spin_lock(&table->lock);
   index_t index = bitmap_get_set_free(table->fds);
   if (index < 0) {
-    unlock(table->lock);
+    spin_unlock(&table->lock);
 
     kfree(file);
     errno = ENFILE;
@@ -91,10 +91,10 @@ file_t *file_create(fs_node_t *node, int flags) {
   file->flags = flags;
   file->offset = 0;
   file->node = node;
-  spinrw_init(&file->lock);
+  spin_lock(&file->lock);
 
   rb_tree_insert(table->files, file->fd, file);
-  unlock(table->lock);
+  spin_unlock(&table->lock);
 
   return file;
 }
@@ -102,19 +102,19 @@ file_t *file_create(fs_node_t *node, int flags) {
 void file_delete(file_t *file) {
   file_table_t *table = FILES;
 
-  lock(table->lock);
+  spin_lock(&table->lock);
   bitmap_clear(table->fds, file->fd);
   rb_tree_delete(table->files, file->fd);
-  unlock(table->lock);
+  spin_unlock(&table->lock);
   kfree(file);
 }
 
 int file_exists(file_t *file) {
   file_table_t *table = FILES;
-  lock(table->lock);
+  spin_lock(&table->lock);
   index_t index = bitmap_get(table->fds, file->fd);
   rb_node_t *rb_node = rb_tree_find(table->files, file->fd);
-  unlock(table->lock);
+  spin_unlock(&table->lock);
 
   if (index >= 0 && rb_node != NULL) {
     return 0;
