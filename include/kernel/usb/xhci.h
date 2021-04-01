@@ -6,8 +6,9 @@
 #define KERNEL_USB_XHCI_H
 
 #include <base.h>
-#include <mm/mm.h>
+#include <mm.h>
 #include <bus/pcie.h>
+#include <mutex.h>
 
 //
 // -------- Registers --------
@@ -90,6 +91,34 @@ typedef volatile struct {
   uint32_t next : 8; // next cap pointer
 } xhci_cap_t;
 
+// Legacy Capabilities
+
+typedef volatile struct {
+  // dword0
+  uint16_t id : 8;             // capability id
+  uint16_t next : 8;           // next cap pointer
+  uint8_t bios_sem : 1;       // hc bios owned semaphore
+  uint8_t : 7;                // reserved
+  uint8_t os_sem : 1;         // hc os owned semaphore
+  uint8_t : 7;                // reserved
+  // dword 1
+  uint32_t smi_en : 1;         // usb smi enable
+  uint32_t : 3;                // reserved
+  uint32_t smi_hse_en: 1;      // smi on host system error enable
+  uint32_t : 8;                // reserved
+  uint32_t smi_os_own_en : 1;  // smi on os ownership enable
+  uint32_t smi_pci_cmd_en : 1; // smi on pci command enable
+  uint32_t smi_bar_en : 1;     // smi on bar enable
+  uint32_t smi_evt_int : 1;    // mirrors usbsts.evt_int bit
+  uint32_t : 3;                // reserved
+  uint32_t smi_hse : 1;        // mirrors usbsts.hc_err bit
+  uint32_t : 8;                // reserved
+  uint32_t smi_os_own_chg : 1; // indicates whether os ownership smi was issued
+  uint32_t smi_pci_cmd : 1;    // indicates whether pci cmd smi was issued
+  uint32_t smi_on_bar : 1;     // indicates whether bar smi was issued
+} xhci_cap_legacy_t;
+static_assert(sizeof(xhci_cap_legacy_t) == 8);
+
 // Protocol Capabilites
 
 #define XHCI_FULL_SPEED       1 // full speed (12 mb/s) [usb 2.0]
@@ -131,6 +160,34 @@ typedef volatile struct {
 } xhci_cap_protocol_t;
 
 // -------- Operational Registers --------
+
+typedef volatile struct {
+  uint32_t ccs : 1;            // current connect status
+  uint32_t enabled : 1;        // port enabled/disabled
+  uint32_t : 1;                // reserved
+  uint32_t oca : 1;            // over-current active
+  uint32_t reset : 1;          // port reset
+  uint32_t pls : 4;            // port link state
+  uint32_t power : 1;          // port power
+  uint32_t speed : 4;          // port speed
+  uint32_t pic : 2;            // port indicator control
+  uint32_t lws : 1;            // port link state write strobe
+  uint32_t csc : 1;            // connect status change
+  uint32_t pec : 1;            // port enabled/disabled change
+  uint32_t wrc : 1;            // warm port reset change
+  uint32_t occ : 1;            // over-current change
+  uint32_t prc : 1;            // port reset change
+  uint32_t plc : 1;            // port link state change
+  uint32_t cec : 1;            // port config error change
+  uint32_t cas : 1;            // cold attach status
+  uint32_t wce : 1;            // wake on connect enable
+  uint32_t wde : 1;            // wake on disconnect enable
+  uint32_t woe : 1;            // wake on over-current enable
+  uint32_t : 2;                // reserved
+  uint32_t dr : 1;             // device removable
+  uint32_t warm_rst : 1;       // warm port reset
+} xhci_portsc_t;
+static_assert(sizeof(xhci_portsc_t) == 4);
 
 typedef volatile struct {
   // port status and control register (dword 0)
@@ -290,9 +347,14 @@ typedef volatile struct {
 // Interrupt Register Set
 typedef volatile struct {
   // interrupt management register (dword 0)
-  uint32_t ip : 1;        // interrupt pending
-  uint32_t ie : 1;        // interrupt enable
-  uint32_t : 30;          // reserved
+  union {
+    uint32_t raw;
+    struct {
+      uint32_t ip : 1;        // interrupt pending
+      uint32_t ie : 1;        // interrupt enable
+      uint32_t : 30;          // reserved
+    };
+  } iman;
   // interrupt moderation register (dword 1)
   // interrupts/sec = 1/(250 * 10^-9sec * interval)
   uint32_t imodi : 16;  // interrupt moderation interval
@@ -327,10 +389,13 @@ typedef volatile struct {
 // -------- Doorbell Registers --------
 
 // Doorbell register
-typedef volatile struct {
-  uint32_t target : 8; // doorbell
-  uint32_t : 8;        // reserved
-  uint32_t : 16;       // doorbell task id
+typedef volatile union {
+  uint32_t raw;
+  struct {
+    uint32_t target : 8;  // doorbell
+    uint32_t : 8;         // reserved
+    uint32_t task_id: 16; // doorbell task id
+  };
 } xhci_db_reg_t;
 
 //
@@ -680,6 +745,27 @@ typedef struct {
 } xhci_disbl_slot_cmd_trb_t;
 static_assert(sizeof(xhci_disbl_slot_cmd_trb_t) == 16);
 
+// -------- Other TRBs --------
+
+// Link TRB
+typedef struct {
+  // dword 0 & 1
+  uint64_t rs_addr;          // ring segment base address
+  // dword 2
+  uint32_t : 24;             // reserved
+  uint32_t target : 8;       // interrupter target
+  // dword 3
+  uint32_t cycle : 1;        // cycle bit
+  uint32_t toggle_cycle : 1; // evaluate next trb
+  uint32_t : 2;              // reserved
+  uint32_t ch : 1;           // chain bit
+  uint32_t ioc : 1;          // interrupt on completion
+  uint32_t : 4;              // reserved
+  uint32_t trb_type : 6;     // trb type
+  uint32_t : 16;             // reserved
+} xhci_link_trb_t;
+static_assert(sizeof(xhci_link_trb_t) == 16);
+
 //
 
 // Event Ring Segment Table Entry
@@ -717,6 +803,9 @@ typedef struct {
   uintptr_t virt_addr;
   size_t size;
 
+  cond_t event;
+  cond_t event_ack;
+
   xhci_cap_regs_t *cap;
   xhci_op_regs_t *op;
   xhci_rt_regs_t *rt;
@@ -727,12 +816,14 @@ typedef struct {
   xhci_erst_entry_t *erst;
 
   xhci_trb_t *evt_ring;
+  uintptr_t evt_ring_phys;
   uint32_t evt_max : 15;
   uint32_t : 1;
   uint32_t evt_index : 15;
   uint32_t evt_ccs : 1;
 
   xhci_trb_t *cmd_ring;
+  uintptr_t cmd_ring_phys;
   uint32_t cmd_max : 15;
   uint32_t : 1;
   uint32_t cmd_index : 15;
@@ -741,7 +832,13 @@ typedef struct {
   xhci_protocol_t *protocols;
 } xhci_dev_t;
 
-void xhci_init();
+#define cast_trb(type, trb) (*(((type) *)(&(trb))))
+#define as_trb(trb) ((xhci_trb_t *)(&(trb)))
 
+
+void xhci_init();
+void xhci_queue_command(xhci_trb_t *trb);
+void xhci_ring(uint8_t slot, uint16_t endpoint);
+void xhci_run_command(xhci_trb_t *trb);
 
 #endif

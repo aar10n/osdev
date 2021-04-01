@@ -97,6 +97,7 @@ typedef struct scheduler {
 void scheduler_init(process_t *root);
 int scheduler_add(thread_t *thread);
 int scheduler_remove(thread_t *thread);
+int scheduler_update(thread_t *thread, uint8_t policy, uint16_t priority);
 int scheduler_block(thread_t *thread);
 int scheduler_unblock(thread_t *thread);
 int scheduler_yield();

@@ -46,9 +46,9 @@ static inline bool is_valid_ptr(void *ptr) {
     return false;
   } else if (chunk->magic != CHUNK_MAGIC) {
     // the chunk header is invalid
-    kprintf("-- invalid header --\n");
-    kprintf("pointer: %p\n", ptr);
-    kprintf("magic: 0x%04X\n", chunk->magic);
+    // kprintf("-- invalid header --\n");
+    // kprintf("pointer: %p\n", ptr);
+    // kprintf("magic: 0x%04X\n", chunk->magic);
     return false;
   }
 
@@ -63,6 +63,8 @@ static inline chunk_t *get_chunk(void *ptr) {
 static inline chunk_t *get_next_chunk(chunk_t *chunk) {
   if (chunk == kheap->last_chunk) {
     return NULL;
+  } else if (chunk->next != NULL) {
+    return chunk->next;
   }
 
   size_t size = chunk->magic == HOLE_MAGIC ? 0 : chunk->size;

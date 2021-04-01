@@ -42,20 +42,6 @@ boot_info_t *boot_info;
 // Kernel launch process
 //
 
-void *thread1(void *arg) {
-  kprintf("[pid %d:%d] thread routine\n", getpid(), gettid());
-  kprintf("inside thread 1\n");
-  thread_sleep(2e6); // 2 seconds
-  return (void *) 0x1234;
-}
-
-void *thread2(void *arg) {
-  kprintf("[pid %d:%d] thread routine\n", getpid(), gettid());
-  kprintf("inside thread 2\n");
-  thread_sleep(1e6); // 1 second
-  return (void *) 0x5678;
-}
-
 void launch() {
   sti();
 
@@ -65,18 +51,9 @@ void launch() {
   pcie_init();
   pcie_discover();
 
-  thread_t *t1 = thread_create(thread1, NULL);
-  thread_t *t2 = thread_create(thread2, NULL);
-  kprintf("[pid %d:%d] joining threads\n", getpid(), gettid());
+  process_create(xhci_init);
 
-  void *ret1, *ret2;
-  thread_join(t1, &ret1);
-  thread_join(t2, &ret2);
-
-  kprintf("ret1: %p\n", ret1);
-  kprintf("ret2: %p\n", ret2);
-
-  kprintf("done!\n");
+  scheduler_block(current_thread);
 }
 
 //

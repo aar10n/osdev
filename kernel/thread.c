@@ -174,7 +174,9 @@ int thread_join(thread_t *thread, void **retval) {
     return result;
   }
 
-  *retval = thread->retval;
+  if (retval != NULL) {
+    *retval = thread->retval;
+  }
   // free thread
   return 0;
 }
@@ -184,22 +186,22 @@ void thread_sleep(uint64_t us) {
   scheduler_sleep(us * 1000);
 }
 
-//
-
-int thread_setpolicy(uint8_t policy) {
-  thread_t *curr = current_thread;
-  curr->policy = policy;
-  return 0;
+void thread_yield() {
+  scheduler_yield();
 }
 
-int thread_setpriority(uint16_t priority) {
-  thread_t *curr = current_thread;
-  sched_policy_t *policy = scheduler_get_policy(curr->policy);
-  if (!policy->config.can_change_priority) {
-    return ENOTSUP;
-  }
-  curr->priority = priority;
-  return 0;
+//
+
+int thread_setpolicy(thread_t *thread, uint8_t policy) {
+  return scheduler_update(thread, policy, thread->priority);
+}
+
+int thread_setpriority(thread_t *thread, uint16_t priority) {
+  return scheduler_update(thread, thread->policy, priority);
+}
+
+int thread_setsched(thread_t *thread, uint8_t policy, uint16_t priority) {
+  return scheduler_update(thread, policy, priority);
 }
 
 //

@@ -28,7 +28,8 @@ QEMUFLAGS = \
 	-device qemu-xhci,id=xhci,p2=2,p3=4 \
 	-device usb-kbd,bus=xhci.0 \
 	-device usb-mouse,bus=xhci.0 \
-	-device usb-storage,drive=boot,bus=xhci.0
+	-device usb-storage,drive=boot,bus=xhci.0 \
+	-trace events=$(BUILD)/traces
 
 include scripts/Makefile.toolchain
 include scripts/Makefile.util
@@ -59,7 +60,7 @@ debug: $(BUILD)/osdev.img
 		-ex "add-symbol $(BUILD)/kernel.elf"
 
 run-debug: $(BUILD)/osdev.img
-	$(QEMU) -s -S $(QEMUFLAGS) -monitor telnet:127.0.0.1:55544,server,nowait &
+	$(QEMU) -s -S $(QEMUFLAGS) -monitor telnet:127.0.0.1:55544,server,nowait &> $(BUILD)/output &
 
 .PHONY: clean
 clean:

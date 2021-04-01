@@ -79,6 +79,14 @@ process_t *create_root_process(void (function)()) {
 
 //
 
+pid_t process_create(void (start_routine)()) {
+  process_t *parent = current_process;
+  pid_t pid = alloc_pid();
+  process_t *process = process_alloc(pid, parent->pid, (void *) start_routine, NULL);
+  scheduler_add(process->main);
+  return process->pid;
+}
+
 pid_t fork() {
   kprintf("[process] creating process\n");
   process_t *parent = current_process;

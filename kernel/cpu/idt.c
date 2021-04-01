@@ -15,11 +15,11 @@ extern uintptr_t idt_stubs;
 //
 
 __used void irq_handler(uint8_t vector, regs_t *regs) {
+  apic_send_eoi();
   idt_handler_t handler = IDT_HANDLERS[vector];
   if (handler.fn) {
     handler.fn(vector, handler.data);
   }
-  apic_send_eoi();
   // sched_irq_hook(vector);
 }
 

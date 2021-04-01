@@ -87,9 +87,11 @@ thread_t *thread_create(void *(start_routine)(void *), void *arg);
 void thread_exit(void *retval);
 int thread_join(thread_t *thread, void **retval);
 void thread_sleep(uint64_t us);
+void thread_yield();
 
-int thread_setpolicy(uint8_t policy);
-int thread_setpriority(uint16_t priority);
+int thread_setpolicy(thread_t *thread, uint8_t policy);
+int thread_setpriority(thread_t *thread, uint16_t priority);
+int thread_setsched(thread_t *thread, uint8_t policy, uint16_t priority);
 
 void print_debug_thread(thread_t *thread);
 

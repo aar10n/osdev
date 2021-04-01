@@ -98,6 +98,7 @@ int mutex_unlock(mutex_t *mutex) {
 // Conditions
 
 void cond_init(cond_t *cond) {
+  cond->signaled = false;
   cond->signaler = NULL;
   cond->queue = NULL;
   spin_init(&cond->queue_lock);
@@ -105,6 +106,10 @@ void cond_init(cond_t *cond) {
 
 int cond_wait(cond_t *cond) {
   thread_t *thread = current_thread;
+  if (cond->signaled) {
+    atomic_bit_test_and_reset(&cond->signaled);
+    return 0;
+  }
 
   preempt_disable();
   safe_enqeue(&cond->queue, &cond->queue_lock, thread);
@@ -115,17 +120,30 @@ int cond_wait(cond_t *cond) {
 
 int cond_signal(cond_t *cond) {
   thread_t *thread = current_thread;
+  if (cond->queue == NULL) {
+    cond->signaled = true;
+    return 0;
+  }
 
   preempt_disable();
   cond->signaler = thread;
   thread_t *signaled = safe_dequeue(&cond->queue, &cond->queue_lock);
   preempt_enable();
+
+  kprintf("[cond] thread %d:%d unblocked by %d:%d\n",
+          signaled->process->pid, signaled->tid,
+          thread->process->pid, thread->tid);
+
   scheduler_unblock(signaled);
   return 0;
 }
 
 int cond_broadcast(cond_t *cond) {
   thread_t *thread = current_thread;
+  if (cond->queue == NULL) {
+    cond->signaled = true;
+    return 0;
+  }
 
   preempt_disable();
   cond->signaler = thread;

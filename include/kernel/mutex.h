@@ -25,6 +25,7 @@ typedef struct mutex {
 } mutex_t;
 
 typedef struct cond {
+  bool signaled;         // signaled flag
   thread_t *signaler;    // signalling thread
   spinlock_t queue_lock; // queue lock
   thread_link_t *queue;  // signaled threads

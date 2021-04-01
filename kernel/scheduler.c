@@ -202,6 +202,7 @@ thread_t *get_next_thread() {
 //
 
 void scheduler_sched(sched_reason_t reason) {
+  // cli();
   scheduler_t *sched = SCHEDULER;
   thread_t *curr = current_thread;
 
@@ -342,6 +343,25 @@ int scheduler_remove(thread_t *thread) {
   return 0;
 }
 
+int scheduler_update(thread_t *thread, uint8_t policy, uint16_t priority) {
+  scheduler_t *sched = SCHEDULER;
+  sched_policy_t *pol = sched->policies[policy];
+  if (!pol->config.can_change_priority && priority != thread->priority) {
+    return ENOTSUP;
+  }
+
+  if (thread == current_thread || IS_BLOCKED(thread)) {
+    thread->policy = policy;
+    thread->priority = priority;
+  } else {
+    DISPATCH(thread->policy, remove_thread, thread);
+    thread->policy = policy;
+    thread->priority = priority;
+    DISPATCH(thread->policy, add_thread, thread, RESERVED);
+  }
+  return 0;
+}
+
 int scheduler_block(thread_t *thread) {
   bool reschedule = false;
   if (thread->status == THREAD_RUNNING) {
@@ -373,6 +393,7 @@ int scheduler_unblock(thread_t *thread) {
 }
 
 int scheduler_yield() {
+  kprintf("[scheduler] yielding\n");
   scheduler_sched(YIELDED);
   return 0;
 }
