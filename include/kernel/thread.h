@@ -63,12 +63,13 @@ typedef struct thread {
   thread_status_t status; // thread status
 
   mutex_t mutex;          // thread mutex
+  cond_t data_ready;      // thread data ready condition
   uint32_t signal;        // signal mask
   uint32_t flags;         // flags mask
 
   int _errno;             // thread local errno
   int preempt_count;      // preempt disable counter
-  void *retval;           // thread return value
+  void *data;             // thread data pointer
 
   page_t *stack;          // stack pages
 
@@ -86,6 +87,8 @@ void thread_free(thread_t *thread);
 thread_t *thread_create(void *(start_routine)(void *), void *arg);
 void thread_exit(void *retval);
 int thread_join(thread_t *thread, void **retval);
+int thread_send(void *data);
+int thread_receive(thread_t *thread, void **data);
 void thread_sleep(uint64_t us);
 void thread_yield();
 

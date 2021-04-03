@@ -411,7 +411,6 @@ typedef volatile union {
 #define XHCI_BULK_IN_EP   6
 #define XHCI_INTR_IN_EP   7
 
-
 // Slot Context
 typedef struct {
   // dword 0
@@ -468,10 +467,30 @@ typedef struct {
 } xhci_endpoint_ctx_t;
 static_assert(sizeof(xhci_endpoint_ctx_t) == 32);
 
+// Input Control Context
+typedef struct {
+  uint32_t drop_flags;      // drop context flags
+  uint32_t add_flags;       // add context flags
+  uint32_t reserved[5];     // reserved
+  uint32_t config_val : 8;  // configuration value
+  uint32_t intrfc_num : 8;  // interface number
+  uint32_t alt_setting : 8; // alternate setting
+  uint32_t : 8;             // reserved
+} xhci_input_ctrl_ctx_t;
+static_assert(sizeof(xhci_input_ctrl_ctx_t) == 32);
+
+// Input Context
+typedef struct {
+  xhci_input_ctrl_ctx_t ctrl;
+  xhci_slot_ctx_t slot;
+  xhci_endpoint_ctx_t endpoint[31];
+} xhci_input_ctx_t;
+
+
 // Device Context
 typedef struct {
-  xhci_slot_ctx_t slot_ctx;
-  xhci_endpoint_ctx_t endpoint_ctx[31];
+  xhci_slot_ctx_t slot;
+  xhci_endpoint_ctx_t endpoint[31];
 } xhci_device_ctx_t;
 
 
@@ -681,6 +700,22 @@ typedef struct {
 } xhci_transfer_evt_trb_t;
 static_assert(sizeof(xhci_transfer_evt_trb_t) == 16);
 
+// Command Completion Event TRB
+typedef struct {
+  // dword 0 & 1
+  uint64_t trb_ptr;         // trb pointer
+  // dword 2
+  uint32_t cmd_compl : 24;  // command completion parameter
+  uint32_t compl_code : 8;  // completion code
+  // dword 3
+  uint32_t cycle : 1;       // cycle bit
+  uint32_t : 9;             // reserved
+  uint32_t trb_type : 6;    // trb type
+  uint32_t vf_id : 8;       // vf id
+  uint32_t slot_id : 8;     // slot id
+} xhci_cmd_compl_evt_trb_t;
+static_assert(sizeof(xhci_cmd_compl_evt_trb_t) == 16);
+
 // Port Status Change Event TRB
 typedef struct {
   // dword 0
@@ -745,6 +780,21 @@ typedef struct {
 } xhci_disbl_slot_cmd_trb_t;
 static_assert(sizeof(xhci_disbl_slot_cmd_trb_t) == 16);
 
+// Address Device Command TRB
+typedef struct {
+  // dword 0 & 1
+  uint64_t input_ctx;       // input context pointer
+  // dword 2
+  uint32_t : 32;            // reserved
+  // dword 3
+  uint32_t cycle : 1;       // cycle bit
+  uint32_t : 9;             // reserved
+  uint32_t trb_type : 6;    // trb type
+  uint32_t : 8;             // reserved
+  uint32_t slot_id : 8;     // slot id
+} xhci_addr_dev_cmd_trb_t;
+static_assert(sizeof(xhci_addr_dev_cmd_trb_t) == 16);
+
 // -------- Other TRBs --------
 
 // Link TRB
@@ -798,10 +848,21 @@ typedef struct xhci_protocol {
 // Pointer equals CCS, then the Event TRB is a valid event.
 
 typedef struct {
+  xhci_input_ctx_t input_ctx;
+} xhci_device_slot_t;
+
+typedef struct xhci_port {
+
+} xhci_port_t;
+
+typedef struct {
   pcie_device_t *pci_dev;
   uintptr_t phys_addr;
   uintptr_t virt_addr;
   size_t size;
+
+  // threads
+  thread_t *event_thread;
 
   cond_t event;
   cond_t event_ack;
@@ -839,6 +900,6 @@ typedef struct {
 void xhci_init();
 void xhci_queue_command(xhci_trb_t *trb);
 void xhci_ring(uint8_t slot, uint16_t endpoint);
-void xhci_run_command(xhci_trb_t *trb);
+void *xhci_run_command(xhci_trb_t *trb);
 
 #endif

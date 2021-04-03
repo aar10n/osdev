@@ -82,6 +82,7 @@ thread_t *thread_alloc(id_t tid, void *(start_routine)(void *), void *arg) {
   thread->status = THREAD_READY;
   thread->policy = SCHED_SYSTEM;
   mutex_init_locked(&thread->mutex, thread);
+  cond_init(&thread->data_ready);
   return thread;
 }
 
@@ -156,16 +157,15 @@ thread_t *thread_create(void *(start_routine)(void *), void *arg) {
 
 void thread_exit(void *retval) {
   thread_t *thread = current_thread;
-  thread->retval = retval;
+  thread->data = retval;
   mutex_unlock(&thread->mutex);
   scheduler_remove(thread);
 }
 
 int thread_join(thread_t *thread, void **retval) {
   thread_t *curr = current_thread;
-  kassert(thread->process == curr->process);
-  if (thread == curr || thread->flags & F_THREAD_JOINING) {
-    return -EINVAL;
+  if (thread->process != curr->process || thread == curr || thread->flags & F_THREAD_JOINING) {
+    return EINVAL;
   }
 
   thread->flags |= F_THREAD_JOINING;
@@ -175,9 +175,31 @@ int thread_join(thread_t *thread, void **retval) {
   }
 
   if (retval != NULL) {
-    *retval = thread->retval;
+    *retval = thread->data;
   }
   // free thread
+  return 0;
+}
+
+int thread_send(void *data) {
+  // send data to awaiting thread
+  thread_t *curr = current_thread;
+  curr->data = data;
+  cond_signal(&curr->data_ready);
+  return 0;
+}
+
+int thread_receive(thread_t *thread, void **data) {
+  // wait for data to be sent from thread
+  thread_t *curr = current_thread;
+  if (thread->process != curr->process || thread == curr) {
+    return EINVAL;
+  }
+
+  cond_wait(&thread->data_ready);
+  if (data != NULL) {
+    *data = thread->data;
+  }
   return 0;
 }
 

@@ -9,6 +9,7 @@
 #include <atomic.h>
 #include <mm.h>
 #include <printf.h>
+#include <panic.h>
 
 void safe_enqeue(thread_link_t **queue, spinlock_t *lock, thread_t *thread) {
   thread_link_t *link = kmalloc(sizeof(thread_link_t));
@@ -60,14 +61,15 @@ int mutex_lock(mutex_t *mutex) {
 
   kprintf("[pid %d:%d] locking mutex\n", getpid(), gettid());
   preempt_disable();
-  label(try_again);
+  // label(try_again);
   if (atomic_bit_test_and_set(&mutex->locked)) {
     kprintf("[pid %d:%d] failed to aquire mutex\n", getpid(), gettid());
     kprintf("blocking\n");
     // the mutex is currently locked
     safe_enqeue(&mutex->queue, &mutex->queue_lock, thread);
     scheduler_block(thread);
-    goto try_again;
+    // goto try_again;
+    kassert(mutex->owner == thread);
   } else {
     mutex->owner = thread;
   }
@@ -86,10 +88,11 @@ int mutex_unlock(mutex_t *mutex) {
   preempt_disable();
   thread_t *unblocked = safe_dequeue(&mutex->queue, &mutex->queue_lock);
   if (unblocked != NULL) {
+    mutex->owner = unblocked;
     scheduler_unblock(unblocked);
   }
   mutex->owner = NULL;
-  atomic_bit_test_and_reset(&mutex->locked);
+  // atomic_bit_test_and_reset(&mutex->locked);
   preempt_enable();
   kprintf("[pid %d:%d] mutex unlocked\n", getpid(), gettid());
   return 0;

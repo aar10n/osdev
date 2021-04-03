@@ -15,17 +15,31 @@
 #define OP_BASE ((uintptr_t)((xhci)->op))
 #define get_portsc(n) ((xhci_portsc_t *)(OP_BASE + (0x400 + (0x10 * (n)))))
 
+#define WAIT_TIMEOUT(value, fail)\
+{                                \
+  int attempts = 0;              \
+  while (!(value)) {             \
+    if (attempts >= 5) {         \
+      fail;                      \
+    }                            \
+    thread_sleep(1000);          \
+    attempts++;                  \
+  }                              \
+}
+
 static xhci_dev_t *xhci;
 
 //
 
-void callback(uint8_t vector, void *data) {
+void xhci_callback(uint8_t vector, void *data) {
   xhci_dev_t *dev = data;
   kprintf(">>>>>> CALLBACK <<<<<<\n");
   cond_signal(&dev->event);
 }
 
 //
+
+// xhci_
 
 xhci_cap_t *xhci_get_cap(xhci_dev_t *dev, xhci_cap_t *cap_ptr, uint8_t cap_id) {
   if (cap_ptr == NULL) {
@@ -80,7 +94,67 @@ xhci_protocol_t *get_protocols(xhci_dev_t *dev) {
 
 //
 
-void *xhci_init_ports() {
+void xhci_init_device(uint32_t port_num, xhci_protocol_t *proto) {
+  // assign a slot for the device
+  xhci_enabl_slot_cmd_trb_t enbl_cmd = { 0 };
+  enbl_cmd.trb_type = TRB_ENABL_SLOT_CMD;
+
+  xhci_cmd_compl_evt_trb_t *result = xhci_run_command(as_trb(enbl_cmd));
+  kassert(result->trb_type == TRB_CMD_CMPL_EVT);
+  if (result->compl_code != 1) {
+    panic("[xhci] failed to assign device slot\n");
+  }
+
+  uint8_t slot_id = result->slot_id;
+
+  xhci_input_ctx_t *input_ctx = kmalloca(sizeof(xhci_input_ctx_t), 16);
+  xhci_slot_ctx_t *slot_ctx = &input_ctx->slot;
+  xhci_endpoint_ctx_t *ep_ctx = &input_ctx->endpoint[0];
+
+  memset(input_ctx, 0, sizeof(xhci_input_ctx_t));
+  // set A0 and A1 flags to 1
+  input_ctx->ctrl.add_flags |= 0x3;
+
+  slot_ctx->root_hub_port = 1;
+  slot_ctx->route_string = 0;
+  slot_ctx->ctx_entries = 1;
+
+  // allocate transfer ring
+  page_t *ring_page = alloc_zero_page(PE_WRITE);
+  xhci_trb_t *ring = (void *) ring_page->addr;
+
+  ep_ctx->ep_type = XHCI_CTRL_BI_EP;
+  ep_ctx->max_packt_sz = 10;
+  ep_ctx->max_burst_sz = 0;
+  ep_ctx->tr_dequeue_ptr = ring_page->frame;
+  ep_ctx->tr_dequeue_ptr |= 1; // DCS bit
+  ep_ctx->interval = 0;
+  ep_ctx->max_streams = 0;
+  ep_ctx->mult = 0;
+  ep_ctx->err_count = 3;
+
+  xhci_device_ctx_t *dev_ctx = kmalloca(sizeof(xhci_device_ctx_t), 16);
+  memset(dev_ctx, 0, sizeof(xhci_device_ctx_t));
+
+  xhci->dcbaap[slot_id] = heap_ptr_phys(dev_ctx);
+
+  xhci_addr_dev_cmd_trb_t addr_cmd = { 0 };
+  addr_cmd.input_ctx = heap_ptr_phys(input_ctx);
+  addr_cmd.trb_type = TRB_ADDR_DEV_CMD;
+  addr_cmd.cycle = 1;
+  addr_cmd.slot_id = slot_id;
+
+  result = xhci_run_command(as_trb(addr_cmd));
+  kassert(result->trb_type == TRB_CMD_CMPL_EVT);
+  if (result->compl_code != 1) {
+    panic("[xhci] failed to address device\n");
+  }
+
+  kprintf("[xhci] result: %d\n", result->trb_type);
+  kprintf("[xhci] success\n");
+}
+
+void xhci_init_ports() {
   kprintf("[xhci] initializing ports\n");
   xhci_protocol_t *proto = xhci->protocols;
   while (proto) {
@@ -101,13 +175,10 @@ void *xhci_init_ports() {
         port->reset = 1;
       }
 
-      if (!port->enabled) {
-        thread_sleep(5000); // 5 ms
-        if (!port->enabled) {
-          kprintf("[xhci] failed to enable port %d\n", i);
-          continue;
-        }
-      }
+      WAIT_TIMEOUT(port->enabled,
+        kprintf("[xhci] failed to enable port %d\n", i);
+        continue
+      );
 
       kprintf("[xhci] enabled port %d\n", i);
 
@@ -118,30 +189,24 @@ void *xhci_init_ports() {
         port->prc = 1;
       }
       port->csc = 1;
-    }
 
-    xhci_enabl_slot_cmd_trb_t cmd = {
-      .trb_type = TRB_ENABL_SLOT_CMD,
-      .cycle = 1,
-      .slot_type = 0
-    };
-    xhci_run_command(as_trb(cmd));
+      // initialize the device
+      xhci_init_device(i, proto);
+      break;
+    }
 
     proto = proto->next;
   }
-  return NULL;
 }
 
-noreturn void xhci_event_loop(xhci_dev_t *dev) {
+noreturn void *xhci_event_loop(void *arg) {
   kprintf("[xhci] starting event loop\n");
 
-  xhci_cap_regs_t *cap = dev->cap;
-  xhci_op_regs_t *op = dev->op;
-  xhci_rt_regs_t *rt = dev->rt;
-  xhci_db_reg_t *db = dev->db;
-  xhci_port_regs_t *ports = dev->ports;
-
-  xhci_trb_t *evt_ring = xhci->evt_ring;
+  xhci_cap_regs_t *cap = xhci->cap;
+  xhci_op_regs_t *op = xhci->op;
+  xhci_rt_regs_t *rt = xhci->rt;
+  xhci_db_reg_t *db = xhci->db;
+  xhci_port_regs_t *ports = xhci->ports;
 
   op->usbsts.evt_int = 1;
   while (true) {
@@ -149,7 +214,6 @@ noreturn void xhci_event_loop(xhci_dev_t *dev) {
       kprintf("[xhci] waiting for event\n");
       cond_wait(&xhci->event);
     }
-
     kprintf("[xhci] >>>>> an event occurred\n");
 
     if (op->usbsts.hc_error) {
@@ -157,12 +221,12 @@ noreturn void xhci_event_loop(xhci_dev_t *dev) {
       panic(">>>>>>> HOST CONTROLLER ERROR <<<<<<<");
     } else if (op->usbsts.hs_err) {
       kprintf("[xhci] an error occurred\n");
-      kprintf(">>>>>>> HOST SYSTEM ERROR <<<<<<<\n");
-      goto ack_event;
+      panic(">>>>>>> HOST SYSTEM ERROR <<<<<<<\n");
     }
-    
+
+    xhci_trb_t *trb = &xhci->evt_ring[xhci->evt_index++];
+
     // acknowledge event
-    label(ack_event);
     op->usbsts.evt_int = 1;
     xhci_intr_regs_t *intr = &rt->irs[0];
     uint32_t iman = intr->iman.raw;
@@ -172,10 +236,13 @@ noreturn void xhci_event_loop(xhci_dev_t *dev) {
     intr->erdp += sizeof(xhci_trb_t);
 
     kprintf("[xhci] event acknowledged\n");
+    thread_send(trb);
     cond_signal(&xhci->event_ack);
   }
 }
 
+//
+// XHCI API
 //
 
 void xhci_init() {
@@ -219,12 +286,12 @@ void xhci_init() {
   xhci->ports = (void *) virt_addr + xhci->cap->length + 0x400;
 
   // spawn threads
-  thread_t *evt_thread = thread_create(xhci_event_loop, NULL);
-  thread_setsched(evt_thread, SCHED_DRIVER, PRIORITY_HIGH);
+  xhci->event_thread = thread_create(xhci_event_loop, NULL);
+  thread_setsched(xhci->event_thread, SCHED_DRIVER, PRIORITY_HIGH);
   thread_yield();
 
   // interrupt setup
-  idt_hook(0x32, callback, xhci);
+  idt_hook(0x32, xhci_callback, xhci);
   pcie_enable_msi_vector(xhci->pci_dev, 0, 0x32);
 
   // take ownership (if needed)
@@ -240,10 +307,7 @@ void xhci_init() {
     kprintf("[xhci] took ownership\n");
   }
 
-  //
-  // Initialize Controller
-  //
-
+  // initialize controller
   kprintf("[xhci] initializing controller\n");
 
   // reset the controller
@@ -309,29 +373,11 @@ void xhci_init() {
 
   xhci->op->usbcmd.run = 1;
 
-
-  // xhci_noop_cmd_trb_t cmd;
-  // cmd.trb_type = TRB_NOOP_CMD;
-
-  // kprintf("[xhci] running command 1\n");
-  // xhci_run_command(as_trb(cmd));
-
-  // xhci->cmd_ccs = 0;
-
-  // kprintf("[xhci] running command 2\n");
-  // xhci_run_command(as_trb(cmd));
-
-
-
-  // xhci->cmd_ccs = 1;
-  // kprintf("[xhci] sending command 2\n");
-  // send_command(as_trb(cmd));
-
-
   xhci->protocols = get_protocols(xhci);
   xhci_init_ports();
+
   kprintf("[xchi] done initializing!\n");
-  thread_join(evt_thread, NULL);
+  thread_join(xhci->event_thread, NULL);
 }
 
 void xhci_queue_command(xhci_trb_t *trb) {
@@ -382,7 +428,11 @@ void xhci_ring(uint8_t slot, uint16_t endpoint) {
   db->target = endpoint;
 }
 
-void xhci_run_command(xhci_trb_t *trb) {
+void *xhci_run_command(xhci_trb_t *trb) {
   xhci_queue_command(trb);
   xhci_ring(0, 0);
+
+  void *ptr;
+  thread_receive(xhci->event_thread, &ptr);
+  return ptr;
 }
