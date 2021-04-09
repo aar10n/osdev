@@ -57,6 +57,7 @@ typedef struct process {
 
 process_t *create_root_process(void (function)());
 pid_t process_create(void (start_routine)());
+pid_t process_create_1(void (start_routine)(), void *arg);
 pid_t fork();
 
 pid_t getpid();

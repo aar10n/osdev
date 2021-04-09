@@ -6,7 +6,7 @@
 #define LIBC_ERRNO_H
 
 #ifdef __KERNEL__
-#define errno (current_thread->_errno)
+#define errno (PERCPU->errno)
 #else
 extern _Thread_local int errno;
 #endif

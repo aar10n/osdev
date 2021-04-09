@@ -51,7 +51,7 @@ void launch() {
   pcie_init();
   pcie_discover();
 
-  process_create(xhci_init);
+  xhci_init();
 
   scheduler_block(current_thread);
 }

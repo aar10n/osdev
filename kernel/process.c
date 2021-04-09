@@ -80,9 +80,13 @@ process_t *create_root_process(void (function)()) {
 //
 
 pid_t process_create(void (start_routine)()) {
+  return process_create_1(start_routine, NULL);
+}
+
+pid_t process_create_1(void (start_routine)(), void *arg) {
   process_t *parent = current_process;
   pid_t pid = alloc_pid();
-  process_t *process = process_alloc(pid, parent->pid, (void *) start_routine, NULL);
+  process_t *process = process_alloc(pid, parent->pid, (void *) start_routine, arg);
   scheduler_add(process->main);
   return process->pid;
 }

@@ -4,8 +4,7 @@
 
 #include <loader.h>
 #include <cpu/cpu.h>
-#include <mm/mm.h>
-#include <mm/vm.h>
+#include <mm.h>
 #include <elf.h>
 #include <elf64.h>
 #include <printf.h>

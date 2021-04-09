@@ -38,15 +38,17 @@ thread_t *safe_dequeue(thread_link_t **queue, spinlock_t *lock) {
 
 // Mutexes
 
-void mutex_init(mutex_t *mutex) {
+void mutex_init(mutex_t *mutex, uint32_t flags) {
   mutex->locked = false;
+  mutex->flags = flags;
   mutex->owner = NULL;
   mutex->queue = NULL;
   spin_init(&mutex->queue_lock);
 }
 
-void mutex_init_locked(mutex_t *mutex, thread_t *owner) {
+void mutex_init_locked(mutex_t *mutex, thread_t *owner, uint32_t flags) {
   mutex->locked = true;
+  mutex->flags = flags;
   mutex->owner = owner;
   mutex->queue = NULL;
   spin_init(&mutex->queue_lock);
@@ -100,8 +102,9 @@ int mutex_unlock(mutex_t *mutex) {
 
 // Conditions
 
-void cond_init(cond_t *cond) {
+void cond_init(cond_t *cond, uint32_t flags) {
   cond->signaled = false;
+  cond->flags = flags;
   cond->signaler = NULL;
   cond->queue = NULL;
   spin_init(&cond->queue_lock);
@@ -110,7 +113,7 @@ void cond_init(cond_t *cond) {
 int cond_wait(cond_t *cond) {
   thread_t *thread = current_thread;
   if (cond->signaled) {
-    atomic_bit_test_and_reset(&cond->signaled);
+    cond->signaled = false;
     return 0;
   }
 
