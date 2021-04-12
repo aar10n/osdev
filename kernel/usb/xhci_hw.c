@@ -46,81 +46,48 @@ int xhci_init_controller(xhci_dev_t *xhci) {
   }
 
   // reset the controller
-  int result = xhci_reset_controller(xhci);
-  if (result != 0) {
-    return result;
-  }
+  kprintf("[xhci] resetting controller\n");
 
-  uint32_t hcsparams1 = read32(CAP, XHCI_CAP_HCSPARAMS1);
-  uint8_t max_ports = CAP_MAX_PORTS(hcsparams1);
-  uint8_t max_slots = CAP_MAX_SLOTS(hcsparams1);
+  xhci_op->usbcmd.run = 0;
+  xhci_op->usbcmd.hc_reset = 1;
+  WAIT_TIMEOUT(xhci_op->usbsts_r & USBSTS_NOT_READY, return ETIMEDOUT);
+
+  uint8_t max_ports = xhci_cap->hcsparams1.max_ports;
+  uint8_t max_slots = xhci_cap->hcsparams1.max_slots;
+  xhci_op->config.max_slots_en = max_slots;
   kprintf("[xhci] number of ports: %d\n", max_ports);
   kprintf("[xhci] number of slots: %d\n", max_slots);
-
-  // set up the number of enabled slots
-  write32(OP, XHCI_OP_CONFIG, CONFIG_MAX_SLOTS_EN(max_slots));
 
   // set up the device context base array
   size_t dcbaap_size = sizeof(uintptr_t) * max_slots;
   void *dcbaap = kmalloca(dcbaap_size, 64);
-  uintptr_t dcbaap_phys = heap_ptr_phys(dcbaap);
-  addr_write64(OP, XHCI_OP_DCBAAP, dcbaap_phys);
   xhci->dcbaap = dcbaap;
+  xhci_op->dcbaap = heap_ptr_phys(dcbaap);
 
   // set up the command ring
   xhci_ring_t *ring = xhci_alloc_ring();
   xhci->cmd_ring = ring;
-  write64(OP, XHCI_OP_CRCR, ring->page->frame | CRCR_RCS);
+  xhci_op->crcr_r |= ring->page->frame | CRCR_RCS;
 
   // set up the root interrupter
-  xhci_intrptr_t *intrptr = xhci_seutp_interrupter(xhci, 0);
+  xhci_intrptr_t *intrptr = xhci_setup_interrupter(xhci, 0);
   xhci->intr = intrptr;
 
   // run the controller
-  result = xhci_run_controller(xhci);
-
-  uint32_t usbcmd = read32(OP, XHCI_OP_USBCMD);
-  uint32_t usbsts = read32(OP, XHCI_OP_USBSTS);
-  uint32_t iman = read32(RT, XHCI_INTR_IMAN(0));
-
-  xhci_noop_cmd_trb_t noop_cmd = {
-    .trb_type = TRB_NOOP_CMD
-  };
-
-  xhci_cmd_compl_evt_trb_t *event;
-  event = xhci_execute_cmd_trb(xhci, as_trb(noop_cmd));
-  kprintf("[xhci] noop command | %d\n", event->compl_code);
-
-  return result;
-}
-
-int xhci_reset_controller(xhci_dev_t *xhci) {
-  kprintf("[xhci] resetting controller\n");
-
-  or_write32(OP, XHCI_OP_USBCMD, USBCMD_HC_RESET);
-  WAIT_TIMEOUT(read32(OP, XHCI_OP_USBSTS) & USBSTS_NOT_READY, return ETIMEDOUT);
-  return 0;
-}
-
-int xhci_run_controller(xhci_dev_t *xhci) {
   kprintf("[xhci] starting controller\n");
+  xhci_op->usbcmd.int_en = 1;
+  xhci_op->usbcmd.hs_err_en = 1;
+  xhci_op->usbcmd.run = 1;
 
-  // enable controller interrupts
-  or_write32(OP, XHCI_OP_USBCMD, USBCMD_INT_EN | USBCMD_HS_ERR_EN);
-  // run the controller
-  or_write32(OP, XHCI_OP_USBCMD, USBCMD_RUN);
+  WAIT_TIMEOUT(xhci_op->usbsts_r & USBSTS_NOT_READY, return ETIMEDOUT);
 
-  WAIT_TIMEOUT(read32(OP, XHCI_OP_USBSTS) & USBSTS_NOT_READY, return ETIMEDOUT);
+  kprintf("[xhci] done!\n");
   return 0;
 }
 
 void *xhci_execute_cmd_trb(xhci_dev_t *xhci, xhci_trb_t *trb) {
   xhci_ring_enqueue_trb(xhci->cmd_ring, trb);
   xhci_ring_db(xhci, 0, 0);
-
-  uint32_t usbcmd = read32(OP, XHCI_OP_USBCMD);
-  uint32_t usbsts = read32(OP, XHCI_OP_USBSTS);
-  uint32_t iman = read32(RT, XHCI_INTR_IMAN(0));
 
   void *ptr;
   thread_receive(xhci->event_thread, &ptr);
@@ -129,16 +96,24 @@ void *xhci_execute_cmd_trb(xhci_dev_t *xhci, xhci_trb_t *trb) {
 
 // Ports
 
-int xhci_enable_port(xhci_dev_t *xhci, uint8_t port_num, xhci_protocol_t *proto) {
-  if (proto->rev_major == 0x3) {
+int xhci_enable_port(xhci_dev_t *xhci, xhci_port_t *port) {
+  uint8_t n = port->number - 1;
+  if (port->protocol->rev_major == 0x3) {
     // USB 3
-    or_write32(OP, XHCI_PORT_SC(port_num), PORTSC_WARM_RESET);
-  } else if (proto->rev_major == 0x2) {
+    xhci_port(n)->portsc.warm_rst = 1;
+  } else if (port->protocol->rev_major == 0x2) {
     // USB 2
-    or_write32(OP, XHCI_PORT_SC(port_num), PORTSC_RESET);
+    xhci_port(n)->portsc.reset = 1;
   }
 
-  WAIT_TIMEOUT(!(read32(OP, XHCI_PORT_SC(port_num)) & PORTSC_EN), return ETIMEDOUT);
+  WAIT_TIMEOUT(!(xhci_port(n)->portsc.enabled), return ETIMEDOUT);
+
+  if (port->protocol->rev_major == 0x3) {
+    xhci_port(n)->portsc.wrc = 1;
+  } else if (port->protocol->rev_major == 0x2) {
+    xhci_port(n)->portsc.prc = 1;
+  }
+  xhci_port(n)->portsc.csc = 1;
   return 0;
 }
 
@@ -152,16 +127,9 @@ xhci_port_t *xhci_discover_ports(xhci_dev_t *xhci) {
   while (proto) {
     kprintf("[xhci] USB %x.%x supported\n", proto->rev_major, proto->rev_minor);
     for (int i = proto->port_offset; i < proto->port_offset + proto->port_count; i++) {
-      if (!(read32(OP, XHCI_PORT_SC(i) & PORTSC_CSC))) {
+      if (!(xhci_port(i)->portsc.ccs)) {
         continue; // no device is connected
       }
-
-      kprintf("[xhci] enabling port %d\n", i);
-      if (xhci_enable_port(xhci, i, proto) != 0) {
-        kprintf("[xhci] failed to enable port %d\n", i);
-        continue;
-      }
-      kprintf("[xhci] enabled port %d\n", i);
 
       xhci_port_t *p = kmalloc(sizeof(xhci_port_t));
       p->number = i + 1;
@@ -180,6 +148,50 @@ xhci_port_t *xhci_discover_ports(xhci_dev_t *xhci) {
   return ports;
 }
 
+// Interrupters
+
+xhci_intrptr_t *xhci_setup_interrupter(xhci_dev_t *xhci, uint8_t n) {
+  uint8_t vector = atomic_fetch_add(&intr_vector, 1);
+  idt_hook(vector, irq_callback, xhci);
+  pcie_enable_msi_vector(xhci->pci_dev, n, vector);
+
+  size_t erst_size = align(sizeof(xhci_erst_entry_t) * 1, 64);
+  xhci_erst_entry_t *erst = kmalloca(erst_size, 64);
+
+  xhci_ring_t *ring = xhci_alloc_ring();
+  erst[0].rs_addr = ring->page->frame;
+  erst[0].rs_size = PAGE_SIZE / sizeof(xhci_trb_t);
+
+  xhci_intrptr_t *intrptr = kmalloc(sizeof(xhci_intrptr_t));
+  intrptr->vector = vector;
+  intrptr->number = n;
+  intrptr->ring = ring;
+  intrptr->erst = (uintptr_t) erst;
+
+  xhci_intr(n)->imod.imodi = 4000;
+  xhci_intr(n)->erstsz = 1;
+  xhci_intr(n)->erstba_r = heap_ptr_phys(erst);
+  xhci_intr(n)->erdp_r = ring->page->frame;
+  xhci_intr(n)->iman.ie = 1;
+  return intrptr;
+}
+
+bool xhci_is_valid_event(xhci_intrptr_t *intrptr) {
+  xhci_ring_t *ring = intrptr->ring;
+  xhci_trb_t *trb = &ring->ptr[ring->index];
+  return trb->trb_type != 0 && trb->cycle == ring->ccs;
+}
+
+// Doorbells
+
+void xhci_ring_db(xhci_dev_t *xhci, uint8_t slot, uint16_t endpoint) {
+  if ((slot == 0 && endpoint > 0) || (slot > 0 && endpoint != 0)) {
+    panic("invalid slot/endpoint combination");
+  }
+
+  kprintf("[xhci] ding dong!\n");
+  xhci_db(slot)->target = endpoint;
+}
 // Devices
 
 xhci_device_t *xhci_setup_device(xhci_dev_t *xhci, xhci_port_t *port) {
@@ -241,8 +253,6 @@ xhci_device_t *xhci_setup_device(xhci_dev_t *xhci, xhci_port_t *port) {
 }
 
 int xhci_address_device(xhci_dev_t *xhci, xhci_device_t *device) {
-  kprintf("[xhci] addressing device\n");
-
   xhci_addr_dev_cmd_trb_t addr_cmd = { 0 };
   addr_cmd.input_ctx = heap_ptr_phys(device->input);
   addr_cmd.trb_type = TRB_ADDR_DEV_CMD;
@@ -256,66 +266,7 @@ int xhci_address_device(xhci_dev_t *xhci, xhci_device_t *device) {
     return EINVAL;
   }
 
-  kprintf("[xhci] success!\n");
   return 0;
-}
-
-// Interrupters
-
-xhci_intrptr_t *xhci_seutp_interrupter(xhci_dev_t *xhci, uint8_t n) {
-  uint8_t vector = atomic_fetch_add(&intr_vector, 1);
-  idt_hook(vector, irq_callback, xhci);
-  pcie_enable_msi_vector(xhci->pci_dev, n, vector);
-
-  size_t erst_size = align(sizeof(xhci_erst_entry_t) * 1, 64);
-  xhci_erst_entry_t *erst = kmalloca(erst_size, 64);
-
-  xhci_ring_t *ring = xhci_alloc_ring();
-  erst[0].rs_addr = heap_ptr_phys(ring->page->frame);
-  erst[0].rs_size = PAGE_SIZE / sizeof(xhci_trb_t);
-
-  xhci_intrptr_t *intrptr = kmalloc(sizeof(xhci_intrptr_t));
-  intrptr->vector = vector;
-  intrptr->number = n;
-  intrptr->ring = ring;
-  intrptr->erst = (uintptr_t) erst;
-
-  write32(RT, XHCI_INTR_IMOD(n), IMOD_INTERVAL(4000));
-  write32(RT, XHCI_INTR_ERSTSZ(n), ERSTSZ(1));
-  addr_write64(RT, XHCI_INTR_ERSTBA(n), heap_ptr_phys(erst));
-  addr_write64(RT, XHCI_INTR_ERDP(n), ring->page->frame);
-  or_write32(RT, XHCI_INTR_IMAN(n), IMAN_IE);
-  return intrptr;
-}
-
-xhci_trb_t *xhci_dequeue_event(xhci_dev_t *xhci, xhci_intrptr_t *intrptr) {
-  xhci_ring_t *ring = intrptr->ring;
-  xhci_trb_t *trb;
-
-  uint8_t n = intrptr->number;
-  bool wrapped = xhci_ring_dequeue_trb(ring, &trb);
-  or_write32(RT, XHCI_INTR_IMAN(n), 0);
-
-  uintptr_t addr = addr_read64(RT, XHCI_INTR_ERDP(n));
-  if (wrapped) {
-    addr = ring->page->frame;
-  } else {
-    addr += sizeof(xhci_trb_t);
-  }
-  addr_write64(RT, XHCI_INTR_ERDP(n), addr);
-  or_write32(RT, XHCI_INTR_ERDP(n), ERDP_BUSY);
-  return trb;
-}
-
-// Doorbells
-
-void xhci_ring_db(xhci_dev_t *xhci, uint8_t slot, uint16_t endpoint) {
-  if ((slot == 0 && endpoint > 0) || (slot > 0 && endpoint != 0)) {
-    panic("invalid slot/endpoint combination");
-  }
-
-  kprintf("[xhci] ding dong!\n");
-  write32(DB, XHCI_DB(slot), DB_TARGET(endpoint));
 }
 
 // Capabilities

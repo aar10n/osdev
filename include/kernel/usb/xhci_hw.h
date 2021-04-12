@@ -16,12 +16,23 @@ typedef struct xhci_dev xhci_dev_t;
 #define DB ((xhci)->db_base)
 #define XCAP ((xhci)->xcap_base)
 
-#define read32(b, r) (*(volatile uint32_t *)((b) + (r)))
-#define write32(b, r, v) ((*(volatile uint32_t *)((b) + (r)) = v))
+#define xhci_cap ((xhci_cap_regs_t *)(xhci->cap_base))
+#define xhci_op ((xhci_op_regs_t *)(xhci->op_base))
+#define xhci_port(n) (&((xhci_port_regs_t *)(xhci->op_base + 0x400))[n])
+#define xhci_rt ((xhci_rt_regs_t *)(xhci->rt_base))
+#define xhci_intr(n) (&((xhci_intr_regs_t *)(xhci->rt_base + 0x20))[n])
+#define xhci_db(n) (&((xhci_db_regs_t *)(xhci->db_base))[n])
+
+
+// #define read32(b, r) (*(volatile uint32_t *)((b) + (r)))
+// #define write32(b, r, v) ((*(volatile uint32_t *)((b) + (r)) = v))
 #define read64(b, r) (read32(b, r) | (uint64_t) read32(b, r + 4) << 32)
 #define write64(b, r, v) { write32(b, r, V64_LOW(v)); write32(b, r + 4, V64_HIGH(v)); }
 #define addr_read64(b, r) ((read32(b, r) & 0xFFFFFFE0) | (uint64_t) read32(b, r + 4) << 32)
 #define addr_write64(b, r, v) { write32(b, r, A64_LOW(v)); write32(b, r + 4, A64_HIGH(v)); }
+
+#define mask_64a_addr(a) ((a) & ~(0x1FULL))
+#define mask_low5(v) ((v) & 0x1F)
 
 #define or_write32(b, r, v) write32(b, r, read32(b, r) | (v))
 
@@ -39,6 +50,87 @@ typedef struct xhci_dev xhci_dev_t;
 //
 
 // -------- Capability Registers --------
+typedef volatile struct {
+  // dword 0
+  uint32_t length : 8;
+  uint32_t : 8;
+  uint32_t hciversion : 16;
+  // dword 1
+  union {
+    uint32_t hcsparams1_r;
+    struct {
+      uint32_t max_slots : 8;     // number of device slots
+      uint32_t max_intrs : 11;    // number of interrupters
+      uint32_t : 5;               // reserved
+      uint32_t max_ports : 8;     // number of ports
+    } hcsparams1;
+  };
+  // dword 2
+  union {
+    uint32_t hcsparams2_r;
+    struct {
+      uint32_t ist : 4;           // isochronous scheduling threshold
+      uint32_t erst_max : 4;      // event ring segment table max
+      uint32_t : 13;              // reserved
+      uint32_t max_scrtch_hi : 5; // max scratchpad buffers (high)
+      uint32_t spr : 1;           // scratchpad restore
+      uint32_t max_scrtch_lo : 5; // max scratchpad buffers (low)
+    } hcsparams2;
+  };
+  // dword 3
+  union {
+    uint32_t hcsparams3_r;
+    struct {
+      uint32_t u1_dev_latency : 8;  // U1 device exit latency
+      uint32_t : 8;                 // reserved
+      uint32_t u2_dev_latency : 16; // U2 device exit latency
+    } hcsparams3;
+  };
+  // dword 4
+  union {
+    uint32_t hccparams1_r;
+    struct {
+      uint32_t ac64 : 1;            // 64-bit addressing capability
+      uint32_t bnc : 1;             // BW negotiation capability
+      uint32_t csz : 1;             // context size (1 = 64-byte | 0 = 32-byte)
+      uint32_t ppc : 1;             // port power control
+      uint32_t pind : 1;            // port indicators
+      uint32_t lhrc : 1;            // light HC reset capability
+      uint32_t ltc : 1;             // latency tolerance messaging capability
+      uint32_t nss : 1;             // no secondary SID capability
+      uint32_t pae : 1;             // parse all event data
+      uint32_t spc : 1;             // stopped - short packet capability
+      uint32_t sec : 1;             // stopped EDTLA capability
+      uint32_t cfc : 1;             // contiguous frame id capability
+      uint32_t max_psa_size : 4;    // maximum primary stream array size
+      uint32_t ext_cap_ptr : 16;    // xHCI extended capabilities pointer (offset in 32-bit words)
+    } hccparams1;
+  };
+  // dword 5
+  uint32_t dboff;
+  // dword 6
+  uint32_t rtsoff;
+  // dword 7
+  union {
+    uint32_t hccparams2_r;
+    struct {
+      uint32_t u3c : 1;             // U3 entry capability
+      uint32_t cmc : 1;             // configure endpoint command max exit latency too large capability
+      uint32_t fsc : 1;             // force save context capability
+      uint32_t ctc : 1;             // compliance transition capability
+      uint32_t lec : 1;             // large ESIT payload capability
+      uint32_t cic : 1;             // configuration information capability
+      uint32_t etc : 1;             // extended tbc capability
+      uint32_t etc_tsc : 1;         // extended tbc trb status capability
+      uint32_t gsc : 1;             // get/set extended property capability
+      uint32_t vtc : 1;             // virtualization based trusted i/o capability
+      uint32_t : 22;                // reserved
+    } hccparams2;
+  };
+  // dword 8
+  uint32_t vtios_offset;            // virtualization based trusted io register space offset
+} xhci_cap_regs_t;
+
 #define XHCI_CAP_LENGTH     0x00
 #define   CAP_LENGTH(v)       ((v) & 0xFF)
 #define XHCI_CAP_VERSION    0x00
@@ -55,6 +147,91 @@ typedef struct xhci_dev xhci_dev_t;
 #define XHCI_CAP_RTSOFF     0x18
 
 // -------- Operational Registers --------
+typedef volatile struct {
+  // dword 0
+  union {
+    uint32_t usbcmd_r;
+    struct {
+      uint32_t run : 1;              // run/stop
+      uint32_t hc_reset : 1;         // host controller reset
+      uint32_t int_en : 1;           // interrupt enable
+      uint32_t hs_err_en : 1;        // host system error enable
+      uint32_t : 3;                  // reserved
+      uint32_t lhc_reset : 1;        // light host controller reset
+      uint32_t save_state : 1;       // controller save state
+      uint32_t restore_state : 1;    // controller restore state
+      uint32_t wrap_evt_en : 1;      // enable wrap event
+      uint32_t u3mfx_stop_en : 1;    // enable U3 MFINDEX stop
+      uint32_t : 1;                  // reserved
+      uint32_t cem_en : 1;           // CEM enable
+      uint32_t ext_tbc_en : 1;       // extended TBC enable
+      uint32_t ext_tbc_trb_en : 1;   // extended TBC TRB status enable
+      uint32_t vtio_en : 1;          // VTIO enable
+      uint32_t : 15;                 // reserved
+    } usbcmd;
+  };
+  // dword 1
+  union {
+    uint32_t usbsts_r;
+    struct {
+      uint32_t hc_halted : 1;        // host controller halted
+      uint32_t : 1;                  // reserved
+      uint32_t hs_err : 1;           // host system error
+      uint32_t evt_int : 1;          // event interrupt
+      uint32_t port_change : 1;      // port change detected
+      uint32_t : 3;                  // reserved
+      uint32_t save_state : 1;       // save state status
+      uint32_t restore_state : 1;    // restore state status
+      uint32_t save_restore_err : 1; // save/restore error
+      uint32_t not_ready : 1;        // controller not ready
+      uint32_t hc_error : 1;         // host controller error
+      uint32_t : 19;                 // reserved
+    } usbsts;
+  };
+  // dword 2
+  uint32_t pagesz : 16;
+  uint32_t : 16;
+  // dword 3-4
+  uint32_t reserved1[2];
+  // dword 5
+  uint32_t dnctrl;
+  // dword 6-7
+  union {
+    uint64_t crcr_r;
+    struct {
+      // dword 6
+      uint32_t rcs : 1;     // ring cycle state
+      uint32_t cs : 1;      // command stop
+      uint32_t ca : 1;      // command abort
+      uint32_t crr : 1;     // command ring running
+      uint32_t : 2;         // reserved
+      uint32_t ptr_lo : 27; // ring pointer low
+      // dword 7
+      uint32_t ptr_hi;      // ring pointer high
+    } crcr;
+  };
+  // dword 8-11
+  uint32_t reserved2[2];
+  // dword 12-13
+  uint64_t dcbaap;
+  // dword 14
+  union {
+    uint32_t config_r;
+    struct {
+      uint32_t max_slots_en : 8;    // max device slots enabled
+      uint32_t u3_entry_en : 1;     // U3 entry enable
+      uint32_t config_info_en : 1;  // configuration information enable
+      uint32_t : 22;                // reserved
+    } config;
+  };
+} xhci_op_regs_t;
+static_assert(offsetof(xhci_op_regs_t, usbcmd) == 0x00);
+static_assert(offsetof(xhci_op_regs_t, usbsts) == 0x04);
+static_assert(offsetof(xhci_op_regs_t, dnctrl) == 0x14);
+static_assert(offsetof(xhci_op_regs_t, crcr) == 0x18);
+static_assert(offsetof(xhci_op_regs_t, dcbaap) == 0x30);
+static_assert(offsetof(xhci_op_regs_t, config) == 0x38);
+
 #define XHCI_OP_USBCMD      0x00
 #define   USBCMD_RUN          (1 << 0) // controller run
 #define   USBCMD_HC_RESET     (1 << 1) // host controller reset
@@ -62,9 +239,9 @@ typedef struct xhci_dev xhci_dev_t;
 #define   USBCMD_HS_ERR_EN    (1 << 3) // host error enable
 #define XHCI_OP_USBSTS      0x04
 #define   USBSTS_HC_HALTED    (1 << 0)  // controller halted
-#define   USBSTS_HS_ERR       (1 << 1)  // host error
-#define   USBSTS_EVT_INT      (1 << 2)  // event interrupt
-#define   USBSTS_PORT_CHG     (1 << 3)  // port change
+#define   USBSTS_HS_ERR       (1 << 2)  // host error
+#define   USBSTS_EVT_INT      (1 << 3)  // event interrupt
+#define   USBSTS_PORT_CHG     (1 << 4)  // port change
 #define   USBSTS_NOT_READY    (1 << 11) // controller not ready
 #define   USBSTS_HC_ERR       (1 << 12) // controller error
 #define XHCI_OP_PAGESZ      0x08
@@ -84,6 +261,45 @@ typedef struct xhci_dev xhci_dev_t;
 #define XHCI_OP_PORT(n)     (0x400 + ((n) * 0x10))
 
 // -------- Port Registers --------
+typedef volatile struct {
+  // dword 0
+  union {
+    uint32_t portsc_r;
+    struct {
+      uint32_t ccs : 1;            // current connect status
+      uint32_t enabled : 1;        // port enabled/disabled
+      uint32_t : 1;                // reserved
+      uint32_t oca : 1;            // over-current active
+      uint32_t reset : 1;          // port reset
+      uint32_t pls : 4;            // port link state
+      uint32_t power : 1;          // port power
+      uint32_t speed : 4;          // port speed
+      uint32_t pic : 2;            // port indicator control
+      uint32_t lws : 1;            // port link state write strobe
+      uint32_t csc : 1;            // connect status change
+      uint32_t pec : 1;            // port enabled/disabled change
+      uint32_t wrc : 1;            // warm port reset change
+      uint32_t occ : 1;            // over-current change
+      uint32_t prc : 1;            // port reset change
+      uint32_t plc : 1;            // port link state change
+      uint32_t cec : 1;            // port config error change
+      uint32_t cas : 1;            // cold attach status
+      uint32_t wce : 1;            // wake on connect enable
+      uint32_t wde : 1;            // wake on disconnect enable
+      uint32_t woe : 1;            // wake on over-current enable
+      uint32_t : 2;                // reserved
+      uint32_t dr : 1;             // device removable
+      uint32_t warm_rst : 1;       // warm port reset
+    } portsc;
+  };
+  // dword 1
+  uint32_t portpmsc;
+  // dword 2
+  uint32_t portli;
+  // dword 3
+  uint32_t porthlpmc;
+} xhci_port_regs_t;
+
 #define XHCI_PORT_SC(n)     (XHCI_OP_PORT(n) + 0x00)
 #define   PORTSC_CCS          (1 << 0)  // current connect status
 #define   PORTSC_EN           (1 << 1)  // port enable
@@ -104,12 +320,48 @@ typedef struct xhci_dev xhci_dev_t;
 #define XHCI_PORT_LI(n)     (XHCI_OP_PORT(n) + 0x08)
 #define XHCI_PORT_HLPMC(n)  (XHCI_OP_PORT(n) + 0x0C)
 
-// -------- Runtime Registers --------
-#define XHCI_RT_MFINDEX     0x00
-#define   MFINDEX(v)          (((v) >> 0) & 0x3FFF)
-#define XHCI_RT_INTR(n)     (0x20 + ((n) * 0x20))
-
 // -------- Interrupter Registers --------
+typedef volatile struct {
+  // dword 0
+  union {
+    uint32_t iman_r;
+    struct {
+      uint32_t ip : 1;
+      uint32_t ie : 1;
+      uint32_t : 30;
+    } iman;
+  };
+  // dword 1
+  union {
+    uint32_t imod_r;
+    struct {
+      uint32_t imodi : 16;
+      uint32_t imodc : 16;
+    } imod;
+  };
+  // dword 2
+  uint32_t erstsz : 16;
+  uint32_t : 16;
+  // dword 3-4
+  union {
+    uint64_t erstba_r;
+    struct {
+      uint32_t erstba_lo;
+      uint32_t erstba_hi;
+    } erstba;
+  };
+  // 5-6
+  union {
+    uint64_t erdp_r;
+    struct {
+      uint32_t desi : 3;
+      uint32_t busy : 1;
+      uint32_t erdp_lo : 28;
+      uint32_t erdp_hi;
+    } erdp;
+  };
+} xhci_intr_regs_t;
+
 #define XHCI_INTR_IMAN(n)   (0x20 + (32 * (n)))
 #define   IMAN_IP             (1 << 0) // interrupt pending
 #define   IMAN_IE             (1 << 1) // interrupt enable
@@ -126,7 +378,28 @@ typedef struct xhci_dev xhci_dev_t;
 #define   ERDP_LOW(v)         A64_LOW(v)  // event ring dequeue pointer
 #define   ERDP_HIGH(v)        A64_HIGH(v) // event ring dequeue pointer
 
+// -------- Runtime Registers --------
+typedef volatile struct {
+  uint32_t mfindex : 16;
+  uint32_t : 16;
+  uint32_t reserved[7];
+  xhci_intr_regs_t intrs[1024];
+} xhci_rt_regs_t;
+
+#define XHCI_RT_MFINDEX     0x00
+#define   MFINDEX(v)          ((v) & 0x3FFF)
+#define XHCI_RT_INTR(n)     (0x20 + ((n) * 0x20))
+
 // -------- Doorbell Registers --------
+typedef volatile union {
+  uint32_t db;
+  struct {
+    uint32_t target : 8;
+    uint32_t : 8;
+    uint32_t task_id : 16;
+  };
+} xhci_db_regs_t;
+
 #define XHCI_DB(n)          ((n) * 0x4)
 #define   DB_TARGET(v)        (((v) & 0xFF) << 0)
 #define   DB_TASK_ID(v)       (((v) & 0xFFFF) << 16)
@@ -688,23 +961,22 @@ typedef struct xhci_port {
 
 // controller
 int xhci_init_controller(xhci_dev_t *xhci);
-int xhci_reset_controller(xhci_dev_t *xhci);
-int xhci_run_controller(xhci_dev_t *xhci);
 void *xhci_execute_cmd_trb(xhci_dev_t *xhci, xhci_trb_t *trb);
 
 // ports
+int xhci_enable_port(xhci_dev_t *xhci, xhci_port_t *port);
 xhci_port_t *xhci_discover_ports(xhci_dev_t *xhci);
+
+// interrupters
+xhci_intrptr_t *xhci_setup_interrupter(xhci_dev_t *xhci, uint8_t n);
+bool xhci_is_valid_event(xhci_intrptr_t *intrptr);
+
+// doorbells
+void xhci_ring_db(xhci_dev_t *xhci, uint8_t slot, uint16_t endpoint);
 
 // devices
 xhci_device_t *xhci_setup_device(xhci_dev_t *xhci, xhci_port_t *port);
 int xhci_address_device(xhci_dev_t *xhci, xhci_device_t *device);
-
-// interrupters
-xhci_intrptr_t *xhci_seutp_interrupter(xhci_dev_t *xhci, uint8_t n);
-xhci_trb_t *xhci_dequeue_event(xhci_dev_t *xhci, xhci_intrptr_t *intrptr);
-
-// doorbells
-void xhci_ring_db(xhci_dev_t *xhci, uint8_t slot, uint16_t endpoint);
 
 // capabilities
 xhci_cap_t *xhci_get_cap(xhci_dev_t *xhci, xhci_cap_t *cap_ptr, uint8_t cap_id);

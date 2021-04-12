@@ -22,28 +22,36 @@ noreturn void *xhci_event_loop(void *arg) {
 
   kprintf("[xhci] starting event loop\n");
 
+  xhci_op->usbsts.evt_int = 1;
   while (true) {
-    if (!(read32(OP, XHCI_OP_USBSTS) & USBSTS_EVT_INT)) {
+    if (!xhci_op->usbsts.evt_int) {
       kprintf("[xhci] waiting for event\n");
       cond_wait(&xhci->event);
     }
     kprintf("[xhci] >>>>> an event occurred\n");
 
-    if (read32(OP, XHCI_OP_USBSTS) & USBSTS_HC_ERR) {
+    if (xhci_op->usbsts.hc_error) {
       kprintf("[xhci] an error occurred\n");
       panic(">>>>>>> HOST CONTROLLER ERROR <<<<<<<");
-    } else if (read32(OP, XHCI_OP_USBSTS) & USBSTS_HS_ERR) {
+    } else if (xhci_op->usbsts.hs_err) {
       kprintf("[xhci] an error occurred\n");
       panic(">>>>>>> HOST SYSTEM ERROR <<<<<<<\n");
     }
 
-    xhci_trb_t *trb = xhci_dequeue_event(xhci, xhci->intr);
+    xhci_ring_t *ring = xhci->intr->ring;
+    while (xhci_is_valid_event(xhci->intr)) {
+      kprintf("[xhci] getting event\n");
+      xhci_trb_t *trb;
+      xhci_ring_dequeue_trb(ring, &trb);
+      kprintf("[xhci] event type: %d\n", trb->trb_type);
+      thread_send(trb);
+    }
 
-    // acknowledge event
-    or_write32(OP, XHCI_OP_USBSTS, USBSTS_EVT_INT);
-    kprintf("[xhci] event acknowledged\n");
+    uintptr_t addr = ring->page->frame + (ring->index * sizeof(xhci_trb_t));
+    xhci_op->usbsts.evt_int = 1;
+    xhci_intr(0)->iman.ip = 1;
+    xhci_intr(0)->erdp_r = addr | ERDP_BUSY;
 
-    thread_send(trb);
     cond_signal(&xhci->event_ack);
   }
 }
@@ -67,20 +75,31 @@ void xhci_main(xhci_dev_t *xhci) {
   // discover ports
   xhci->ports = xhci_discover_ports(xhci);
 
-
   // setup devices
   xhci_port_t *port = xhci->ports;
   while (port) {
     kprintf("[xhci] setting up device on port %d\n", port->number);
+
+    kprintf("[xhci] enabling port %d\n", port->number);
+    if (xhci_enable_port(xhci, port) != 0) {
+      kprintf("[xhci] failed to enable port %d\n", port->number);
+      port = port->next;
+      continue;
+    }
+    kprintf("[xhci] enabled port %d\n", port->number);
+
     xhci_device_t *device = xhci_setup_device(xhci, port);
     if (device == NULL) {
       kprintf("[xhci] failed to setup device on port %d\n", port->number);
+      port = port->next;
       continue;
     }
 
     kprintf("[xhci] addressing device\n");
     if (xhci_address_device(xhci, device) != 0) {
       kprintf("[xhci] failed to address device\n");
+      port = port->next;
+      continue;
     }
     kprintf("[xhci] addressed device!\n");
 
@@ -127,12 +146,10 @@ void xhci_init() {
   xhci->size = bar->size;
 
   xhci->cap_base = virt_addr;
-  xhci->op_base = virt_addr + CAP_LENGTH(read32(CAP, XHCI_CAP_LENGTH));
-  xhci->rt_base = virt_addr + read32(CAP, XHCI_CAP_RTSOFF);
-  xhci->db_base = virt_addr + read32(CAP, XHCI_CAP_DBOFF);
-
-  uint32_t hccparams1 = read32(CAP, XHCI_CAP_HCCPARAMS1);
-  xhci->xcap_base = virt_addr + (HCCPARAMS1_XECP(hccparams1) << 2);
+  xhci->op_base = virt_addr + xhci_cap->length;
+  xhci->rt_base = virt_addr + xhci_cap->rtsoff;
+  xhci->db_base = virt_addr + xhci_cap->dboff;
+  xhci->xcap_base = virt_addr + (xhci_cap->hccparams1.ext_cap_ptr << 2);
 
   cond_init(&xhci->init, 0);
   cond_init(&xhci->event, 0);
