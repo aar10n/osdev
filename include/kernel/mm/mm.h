@@ -10,7 +10,7 @@
 #include <bitmap.h>
 #include <spinlock.h>
 
-#define virt_to_phys(x) ((x) - KERNEL_OFFSET)
+#define virt_to_phys(x) (((uintptr_t)(x)) - KERNEL_OFFSET)
 #define phys_to_virt(x) (KERNEL_OFFSET + (x))
 
 #define get_virt_addr(l4, l3, l2, l1) \

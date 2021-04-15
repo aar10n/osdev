@@ -26,7 +26,7 @@ QEMUFLAGS = \
 	-device ahci,id=ahci \
 	-device ide-hd,drive=disk,bus=ahci.0 \
 	-device qemu-xhci,id=xhci \
-	-device usb-kbd,bus=xhci.0,port=3 \
+	-device usb-kbd,bus=xhci.0 \
 	-device usb-mouse,bus=xhci.0 \
 	-device usb-storage,drive=boot,bus=xhci.0 \
 	-trace events=$(BUILD)/traces

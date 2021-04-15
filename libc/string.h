@@ -5,8 +5,7 @@
 #ifndef LIBC_STRING_H
 #define LIBC_STRING_H
 
-#include <stddef.h>
-#include <stdint.h>
+#include <types.h>
 #include <errno.h>
 
 int memcmp(const void *str1, const void *str2, size_t count);
@@ -19,5 +18,10 @@ int strncmp(const char *s1, const char *s2, size_t n);
 int strlen(const char *s);
 void *strcpy(char *dest, const char *src);
 void reverse(char *s);
+
+int utf16_strlen(const char16_t *s);
+
+int utf16_iconv_ascii(char *dest, const char16_t *src);
+int utf16_iconvn_ascii(char *dest, const char16_t *src, size_t n);
 
 #endif // LIBC_STRING_H

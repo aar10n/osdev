@@ -1,5 +1,5 @@
-#include <stddef.h>
 #include <string.h>
+#include <types.h>
 
 extern const char *errno_str[];
 
@@ -109,3 +109,41 @@ void reverse(char *s) {
   }
 }
 
+// utf-16 functions
+
+int utf16_strlen(const char16_t *s) {
+  int len = 0;
+  while (*s != 0) {
+    len++;
+    s++;
+  }
+  return len;
+}
+
+// encoding conversion functions
+
+int utf16_iconv_ascii(char *dest, const char16_t *src) {
+  int count = 0;
+  while (*src != 0) {
+    if (*src <= 127) {
+      *dest = *src & 0xFF;
+      dest++;
+      count++;
+    }
+  }
+  return count;
+}
+
+int utf16_iconvn_ascii(char *dest, const char16_t *src, size_t n) {
+  int count = 0;
+  while (n > 0) {
+    if (*src <= 127) {
+      *dest = *src & 0xFF;
+      src++;
+      dest++;
+      count++;
+    }
+    n--;
+  }
+  return count;
+}

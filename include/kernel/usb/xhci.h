@@ -51,10 +51,11 @@ void *xhci_run_command(xhci_trb_t *trb);
 void xhci_run_commands();
 
 int xhci_queue_setup(xhci_device_t *device, usb_setup_packet_t *setup, uint8_t type);
-int xhci_queue_data(xhci_device_t *device, void *buffer, uint16_t size, bool dir);
+int xhci_queue_data(xhci_device_t *device, uintptr_t buffer, uint16_t size, bool dir);
 int xhci_queue_status(xhci_device_t *device, bool dir);
 int xhci_run_device(xhci_device_t *device);
 
 void xhci_get_descriptor(xhci_device_t *device);
+char *xhci_get_string_descriptor(xhci_device_t *device, uint8_t index);
 
 #endif

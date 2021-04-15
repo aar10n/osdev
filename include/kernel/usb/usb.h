@@ -41,16 +41,110 @@ typedef struct {
 } usb_setup_packet_t;
 static_assert(sizeof(usb_setup_packet_t) == 8);
 
-#define GET_DESCRIPTOR(t, l) ((usb_setup_packet_t){ \
+#define GET_DESCRIPTOR(t, i, l) ((usb_setup_packet_t){ \
   .request_type = {                           \
     .recipient = USB_SETUP_DEVICE,            \
     .type = USB_SETUP_TYPE_STANDARD,          \
     .direction = USB_SETUP_DEV_TO_HOST,       \
   },                                          \
   .request = USB_GET_DESCRIPTOR,              \
-  .value = ((t) << 8),                        \
+  .value = ((t) << 8) | (i & 0xFF),           \
   .index = 0,                                 \
   .length = l,\
 })
+
+
+//
+// Device Classes
+//
+
+
+//
+// Descriptors
+//
+
+#define DEVICE_DESCRIPTOR 0x1
+#define CONFIG_DESCRIPTOR 0x2
+#define IF_DESCRIPTOR     0x4
+#define EP_DESCRIPTOR     0x5
+#define STRING_DESCRIPTOR 0x3
+
+// Device Descriptor
+typedef struct {
+  uint8_t length;        // descriptor length
+  uint8_t type;          // descriptor type (0x1)
+  uint16_t usb_ver;      // usb version (bcd)
+  uint8_t dev_class;     // device class code
+  uint8_t dev_subclass;  // device subclass code
+  uint8_t dev_protocol;  // device protocol code
+  uint8_t max_packt_sz0; // max ep0 packet size
+  uint16_t vendor_id;    // vendor id
+  uint16_t product_id;   // product id
+  uint16_t dev_release;  // device release number (bcd)
+  uint8_t manuf_idx;     // index of manufacturer string
+  uint8_t product_idx;   // index of product string
+  uint8_t serial_idx;    // index of serial number
+  uint8_t num_configs;   // number of configurations
+} usb_device_descriptor_t;
+
+// Configuration Descriptor
+typedef struct {
+  uint8_t length;     // descriptor length
+  uint8_t type;       // descriptor type (0x2)
+  uint16_t total_len; // total length of combined descriptors
+  uint8_t num_ifs;    // number of interfaces
+  uint8_t config_val; // configuration value (value to use in SET_CONFIGURATION request)
+  uint8_t this_idx;   // own string descriptor index
+  uint8_t attributes; // attributes bitmap
+  uint8_t max_power;  // maximum power consumption
+} usb_config_descriptor_t;
+
+// Interface Association Descriptor
+typedef struct {
+  uint8_t length;      // descriptor length
+  uint8_t type;        // descriptor type (0x4)
+  uint8_t first_if;    // number of first interface
+  uint8_t if_count;    // number of contiguous interfaces
+  uint8_t fn_class;    // class code
+  uint8_t fn_subclass; // subclass code
+  uint8_t fn_protocol; // protocol code
+  uint8_t this_idx;    // own string descriptor index
+} usb_if_assoc_descriptor_t;
+
+// Interface Descriptor
+typedef struct {
+  uint8_t length;      // descriptor length
+  uint8_t type;        // descriptor type (0x4)
+  uint8_t if_number;   // number of this interface
+  uint8_t alt_setting; // value to select this alternate setting
+  uint8_t num_eps;     // number of endpoints used
+  uint8_t if_subclass; // subclass code
+  uint8_t if_protocol; // protocol code
+  uint8_t this_idx;    // own string descriptor index
+} usb_if_descriptor_t;
+
+// Endpoint Descriptor
+typedef struct {
+  uint8_t length;       // descriptor length
+  uint8_t type;         // descriptor type (0x5)
+  uint8_t ep_addr;      // address of endpoint on device
+  uint8_t attributes;   // attributes bitmap
+  uint16_t max_pckt_sz; // maximum packet size
+  uint8_t interval;     // interval for servicing
+} usb_ep_descriptor_t;
+
+// String Descriptor
+typedef struct {
+  // string descriptors use UNICODE UTF16LE encoding
+  uint8_t length;    // size of string descriptor
+  uint8_t type;      // descriptor type (0x2)
+  char16_t string[]; // utf-16 string (size = length - 2)
+} usb_string_t;
+
+typedef struct {
+  uint8_t length;         // descriptor length
+  uint8_t type;           // descriptor type (0x2)
+  usb_string_t strings[]; // individual string descriptors
+} usb_string_descriptor_t;
 
 #endif

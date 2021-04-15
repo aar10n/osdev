@@ -9,6 +9,8 @@
 #include <stdbool.h>
 #include <stddef.h>
 
+typedef uint16_t char16_t;
+
 typedef int64_t blkcnt_t;    // Used for file block counts.
 typedef int64_t blksize_t;   // Used for block sizes.
 typedef uint64_t clock_t;    // Used for system times in clock ticks or CLOCKS_PER_SEC

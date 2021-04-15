@@ -140,6 +140,11 @@ void xhci_setup_devices() {
   // setup devices
   xhci_port_t *port = xhci->ports;
   while (port) {
+
+    if (port->number == 7) {
+      port = port->next;
+      continue;
+    }
     kprintf("[xhci] setting up device on port %d\n", port->number);
 
     kprintf("[xhci] enabling port %d\n", port->number);
@@ -225,7 +230,7 @@ int xhci_queue_setup(xhci_device_t *device, usb_setup_packet_t *setup, uint8_t t
   return 0;
 }
 
-int xhci_queue_data(xhci_device_t *device, void *buffer, uint16_t size, bool dir) {
+int xhci_queue_data(xhci_device_t *device, uintptr_t buffer, uint16_t size, bool dir) {
   kassert(xhc != NULL);
 
   xhci_data_trb_t trb;
@@ -266,12 +271,66 @@ void xhci_get_descriptor(xhci_device_t *device) {
   kassert(xhc != NULL);
   xhci_dev_t *xhci = xhc;
 
-  usb_setup_packet_t get_desc = GET_DESCRIPTOR(1, 8);
-  void *buffer = kmalloc(8);
+  kprintf("[xhci] getting device descriptor\n");
+
+  size_t desc_size = sizeof(usb_device_descriptor_t);
+  usb_setup_packet_t get_desc = GET_DESCRIPTOR(DEVICE_DESCRIPTOR, 0, desc_size);
+  usb_device_descriptor_t *desc = kmalloc(desc_size);
 
   xhci_queue_setup(device, &get_desc, SETUP_DATA_IN);
-  xhci_queue_data(device, buffer, 8, DATA_IN);
+  xhci_queue_data(device, (uintptr_t) desc, desc_size, DATA_IN);
   xhci_queue_status(device, DATA_OUT);
   xhci_db(device->slot_id)->target = 1;
 
+  kprintf("[xhci] done!\n");
+
+  char *manufacturer = xhci_get_string_descriptor(device, desc->manuf_idx);
+  char *product = xhci_get_string_descriptor(device, desc->product_idx);
+  char *serial_num = xhci_get_string_descriptor(device, desc->serial_idx);
+
+  kprintf("USB DEVICE:\n");
+  kprintf("  manufacturer: %s\n"
+          "  product: %s\n"
+          "  serial number: %s\n",
+          manufacturer, product, serial_num);
+
+}
+
+char *xhci_get_string_descriptor(xhci_device_t *device, uint8_t index) {
+  kassert(xhc != NULL);
+  xhci_dev_t *xhci = xhc;
+
+  // allocate enough to handle most cases
+  size_t size = 32;
+
+  label(make_request);
+  usb_setup_packet_t get_desc = GET_DESCRIPTOR(STRING_DESCRIPTOR, index, size);
+  usb_string_t *string = kmalloc(size);
+  xhci_queue_setup(device, &get_desc, SETUP_DATA_IN);
+  xhci_queue_data(device, (uintptr_t) string, size, DATA_IN);
+  xhci_queue_status(device, DATA_OUT);
+  xhci_db(device->slot_id)->target = 1;
+
+  cond_wait(&xhci->event_ack);
+
+  if (string->length > size) {
+    size = string->length;
+    kfree(string);
+    goto make_request;
+  }
+
+  // number of utf16 characters is string->length - 2
+  // and since we're converting to null-terminated ascii
+  // we only need half as many characters.
+  size_t len = ((string->length - 2) / 2);
+  char *ascii = kmalloc(len + 1); // 1 extra null char
+  ascii[len] = 0;
+
+  int result = utf16_iconvn_ascii(ascii, string->string, len);
+  if (result != len) {
+    kprintf("[xhci] string descriptor conversion failed\n");
+  }
+
+  kfree(string);
+  return ascii;
 }

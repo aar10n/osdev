@@ -71,6 +71,17 @@ bool vm_find_free_area(vm_search_t search_type, uintptr_t *addr, size_t len);
 void vm_print_debug_mappings();
 
 
+static inline intptr_t vm_virt_to_phys(uintptr_t addr) {
+  page_t *page = vm_get_page(addr);
+  if (page == NULL) {
+    return -1;
+  }
+
+  uintptr_t phys = page->frame;
+  uintptr_t offset = addr - page->addr;
+  return phys + offset;
+}
+
 static inline page_t *alloc_zero_pages(size_t count, uint16_t flags) {
   if (count == 0) {
     return NULL;
