@@ -25,9 +25,11 @@
 static uint8_t intr_vector = 0x32;
 
 static void irq_callback(uint8_t vector, void *data) {
-  xhci_dev_t *dev = data;
-  kprintf(">>>>>> CALLBACK <<<<<<\n");
-  cond_signal(&dev->event);
+  xhci_dev_t *xhci = data;
+  if (xhci_op->usbsts.evt_int) {
+    kprintf(">>>>>> CALLBACK <<<<<<\n");
+    cond_signal(&xhci->event);
+  }
 }
 
 // Controller
@@ -75,13 +77,20 @@ int xhci_init_controller(xhci_dev_t *xhci) {
 
   // run the controller
   kprintf("[xhci] starting controller\n");
-  xhci_op->usbcmd.int_en = 1;
-  xhci_op->usbcmd.hs_err_en = 1;
-  xhci_op->usbcmd.run = 1;
+
+  uint32_t usbsts = read32(OP, XHCI_OP_USBSTS);
+  uint32_t usbcmd = read32(OP, XHCI_OP_USBCMD);
+
+  xhci_op->usbcmd_r |= USBCMD_HS_ERR_EN | USBCMD_RUN;
+
+  usbsts = read32(OP, XHCI_OP_USBSTS);
+  usbcmd = read32(OP, XHCI_OP_USBCMD);
+
+  xhci_op->usbcmd_r |= USBCMD_INT_EN;
 
   WAIT_TIMEOUT(xhci_op->usbsts_r & USBSTS_NOT_READY, return ETIMEDOUT);
 
-  kprintf("[xhci] done!\n");
+  cond_signal(&xhci->init);
   return 0;
 }
 
@@ -185,9 +194,9 @@ bool xhci_is_valid_event(xhci_intrptr_t *intrptr) {
 // Doorbells
 
 void xhci_ring_db(xhci_dev_t *xhci, uint8_t slot, uint16_t endpoint) {
-  if ((slot == 0 && endpoint > 0) || (slot > 0 && endpoint != 0)) {
-    panic("invalid slot/endpoint combination");
-  }
+  // if ((slot == 0 && endpoint > 0) || (slot > 0 && endpoint != 0)) {
+  //   panic("invalid slot/endpoint combination");
+  // }
 
   kprintf("[xhci] ding dong!\n");
   xhci_db(slot)->target = endpoint;
@@ -209,44 +218,49 @@ xhci_device_t *xhci_setup_device(xhci_dev_t *xhci, xhci_port_t *port) {
 
   uint8_t slot_id = result->slot_id;
 
-  xhci_input_ctx_t *input_ctx = kmalloca(sizeof(xhci_input_ctx_t), 16);
+  // input context
+  page_t *input_page = alloc_zero_page(PE_WRITE | PE_CACHE_DISABLE);
+  xhci_input_ctx_t *input_ctx = (void *) input_page->addr;
   xhci_slot_ctx_t *slot_ctx = &input_ctx->slot;
   xhci_endpoint_ctx_t *ep_ctx = &input_ctx->endpoint[0];
-
-  memset(input_ctx, 0, sizeof(xhci_input_ctx_t));
 
   // set A0 and A1 flags to 1
   input_ctx->ctrl.add_flags |= 0x3;
 
-  slot_ctx->root_hub_port = port->number;
+  slot_ctx->root_hub_port = 2;
   slot_ctx->route_string = 0;
+  slot_ctx->speed = 4;
   slot_ctx->ctx_entries = 1;
+  slot_ctx->intrptr_target = 0;
 
   // allocate transfer ring
   xhci_ring_t *ring = xhci_alloc_ring();
 
   // endpoint context
   ep_ctx->ep_type = XHCI_CTRL_BI_EP;
-  ep_ctx->max_packt_sz = 10;
+  ep_ctx->max_packt_sz = 512;
   ep_ctx->max_burst_sz = 0;
   ep_ctx->tr_dequeue_ptr = ring->page->frame | 1;
+  ep_ctx->avg_trb_length = 8;
   ep_ctx->interval = 0;
   ep_ctx->max_streams = 0;
   ep_ctx->mult = 0;
-  ep_ctx->err_count = 3;
+  ep_ctx->cerr = 3;
 
-  // device context
-  xhci_device_ctx_t *dev_ctx = kmalloca(sizeof(xhci_device_ctx_t), 16);
-  memset(dev_ctx, 0, sizeof(xhci_device_ctx_t));
-  xhci->dcbaap[slot_id] = heap_ptr_phys(dev_ctx);
+  // output context
+  page_t *output_page = alloc_zero_page(PE_WRITE | PE_CACHE_DISABLE);
+  xhci_device_ctx_t *output_ctx = (void *) output_page->addr;
+  xhci->dcbaap[slot_id] = output_page->frame;
 
   // device struct
   xhci_device_t *device = kmalloc(sizeof(xhci_device_t));
   device->slot_id = slot_id;
   device->port_num = port->number;
   device->ring = ring;
+  device->input_page = input_page;
   device->input = input_ctx;
-  device->output = dev_ctx;
+  device->output_page = output_page;
+  device->output = output_ctx;
 
   port->device = device;
   return device;
@@ -254,7 +268,7 @@ xhci_device_t *xhci_setup_device(xhci_dev_t *xhci, xhci_port_t *port) {
 
 int xhci_address_device(xhci_dev_t *xhci, xhci_device_t *device) {
   xhci_addr_dev_cmd_trb_t addr_cmd = { 0 };
-  addr_cmd.input_ctx = heap_ptr_phys(device->input);
+  addr_cmd.input_ctx = device->input_page->frame;
   addr_cmd.trb_type = TRB_ADDR_DEV_CMD;
   addr_cmd.slot_id = device->slot_id;
 

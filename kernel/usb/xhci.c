@@ -38,6 +38,7 @@ noreturn void *xhci_event_loop(void *arg) {
       panic(">>>>>>> HOST SYSTEM ERROR <<<<<<<\n");
     }
 
+
     xhci_ring_t *ring = xhci->intr->ring;
     while (xhci_is_valid_event(xhci->intr)) {
       kprintf("[xhci] getting event\n");
@@ -75,36 +76,7 @@ void xhci_main(xhci_dev_t *xhci) {
   // discover ports
   xhci->ports = xhci_discover_ports(xhci);
 
-  // setup devices
-  xhci_port_t *port = xhci->ports;
-  while (port) {
-    kprintf("[xhci] setting up device on port %d\n", port->number);
-
-    kprintf("[xhci] enabling port %d\n", port->number);
-    if (xhci_enable_port(xhci, port) != 0) {
-      kprintf("[xhci] failed to enable port %d\n", port->number);
-      port = port->next;
-      continue;
-    }
-    kprintf("[xhci] enabled port %d\n", port->number);
-
-    xhci_device_t *device = xhci_setup_device(xhci, port);
-    if (device == NULL) {
-      kprintf("[xhci] failed to setup device on port %d\n", port->number);
-      port = port->next;
-      continue;
-    }
-
-    kprintf("[xhci] addressing device\n");
-    if (xhci_address_device(xhci, device) != 0) {
-      kprintf("[xhci] failed to address device\n");
-      port = port->next;
-      continue;
-    }
-    kprintf("[xhci] addressed device!\n");
-
-    port = port->next;
-  }
+  xhci_setup_devices();
 
   kprintf("[xchi] done initializing!\n");
   thread_join(xhci->event_thread, NULL);
@@ -161,6 +133,60 @@ void xhci_init() {
   kprintf("[xhci] done!\n");
 }
 
+void xhci_setup_devices() {
+  kassert(xhc != NULL);
+  xhci_dev_t *xhci = xhc;
+
+  // setup devices
+  xhci_port_t *port = xhci->ports;
+  while (port) {
+    kprintf("[xhci] setting up device on port %d\n", port->number);
+
+    kprintf("[xhci] enabling port %d\n", port->number);
+    if (xhci_enable_port(xhci, port) != 0) {
+      kprintf("[xhci] failed to enable port %d\n", port->number);
+      port = port->next;
+      continue;
+    }
+    kprintf("[xhci] enabled port %d\n", port->number);
+
+    xhci_device_t *device = xhci_setup_device(xhci, port);
+    if (device == NULL) {
+      kprintf("[xhci] failed to setup device on port %d\n", port->number);
+      port = port->next;
+      continue;
+    }
+    kprintf("[xhci] device set up\n");
+
+    port->device = device;
+
+    kprintf("[xhci] addressing device\n");
+    if (xhci_address_device(xhci, device) != 0) {
+      kprintf("[xhci] failed to address device\n");
+      port = port->next;
+      continue;
+    }
+    kprintf("[xhci] addressed device!\n");
+
+    // xhci_noop_trb_t noop_trb = {
+    //   .trb_type = TRB_NOOP,
+    //   .intr_trgt = 0,
+    //   .cycle = 1,
+    //   .ioc = 1,
+    // };
+    // xhci_ring_enqueue_trb(device->ring, as_trb(noop_trb));
+    // xhci_ring_enqueue_trb(device->ring, as_trb(noop_trb));
+    // xhci_db(1)->target = 1
+
+
+    xhci_get_descriptor(device);
+
+    port = port->next;
+  }
+}
+
+//
+
 void xhci_queue_command(xhci_trb_t *trb) {
   kassert(xhc != NULL);
   xhci_ring_enqueue_trb(xhc->cmd_ring, trb);
@@ -171,3 +197,81 @@ void *xhci_run_command(xhci_trb_t *trb) {
   return xhci_execute_cmd_trb(xhc, trb);
 }
 
+void xhci_run_commands() {
+  kassert(xhc != NULL);
+  xhci_ring_db(xhc, 0, 0);
+  cond_wait(&xhc->event_ack);
+}
+
+//
+
+int xhci_queue_setup(xhci_device_t *device, usb_setup_packet_t *setup, uint8_t type) {
+  kassert(xhc != NULL);
+  if (type != SETUP_DATA_NONE && type != SETUP_DATA_OUT && type != SETUP_DATA_IN) {
+    return EINVAL;
+  }
+
+  xhci_setup_trb_t trb;
+  clear_trb(&trb);
+
+  memcpy(&trb, setup, sizeof(usb_setup_packet_t));
+  trb.trb_type = TRB_SETUP_STAGE;
+  trb.trs_length = 8;
+  trb.tns_type = type;
+  trb.ioc = 1;
+  trb.idt = 1;
+
+  xhci_ring_enqueue_trb(device->ring, as_trb(trb));
+  return 0;
+}
+
+int xhci_queue_data(xhci_device_t *device, void *buffer, uint16_t size, bool dir) {
+  kassert(xhc != NULL);
+
+  xhci_data_trb_t trb;
+  clear_trb(&trb);
+
+  trb.trb_type = TRB_DATA_STAGE;
+  trb.buf_ptr = heap_ptr_phys(buffer);
+  trb.trs_length = size;
+  trb.td_size = 0;
+  trb.dir = dir;
+
+  xhci_ring_enqueue_trb(device->ring, as_trb(trb));
+  return 0;
+}
+
+int xhci_queue_status(xhci_device_t *device, bool dir) {
+  kassert(xhc != NULL);
+
+  xhci_status_trb_t trb;
+  clear_trb(&trb);
+
+  trb.trb_type = TRB_STATUS_STAGE;
+  trb.dir = dir;
+  trb.ioc = 1;
+
+  xhci_ring_enqueue_trb(device->ring, as_trb(trb));
+  return 0;
+}
+
+int xhci_run_device(xhci_device_t *device) {
+  xhci_ring_db(xhc, device->slot_id, 0);
+  return 0;
+}
+
+//
+
+void xhci_get_descriptor(xhci_device_t *device) {
+  kassert(xhc != NULL);
+  xhci_dev_t *xhci = xhc;
+
+  usb_setup_packet_t get_desc = GET_DESCRIPTOR(1, 8);
+  void *buffer = kmalloc(8);
+
+  xhci_queue_setup(device, &get_desc, SETUP_DATA_IN);
+  xhci_queue_data(device, buffer, 8, DATA_IN);
+  xhci_queue_status(device, DATA_OUT);
+  xhci_db(device->slot_id)->target = 1;
+
+}

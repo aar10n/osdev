@@ -7,6 +7,7 @@
 
 #include <base.h>
 #include <usb/xhci_hw.h>
+#include <usb/usb.h>
 #include <bus/pcie.h>
 #include <mm.h>
 #include <mutex.h>
@@ -43,7 +44,17 @@ typedef struct xhci_dev {
 
 
 void xhci_init();
+void xhci_setup_devices();
+
 void xhci_queue_command(xhci_trb_t *trb);
 void *xhci_run_command(xhci_trb_t *trb);
+void xhci_run_commands();
+
+int xhci_queue_setup(xhci_device_t *device, usb_setup_packet_t *setup, uint8_t type);
+int xhci_queue_data(xhci_device_t *device, void *buffer, uint16_t size, bool dir);
+int xhci_queue_status(xhci_device_t *device, bool dir);
+int xhci_run_device(xhci_device_t *device);
+
+void xhci_get_descriptor(xhci_device_t *device);
 
 #endif

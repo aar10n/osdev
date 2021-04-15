@@ -23,9 +23,8 @@ typedef struct xhci_dev xhci_dev_t;
 #define xhci_intr(n) (&((xhci_intr_regs_t *)(xhci->rt_base + 0x20))[n])
 #define xhci_db(n) (&((xhci_db_regs_t *)(xhci->db_base))[n])
 
-
-// #define read32(b, r) (*(volatile uint32_t *)((b) + (r)))
-// #define write32(b, r, v) ((*(volatile uint32_t *)((b) + (r)) = v))
+#define read32(b, r) (*(volatile uint32_t *)((b) + (r)))
+#define write32(b, r, v) ((*(volatile uint32_t *)((b) + (r)) = v))
 #define read64(b, r) (read32(b, r) | (uint64_t) read32(b, r + 4) << 32)
 #define write64(b, r, v) { write32(b, r, V64_LOW(v)); write32(b, r + 4, V64_HIGH(v)); }
 #define addr_read64(b, r) ((read32(b, r) & 0xFFFFFFE0) | (uint64_t) read32(b, r + 4) << 32)
@@ -38,9 +37,6 @@ typedef struct xhci_dev xhci_dev_t;
 
 #define as_trb(trb) ((xhci_trb_t *)(&(trb)))
 #define clear_trb(trb) memset(trb, 0, sizeof(xhci_trb_t))
-
-#define V64_LOW(addr) ((addr) & 0xFFFFFFFF)
-#define V64_HIGH(addr) (((addr) >> 32) & 0xFFFFFFFF)
 
 #define A64_LOW(addr) ((addr) & 0xFFFFFFE0)
 #define A64_HIGH(addr) (((addr) >> 32) & 0xFFFFFFFF)
@@ -559,6 +555,13 @@ static_assert(sizeof(xhci_normal_trb_t) == 16);
 
 // Control TRBs
 
+#define SETUP_DATA_NONE 1
+#define SETUP_DATA_OUT  2
+#define SETUP_DATA_IN   3
+
+#define DATA_OUT 0
+#define DATA_IN  1
+
 // Setup Stage TRB
 typedef struct {
   // dword 0
@@ -600,10 +603,10 @@ typedef struct {
   uint32_t ch : 1;          // chain bit
   uint32_t ioc : 1;         // interrupt on completion
   uint32_t idt : 1;         // immediate data
-  uint32_t : 2;             // reserved
+  uint32_t : 3;             // reserved
   uint32_t trb_type : 6;    // trb type
   uint32_t dir : 1;         // direction
-  uint32_t : 16;            // reserved
+  uint32_t : 15;            // reserved
 } xhci_data_trb_t;
 static_assert(sizeof(xhci_data_trb_t) == 16);
 
@@ -788,6 +791,23 @@ typedef struct {
 } xhci_addr_dev_cmd_trb_t;
 static_assert(sizeof(xhci_addr_dev_cmd_trb_t) == 16);
 
+// Configure Endpoint Command TRB
+typedef struct {
+  // dword 0 & 1
+  uint64_t input_ctx;       // input context pointer
+  // dword 2
+  uint32_t : 32;            // reserved
+  // dword 3
+  uint32_t cycle : 1;       // cycle bit
+  uint32_t : 8;             // reserved
+  uint32_t dc : 1;          // deconfigure
+  uint32_t trb_type : 6;    // trb type
+  uint32_t : 8;             // reserved
+  uint32_t slot_id : 8;     // slot id
+} xhci_config_ep_cmd_trb_t;
+static_assert(sizeof(xhci_config_ep_cmd_trb_t) == 16);
+
+
 // -------- Other TRBs --------
 
 // Link TRB
@@ -825,6 +845,8 @@ static_assert(sizeof(xhci_link_trb_t) == 16);
 // Slot Context
 typedef struct {
   // dword 0
+  // 00001 0 0 0 0000 00000000000000000000
+  // 00001 0 0 0 0100 00000000000000000000
   uint32_t route_string : 20;   // route string
   uint32_t speed : 4;           // speed (deprecated)
   uint32_t : 1;                 // reserved
@@ -832,6 +854,8 @@ typedef struct {
   uint32_t hub : 1;             // hub (device is usb hub)
   uint32_t ctx_entries : 5;     // context entries
   // dword 1
+  // 111 0000000000000000
+  // 010 0000000000000000
   uint32_t max_latency : 16;    // max exit latency
   uint32_t root_hub_port : 8;   // root hub port number
   uint32_t num_ports : 8;       // number of ports
@@ -857,17 +881,23 @@ typedef struct {
   uint32_t : 5;              // reserved
   uint32_t mult : 2;         // multi
   uint32_t max_streams : 5;  // max primary streams
-  uint32_t lsa : 5;          // linear stream array
+  uint32_t lsa : 1;          // linear stream array
   uint32_t interval : 8;     // interval
   uint32_t max_esit_hi : 8;  // max endpoint service time interval (high)
   // dword 1
-  uint32_t : 1;              // reserved
-  uint32_t err_count : 2;    // error count
-  uint32_t ep_type : 3;      // endpoint type
-  uint32_t : 1;              // reserved
-  uint32_t hid : 1;          // host initiate disable
-  uint32_t max_burst_sz : 8; // max burst size
-  uint32_t max_packt_sz : 8; // max packet size
+  // 00000100 00000000 0 00 100 11 0
+  //        4        0 0  0   4  3 0
+
+  // 01000000 00000000 0 00 100 11 0
+  //       64        0 0  0   4  3 0
+  // 100 00000000 00000000 0 100 11 0
+  uint32_t : 1;               // reserved
+  uint32_t cerr : 2;          // error count
+  uint32_t ep_type : 3;       // endpoint type
+  uint32_t : 1;               // reserved
+  uint32_t hid : 1;           // host initiate disable
+  uint32_t max_burst_sz : 8;  // max burst size
+  uint32_t max_packt_sz : 16; // max packet size
   // dword 2 & 3
   uint64_t tr_dequeue_ptr;   // tr dequeue pointer
   // dword 4
@@ -944,7 +974,9 @@ typedef struct {
   uint8_t port_num;
 
   xhci_ring_t *ring;
+  page_t *input_page;
   xhci_input_ctx_t *input;
+  page_t *output_page;
   xhci_device_ctx_t *output;
 } xhci_device_t;
 

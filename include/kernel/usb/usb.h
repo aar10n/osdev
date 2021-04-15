@@ -24,8 +24,8 @@
 #define USB_SETUP_OTHER     3
 
 // Setup Packet Direction
-#define USB_SETUP_HOST_2_DEV 0
-#define USB_SETUP_DEV_2_HOST 1
+#define USB_SETUP_HOST_TO_DEV 0
+#define USB_SETUP_DEV_TO_HOST 1
 
 // USB Setup Packet
 typedef struct {
@@ -38,8 +38,19 @@ typedef struct {
   uint16_t value;
   uint16_t index;
   uint16_t length;
-} usb_packet_setup_t;
-static_assert(sizeof(usb_packet_setup_t) == 8);
+} usb_setup_packet_t;
+static_assert(sizeof(usb_setup_packet_t) == 8);
 
+#define GET_DESCRIPTOR(t, l) ((usb_setup_packet_t){ \
+  .request_type = {                           \
+    .recipient = USB_SETUP_DEVICE,            \
+    .type = USB_SETUP_TYPE_STANDARD,          \
+    .direction = USB_SETUP_DEV_TO_HOST,       \
+  },                                          \
+  .request = USB_GET_DESCRIPTOR,              \
+  .value = ((t) << 8),                        \
+  .index = 0,                                 \
+  .length = l,\
+})
 
 #endif
