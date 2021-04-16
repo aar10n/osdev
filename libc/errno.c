@@ -92,6 +92,7 @@ const char *errno_str[] = {
   [ETXTBSY] = "Text file busy",
   [EWOULDBLOCK] = "Operation would block",
   [EXDEV] = "Cross-device link",
+  [EFAILED] = "Failed"
 };
 
 const char *strerror(int errnum) {

@@ -8,9 +8,15 @@
 #include <base.h>
 
 // Request Type
-#define USB_CLEAR_FEATURE     1
-#define USB_GET_DESCRIPTOR    6
-#define USB_GET_CONFIGURATION 8
+#define USB_GET_STATUS        0x0
+#define USB_CLEAR_FEATURE     0x1
+#define USB_SET_FEATURE       0x3
+#define USB_SET_ADDRESS       0x5
+#define USB_GET_DESCRIPTOR    0x6
+#define USB_SET_DESCRIPTOR    0x7
+#define USB_GET_CONFIGURATION 0x8
+#define USB_SET_CONFIGURATION 0x9
+#define USB_GET_INTERFACE     0xA
 
 // Packet Request Type
 #define USB_SETUP_TYPE_STANDARD 0
@@ -53,6 +59,18 @@ static_assert(sizeof(usb_setup_packet_t) == 8);
   .length = l,\
 })
 
+#define GET_INTERFACE(i) ((usb_setup_packet_t){ \
+  .request_type = {                           \
+    .recipient = USB_SETUP_DEVICE,            \
+    .type = USB_SETUP_TYPE_STANDARD,          \
+    .direction = USB_SETUP_DEV_TO_HOST,       \
+  },                                          \
+  .request = USB_GET_INTERFACE,               \
+  .value = 0,                                 \
+  .index = i,                                 \
+  .length = 1,                                \
+})
+
 
 //
 // Device Classes
@@ -70,7 +88,7 @@ static_assert(sizeof(usb_setup_packet_t) == 8);
 #define STRING_DESCRIPTOR 0x3
 
 // Device Descriptor
-typedef struct {
+typedef struct packed {
   uint8_t length;        // descriptor length
   uint8_t type;          // descriptor type (0x1)
   uint16_t usb_ver;      // usb version (bcd)
@@ -88,7 +106,7 @@ typedef struct {
 } usb_device_descriptor_t;
 
 // Configuration Descriptor
-typedef struct {
+typedef struct packed {
   uint8_t length;     // descriptor length
   uint8_t type;       // descriptor type (0x2)
   uint16_t total_len; // total length of combined descriptors
@@ -100,7 +118,7 @@ typedef struct {
 } usb_config_descriptor_t;
 
 // Interface Association Descriptor
-typedef struct {
+typedef struct packed {
   uint8_t length;      // descriptor length
   uint8_t type;        // descriptor type (0x4)
   uint8_t first_if;    // number of first interface
@@ -112,7 +130,7 @@ typedef struct {
 } usb_if_assoc_descriptor_t;
 
 // Interface Descriptor
-typedef struct {
+typedef struct packed {
   uint8_t length;      // descriptor length
   uint8_t type;        // descriptor type (0x4)
   uint8_t if_number;   // number of this interface
@@ -124,7 +142,7 @@ typedef struct {
 } usb_if_descriptor_t;
 
 // Endpoint Descriptor
-typedef struct {
+typedef struct packed {
   uint8_t length;       // descriptor length
   uint8_t type;         // descriptor type (0x5)
   uint8_t ep_addr;      // address of endpoint on device
@@ -134,14 +152,14 @@ typedef struct {
 } usb_ep_descriptor_t;
 
 // String Descriptor
-typedef struct {
+typedef struct packed {
   // string descriptors use UNICODE UTF16LE encoding
   uint8_t length;    // size of string descriptor
   uint8_t type;      // descriptor type (0x2)
   char16_t string[]; // utf-16 string (size = length - 2)
 } usb_string_t;
 
-typedef struct {
+typedef struct packed {
   uint8_t length;         // descriptor length
   uint8_t type;           // descriptor type (0x2)
   usb_string_t strings[]; // individual string descriptors

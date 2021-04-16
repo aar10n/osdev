@@ -35,6 +35,7 @@
 #define offset_ptr(p, c) ((void *)(((uint8_t *)(p)) + (c)))
 #define align(v, a) ((v) + (((a) - (v)) & ((a) - 1)))
 #define align_ptr(p, a) ((void *) (align((uintptr_t)(p), (a))))
+#define ptr_after(s) ((void *)(((uintptr_t)(s)) + (sizeof(*s))))
 
 #define min(a, b) (((a) < (b)) ? (a) : (b))
 #define max(a, b) (((a) > (b)) ? (a) : (b))

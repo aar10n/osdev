@@ -94,7 +94,8 @@ extern _Thread_local int errno;
 #define ETXTBSY 81         // Text file busy.
 #define EWOULDBLOCK 82     // Operation would block (may be the same value as [EAGAIN]).
 #define EXDEV 83           // Cross-device link.
-#define ERRNO_MAX 83
+#define EFAILED 84         // General failure.
+#define ERRNO_MAX 84
 
 const char *strerror(int errnum);
 

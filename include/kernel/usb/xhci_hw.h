@@ -6,9 +6,11 @@
 #define KERNEL_USB_XHCI_HW_H
 
 #include <base.h>
-#include <mm.h>
 
-typedef struct xhci_dev xhci_dev_t;
+//
+// Definitions for XHCI registers and structures
+// as are defined in the specification.
+//
 
 #define CAP ((xhci)->cap_base)
 #define OP ((xhci)->op_base)
@@ -676,6 +678,16 @@ static_assert(sizeof(xhci_noop_trb_t) == 16);
 
 // -------- Event TRBs --------
 
+#define CC_SUCCESS         1
+#define CC_DATA_BUF_ERROR  2
+#define CC_BABBLE_DT_ERROR 3
+#define CC_USB_TX_ERROR    4
+#define CC_TRB_ERROR       5
+#define CC_STALL_ERROR     6
+#define CC_RESOURCE_ERROR  7
+#define CC_BANDWIDTH_ERROR 8
+#define CC_NO_SLOTS_ERROR  9
+
 // Transfer Event TRB
 typedef struct {
   // dword 0 & 1
@@ -807,6 +819,22 @@ typedef struct {
 } xhci_config_ep_cmd_trb_t;
 static_assert(sizeof(xhci_config_ep_cmd_trb_t) == 16);
 
+// Evaluate Context Command TRB
+typedef struct {
+  // dword 0 & 1
+  uint64_t input_ctx;       // input context pointer
+  // dword 2
+  uint32_t : 32;            // reserved
+  // dword 3
+  uint32_t cycle : 1;       // cycle bit
+  uint32_t : 8;             // reserved
+  uint32_t bsr : 1;         // block set address request
+  uint32_t trb_type : 6;    // trb type
+  uint32_t : 8;             // reserved
+  uint32_t slot_id : 8;     // slot id
+} xhci_eval_ctx_cmd_trb_t;
+static_assert(sizeof(xhci_eval_ctx_cmd_trb_t) == 16);
+
 
 // -------- Other TRBs --------
 
@@ -885,12 +913,6 @@ typedef struct {
   uint32_t interval : 8;     // interval
   uint32_t max_esit_hi : 8;  // max endpoint service time interval (high)
   // dword 1
-  // 00000100 00000000 0 00 100 11 0
-  //        4        0 0  0   4  3 0
-
-  // 01000000 00000000 0 00 100 11 0
-  //       64        0 0  0   4  3 0
-  // 100 00000000 00000000 0 100 11 0
   uint32_t : 1;               // reserved
   uint32_t cerr : 2;          // error count
   uint32_t ep_type : 3;       // endpoint type
@@ -943,81 +965,5 @@ typedef struct {
   // dword 3
   uint32_t : 32;          // reserved
 } xhci_erst_entry_t;
-
-//
-
-typedef struct xhci_protocol {
-  uint8_t rev_major;   // major usb revision
-  uint8_t rev_minor;   // minor usb revision
-  uint8_t port_offset; // compatible port offset
-  uint8_t port_count;  // compatible port count
-  struct xhci_protocol *next;
-} xhci_protocol_t;
-
-typedef struct {
-  xhci_trb_t *ptr;    // ring base
-  page_t *page;       // ring pages
-  uint32_t index;     // ring enqueue/dequeue index
-  uint32_t max_index; // max index
-  bool ccs;           // cycle state
-} xhci_ring_t;
-
-typedef struct {
-  uint8_t number;    // interrupter number
-  uint8_t vector;    // mapped interrupt vector
-  uintptr_t erst;    // event ring segment table
-  xhci_ring_t *ring; // event ring
-} xhci_intrptr_t;
-
-typedef struct {
-  uint8_t slot_id;
-  uint8_t port_num;
-
-  xhci_ring_t *ring;
-  page_t *input_page;
-  xhci_input_ctx_t *input;
-  page_t *output_page;
-  xhci_device_ctx_t *output;
-} xhci_device_t;
-
-typedef struct xhci_port {
-  uint8_t number;            // port number
-  xhci_protocol_t *protocol; // port protocol
-  xhci_device_t *device;     // attached device
-  struct xhci_port *next;    // linked list
-} xhci_port_t;
-
-//
-// private api
-//
-
-// controller
-int xhci_init_controller(xhci_dev_t *xhci);
-void *xhci_execute_cmd_trb(xhci_dev_t *xhci, xhci_trb_t *trb);
-
-// ports
-int xhci_enable_port(xhci_dev_t *xhci, xhci_port_t *port);
-xhci_port_t *xhci_discover_ports(xhci_dev_t *xhci);
-
-// interrupters
-xhci_intrptr_t *xhci_setup_interrupter(xhci_dev_t *xhci, uint8_t n);
-bool xhci_is_valid_event(xhci_intrptr_t *intrptr);
-
-// doorbells
-void xhci_ring_db(xhci_dev_t *xhci, uint8_t slot, uint16_t endpoint);
-
-// devices
-xhci_device_t *xhci_setup_device(xhci_dev_t *xhci, xhci_port_t *port);
-int xhci_address_device(xhci_dev_t *xhci, xhci_device_t *device);
-
-// capabilities
-xhci_cap_t *xhci_get_cap(xhci_dev_t *xhci, xhci_cap_t *cap_ptr, uint8_t cap_id);
-xhci_protocol_t *xhci_get_protocols(xhci_dev_t *xhci);
-
-// trb ring
-xhci_ring_t *xhci_alloc_ring();
-void xhci_free_ring(xhci_ring_t *ring);
-bool xhci_ring_enqueue_trb(xhci_ring_t *ring, xhci_trb_t *trb);
-bool xhci_ring_dequeue_trb(xhci_ring_t *ring, xhci_trb_t **result);
 
 #endif
