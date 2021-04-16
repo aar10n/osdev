@@ -11,6 +11,20 @@
 #include <printf.h>
 #include <panic.h>
 
+// #define MUTEX_DEBUG
+#ifdef MUTEX_DEBUG
+#define mutex_trace_debug(str, args...) kprintf("[mutex] " str "\n", ##args)
+#else
+#define mutex_trace_debug(str, args...)
+#endif
+// #define COND_DEBUG
+#ifdef COND_DEBUG
+#define cond_trace_debug(str, args...) kprintf("[cond] " str "\n", ##args)
+#else
+#define cond_trace_debug(str, args...)
+#endif
+
+
 void safe_enqeue(thread_link_t **queue, spinlock_t *lock, thread_t *thread) {
   thread_link_t *link = kmalloc(sizeof(thread_link_t));
   link->thread = thread;
@@ -61,12 +75,12 @@ int mutex_lock(mutex_t *mutex) {
     return EINVAL;
   }
 
-  kprintf("[pid %d:%d] locking mutex\n", getpid(), gettid());
+  mutex_trace_debug("locking mutex (%d:%d)", getpid(), gettid());
   preempt_disable();
   // label(try_again);
   if (atomic_bit_test_and_set(&mutex->locked)) {
-    kprintf("[pid %d:%d] failed to aquire mutex\n", getpid(), gettid());
-    kprintf("blocking\n");
+    mutex_trace_debug("failed to aquire mutex (%d:%d)", getpid(), gettid());
+    mutex_trace_debug("blocking");
     // the mutex is currently locked
     safe_enqeue(&mutex->queue, &mutex->queue_lock, thread);
     scheduler_block(thread);
@@ -76,7 +90,7 @@ int mutex_lock(mutex_t *mutex) {
     mutex->owner = thread;
   }
   preempt_enable();
-  kprintf("[pid %d:%d] mutex aquired\n", getpid(), gettid());
+  mutex_trace_debug("mutex aquired (%d:%d)", getpid(), gettid());
   return 0;
 }
 
@@ -86,7 +100,7 @@ int mutex_unlock(mutex_t *mutex) {
     return EINVAL;
   }
 
-  kprintf("[pid %d:%d] unlocking mutex\n", getpid(), gettid());
+  mutex_trace_debug("unlocking mutex (%d:%d)", getpid(), gettid());
   preempt_disable();
   thread_t *unblocked = safe_dequeue(&mutex->queue, &mutex->queue_lock);
   if (unblocked != NULL) {
@@ -96,7 +110,7 @@ int mutex_unlock(mutex_t *mutex) {
   mutex->owner = NULL;
   // atomic_bit_test_and_reset(&mutex->locked);
   preempt_enable();
-  kprintf("[pid %d:%d] mutex unlocked\n", getpid(), gettid());
+  mutex_trace_debug("mutex unlocked (%d:%d)", getpid(), gettid());
   return 0;
 }
 
@@ -136,7 +150,7 @@ int cond_signal(cond_t *cond) {
   thread_t *signaled = safe_dequeue(&cond->queue, &cond->queue_lock);
   preempt_enable();
 
-  kprintf("[cond] thread %d:%d unblocked by %d:%d\n",
+  cond_trace_debug("thread %d:%d unblocked by %d:%d",
           signaled->process->pid, signaled->tid,
           thread->process->pid, thread->tid);
 

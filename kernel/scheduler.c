@@ -17,6 +17,13 @@
 #include <device/apic.h>
 #include <string.h>
 
+// #define SCHED_DEBUG
+#ifdef SCHED_DEBUG
+#define sched_trace_debug(str, args...) kprintf("[scheduler] " str "\n", ##args)
+#else
+#define sched_trace_debug(str, args...)
+#endif
+
 #define DISPATCH(policy, func, args...) \
   (((SCHEDULER->policies[policy])->func)(SCHEDULER->policy_data[policy], ##args))
 #define REGISTER_POLICY(policy, impl) ({           \
@@ -167,7 +174,7 @@ thread_status_t get_new_status(sched_reason_t reason) {
 }
 
 thread_t *get_next_thread() {
-  kprintf("[scheduler] getting next thread\n");
+  sched_trace_debug("getting next thread");
   scheduler_t *sched = SCHEDULER;
   if (sched->count == 0) {
     return NULL;
@@ -186,7 +193,7 @@ thread_t *get_next_thread() {
 
   // clean up thread if it has been terminated
   if (thread->status == THREAD_TERMINATED) {
-    kprintf("[scheduler] cleaning up thread\n");
+    sched_trace_debug("cleaning up thread");
     // do cleanup logic
     if (sched->count == 0) {
       return NULL;
@@ -216,7 +223,7 @@ void scheduler_sched(sched_reason_t reason) {
 
   uint64_t count = sched->count;
 
-  kprintf("[scheduler] schedule\n");
+  sched_trace_debug("schedule");
   if (curr == sched->idle) {
     curr->status = THREAD_READY;
   } else {
@@ -234,7 +241,7 @@ void scheduler_sched(sched_reason_t reason) {
   if (count == 0) {
     // switch to idle thread
     sched->timer_event = false;
-    kprintf("[scheduler] idling...\n");
+    sched_trace_debug("idling...");
     curr->status = THREAD_READY;
     if (curr != sched->idle) {
       thread_switch(sched->idle);
@@ -247,7 +254,7 @@ void scheduler_sched(sched_reason_t reason) {
     panic("[scheduler] failed to get next thread");
   }
 
-  kprintf("[scheduler] pid: %d | thread: %d\n", next->process->pid, next->tid);
+  sched_trace_debug("pid: %d | thread: %d", next->process->pid, next->tid);
   sched->timer_event = false;
   next->status = THREAD_RUNNING;
   next->cpu_id = sched->cpu_id;
@@ -256,12 +263,12 @@ void scheduler_sched(sched_reason_t reason) {
 
 void scheduler_tick() {
   SCHEDULER->timer_event = true;
-  kprintf("[scheduler] tick\n");
+  sched_trace_debug("tick");
   scheduler_sched(PREEMPTED);
 }
 
 void scheduler_wakeup(thread_t *thread) {
-  kprintf("[scheduler] wakeup (%d:%d)\n", thread->process->pid, thread->tid);
+  sched_trace_debug("wakeup (%d:%d)", thread->process->pid, thread->tid);
   scheduler_t *sched = SCHEDULER;
   THREAD_QUEUE_REMOVE(&sched->blocked, thread);
   DISPATCH(thread->policy, add_thread, thread, RESERVED);
@@ -272,7 +279,7 @@ void scheduler_wakeup(thread_t *thread) {
 //
 
 void scheduler_init(process_t *root) {
-  kprintf("[scheduler] initializing\n");
+  sched_trace_debug("initializing");
 
   thread_t *idle = thread_alloc(root->threads->tid + 1, idle_task, NULL);
   idle->process = root;
@@ -300,7 +307,7 @@ void scheduler_init(process_t *root) {
   idt_set_gate(VECTOR_SCHED_TIMER, gate);
 
   apic_init_periodic(SCHED_PERIOD);
-  kprintf("[scheduler] done!\n");
+  sched_trace_debug("done!");
 
   root->main->status = THREAD_RUNNING;
   thread_switch(root->main);
@@ -393,7 +400,7 @@ int scheduler_unblock(thread_t *thread) {
 }
 
 int scheduler_yield() {
-  kprintf("[scheduler] yielding\n");
+  sched_trace_debug("yielding");
   scheduler_sched(YIELDED);
   return 0;
 }
