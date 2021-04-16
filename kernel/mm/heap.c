@@ -160,9 +160,14 @@ void *__kmalloc(size_t size, size_t alignment, int flags) {
       // if a chunk was found remove it from the list
       if (chunk_last) {
         chunk_last->next = chunk->next;
-      } else {
+      } else if (chunk == kheap->chunks) {
         kheap->chunks = chunk->next;
       }
+
+      if (chunk->next) {
+        chunk->next->prev_free = false;
+      }
+      chunk->free = false;
       chunk->next = NULL;
 
       // return pointer to user data
@@ -215,7 +220,6 @@ void *__kmalloc(size_t size, size_t alignment, int flags) {
     chunk_t *last = kheap->last_chunk;
     chunk->prev_size = last->size;
     chunk->prev_free = last->free;
-    last->next = chunk;
   }
 
   // kprintf("[kmalloc] new chunk header at %p\n", chunk_mem_start);
@@ -254,11 +258,6 @@ void kfree(void *ptr) {
   // finally mark the chunk as used and add it to the used list
   chunk->free = true;
   chunk->next = kheap->chunks;
-
-  // update the used status in the next chunk
-  if (next_chunk) {
-    next_chunk->free = true;
-  }
 
   kheap->used -= (chunk->size) + sizeof(chunk_t);
   kheap->chunks = chunk;

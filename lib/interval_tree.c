@@ -23,22 +23,22 @@
   NULL
 
 
-static inline interval_t get_interval(rb_node_t *node) {
-  if (node == NULL || node->data == NULL) {
+static inline interval_t get_interval(rb_tree_t *tree, rb_node_t *node) {
+  if (node == NULL || node == tree->nil || node->data == NULL) {
     return NULL_SET;
   }
   return ((intvl_node_t *) node->data)->interval;
 }
 
-static inline uint64_t get_max(rb_node_t *node) {
-  if (node == NULL || node->data == NULL) {
+static inline uint64_t get_max(rb_tree_t *tree, rb_node_t *node) {
+  if (node == NULL || node == tree->nil || node->data == NULL) {
     return 0;
   }
   return ((intvl_node_t *) node->data)->max;
 }
 
-static inline uint64_t get_min(rb_node_t *node) {
-  if (node == NULL || node->data == NULL) {
+static inline uint64_t get_min(rb_tree_t *tree, rb_node_t *node) {
+  if (node == NULL || node == tree->nil || node->data == NULL) {
     return UINT64_MAX;
   }
   return ((intvl_node_t *) node->data)->min;
@@ -49,8 +49,8 @@ static inline uint64_t get_min(rb_node_t *node) {
 void recalculate_min_max(rb_tree_t *tree, rb_node_t *x) {
   while (x != tree->nil) {
     intvl_node_t *xd = x->data;
-    xd->max = max(xd->interval.end, max(get_max(x->left), get_max(x->right)));
-    xd->min = min(xd->interval.start, min(get_min(x->left), get_min(x->right)));
+    xd->max = max(xd->interval.end, max(get_max(tree, x->left), get_max(tree, x->right)));
+    xd->min = min(xd->interval.start, min(get_min(tree, x->left), get_min(tree, x->right)));
     x = x->parent;
   }
 }
@@ -133,8 +133,8 @@ intvl_node_t *intvl_tree_find(intvl_tree_t *tree, interval_t interval) {
   interval_t i = interval;
 
   rb_node_t *node = rb->root;
-  while (node != rb->nil && !overlaps(i, get_interval(node))) {
-    if (node->left != rb->nil && get_max(node->left) > i.start) {
+  while (node != rb->nil && !overlaps(i, get_interval(rb, node))) {
+    if (node->left != rb->nil && get_max(rb, node->left) > i.start) {
       node = node->left;
     } else {
       node = node->right;
@@ -151,27 +151,27 @@ intvl_node_t *intvl_tree_find_closest(intvl_tree_t *tree, interval_t interval) {
   rb_node_t *closest = NULL;
   rb_node_t *node = rb->root;
   while (node != rb->nil) {
-    if (overlaps(i, get_interval(node))) {
+    if (overlaps(i, get_interval(rb, node))) {
       return node->data;
     }
 
     closest = node;
-    if (overlaps(i, get_interval(node->left))) {
+    if (overlaps(i, get_interval(rb, node->left))) {
       return node->left->data;
-    } else if (overlaps(i, get_interval(node->right))) {
+    } else if (overlaps(i, get_interval(rb, node->right))) {
       return node->right->data;
     } else {
-      uint64_t diff = i.start < get_interval(node).start ?
-                      udiff(i.end, get_interval(node).start) :
-                      udiff(i.start, get_interval(node).end);
+      uint64_t diff = i.start < get_interval(rb, node).start ?
+                      udiff(i.end, get_interval(rb, node).start) :
+                      udiff(i.start, get_interval(rb, node).end);
 
       uint64_t ldiff = min(
-        udiff(get_min(node->left), i.start),
-        udiff(get_max(node->left), i.end)
+        udiff(get_min(rb, node->left), i.start),
+        udiff(get_max(rb, node->left), i.end)
       );
       uint64_t rdiff = min(
-        udiff(get_min(node->right), i.start),
-        udiff(get_max(node->right), i.end)
+        udiff(get_min(rb, node->right), i.start),
+        udiff(get_max(rb, node->right), i.end)
       );
       if (diff <= ldiff && diff <= rdiff) {
         // current node is closest

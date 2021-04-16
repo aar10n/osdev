@@ -36,7 +36,7 @@ typedef struct heap {
   size_t size;          // the size of the heap
   size_t used;          // the total number of bytes used
   chunk_t *last_chunk;  // the last created chunk
-  chunk_t *chunks;      // a linked list of used chunks
+  chunk_t *chunks;      // a linked list of free chunks
 } heap_t;
 
 void kheap_init();
