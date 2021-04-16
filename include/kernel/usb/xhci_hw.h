@@ -873,8 +873,6 @@ static_assert(sizeof(xhci_link_trb_t) == 16);
 // Slot Context
 typedef struct {
   // dword 0
-  // 00001 0 0 0 0000 00000000000000000000
-  // 00001 0 0 0 0100 00000000000000000000
   uint32_t route_string : 20;   // route string
   uint32_t speed : 4;           // speed (deprecated)
   uint32_t : 1;                 // reserved
@@ -882,8 +880,6 @@ typedef struct {
   uint32_t hub : 1;             // hub (device is usb hub)
   uint32_t ctx_entries : 5;     // context entries
   // dword 1
-  // 111 0000000000000000
-  // 010 0000000000000000
   uint32_t max_latency : 16;    // max exit latency
   uint32_t root_hub_port : 8;   // root hub port number
   uint32_t num_ports : 8;       // number of ports
@@ -943,14 +939,14 @@ typedef struct {
 static_assert(sizeof(xhci_input_ctrl_ctx_t) == 32);
 
 // Input Context
-typedef struct xhci_input_ctx {
+typedef struct {
   xhci_input_ctrl_ctx_t ctrl;
   xhci_slot_ctx_t slot;
   xhci_endpoint_ctx_t endpoint[31];
 } xhci_input_ctx_t;
 
 // Device Context
-typedef struct xhci_device_ctx {
+typedef struct {
   xhci_slot_ctx_t slot;
   xhci_endpoint_ctx_t endpoint[31];
 } xhci_device_ctx_t;

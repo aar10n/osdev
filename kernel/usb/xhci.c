@@ -67,10 +67,10 @@ noreturn void *xhci_event_loop(void *arg) {
   xhci_op->usbsts.evt_int = 1;
   while (true) {
     if (!xhci_op->usbsts.evt_int) {
-      xhci_trace_debug("waiting for event");
+      // xhci_trace_debug("waiting for event");
       cond_wait(&xhci->event);
     }
-    xhci_trace_debug("an event occurred");
+    // xhci_trace_debug("an event occurred");
 
     if (xhci_op->usbsts.hc_error) {
       panic(">>>>>>> HOST CONTROLLER ERROR <<<<<<<");
@@ -224,8 +224,9 @@ void xhci_setup_devices() {
 
     device->desc = desc;
 
-    device->input->ctrl.add_flags |= 1;
-    device->input->endpoint[0].max_packt_sz = desc->max_packt_sz0;
+    xhci_input_ctx_t *input = device->input;
+    input->ctrl.add_flags |= 1;
+    input->endpoint[0].max_packt_sz = desc->max_packt_sz0;
     xhci_trace_debug("evaluating context");
     if (xhci_evaluate_context(xhci, device) != 0) {
       xhci_trace_debug("failed to evaluate context");
@@ -234,7 +235,25 @@ void xhci_setup_devices() {
     }
     xhci_trace_debug("context evaluated!");
 
-    xhci_get_device_info(device);
+    // input->ctrl.drop_flags = 0;
+    // input->ctrl.add_flags = 1 | 4;
+    // xhci_configure_endpoint(xhci, device);
+
+    xhci_trace_debug("reading device configs");
+    if (xhci_get_device_configs(device) != 0) {
+      xhci_trace_debug("failed to read configs");
+      port = port->next;
+      continue;
+    }
+    xhci_trace_debug("configs read!");
+
+    xhci_trace_debug("selecting config");
+    if (xhci_select_device_config(xhci, device) != 0) {
+      xhci_trace_debug("failed to select config");
+      port = port->next;
+      continue;
+    }
+    xhci_trace_debug("config selected!");
 
     port = port->next;
   }
@@ -282,7 +301,7 @@ int xhci_init_controller(xhci_dev_t *xhci) {
   xhci_op->crcr_r |= ring->page->frame | CRCR_RCS;
 
   // set up the root interrupter
-  xhci_intrptr_t *intrptr = xhci_setup_interrupter(xhci, 0);
+  xhci_intr_t *intrptr = xhci_setup_interrupter(xhci, 0);
   xhci->intr = intrptr;
 
   // run the controller
@@ -294,7 +313,7 @@ int xhci_init_controller(xhci_dev_t *xhci) {
   return 0;
 }
 
-xhci_intrptr_t *xhci_setup_interrupter(xhci_dev_t *xhci, uint8_t n) {
+xhci_intr_t *xhci_setup_interrupter(xhci_dev_t *xhci, uint8_t n) {
   uint8_t vector = atomic_fetch_add(&intr_vector, 1);
   idt_hook(vector, irq_callback, xhci);
   pcie_enable_msi_vector(xhci->pci_dev, n, vector);
@@ -306,7 +325,7 @@ xhci_intrptr_t *xhci_setup_interrupter(xhci_dev_t *xhci, uint8_t n) {
   erst[0].rs_addr = ring->page->frame;
   erst[0].rs_size = PAGE_SIZE / sizeof(xhci_trb_t);
 
-  xhci_intrptr_t *intr = kmalloc(sizeof(xhci_intrptr_t));
+  xhci_intr_t *intr = kmalloc(sizeof(xhci_intr_t));
   intr->vector = vector;
   intr->number = n;
   intr->ring = ring;
@@ -523,7 +542,7 @@ int xhci_evaluate_context(xhci_dev_t *xhci, xhci_device_t *device) {
 // MARK: Events
 //
 
-bool xhci_is_valid_event(xhci_intrptr_t *intr) {
+bool xhci_is_valid_event(xhci_intr_t *intr) {
   xhci_ring_t *ring = intr->ring;
   xhci_trb_t *trb = &ring->ptr[ring->index];
   return trb->trb_type != 0 && trb->cycle == ring->ccs;
@@ -543,7 +562,7 @@ xhci_device_t *xhci_alloc_device(xhci_dev_t *xhci, xhci_port_t *port, uint8_t sl
   // set A0 and A1 flags to 1
   input_ctx->ctrl.add_flags |= 0x3;
 
-  slot_ctx->root_hub_port = 2;
+  slot_ctx->root_hub_port = port->number;
   slot_ctx->route_string = 0;
   slot_ctx->speed = 4;
   slot_ctx->ctx_entries = 1;
@@ -582,27 +601,32 @@ xhci_device_t *xhci_alloc_device(xhci_dev_t *xhci, xhci_port_t *port, uint8_t sl
   return device;
 }
 
-int xhci_ring_device_db(xhci_device_t *device) {
-  xhci_ring_db(xhc, device->slot_id, 0);
-  return 0;
+xhci_ep_t *xhci_alloc_device_ep(xhci_device_t *device, uint8_t ep_num) {
+  kassert(ep_num > 0 && ep_num < 32);
+
+  // endpoint struct
+  xhci_ep_t *ep = kmalloc(sizeof(xhci_ep_t));
+  ep->number = ep_num;
+  ep->ictx = &device->output->endpoint[ep_num];
+  ep->octx = &device->input->endpoint[ep_num];
+  ep->ring = xhci_alloc_ring();
+
+  xhci_endpoint_ctx_t *ictx = ep->ictx;
+  ictx->ep_type = XHCI_INTR_IN_EP;
+  ictx->max_packt_sz = 512;
+  ictx->max_burst_sz = 0;
+  ictx->tr_dequeue_ptr = ep->ring->page->frame | 1;
+  ictx->avg_trb_length = 8;
+  ictx->interval = 0;
+  ictx->max_streams = 0;
+  ictx->mult = 0;
+  ictx->cerr = 3;
+
+  return ep;
 }
 
-void xhci_get_device_info(xhci_device_t *device) {
+int xhci_get_device_configs(xhci_device_t *device) {
   usb_device_descriptor_t *desc = device->desc;
-  // char *manufacturer = xhci_get_string_descriptor(device, desc->manuf_idx);
-  // char *product = xhci_get_string_descriptor(device, desc->product_idx);
-  // char *serial_num = xhci_get_string_descriptor(device, desc->serial_idx);
-
-  // kprintf("USB DEVICE:\n");
-  // kprintf("  manufacturer: %s\n"
-  //         "  product: %s\n"
-  //         "  serial number: %s\n",
-  //         manufacturer, product, serial_num);
-  //
-  // kfree(manufacturer);
-  // kfree(product);
-  // kfree(serial_num);
-
   usb_config_descriptor_t **configs = kmalloc(sizeof(void *) * desc->num_configs);
   device->configs = configs;
   for (int i = 0; i < desc->num_configs; i++) {
@@ -610,17 +634,78 @@ void xhci_get_device_info(xhci_device_t *device) {
     usb_config_descriptor_t *config = xhci_get_descriptor(device, CONFIG_DESCRIPTOR, i, &size);
     if (config == NULL) {
       xhci_trace_debug("failed to get config descriptor (%d)", i);
-      continue;
+      return -EFAILED;
     }
     configs[i] = config;
+  }
+  return 0;
+}
 
+int xhci_select_device_config(xhci_dev_t *xhci, xhci_device_t *device) {
+  xhci_input_ctx_t *input = device->input;
+  usb_device_descriptor_t *desc = device->desc;
+
+  int ep_num = xhci_get_free_ep(device);
+  if (ep_num < 0) {
+    xhci_trace_debug("no free endpoints");
+    return ep_num;
+  }
+
+  for (int i = 0; i < desc->num_configs; i++) {
+    usb_config_descriptor_t *config = device->configs[i];
     usb_if_descriptor_t *interfaces = ptr_after(config);
+
     for (int j = 0; j < config->num_ifs; j++) {
       usb_if_descriptor_t *interface = interfaces + j;
 
+      uint8_t class_code = desc->dev_class;
+      uint8_t subclass_code = desc->dev_subclass;
+      if (class_code == 0) {
+        class_code = interface->if_protocol;
+        subclass_code = interface->if_subclass;
+      }
+
+      xhci_trace_debug("trying config %d interface %d", i, j);
+      xhci_trace_debug("class code %d | subclass code %d", class_code, subclass_code);
+
+      xhci_ep_t *ep = xhci_alloc_device_ep(device, ep_num);
+      input->ctrl.drop_flags = 0;
+      input->ctrl.add_flags = 1 | (1 << (ep_num + 1));
+      if (xhci_configure_endpoint(xhci, device) != 0) {
+        xhci_trace_debug("failed to configure endpoint with config %d interface %d", i, j);
+        kfree(ep);
+        continue;
+      }
+
+      usb_setup_packet_t get_desc = SET_CONFIGURATION(0);
+      xhci_queue_setup(device, &get_desc, SETUP_DATA_NONE);
+      xhci_queue_status(device, DATA_OUT);
+      xhci_db(device->slot_id)->target = 1;
+      cond_wait(&xhci->event_ack);
+
+      xhci_trace_debug("device configured with config %d interface %d", i, j);
+      device->dev_class = class_code;
+      device->dev_subclass = subclass_code;
+      device->endpoints[ep_num - 1] = ep;
+      return 0;
     }
   }
 
+  return -EFAILED;
+}
+
+int xhci_get_free_ep(xhci_device_t *device) {
+  for (int i = 0; i < sizeof(device->endpoints); i++) {
+    if (device->endpoints[i] == NULL) {
+      return i + 1;
+    }
+  }
+  return -ENOSPC;
+}
+
+int xhci_ring_device_db(xhci_device_t *device) {
+  xhci_ring_db(xhc, device->slot_id, 0);
+  return 0;
 }
 
 //
@@ -762,7 +847,6 @@ char *xhci_get_string_descriptor(xhci_device_t *device, uint8_t index) {
   kfree(string);
   return ascii;
 }
-
 
 //
 // MARK: TRB Rings

@@ -71,6 +71,18 @@ static_assert(sizeof(usb_setup_packet_t) == 8);
   .length = 1,                                \
 })
 
+#define SET_CONFIGURATION(c) ((usb_setup_packet_t){ \
+  .request_type = {                           \
+    .recipient = USB_SETUP_DEVICE,            \
+    .type = USB_SETUP_TYPE_STANDARD,          \
+    .direction = USB_SETUP_HOST_TO_DEV,       \
+  },                                          \
+  .request = USB_SET_CONFIGURATION,           \
+  .value = c,                                 \
+  .index = 0,                                 \
+  .length = 0,                                \
+})
+
 
 //
 // Device Classes

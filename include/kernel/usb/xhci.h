@@ -33,12 +33,22 @@ typedef struct {
   uint8_t vector;    // mapped interrupt vector
   uintptr_t erst;    // event ring segment table
   xhci_ring_t *ring; // event ring
-} xhci_intrptr_t;
+} xhci_intr_t;
+
+typedef struct {
+  uint8_t number;             // endpoint number
+  xhci_endpoint_ctx_t *ictx;  // input context
+  xhci_endpoint_ctx_t *octx;  // output context
+  xhci_ring_t *ring;          // transfer ring
+} xhci_ep_t;
 
 typedef struct {
   uint8_t slot_id;
   uint8_t port_num;
+  uint8_t dev_class;
+  uint8_t dev_subclass;
 
+  // control endpoint
   xhci_ring_t *ring;
   page_t *input_page;
   xhci_input_ctx_t *input;
@@ -47,6 +57,7 @@ typedef struct {
 
   usb_device_descriptor_t *desc;
   usb_config_descriptor_t **configs;
+  xhci_ep_t *endpoints[31];
 } xhci_device_t;
 
 typedef struct xhci_port {
@@ -82,7 +93,7 @@ typedef struct xhci_dev {
   xhci_protocol_t *protocols;
   xhci_port_t *ports;
 
-  xhci_intrptr_t *intr;
+  xhci_intr_t *intr;
   xhci_ring_t *cmd_ring;
 } xhci_dev_t;
 
@@ -91,7 +102,7 @@ void xhci_init();
 void xhci_setup_devices();
 
 int xhci_init_controller(xhci_dev_t *xhci);
-xhci_intrptr_t *xhci_setup_interrupter(xhci_dev_t *xhci, uint8_t n);
+xhci_intr_t *xhci_setup_interrupter(xhci_dev_t *xhci, uint8_t n);
 void xhci_ring_db(xhci_dev_t *xhci, uint8_t slot, uint16_t endpoint);
 xhci_cap_t *xhci_get_cap(xhci_dev_t *xhci, xhci_cap_t *cap_ptr, uint8_t cap_id);
 xhci_protocol_t *xhci_get_protocols(xhci_dev_t *xhci);
@@ -105,11 +116,14 @@ int xhci_address_device(xhci_dev_t *xhci, xhci_device_t *device);
 int xhci_configure_endpoint(xhci_dev_t *xhci, xhci_device_t *device);
 int xhci_evaluate_context(xhci_dev_t *xhci, xhci_device_t *device);
 
-bool xhci_is_valid_event(xhci_intrptr_t *intr);
+bool xhci_is_valid_event(xhci_intr_t *intr);
 
 xhci_device_t *xhci_alloc_device(xhci_dev_t *xhci, xhci_port_t *port, uint8_t slot);
+xhci_ep_t *xhci_alloc_device_ep(xhci_device_t *device, uint8_t ep_num);
+int xhci_get_device_configs(xhci_device_t *device);
+int xhci_select_device_config(xhci_dev_t *xhci, xhci_device_t *device);
+int xhci_get_free_ep(xhci_device_t *device);
 int xhci_ring_device_db(xhci_device_t *device);
-void xhci_get_device_info(xhci_device_t *device);
 
 int xhci_queue_setup(xhci_device_t *device, usb_setup_packet_t *setup, uint8_t type);
 int xhci_queue_data(xhci_device_t *device, uintptr_t buffer, uint16_t size, bool dir);
