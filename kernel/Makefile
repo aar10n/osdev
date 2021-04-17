@@ -27,7 +27,7 @@ kernel += device/apic.c device/hpet.c \
 kernel += mm/heap.c mm/mm.c mm/vm.c
 
 # kernel/usb
-kernel += usb/usb.c usb/xhci.c
+kernel += usb/hid.c usb/usb.c usb/xhci.c
 
 
 # kernel-y

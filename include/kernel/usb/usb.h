@@ -177,4 +177,14 @@ typedef struct packed {
   usb_string_t strings[]; // individual string descriptors
 } usb_string_descriptor_t;
 
+typedef struct packed {
+  uint8_t length;
+  uint8_t type;
+  uint16_t hid;
+  uint8_t country_code;
+  uint8_t num_descriptors;
+  uint8_t type2;
+  uint16_t length2;
+} hid_descriptor_t;
+
 #endif
