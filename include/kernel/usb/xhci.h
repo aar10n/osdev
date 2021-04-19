@@ -12,6 +12,8 @@
 #include <mm.h>
 #include <mutex.h>
 
+typedef struct xhci_dev xhci_dev_t;
+
 typedef struct {
   xhci_trb_t *ptr;    // ring base
   page_t *page;       // ring pages
@@ -47,8 +49,12 @@ typedef struct {
   uint8_t port_num;
   uint8_t dev_class;
   uint8_t dev_subclass;
+  uint8_t dev_protocol;
+  uint8_t dev_config;
+  uint8_t dev_if;
 
-  // control endpoint
+  xhci_dev_t *xhci;
+
   xhci_ring_t *ring;
   page_t *input_page;
   xhci_input_ctx_t *input;
@@ -116,12 +122,13 @@ int xhci_address_device(xhci_dev_t *xhci, xhci_device_t *device);
 int xhci_configure_endpoint(xhci_dev_t *xhci, xhci_device_t *device);
 int xhci_evaluate_context(xhci_dev_t *xhci, xhci_device_t *device);
 
+void *xhci_wait_for_transfer(xhci_device_t *device);
 bool xhci_is_valid_event(xhci_intr_t *intr);
 
 xhci_device_t *xhci_alloc_device(xhci_dev_t *xhci, xhci_port_t *port, uint8_t slot);
 xhci_ep_t *xhci_alloc_device_ep(xhci_device_t *device, uint8_t ep_num);
 int xhci_get_device_configs(xhci_device_t *device);
-int xhci_select_device_config(xhci_dev_t *xhci, xhci_device_t *device);
+int xhci_select_device_config(xhci_device_t *device);
 int xhci_get_free_ep(xhci_device_t *device);
 int xhci_ring_device_db(xhci_device_t *device);
 

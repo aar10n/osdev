@@ -88,6 +88,11 @@ static_assert(sizeof(usb_setup_packet_t) == 8);
 // Device Classes
 //
 
+#define USB_CLASS_NONE     0x00 // use class information in interface descriptors
+#define USB_CLASS_AUDIO    0x01 // audio devices
+#define USB_CLASS_HID      0x03 // human interface devices
+#define USB_CLASS_STORAGE  0x08 // mass storage devices
+#define USB_CLASS_HUB      0x09 // usb hub devices
 
 //
 // Descriptors
@@ -148,6 +153,7 @@ typedef struct packed {
   uint8_t if_number;   // number of this interface
   uint8_t alt_setting; // value to select this alternate setting
   uint8_t num_eps;     // number of endpoints used
+  uint8_t if_class;    // class code
   uint8_t if_subclass; // subclass code
   uint8_t if_protocol; // protocol code
   uint8_t this_idx;    // own string descriptor index
@@ -176,15 +182,5 @@ typedef struct packed {
   uint8_t type;           // descriptor type (0x2)
   usb_string_t strings[]; // individual string descriptors
 } usb_string_descriptor_t;
-
-typedef struct packed {
-  uint8_t length;
-  uint8_t type;
-  uint16_t hid;
-  uint8_t country_code;
-  uint8_t num_descriptors;
-  uint8_t type2;
-  uint16_t length2;
-} hid_descriptor_t;
 
 #endif

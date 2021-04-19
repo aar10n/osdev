@@ -14,6 +14,7 @@
 #include <scheduler.h>
 #include <mutex.h>
 #include <atomic.h>
+#include <usb/hid.h>
 
 #define XHCI_DEBUG
 
@@ -176,7 +177,13 @@ void xhci_setup_devices() {
 
   // setup devices
   xhci_port_t *port = xhci->ports;
+  bool first = true;
   while (port) {
+    // if (first) {
+    //   port = port->next;
+    //   first = false;
+    //   continue;
+    // }
 
     xhci_trace_debug("setting up device on port %d", port->number);
 
@@ -248,12 +255,16 @@ void xhci_setup_devices() {
     xhci_trace_debug("configs read!");
 
     xhci_trace_debug("selecting config");
-    if (xhci_select_device_config(xhci, device) != 0) {
+    if (xhci_select_device_config(device) != 0) {
       xhci_trace_debug("failed to select config");
       port = port->next;
       continue;
     }
     xhci_trace_debug("config selected!");
+
+    if (device->dev_class == USB_CLASS_HID) {
+      hid_get_report_descriptor(device);
+    }
 
     port = port->next;
   }
@@ -542,6 +553,12 @@ int xhci_evaluate_context(xhci_dev_t *xhci, xhci_device_t *device) {
 // MARK: Events
 //
 
+void *xhci_wait_for_transfer(xhci_device_t *device) {
+  void *ptr;
+  thread_receive(device->xhci->event_thread, &ptr);
+  return ptr;
+}
+
 bool xhci_is_valid_event(xhci_intr_t *intr) {
   xhci_ring_t *ring = intr->ring;
   xhci_trb_t *trb = &ring->ptr[ring->index];
@@ -591,6 +608,10 @@ xhci_device_t *xhci_alloc_device(xhci_dev_t *xhci, xhci_port_t *port, uint8_t sl
   xhci_device_t *device = kmalloc(sizeof(xhci_device_t));
   device->slot_id = slot;
   device->port_num = port->number;
+  device->dev_class = 0;
+  device->dev_subclass = 0;
+  device->dev_protocol = 0;
+  device->xhci = xhci;
   device->ring = ring;
   device->input_page = input_page;
   device->input = input_ctx;
@@ -641,7 +662,8 @@ int xhci_get_device_configs(xhci_device_t *device) {
   return 0;
 }
 
-int xhci_select_device_config(xhci_dev_t *xhci, xhci_device_t *device) {
+int xhci_select_device_config(xhci_device_t *device) {
+  xhci_dev_t *xhci = device->xhci;
   xhci_input_ctx_t *input = device->input;
   usb_device_descriptor_t *desc = device->desc;
 
@@ -660,13 +682,15 @@ int xhci_select_device_config(xhci_dev_t *xhci, xhci_device_t *device) {
 
       uint8_t class_code = desc->dev_class;
       uint8_t subclass_code = desc->dev_subclass;
-      if (class_code == 0) {
-        class_code = interface->if_protocol;
+      uint8_t protocol = desc->dev_protocol;
+      if (class_code == USB_CLASS_NONE) {
+        class_code = interface->if_class;
         subclass_code = interface->if_subclass;
+        protocol = interface->if_protocol;
       }
 
       xhci_trace_debug("trying config %d interface %d", i, j);
-      xhci_trace_debug("class code %d | subclass code %d", class_code, subclass_code);
+      xhci_trace_debug("class: %d | subclass: %d | protocol: %d", class_code, subclass_code, protocol);
 
       xhci_ep_t *ep = xhci_alloc_device_ep(device, ep_num);
       input->ctrl.drop_flags = 0;
@@ -677,7 +701,7 @@ int xhci_select_device_config(xhci_dev_t *xhci, xhci_device_t *device) {
         continue;
       }
 
-      usb_setup_packet_t get_desc = SET_CONFIGURATION(0);
+      usb_setup_packet_t get_desc = SET_CONFIGURATION(config->config_val);
       xhci_queue_setup(device, &get_desc, SETUP_DATA_NONE);
       xhci_queue_status(device, DATA_OUT);
       xhci_db(device->slot_id)->target = 1;
@@ -686,6 +710,9 @@ int xhci_select_device_config(xhci_dev_t *xhci, xhci_device_t *device) {
       xhci_trace_debug("device configured with config %d interface %d", i, j);
       device->dev_class = class_code;
       device->dev_subclass = subclass_code;
+      device->dev_protocol = protocol;
+      device->dev_config = i;
+      device->dev_if = j;
       device->endpoints[ep_num - 1] = ep;
       return 0;
     }
@@ -704,7 +731,8 @@ int xhci_get_free_ep(xhci_device_t *device) {
 }
 
 int xhci_ring_device_db(xhci_device_t *device) {
-  xhci_ring_db(xhc, device->slot_id, 0);
+  xhci_dev_t *xhci = device->xhci;
+  xhci_db(device->slot_id)->target = 1;
   return 0;
 }
 
