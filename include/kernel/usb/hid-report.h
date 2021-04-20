@@ -128,6 +128,12 @@ typedef struct collection_node {
 } collection_node_t;
 
 
-void hid_parse_report_descriptor(uint8_t *desc, size_t size);
+typedef struct {
+  collection_node_t *root;
+  size_t size;
+} report_format_t;
+
+
+report_format_t *hid_parse_report_descriptor(uint8_t *desc, size_t length);
 
 #endif

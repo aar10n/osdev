@@ -6,6 +6,11 @@
 #define KERNEL_USB_USB_H
 
 #include <base.h>
+#include <thread.h>
+
+typedef struct xhci_device xhci_device_t;
+typedef struct xhci_dev xhci_dev_t;
+
 
 // Request Type
 #define USB_GET_STATUS        0x0
@@ -182,5 +187,60 @@ typedef struct packed {
   uint8_t type;           // descriptor type (0x2)
   usb_string_t strings[]; // individual string descriptors
 } usb_string_descriptor_t;
+
+//
+//
+//
+
+typedef struct usb_dev usb_device_t;
+
+typedef enum {
+  USB_IN,
+  USB_OUT,
+} usb_dir_t;
+
+typedef enum {
+  TRANSFER_IN,
+  TRANSFER_OUT,
+} usb_event_type_t;
+
+typedef enum {
+  USB_SUCCESS,
+  USB_ERROR,
+} usb_status_t;
+
+typedef struct usb_event {
+  usb_device_t *device;  // device
+  usb_event_type_t type; // event type
+  usb_status_t status;   // event status
+  time_t timestamp;      // timestamp
+} usb_event_t;
+
+typedef struct {
+  const char *name;
+  uint8_t dev_class;
+  uint8_t dev_subclass;
+
+  void *(*init)(usb_device_t *dev);
+  void (*handle_event)(usb_event_t *event, void *data);
+} usb_driver_t;
+
+typedef struct usb_dev {
+  id_t id;
+  xhci_dev_t *hc;
+  xhci_device_t *device;
+  int endpoint;
+
+  usb_driver_t *driver;
+  void *driver_data;
+
+  thread_t *thread;
+} usb_device_t;
+
+
+void usb_init();
+void usb_register_device(xhci_device_t *device);
+
+int usb_add_transfer(usb_device_t *device, usb_dir_t dir, void *buffer, size_t size);
 
 #endif

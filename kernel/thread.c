@@ -212,6 +212,10 @@ void thread_yield() {
   scheduler_yield();
 }
 
+void thread_block() {
+  scheduler_block(current_thread);
+}
+
 //
 
 int thread_setpolicy(thread_t *thread, uint8_t policy) {

@@ -91,6 +91,7 @@ int thread_send(void *data);
 int thread_receive(thread_t *thread, void **data);
 void thread_sleep(uint64_t us);
 void thread_yield();
+void thread_block();
 
 int thread_setpolicy(thread_t *thread, uint8_t policy);
 int thread_setpriority(thread_t *thread, uint16_t priority);

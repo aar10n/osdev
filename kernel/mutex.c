@@ -131,6 +131,9 @@ int cond_wait(cond_t *cond) {
     return 0;
   }
 
+  cond_trace_debug("thread %d:%d blocked by condition",
+                   thread->process->pid, thread->tid);
+
   preempt_disable();
   safe_enqeue(&cond->queue, &cond->queue_lock, thread);
   preempt_enable();

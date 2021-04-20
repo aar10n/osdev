@@ -228,6 +228,7 @@ void scheduler_sched(sched_reason_t reason) {
     curr->status = THREAD_READY;
   } else {
     curr->status = get_new_status(reason);
+    sched_trace_debug("cur status: %d (%d:%d)", curr->status, curr->process->pid, curr->tid);
     if (IS_BLOCKED(curr)) {
       THREAD_QUEUE_ADD(&sched->blocked, curr);
     } else if (!IS_TERMINATED(curr)) {
@@ -242,7 +243,7 @@ void scheduler_sched(sched_reason_t reason) {
     // switch to idle thread
     sched->timer_event = false;
     sched_trace_debug("idling...");
-    curr->status = THREAD_READY;
+    // curr->status = THREAD_READY;
     if (curr != sched->idle) {
       thread_switch(sched->idle);
     }

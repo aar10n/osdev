@@ -34,7 +34,7 @@
 #include <fs/utils.h>
 
 #include <bus/pcie.h>
-#include <usb/xhci.h>
+#include <usb/usb.h>
 
 boot_info_t *boot_info;
 
@@ -51,9 +51,9 @@ void launch() {
   pcie_init();
   pcie_discover();
 
-  xhci_init();
+  usb_init();
 
-  scheduler_block(current_thread);
+  thread_block();
 }
 
 //

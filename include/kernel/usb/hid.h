@@ -8,6 +8,7 @@
 #include <base.h>
 #include <usb/usb.h>
 #include <usb/xhci.h>
+#include <usb/hid-report.h>
 
 //
 // Requests
@@ -73,6 +74,19 @@ typedef struct packed {
   uint16_t report_length;
 } hid_descriptor_t;
 
-void hid_get_report_descriptor(xhci_device_t *device);
+//
+
+typedef struct {
+  hid_descriptor_t *desc;
+  report_format_t *format;
+  void *buffer;
+  size_t size;
+
+  void (*handle_input)(void *data, size_t size);
+} hid_device_t;
+
+
+void *hid_device_init(usb_device_t *dev);
+void hid_handle_event(usb_event_t *event, void *data);
 
 #endif
