@@ -6,8 +6,8 @@ CFLAGS-kernel = $(CFLAGS) -fstrict-volatile-bitfields
 
 # kernel
 kernel += entry.asm sched.asm smpboot.asm syscall.asm \
-	thread.asm user.asm acpi.c loader.c main.c mutex.c \
-	panic.c percpu.c printf.c process.c scheduler.c \
+	thread.asm user.asm acpi.c event.c loader.c main.c \
+	mutex.c panic.c percpu.c printf.c process.c scheduler.c \
 	signal.c smpboot.c spinlock.c syscall.c thread.c \
 	timer.c
 
@@ -28,7 +28,7 @@ kernel += mm/heap.c mm/mm.c mm/vm.c
 
 # kernel/usb
 kernel += usb/hid.c usb/hid-report.c usb/hid-usage.c \
-	usb/usb.c usb/xhci.c
+	usb/keyboard.c usb/usb.c usb/xhci.c
 
 
 # kernel-y
