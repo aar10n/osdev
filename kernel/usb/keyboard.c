@@ -124,6 +124,9 @@ hid_keyboard_t *hid_keyboard_init(report_format_t *format) {
     }
     node = node->next;
   }
+
+  keyboard->prev_buffer = kmalloc(offset);
+  memset(keyboard->prev_buffer, 0, offset);
   return keyboard;
 }
 
@@ -143,6 +146,14 @@ void hid_keyboard_handle_input(hid_device_t *device, const uint8_t *buffer) {
       break;
     }
 
+    for (int j = char_idx; j < char_max; j++) {
+      if (kb->prev_buffer[j] == 0) {
+        break;
+      } else if (buffer[i] == kb->prev_buffer[j]) {
+        goto cont;
+      }
+    }
+
     key_event_t event = {
       .modifiers = modifiers,
       .key_code = hid_keyboard_layout[buffer[i]],
@@ -151,7 +162,11 @@ void hid_keyboard_handle_input(hid_device_t *device, const uint8_t *buffer) {
     };
     char ch = key_event_to_character(&event);
     if (ch != 0) {
-      kprintf("%c", ch);
+      kprintf("%c\n", ch);
     }
+
+    label(cont);
   }
+
+  memcpy(kb->prev_buffer, buffer, device->size);
 }

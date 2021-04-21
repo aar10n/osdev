@@ -104,6 +104,8 @@ typedef struct {
   uint8_t led_offset;
   uint8_t buffer_offset;
   uint8_t buffer_size;
+
+  uint8_t *prev_buffer;
 } hid_keyboard_t;
 
 
