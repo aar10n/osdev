@@ -25,15 +25,15 @@
 #define COLLECTION_TAG     0x0A
 #define END_COLLECTION_TAG 0x0C
 
-#define MAIN_ITEM_BIT0 // data (0) constant (1)
-#define MAIN_ITEM_BIT1 // array (0) variable (1)
-#define MAIN_ITEM_BIT2 // absolute (0) relative (1)
-#define MAIN_ITEM_BIT3 // no wrap (0) wrap (1)
-#define MAIN_ITEM_BIT4 // linear (0) non linear (1)
-#define MAIN_ITEM_BIT5 // preferred state (0) no preferred (1)
-#define MAIN_ITEM_BIT6 // no null position (0) null state (1)
-#define MAIN_ITEM_BIT7 // non volatile (0) volatile (1)
-#define MAIN_ITEM_BIT8 // bit field (0) buffered bytes (1)
+// #define MAIN_ITEM_BIT0 // data (0) constant (1)
+// #define MAIN_ITEM_BIT1 // array (0) variable (1)
+// #define MAIN_ITEM_BIT2 // absolute (0) relative (1)
+// #define MAIN_ITEM_BIT3 // no wrap (0) wrap (1)
+// #define MAIN_ITEM_BIT4 // linear (0) non linear (1)
+// #define MAIN_ITEM_BIT5 // preferred state (0) no preferred (1)
+// #define MAIN_ITEM_BIT6 // no null position (0) null state (1)
+// #define MAIN_ITEM_BIT7 // non volatile (0) volatile (1)
+// #define MAIN_ITEM_BIT8 // bit field (0) buffered bytes (1)
 
 #define COLLECTION_PHYSICAL     0x00
 #define COLLECTION_APPLICATION  0x01
@@ -135,5 +135,8 @@ typedef struct {
 
 
 report_format_t *hid_parse_report_descriptor(uint8_t *desc, size_t length);
+bool is_usage(item_node_t *item, uint32_t usage_page, uint32_t usage);
+bool is_usage_range(item_node_t *item, uint32_t usage_page, uint32_t usage_min, uint32_t usage_max);
+int get_item_size_bits(item_node_t *node);
 
 #endif

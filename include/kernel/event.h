@@ -7,6 +7,16 @@
 
 #include <base.h>
 
+// modifiers
+#define L_CONTROL (1 << 0)
+#define L_SHIFT   (1 << 1)
+#define L_ALT     (1 << 2)
+#define L_SPECIAL (1 << 3)
+#define R_CONTROL (1 << 4)
+#define R_SHIFT   (1 << 5)
+#define R_ALT     (1 << 6)
+#define R_SPECIAL (1 << 7)
+
 typedef enum key_code {
   // letters
   VK_KEYCODE_A,           // a and A
@@ -61,6 +71,7 @@ typedef enum key_code {
   VK_KEYCODE_BACKSLASH,   // \ and |
   VK_KEYCODE_SEMICOLON,   // ; and :
   VK_KEYCODE_APOSTROPHE,  // ' and "
+  VK_KEYCODE_TILDE,       // ` and ~
   VK_KEYCODE_COMMA,       // , and <
   VK_KEYCODE_PERIOD,      // . and >
   VK_KEYCODE_SLASH,       // / and ?
@@ -83,6 +94,7 @@ typedef enum key_code {
   VK_KEYCODE_PAUSE,       // pause
   VK_KEYCODE_INSERT,      // insert
   VK_KEYCODE_HOME,        // home
+  VK_KEYCODE_END,         // end
   VK_KEYCODE_PAGE_UP,     // page up
   VK_KEYCODE_PAGE_DOWN,   // page down
   VK_KEYCODE_DELETE_FWD,  // delete forward
@@ -92,5 +104,21 @@ typedef enum key_code {
   VK_KEYCODE_DOWN,        // down arrow
   VK_KEYCODE_UP,          // up arrow
 } key_code_t;
+
+typedef struct key_event {
+  uint8_t modifiers;
+  key_code_t key_code;
+  bool release;
+  struct key_event *next;
+} key_event_t;
+
+typedef struct {
+  key_event_t *first;
+  key_event_t *last;
+  size_t count;
+} key_event_queue_t;
+
+
+char key_event_to_character(key_event_t *event);
 
 #endif

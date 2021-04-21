@@ -318,6 +318,9 @@ report_format_t *hid_parse_report_descriptor(uint8_t *desc, size_t length) {
   uint8_t *ptr = desc;
   uint8_t *ptr_max = desc + length;
 
+  uint16_t bits_offset = 0;
+  uint8_t report_size = 0;
+
   hid_trace_debug("parsing report descriptor");
   hid_trace_debug("report descriptor:");
   while (ptr < ptr_max) {
@@ -339,7 +342,7 @@ report_format_t *hid_parse_report_descriptor(uint8_t *desc, size_t length) {
       while (size > 0) {
         if (ptr >= ptr_max) {
           kprintf("[hid] invalid long item size\n");
-          return;
+          continue;
         }
       }
 
@@ -378,6 +381,16 @@ report_format_t *hid_parse_report_descriptor(uint8_t *desc, size_t length) {
             item = NULL;
             usage = NULL;
             usages = NULL;
+            if (state->report_size * state->report_count % 8 == 0 && data & 1) {
+              // constant
+              break;
+            }
+
+            bits_offset += state->report_size * state->report_count;
+            if (bits_offset % 8 == 0) {
+              report_size += bits_offset / 8;
+              bits_offset = 0;
+            }
             break;
           case COLLECTION_TAG:
             state->collection = collections;
@@ -495,6 +508,34 @@ report_format_t *hid_parse_report_descriptor(uint8_t *desc, size_t length) {
 
   report_format_t *format = kmalloc(sizeof(report_format_t));
   format->root = root;
-  format->size = 0;
+  format->size = report_size;
   return format;
+}
+
+bool is_usage(item_node_t *item, uint32_t usage_page, uint32_t usage) {
+  return is_usage_range(item, usage_page, usage, usage);
+}
+
+bool is_usage_range(item_node_t *item, uint32_t usage_page, uint32_t usage_min, uint32_t usage_max) {
+  if (item == NULL || item->usage_page != usage_page || item->usages == NULL) {
+    return false;
+  }
+
+  usage_node_t *node = item->usages;
+  while (node != NULL) {
+    if ((usage_min == usage_max && node->usage == usage_min) ||
+        (node->usage_min <= usage_min && node->usage_max >= usage_max)) {
+      return true;
+    }
+    node = (void *) node->next;
+  }
+  return false;
+}
+
+int get_item_size_bits(item_node_t *node) {
+  int bits = node->report_size * node->report_count;
+  if (bits % 8 == 0 && node->data & 1) {
+    return 0;
+  }
+  return bits;
 }

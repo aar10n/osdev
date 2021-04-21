@@ -76,13 +76,14 @@ typedef struct packed {
 
 //
 
-typedef struct {
+typedef struct hid_device {
   hid_descriptor_t *desc;
   report_format_t *format;
   void *buffer;
   size_t size;
 
-  void (*handle_input)(void *data, size_t size);
+  void *data;
+  void (*handle_input)(struct hid_device *device, uint8_t *buffer);
 } hid_device_t;
 
 

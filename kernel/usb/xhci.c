@@ -115,7 +115,7 @@ noreturn void *xhci_device_event_loop(void *arg) {
   while (true) {
     if (!xhci_op->usbsts.evt_int) {
       cond_wait(&device->event);
-      xhci_trace_debug("device event!");
+      // xhci_trace_debug("device event!");
     }
 
     xhci_ring_t *ring = device->intr->ring;

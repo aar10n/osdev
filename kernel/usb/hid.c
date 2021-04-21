@@ -4,9 +4,13 @@
 
 #include <usb/hid.h>
 #include <usb/hid-report.h>
+#include <usb/hid-usage.h>
+#include <usb/keyboard.h>
 #include <usb/usb.h>
 #include <usb/xhci.h>
 #include <printf.h>
+
+#define hid_log(str, args...) kprintf("[hid] " str "\n", ##args)
 
 #define HID_DEBUG
 #ifdef HID_DEBUG
@@ -41,10 +45,6 @@ void *hid_get_report_descriptor(xhci_device_t *device) {
   return report;
 }
 
-// device specific
-
-
-
 //
 
 void *hid_device_init(usb_device_t *dev) {
@@ -60,13 +60,42 @@ void *hid_device_init(usb_device_t *dev) {
     return NULL;
   }
 
+  void *fn_ptr = NULL;
+  void *data_ptr = NULL;
+  collection_node_t *top_level = (void *) format->root->children;
+  uint32_t usage_page = top_level->usage_page;
+  uint32_t usage = top_level->usage;
+  if (usage_page == GENERIC_DESKTOP_PAGE) {
+    if (usage == MOUSE_USAGE) {
+      hid_trace_debug("mouse");
+      return NULL;
+    } else if (usage == KEYBOARD_USAGE) {
+      hid_trace_debug("keyboard");
+      fn_ptr = hid_keyboard_handle_input;
+      data_ptr = hid_keyboard_init(format);
+      if (data_ptr == NULL) {
+        hid_log("failed to initialize keyboard driver");
+        return NULL;
+      }
+    } else {
+      hid_log("hid device not supported: %s", hid_get_usage_name(usage_page, usage));
+      return NULL;
+    }
+
+  } else {
+    hid_log("hid device not supported: %s", hid_get_usage_name(usage_page, usage));
+    return NULL;
+  }
+
   hid_device_t *hid = kmalloc(sizeof(hid_device_t));
   hid->desc = desc;
   hid->format = format;
+  hid->buffer = kmalloc(format->size);
+  hid->size = format->size;
+  memset(hid->buffer, 0, format->size);
 
-  hid->buffer = kmalloc(8);
-  hid->size = 8;
-  memset(hid->buffer, 0, 8);
+  hid->data = data_ptr;
+  hid->handle_input = fn_ptr;
 
   usb_add_transfer(dev, USB_IN, (void *) heap_ptr_phys(hid->buffer), 8);
   return hid;
@@ -75,15 +104,10 @@ void *hid_device_init(usb_device_t *dev) {
 void hid_handle_event(usb_event_t *event, void *data) {
   usb_device_t *usb_dev = event->device;
   hid_device_t *device = data;
-  hid_trace_debug("event");
+  // hid_trace_debug("event");
 
   uint8_t buffer[device->size];
   memcpy(buffer, device->buffer, device->size);
   usb_add_transfer(usb_dev, USB_IN, (void *) heap_ptr_phys(device->buffer), device->size);
-
-  for (int i = 0; i < device->size; i++) {
-    kprintf("%#x ", (int) buffer[i]);
-  }
-  kprintf("\n");
-  int x = 5;
+  device->handle_input(device, buffer);
 }

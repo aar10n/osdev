@@ -55,9 +55,9 @@ noreturn void *usb_event_loop(void *arg) {
 
   usb_trace_debug("starting device event loop");
   while (true) {
-    usb_trace_debug("waiting for event");
+    // usb_trace_debug("waiting for event");
     cond_wait(&dev->device->event_ack);
-    usb_trace_debug("event");
+    // usb_trace_debug("event");
 
     xhci_transfer_evt_trb_t *trb = dev->device->thread->data;
     usb_status_t status;
