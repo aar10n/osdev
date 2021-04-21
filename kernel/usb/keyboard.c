@@ -7,7 +7,7 @@
 #include <usb/hid-report.h>
 #include <usb/hid-usage.h>
 #include <event.h>
-#include <printf.h>
+#include <gui/screen.h>
 
 key_code_t hid_keyboard_layout[] = {
   [HID_KEYBOARD_A] = VK_KEYCODE_A,
@@ -160,9 +160,17 @@ void hid_keyboard_handle_input(hid_device_t *device, const uint8_t *buffer) {
       .release = false,
       .next = NULL
     };
+
+    if (event.key_code == VK_KEYCODE_RETURN) {
+      screen_print_char('\n');
+    } else if (event.key_code == VK_KEYCODE_DELETE) {
+      screen_print_char('\b');
+    }
+
     char ch = key_event_to_character(&event);
     if (ch != 0) {
-      kprintf("%c\n", ch);
+      // kprintf("%c\n", ch);
+      screen_print_char(ch);
     }
 
     label(cont);

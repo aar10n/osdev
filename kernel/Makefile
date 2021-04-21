@@ -23,6 +23,9 @@ kernel += cpu/cpu.asm cpu/idt.asm \
 kernel += device/apic.c device/hpet.c \
 	device/ioapic.c device/pic.c device/pit.c
 
+# kernel/gui
+kernel += gui/screen.c
+
 # kernel/mm
 kernel += mm/heap.c mm/mm.c mm/vm.c
 
