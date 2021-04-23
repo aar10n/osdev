@@ -14,6 +14,7 @@
 #include <mutex.h>
 
 typedef struct xhci_dev xhci_dev_t;
+typedef struct xhci_port xhci_port_t;
 
 typedef struct {
   xhci_trb_t *ptr;    // ring base
@@ -31,6 +32,10 @@ typedef struct xhci_protocol {
   struct xhci_protocol *next;
 } xhci_protocol_t;
 
+typedef struct xhci_speed {
+  struct xhci_speed *next;
+} xhci_speed_t;
+
 typedef struct {
   uint8_t number;    // interrupter number
   uint8_t vector;    // mapped interrupt vector
@@ -40,15 +45,14 @@ typedef struct {
 
 typedef struct xhci_ep {
   uint8_t number;             // endpoint number
-  xhci_endpoint_ctx_t *ictx;  // input context
-  xhci_endpoint_ctx_t *octx;  // output context
-  xhci_ring_t *in_ring;       // transfer ring
-  xhci_ring_t *out_ring;      // event ring
+  uint8_t index;              // endpoint index
+  xhci_endpoint_ctx_t *ctx;   // endpoint context
+  xhci_ring_t *ring;          // transfer ring
+  struct xhci_ep *next;
 } xhci_ep_t;
 
 typedef struct xhci_device {
   uint8_t slot_id;
-  uint8_t port_num;
   uint8_t dev_class;
   uint8_t dev_subclass;
   uint8_t dev_protocol;
@@ -56,16 +60,16 @@ typedef struct xhci_device {
   uint8_t dev_if;
 
   xhci_dev_t *xhci;
+  xhci_port_t *port;
 
   xhci_ring_t *ring;
-  page_t *input_page;
-  xhci_input_ctx_t *input;
-  page_t *device_page;
-  xhci_device_ctx_t *device;
+  xhci_input_ctx_t *ictx;
+  xhci_device_ctx_t *dctx;
+  page_t *pages;
 
   usb_device_descriptor_t *desc;
   usb_config_descriptor_t **configs;
-  xhci_ep_t *endpoints[16];
+  xhci_ep_t *endpoints;
   xhci_intr_t *intr;
 
   thread_t *thread;
@@ -75,6 +79,7 @@ typedef struct xhci_device {
 
 typedef struct xhci_port {
   uint8_t number;            // port number
+  uint8_t speed;             // port speed
   xhci_protocol_t *protocol; // port protocol
   xhci_device_t *device;     // attached device
   struct xhci_port *next;    // linked list
@@ -104,6 +109,7 @@ typedef struct xhci_dev {
   cond_t event_ack;
 
   xhci_protocol_t *protocols;
+  xhci_speed_t *speeds;
   xhci_port_t *ports;
 
   xhci_intr_t *intr;
@@ -119,6 +125,7 @@ xhci_intr_t *xhci_setup_interrupter(xhci_dev_t *xhci, idt_function_t fn, void *d
 void xhci_ring_db(xhci_dev_t *xhci, uint8_t slot, uint16_t endpoint);
 xhci_cap_t *xhci_get_cap(xhci_dev_t *xhci, xhci_cap_t *cap_ptr, uint8_t cap_id);
 xhci_protocol_t *xhci_get_protocols(xhci_dev_t *xhci);
+xhci_speed_t *xhci_get_speeds(xhci_dev_t *xhci);
 
 xhci_port_t *xhci_discover_ports(xhci_dev_t *xhci);
 int xhci_enable_port(xhci_dev_t *xhci, xhci_port_t *port);
@@ -133,18 +140,17 @@ void *xhci_wait_for_transfer(xhci_device_t *device);
 bool xhci_is_valid_event(xhci_intr_t *intr);
 
 xhci_device_t *xhci_alloc_device(xhci_dev_t *xhci, xhci_port_t *port, uint8_t slot);
-xhci_ep_t *xhci_alloc_device_ep(xhci_device_t *device, uint8_t ep_num);
+xhci_ep_t *xhci_alloc_device_ep(xhci_device_t *device, usb_ep_descriptor_t *desc);
 int xhci_get_device_configs(xhci_device_t *device);
 int xhci_select_device_config(xhci_device_t *device);
-int xhci_get_free_ep(xhci_device_t *device);
-int xhci_get_active_endpoint(xhci_device_t *device);
-int xhci_enable_device_interrupts(xhci_dev_t *xhci, xhci_device_t *device);
+xhci_ep_t *xhci_get_endpoint(xhci_device_t *device, uint8_t ep_num);
+xhci_ep_t *xhci_find_endpoint(xhci_device_t *device, bool dir);
 int xhci_ring_device_db(xhci_device_t *device);
 
 int xhci_queue_setup(xhci_device_t *device, usb_setup_packet_t *setup, uint8_t type);
 int xhci_queue_data(xhci_device_t *device, uintptr_t buffer, uint16_t size, bool dir);
 int xhci_queue_status(xhci_device_t *device, bool dir);
-int xhci_queue_transfer(xhci_device_t *device, uint8_t ep_num, uintptr_t buffer, uint16_t size, bool dir);
+int xhci_queue_transfer(xhci_device_t *device, uintptr_t buffer, uint16_t size, bool dir);
 void *xhci_get_descriptor(xhci_device_t *device, uint8_t type, uint8_t index, size_t *size);
 char *xhci_get_string_descriptor(xhci_device_t *device, uint8_t index);
 

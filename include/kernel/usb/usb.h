@@ -109,6 +109,12 @@ static_assert(sizeof(usb_setup_packet_t) == 8);
 #define EP_DESCRIPTOR     0x5
 #define STRING_DESCRIPTOR 0x3
 
+// Generic Descriptor
+typedef struct packed {
+  uint8_t length;
+  uint8_t type;
+} usb_descriptor_t;
+
 // Device Descriptor
 typedef struct packed {
   uint8_t length;        // descriptor length
@@ -174,6 +180,15 @@ typedef struct packed {
   uint8_t interval;     // interval for servicing
 } usb_ep_descriptor_t;
 
+// SuperSpeed Endpoint Companion Descriptor
+typedef struct packed {
+  uint8_t length;
+  uint8_t type;
+  uint8_t max_burst_sz;
+  uint8_t attributes;
+  uint16_t bytes_per_intvl;
+} usb_ss_ep_descriptor_t;
+
 // String Descriptor
 typedef struct packed {
   // string descriptors use UNICODE UTF16LE encoding
@@ -229,7 +244,6 @@ typedef struct usb_dev {
   id_t id;
   xhci_dev_t *hc;
   xhci_device_t *device;
-  int endpoint;
 
   usb_driver_t *driver;
   void *driver_data;
@@ -242,5 +256,7 @@ void usb_init();
 void usb_register_device(xhci_device_t *device);
 
 int usb_add_transfer(usb_device_t *device, usb_dir_t dir, void *buffer, size_t size);
+
+usb_ep_descriptor_t *usb_get_ep_descriptors(usb_if_descriptor_t *interface);
 
 #endif

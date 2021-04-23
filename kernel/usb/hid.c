@@ -68,6 +68,7 @@ void *hid_device_init(usb_device_t *dev) {
   if (usage_page == GENERIC_DESKTOP_PAGE) {
     if (usage == MOUSE_USAGE) {
       hid_trace_debug("mouse");
+      hid_log("hid device not supported: Mouse");
       return NULL;
     } else if (usage == KEYBOARD_USAGE) {
       hid_trace_debug("keyboard");

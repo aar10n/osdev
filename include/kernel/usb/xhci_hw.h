@@ -409,6 +409,8 @@ typedef volatile union {
 #define XHCI_CAP_PROTOCOL   2
 #define XHCI_CAP_POWER_MGMT 3
 
+#define XHCI_PSI_OFFSET 0x10
+
 typedef volatile struct {
   uint32_t id : 8;   // capability id
   uint32_t next : 8; // next cap pointer
@@ -451,8 +453,6 @@ typedef volatile struct {
   // dword 3
   uint32_t slot_type : 5;     // protocol slot type
   uint32_t : 27;              // reserved
-  // dword 4-N
-  xhci_port_speed_t speeds[]; // speed of each port
 } xhci_cap_protocol_t;
 
 // Legacy Capabilities

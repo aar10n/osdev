@@ -503,8 +503,8 @@ report_format_t *hid_parse_report_descriptor(uint8_t *desc, size_t length) {
     }
   }
 
-  hid_trace_debug("descriptor tree:");
-  print_node(root, 0);
+  // hid_trace_debug("descriptor tree:");
+  // print_node(root, 0);
 
   report_format_t *format = kmalloc(sizeof(report_format_t));
   format->root = root;

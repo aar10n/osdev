@@ -17,7 +17,7 @@
 
 #define xhci_log(str, args...) kprintf("[xhci] " str "\n", ##args)
 
-#define XHCI_DEBUG
+// #define XHCI_DEBUG
 #ifdef XHCI_DEBUG
 #define xhci_trace_debug(str, args...) kprintf("[xhci] " str "\n", ##args)
 #else
@@ -48,13 +48,52 @@
   }                                              \
 }
 
-#define ep_index(num) ((num) + max((num) - 1, 0))
+#define ep_index(num, dir) ((num) + max((num) - 1, 0) + dir)
 
 //
 static xhci_dev_t *xhc = NULL;
 static uint8_t intr_vector = 0x32;
 static uint8_t intr_number = 0;
 
+static inline int get_ep_type(uint8_t ep_type, uint8_t ep_dir) {
+  switch (ep_type) {
+    case 0:
+      return XHCI_CTRL_BI_EP;
+    case 1:
+      return ep_dir == 0 ? XHCI_ISOCH_OUT_EP : XHCI_ISOCH_IN_EP;
+    case 2:
+      return ep_dir == 0 ? XHCI_BULK_OUT_EP : XHCI_BULK_IN_EP;
+    case 3:
+      return ep_dir == 0 ? XHCI_INTR_OUT_EP : XHCI_INTR_IN_EP;
+    default:
+      return 0;
+  }
+}
+
+static inline const char *get_speed_str(uint8_t speed) {
+  switch (speed) {
+    case XHCI_FULL_SPEED:
+      return "Full-speed (12 Mb/s)";
+    case XHCI_LOW_SPEED:
+      return "Low-speed (1.5 Mb/s)";
+    case XHCI_HIGH_SPEED:
+      return "High-speed (480 Mb/s)";
+    case XHCI_SUPER_SPEED_G1X1:
+      return "SuperSpeed Gen1 x1 (5 Gb/s)";
+    case XHCI_SUPER_SPEED_G2X1:
+      return "SuperSpeedPlus Gen2 x1 (10 Gb/s)";
+    case XHCI_SUPER_SPEED_G1X2:
+      return "SuperSpeedPlus Gen1 x2 (5 Gb/s)";
+    case XHCI_SUPER_SPEED_G2X2:
+      return "SuperSpeedPlus Gen2 x2 (10 Gb/s)";
+    default:
+      return "Unknown";
+  }
+}
+
+//
+// MARK:
+//
 
 static void irq_callback(uint8_t vector, void *data) {
   xhci_dev_t *xhci = data;
@@ -135,29 +174,6 @@ noreturn void *xhci_device_event_loop(void *arg) {
   }
 }
 
-void xhci_main(xhci_dev_t *xhci) {
-  // spawn threads
-  xhci->event_thread = thread_create(xhci_event_loop, xhci);
-  thread_setsched(xhci->event_thread, SCHED_DRIVER, PRIORITY_HIGH);
-  thread_yield();
-
-  // initialize the controller
-  if (xhci_init_controller(xhci) != 0) {
-    panic("[xhci] failed to initialize controller");
-  }
-
-  xhc = xhci;
-
-  // get protocols
-  xhci->protocols = xhci_get_protocols(xhci);
-  // discover ports
-  xhci->ports = xhci_discover_ports(xhci);
-
-  xhci_log("done initializing!");
-  cond_signal(&xhci->init);
-  thread_join(xhci->event_thread, NULL);
-}
-
 //
 // MARK: Core
 //
@@ -203,10 +219,25 @@ void xhci_init() {
   cond_init(&xhci->event, 0);
   cond_init(&xhci->event_ack, 0);
 
-  process_create_1(xhci_main, xhci);
-  cond_wait(&xhci->init);
+  // spawn threads
+  xhci->event_thread = thread_create(xhci_event_loop, xhci);
+  thread_setsched(xhci->event_thread, SCHED_DRIVER, PRIORITY_HIGH);
+  thread_yield();
 
-  xhci_trace_debug("done!");
+  // initialize the controller
+  if (xhci_init_controller(xhci) != 0) {
+    panic("[xhci] failed to initialize controller");
+  }
+  xhc = xhci;
+
+  // get protocols
+  xhci->protocols = xhci_get_protocols(xhci);
+  // xhci->speeds = xhci_get_speeds(xhci);
+  xhci->speeds = NULL;
+
+  // discover ports
+  xhci->ports = xhci_discover_ports(xhci);
+  xhci_log("done!");
 }
 
 void xhci_setup_devices() {
@@ -216,12 +247,8 @@ void xhci_setup_devices() {
   // setup devices
   xhci_port_t *port = xhci->ports;
   while (port) {
-    if (port->number != 5) {
-      port = port->next;
-      continue;
-    }
-
     xhci_trace_debug("setting up device on port %d", port->number);
+    xhci_trace_debug("port speed: %s\n", get_speed_str(port->speed));
 
     xhci_trace_debug("enabling port %d", port->number);
     if (xhci_enable_port(xhci, port) != 0) {
@@ -267,7 +294,7 @@ void xhci_setup_devices() {
 
     device->desc = desc;
 
-    xhci_input_ctx_t *input = device->input;
+    xhci_input_ctx_t *input = device->ictx;
     input->ctrl.add_flags |= 1;
     input->endpoint[0].max_packt_sz = desc->max_packt_sz0;
     xhci_trace_debug("evaluating context");
@@ -444,6 +471,32 @@ xhci_protocol_t *xhci_get_protocols(xhci_dev_t *xhci) {
   return first;
 }
 
+xhci_speed_t *xhci_get_speeds(xhci_dev_t *xhci) {
+  xhci_speed_t *first = NULL;
+  xhci_speed_t *speeds = NULL;
+
+  xhci_cap_t *cap_ptr = NULL;
+  while (true) {
+    cap_ptr = xhci_get_cap(xhci, cap_ptr, XHCI_CAP_PROTOCOL);
+    if (cap_ptr == NULL) {
+      break;
+    }
+
+    xhci_cap_protocol_t *p = (void *) cap_ptr;
+    xhci_speed_t *speed = kmalloc(sizeof(xhci_speed_t));
+
+    xhci_port_speed_t *ps = offset_ptr(p, XHCI_PSI_OFFSET);
+
+    if (speeds != NULL) {
+      speeds->next = speed;
+    } else {
+      first = speed;
+    }
+    speeds = speed;
+  }
+  return first;
+}
+
 //
 // MARK: Ports
 //
@@ -466,6 +519,7 @@ xhci_port_t *xhci_discover_ports(xhci_dev_t *xhci) {
       xhci_port_t *p = kmalloc(sizeof(xhci_port_t));
       p->number = i + 1;
       p->protocol = proto;
+      p->speed = xhci_port(i)->portsc.speed;
       p->device = NULL;
       p->next = NULL;
       if (last != NULL) {
@@ -531,7 +585,7 @@ int xhci_enable_slot(xhci_dev_t *xhci) {
 
 int xhci_address_device(xhci_dev_t *xhci, xhci_device_t *device) {
   xhci_addr_dev_cmd_trb_t addr_cmd = { 0 };
-  addr_cmd.input_ctx = device->input_page->frame;
+  addr_cmd.input_ctx = device->pages->frame;
   addr_cmd.trb_type = TRB_ADDR_DEV_CMD;
   addr_cmd.slot_id = device->slot_id;
 
@@ -547,7 +601,7 @@ int xhci_address_device(xhci_dev_t *xhci, xhci_device_t *device) {
 
 int xhci_configure_endpoint(xhci_dev_t *xhci, xhci_device_t *device) {
   xhci_config_ep_cmd_trb_t config_cmd = { 0 };
-  config_cmd.input_ctx = device->input_page->frame;
+  config_cmd.input_ctx = device->pages->frame;
   config_cmd.trb_type = TRB_CONFIG_EP_CMD;
   config_cmd.slot_id = device->slot_id;
 
@@ -564,7 +618,7 @@ int xhci_configure_endpoint(xhci_dev_t *xhci, xhci_device_t *device) {
 
 int xhci_evaluate_context(xhci_dev_t *xhci, xhci_device_t *device) {
   xhci_eval_ctx_cmd_trb_t eval_cmd = { 0 };
-  eval_cmd.input_ctx = device->input_page->frame;
+  eval_cmd.input_ctx = device->pages->frame;
   eval_cmd.trb_type = TRB_EVAL_CTX_CMD;
   eval_cmd.slot_id = device->slot_id;
 
@@ -603,17 +657,17 @@ bool xhci_is_valid_event(xhci_intr_t *intr) {
 
 xhci_device_t *xhci_alloc_device(xhci_dev_t *xhci, xhci_port_t *port, uint8_t slot) {
   // input context
-  page_t *input_page = alloc_zero_page(PE_WRITE | PE_CACHE_DISABLE);
-  xhci_input_ctx_t *input_ctx = (void *) input_page->addr;
-  xhci_slot_ctx_t *slot_ctx = &input_ctx->slot;
-  xhci_endpoint_ctx_t *ep_ctx = &input_ctx->endpoint[0];
+  page_t *ictx_page = alloc_zero_page(PE_WRITE | PE_CACHE_DISABLE);
+  xhci_input_ctx_t *ictx = (void *) ictx_page->addr;
+  xhci_slot_ctx_t *slot_ctx = &ictx->slot;
+  xhci_endpoint_ctx_t *ep_ctx = &ictx->endpoint[0];
 
   // set A0 and A1 flags to 1
-  input_ctx->ctrl.add_flags |= 0x3;
+  ictx->ctrl.add_flags |= 0x3;
 
   slot_ctx->root_hub_port = port->number;
   slot_ctx->route_string = 0;
-  slot_ctx->speed = 4;
+  slot_ctx->speed = port->speed;
   slot_ctx->ctx_entries = 1;
 
   // allocate transfer ring
@@ -630,24 +684,25 @@ xhci_device_t *xhci_alloc_device(xhci_dev_t *xhci, xhci_port_t *port, uint8_t sl
   ep_ctx->mult = 0;
   ep_ctx->cerr = 3;
 
-  // output context
-  page_t *output_page = alloc_zero_page(PE_WRITE | PE_CACHE_DISABLE);
-  xhci_device_ctx_t *output_ctx = (void *) output_page->addr;
-  xhci->dcbaap[slot] = output_page->frame;
+  // device context
+  page_t *dctx_page = alloc_zero_page(PE_WRITE | PE_CACHE_DISABLE);
+  xhci_device_ctx_t *dctx = (void *) dctx_page->addr;
+  xhci->dcbaap[slot] = dctx_page->frame;
+
+  ictx_page->next = dctx_page;
 
   // device struct
   xhci_device_t *device = kmalloc(sizeof(xhci_device_t));
   device->slot_id = slot;
-  device->port_num = port->number;
   device->dev_class = 0;
   device->dev_subclass = 0;
   device->dev_protocol = 0;
   device->xhci = xhci;
+  device->port = port;
   device->ring = ring;
-  device->input_page = input_page;
-  device->input = input_ctx;
-  device->device_page = output_page;
-  device->device = output_ctx;
+  device->ictx = ictx;
+  device->dctx = dctx;
+  device->pages = ictx_page;
   device->thread = NULL;
   cond_init(&device->event, 0);
   cond_init(&device->event_ack, 0);
@@ -660,43 +715,59 @@ xhci_device_t *xhci_alloc_device(xhci_dev_t *xhci, xhci_port_t *port, uint8_t sl
   return device;
 }
 
-xhci_ep_t *xhci_alloc_device_ep(xhci_device_t *device, uint8_t ep_num) {
-  kassert(ep_num > 0 && ep_num < 16);
-  uint8_t index = ep_index(ep_num);
+xhci_ep_t *xhci_alloc_device_ep(xhci_device_t *device, usb_ep_descriptor_t *desc) {
+  uint8_t ep_num = desc->ep_addr & 0xF;
+  uint8_t ep_dir = (desc->ep_addr >> 7) & 0x1;
+  uint8_t ep_type = desc->attributes & 0x3;
+  uint8_t index = ep_index(ep_num, ep_dir);
+
+  // num = 1
+  // dir = 1
+  // index = 3
+
+  // 0 -> ctrl
+  // 1 -> ep 1 out
+  // 2 -> ep 1 in
+  // 3 -> ep 2 out
+  // 4 -> ep 2 in
+
+
+
+  // num = 2
+  // dir = 1
+  // index = 5
 
   // endpoint struct
   xhci_ep_t *ep = kmalloc(sizeof(xhci_ep_t));
   ep->number = ep_num;
-  ep->octx = &device->input->endpoint[index];
-  ep->ictx = &device->input->endpoint[index + 1];
-  ep->in_ring = xhci_alloc_ring();
-  ep->out_ring = xhci_alloc_ring();
+  ep->index = index;
+  ep->ctx = &device->ictx->endpoint[index];
+  ep->ring = xhci_alloc_ring();
+  ep->next = NULL;
 
   xhci_trace_debug("endpoint %d", ep_num);
-  xhci_trace_debug("in ring | phys: %p | virt: %p", ep->in_ring->page->frame, ep->in_ring->ptr);
-  xhci_trace_debug("out ring | phys: %p | virt: %p", ep->out_ring->page->frame, ep->out_ring->ptr);
+  xhci_trace_debug("index %d", index);
 
-  xhci_endpoint_ctx_t *octx = ep->octx;
-  octx->ep_type = XHCI_INTR_OUT_EP;
-  octx->max_packt_sz = 512;
-  octx->max_burst_sz = 0;
-  octx->tr_dequeue_ptr = ep->out_ring->page->frame | 1;
-  octx->avg_trb_length = 8;
-  octx->interval = 0;
-  octx->max_streams = 0;
-  octx->mult = 0;
-  octx->cerr = 3;
+  xhci_endpoint_ctx_t *ctx = ep->ctx;
+  ctx->ep_type = get_ep_type(ep_type, ep_dir);
+  ctx->interval = desc->interval;
+  ctx->max_packt_sz = desc->max_pckt_sz;
+  ctx->max_burst_sz = 0;
+  ctx->tr_dequeue_ptr = ep->ring->page->frame | 1;
+  ctx->avg_trb_length = 8;
+  ctx->max_streams = 0;
+  ctx->mult = 0;
+  ctx->cerr = 3;
 
-  xhci_endpoint_ctx_t *ictx = ep->ictx;
-  ictx->ep_type = XHCI_INTR_IN_EP;
-  ictx->max_packt_sz = 512;
-  ictx->max_burst_sz = 0;
-  ictx->tr_dequeue_ptr = ep->in_ring->page->frame | 1;
-  ictx->avg_trb_length = 8;
-  ictx->interval = 0;
-  ictx->max_streams = 0;
-  ictx->mult = 0;
-  ictx->cerr = 3;
+  if (device->endpoints == NULL) {
+    device->endpoints = ep;
+  } else {
+    xhci_ep_t *last = device->endpoints;
+    while (last->next != NULL) {
+      last = last->next;
+    }
+    last->next = ep;
+  }
 
   return ep;
 }
@@ -719,21 +790,28 @@ int xhci_get_device_configs(xhci_device_t *device) {
 
 int xhci_select_device_config(xhci_device_t *device) {
   xhci_dev_t *xhci = device->xhci;
-  xhci_input_ctx_t *input = device->input;
+  xhci_input_ctx_t *input = device->ictx;
   usb_device_descriptor_t *desc = device->desc;
 
-  int ep_num = xhci_get_free_ep(device);
-  if (ep_num < 0) {
-    xhci_trace_debug("no free endpoints");
-    return ep_num;
-  }
+  char *device_str = xhci_get_string_descriptor(device, device->desc->product_idx);
+  char *manuf_str = xhci_get_string_descriptor(device, device->desc->manuf_idx);
+  xhci_log("Device: %s | Manufacturer: %s", device_str, manuf_str);
+  kfree(device_str);
+  kfree(manuf_str);
 
   for (int i = 0; i < desc->num_configs; i++) {
+    label(try_config);
+
     usb_config_descriptor_t *config = device->configs[i];
     usb_if_descriptor_t *interfaces = ptr_after(config);
 
+    char *config_str = xhci_get_string_descriptor(device, config->this_idx);
+    xhci_log("Config: %s", config_str);
+    kfree(config_str);
+
     for (int j = 0; j < config->num_ifs; j++) {
-      usb_if_descriptor_t *interface = interfaces + j;
+      usb_if_descriptor_t *interface = &interfaces[j];
+      usb_ep_descriptor_t *endpoints = usb_get_ep_descriptors(interface);
 
       uint8_t class_code = desc->dev_class;
       uint8_t subclass_code = desc->dev_subclass;
@@ -747,14 +825,18 @@ int xhci_select_device_config(xhci_device_t *device) {
       xhci_trace_debug("trying config %d interface %d", i, j);
       xhci_trace_debug("class: %d | subclass: %d | protocol: %d", class_code, subclass_code, protocol);
 
-      xhci_ep_t *ep = xhci_alloc_device_ep(device, ep_num);
-      input->slot.ctx_entries++;
-      input->ctrl.drop_flags = 0;
-      input->ctrl.add_flags = 1 | (0x3 << (ep_index(ep_num) + 1));
-      if (xhci_configure_endpoint(xhci, device) != 0) {
-        xhci_trace_debug("failed to configure endpoint with config %d interface %d", i, j);
-        kfree(ep);
-        continue;
+      for (int k = 0; k < interface->num_eps; k++) {
+        usb_ep_descriptor_t *endpoint = &endpoints[k];
+
+        xhci_ep_t *ep = xhci_alloc_device_ep(device, endpoint);
+        input->slot.ctx_entries++;
+        input->ctrl.drop_flags = 0;
+        input->ctrl.add_flags = 1 | (1 << (ep->index + 1));
+        if (xhci_configure_endpoint(xhci, device) != 0) {
+          xhci_trace_debug("failed to configure endpoint");
+          kfree(ep);
+          goto try_config;
+        }
       }
 
       usb_setup_packet_t get_desc = SET_CONFIGURATION(config->config_val);
@@ -769,7 +851,6 @@ int xhci_select_device_config(xhci_device_t *device) {
       device->dev_protocol = protocol;
       device->dev_config = i;
       device->dev_if = j;
-      device->endpoints[ep_num - 1] = ep;
       return 0;
     }
   }
@@ -777,42 +858,40 @@ int xhci_select_device_config(xhci_device_t *device) {
   return -EFAILED;
 }
 
-int xhci_get_free_ep(xhci_device_t *device) {
-  for (int i = 0; i < sizeof(device->endpoints); i++) {
-    if (device->endpoints[i] == NULL) {
-      return i + 1;
+xhci_ep_t *xhci_get_endpoint(xhci_device_t *device, uint8_t ep_num) {
+  xhci_ep_t *ep = device->endpoints;
+  while (ep != NULL) {
+    if (ep->number == ep_num) {
+      return ep;
     }
+    ep = ep->next;
   }
-  return -ENOSPC;
+  return NULL;
 }
 
-int xhci_get_active_endpoint(xhci_device_t *device) {
-  xhci_device_ctx_t *dctx = device->device;
-  // check that device is configured
-  if (dctx->slot.slot_state != 3) {
-    return -EINVAL;
-  }
-
-  for (int i = 0; i < sizeof(device->endpoints); i++) {
-    xhci_ep_t *ep = device->endpoints[i];
-    if (ep == NULL) {
-      continue;
+xhci_ep_t *xhci_find_endpoint(xhci_device_t *device, bool dir) {
+  xhci_ep_t *ep = device->endpoints;
+  while (ep != NULL) {
+    switch (ep->ctx->ep_type) {
+      case XHCI_ISOCH_OUT_EP:
+      case XHCI_BULK_OUT_EP:
+      case XHCI_INTR_OUT_EP:
+        if (dir == DATA_OUT) {
+          return ep;
+        }
+        break;
+      case XHCI_ISOCH_IN_EP:
+      case XHCI_BULK_IN_EP:
+      case XHCI_INTR_IN_EP:
+        if (dir == DATA_IN) {
+          return ep;
+        }
+        break;
+      default:
+        break;
     }
-
-    xhci_endpoint_ctx_t *ictx = &dctx->endpoint[ep_index(ep->number)];
-    xhci_endpoint_ctx_t *octx = &dctx->endpoint[ep_index(ep->number) + 1];
-    if (ictx->ep_state == 1 && octx->ep_state == 1) {
-      return ep->number;
-    }
-    return -EINVAL;
   }
-  return -EFAILED;
-}
-
-int xhci_enable_device_interrupts(xhci_dev_t *xhci, xhci_device_t *device) {
-  xhci_intr(device->intr->number)->iman.ip = 1;
-  xhci_intr(device->intr->number)->iman.ie = 1;
-  return 0;
+  return NULL;
 }
 
 int xhci_ring_device_db(xhci_device_t *device) {
@@ -875,11 +954,8 @@ int xhci_queue_status(xhci_device_t *device, bool dir) {
   return 0;
 }
 
-int xhci_queue_transfer(xhci_device_t *device, uint8_t ep_num, uintptr_t buffer, uint16_t size, bool dir) {
+int xhci_queue_transfer(xhci_device_t *device, uintptr_t buffer, uint16_t size, bool dir) {
   kassert(xhc != NULL);
-  if (ep_num == 0 || ep_num >= 16) {
-    return -EINVAL;
-  }
 
   xhci_normal_trb_t trb;
   clear_trb(&trb);
@@ -889,12 +965,12 @@ int xhci_queue_transfer(xhci_device_t *device, uint8_t ep_num, uintptr_t buffer,
   trb.ioc = 1;
   trb.trb_type = TRB_NORMAL;
 
-  xhci_ep_t *ep = device->endpoints[ep_num - 1];
-  if (dir == DATA_OUT) {
-    xhci_ring_enqueue_trb(ep->out_ring, as_trb(trb));
-  } else if (dir == DATA_IN) {
-    xhci_ring_enqueue_trb(ep->in_ring, as_trb(trb));
+  xhci_ep_t *ep = xhci_find_endpoint(device, dir);
+  if (ep == NULL) {
+    return -EINVAL;
   }
+
+  xhci_ring_enqueue_trb(ep->ring, as_trb(trb));
   return 0;
 }
 

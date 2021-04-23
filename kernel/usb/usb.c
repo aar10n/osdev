@@ -20,6 +20,10 @@
 #define usb_trace_debug(str, args...)
 #endif
 
+#define desc_type(d) (((usb_descriptor_t *)((void *)(d)))->type)
+#define desc_length(d) (((usb_descriptor_t *)((void *)(d)))->length)
+
+
 static rb_tree_t *tree = NULL;
 static id_t device_id = 0;
 
@@ -38,10 +42,7 @@ usb_driver_t hid_driver = {
 static usb_driver_t *drivers[] = {
   &hid_driver
 };
-
-static inline bool is_device_ok(usb_device_t *dev) {
-  return dev->endpoint > 0;
-}
+static size_t num_drivers = sizeof(drivers) / sizeof(usb_driver_t *);
 
 static inline bool is_correct_driver(usb_driver_t *driver, usb_device_t *dev) {
   return driver->dev_class == dev->device->dev_class &&
@@ -87,6 +88,8 @@ void usb_main() {
 }
 
 //
+// MARK: Core
+//
 
 void usb_init() {
   process_create(usb_main);
@@ -102,19 +105,12 @@ void usb_register_device(xhci_device_t *device) {
   dev->device = device;
   dev->driver = NULL;
   dev->driver_data = NULL;
-
-  int ep_num = xhci_get_active_endpoint(device);
-  if (ep_num < 0) {
-    usb_log("usb device %d has no active endpoints", id);
-    dev->endpoint = -1;
-  } else {
-    dev->endpoint = ep_num;
-  }
   rb_tree_insert(tree, id, dev);
 
+  usb_log("device class: %d | subclass: %d", device->dev_class, device->dev_subclass);
   usb_log("locating device driver");
   usb_driver_t *driver = NULL;
-  for (int i = 0; i < sizeof(drivers); i++) {
+  for (int i = 0; i < num_drivers; i++) {
     usb_driver_t *d = drivers[i];
     if (is_correct_driver(d, dev)) {
       usb_log("using driver \"%s\"", d->name);
@@ -141,18 +137,28 @@ void usb_register_device(xhci_device_t *device) {
 }
 
 //
+// MARK: Transfers
+//
 
 int usb_add_transfer(usb_device_t *dev, usb_dir_t dir, void *buffer, size_t size) {
-  if (!is_device_ok(dev)) {
-    return -EINVAL;
-  }
-
   bool tdir = dir == USB_IN ? DATA_IN : DATA_OUT;
-  int result = xhci_queue_transfer(dev->device, dev->endpoint, (uintptr_t) buffer, size, tdir);
+  int result = xhci_queue_transfer(dev->device, (uintptr_t) buffer, size, tdir);
   if (result < 0) {
     return -EINVAL;
   }
   return 0;
+}
+
+//
+// MARK: Descriptors
+//
+
+usb_ep_descriptor_t *usb_get_ep_descriptors(usb_if_descriptor_t *interface) {
+  uintptr_t ptr = ((uintptr_t) interface) + interface->length;
+  while (desc_type(ptr) != EP_DESCRIPTOR) {
+    ptr += desc_length(ptr);
+  }
+  return (void *) ptr;
 }
 
 
