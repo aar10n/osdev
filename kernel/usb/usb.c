@@ -153,11 +153,21 @@ int usb_add_transfer(usb_device_t *dev, usb_dir_t dir, void *buffer, size_t size
 // MARK: Descriptors
 //
 
-usb_ep_descriptor_t *usb_get_ep_descriptors(usb_if_descriptor_t *interface) {
+usb_ep_descriptor_t *usb_get_ep_descriptor(usb_if_descriptor_t *interface, uint8_t index) {
+  int i = 0;
   uintptr_t ptr = ((uintptr_t) interface) + interface->length;
+
+  label(find_next);
   while (desc_type(ptr) != EP_DESCRIPTOR) {
     ptr += desc_length(ptr);
   }
+
+  if (i != index) {
+    ptr += desc_length(ptr);
+    i++;
+    goto find_next;
+  }
+
   return (void *) ptr;
 }
 

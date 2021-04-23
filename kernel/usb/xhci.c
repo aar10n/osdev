@@ -721,22 +721,6 @@ xhci_ep_t *xhci_alloc_device_ep(xhci_device_t *device, usb_ep_descriptor_t *desc
   uint8_t ep_type = desc->attributes & 0x3;
   uint8_t index = ep_index(ep_num, ep_dir);
 
-  // num = 1
-  // dir = 1
-  // index = 3
-
-  // 0 -> ctrl
-  // 1 -> ep 1 out
-  // 2 -> ep 1 in
-  // 3 -> ep 2 out
-  // 4 -> ep 2 in
-
-
-
-  // num = 2
-  // dir = 1
-  // index = 5
-
   // endpoint struct
   xhci_ep_t *ep = kmalloc(sizeof(xhci_ep_t));
   ep->number = ep_num;
@@ -811,7 +795,6 @@ int xhci_select_device_config(xhci_device_t *device) {
 
     for (int j = 0; j < config->num_ifs; j++) {
       usb_if_descriptor_t *interface = &interfaces[j];
-      usb_ep_descriptor_t *endpoints = usb_get_ep_descriptors(interface);
 
       uint8_t class_code = desc->dev_class;
       uint8_t subclass_code = desc->dev_subclass;
@@ -826,7 +809,7 @@ int xhci_select_device_config(xhci_device_t *device) {
       xhci_trace_debug("class: %d | subclass: %d | protocol: %d", class_code, subclass_code, protocol);
 
       for (int k = 0; k < interface->num_eps; k++) {
-        usb_ep_descriptor_t *endpoint = &endpoints[k];
+        usb_ep_descriptor_t *endpoint = usb_get_ep_descriptor(interface, k);
 
         xhci_ep_t *ep = xhci_alloc_device_ep(device, endpoint);
         input->slot.ctx_entries++;

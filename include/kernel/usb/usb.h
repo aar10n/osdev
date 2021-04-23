@@ -257,6 +257,6 @@ void usb_register_device(xhci_device_t *device);
 
 int usb_add_transfer(usb_device_t *device, usb_dir_t dir, void *buffer, size_t size);
 
-usb_ep_descriptor_t *usb_get_ep_descriptors(usb_if_descriptor_t *interface);
+usb_ep_descriptor_t *usb_get_ep_descriptor(usb_if_descriptor_t *interface, uint8_t index);
 
 #endif
