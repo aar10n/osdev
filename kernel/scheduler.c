@@ -17,6 +17,8 @@
 #include <device/apic.h>
 #include <string.h>
 
+#define sched_log(str, args...) kprintf("[scheduler] " str "\n", ##args)
+
 // #define SCHED_DEBUG
 #ifdef SCHED_DEBUG
 #define sched_trace_debug(str, args...) kprintf("[scheduler] " str "\n", ##args)

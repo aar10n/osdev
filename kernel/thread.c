@@ -12,6 +12,14 @@
 #include <mutex.h>
 #include <mm.h>
 
+#define THREAD_DEBUG
+#ifdef THREAD_DEBUG
+#define thread_trace_debug(str, args...) kprintf("[thread] " str "\n", ##args)
+#else
+#define thread_trace_debug(str, args...)
+#endif
+
+
 extern void thread_entry_stub();
 
 static inline const char *get_status_str(thread_status_t status) {
@@ -144,6 +152,8 @@ void thread_free(thread_t *thread) {
 thread_t *thread_create(void *(start_routine)(void *), void *arg) {
   process_t *process = current_process;
   id_t tid = process->threads->tid + 1;
+  thread_trace_debug("creating thread %d | process %d", tid, process->pid);
+
   thread_t *thread = thread_alloc(tid, start_routine, arg);
   thread->process = process;
   thread->g_next = process->threads;
@@ -157,6 +167,7 @@ thread_t *thread_create(void *(start_routine)(void *), void *arg) {
 
 void thread_exit(void *retval) {
   thread_t *thread = current_thread;
+  thread_trace_debug("thread %d process %d exiting", thread->tid, thread->process->pid);
   thread->data = retval;
   mutex_unlock(&thread->mutex);
   scheduler_remove(thread);

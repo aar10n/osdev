@@ -17,6 +17,13 @@
 
 #include <printf.h>
 
+#define PROCESS_DEBUG
+#ifdef PROCESS_DEBUG
+#define proc_trace_debug(str, args...) kprintf("[process] " str "\n", ##args)
+#else
+#define proc_trace_debug(str, args...)
+#endif
+
 static uint64_t __pid = 0;
 
 uint64_t alloc_pid() {
@@ -86,12 +93,13 @@ pid_t process_create(void (start_routine)()) {
 pid_t process_create_1(void (start_routine)(), void *arg) {
   process_t *parent = current_process;
   pid_t pid = alloc_pid();
+  proc_trace_debug("creating process %d | parent %d", pid, parent->pid);
   process_t *process = process_alloc(pid, parent->pid, (void *) start_routine, arg);
   scheduler_add(process->main);
   return process->pid;
 }
 
-pid_t fork() {
+pid_t process_fork() {
   kprintf("[process] creating process\n");
   process_t *parent = current_process;
   thread_t *parent_thread = current_thread;

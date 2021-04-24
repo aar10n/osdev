@@ -13,6 +13,10 @@
 #include <mm.h>
 #include <mutex.h>
 
+#define ep_index(num, dir) ((num) + max((num) - 1, 0) + dir)
+#define ep_number(idx) (((idx) - ((idx) % 2 == 0) + 1) / 2)
+
+
 typedef struct xhci_dev xhci_dev_t;
 typedef struct xhci_port xhci_port_t;
 
@@ -46,8 +50,12 @@ typedef struct {
 typedef struct xhci_ep {
   uint8_t number;             // endpoint number
   uint8_t index;              // endpoint index
+  uint8_t type;               // endpoint type
+  uint8_t dir;                // endpoint direction
   xhci_endpoint_ctx_t *ctx;   // endpoint context
   xhci_ring_t *ring;          // transfer ring
+  cond_t event;               // event condition
+  usb_event_t last_event;     // last endpoint event
   struct xhci_ep *next;
 } xhci_ep_t;
 

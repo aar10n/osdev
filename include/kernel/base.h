@@ -45,14 +45,21 @@
 
 #define label(lbl) lbl: NULL
 
-#define barrier() \
-  asm volatile("":::"memory");
+#define barrier() asm volatile("":::"memory");
+#define cpu_pause() asm volatile("pause":::"memory");
+#define cpu_hlt() asm volatile("hlt")
 
-#define cpu_pause() \
-  asm volatile("pause":::"memory");
+#define bswap16(v) __builtin_bswap16(v)
+#define bswap32(v) __builtin_bswap32(v)
+#define bswap64(v) __builtin_bswap64(v)
+#define bswap128(v) __builtin_bswap128(v)
 
-#define cpu_hlt() \
-  asm volatile("hlt");
+#define big_endian(v) \
+  _Generic(v,       \
+    uint16_t: __builtin_bswap16(v), \
+    uint32_t: __builtin_bswap32(v), \
+    uint64_t: __builtin_bswap64(v) \
+  )
 
 //
 // Compiler Attributes

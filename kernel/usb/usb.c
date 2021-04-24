@@ -4,12 +4,14 @@
 
 #include <usb/usb.h>
 #include <usb/xhci.h>
-#include <usb/hid.h>
 #include <printf.h>
 #include <rb_tree.h>
 #include <atomic.h>
 #include <mm.h>
 #include <scheduler.h>
+
+#include <usb/hid.h>
+#include <usb/scsi.h>
 
 #define usb_log(str, args...) kprintf("[usb] " str "\n", ##args)
 
@@ -37,10 +39,19 @@ usb_driver_t hid_driver = {
   .handle_event = hid_handle_event,
 };
 
+usb_driver_t scsi_driver = {
+  .name = "Mass Storage Driver",
+  .dev_class = USB_CLASS_STORAGE,
+  .dev_subclass = USB_SUBCLASS_SCSI,
+  .init = scsi_device_init,
+  .handle_event = scsi_handle_event,
+};
+
 //
 
 static usb_driver_t *drivers[] = {
-  &hid_driver
+  &hid_driver,
+  &scsi_driver
 };
 static size_t num_drivers = sizeof(drivers) / sizeof(usb_driver_t *);
 
@@ -53,14 +64,15 @@ static inline bool is_correct_driver(usb_driver_t *driver, usb_device_t *dev) {
 
 noreturn void *usb_event_loop(void *arg) {
   usb_device_t *dev = arg;
+  xhci_device_t *device = dev->device;
 
   usb_trace_debug("starting device event loop");
   while (true) {
     // usb_trace_debug("waiting for event");
-    cond_wait(&dev->device->event_ack);
+    cond_wait(&device->event_ack);
     // usb_trace_debug("event");
 
-    xhci_transfer_evt_trb_t *trb = dev->device->thread->data;
+    xhci_transfer_evt_trb_t *trb = device->thread->data;
     usb_status_t status;
     if (trb->trb_type != TRB_TRANSFER_EVT || trb->compl_code != CC_SUCCESS) {
       status = USB_ERROR;
@@ -68,13 +80,22 @@ noreturn void *usb_event_loop(void *arg) {
       status = USB_SUCCESS;
     }
 
+    uint8_t ep_num = ep_number(trb->endp_id - 1);
+    xhci_ep_t *ep = xhci_get_endpoint(device, ep_num);
+    if (ep == NULL) {
+      usb_log("error: unable to find corresponding endpoint");
+      continue;
+    }
+
     usb_event_t event = {
-      .type = TRANSFER_IN,
+      .type = ep->dir == USB_IN ? TRANSFER_IN : TRANSFER_OUT,
       .device = dev,
       .status = status,
       .timestamp = 0,
     };
+    ep->last_event = event;
     dev->driver->handle_event(&event, dev->driver_data);
+    cond_signal(&ep->event);
   }
 }
 
@@ -124,28 +145,57 @@ void usb_register_device(xhci_device_t *device) {
     return;
   }
 
+  dev->driver = driver;
+  dev->thread = thread_create(usb_event_loop, dev);
+  thread_setsched(dev->thread, SCHED_DRIVER, PRIORITY_HIGH);
+
   void *ptr = driver->init(dev);
   if (ptr == NULL) {
     usb_log("failed to initialize driver");
     return;
   }
-  dev->driver = driver;
   dev->driver_data = ptr;
-  dev->thread = thread_create(usb_event_loop, dev);
-  thread_setsched(dev->thread, SCHED_DRIVER, PRIORITY_HIGH);
+
   thread_yield();
+}
+
+usb_device_t *usb_get_device(id_t id) {
+  rb_node_t *node = rb_tree_find(tree, id);
+  return node->data;
 }
 
 //
 // MARK: Transfers
 //
 
+int usb_start_transfer(usb_device_t *dev, usb_dir_t dir) {
+  bool d = dir == USB_IN ? DATA_IN : DATA_OUT;
+  xhci_ep_t *ep = xhci_find_endpoint(dev->device, d);
+  if (ep == NULL) {
+    return -EINVAL;
+  }
+
+  uint8_t ep_id = ep->number * 2 + d;
+  xhci_ring_db(dev->device->xhci, dev->device->slot_id, ep_id);
+  return 0;
+}
+
 int usb_add_transfer(usb_device_t *dev, usb_dir_t dir, void *buffer, size_t size) {
-  bool tdir = dir == USB_IN ? DATA_IN : DATA_OUT;
-  int result = xhci_queue_transfer(dev->device, (uintptr_t) buffer, size, tdir);
+  bool d = dir == USB_IN ? DATA_IN : DATA_OUT;
+  int result = xhci_queue_transfer(dev->device, (uintptr_t) buffer, size, d);
   if (result < 0) {
     return -EINVAL;
   }
+  return 0;
+}
+
+int usb_await_transfer(usb_device_t *dev, usb_dir_t dir) {
+  xhci_ep_t *ep = xhci_find_endpoint(dev->device, dir);
+  if (ep == NULL) {
+    return -EINVAL;
+  }
+
+  cond_wait(&ep->event);
   return 0;
 }
 

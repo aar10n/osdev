@@ -48,7 +48,15 @@
   }                                              \
 }
 
-#define ep_index(num, dir) ((num) + max((num) - 1, 0) + dir)
+// idx = num + num - 1 + dir
+// num + num - 1 + dir = idx
+// 2 * num = idx - dir + 1
+// num = (idx - dir + 1) / 2
+// num = (idx - (idx % 2 == 0) + 1) / 2
+
+// dir -> OUT = 0 | IN = 1
+// IN = even
+// OUT = odd
 
 //
 static xhci_dev_t *xhc = NULL;
@@ -247,6 +255,11 @@ void xhci_setup_devices() {
   // setup devices
   xhci_port_t *port = xhci->ports;
   while (port) {
+    if (port->number != 3) {
+      port = port->next;
+      continue;
+    }
+
     xhci_trace_debug("setting up device on port %d", port->number);
     xhci_trace_debug("port speed: %s\n", get_speed_str(port->speed));
 
@@ -412,10 +425,6 @@ xhci_intr_t *xhci_setup_interrupter(xhci_dev_t *xhci, idt_function_t fn, void *d
 }
 
 void xhci_ring_db(xhci_dev_t *xhci, uint8_t slot, uint16_t endpoint) {
-  if ((slot == 0 && endpoint > 0) || (slot > 0 && endpoint != 0)) {
-    panic("invalid slot/endpoint combination");
-  }
-
   // xhci_trace_debug("ringing doorbell %d:%d", slot, endpoint);
   xhci_db(slot)->target = endpoint;
 }
@@ -725,9 +734,14 @@ xhci_ep_t *xhci_alloc_device_ep(xhci_device_t *device, usb_ep_descriptor_t *desc
   xhci_ep_t *ep = kmalloc(sizeof(xhci_ep_t));
   ep->number = ep_num;
   ep->index = index;
+  ep->type = get_ep_type(ep_type, ep_dir);
+  ep->dir = ep_dir;
   ep->ctx = &device->ictx->endpoint[index];
   ep->ring = xhci_alloc_ring();
+  cond_init(&ep->event, 0);
   ep->next = NULL;
+
+  memset(&ep->last_event, 0, sizeof(usb_event_t));
 
   xhci_trace_debug("endpoint %d", ep_num);
   xhci_trace_debug("index %d", index);
@@ -873,6 +887,7 @@ xhci_ep_t *xhci_find_endpoint(xhci_device_t *device, bool dir) {
       default:
         break;
     }
+    ep = ep->next;
   }
   return NULL;
 }

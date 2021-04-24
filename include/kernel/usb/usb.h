@@ -99,6 +99,8 @@ static_assert(sizeof(usb_setup_packet_t) == 8);
 #define USB_CLASS_STORAGE  0x08 // mass storage devices
 #define USB_CLASS_HUB      0x09 // usb hub devices
 
+#define USB_SUBCLASS_SCSI  0x06
+
 //
 // Descriptors
 //
@@ -210,8 +212,8 @@ typedef struct packed {
 typedef struct usb_dev usb_device_t;
 
 typedef enum {
-  USB_IN,
   USB_OUT,
+  USB_IN,
 } usb_dir_t;
 
 typedef enum {
@@ -254,8 +256,11 @@ typedef struct usb_dev {
 
 void usb_init();
 void usb_register_device(xhci_device_t *device);
+usb_device_t *usb_get_device(id_t id);
 
+int usb_start_transfer(usb_device_t *dev, usb_dir_t dir);
 int usb_add_transfer(usb_device_t *device, usb_dir_t dir, void *buffer, size_t size);
+int usb_await_transfer(usb_device_t *device, usb_dir_t dir);
 
 usb_ep_descriptor_t *usb_get_ep_descriptor(usb_if_descriptor_t *interface, uint8_t index);
 
