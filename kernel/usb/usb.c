@@ -28,6 +28,7 @@
 
 static rb_tree_t *tree = NULL;
 static id_t device_id = 0;
+static cond_t init;
 
 // Drivers
 
@@ -105,6 +106,7 @@ void usb_main() {
   xhci_init();
   xhci_setup_devices();
   usb_log("done!");
+  cond_signal(&init);
   thread_block();
 }
 
@@ -113,7 +115,9 @@ void usb_main() {
 //
 
 void usb_init() {
+  cond_init(&init, 0);
   process_create(usb_main);
+  cond_wait(&init);
 }
 
 void usb_register_device(xhci_device_t *device) {
@@ -196,7 +200,7 @@ int usb_await_transfer(usb_device_t *dev, usb_dir_t dir) {
   }
 
   cond_wait(&ep->event);
-  return 0;
+  return ep->last_event.status;
 }
 
 //
