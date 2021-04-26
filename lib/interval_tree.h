@@ -8,21 +8,40 @@
 #include <base.h>
 #include <rb_tree.h>
 
+#define NULL_SET ((interval_t){ UINT64_MAX, 0 })
+
 #define intvl(start, end) \
   ((interval_t){ start, end })
 
-#define NULL_SET ((interval_t){ UINT64_MAX, 0 })
+#define magnitude(i) \
+  ((i).end - (i).start)
 
 #define is_null_set(i) \
   ((i).start == UINT64_MAX && (i).end == 0)
 
+#define intvl_eq(i, j) \
+  (((i).start == (j).start) && ((i).end == (j).end))
+
+// intersection of i and j
 #define intersection(i, j) \
   (((j).start >= (i).end) || ((i).start >= (j).end) ? \
-    NULL_SET : intvl(max(i.start, j.start), min(i.end, j.end)))
+    NULL_SET : intvl(max((i).start, (j).start), min((i).end, (j).end)))
 
+// subtract j from i (i - j)
+#define subtract(i, j) \
+  ((contains(i, j) || !overlaps(i, j)) ? NULL_SET : (i).start < (j).start ? \
+    intvl((i).start, (j).start) : \
+    intvl((j).end, (i).end))
+
+// i and j are contiguous
 #define contiguous(i, j) \
   (!overlaps(i, j) && (((j).start == (i).end) || ((i).start == (j).end)))
 
+// i contains j
+#define contains(i, j) \
+  (intvl_eq(intersection(i, j), j))
+
+// i and j overlap
 #define overlaps(i, j) \
   (!is_null_set(intersection(i, j)))
 
@@ -31,6 +50,8 @@ typedef struct interval {
   uint64_t start;
   uint64_t end;
 } interval_t;
+
+//
 
 typedef struct {
   void *(*copy_data)(void *data);
