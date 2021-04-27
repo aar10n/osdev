@@ -89,13 +89,14 @@ ramdisk: initrd $(BUILD)/initrd.img
 # USB bootable image
 $(BUILD)/osdev.img: $(BUILD)/bootx64.efi $(BUILD)/kernel.elf config.ini $(BUILD)/fat.img $(BUILD)/hello.elf
 	dd if=/dev/zero of=$@ bs=1k count=1440
-	mformat -i $@ -f 1440 ::
+	mformat -i $@ -f 1440 -v osdev ::
 	mmd -i $@ ::/EFI
 	mmd -i $@ ::/EFI/boot
 	mcopy -i $@ $(BUILD)/bootx64.efi ::/EFI/boot
 	mcopy -i $@ config.ini ::/EFI/boot
 	mcopy -i $@ $(BUILD)/kernel.elf ::/EFI
-	mcopy -i $@ $(BUILD)/hello.elf ::/EFI
+	mcopy -i $@ $(BUILD)/hello.txt ::/
+	mcopy -i $@ $(BUILD)/hello.elf ::/
 
 # EFI Bootloader
 $(BUILD)/bootx64.efi: $(BUILD)/loader.dll
@@ -119,11 +120,18 @@ $(BUILD)/hello.elf: $(sys-y)
 
 # External Data
 
-$(BUILD)/fat.img:
-	dd if=/dev/zero of=$@ bs=1k count=1440
-	mformat -i $@ -f 1440 ::
-	echo "Hello, world! I am a file with some text" > $(BUILD)/file.txt
+$(BUILD)/fat.img: config.ini $(BUILD)/hello.elf
+	dd if=/dev/zero of=$@ bs=1m count=128
+	mformat -i $@ -v "UNTITLED" -T 262144 ::
+	mmd -i $@ ::/usr
+	mmd -i $@ ::/usr/local
+	mcopy -i $@ $(BUILD)/text ::/text.txt
+	echo "# here is a config file" > $(BUILD)/sys.conf
+	mcopy -i $@ $(BUILD)/file.txt ::/usr/sys.conf
+	echo "Hello, world!" > $(BUILD)/file.txt
+	mcopy -i $@ config.ini ::/usr/config.ini
 	mcopy -i $@ $(BUILD)/file.txt ::/hello.txt
+	mcopy -i $@ $(BUILD)/hello.elf ::/usr/local/hello
 
 $(BUILD)/disk.img:
 	scripts/create-disk.sh $@

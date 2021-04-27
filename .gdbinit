@@ -1,1 +1,2 @@
- set disassembly-flavor intel
+set disassembly-flavor intel
+add-symbol-file build/hello.elf
