@@ -20,6 +20,16 @@
 
 extern void page_fault_handler();
 
+static inline vm_area_t *alloc_area(uintptr_t base, size_t size, uint32_t attr) {
+  vm_area_t *area = kmalloc(sizeof(vm_area_t));
+  area->base = base;
+  area->size = size;
+  area->data = 0;
+  area->attr = attr;
+  return area;
+}
+
+//
 
 static inline size_t page_to_size(page_t *page) {
   if (page->flags.page_size_2mb) {
@@ -248,6 +258,48 @@ void *duplicate_intvl_node(void *data) {
   return new_area;
 }
 
+void *map_area(vm_area_t *area, uint16_t flags) {
+  uintptr_t virt_addr = area->base;
+
+  if (area->attr & AREA_PAGE) {
+    kassert(area->pages != NULL);
+    page_t *curr = area->pages;
+    while (curr) {
+      curr->flags.present = 1;
+      uint64_t *entry = map_page(virt_addr, curr->frame, page_to_flags(curr));
+      curr->addr = virt_addr;
+      curr->entry = entry;
+
+      virt_addr += page_to_size(curr);
+      curr = curr->next;
+    }
+  } else if (area->attr & AREA_PHYS) {
+    kassert(area->phys != 0);
+    uintptr_t phys_addr = area->phys;
+    size_t remaining = area->size;
+    while (remaining > 0) {
+      size_t size = PAGE_SIZE;
+      uint16_t cur_flags = flags | PE_PRESENT;
+      if (remaining >= PAGE_SIZE_1GB) {
+        size = PAGE_SIZE_1GB;
+        cur_flags |= PE_SIZE | PE_1GB_SIZE;
+      } else if (remaining >= PAGE_SIZE_2MB) {
+        size = PAGE_SIZE_2MB;
+        cur_flags |= PE_SIZE | PE_2MB_SIZE;
+      }
+
+      map_page(virt_addr, phys_addr, cur_flags);
+
+      remaining -= size;
+      virt_addr += size;
+      phys_addr += size;
+    }
+  }
+
+  intvl_tree_insert(VM->tree, intvl(area->base, area->base + area->size), area);
+  return (void *) area->base;
+}
+
 //
 
 __used int fault_handler(uintptr_t addr, uint32_t err) {
@@ -314,20 +366,37 @@ void vm_init() {
   //
 
   // null page (fault on null reference)
-  intvl_tree_insert(vm->tree, intvl(0, PAGE_SIZE), NULL);
+  vm_area_t *null_area = alloc_area(0, PAGE_SIZE, AREA_USED | AREA_PHYS);
+  intvl_tree_insert(vm->tree, intvl(0, PAGE_SIZE), null_area);
+
   // non-canonical address space
-  intvl_tree_insert(vm->tree, intvl(LOW_HALF_END + 1, HIGH_HALF_START), NULL);
+  uintptr_t non_cann_start = LOW_HALF_END + 1;
+  uintptr_t non_cann_end = HIGH_HALF_START;
+  size_t non_cann_size = non_cann_end - non_cann_start;
+  vm_area_t *non_cann_area = alloc_area(non_cann_start, non_cann_size, AREA_UNUSABLE);
+  intvl_tree_insert(vm->tree, intvl(LOW_HALF_END + 1, HIGH_HALF_START), non_cann_area);
+
   // recursively mapped region
   uintptr_t recurs_start = get_virt_addr(R_ENTRY, 0, 0, 0);
   uintptr_t recurs_end = get_virt_addr(R_ENTRY, K_ENTRY, K_ENTRY, K_ENTRY);
-  intvl_tree_insert(vm->tree, intvl(recurs_start, recurs_end), NULL);
+  size_t recurs_size = recurs_end - recurs_start;
+  vm_area_t *recurse_area = alloc_area(recurs_start, recurs_size, AREA_UNUSABLE);
+  intvl_tree_insert(vm->tree, intvl(recurs_start, recurs_end), recurse_area);
+
   // temporary page space
-  interval_t temp = { TEMP_PAGE, HIGH_HALF_END };
-  intvl_tree_insert(vm->tree, temp, NULL);
-  // virtual kernel space
+  interval_t temp = intvl(TEMP_PAGE, HIGH_HALF_END);
+  size_t temp_size = HIGH_HALF_END - TEMP_PAGE;
+  vm_area_t *temp_area = alloc_area(TEMP_PAGE, temp_size, AREA_UNUSABLE);
+  intvl_tree_insert(vm->tree, temp, temp_area);
+
+  // kernel space
   uintptr_t kernel_start = KERNEL_VA;
   uintptr_t kernel_end = KERNEL_VA + KERNEL_RESERVED;
-  intvl_tree_insert(vm->tree, intvl(kernel_start, kernel_end), NULL);
+  size_t kernel_size = kernel_end - kernel_start;
+  vm_area_t *kernel_area = alloc_area(kernel_start, kernel_size, AREA_UNUSABLE | AREA_PHYS);
+  kernel_area->phys = boot_info->kernel_phys;
+  intvl_tree_insert(vm->tree, intvl(kernel_start, kernel_end), kernel_area);
+
   // virtual stack space
   uint64_t logical_cores = boot_info->num_cores * boot_info->num_threads;
   uint64_t stack_size = logical_cores * (STACK_SIZE + 1);
@@ -411,7 +480,7 @@ void *vm_create_ap_tables() {
   return (void *) ap_pml4_page->frame;
 }
 
-void vm_swap_vmspace(vm_t *new_vm) {
+__used void vm_swap_vmspace(vm_t *new_vm) {
   if (VM->pml4 == new_vm->pml4) {
     return;
   }
@@ -421,14 +490,14 @@ void vm_swap_vmspace(vm_t *new_vm) {
   VM = new_vm;
 }
 
-
+//
 
 /**
  * Maps a physical page or pages to an available virtual address.
  */
 void *vm_map_page(page_t *page) {
   size_t len = 0;
-  page_t * curr = page;
+  page_t *curr = page;
   while (curr) {
     len += page_to_size(curr);
     curr = curr->next;
@@ -440,7 +509,9 @@ void *vm_map_page(page_t *page) {
     panic("[vm] no free address space");
   }
 
-  return vm_map_page_vaddr(address, page);
+  vm_area_t *area = alloc_area(address, len, AREA_USED | AREA_PAGE);
+  area->pages = page;
+  return map_area(area, 0);
 }
 
 /**
@@ -455,24 +526,9 @@ void *vm_map_page_vaddr(uintptr_t virt_addr, page_t *page) {
     curr = curr->next;
   }
 
-  vm_area_t *area = kmalloc(sizeof(vm_area_t));
-  area->base = address;
-  area->size = len;
+  vm_area_t *area = alloc_area(address, len, AREA_USED | AREA_PAGE);
   area->pages = page;
-  intvl_tree_insert(VM->tree, intvl(address, address + len), area);
-
-  curr = page;
-  while (curr) {
-    curr->flags.present = 1;
-    uint64_t *entry = map_page(virt_addr, curr->frame, page_to_flags(curr));
-    curr->addr = virt_addr;
-    curr->entry = entry;
-
-    virt_addr += page_to_size(curr);
-    curr = curr->next;
-  }
-
-  return (void *) address;
+  return map_area(area, 0);
 }
 
 /**
@@ -493,7 +549,10 @@ void *vm_map_page_search(page_t *page, vm_search_t search_type, uintptr_t vaddr)
     panic("[vm] no free address space");
   }
   // kprintf("[vm] address: %p\n", address);
-  return vm_map_page_vaddr(address, page);
+
+  vm_area_t *area = alloc_area(address, len, AREA_USED | AREA_PAGE);
+  area->pages = page;
+  return map_area(area, 0);
 }
 
 /**
@@ -507,14 +566,10 @@ void *vm_map_addr(uintptr_t phys_addr, size_t len, uint16_t flags) {
     panic("[vm] no free address space");
   }
 
-  vm_area_t *area = kmalloc(sizeof(vm_area_t));
-  area->base = address;
-  area->size = len;
-  area->pages = NULL;
-  intvl_tree_insert(VM->tree, intvl(address, len), area);
-
-  vm_map_vaddr(address, phys_addr, len, flags | PE_PRESENT);
-  return (void *) address;
+  vm_area_t *area = alloc_area(address, len, AREA_USED | AREA_PHYS);
+  area->phys = phys_addr;
+  flags |= PE_PRESENT;
+  return map_area(area, flags);
 }
 
 /**
@@ -528,34 +583,49 @@ void *vm_map_vaddr(uintptr_t virt_addr, uintptr_t phys_addr, size_t len, uint16_
     panic("[vm] failed to map address - already in use\n");
   }
 
-  vm_area_t *area = kmalloc(sizeof(vm_area_t));
-  area->base = interval.start;
-  area->size = len;
-  area->pages = NULL;
+  vm_area_t *area = alloc_area(virt_addr, len, AREA_USED | AREA_PHYS);
+  area->phys = phys_addr;
+  flags |= PE_PRESENT;
+  return map_area(area, flags);
+}
 
-  intvl_tree_insert(VM->tree, interval, area);
+//
 
-  // add table entry
-  size_t remaining = len;
-  while (remaining > 0) {
-    size_t size = PAGE_SIZE;
-    uint16_t cur_flags = flags | PE_PRESENT;
-    if (remaining >= PAGE_SIZE_1GB) {
-      size = PAGE_SIZE_1GB;
-      cur_flags |= PE_SIZE | PE_1GB_SIZE;
-    } else if (remaining >= PAGE_SIZE_2MB) {
-      size = PAGE_SIZE_2MB;
-      cur_flags |= PE_SIZE | PE_2MB_SIZE;
-    }
-
-    map_page(virt_addr, phys_addr, cur_flags);
-
-    remaining -= size;
-    virt_addr += size;
-    phys_addr += size;
+/**
+ * Reserves a part of the address space with the given size.
+ * The reserved area can only be mapped by calling vm_map_vaddr
+ * with the same size as was reserved. The reserved area will not
+ * be automatically used by the other vm functions.
+ */
+uintptr_t vm_reserve(size_t len) {
+  len = align(len, PAGE_SIZE);
+  uintptr_t address = 0;
+  bool success = vm_find_free_area(ABOVE, &address, len);
+  if (!success) {
+    panic("[vm] no free address space");
   }
 
-  return (void *) interval.start;
+  vm_area_t *area = alloc_area(address, len, AREA_RESERVED);
+  intvl_tree_insert(VM->tree, intvl(area->base, area->base + area->size), area);
+  return address;
+}
+
+/**
+ * Marks the virtual area given by the address and length as reserved.
+ * The reserved area can only be mapped by calling vm_map_vaddr
+ * with the same size as was reserved. The reserved area will not
+ * be automatically used by the other vm functions.
+ */
+void vm_mark_reserved(uintptr_t virt_addr, size_t len) {
+  len = align(len, PAGE_SIZE);
+  interval_t interval = intvl(virt_addr, virt_addr + len);
+  intvl_node_t *existing = intvl_tree_find(VM->tree, interval);
+  if (existing) {
+    panic("[vm] failed to reserve address - already in use\n");
+  }
+
+  vm_area_t *area = alloc_area(virt_addr, len, AREA_RESERVED);
+  intvl_tree_insert(VM->tree, interval, area);
 }
 
 //

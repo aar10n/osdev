@@ -23,6 +23,13 @@
 #define HIGH_HALF_START 0xFFFF800000000000
 #define HIGH_HALF_END 0xFFFFFFFFFFFFFFFF
 
+#define AREA_USED     0x01  // area is being used
+#define AREA_RESERVED 0x02  // area has been reserved
+#define AREA_MMIO     0x04  // area is memory mapped io
+#define AREA_UNUSABLE 0x08  // area is unusable
+#define AREA_PHYS     0x10  // area uses physical address
+#define AREA_PAGE     0x20  // area uses pages
+
 #define PF_PRESENT  0x01
 #define PF_WRITE    0x02
 #define PF_USER     0x04
@@ -38,7 +45,12 @@ typedef struct vm {
 typedef struct vm_area {
   uintptr_t base;
   size_t size;
-  page_t *pages;
+  union {
+    void *data;
+    uintptr_t phys;
+    page_t *pages;
+  };
+  uint32_t attr;
 } vm_area_t;
 
 typedef enum {
@@ -58,6 +70,9 @@ void *vm_map_page_search(page_t *page, vm_search_t search_type, uintptr_t vaddr)
 void *vm_map_addr(uintptr_t phys_addr, size_t len, uint16_t flags);
 void *vm_map_vaddr(uintptr_t virt_addr, uintptr_t phys_addr, size_t len, uint16_t flags);
 
+uintptr_t vm_reserve(size_t len);
+void vm_mark_reserved(uintptr_t virt_addr, size_t len);
+
 void vm_update_page(page_t *page, uint16_t flags);
 void vm_update_pages(page_t *page, uint16_t flags);
 
@@ -72,14 +87,30 @@ void vm_print_debug_mappings();
 
 
 static inline intptr_t vm_virt_to_phys(uintptr_t addr) {
-  page_t *page = vm_get_page(addr);
-  if (page == NULL) {
+  vm_area_t *area = vm_get_vm_area(addr);
+  if (area == NULL) {
     return -1;
   }
 
-  uintptr_t phys = page->frame;
-  uintptr_t offset = addr - page->addr;
-  return phys + offset;
+  uintptr_t offset = addr - area->base;
+  if (area->attr & AREA_PHYS) {
+    return area->phys + offset;
+  } else if (area->attr & AREA_PAGE) {
+    page_t *page = area->pages;
+    while (offset >= PAGE_SIZE) {
+      size_t size = PAGE_SIZE;
+      if (page->flags.page_size_2mb) {
+        size = PAGE_SIZE_2MB;
+      } else if (page->flags.page_size_1gb) {
+        size = PAGE_SIZE_1GB;
+      }
+
+      offset -= size;
+      page = page->next;
+    }
+    return page->frame + offset;
+  }
+  return -1;
 }
 
 static inline page_t *alloc_zero_pages(size_t count, uint16_t flags) {
