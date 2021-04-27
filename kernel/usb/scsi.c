@@ -83,22 +83,37 @@ ssize_t scsi_read(usb_device_t *dev, uint64_t lba, uint32_t count, void *buf) {
   usb_ms_csw_t *csw = kmalloc(sizeof(usb_ms_csw_t));
   setup_command_block(cbw, &read_cmd, sizeof(scsi_read16_cmd_t), size, USB_IN);
 
-
   usb_add_transfer(dev, USB_OUT, (void *) heap_ptr_phys(cbw), sizeof(usb_ms_cbw_t));
-  usb_add_transfer(dev, USB_IN, (void *) vm_virt_to_phys((uintptr_t) buf), size);
-  usb_add_transfer(dev, USB_IN, (void *) heap_ptr_phys(csw), sizeof(usb_ms_csw_t));
   usb_start_transfer(dev, USB_OUT);
-  usb_start_transfer(dev, USB_IN);
+  int result = usb_await_transfer(dev, USB_OUT);
+  if (result != 0) {
+    goto FAIL;
+  }
 
-  int result = usb_await_transfer(dev, USB_IN);
+  usb_add_transfer(dev, USB_IN, (void *) vm_virt_to_phys((uintptr_t) buf), size);
+  usb_start_transfer(dev, USB_IN);
+  result = usb_await_transfer(dev, USB_IN);
+  if (result != 0) {
+    goto FAIL;
+  }
+
+  usb_add_transfer(dev, USB_IN, (void *) heap_ptr_phys(csw), sizeof(usb_ms_csw_t));
+  usb_start_transfer(dev, USB_IN);
+  result = usb_await_transfer(dev, USB_IN);
+  if (result != 0) {
+    goto FAIL;
+  }
+
   kfree(cbw);
   kfree(csw);
-  if (result != 0) {
-    kprintf("[scsi] read failed\n");
-    return -EFAILED;
-  }
   kprintf("[scsi] read successful\n");
   return size;
+
+  FAIL:
+    kfree(cbw);
+    kfree(csw);
+    kprintf("[scsi] read failed\n");
+    return -EFAILED;
 }
 
 
@@ -127,19 +142,34 @@ ssize_t scsi_write(usb_device_t *dev, uint64_t lba, uint32_t count, void *buf) {
   setup_command_block(cbw, &write_cmd, sizeof(scsi_read16_cmd_t), size, USB_OUT);
 
   usb_add_transfer(dev, USB_OUT, (void *) heap_ptr_phys(cbw), sizeof(usb_ms_cbw_t));
-  usb_add_transfer(dev, USB_OUT, (void *) vm_virt_to_phys((uintptr_t) buf), size);
-  usb_add_transfer(dev, USB_IN, (void *) heap_ptr_phys(csw), sizeof(usb_ms_csw_t));
   usb_start_transfer(dev, USB_OUT);
-  usb_start_transfer(dev, USB_IN);
-
   int result = usb_await_transfer(dev, USB_OUT);
-  kfree(cbw);
-  kfree(csw);
   if (result != 0) {
-    kprintf("[scsi] write failed\n");
-    return -EFAILED;
+    goto FAIL;
   }
 
+  usb_add_transfer(dev, USB_OUT, (void *) vm_virt_to_phys((uintptr_t) buf), size);
+  usb_start_transfer(dev, USB_OUT);
+  result = usb_await_transfer(dev, USB_OUT);
+  if (result != 0) {
+    goto FAIL;
+  }
+
+  usb_add_transfer(dev, USB_IN, (void *) heap_ptr_phys(csw), sizeof(usb_ms_csw_t));
+  usb_start_transfer(dev, USB_IN);
+  result = usb_await_transfer(dev, USB_IN);
+  if (result != 0) {
+    goto FAIL;
+  }
+
+  kfree(cbw);
+  kfree(csw);
   kprintf("[scsi] write successful\n");
   return size;
+
+  FAIL:
+    kfree(cbw);
+    kfree(csw);
+    kprintf("[scsi] write failed\n");
+    return -EFAILED;
 }
