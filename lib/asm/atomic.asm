@@ -28,14 +28,14 @@ __atomic_fetch_add8:
 
 global __atomic_bit_test_and_set
 __atomic_bit_test_and_set:
-  lock bts word [rdi], 0
+  lock bts word [rdi], si
   mov rax, 0
   adc rax, 0
   ret
 
 global __atomic_bit_test_and_reset
 __atomic_bit_test_and_reset:
-  lock btr word [rdi], 0
+  lock btr word [rdi], si
   xor rax, rax
   adc rax, 0
   ret

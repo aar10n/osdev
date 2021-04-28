@@ -232,7 +232,9 @@ void scheduler_sched(sched_reason_t reason) {
     curr->status = get_new_status(reason);
     sched_trace_debug("cur status: %d (%d:%d)", curr->status, curr->process->pid, curr->tid);
     if (IS_BLOCKED(curr)) {
-      THREAD_QUEUE_ADD(&sched->blocked, curr);
+      if (!(curr->flags & F_THREAD_OWN_BLOCKQ)) {
+        THREAD_QUEUE_ADD(&sched->blocked, curr);
+      }
     } else if (!IS_TERMINATED(curr)) {
       int result = DISPATCH(curr->policy, add_thread, curr, reason);
       if (result != 0) {
@@ -395,7 +397,11 @@ int scheduler_unblock(thread_t *thread) {
   }
 
   scheduler_t *sched = SCHEDULER;
-  THREAD_QUEUE_REMOVE(&sched->blocked, thread);
+  if (!(thread->flags & F_THREAD_OWN_BLOCKQ)) {
+    THREAD_QUEUE_REMOVE(&sched->blocked, thread);
+  } else {
+    thread->flags ^= F_THREAD_OWN_BLOCKQ;
+  }
   DISPATCH(thread->policy, add_thread, thread, RESERVED);
   thread->status = THREAD_READY;
   scheduler_sched(PREEMPTED);

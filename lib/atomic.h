@@ -16,13 +16,16 @@
     uint64_t: __atomic_fetch_add64  \
   )(ptr, val))
 
-#define atomic_bit_test_and_set(ptr) \
-  __atomic_bit_test_and_set((uint8_t *)(ptr))
+#define atomic_fetch_sub(ptr, val) \
+  __sync_fetch_and_sub(ptr, val)
 
-#define atomic_bit_test_and_reset(ptr) \
-  __atomic_bit_test_and_reset((uint8_t *)(ptr))
+#define atomic_bit_test_and_set(ptr, b) \
+  __atomic_bit_test_and_set((void *)(ptr), b)
+
+#define atomic_bit_test_and_reset(ptr, b) \
+  __atomic_bit_test_and_reset((void *)(ptr), b)
 
 
-#define atomic_cmpxchg(ptr, val) __atomic_cmpxchg64((uint64_t *)(ptr), val)
+#define atomic_cmpxchg(ptr, val) __atomic_cmpxchg64((uint64_t *)(ptr), (uintptr_t) val)
 
 #endif

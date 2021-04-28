@@ -37,7 +37,7 @@ void spin_init(spinlock_t *lock) {
 void spin_lock(spinlock_t *lock) {
   uint8_t id = PERCPU->id;
   __preempt_disable();
-  if (atomic_bit_test_and_set(&lock->locked)) {
+  if (atomic_bit_test_and_set(&lock->locked, 0)) {
     if (lock->locked_by == id) {
       // re-entrant
       lock->lock_count++;
@@ -45,7 +45,7 @@ void spin_lock(spinlock_t *lock) {
     }
 
     __preempt_enable();
-    while (atomic_bit_test_and_set(&lock->locked)) {
+    while (atomic_bit_test_and_set(&lock->locked, 0)) {
       cpu_pause(); // spin
     }
     __preempt_disable();
@@ -56,13 +56,13 @@ void spin_lock(spinlock_t *lock) {
 
 void spin_unlock(spinlock_t *lock) {
   uint64_t id = PERCPU->id;
-  if (atomic_bit_test_and_set(&lock->locked)) {
+  if (atomic_bit_test_and_set(&lock->locked, 0)) {
     // the lock was set
     kassert(lock->locked_by == id);
     lock->lock_count--;
     if (lock->lock_count == 0) {
       // only clear when last re-entrant lock is released
-      atomic_bit_test_and_reset(&lock->locked);
+      atomic_bit_test_and_reset(&lock->locked, 0);
       __preempt_enable();
     }
   } else {

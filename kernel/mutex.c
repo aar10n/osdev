@@ -23,93 +23,105 @@
 #else
 #define cond_trace_debug(str, args...)
 #endif
+// #define SHARED_MUTEX_DEBUG
+#ifdef SHARED_MUTEX_DEBUG
+#define shd_mutex_trace_debug(str, args...) kprintf("[shared mutex] " str "\n", ##args)
+#else
+#define shd_mutex_trace_debug(str, args...)
+#endif
+
+// flag bits
+#define B_LOCKED        0 // mutex lock bit
+#define B_QUEUE_LOCKED 31 // mutex queue lock bit
+// flag masks
+#define M_LOCKED       (1 << B_LOCKED)
+#define M_QUEUE_LOCKED (1 << B_QUEUE_LOCKED)
 
 
-void safe_enqeue(thread_link_t **queue, spinlock_t *lock, thread_t *thread) {
-  thread_link_t *link = kmalloc(sizeof(thread_link_t));
-  link->thread = thread;
-
-  spin_lock(lock);
-  link->next = *queue;
-  *queue = link;
-  spin_unlock(lock);
+void safe_enqeue(volatile uint32_t *flags, tqueue_t *queue, thread_t *thread) {
+  uint64_t rflags = cli_save();
+  if (atomic_bit_test_and_set(flags, B_QUEUE_LOCKED)) {
+    while (atomic_bit_test_and_set(flags, B_QUEUE_LOCKED)) {
+      cpu_pause(); // spin
+    }
+  }
+  // ------
+  thread_t *next = queue->head;
+  queue->head = thread;
+  thread->next = next;
+  if (next != NULL) {
+    next->prev = thread;
+  } else {
+    queue->tail = thread;
+  }
+  // ------
+  atomic_bit_test_and_reset(flags, B_QUEUE_LOCKED);
+  sti_restore(rflags);
 }
 
-thread_t *safe_dequeue(thread_link_t **queue, spinlock_t *lock) {
-  if (*queue == NULL) {
-    return NULL;
+thread_t *safe_dequeue(volatile uint32_t *flags, tqueue_t *queue) {
+  uint64_t rflags = cli_save();
+  if (atomic_bit_test_and_set(flags, B_QUEUE_LOCKED)) {
+    while (atomic_bit_test_and_set(flags, B_QUEUE_LOCKED)) {
+      cpu_pause(); // spin
+    }
   }
-
-  spin_lock(lock);
-  thread_link_t *link = *queue;
-  *queue = link->next;
-  spin_unlock(lock);
-
-  thread_t *thread = link->thread;
-  kfree(link);
-  return thread;
+  // ------
+  thread_t *last = queue->tail;
+  if (last != NULL && last->prev != NULL) {
+    queue->tail = last->prev;
+    last->prev->next = NULL;
+  } else {
+    queue->head = NULL;
+    queue->tail = NULL;
+  }
+  // ------
+  atomic_bit_test_and_reset(flags, B_QUEUE_LOCKED);
+  sti_restore(rflags);
+  return last;
 }
 
 // Mutexes
 
 void mutex_init(mutex_t *mutex, uint32_t flags) {
-  mutex->locked = false;
   mutex->flags = flags;
-  mutex->owner = NULL;
-  mutex->queue = NULL;
-  spin_init(&mutex->queue_lock);
+  mutex->queue.head = NULL;
+  mutex->queue.tail = NULL;
 }
-
-void mutex_init_locked(mutex_t *mutex, thread_t *owner, uint32_t flags) {
-  mutex->locked = true;
-  mutex->flags = flags;
-  mutex->owner = owner;
-  mutex->queue = NULL;
-  spin_init(&mutex->queue_lock);
-}
-
 
 int mutex_lock(mutex_t *mutex) {
   thread_t *thread = current_thread;
-  if (mutex->owner == thread) {
-    return EINVAL;
-  }
 
   mutex_trace_debug("locking mutex (%d:%d)", getpid(), gettid());
-  preempt_disable();
-  // label(try_again);
-  if (atomic_bit_test_and_set(&mutex->locked)) {
+  thread->preempt_count++;
+  if (atomic_bit_test_and_set(&mutex->flags, B_LOCKED)) {
+    // mutex is already locked
     mutex_trace_debug("failed to aquire mutex (%d:%d)", getpid(), gettid());
     mutex_trace_debug("blocking");
-    // the mutex is currently locked
-    safe_enqeue(&mutex->queue, &mutex->queue_lock, thread);
+
+    thread->flags |= F_THREAD_OWN_BLOCKQ;
+    safe_enqeue(&mutex->flags, &mutex->queue, thread);
     scheduler_block(thread);
-    // goto try_again;
-    kassert(mutex->owner == thread);
-  } else {
-    mutex->owner = thread;
   }
-  preempt_enable();
+  thread->preempt_count--;
   mutex_trace_debug("mutex aquired (%d:%d)", getpid(), gettid());
   return 0;
 }
 
 int mutex_unlock(mutex_t *mutex) {
   thread_t *thread = current_thread;
-  if (mutex->owner != thread || !mutex->locked) {
-    return EINVAL;
+  if (!(mutex->flags & MUTEX_LOCKED)) {
+    return -EINVAL;
   }
 
   mutex_trace_debug("unlocking mutex (%d:%d)", getpid(), gettid());
-  preempt_disable();
-  thread_t *unblocked = safe_dequeue(&mutex->queue, &mutex->queue_lock);
-  if (unblocked != NULL) {
-    mutex->owner = unblocked;
-    scheduler_unblock(unblocked);
+  thread->preempt_count++;
+  thread_t *next = safe_dequeue(&mutex->flags, &mutex->queue);
+  atomic_bit_test_and_reset(&mutex->flags, B_LOCKED);
+  if (next != NULL) {
+    scheduler_unblock(next);
   }
-  mutex->owner = NULL;
-  // atomic_bit_test_and_reset(&mutex->locked);
-  preempt_enable();
+  thread->preempt_count--;
   mutex_trace_debug("mutex unlocked (%d:%d)", getpid(), gettid());
   return 0;
 }
@@ -117,64 +129,62 @@ int mutex_unlock(mutex_t *mutex) {
 // Conditions
 
 void cond_init(cond_t *cond, uint32_t flags) {
-  cond->signaled = false;
   cond->flags = flags;
-  cond->signaler = NULL;
-  cond->queue = NULL;
-  spin_init(&cond->queue_lock);
+  cond->queue.head = NULL;
+  cond->queue.tail = NULL;
 }
 
 int cond_wait(cond_t *cond) {
   thread_t *thread = current_thread;
-  if (cond->signaled) {
-    cond->signaled = false;
+
+  if (cond->flags & M_LOCKED) {
+    cond->flags ^= M_LOCKED;
     return 0;
   }
 
   cond_trace_debug("thread %d:%d blocked by condition",
                    thread->process->pid, thread->tid);
 
-  preempt_disable();
-  safe_enqeue(&cond->queue, &cond->queue_lock, thread);
-  preempt_enable();
+  thread->preempt_count++;
+  thread->flags |= F_THREAD_OWN_BLOCKQ;
+  safe_enqeue(&cond->flags, &cond->queue, thread);
+  thread->preempt_count--;
   scheduler_block(thread);
   return 0;
 }
 
 int cond_signal(cond_t *cond) {
   thread_t *thread = current_thread;
-  if (cond->queue == NULL) {
-    cond->signaled = true;
+  if (cond->queue.tail == NULL) {
+    cond->flags |= M_LOCKED;
     return 0;
   }
 
-  preempt_disable();
-  cond->signaler = thread;
-  thread_t *signaled = safe_dequeue(&cond->queue, &cond->queue_lock);
-  preempt_enable();
+  thread->preempt_count++;
+  thread_t *signaled = safe_dequeue(&cond->flags, &cond->queue);
+  scheduler_unblock(signaled);
 
   cond_trace_debug("thread %d:%d unblocked by %d:%d",
           signaled->process->pid, signaled->tid,
           thread->process->pid, thread->tid);
 
-  scheduler_unblock(signaled);
+  thread->preempt_count--;
+
   return 0;
 }
 
 int cond_broadcast(cond_t *cond) {
   thread_t *thread = current_thread;
-  if (cond->queue == NULL) {
-    cond->signaled = true;
+  if (cond->queue.tail == NULL) {
+    cond->flags |= M_LOCKED;
     return 0;
   }
 
-  preempt_disable();
-  cond->signaler = thread;
-
+  thread->preempt_count++;
   thread_t *signaled;
-  while ((signaled = safe_dequeue(&cond->queue, &cond->queue_lock))) {
+  while ((signaled = safe_dequeue(&cond->flags, &cond->queue))) {
     scheduler_unblock(signaled);
   }
-  preempt_enable();
+  thread->preempt_count--;
   return 0;
 }

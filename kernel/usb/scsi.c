@@ -53,7 +53,7 @@ void *scsi_device_init(usb_device_t *dev) {
 }
 
 void scsi_handle_event(usb_event_t *event, void *data) {
-  kprintf("[scsi] event\n");
+  // kprintf("[scsi] event\n");
 }
 
 // disk api
@@ -106,13 +106,13 @@ ssize_t scsi_read(usb_device_t *dev, uint64_t lba, uint32_t count, void *buf) {
 
   kfree(cbw);
   kfree(csw);
-  kprintf("[scsi] read successful\n");
+  // kprintf("[scsi] read successful\n");
   return size;
 
   FAIL:
     kfree(cbw);
     kfree(csw);
-    kprintf("[scsi] read failed\n");
+    // kprintf("[scsi] read failed\n");
     return -EFAILED;
 }
 

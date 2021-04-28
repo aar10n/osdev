@@ -89,7 +89,7 @@ thread_t *thread_alloc(id_t tid, void *(start_routine)(void *), void *arg) {
   thread->tls = tls;
   thread->status = THREAD_READY;
   thread->policy = SCHED_SYSTEM;
-  mutex_init_locked(&thread->mutex, thread, 0);
+  mutex_init(&thread->mutex, MUTEX_LOCKED);
   cond_init(&thread->data_ready, 0);
   return thread;
 }

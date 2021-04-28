@@ -16,8 +16,9 @@ typedef struct process process_t;
 typedef struct page page_t;
 
 // thread flags
-#define F_THREAD_JOINING    (1 << 0) // thread will join
-#define F_THREAD_DETATCHING (1 << 1) // thread will detatch
+#define F_THREAD_OWN_BLOCKQ 0x1 // thread uses external blocked queue
+#define F_THREAD_JOINING    0x2 // thread will join
+#define F_THREAD_DETATCHING 0x4 // thread will detatch
 
 typedef enum {
   THREAD_READY,
