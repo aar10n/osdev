@@ -15,10 +15,10 @@ typedef struct tqueue {
   thread_t *tail; // queue tail
 } tqueue_t;
 
-// flags
-#define MUTEX_LOCKED  0x1 // mutex lock
 
 // -------- Mutexes --------
+
+#define MUTEX_LOCKED  0x1 // mutex lock
 
 typedef struct mutex {
   volatile uint32_t flags; // flags
@@ -30,6 +30,8 @@ int mutex_lock(mutex_t *mutex);
 int mutex_unlock(mutex_t *mutex);
 
 // -------- Conditions --------
+
+#define COND_SIGNALED 0x1 // condition is signaled
 
 typedef struct cond {
   uint32_t flags;  // flags

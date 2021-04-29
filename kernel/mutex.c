@@ -37,35 +37,39 @@
 #define M_LOCKED       (1 << B_LOCKED)
 #define M_QUEUE_LOCKED (1 << B_QUEUE_LOCKED)
 
-
-void safe_enqeue(volatile uint32_t *flags, tqueue_t *queue, thread_t *thread) {
+static inline uint64_t inline_lock(volatile uint32_t *flags) {
   uint64_t rflags = cli_save();
   if (atomic_bit_test_and_set(flags, B_QUEUE_LOCKED)) {
     while (atomic_bit_test_and_set(flags, B_QUEUE_LOCKED)) {
       cpu_pause(); // spin
     }
   }
+  return rflags;
+}
+
+static inline void inline_unlock(volatile uint32_t *flags, uint64_t rflags) {
+  atomic_bit_test_and_reset(flags, B_QUEUE_LOCKED);
+  sti_restore(rflags);
+}
+
+void safe_enqeue(volatile uint32_t *flags, tqueue_t *queue, thread_t *thread) {
+  uint64_t rflags = inline_lock(flags);
   // ------
   thread_t *next = queue->head;
   queue->head = thread;
   thread->next = next;
+  // thread->prev = NULL;
   if (next != NULL) {
     next->prev = thread;
   } else {
     queue->tail = thread;
   }
   // ------
-  atomic_bit_test_and_reset(flags, B_QUEUE_LOCKED);
-  sti_restore(rflags);
+  inline_unlock(flags, rflags);
 }
 
 thread_t *safe_dequeue(volatile uint32_t *flags, tqueue_t *queue) {
-  uint64_t rflags = cli_save();
-  if (atomic_bit_test_and_set(flags, B_QUEUE_LOCKED)) {
-    while (atomic_bit_test_and_set(flags, B_QUEUE_LOCKED)) {
-      cpu_pause(); // spin
-    }
-  }
+  uint64_t rflags = inline_lock(flags);
   // ------
   thread_t *last = queue->tail;
   if (last != NULL && last->prev != NULL) {
@@ -75,9 +79,10 @@ thread_t *safe_dequeue(volatile uint32_t *flags, tqueue_t *queue) {
     queue->head = NULL;
     queue->tail = NULL;
   }
+  // last->next = NULL;
+  // last->prev = NULL;
   // ------
-  atomic_bit_test_and_reset(flags, B_QUEUE_LOCKED);
-  sti_restore(rflags);
+  inline_unlock(flags, rflags);
   return last;
 }
 
