@@ -13,7 +13,7 @@ page_t *alloc_buffer(uint32_t count) {
 
 void free_buffer(page_t *buffer) {
   vm_unmap_page(buffer);
-  free_page(buffer);
+  free_frame(buffer);
 }
 
 //
@@ -79,4 +79,37 @@ int blkdev_write(blkdev_t *dev, uint64_t lba, uint32_t count, void *buf) {
     return result;
   }
   return result;
+}
+
+//
+
+int blkdev_readbuf(blkdev_t *dev, uint64_t lba, uint32_t count, void *buf) {
+  if (count == 0 || buf == NULL) {
+    return 0;
+  }
+
+  interval_t ivl = intvl(lba, lba + count);
+  intvl_node_t *node = intvl_tree_find(dev->cache, ivl);
+  if (node != NULL) {
+    if (contains(node->interval, ivl)) {
+      kprintf("[blkdev] using cache\n");
+      // requested data has already been fully read in
+      uint64_t offset = ivl.start - node->interval.start;
+      page_t *buffer = node->data;
+      uintptr_t addr = buffer->addr + (SEC_SIZE * offset);
+      memcpy(buf, (void *) addr, count * SEC_SIZE);
+      return 0;
+    } else {
+      free_buffer(node->data);
+      intvl_tree_delete(dev->cache, node->interval);
+      return blkdev_readbuf(dev, lba, count, buf);
+    }
+  }
+
+  kprintf("[blkdev] reading from disk\n");
+  ssize_t result = dev->read(dev->self, lba, count, virt_to_phys_ptr(buf));
+  if (result < 0) {
+    return -EFAILED;
+  }
+  return 0;
 }

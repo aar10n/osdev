@@ -30,5 +30,6 @@ typedef struct blkdev {
 blkdev_t *blkdev_init(void *self, void *read, void *write);
 void *blkdev_read(blkdev_t *dev, uint64_t lba, uint32_t count);
 int blkdev_write(blkdev_t *dev, uint64_t lba, uint32_t count, void *buf);
+int blkdev_readbuf(blkdev_t *dev, uint64_t lba, uint32_t count, void *buf);
 
 #endif
