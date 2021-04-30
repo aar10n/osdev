@@ -18,6 +18,8 @@
 
 #include <interval_tree.h>
 
+#define kernel_virt_to_phys(x) (((uintptr_t)(x)) - KERNEL_OFFSET)
+
 extern void page_fault_handler();
 
 static inline vm_area_t *alloc_area(uintptr_t base, size_t size, uint32_t attr) {
@@ -152,7 +154,7 @@ uint64_t *map_page(uintptr_t virt_addr, uintptr_t phys_addr, uint16_t flags) {
       // kprintf("allocating new table (level %d)\n", level);
       // kprintf("[vm] allocating page table\n");
 
-      page_t *page = alloc_page(PE_WRITE);
+      page_t *page = alloc_frame(PE_WRITE);
       page->flags.present = 1;
 
       // kprintf("[vm] page table: %p\n", page->frame);
@@ -187,7 +189,7 @@ uint64_t *map_page(uintptr_t virt_addr, uintptr_t phys_addr, uint16_t flags) {
 }
 
 uint64_t *copy_table(const uint64_t *table, uint16_t level, uint16_t root) {
-  page_t *page = alloc_page(PE_WRITE);
+  page_t *page = alloc_frame(PE_WRITE);
   uint64_t *new_table = vm_map_page_search(page, ABOVE, STACK_VA);
   memset(new_table, 0, PAGE_SIZE);
 
@@ -338,7 +340,7 @@ void vm_init() {
     // only the bsp has to set up recursive pml4 mappings
     // because the AP kernel tables come pre-setup as
     // recursive page tables
-    pml4[R_ENTRY] = virt_to_phys((uintptr_t) pml4) | PE_WRITE | PE_PRESENT;
+    pml4[R_ENTRY] = kernel_virt_to_phys((uintptr_t) pml4) | PE_WRITE | PE_PRESENT;
     tlb_flush();
 
     // setup the page table for temporary mappings
@@ -348,8 +350,8 @@ void vm_init() {
     memset(dir1, 0, PAGE_SIZE);
     memset(dir2, 0, PAGE_SIZE);
 
-    get_table(TEMP_PAGE, 3)[511] = virt_to_phys((uintptr_t) dir1) | PE_WRITE | PE_PRESENT;
-    get_table(TEMP_PAGE, 2)[511] = virt_to_phys((uintptr_t) dir2) | PE_WRITE | PE_PRESENT;
+    get_table(TEMP_PAGE, 3)[511] = kernel_virt_to_phys((uintptr_t) dir1) | PE_WRITE | PE_PRESENT;
+    get_table(TEMP_PAGE, 2)[511] = kernel_virt_to_phys((uintptr_t) dir2) | PE_WRITE | PE_PRESENT;
     vm->temp_dir = get_table(TEMP_PAGE, 1);
     tlb_flush();
   } else {
@@ -443,11 +445,11 @@ void *vm_create_ap_tables() {
   // since these tables are also used when switching
   // from protected to long mode, the tables need to
   // be within the first 4GB of ram.
-  page_t *ap_pml4_page = alloc_page(PE_WRITE | PE_ASSERT);
-  page_t *low_pdpt_page = alloc_page(PE_WRITE | PE_ASSERT);
-  page_t *high_pdpt_page = alloc_page(PE_WRITE | PE_ASSERT);
-  page_t *temp_pdt_page = alloc_page(PE_WRITE | PE_ASSERT);
-  page_t *temp_pt_page = alloc_page(PE_WRITE | PE_ASSERT);
+  page_t *ap_pml4_page = alloc_frame(PE_WRITE | PE_ASSERT);
+  page_t *low_pdpt_page = alloc_frame(PE_WRITE | PE_ASSERT);
+  page_t *high_pdpt_page = alloc_frame(PE_WRITE | PE_ASSERT);
+  page_t *temp_pdt_page = alloc_frame(PE_WRITE | PE_ASSERT);
+  page_t *temp_pt_page = alloc_frame(PE_WRITE | PE_ASSERT);
 
   uint64_t *ap_pml4 = vm_map_page(ap_pml4_page);
   uint64_t *low_pdpt = vm_map_page(low_pdpt_page);

@@ -113,28 +113,5 @@ static inline intptr_t vm_virt_to_phys(uintptr_t addr) {
   return -1;
 }
 
-static inline page_t *alloc_zero_pages(size_t count, uint16_t flags) {
-  if (count == 0) {
-    return NULL;
-  }
-
-  page_t *pages = mm_alloc_pages(ZONE_NORMAL, count, flags);
-  if (pages == NULL) {
-    return NULL;
-  }
-
-  void *ptr = vm_map_page(pages);
-  if (ptr == NULL) {
-    return NULL;
-  }
-
-  memset(ptr, 0, PAGES_TO_SIZE(count));
-  return pages;
-}
-
-static inline page_t *alloc_zero_page(uint16_t flags) {
-  return alloc_zero_pages(1, flags);
-}
-
 
 #endif

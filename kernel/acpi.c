@@ -8,8 +8,7 @@
 
 #include <acpi.h>
 #include <panic.h>
-#include <mm/heap.h>
-#include <mm/vm.h>
+#include <mm.h>
 
 #include <device/apic.h>
 #include <device/ioapic.h>
@@ -196,6 +195,7 @@ void get_apic_info(system_info_t *info, acpi_madt_t *madt) {
 void get_hpet_info(system_info_t *info, acpi_hpetdt_t *hpetdt) {
   if (hpetdt == NULL) {
     info->hpet = NULL;
+    return;
   }
 
   hpet_desc_t *hpet = kmalloc(sizeof(hpet_desc_t));
@@ -240,7 +240,7 @@ void *locate_header(const char *signature) {
   kprintf("[acpi] locating header %s...\n", signature);
 
   for (int i = 0; i < entries; i++) {
-    uintptr_t ptr = phys_to_virt(pointers[i]);
+    uintptr_t ptr = kernel_phys_to_virt(pointers[i]);
     acpi_header_t *header = get_header(ptr);
     if (is_signature(header->signature, signature, 4)) {
       kprintf("[acpi] %s header found\n", signature);
@@ -273,7 +273,7 @@ void acpi_init() {
       continue;
     }
 
-    uintptr_t virt_addr = phys_to_virt(region->phys_addr);
+    uintptr_t virt_addr = kernel_phys_to_virt(region->phys_addr);
     size_t size = align(region->size, PAGE_SIZE);
 
     vm_map_vaddr(virt_addr, region->phys_addr, size, 0);
@@ -288,12 +288,12 @@ void acpi_init() {
     panic("[acpi] failed to locate acpi regions");
   }
 
-  acpi_rsdp_t *rsdp = (void *) phys_to_virt(boot_info->acpi_table);
+  acpi_rsdp_t *rsdp = (void *) kernel_phys_to_virt(boot_info->acpi_table);
   if (!checksum((uint8_t *) rsdp, sizeof(acpi_rsdp_t))) {
     panic("[acpi] rsdp checksum failed");
   }
 
-  xsdt = (void *) phys_to_virt(rsdp->xsdt_address);
+  xsdt = (void *) kernel_phys_to_virt(rsdp->xsdt_address);
   if (!is_header_valid((acpi_header_t *) xsdt)) {
     panic("[acpi] rsdt checksum failed");
   }

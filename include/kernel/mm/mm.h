@@ -10,9 +10,6 @@
 #include <bitmap.h>
 #include <spinlock.h>
 
-#define virt_to_phys(x) (((uintptr_t)(x)) - KERNEL_OFFSET)
-#define phys_to_virt(x) (KERNEL_OFFSET + (x))
-
 #define get_virt_addr(l4, l3, l2, l1) \
   ((0xFFFFULL << 48) | ((l4) << 39) | ((l3) << 30) | \
    ((l2) << 21) | ((l1) << 12))
@@ -111,8 +108,8 @@ page_t *mm_alloc_pages(zone_type_t zone_type, size_t count, uint16_t flags);
 page_t *mm_alloc_frame(uintptr_t frame, uint16_t flags);
 void mm_free_page(page_t *page);
 
-#define alloc_page(flags) mm_alloc_pages(ZONE_NORMAL, 1, flags)
-#define alloc_pages(count, flags) mm_alloc_pages(ZONE_NORMAL, count, flags)
-#define free_page(page) mm_free_page(page)
+#define alloc_frame(flags) mm_alloc_pages(ZONE_NORMAL, 1, flags)
+#define alloc_frames(count, flags) mm_alloc_pages(ZONE_NORMAL, count, flags)
+#define free_frame(page) mm_free_page(page)
 
 #endif

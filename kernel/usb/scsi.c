@@ -90,7 +90,7 @@ ssize_t scsi_read(usb_device_t *dev, uint64_t lba, uint32_t count, void *buf) {
     goto FAIL;
   }
 
-  usb_add_transfer(dev, USB_IN, (void *) vm_virt_to_phys((uintptr_t) buf), size);
+  usb_add_transfer(dev, USB_IN, virt_to_phys_ptr(buf), size);
   usb_start_transfer(dev, USB_IN);
   result = usb_await_transfer(dev, USB_IN);
   if (result != 0) {
@@ -148,7 +148,7 @@ ssize_t scsi_write(usb_device_t *dev, uint64_t lba, uint32_t count, void *buf) {
     goto FAIL;
   }
 
-  usb_add_transfer(dev, USB_OUT, (void *) vm_virt_to_phys((uintptr_t) buf), size);
+  usb_add_transfer(dev, USB_OUT, virt_to_phys_ptr(buf), size);
   usb_start_transfer(dev, USB_OUT);
   result = usb_await_transfer(dev, USB_OUT);
   if (result != 0) {
