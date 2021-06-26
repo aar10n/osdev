@@ -6,6 +6,8 @@
 #define FS_FAT_H
 
 #include <base.h>
+#include <blkdev.h>
+#include <fs.h>
 
 #define FAT_SIG_WORD 0x55AA
 #define FAT_BACKUP_BPB_SECT 6
@@ -22,12 +24,12 @@ typedef enum {
 #define FAT_READ_ONLY 0x01
 #define FAT_HIDDEN    0x02
 #define FAT_SYSTEM    0x04
-#define FAT_VOL_ID    0x08
-#define FAT_SUBDIR    0x10
+#define FAT_VOLUME_ID 0x08
+#define FAT_DIRECTORY 0x10
 #define FAT_ARCHVE    0x20
 
 #define FAT_LONG_NAME \
-  (FAT_READ_ONLY | FAT_HIDDEN | FAT_SYSTEM | FAT_VOL_ID)
+  (FAT_READ_ONLY | FAT_HIDDEN | FAT_SYSTEM | FAT_VOLUME_ID)
 
 //
 // Common FAT structures
@@ -84,7 +86,6 @@ typedef struct packed {
   char name3[4];        // a portion of the file name (part 3)
 } fat_lname_dirent_t;
 
-
 //
 // FAT12/FAT16
 //
@@ -136,18 +137,33 @@ typedef struct packed {
   uint8_t reserved1;         // reserved - set to 0
   uint8_t boot_sig;          // extended boot signature
   uint32_t vol_id;           // volume serial number
-  char vol_lab[11];          // volume label (default: "NO NAME ")
-  char fil_sys_type[8];      // set to the string: "FAT32 "
+  char vol_lab[11];          // volume label
+  char fil_sys_type[8];      // human readable string
   uint8_t reserved2[420];    // reserved - set to 0
   uint16_t sig_word;         // signature word (0x55 and 0xAA)
-  // if byts_per_sec > 512 the remainder of the
-  // sector is also reserved and set to 0
 } fat32_ebpb_t;
+
+//
+
+typedef struct {
+  fat_volume_type_t type;
+  uint32_t fat_size;
+  uint32_t total_sectors;
+  uint32_t data_sectors;
+  uint32_t cluster_count;
+
+  fat_bpb_t *bpb;
+  void *fat;
+  fat_dirent_t *root;
+} fs_fat_t;
 
 //
 // Common functions
 //
 
-fat_volume_type_t fat_get_volume_type(uint8_t *boot_sector);
+fs_t *fat_mount(blkdev_t *dev, fs_node_t *mount);
+inode_t *fat_locate(fs_t *fs, inode_t *parent, ino_t ino);
+
+ssize_t fat_read(fs_t *fs, inode_t *inode, off_t offset, size_t nbytes, void *buf);
 
 #endif
