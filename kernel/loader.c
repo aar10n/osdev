@@ -31,7 +31,7 @@ int load_elf_segment(Elf64_Phdr *pheader, void *buf) {
   if (hdr_flags & PF_W)
     flags |= PE_WRITE;
 
-  page_t *pages = alloc_pages(SIZE_TO_PAGES(mem_size), flags);
+  page_t *pages = alloc_frames(SIZE_TO_PAGES(mem_size), flags);
   void *addr = vm_map_page_vaddr(vaddr, pages);
 
   // disable write protection just long enough for us to

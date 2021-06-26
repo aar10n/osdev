@@ -5,10 +5,8 @@
 #include <drivers/ahci.h>
 #include <device/ioapic.h>
 #include <cpu/idt.h>
-#include <bus/pci.h>
-#include <mm/mm.h>
-#include <mm/vm.h>
-#include <mm/heap.h>
+#include <bus/pcie.h>
+#include <mm.h>
 #include <panic.h>
 #include <printf.h>
 #include <string.h>
@@ -120,17 +118,15 @@ ahci_device_t *port_init(ahci_controller_t *controller, int port_num) {
   port_command_stop(port);
 
   // command list
-  page_t *cmd_list_page = alloc_page(PE_WRITE | PE_CACHE_DISABLE);
-  void *cmd_list = vm_map_page(cmd_list_page);
+  page_t *cmd_list_page = alloc_zero_page(PE_WRITE | PE_CACHE_DISABLE);
+  void *cmd_list = (void *) cmd_list_page->addr;
   port->cmd_list_base = (uintptr_t) cmd_list_page->frame;
-  memset(cmd_list, 0, PAGE_SIZE);
 
   // fis structure
-  page_t *fis_page = alloc_page(PE_WRITE | PE_CACHE_DISABLE);
-  void *fis = vm_map_page(fis_page);
+  page_t *fis_page = alloc_zero_page(PE_WRITE | PE_CACHE_DISABLE);
+  void *fis = (void *) fis_page->addr;
   port->fis_base = fis_page->frame;
   kprintf("[ahci] fis base: %p\n", fis_page->frame);
-  memset(fis, 0, PAGE_SIZE);
 
   ahci_port->fis = fis;
 
@@ -144,9 +140,8 @@ ahci_device_t *port_init(ahci_controller_t *controller, int port_num) {
   ahci_slot_t **slots = kmalloc(sizeof(ahci_slot_t *) * num_slots);
   hba_cmd_header_t *headers = (void *) cmd_list;
   for (int i = 0; i < num_slots; i++) {
-    page_t *table_page = alloc_page(PE_WRITE | PE_CACHE_DISABLE);
-    void *table = vm_map_page(table_page);
-    memset(table, 0, PAGE_SIZE);
+    page_t *table_page = alloc_zero_page(PE_WRITE | PE_CACHE_DISABLE);
+    void *table = (void *) table_page->addr;
 
     hba_cmd_header_t *header = &(headers[i]);
     header->prdt_length = 8;
@@ -292,29 +287,34 @@ ssize_t transfer_dma(direction_t dir, ahci_device_t *ahci_port, uintptr_t lba, s
 
 void ahci_init() {
   kprintf("[ahci] initializing\n");
-  pci_device_t *pci = pci_locate_device(
+  pcie_device_t *pci_dev = pcie_locate_device(
     PCI_STORAGE_CONTROLLER,
     PCI_SERIAL_ATA_CONTROLLER,
     -1
   );
-  if (pci == NULL) {
+  if (pci_dev == NULL) {
     kprintf("[ahci] no ahci controller\n");
     return;
   }
 
-  size_t mmio_size = pci->bars[5].size;
-  void *ahci_base = vm_map_addr(pci->bars[5].base_addr, mmio_size, PE_WRITE);
+  pcie_bar_t *bar = pcie_get_bar(pci_dev, 5);
+  uintptr_t virt_addr = MMIO_BASE_VA;
+  if (!vm_find_free_area(ABOVE, &virt_addr, bar->size)) {
+    panic("[ahci] failed to map ahci registers");
+  }
+  vm_map_vaddr(virt_addr, bar->phys_addr, bar->size, PE_WRITE);
+  void *ahci_base = (void *) virt_addr;
 
   hba_reg_mem_t *hba_mem = ahci_base;
   ahci_controller_t *controller = kmalloc(sizeof(ahci_controller_t));
   controller->mem = hba_mem;
-  controller->pci = pci;
+  controller->pci = pci_dev;
 
   // configure the global host control
   hba_mem->global_host_ctrl |= HBA_CTRL_AHCI_ENABLE;
   hba_mem->global_host_ctrl |= HBA_CTRL_INT_ENABLE;
 
-  ioapic_set_irq(0, pci->interrupt_line, VECTOR_AHCI_IRQ);
+  ioapic_set_irq(0, pci_dev->int_line, VECTOR_AHCI_IRQ);
   idt_hook(VECTOR_AHCI_IRQ, interrupt_handler, NULL);
 
   ahci_discover(controller);
@@ -357,7 +357,7 @@ int ahci_release(fs_device_t *device, void *buf) {
   page_t *pages = *pages_ptr;
 
   vm_unmap_page(pages);
-  free_page(pages);
+  free_frame(pages);
   return 0;
 }
 

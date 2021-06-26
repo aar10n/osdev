@@ -7,7 +7,7 @@
 
 #include <base.h>
 #include <device.h>
-#include <bus/pci.h>
+#include <bus/pcie.h>
 
 #define	SATA_SIG_ATA    0x00000101	// SATA drive
 #define	SATA_SIG_ATAPI  0xEB140101	// SATAPI drive
@@ -390,7 +390,7 @@ typedef struct ahci_device {
 typedef struct ahci_controller {
   hba_reg_mem_t *mem;
   ahci_device_t **ports;
-  pci_device_t *pci;
+  pcie_device_t *pci;
 } ahci_controller_t;
 
 void ahci_init();
