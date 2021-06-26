@@ -3,41 +3,50 @@
 //
 
 #include <inode.h>
-#include <fs.h>
-#include <mm/heap.h>
 #include <process.h>
+#include <fs.h>
+#include <mm.h>
 
 #define UID (current_process->uid)
-// #define UID (PERCPU->uid)
-
 #define GID (current_process->gid)
-// #define GID (PERCPU->gid)
 
 inode_table_t *inodes;
 
 inode_table_t *create_inode_table() {
   inode_table_t *inode_table = kmalloc(sizeof(inode_table_t));
   inode_table->inodes = create_rb_tree();
-  spin_init(&inode_table->lock);
+  mutex_init(&inode_table->lock, 0);
   return inode_table;
 }
 
 inode_t *inode_get(fs_node_t *node) {
-  spin_lock(&inodes->lock);
+  mutex_lock(&inodes->lock);
   rb_node_t *rb_node = rb_tree_find(inodes->inodes, node->inode);
-  spin_unlock(&inodes->lock);
+  mutex_unlock(&inodes->lock);
 
-  if (rb_node) {
+  if (rb_node != NULL) {
     return rb_node->data;
   }
 
+  inode_t *parent = NULL;
+  if (node->parent && !IS_IFMNT(node->parent->mode)) {
+    mutex_lock(&inodes->lock);
+    rb_node = rb_tree_find(inodes->inodes, node->parent->inode);
+    mutex_unlock(&inodes->lock);
+    if (rb_node == NULL) {
+      parent = inode_get(node->parent);
+    } else {
+      parent = rb_node->data;
+    }
+  }
+
   // if the inode is not already cached we have
-  // to load it from the nodes backing filesystem
-  inode_t *inode = node->fs->impl->locate(node->fs, node->inode);
+  // to load it from the backing filesystem
+  inode_t *inode = node->fs->impl->locate(node->fs, parent, node->inode);
   if (inode) {
-    spin_lock(&inodes->lock);
+    mutex_lock(&inodes->lock);
     rb_tree_insert(inodes->inodes, inode->ino, inode);
-    spin_unlock(&inodes->lock);
+    mutex_unlock(&inodes->lock);
   }
   return inode;
 }
@@ -58,11 +67,10 @@ inode_t *inode_create(fs_t *fs, mode_t mode) {
   inode->ctime = 0;
   inode->mtime = 0;
 
-  spin_init(&inode->lock);
-
-  spin_lock(&inodes->lock);
+  mutex_init(&inode->lock, 0);
+  mutex_lock(&inodes->lock);
   rb_tree_insert(inodes->inodes, inode->ino, inode);
-  spin_unlock(&inodes->lock);
+  mutex_unlock(&inodes->lock);
 
   return inode;
 }
@@ -73,8 +81,8 @@ int inode_delete(fs_t *fs, inode_t *inode) {
     return -1;
   }
 
-  spin_lock(&inodes->lock);
+  mutex_lock(&inodes->lock);
   rb_tree_delete(inodes->inodes, inode->ino);
-  spin_unlock(&inodes->lock);
+  mutex_unlock(&inodes->lock);
   return 0;
 }

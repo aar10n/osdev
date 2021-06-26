@@ -8,8 +8,7 @@ fs += acl.c blkdev.c device.c dirent.c \
 	stat.c utils.c vfs.c
 
 # fs/fat
-fs += fat/fat.c fat/fat12.c \
-	fat/fat16.c fat/fat32.c
+fs += fat/fat.c
 
 # fs/proc
 fs += proc/proc.c

@@ -6,6 +6,7 @@
 #define FS_FS_H
 
 #include <base.h>
+#include <blkdev.h>
 #include <dirent.h>
 #include <inode.h>
 #include <file.h>
@@ -23,10 +24,10 @@ typedef struct fs_node fs_node_t;
 
 /* Filesystem operations */
 typedef struct fs_impl {
-  fs_t *(*mount)(fs_device_t *device, fs_node_t *mount);
+  fs_t *(*mount)(blkdev_t *device, fs_node_t *mount);
   int (*unmount)(fs_t *fs, fs_node_t *mount);
 
-  inode_t *(*locate)(fs_t *fs, ino_t ino);
+  inode_t *(*locate)(fs_t *fs, inode_t *parent, ino_t ino);
   inode_t *(*create)(fs_t *fs, mode_t mode);
   int (*remove)(fs_t *fs, inode_t *inode);
   dirent_t *(*link)(fs_t *fs, inode_t *inode, inode_t *parent, char *name);
@@ -48,7 +49,7 @@ typedef struct fs_driver {
 
 /* A mounted filesystem instance */
 typedef struct fs {
-  fs_device_t *device; // fs device
+  blkdev_t *device;    // fs device
   fs_node_t *mount;    // vfs mount node
   fs_node_t *root;     // fs root node
 

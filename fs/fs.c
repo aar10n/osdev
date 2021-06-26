@@ -22,6 +22,13 @@ static dev_t __dev_id = 0;
 // Filesystem API
 //
 
+// 0x8000
+// 0x9000
+
+// 0x9000
+// 0x1000
+//
+
 void fs_init() {
   kprintf("[fs] initializing...\n");
 
@@ -53,7 +60,7 @@ int fs_mount(fs_driver_t *driver, const char *device, const char *path) {
   fs_node_t *parent;
   NOT_NULL(parent = vfs_get_node(path_dirname(p), O_DIRECTORY));
 
-  fs_device_t *dev = dev_node->ifblk.device;
+  fs_device_t *dev = dev_node->ptr1;
 
   dev_t dev_id = atomic_fetch_add(&__dev_id, 1);
   fs_device_t *copy = kmalloc(sizeof(fs_device_t));
@@ -104,10 +111,10 @@ int fs_unmount(const char *path) {
     return -1;
   }
 
-  if (mount->ifmnt.shadow == NULL) {
+  if (mount->ptr1 == NULL) {
     vfs_remove_node(mount);
   } else {
-    vfs_swap_node(mount, mount->ifmnt.shadow);
+    vfs_swap_node(mount, mount->ptr1);
   }
 
   kfree(instance);
@@ -175,9 +182,9 @@ ssize_t fs_read(int fd, void *buf, size_t nbytes) {
 
   fs_t *fs = file->node->fs;
   // aquire(file->lock);
-  spin_lock(&inode->lock);
+  mutex_lock(&inode->lock);
   ssize_t nread = fs->impl->read(file->node->fs, inode, file->offset, nbytes, buf);
-  spin_unlock(&inode->lock);
+  mutex_unlock(&inode->lock);
   // release(file->lock);
 
   file->offset += nread;
@@ -193,9 +200,9 @@ ssize_t fs_write(int fd, void *buf, size_t nbytes) {
 
   fs_t *fs = file->node->fs;
   // aquire(file->lock);
-  spin_lock(&inode->lock);
+  mutex_lock(&inode->lock);
   ssize_t nwritten = fs->impl->write(file->node->fs, inode, file->offset, nbytes, buf);
-  spin_unlock(&inode->lock);
+  mutex_unlock(&inode->lock);
   // release(file->lock);
 
   file->offset += nwritten;
@@ -290,7 +297,7 @@ int fs_symlink(const char *path1, const char *path2) {
   fs_node_t *node;
   NOT_NULL(node = vfs_create_node(dest, S_IFLNK));
   path_t link_path = str_to_path(path1);
-  node->iflnk.path = path_to_str(link_path);
+  node->ptr1 = path_to_str(link_path);
 
   inode_t *inode;
   NOT_NULL(inode = inode_get(node));
@@ -346,7 +353,7 @@ DIR *fs_opendir(const char *dirname) {
   NNOT_NULL(node = vfs_get_node(str_to_path(dirname), flags));
   file_t *file;
   NNOT_NULL(file = file_create(node, flags));
-  file->node = node->ifdir.first;
+  file->node = node->ptr1;
   return file;
 }
 

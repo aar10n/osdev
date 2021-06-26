@@ -8,7 +8,7 @@
 #include <base.h>
 #include <hash_table.h>
 #include <rb_tree.h>
-#include <spinlock.h>
+#include <mutex.h>
 
 // Extended flags for controlling VFS functions
 #define V_NOFAIL 0x0100000 // Makes O_NOFOLLOW return the symlink instead of failing
@@ -48,34 +48,14 @@ typedef struct fs_node {
   ino_t inode;      // inode
   dev_t dev;        // device
   mode_t mode;      // file mode
-  dirent_t *dirent; // the directory entry for the file
+  uint32_t state;   // node state
   fs_t *fs;         // containing filesystem
+  dirent_t *dirent; // the directory entry for the file
+  void *ptr1;       // node type specific pointer
+  void *ptr2;       // node type specific pointer
   struct fs_node *parent;
   struct fs_node *next;
   struct fs_node *prev;
-  union {
-    struct { // V_IFREG
-    } ifreg;
-    struct { // V_IFDIR
-      struct fs_node *first;
-      struct fs_node *last;
-    } ifdir;
-    struct { // V_IFBLK
-      fs_device_t *device;
-    } ifblk;
-    struct { // V_IFSOCK
-    } ifsock;
-    struct { // V_IFLNK
-      char *path;
-    } iflnk;
-    struct { // V_IFIFO
-    } ififo;
-    struct { // V_IFCHR
-    } ifchr;
-    struct { // V_IFMNT
-      struct fs_node *shadow;
-    } ifmnt;
-  };
 } fs_node_t;
 
 typedef struct fs_node_table {

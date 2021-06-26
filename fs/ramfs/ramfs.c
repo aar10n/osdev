@@ -61,7 +61,7 @@ ramfs_file_t *ramfs_alloc_file(inode_t *inode, ramfs_backing_mem_t backing, size
 
   if (backing == RAMFS_PAGE_BACKED) {
     size = align(size, PAGE_SIZE);
-    page_t *pages = alloc_pages(SIZE_TO_PAGES(size), PE_WRITE);
+    page_t *pages = alloc_frames(SIZE_TO_PAGES(size), PE_WRITE);
     void *addr = vm_map_page(pages);
     memset(addr, 0, size);
 
@@ -115,7 +115,7 @@ void ramfs_resize_file(inode_t *inode, size_t new_size) {
     page_t *page = file->mem;
     vm_unmap_page(page);
 
-    page_t *new_pages = alloc_pages(SIZE_TO_PAGES(size_diff), PE_WRITE);
+    page_t *new_pages = alloc_frames(SIZE_TO_PAGES(size_diff), PE_WRITE);
 
     page_t *last = page;
     while (last->next) {
@@ -139,7 +139,7 @@ void ramfs_free_file(inode_t *inode) {
   if (file->mem_type == RAMFS_PAGE_BACKED) {
     page_t *page = file->mem;
     vm_unmap_page(page);
-    free_page(page);
+    free_frame(page);
   } else {
     kfree(file->mem);
     kfree(file);
@@ -185,10 +185,10 @@ int ramfs_remove_dirent(inode_t *parent, dirent_t *dirent) {
 
 //
 
-fs_t *ramfs_mount(fs_device_t *device, fs_node_t *mount) {
+fs_t *ramfs_mount(blkdev_t *device, fs_node_t *mount) {
   kprintf("[ramfs] mount\n");
   // allocate some space for the filesystem
-  page_t *pages = alloc_pages(1, PE_2MB_SIZE | PE_WRITE);
+  page_t *pages = alloc_frames(1, PE_2MB_SIZE | PE_WRITE);
   void *mem = vm_map_page(pages);
 
   // filesystem data
@@ -243,7 +243,7 @@ int ramfs_unmount(fs_t *fs, fs_node_t *mount) {
 
 //
 
-inode_t *ramfs_locate(fs_t *fs, ino_t ino) {
+inode_t *ramfs_locate(fs_t *fs, inode_t *parent, ino_t ino) {
   kprintf("[ramfs] locate\n");
   ramfs_t *ramfs = fs->data;
   if (ino > ramfs->max_inodes) {

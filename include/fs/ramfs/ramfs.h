@@ -37,10 +37,10 @@ typedef struct {
 extern fs_driver_t ramfs_driver;
 
 
-fs_t *ramfs_mount(fs_device_t *device, fs_node_t *mount);
+fs_t *ramfs_mount(blkdev_t *device, fs_node_t *mount);
 int ramfs_unmount(fs_t *fs, fs_node_t *mount);
 
-inode_t *ramfs_locate(fs_t *fs, ino_t ino);
+inode_t *ramfs_locate(fs_t *fs, inode_t *parent, ino_t ino);
 inode_t *ramfs_create(fs_t *fs, mode_t mode);
 int ramfs_remove(fs_t *fs, inode_t *inode);
 dirent_t *ramfs_link(fs_t *fs, inode_t *inode, inode_t *parent, char *name);

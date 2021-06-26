@@ -25,6 +25,8 @@
 #define GID (current_process->gid)
 // #define GID (PERCPU->gid)
 
+#define as_node(ptr) ((fs_node_t *)(ptr))
+
 
 fs_t *root_fs = NULL;
 fs_node_t *fs_root = NULL;
@@ -164,7 +166,7 @@ void vfs_free_node(fs_node_t *node) {
 
   // free children first
   if (IS_IFDIR(node->mode)) {
-    fs_node_t *child = node->ifdir.first;
+    fs_node_t *child = node->ptr1;
     while (child) {
       fs_node_t *next = child->next;
       vfs_free_node(child);
@@ -207,8 +209,8 @@ void vfs_populate_dir_node(fs_node_t *node) {
   dot->next = dotdot;
   dotdot->prev = dot;
 
-  node->ifdir.first = dot;
-  node->ifdir.last = dotdot;
+  node->ptr1 = dot;
+  node->ptr2 = dotdot;
 }
 
 //
@@ -310,7 +312,7 @@ fs_node_t *vfs_find_child(fs_node_t *parent, path_t name) {
     return NULL;
   }
 
-  fs_node_t *child = parent->ifdir.first;
+  fs_node_t *child = parent->ptr1;
   while (child) {
     if (pathcmp_s(name, child->dirent->name) == 0) {
       return child;
@@ -339,7 +341,7 @@ fs_node_t *vfs_resolve_link(fs_node_t *node, int flags) {
       return NULL;
     }
 
-    fs_node_t *linked = vfs_get_link(node->iflnk.path);
+    fs_node_t *linked = vfs_get_link(node->ptr1);
     if (linked) {
       node = linked;
       lcount++;
@@ -380,7 +382,7 @@ int vfs_add_device(fs_device_t *device) {
   }
 
   fs_node_t *dev = vfs_create_node(dev_dir, S_IFBLK);
-  dev->ifblk.device = device;
+  dev->ptr1 = device;
 
   char name[MAX_FILE_NAME];
   ksprintf(name, "disk%d", device->id);
@@ -406,13 +408,13 @@ int vfs_add_node(fs_node_t *parent, fs_node_t *child, char *name) {
 
   child->dirent = dirent;
   child->parent = parent;
-  if (parent->ifdir.last == NULL) {
-    parent->ifdir.first = child;
-    parent->ifdir.last = child;
+  if (parent->ptr2 == NULL) {
+    parent->ptr1 = child;
+    parent->ptr2 = child;
   } else {
-    child->prev = parent->ifdir.last;
-    parent->ifdir.last->next = child;
-    parent->ifdir.last = child;
+    child->prev = parent->ptr2;
+    as_node(parent->ptr2)->next = child;
+    parent->ptr2 = child;
   }
   return 0;
 }
@@ -430,8 +432,8 @@ int vfs_remove_node(fs_node_t *node) {
     node->next->prev = node->prev;
   }
 
-  if (node->parent && node->parent->ifdir.first == node) {
-    node->parent->ifdir.first = node->next;
+  if (node->parent && node->parent->ptr1 == node) {
+    node->parent->ptr1 = node->next;
   }
 
   // break any links to this node
@@ -473,8 +475,8 @@ int vfs_swap_node(fs_node_t *orig_node, fs_node_t *new_node) {
     orig_node->next->prev = new_node;
   }
 
-  if (orig_node->parent && orig_node->parent->ifdir.first == orig_node) {
-    orig_node->parent->ifdir.first = new_node;
+  if (orig_node->parent && orig_node->parent->ptr1 == orig_node) {
+    orig_node->parent->ptr1 = new_node;
   }
 
   // break any links to this node

@@ -6,13 +6,15 @@
 #define FS_INODE_H
 
 #include <base.h>
-#include <spinlock.h>
+#include <mutex.h>
 #include <rb_tree.h>
 
-// file types backed by inodes
-#define I_TYPE_MASK 0xFFF0000
-#define I_PERM_MASK 0x000FFFF
+// mode flags
+#define I_TYPE_MASK 0x0FFF0000
+#define I_PERM_MASK 0x0000FFFF
 #define I_FILE_MASK (S_IFREG | S_IFDIR | S_IFLNK)
+
+#define S_ISLDD  0x1000000 // Inode is loaded.
 
 #define S_IFMNT  0x0800000 // Filesystem mount.
 #define S_IFCHR  0x0400000 // Character special (tty).
@@ -47,6 +49,8 @@
 #define IS_IFDIR(mode) ((mode) & S_IFDIR)
 #define IS_IFREG(mode) ((mode) & S_IFREG)
 
+#define IS_LOADED(mode) ((mode) & S_ISLDD)
+
 typedef struct fs_impl fs_impl_t;
 typedef struct fs_node fs_node_t;
 typedef struct fs fs_t;
@@ -68,13 +72,13 @@ typedef struct inode {
   blksize_t blksize;
   blkcnt_t blocks;
 
-  spinlock_t lock;
+  mutex_t lock;
   void *data;
 } inode_t;
 
 typedef struct inode_table {
   rb_tree_t *inodes;
-  spinlock_t lock;
+  mutex_t lock;
 } inode_table_t;
 
 extern inode_table_t *inodes;
