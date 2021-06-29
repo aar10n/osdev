@@ -5,8 +5,9 @@
 #include <mutex.h>
 #include <spinlock.h>
 #include <scheduler.h>
-#include <thread.h>
 #include <atomic.h>
+#include <thread.h>
+#include <timer.h>
 #include <mm.h>
 #include <printf.h>
 #include <panic.h>
@@ -133,6 +134,13 @@ int mutex_unlock(mutex_t *mutex) {
 
 // Conditions
 
+static void cond_timeout_cb(void *arg) {
+  cond_t *cond = arg;
+  cond_signal(cond);
+}
+
+//
+
 void cond_init(cond_t *cond, uint32_t flags) {
   cond->flags = flags;
   cond->queue.head = NULL;
@@ -156,6 +164,18 @@ int cond_wait(cond_t *cond) {
   thread->preempt_count--;
   scheduler_block(thread);
   return 0;
+}
+
+int cond_wait_timeout(cond_t *cond, uint64_t us) {
+  if (cond->flags & M_LOCKED) {
+    cond->flags ^= M_LOCKED;
+    return 0;
+  }
+
+  id_t id = create_timer(timer_now() + (us * 1000), cond_timeout_cb, cond);
+  int status = cond_wait(cond);
+  timer_cancel(id);
+  return status;
 }
 
 int cond_signal(cond_t *cond) {

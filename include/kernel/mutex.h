@@ -40,6 +40,7 @@ typedef struct cond {
 
 void cond_init(cond_t *cond, uint32_t flags);
 int cond_wait(cond_t *cond);
+int cond_wait_timeout(cond_t *cond, uint64_t us);
 int cond_signal(cond_t *cond);
 int cond_broadcast(cond_t *cond);
 

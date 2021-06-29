@@ -48,7 +48,6 @@ void timer_handler() {
 }
 
 noreturn void *timer_event_loop(void *arg) {
-  kprintf("starting timer event loop\n");
   while (true) {
     cond_wait(&event);
 
@@ -59,7 +58,9 @@ noreturn void *timer_event_loop(void *arg) {
     }
 
     label(dispatch);
+    current_thread->preempt_count++;
     timer->callback(timer->data);
+    current_thread->preempt_count--;
 
     // spinrw_aquire_write(&lock);
     rb_tree_delete_node(tree, tree->min);
