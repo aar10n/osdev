@@ -15,6 +15,7 @@
 #include <spinlock.h>
 #include <printf.h>
 #include <rb_tree.h>
+#include <thread.h>
 
 extern void hpet_handler();
 static id_t __id;
@@ -46,7 +47,7 @@ void timer_handler() {
   cond_signal(&event);
 }
 
-noreturn void timer_event_loop() {
+noreturn void *timer_event_loop(void *arg) {
   kprintf("starting timer event loop\n");
   while (true) {
     cond_wait(&event);
@@ -93,7 +94,7 @@ void timer_init() {
   lookup_tree = create_rb_tree();
 
   cond_init(&event, 0);
-  process_create(timer_event_loop);
+  thread_create(timer_event_loop, NULL);
   // spinrw_init(&lock);
 }
 
