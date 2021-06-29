@@ -14,7 +14,7 @@
 typedef void (*timer_cb_t)(void *);
 
 typedef struct timer {
-  uint64_t id;
+  id_t id;
   uint8_t cpu;
   clock_t expiry;
   timer_cb_t callback;
@@ -24,7 +24,8 @@ typedef struct timer {
 uint64_t timer_now();
 
 void timer_init();
-void create_timer(clock_t ns, timer_cb_t callback, void *data);
+id_t create_timer(clock_t ns, timer_cb_t callback, void *data);
+void *timer_cancel(id_t id);
 void timer_print_debug();
 
 #endif

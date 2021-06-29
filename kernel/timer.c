@@ -16,13 +16,29 @@
 #include <spinlock.h>
 
 extern void hpet_handler();
-static uint64_t __id;
+static id_t __id;
 static rb_tree_t *tree;
+static rb_tree_t *lookup_tree;
 // static rw_spinlock_t lock;
 
-static inline uint64_t alloc_id() {
+static inline id_t alloc_id() {
   return atomic_fetch_add(&__id, 1);
 }
+
+//
+
+void handle_insert_node(rb_tree_t *_tree, rb_node_t *node) {
+  // spinrw_aquire_write(&lock);
+  timer_event_t *timer = node->data;
+  rb_tree_insert(lookup_tree, timer->id, node);
+  // spinrw_release_write(&lock);
+}
+
+static rb_tree_events_t events = {
+  .post_insert_node = handle_insert_node
+};
+
+//
 
 void timer_handler() {
   // kprintf("timer irq!\n");
@@ -37,8 +53,10 @@ void timer_handler() {
 
   // spinrw_aquire_write(&lock);
   rb_tree_delete_node(tree, tree->min);
+  rb_tree_delete(lookup_tree, timer->id);
   // spinrw_release_write(&lock);
 
+  kfree(timer);
   timer = tree->min->data;
   if (timer && timer->cpu == PERCPU->id && timer->expiry == expiry) {
     goto dispatch;
@@ -60,10 +78,13 @@ void timer_init() {
   idt_set_gate(VECTOR_HPET_TIMER, gate);
 
   tree = create_rb_tree();
+  tree->events = &events;
+
+  lookup_tree = create_rb_tree();
   // spinrw_init(&lock);
 }
 
-void create_timer(clock_t ns, timer_cb_t callback, void *data) {
+id_t create_timer(clock_t ns, timer_cb_t callback, void *data) {
   timer_event_t *timer = kmalloc(sizeof(timer_event_t));
   timer->id = alloc_id();
   timer->cpu = PERCPU->id;
@@ -78,6 +99,23 @@ void create_timer(clock_t ns, timer_cb_t callback, void *data) {
   // spinrw_aquire_write(&lock);
   rb_tree_insert(tree, ns, timer);
   // spinrw_release_write(&lock);
+  return timer->id;
+}
+
+void *timer_cancel(id_t id) {
+  // spinrw_aquire_write(&lock);
+  rb_node_t *node = rb_tree_find(lookup_tree, id);
+  if (node == NULL) {
+    // spinrw_release_write(&lock);
+    return NULL;
+  }
+
+  timer_event_t *timer = rb_tree_delete_node(tree, node->data);
+  rb_tree_delete_node(lookup_tree, node);
+  // spinrw_release_write(&lock);
+  void *data = timer->data;
+  kfree(timer);
+  return data;
 }
 
 void timer_print_debug() {
