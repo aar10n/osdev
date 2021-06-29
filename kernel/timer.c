@@ -11,14 +11,16 @@
 #include <device/ioapic.h>
 #include <device/hpet.h>
 
-#include <rb_tree.h>
-#include <printf.h>
+#include <mutex.h>
 #include <spinlock.h>
+#include <printf.h>
+#include <rb_tree.h>
 
 extern void hpet_handler();
 static id_t __id;
 static rb_tree_t *tree;
 static rb_tree_t *lookup_tree;
+static cond_t event;
 // static rw_spinlock_t lock;
 
 static inline id_t alloc_id() {
@@ -41,27 +43,35 @@ static rb_tree_events_t events = {
 //
 
 void timer_handler() {
-  // kprintf("timer irq!\n");
-  timer_event_t *timer = tree->min->data;
-  clock_t expiry = timer->expiry;
-  if (/*lock.locked */false || timer->cpu != PERCPU->id) {
-    return;
-  }
+  cond_signal(&event);
+}
 
-  label(dispatch);
-  timer->callback(timer->data);
+noreturn void timer_event_loop() {
+  kprintf("starting timer event loop\n");
+  while (true) {
+    cond_wait(&event);
 
-  // spinrw_aquire_write(&lock);
-  rb_tree_delete_node(tree, tree->min);
-  rb_tree_delete(lookup_tree, timer->id);
-  // spinrw_release_write(&lock);
+    timer_event_t *timer = tree->min->data;
+    clock_t expiry = timer->expiry;
+    if (/*lock.locked */false || timer->cpu != PERCPU->id) {
+      continue;
+    }
 
-  kfree(timer);
-  timer = tree->min->data;
-  if (timer && timer->cpu == PERCPU->id && timer->expiry == expiry) {
-    goto dispatch;
-  } else if (timer) {
-    hpet_set_timer(timer->expiry);
+    label(dispatch);
+    timer->callback(timer->data);
+
+    // spinrw_aquire_write(&lock);
+    rb_tree_delete_node(tree, tree->min);
+    rb_tree_delete(lookup_tree, timer->id);
+    // spinrw_release_write(&lock);
+
+    kfree(timer);
+    timer = tree->min->data;
+    if (timer && timer->cpu == PERCPU->id && timer->expiry == expiry) {
+      goto dispatch;
+    } else if (timer) {
+      hpet_set_timer(timer->expiry);
+    }
   }
 }
 
@@ -81,6 +91,9 @@ void timer_init() {
   tree->events = &events;
 
   lookup_tree = create_rb_tree();
+
+  cond_init(&event, 0);
+  process_create(timer_event_loop);
   // spinrw_init(&lock);
 }
 
