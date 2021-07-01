@@ -89,6 +89,9 @@ static xhci_ep_t *form_usb_event(usb_device_t *dev, xhci_transfer_evt_trb_t *trb
 noreturn void *usb_event_loop(void *arg) {
   usb_device_t *dev = arg;
   xhci_device_t *device = dev->device;
+
+  thread_yield();
+
   uint8_t mode = dev->mode;
   uint32_t value = dev->value;
 
@@ -100,6 +103,7 @@ noreturn void *usb_event_loop(void *arg) {
 
       usb_trace_debug("event");
 
+
       xhci_transfer_evt_trb_t *trb = device->thread->data;
       usb_event_t event;
       xhci_ep_t *ep = form_usb_event(dev, trb, &event);
@@ -108,8 +112,10 @@ noreturn void *usb_event_loop(void *arg) {
       }
 
       ep->last_event = event;
-      dev->driver->handle_event(&event, dev->driver_data);
       cond_signal(&ep->event);
+      if (dev->driver && dev->driver->handle_event) {
+        dev->driver->handle_event(&event, dev->driver_data);
+      }
     } else if (mode == USB_DEVICE_POLLING) {
       thread_sleep(value);
 
@@ -184,14 +190,15 @@ void usb_register_device(xhci_device_t *device) {
     return;
   }
 
+  dev->driver = driver;
+  dev->thread = thread_create(usb_event_loop, dev);
+
   void *ptr = driver->init(dev);
   if (ptr == NULL) {
     usb_log("failed to initialize driver");
     return;
   }
-  dev->driver = driver;
   dev->driver_data = ptr;
-  dev->thread = thread_create(usb_event_loop, dev);
   thread_setsched(dev->thread, SCHED_DRIVER, PRIORITY_HIGH);
   thread_yield();
 }

@@ -17,7 +17,7 @@
 
 #define xhci_log(str, args...) kprintf("[xhci] " str "\n", ##args)
 
-// #define XHCI_DEBUG
+#define XHCI_DEBUG
 #ifdef XHCI_DEBUG
 #define xhci_trace_debug(str, args...) kprintf("[xhci] " str "\n", ##args)
 #else
@@ -256,11 +256,6 @@ void xhci_setup_devices() {
   // setup devices
   xhci_port_t *port = xhci->ports;
   while (port) {
-    if (port->number != 5) {
-      port = port->next;
-      continue;
-    }
-
     xhci_trace_debug("setting up device on port %d", port->number);
     xhci_trace_debug("port speed: %s", get_speed_str(port->speed));
 
