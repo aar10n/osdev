@@ -9,6 +9,7 @@
 #include <usb/usb.h>
 #include <usb/xhci.h>
 #include <printf.h>
+#include <event.h>
 
 #define hid_log(str, args...) kprintf("[hid] " str "\n", ##args)
 
@@ -24,6 +25,52 @@ static inline hid_descriptor_t *get_hid_descriptor(xhci_device_t *device) {
   usb_if_descriptor_t *interface = offset_ptr(config, config->length);
   return offset_ptr(interface, interface->length);
 }
+
+// HID Buffers
+
+hid_buffer_t *hid_buffer_create(uint16_t alloc_size) {
+  hid_buffer_t *buffer = kmalloc(sizeof(hid_buffer_t));
+  page_t *page = alloc_zero_page(PE_WRITE);
+
+  buffer->alloc_ptr = page->frame;
+  buffer->read_ptr = page->addr;
+  buffer->alloc_size = alloc_size;
+  buffer->max_index = PAGE_SIZE / alloc_size;
+  buffer->page = page;
+  return buffer;
+}
+
+uintptr_t hid_buffer_alloc(hid_buffer_t *buffer) {
+  uintptr_t ptr = buffer->alloc_ptr;
+  int index = (ptr - buffer->page->frame) / buffer->alloc_size;
+  if (index == buffer->max_index - 1) {
+    buffer->alloc_ptr = buffer->page->frame;
+  } else {
+    buffer->alloc_ptr += buffer->alloc_size;
+  }
+  return ptr;
+}
+
+void *hid_buffer_read(hid_buffer_t *buffer) {
+  uintptr_t ptr = buffer->read_ptr;
+  int index = (ptr - buffer->page->addr) / buffer->alloc_size;
+  if (index == buffer->max_index - 1) {
+    buffer->read_ptr = buffer->page->addr;
+  } else {
+    buffer->read_ptr += buffer->alloc_size;
+  }
+  return (void *) ptr;
+}
+
+void *hid_buffer_read_last(hid_buffer_t *buffer) {
+  uintptr_t ptr = buffer->read_ptr;
+  if (ptr == buffer->page->addr) {
+    return (void *) buffer->page->addr + PAGE_SIZE - buffer->alloc_size;
+  }
+  return (void *) ptr - buffer->alloc_size;
+}
+
+//
 
 void *hid_get_report_descriptor(xhci_device_t *device) {
   hid_descriptor_t *hid = get_hid_descriptor(device);
@@ -45,6 +92,41 @@ void *hid_get_report_descriptor(xhci_device_t *device) {
   return report;
 }
 
+void hid_get_idle(xhci_device_t *device) {
+  usb_setup_packet_t get_idle = GET_IDLE(0, 0);
+  uint16_t idle_rate = 0;
+
+  hid_trace_debug("getting idle rate");
+  xhci_queue_setup(device, &get_idle, SETUP_DATA_IN);
+  xhci_queue_data(device, (uintptr_t) &idle_rate, sizeof(uint16_t), DATA_IN);
+  xhci_queue_status(device, DATA_OUT);
+  xhci_ring_device_db(device);
+
+  xhci_transfer_evt_trb_t *result = xhci_wait_for_transfer(device);
+  if (result->compl_code != CC_SUCCESS) {
+    hid_trace_debug("failed to get idle");
+    return;
+  }
+  hid_trace_debug("idle loaded");
+  hid_trace_debug("idle: %d", idle_rate);
+}
+
+void hid_set_idle(xhci_device_t *device, uint8_t duration) {
+  usb_setup_packet_t set_idle = SET_IDLE(duration, 0, 0);
+
+  hid_trace_debug("setting idle rate");
+  xhci_queue_setup(device, &set_idle, SETUP_DATA_OUT);
+  xhci_queue_status(device, DATA_OUT);
+  xhci_ring_device_db(device);
+
+  xhci_transfer_evt_trb_t *result = xhci_wait_for_transfer(device);
+  if (result->compl_code != CC_SUCCESS) {
+    hid_trace_debug("failed to set idle rate");
+    return;
+  }
+  hid_trace_debug("idle rate set");
+}
+
 //
 
 void *hid_device_init(usb_device_t *dev) {
@@ -59,6 +141,11 @@ void *hid_device_init(usb_device_t *dev) {
     kfree(report_desc);
     return NULL;
   }
+
+  kprintf(">>> setting device mode\n");
+  dev->mode = USB_DEVICE_POLLING;
+  dev->value = 16000;
+  // dev->value = 2000000;
 
   void *fn_ptr = NULL;
   void *data_ptr = NULL;
@@ -91,24 +178,38 @@ void *hid_device_init(usb_device_t *dev) {
   hid_device_t *hid = kmalloc(sizeof(hid_device_t));
   hid->desc = desc;
   hid->format = format;
-  hid->buffer = kmalloc(format->size);
+  hid->buffer = hid_buffer_create(format->size);
   hid->size = format->size;
-  memset(hid->buffer, 0, format->size);
 
   hid->data = data_ptr;
   hid->handle_input = fn_ptr;
 
-  usb_add_transfer(dev, USB_IN, (void *) heap_ptr_phys(hid->buffer), 8);
+  for (int i = 0; i < 8; i++) {
+    usb_add_transfer(dev, USB_IN, (void *) hid_buffer_alloc(hid->buffer), format->size);
+  }
   return hid;
 }
 
 void hid_handle_event(usb_event_t *event, void *data) {
   usb_device_t *usb_dev = event->device;
   hid_device_t *device = data;
-  // hid_trace_debug("event");
+  hid_trace_debug("event");
 
-  uint8_t buffer[device->size];
-  memcpy(buffer, device->buffer, device->size);
-  usb_add_transfer(usb_dev, USB_IN, (void *) heap_ptr_phys(device->buffer), device->size);
+  uint8_t *buffer = hid_buffer_read(device->buffer);
+  usb_add_transfer(usb_dev, USB_IN, (void *) hid_buffer_alloc(device->buffer), device->size);
+
+  for (int i = 2; i < device->size; i++) {
+    // kprintf("%x ", (int) buffer[i]);
+    if (buffer[i] == 0) {
+      continue;
+    }
+
+    key_event_t ev = {
+      .key_code = hid_keyboard_get_key(buffer[i])
+    };
+    char c = key_event_to_character(&ev);
+    kprintf("%c ", c);
+  }
+  kprintf("\n");
   device->handle_input(device, buffer);
 }

@@ -12,7 +12,7 @@
 #include <mutex.h>
 #include <mm.h>
 
-#define THREAD_DEBUG
+// #define THREAD_DEBUG
 #ifdef THREAD_DEBUG
 #define thread_trace_debug(str, args...) kprintf("[thread] " str "\n", ##args)
 #else
@@ -215,7 +215,7 @@ int thread_receive(thread_t *thread, void **data) {
 }
 
 void thread_sleep(uint64_t us) {
-  kprintf("[pid %d:%d] sleeping for %lf seconds\n", getpid(), gettid(), (double)(us) / 1e6);
+  // kprintf("[pid %d:%d] sleeping for %lf seconds\n", getpid(), gettid(), (double)(us) / 1e6);
   scheduler_sleep(us * 1000);
 }
 

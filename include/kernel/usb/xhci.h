@@ -16,6 +16,11 @@
 #define ep_index(num, dir) ((num) + max((num) - 1, 0) + dir)
 #define ep_number(idx) (((idx) - ((idx) % 2 == 0) + 1) / 2)
 
+// Transfer Flags
+#define XHCI_XFER_IOC 0x1 // interrupt on completion
+#define XHCI_XFER_ISP 0x2 // interrupt on short packet
+#define XHCI_XFER_NS  0x4 // no snoop
+
 
 typedef struct xhci_dev xhci_dev_t;
 typedef struct xhci_port xhci_port_t;
@@ -23,7 +28,8 @@ typedef struct xhci_port xhci_port_t;
 typedef struct {
   xhci_trb_t *ptr;    // ring base
   page_t *page;       // ring pages
-  uint32_t index;     // ring enqueue/dequeue index
+  uint16_t index;     // ring enqueue/dequeue index
+  uint16_t rd_index;  // ring read index
   uint32_t max_index; // max index
   bool ccs;           // cycle state
 } xhci_ring_t;
@@ -145,7 +151,8 @@ int xhci_configure_endpoint(xhci_dev_t *xhci, xhci_device_t *device);
 int xhci_evaluate_context(xhci_dev_t *xhci, xhci_device_t *device);
 
 void *xhci_wait_for_transfer(xhci_device_t *device);
-bool xhci_is_valid_event(xhci_intr_t *intr);
+bool xhci_has_dequeue_event(xhci_intr_t *intr);
+bool xhci_has_event(xhci_intr_t *intr);
 
 xhci_device_t *xhci_alloc_device(xhci_dev_t *xhci, xhci_port_t *port, uint8_t slot);
 xhci_ep_t *xhci_alloc_device_ep(xhci_device_t *device, usb_ep_descriptor_t *desc);
@@ -158,7 +165,7 @@ int xhci_ring_device_db(xhci_device_t *device);
 int xhci_queue_setup(xhci_device_t *device, usb_setup_packet_t *setup, uint8_t type);
 int xhci_queue_data(xhci_device_t *device, uintptr_t buffer, uint16_t size, bool dir);
 int xhci_queue_status(xhci_device_t *device, bool dir);
-int xhci_queue_transfer(xhci_device_t *device, uintptr_t buffer, uint16_t size, bool dir);
+int xhci_queue_transfer(xhci_device_t *device, uintptr_t buffer, uint16_t size, bool dir, uint8_t flags);
 void *xhci_get_descriptor(xhci_device_t *device, uint8_t type, uint8_t index, size_t *size);
 char *xhci_get_string_descriptor(xhci_device_t *device, uint8_t index);
 
@@ -166,5 +173,6 @@ xhci_ring_t *xhci_alloc_ring();
 void xhci_free_ring(xhci_ring_t *ring);
 void xhci_ring_enqueue_trb(xhci_ring_t *ring, xhci_trb_t *trb);
 void xhci_ring_dequeue_trb(xhci_ring_t *ring, xhci_trb_t **result);
+void xhci_ring_read_trb(xhci_ring_t *ring, xhci_trb_t **result);
 
 #endif

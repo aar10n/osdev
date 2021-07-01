@@ -57,6 +57,29 @@
   .length = l,\
 })
 
+#define GET_IDLE(i, f) ((usb_setup_packet_t){ \
+  .request_type = {                           \
+    .recipient = USB_SETUP_INTERFACE,         \
+    .type = USB_SETUP_TYPE_CLASS,             \
+    .direction = USB_SETUP_DEV_TO_HOST,       \
+  },                                          \
+  .request = HID_GET_IDLE,                    \
+  .value = (i & 0xFF),                        \
+  .index = f,                                 \
+  .length = 1,\
+})
+
+#define SET_IDLE(d, i, f) ((usb_setup_packet_t){ \
+  .request_type = {                       \
+    .recipient = USB_SETUP_INTERFACE,     \
+    .type = USB_SETUP_TYPE_CLASS,         \
+    .direction = USB_SETUP_HOST_TO_DEV    \
+  },                                      \
+  .request = HID_SET_IDLE,                \
+  .value = ((d) << 8) | (i & 0xFF),       \
+  .index = f,                             \
+  .length = 0,                            \
+})
 
 //
 // Descriptors
@@ -76,10 +99,18 @@ typedef struct packed {
 
 //
 
+typedef struct {
+  uintptr_t alloc_ptr;
+  uintptr_t read_ptr;
+  uint16_t alloc_size;
+  uint16_t max_index;
+  page_t *page;
+} hid_buffer_t;
+
 typedef struct hid_device {
   hid_descriptor_t *desc;
   report_format_t *format;
-  void *buffer;
+  hid_buffer_t *buffer;
   size_t size;
 
   void *data;
@@ -89,5 +120,8 @@ typedef struct hid_device {
 
 void *hid_device_init(usb_device_t *dev);
 void hid_handle_event(usb_event_t *event, void *data);
+
+void hid_get_idle(xhci_device_t *device);
+void hid_set_idle(xhci_device_t *device, uint8_t duration);
 
 #endif

@@ -17,7 +17,7 @@
 
 #define xhci_log(str, args...) kprintf("[xhci] " str "\n", ##args)
 
-// #define XHCI_DEBUG
+#define XHCI_DEBUG
 #ifdef XHCI_DEBUG
 #define xhci_trace_debug(str, args...) kprintf("[xhci] " str "\n", ##args)
 #else
@@ -137,7 +137,7 @@ noreturn void *xhci_event_loop(void *arg) {
     }
 
     xhci_ring_t *ring = xhci->intr->ring;
-    while (xhci_is_valid_event(xhci->intr)) {
+    while (xhci_has_dequeue_event(xhci->intr)) {
       xhci_trb_t *trb;
       xhci_ring_dequeue_trb(ring, &trb);
       thread_send(trb);
@@ -162,11 +162,11 @@ noreturn void *xhci_device_event_loop(void *arg) {
   while (true) {
     if (!xhci_op->usbsts.evt_int) {
       cond_wait(&device->event);
-      // xhci_trace_debug("device event!");
+      xhci_trace_debug("device event!");
     }
 
     xhci_ring_t *ring = device->intr->ring;
-    while (xhci_is_valid_event(device->intr)) {
+    while (xhci_has_dequeue_event(device->intr)) {
       xhci_trb_t *trb;
       xhci_ring_dequeue_trb(ring, &trb);
       // thread_send(trb);
@@ -178,6 +178,7 @@ noreturn void *xhci_device_event_loop(void *arg) {
     xhci_intr(n)->iman.ip = 1;
     xhci_intr(n)->erdp_r = addr | ERDP_BUSY;
 
+    xhci_trace_debug("signalling");
     cond_signal(&device->event_ack);
   }
 }
@@ -255,13 +256,13 @@ void xhci_setup_devices() {
   // setup devices
   xhci_port_t *port = xhci->ports;
   while (port) {
-    if (port->number != 3) {
+    if (port->number != 5) {
       port = port->next;
       continue;
     }
 
     xhci_trace_debug("setting up device on port %d", port->number);
-    xhci_trace_debug("port speed: %s\n", get_speed_str(port->speed));
+    xhci_trace_debug("port speed: %s", get_speed_str(port->speed));
 
     xhci_trace_debug("enabling port %d", port->number);
     if (xhci_enable_port(xhci, port) != 0) {
@@ -654,9 +655,15 @@ void *xhci_wait_for_transfer(xhci_device_t *device) {
   return device->xhci->event_thread->data;
 }
 
-bool xhci_is_valid_event(xhci_intr_t *intr) {
+bool xhci_has_dequeue_event(xhci_intr_t *intr) {
   xhci_ring_t *ring = intr->ring;
   xhci_trb_t *trb = &ring->ptr[ring->index];
+  return trb->trb_type != 0 && trb->cycle == ring->ccs;
+}
+
+bool xhci_has_event(xhci_intr_t *intr) {
+  xhci_ring_t *ring = intr->ring;
+  xhci_trb_t *trb = &ring->ptr[ring->rd_index];
   return trb->trb_type != 0 && trb->cycle == ring->ccs;
 }
 
@@ -745,6 +752,8 @@ xhci_ep_t *xhci_alloc_device_ep(xhci_device_t *device, usb_ep_descriptor_t *desc
 
   xhci_trace_debug("endpoint %d", ep_num);
   xhci_trace_debug("index %d", index);
+  xhci_trace_debug("interval %d", desc->interval);
+  xhci_trace_debug("%s", get_speed_str(device->port->speed));
 
   xhci_endpoint_ctx_t *ctx = ep->ctx;
   ctx->ep_type = get_ep_type(ep_type, ep_dir);
@@ -929,7 +938,7 @@ int xhci_queue_data(xhci_device_t *device, uintptr_t buffer, uint16_t size, bool
   clear_trb(&trb);
 
   trb.trb_type = TRB_DATA_STAGE;
-  trb.buf_ptr = heap_ptr_phys(buffer);
+  trb.buf_ptr = vm_virt_to_phys(buffer);
   trb.trs_length = size;
   trb.td_size = 0;
   trb.dir = dir;
@@ -952,15 +961,17 @@ int xhci_queue_status(xhci_device_t *device, bool dir) {
   return 0;
 }
 
-int xhci_queue_transfer(xhci_device_t *device, uintptr_t buffer, uint16_t size, bool dir) {
+int xhci_queue_transfer(xhci_device_t *device, uintptr_t buffer, uint16_t size, bool dir, uint8_t flags) {
   kassert(xhc != NULL);
 
   xhci_normal_trb_t trb;
   clear_trb(&trb);
+  trb.ioc = flags & XHCI_XFER_IOC;
+  trb.isp = flags & XHCI_XFER_ISP;
+  trb.ns = flags & XHCI_XFER_NS;
   trb.buf_ptr = buffer;
   trb.trs_length = size;
   trb.intr_trgt = device->intr->number;
-  trb.ioc = 1;
   trb.trb_type = TRB_NORMAL;
 
   xhci_ep_t *ep = xhci_find_endpoint(device, dir);
@@ -1067,6 +1078,7 @@ xhci_ring_t *xhci_alloc_ring() {
   ring->page = alloc_zero_page(PE_WRITE);
   ring->ptr = (void *) ring->page->addr;
   ring->index = 0;
+  ring->rd_index = 0;
   ring->max_index = PAGE_SIZE / sizeof(xhci_trb_t);
   ring->ccs = 1;
   return ring;
@@ -1102,6 +1114,15 @@ void xhci_ring_dequeue_trb(xhci_ring_t *ring, xhci_trb_t **result) {
   if (ring->index == ring->max_index) {
     ring->index = 0;
     ring->ccs = !ring->ccs;
+  }
+  *result = trb;
+}
+
+void xhci_ring_read_trb(xhci_ring_t *ring, xhci_trb_t **result) {
+  xhci_trb_t *trb = &ring->ptr[ring->rd_index++];
+
+  if (ring->rd_index == ring->max_index) {
+    ring->rd_index = 0;
   }
   *result = trb;
 }

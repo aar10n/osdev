@@ -33,9 +33,11 @@
 
 // flag bits
 #define B_LOCKED        0 // mutex lock bit
+#define B_TIMEOUT      30 // condition timed out
 #define B_QUEUE_LOCKED 31 // mutex queue lock bit
 // flag masks
 #define M_LOCKED       (1 << B_LOCKED)
+#define M_TIMEOUT      (1 << B_TIMEOUT)
 #define M_QUEUE_LOCKED (1 << B_QUEUE_LOCKED)
 
 static inline uint64_t inline_lock(volatile uint32_t *flags) {
@@ -136,6 +138,7 @@ int mutex_unlock(mutex_t *mutex) {
 
 static void cond_timeout_cb(void *arg) {
   cond_t *cond = arg;
+  cond->flags |= M_TIMEOUT;
   cond_signal(cond);
 }
 
@@ -173,9 +176,13 @@ int cond_wait_timeout(cond_t *cond, uint64_t us) {
   }
 
   id_t id = create_timer(timer_now() + (us * 1000), cond_timeout_cb, cond);
-  int status = cond_wait(cond);
+  cond_wait(cond);
   timer_cancel(id);
-  return status;
+  if (cond->flags & M_TIMEOUT){
+    cond->flags ^= M_TIMEOUT;
+    return 1;
+  }
+  return 0;
 }
 
 int cond_signal(cond_t *cond) {

@@ -8,6 +8,7 @@
 #include <usb/hid-usage.h>
 #include <event.h>
 #include <gui/screen.h>
+#include <printf.h>
 
 key_code_t hid_keyboard_layout[] = {
   [HID_KEYBOARD_A] = VK_KEYCODE_A,
@@ -90,6 +91,9 @@ key_code_t hid_keyboard_layout[] = {
   [HID_KEYBOARD_UP] = VK_KEYCODE_UP
 };
 
+key_code_t hid_keyboard_get_key(uint8_t key) {
+  return hid_keyboard_layout[key];
+}
 
 hid_keyboard_t *hid_keyboard_init(report_format_t *format) {
   collection_node_t *collection = (void *) format->root->children;

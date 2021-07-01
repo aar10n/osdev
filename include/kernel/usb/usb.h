@@ -11,6 +11,15 @@
 typedef struct xhci_device xhci_device_t;
 typedef struct xhci_dev xhci_dev_t;
 
+// USB Device Mode
+#define USB_DEVICE_REGULAR    0x0
+#define USB_DEVICE_POLLING    0x1
+
+// USB Transfer Flags
+#define USB_XFER_IOC 0x1 // interrupt on completion
+#define USB_XFER_ISP 0x2 // interrupt on short packet
+#define USB_XFER_NS  0x4 // no snoop
+
 
 // Request Type
 #define USB_GET_STATUS        0x0
@@ -237,19 +246,20 @@ typedef struct {
   const char *name;
   uint8_t dev_class;
   uint8_t dev_subclass;
-
   void *(*init)(usb_device_t *dev);
   void (*handle_event)(usb_event_t *event, void *data);
 } usb_driver_t;
 
 typedef struct usb_dev {
   id_t id;
+  uint8_t mode;
+  uint32_t value;
+
   xhci_dev_t *hc;
   xhci_device_t *device;
 
   usb_driver_t *driver;
   void *driver_data;
-
   thread_t *thread;
 } usb_device_t;
 
@@ -260,6 +270,7 @@ usb_device_t *usb_get_device(id_t id);
 
 int usb_start_transfer(usb_device_t *dev, usb_dir_t dir);
 int usb_add_transfer(usb_device_t *device, usb_dir_t dir, void *buffer, size_t size);
+int usb_add_transfer_custom(usb_device_t *dev, usb_dir_t dir, void *buffer, size_t size, uint8_t flags);
 int usb_await_transfer(usb_device_t *device, usb_dir_t dir);
 
 usb_ep_descriptor_t *usb_get_ep_descriptor(usb_if_descriptor_t *interface, uint8_t index);

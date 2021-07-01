@@ -8,6 +8,7 @@
 #include <base.h>
 #include <usb/hid.h>
 #include <usb/hid-report.h>
+#include <event.h>
 
 // HID Keyboard Driver
 
@@ -109,6 +110,7 @@ typedef struct {
 } hid_keyboard_t;
 
 
+key_code_t hid_keyboard_get_key(uint8_t key);
 hid_keyboard_t *hid_keyboard_init(report_format_t *format);
 void hid_keyboard_handle_input(hid_device_t *device, const uint8_t *buffer);
 
