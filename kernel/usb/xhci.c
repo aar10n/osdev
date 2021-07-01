@@ -17,7 +17,7 @@
 
 #define xhci_log(str, args...) kprintf("[xhci] " str "\n", ##args)
 
-#define XHCI_DEBUG
+// #define XHCI_DEBUG
 #ifdef XHCI_DEBUG
 #define xhci_trace_debug(str, args...) kprintf("[xhci] " str "\n", ##args)
 #else

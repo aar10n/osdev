@@ -13,7 +13,7 @@
 
 #define hid_log(str, args...) kprintf("[hid] " str "\n", ##args)
 
-#define HID_DEBUG
+// #define HID_DEBUG
 #ifdef HID_DEBUG
 #define hid_trace_debug(str, args...) kprintf("[hid] " str "\n", ##args)
 #else
@@ -197,19 +197,5 @@ void hid_handle_event(usb_event_t *event, void *data) {
 
   uint8_t *buffer = hid_buffer_read(device->buffer);
   usb_add_transfer(usb_dev, USB_IN, (void *) hid_buffer_alloc(device->buffer), device->size);
-
-  for (int i = 2; i < device->size; i++) {
-    // kprintf("%x ", (int) buffer[i]);
-    if (buffer[i] == 0) {
-      continue;
-    }
-
-    key_event_t ev = {
-      .key_code = hid_keyboard_get_key(buffer[i])
-    };
-    char c = key_event_to_character(&ev);
-    kprintf("%c ", c);
-  }
-  kprintf("\n");
   device->handle_input(device, buffer);
 }

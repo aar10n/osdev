@@ -45,6 +45,7 @@ static rb_tree_events_t events = {
 
 void timer_handler() {
   cond_signal(&event);
+  thread_yield();
 }
 
 noreturn void *timer_event_loop(void *arg) {
