@@ -20,7 +20,7 @@
 #define SCHEDULER (PERCPU->scheduler)
 #define CURRENT (PERCPU->curr)
 
-#define SCHED_PERIOD   1000
+#define SCHED_PERIOD   50
 #define SCHED_POLICIES 2
 #define PTABLE_SIZE    1024
 #define SCHED_QUEUES   4

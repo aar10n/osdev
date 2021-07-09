@@ -15,10 +15,6 @@
 
 #include <asm/bits.h>
 
-fs_device_impl_t ahci_impl = {
-  ahci_read, ahci_write, ahci_release
-};
-
 
 typedef enum {
   DEVICE_TO_HOST, // read
@@ -177,7 +173,8 @@ void ahci_discover(ahci_controller_t *controller) {
       ahci_device_t *port = port_init(controller, i);
       ports[i] = port;
 
-      fs_register_device(port, &ahci_impl);
+      blkdev_t *blkdev = blkdev_init(port, ahci_read, ahci_write);
+      fs_register_device(DEV_HD, blkdev);
     } else {
       ports[i] = NULL;
     }
@@ -332,7 +329,7 @@ ssize_t ahci_read(fs_device_t *device, uint64_t lba, uint32_t count, void **buf)
   *saved = pages;
 
   *buf = ptr + PAGE_SIZE;
-  ahci_device_t *port = device->data;
+  ahci_device_t *port = ((blkdev_t *) device->driver)->self;
   return transfer_dma(DEVICE_TO_HOST, port, lba, count, pages->next->frame);
 }
 
@@ -346,7 +343,7 @@ ssize_t ahci_write(fs_device_t *device, uint64_t lba, uint32_t count, void **buf
   *saved = pages;
 
   *buf = (void *)((uintptr_t) ptr + PAGE_SIZE);
-  ahci_device_t *port = device->data;
+  ahci_device_t *port = ((blkdev_t *) device->driver)->self;
   return transfer_dma(HOST_TO_DEVICE, port, lba, count, pages->next->frame);
 }
 

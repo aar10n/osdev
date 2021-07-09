@@ -11,24 +11,25 @@
 
 typedef struct fs_device fs_device_t;
 
-/* Storage device operations */
-typedef struct fs_device_impl {
-  ssize_t (*read)(fs_device_t *device, uint64_t lba, uint32_t seccount, void **buf);
-  ssize_t (*write)(fs_device_t *device, uint64_t lba, uint32_t seccount, void **buf);
-  int (*release)(fs_device_t *device, void *buf);
-} fs_device_impl_t;
+typedef enum fs_dev_type {
+  DEV_FB,  // framebuffer
+  DEV_HD,  // hard drive
+  DEV_TTY, // serial port
+  DEV_SD,  // scsi drive
+} fs_dev_type_t;
 
-/* A storage device */
+/* a generic filesystem device */
 typedef struct fs_device {
-  dev_t id;                    // device id
-  void *data;                  // device specific data
-  fs_device_impl_t *impl;      // device operations
+  dev_t id;           // device id
+  dev_t num;          // device number
+  fs_dev_type_t type; // device type
+  char *name;         // device name
+  void *driver;       // device driver
 } fs_device_t;
 
-extern fs_device_impl_t pseudo_impl;
 
 void fs_device_init();
-dev_t fs_register_device(void *data, fs_device_impl_t *impl);
+dev_t fs_register_device(fs_dev_type_t type, void *driver);
 // dev_t fs_register_partition(fs_device_t *device, dev_t partition);
 
 #endif

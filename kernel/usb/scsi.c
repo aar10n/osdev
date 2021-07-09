@@ -5,6 +5,7 @@
 #include <usb/scsi.h>
 #include <usb/usb.h>
 #include <printf.h>
+#include <fs.h>
 #include <mm.h>
 
 void setup_command_block(usb_ms_cbw_t *cbw, void *cb, size_t size, size_t trnsf_len, bool dir) {
@@ -49,6 +50,9 @@ void *scsi_device_init(usb_device_t *dev) {
 
   kfree(cbw);
   kfree(csw);
+
+  blkdev_t *blkdev = blkdev_init(dev, scsi_read, scsi_write);
+  fs_register_device(DEV_SD, blkdev);
   return device;
 }
 

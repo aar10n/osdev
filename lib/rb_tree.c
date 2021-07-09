@@ -456,7 +456,7 @@ rb_iter_t *rb_tree_make_iter(rb_tree_t *tree, rb_node_t *next, rb_iter_type_t ty
   iter->type = type;
   iter->tree = tree;
   iter->next = next;
-  iter->has_next = true;
+  iter->has_next = tree->nodes > 0;
   return iter;
 }
 
