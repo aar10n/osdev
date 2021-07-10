@@ -6,6 +6,7 @@
 #include <process.h>
 #include <fs.h>
 #include <mm.h>
+#include <printf.h>
 
 #define UID (current_process->uid)
 #define GID (current_process->gid)
@@ -75,6 +76,17 @@ inode_t *inode_create(fs_t *fs, mode_t mode) {
   return inode;
 }
 
+void inode_insert(inode_t *inode) {
+  if (inode == NULL) {
+    return;
+  }
+
+  mutex_init(&inode->lock, 0);
+  mutex_lock(&inodes->lock);
+  rb_tree_insert(inodes->inodes, inode->ino, inode);
+  mutex_unlock(&inodes->lock);
+}
+
 int inode_delete(fs_t *fs, inode_t *inode) {
   int result = fs->impl->remove(fs, inode);
   if (result < 0) {
@@ -85,4 +97,15 @@ int inode_delete(fs_t *fs, inode_t *inode) {
   rb_tree_delete(inodes->inodes, inode->ino);
   mutex_unlock(&inodes->lock);
   return 0;
+}
+
+void inode_remove(inode_t *inode) {
+  if (inode == NULL) {
+    return;
+  }
+
+  mutex_lock(&inodes->lock);
+  rb_tree_delete(inodes->inodes, inode->ino);
+  mutex_unlock(&inodes->lock);
+  kfree(inode);
 }

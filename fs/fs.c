@@ -5,7 +5,6 @@
 #include <fs.h>
 #include <vfs.h>
 #include <printf.h>
-#include <panic.h>
 #include <mm/heap.h>
 #include <errno.h>
 
@@ -14,7 +13,6 @@
 #include <path.h>
 #include <device.h>
 #include <process.h>
-#include <atomic.h>
 
 static dev_t __dev_id = 0;
 
@@ -35,7 +33,6 @@ void fs_init() {
   path_init();
   vfs_init();
 
-  fs_register_device(NULL, &pseudo_impl);
   current_process->pwd = fs_root;
 
   kprintf("[fs] done!\n");
@@ -61,15 +58,8 @@ int fs_mount(fs_driver_t *driver, const char *device, const char *path) {
   NOT_NULL(parent = vfs_get_node(path_dirname(p), O_DIRECTORY));
 
   fs_device_t *dev = dev_node->ptr1;
-
-  dev_t dev_id = atomic_fetch_add(&__dev_id, 1);
-  fs_device_t *copy = kmalloc(sizeof(fs_device_t));
-  memcpy(dev, copy, sizeof(fs_device_t));
-  copy->id = dev_id;
-
   fs_node_t *mount = vfs_create_node(parent, S_IFDIR | S_IFMNT);
-  mount->dev = dev_id;
-  // mount->ifmnt.shadow = NULL;
+  // mount->ptr1 = parent;
 
   path_t basename = path_basename(p);
   char name[p_len(basename) + 1];
@@ -82,11 +72,15 @@ int fs_mount(fs_driver_t *driver, const char *device, const char *path) {
     vfs_swap_node(child, mount);
   }
 
-  fs_t *instance = driver->impl->mount(copy, mount);
+  fs_t *instance = driver->impl->mount(dev->driver, mount);
   if (instance == NULL) {
     kfree(mount);
     return -1;
   }
+
+  inode_remove(inode_get(mount));
+  mount->fs = instance;
+  inode_get(mount);
 
   return 0;
 }

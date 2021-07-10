@@ -17,7 +17,6 @@ static int y = 0;
 static uint32_t *fb = (void *) FRAMEBUFFER_VA;
 
 void screen_print_char(char ch) {
-  kprintf("x: %d | y: %d\n", x, y);
   switch (ch) {
     case '\n':
       x = 0;

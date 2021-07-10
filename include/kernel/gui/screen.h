@@ -2,8 +2,8 @@
 // Created by Aaron Gill-Braun on 2021-04-20.
 //
 
-#ifndef DRIVERS_SCREEN_H
-#define DRIVERS_SCREEN_H
+#ifndef KERNEL_GUI_SCREEN_H
+#define KERNEL_GUI_SCREEN_H
 
 #include <base.h>
 

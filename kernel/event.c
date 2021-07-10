@@ -112,6 +112,12 @@ char key_to_character_upper[] = {
   [VK_KEYCODE_SLASH] = '?',
 };
 
+//
+
+void queue_key_event(key_event_t *event) {
+
+}
+
 bool is_printable_key(key_code_t key) {
   if ((key >= VK_KEYCODE_A && key <= VK_KEYCODE_0) ||
       (key >= VK_KEYCODE_MINUS && key <= VK_KEYCODE_SLASH) ||

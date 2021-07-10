@@ -19,11 +19,8 @@
 
 
 #define PWD (current_process->pwd)
-// #define PWD (PERCPU->pwd)
 #define UID (current_process->uid)
-// #define UID (PERCPU->uid)
 #define GID (current_process->gid)
-// #define GID (PERCPU->gid)
 
 #define as_node(ptr) ((fs_node_t *)(ptr))
 
@@ -99,6 +96,8 @@ void vfs_init() {
   if (result < 0) {
     panic("failed to create directory: /dev | %s", strerror(errno));
   }
+
+  fs_device_init();
 }
 
 void vfs_init_proc(process_t *proc) {
@@ -383,10 +382,7 @@ int vfs_add_device(fs_device_t *device) {
 
   fs_node_t *dev = vfs_create_node(dev_dir, S_IFBLK);
   dev->ptr1 = device;
-
-  char name[MAX_FILE_NAME];
-  ksprintf(name, "disk%d", device->id);
-  return vfs_add_node(dev_dir, dev, name);
+  return vfs_add_node(dev_dir, dev, device->name);
 }
 
 int vfs_add_node(fs_node_t *parent, fs_node_t *child, char *name) {

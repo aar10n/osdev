@@ -59,21 +59,20 @@ void launch() {
 
   usb_init();
 
-  kprintf("done!\n");
-
   // usb_device_t *drive = usb_get_device(0);
-  // blkdev_t *blkdev = blkdev_init(drive, scsi_read, scsi_write);
-  //
-  // inode_t *inode = kmalloc(sizeof(inode_t));
-  // fs_t *fs = kmalloc(sizeof(fs_t));
-  //
+
+  // fs_lsdir("/dev");
+
+  // // inode_t *inode = kmalloc(sizeof(inode_t));
   // fs_t *fatfs = fat_mount(blkdev, NULL);
+  // fatfs->device = blkdev;
+  // fat_locate(fatfs, NULL, 0);
 
-  // fs->device = blkdev;
-  // fs->data = data;
-  //
-  // fat_locate(fs, NULL, 0);
+  fs_mount(fatfs_driver, "/dev/sda", "/test");
 
+  fs_lsdir("/test");
+
+  kprintf("done!\n");
   thread_block();
 }
 

@@ -87,7 +87,8 @@ extern inode_table_t *inodes;
 inode_table_t *create_inode_table();
 inode_t *inode_get(fs_node_t *node);
 inode_t *inode_create(fs_t *fs, mode_t mode);
+void inode_insert(inode_t *inode);
 int inode_delete(fs_t *fs, inode_t *inode);
-
+void inode_remove(inode_t *inode);
 
 #endif
