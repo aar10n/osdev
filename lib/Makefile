@@ -5,7 +5,7 @@
 # lib
 lib += atomic.c bitmap.c format.c \
 	hash_table.c interval_tree.c \
-	 murmur3.c \
+	list.c murmur3.c \
 	rb_tree.c ringbuf.c
 
 # lib/asm

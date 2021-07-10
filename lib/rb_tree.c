@@ -3,7 +3,6 @@
 //
 
 #include "rb_tree.h"
-
 #include <string.h>
 
 #ifndef _assert
