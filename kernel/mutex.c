@@ -188,7 +188,9 @@ int cond_wait_timeout(cond_t *cond, uint64_t us) {
 int cond_signal(cond_t *cond) {
   thread_t *thread = current_thread;
   if (cond->queue.tail == NULL) {
-    cond->flags |= M_LOCKED;
+    if (!(cond->flags & COND_NOEMPTY)) {
+      cond->flags |= M_LOCKED;
+    }
     return 0;
   }
 

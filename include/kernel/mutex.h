@@ -32,10 +32,11 @@ int mutex_unlock(mutex_t *mutex);
 // -------- Conditions --------
 
 #define COND_SIGNALED 0x1 // condition is signaled
+#define COND_NOEMPTY  0x2 // signal doesnt work if queue is empty
 
 typedef struct cond {
-  uint32_t flags;  // flags
-  tqueue_t queue;  // queue
+  volatile uint32_t flags;  // flags
+  tqueue_t queue;           // queue
 } cond_t;
 
 void cond_init(cond_t *cond, uint32_t flags);
