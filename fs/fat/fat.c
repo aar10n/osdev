@@ -33,6 +33,20 @@ const char *fat_types[] = {
   [FAT32] = "FAT32"
 };
 
+fs_impl_t fat_impl = {
+  .mount = fat_mount,
+  .locate = fat_locate,
+  .read = fat_read,
+};
+
+fs_driver_t fat_driver = {
+  .name = "FAT",
+  .cap = FS_CAP_RO,
+  .impl = &fat_impl,
+};
+
+fs_driver_t *fatfs_driver = &fat_driver;
+
 //
 
 static inline uint32_t get_first_cluster(fat_dirent_t *file) {
@@ -46,6 +60,10 @@ static inline uint32_t cluster_to_entry(fs_fat_t *fatfs, uint64_t n) {
     return ((uint32_t *) fatfs->fat)[n] & 0x0FFFFFFF;
   }
   return 0;
+}
+
+static inline uint32_t cluster_to_sector(fs_fat_t *fatfs, uint64_t n) {
+  return ((n - 2) * fatfs->bpb->sec_per_clus) + fatfs->first_sector;
 }
 
 static inline ent_type_t entry_to_type(fs_fat_t *fatfs, uint32_t entry) {
@@ -130,8 +148,8 @@ void fat_print_dir(fs_t *fs, fat_dirent_t *dir, int indent) {
   fat_dirent_t *dirent = dir;
   while (dirent->name[0] != 0) {
     kprintf("%s%s  (%d) %X\n", space, dirent->name, dirent->file_size, dirent->attr);
-    uint32_t n = ((uint32_t) dirent->fst_clus_hi << 16) | dirent->fst_clus_lo;
-    if (n < 2) {
+    uint32_t n = get_first_cluster(dirent);
+    if (n < 2 || dirent->attr & FAT_VOLUME_ID || dirent->name[0] == '.') {
       dirent++;
       continue;
     }
@@ -140,13 +158,15 @@ void fat_print_dir(fs_t *fs, fat_dirent_t *dir, int indent) {
 
     uint32_t count = max(dirent->file_size / SEC_SIZE, 1);
 
+    uint32_t sector = cluster_to_sector(fatfs, n);
     if (dirent->attr & FAT_DIRECTORY) {
-      void *next_dir = blkdev_read(fs->device, dirent->fst_clus_lo, count);
+      // uint32_t x = cluster_to_entry()
+      void *next_dir = blkdev_read(fs->device, sector, count);
       fat_print_dir(fs, next_dir, indent + 2);
     } else if (dirent->attr & FAT_VOLUME_ID) {
 
     } else if (dirent->file_size > 0 && dirent->file_size <= 1024) {
-      void *file = blkdev_read(fs->device, dirent->fst_clus_lo, count);
+      void *file = blkdev_read(fs->device, sector, count);
       uint8_t *buffer = file;
       for (int i = 0; i < dirent->file_size; i++) {
         kprintf("%02X ", buffer[i]);
@@ -305,6 +325,7 @@ fs_t *fat_mount(blkdev_t *dev, fs_node_t *mount) {
   fatfs->fat_size = fat_size;
   fatfs->total_sectors = total_sectors;
   fatfs->data_sectors = data_sectors;
+  fatfs->first_sector = bpb->rsvd_sec_cnt + (fat_size * bpb->num_fats) + root_sectors;
   fatfs->cluster_count = cluster_count;
 
   fat_log("volume type: %s", fat_types[fatfs->type]);
@@ -333,6 +354,8 @@ fs_t *fat_mount(blkdev_t *dev, fs_node_t *mount) {
   fs->mount = mount;
   fs->data = fatfs;
 
+  inode_t *root = fat_locate(fs, NULL, 0);
+
   return fs;
 }
 
@@ -356,22 +379,39 @@ inode_t *fat_locate(fs_t *fs, inode_t *parent, ino_t ino) {
     panic("parent not loaded");
   }
 
-  fat_dirent_t *ent = fat_get_dirent(fs, parent_dir, ino);
-  if (ent == NULL) {
-    return NULL;
-  }
+  if (ino == 0) {
 
-  uint32_t sectors;
-  load_chunk_t *chunks = fat_get_load_chunks(fs, ent, &sectors);
+  }
 
   inode_t *inode = kmalloc(sizeof(inode_t));
   memset(inode, 0, sizeof(inode_t));
   inode->ino = ino;
-  inode->mode = dirent_to_mode(ent);
-  inode->size = ent->file_size > 0 ? ent->file_size : sectors * SEC_SIZE;
-  inode->blocks = sectors;
-  inode->blksize = fatfs->bpb->byts_per_sec;
-  inode->data = chunks;
+  if (ino == 0) {
+
+
+  } else {
+    fat_dirent_t *ent = fat_get_dirent(fs, parent_dir, ino);
+    if (ent == NULL) {
+      kfree(inode);
+      return NULL;
+    }
+
+    uint32_t sectors;
+    load_chunk_t *chunks = fat_get_load_chunks(fs, ent, &sectors);
+
+    inode->mode = dirent_to_mode(ent);
+    inode->size = ent->file_size > 0 ? ent->file_size : sectors * SEC_SIZE;
+    inode->blocks = sectors;
+    inode->blksize = fatfs->bpb->byts_per_sec;
+    inode->data = chunks;
+  }
+
+
+  //
+  // inode_t *inode = kmalloc(sizeof(inode_t));
+  // memset(inode, 0, sizeof(inode_t));
+  // inode->ino = ino;
+
   return inode;
 }
 

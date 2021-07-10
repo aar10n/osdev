@@ -42,6 +42,8 @@ typedef enum {
 //   0xF8 -> "fixed" (non-removable) media
 //
 
+extern fs_driver_t *fatfs_driver;
+
 // BPB common to all FAT volumes
 typedef struct packed {
   uint8_t bs_jmp_boot[3]; // jump instructions to boot code
@@ -150,6 +152,7 @@ typedef struct {
   uint32_t fat_size;
   uint32_t total_sectors;
   uint32_t data_sectors;
+  uint32_t first_sector;
   uint32_t cluster_count;
 
   fat_bpb_t *bpb;
