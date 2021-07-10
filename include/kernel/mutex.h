@@ -45,4 +45,18 @@ int cond_wait_timeout(cond_t *cond, uint64_t us);
 int cond_signal(cond_t *cond);
 int cond_broadcast(cond_t *cond);
 
+// -------- Read/Write Locks --------
+
+typedef struct rw_lock {
+  mutex_t mutex;
+  cond_t cond;
+  int64_t readers;
+} rw_lock_t;
+
+void rw_lock_init(rw_lock_t *lock);
+int rw_lock_read(rw_lock_t *lock);
+int rw_lock_write(rw_lock_t *lock);
+int rw_unlock_read(rw_lock_t *lock);
+int rw_unlock_write(rw_lock_t *lock);
+
 #endif

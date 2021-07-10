@@ -222,3 +222,42 @@ int cond_broadcast(cond_t *cond) {
   thread->preempt_count--;
   return 0;
 }
+
+// Read/Write Locks
+
+void rw_lock_init(rw_lock_t *lock) {
+  mutex_init(&lock->mutex, 0);
+  cond_init(&lock->cond, COND_NOEMPTY);
+  lock->readers = 0;
+}
+
+int rw_lock_read(rw_lock_t *lock) {
+  mutex_lock(&lock->mutex);
+  lock->readers++;
+  mutex_unlock(&lock->mutex);
+  return 0;
+}
+
+int rw_lock_write(rw_lock_t *lock) {
+  mutex_lock(&lock->mutex);
+  for (int64_t i = 0; i < lock->readers; i++) {
+    cond_signal(&lock->cond);
+  }
+  return 0;
+}
+
+int rw_unlock_read(rw_lock_t *lock) {
+  mutex_lock(&lock->mutex);
+  lock->readers--;
+  if (lock->readers == 0) {
+    cond_signal(&lock->cond);
+  }
+  mutex_unlock(&lock->mutex);
+  return 0;
+}
+
+int rw_unlock_write(rw_lock_t *lock) {
+  cond_signal(&lock->cond);
+  mutex_unlock(&lock->mutex);
+  return 0;
+}
