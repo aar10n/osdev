@@ -5,12 +5,18 @@
 #include <list.h>
 #include <mm.h>
 
-list_head_t *list_init() {
+list_head_t *list_create() {
   list_head_t *head = kmalloc(sizeof(list_head_t));
   head->first = NULL;
   head->last = NULL;
   spin_init(&head->lock);
   return head;
+}
+
+void list_init(list_head_t *list) {
+  list->first = NULL;
+  list->last = NULL;
+  spin_init(&list->lock);
 }
 
 void list_add(list_head_t *list, void *data) {

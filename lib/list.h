@@ -20,7 +20,8 @@ typedef struct list_head {
 } list_head_t;
 
 
-list_head_t *list_init();
+list_head_t *list_create();
+void list_init();
 void list_add(list_head_t *list, void *data);
 void *list_remove(list_head_t *list, list_node_t *node);
 
