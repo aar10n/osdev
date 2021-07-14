@@ -5,12 +5,6 @@
 #ifndef LIBC_ERRNO_H
 #define LIBC_ERRNO_H
 
-#ifdef __KERNEL__
-#define errno (PERCPU->errno)
-#else
-extern _Thread_local int errno;
-#endif
-
 #define E2BIG 1            // Argument list too long.
 #define EACCES 2           // Permission denied.
 #define EADDRINUSE 3       // Address in use.

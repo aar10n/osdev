@@ -8,6 +8,8 @@
 #include <base.h>
 #include <mutex.h>
 
+#define ERRNO (current_thread->errno)
+
 #define THREAD_STACK_SIZE 0x2000 // 8 KiB
 #define TLS_SIZE 0x // 8 KiB
 #define DEFAULT_RFLAGS 0x246
@@ -68,7 +70,7 @@ typedef struct thread {
   uint32_t signal;        // signal mask
   uint32_t flags;         // flags mask
 
-  int _errno;             // thread local errno
+  int errno;              // thread local errno
   int preempt_count;      // preempt disable counter
   void *data;             // thread data pointer
 

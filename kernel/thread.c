@@ -122,7 +122,7 @@ thread_t *thread_copy(thread_t *other) {
   thread->priority = other->priority;
   thread->status = other->status;
 
-  thread->_errno = other->_errno;
+  thread->errno = other->errno;
   thread->preempt_count = 0; // what do we do here?
 
   return thread;
