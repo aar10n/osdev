@@ -45,7 +45,7 @@ typedef struct process {
 
   uid_t uid;           // user id
   gid_t gid;           // group id
-  fs_node_t *pwd;      // process working directory
+  dentry_t *pwd;      // process working directory
   file_table_t *files; // open file table
 
   thread_t *main;      // main thread (first)
