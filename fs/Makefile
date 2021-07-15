@@ -3,7 +3,7 @@
 #
 
 # fs
-fs += acl.c blkdev.c device.c dentry.c \
+fs += acl.c blkdev.c device.c dcache.c \
 	file.c fs.c inode.c path.c \
 	stat.c utils.c vfs.c
 
