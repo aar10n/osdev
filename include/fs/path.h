@@ -21,7 +21,7 @@
   ((path).str == path_slash.str)
 
 #define p_is_dot(path) \
-  ((path).str == path_slash.str)
+  ((path).str == path_dot.str)
 
 
 typedef struct path {
@@ -40,6 +40,7 @@ void path_init();
 
 path_t str_to_path(const char *path);
 char *path_to_str(path_t path);
+uint32_t path_to_hash(path_t path);
 
 void pathcpy(char *dest, path_t path);
 int patheq(path_t path1, path_t path2);
@@ -61,5 +62,7 @@ path_t path_suffix(path_t path);
 path_t path_next_part(path_t path);
 
 void path_print(path_t path);
+
+int path_cleanup(const char *path, char *buf, size_t len);
 
 #endif

@@ -7,6 +7,10 @@
 #include <printf.h>
 #include <fs.h>
 #include <mm.h>
+#include <panic.h>
+#include <printf.h>
+
+char sd_suffix = 'a';
 
 void setup_command_block(usb_ms_cbw_t *cbw, void *cb, size_t size, size_t trnsf_len, bool dir) {
   memset(cbw, 0, sizeof(usb_ms_cbw_t));
@@ -52,7 +56,18 @@ void *scsi_device_init(usb_device_t *dev) {
   kfree(csw);
 
   blkdev_t *blkdev = blkdev_init(dev, scsi_read, scsi_write);
-  fs_register_device(DEV_SD, blkdev);
+  dev_t d = fs_register_blkdev(1, blkdev);
+  kassert(d > 0);
+
+  char suffix = sd_suffix;
+  sd_suffix++;
+
+  char path[12];
+  ksnprintf(path, 12, "/dev/sd%c", suffix);
+
+  if (fs_mknod(path, S_IFBLK, d) < 0) {
+    panic("failed to add device node");
+  }
   return device;
 }
 
@@ -113,11 +128,11 @@ ssize_t scsi_read(usb_device_t *dev, uint64_t lba, uint32_t count, void *buf) {
   // kprintf("[scsi] read successful\n");
   return size;
 
-  FAIL:
-    kfree(cbw);
-    kfree(csw);
-    // kprintf("[scsi] read failed\n");
-    return -EFAILED;
+ FAIL:
+  kfree(cbw);
+  kfree(csw);
+  // kprintf("[scsi] read failed\n");
+  return -EFAILED;
 }
 
 
@@ -171,9 +186,9 @@ ssize_t scsi_write(usb_device_t *dev, uint64_t lba, uint32_t count, void *buf) {
   kprintf("[scsi] write successful\n");
   return size;
 
-  FAIL:
-    kfree(cbw);
-    kfree(csw);
-    kprintf("[scsi] write failed\n");
-    return -EFAILED;
+ FAIL:
+  kfree(cbw);
+  kfree(csw);
+  kprintf("[scsi] write failed\n");
+  return -EFAILED;
 }

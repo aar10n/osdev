@@ -102,7 +102,7 @@ static inline mode_t dirent_to_mode(fat_dirent_t *dirent) {
 //
 
 void fat_print_clusters(fs_t *fs, fat_dirent_t *file) {
-  fs_fat_t *fatfs = fs->data;
+  fs_fat_t *fatfs = fs->pages;
 
   bool first = true;
   uint32_t n = get_first_cluster(file);
@@ -137,7 +137,7 @@ void fat_print_clusters(fs_t *fs, fat_dirent_t *file) {
 }
 
 void fat_print_dir(fs_t *fs, fat_dirent_t *dir, int indent) {
-  fs_fat_t *fatfs = fs->data;
+  fs_fat_t *fatfs = fs->pages;
 
   char space[indent + 1];
   space[indent] = '\0';
@@ -183,7 +183,7 @@ void fat_print_dir(fs_t *fs, fat_dirent_t *dir, int indent) {
 }
 
 load_chunk_t *fat_get_load_chunks(fs_t *fs, fat_dirent_t *file, uint32_t *sec_count) {
-  fs_fat_t *fatfs = fs->data;
+  fs_fat_t *fatfs = fs->pages;
   fat_bpb_t *bpb = fatfs->bpb;
 
   uint32_t n = get_first_cluster(file);
@@ -245,7 +245,7 @@ fat_dirent_t *fat_get_dirent(fs_t *fs, fat_dirent_t *dir, ino_t ino) {
 
 int fat_load_file(fs_t *fs, inode_t *inode) {
   blkdev_t *dev = fs->device;
-  fs_fat_t *fatfs = fs->data;
+  fs_fat_t *fatfs = fs->pages;
   if (IS_LOADED(inode->mode)) {
     return 0;
   }
@@ -254,7 +254,7 @@ int fat_load_file(fs_t *fs, inode_t *inode) {
   page_t *buffer = alloc_pages(SIZE_TO_PAGES(size), PE_WRITE);
 
   uintptr_t ptr = buffer->addr;
-  load_chunk_t *chunk = inode->data;
+  load_chunk_t *chunk = inode->pages;
   while (chunk != NULL) {
     size_t sectors = chunk->count * fatfs->bpb->sec_per_clus;
     if (blkdev_readbuf(dev, chunk->cluster, sectors, (void *) ptr) != 0) {
@@ -268,7 +268,7 @@ int fat_load_file(fs_t *fs, inode_t *inode) {
     chunk = next;
   }
 
-  inode->data = (void *) buffer->addr;
+  inode->pages = (void *) buffer->addr;
   inode->mode |= S_ISLDD;
   return 0;
 }
@@ -352,7 +352,7 @@ fs_t *fat_mount(blkdev_t *dev, fs_node_t *mount) {
   fs_t *fs = kmalloc(sizeof(fs_t));
   fs->device = dev;
   fs->mount = mount;
-  fs->data = fatfs;
+  fs->pages = fatfs;
 
   inode_t *root = fat_locate(fs, NULL, 0);
 
@@ -368,13 +368,13 @@ int fat_unmount(fs_t *fs) {
 // inode_t *(*locate)(fs_t *fs, inode_t *parent, ino_t ino);
 inode_t *fat_locate(fs_t *fs, inode_t *parent, ino_t ino) {
   blkdev_t *dev = fs->device;
-  fs_fat_t *fatfs = fs->data;
+  fs_fat_t *fatfs = fs->pages;
 
   fat_dirent_t *parent_dir;
   if (parent == NULL) {
     parent_dir = fatfs->root;
   } else if (IS_LOADED(parent->mode)) {
-    parent_dir = parent->data;
+    parent_dir = parent->pages;
   } else {
     panic("parent not loaded");
   }
@@ -403,7 +403,7 @@ inode_t *fat_locate(fs_t *fs, inode_t *parent, ino_t ino) {
     inode->size = ent->file_size > 0 ? ent->file_size : sectors * SEC_SIZE;
     inode->blocks = sectors;
     inode->blksize = fatfs->bpb->byts_per_sec;
-    inode->data = chunks;
+    inode->pages = chunks;
   }
 
 
@@ -441,7 +441,7 @@ ssize_t fat_read(fs_t *fs, inode_t *inode, off_t offset, size_t nbytes, void *bu
 
   off_t available = inode->size - offset;
   ssize_t bytes = min(available, nbytes);
-  void *buffer = offset_ptr(inode->data, offset);
+  void *buffer = offset_ptr(inode->pages, offset);
   memcpy(buf, buffer, bytes);
   return bytes;
 }

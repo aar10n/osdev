@@ -48,4 +48,31 @@ static inline page_t *alloc_zero_page(uint16_t flags) {
   return alloc_zero_pages(1, flags);
 }
 
+static inline void free_pages(page_t *pages) {
+  if (pages == NULL)
+    return;
+
+  if (pages->flags.present) {
+    vm_unmap_page(pages);
+  }
+  mm_free_page(pages);
+}
+
+static inline void map_pages(page_t *pages) {
+  if (pages == NULL)
+    return;
+
+  void *ptr = vm_map_page(pages);
+  if (ptr == NULL) {
+    panic("[mm] remap failed");
+    return;
+  }
+}
+
+static inline void unmap_pages(page_t *pages) {
+  if (pages == NULL)
+    return;
+  vm_unmap_page(pages);
+}
+
 #endif

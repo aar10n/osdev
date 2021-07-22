@@ -264,5 +264,5 @@ void print_debug_thread(thread_t *thread) {
           "  \n"
           "  errno: %d\n",
           thread->tid, thread->cpu_id, thread->policy, thread->priority,
-          get_status_str(thread->status), thread->signal, thread->flags, thread->_errno);
+          get_status_str(thread->status), thread->signal, thread->flags, thread->errno);
 }

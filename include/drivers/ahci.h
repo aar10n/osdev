@@ -393,9 +393,9 @@ typedef struct ahci_controller {
   pcie_device_t *pci;
 } ahci_controller_t;
 
-void ahci_init();
-ssize_t ahci_read(fs_device_t *device, uint64_t lba, uint32_t count, void **buf);
-ssize_t ahci_write(fs_device_t *device, uint64_t lba, uint32_t count, void **buf);
-int ahci_release(fs_device_t *device, void *buf);
+// void ahci_init();
+// ssize_t ahci_read(fs_device_t *device, uint64_t lba, uint32_t count, void **buf);
+// ssize_t ahci_write(fs_device_t *device, uint64_t lba, uint32_t count, void **buf);
+// int ahci_release(fs_device_t *device, void *buf);
 
 #endif

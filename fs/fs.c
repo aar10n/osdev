@@ -3,469 +3,554 @@
 //
 
 #include <fs.h>
-#include <vfs.h>
-#include <printf.h>
-#include <mm/heap.h>
-#include <errno.h>
-
-#include <inode.h>
-#include <dirent.h>
-#include <path.h>
+#include <dcache.h>
+#include <dentry.h>
 #include <device.h>
+#include <file.h>
+#include <inode.h>
+#include <path.h>
+#include <thread.h>
 #include <process.h>
+#include <hash_table.h>
+#include <panic.h>
 
-static dev_t __dev_id = 0;
+#include <ramfs/ramfs.h>
+
+// #define FS_DEBUG
+#ifdef FS_DEBUG
+#define fs_trace_debug(str, args...) kprintf("[fs] " str "\n", ##args)
+#else
+#define fs_trace_debug(str, args...)
+#endif
+
+dentry_t *fs_root;
+map_t(file_system_t *) fs_types;
+
+
+int validate_open_flags(dentry_t *dentry, int flags) {
+  uint32_t type = flags & OPEN_TYPE_MASK;
+  if (type & (type - 1)) {
+    // if more than one type flag is set
+    ERRNO = EINVAL;
+    return -1;
+  }
+
+  if (dentry == NULL) {
+    if (!(flags & O_CREAT)) {
+      if (ERRNO == ENOTDIR) {
+        ERRNO = ENOTDIR;
+        return -1;
+      }
+      ERRNO = ENOENT;
+      return -1;
+    }
+  } else {
+    if ((flags & O_CREAT && flags & O_EXCL)) {
+      ERRNO = EEXIST;
+      return -1;
+    }
+    if (IS_IFDIR(dentry->mode) && (flags & O_EXEC)) {
+      ERRNO = EINVAL;
+      return -1;
+    }
+    if (IS_IFDIR(dentry->mode) && (flags & O_WRONLY || flags & O_RDWR)) {
+      ERRNO = EISDIR;
+      return -1;
+    }
+    if (IS_IFDIR(dentry->mode) && (flags & O_CREAT && !(flags & O_DIRECTORY))) {
+      ERRNO = EISDIR;
+      return -1;
+    }
+  }
+  return 0;
+}
+
+dentry_t *dentry_from_basename(dentry_t *parent, const char *path) {
+  path_t p = str_to_path(path);
+  if (p_len(p) >= MAX_PATH) {
+    ERRNO = ENAMETOOLONG;
+    return NULL;
+  }
+
+  path_t base = path_basename(p);
+  if (p_len(base) >= MAX_FILE_NAME) {
+    ERRNO = ENAMETOOLONG;
+    return NULL;
+  }
+
+  char name[MAX_FILE_NAME + 1];
+  pathcpy(name, base);
+  return d_alloc(parent, name);
+}
+
+int mount_internal(const char *path, device_t *device, file_system_t *fs) {
+  if (device && major(device->dev) == DEVICE_BLKDEV) {
+    ERRNO = ENOTBLK;
+    return -1;
+  }
+
+  dentry_t *parent = NULL;
+  dentry_t *dentry = resolve_path(path, *current_process->pwd, 0, &parent);
+  if (dentry != NULL) {
+    ERRNO = EEXIST;
+    return -1;
+  } else if (parent == NULL) {
+    return -1;
+  }
+
+  // mount filesystem
+  dentry = dentry_from_basename(parent, path);
+  if (dentry == NULL) {
+    return -1;
+  }
+
+  super_block_t *sb = fs->mount(fs, device ? device->device : NULL, dentry);
+  if (sb == NULL) {
+    d_destroy(dentry);
+    return -1;
+  }
+
+  if (d_populate_dir(dentry) < 0) {
+    return -1;
+  }
+
+  d_add_child(parent, dentry);
+  dentry->inode->sb = sb;
+  return 0;
+}
+
 
 //
 // Filesystem API
 //
 
-// 0x8000
-// 0x9000
-
-// 0x9000
-// 0x1000
-//
 
 void fs_init() {
-  kprintf("[fs] initializing...\n");
-
+  dcache_init();
   path_init();
-  vfs_init();
+  map_init(&fs_types);
 
-  current_process->pwd = fs_root;
+  ramfs_init();
 
-  kprintf("[fs] done!\n");
+  file_system_t *ramfs = map_get(&fs_types, "ramfs");
+  if (ramfs == NULL) {
+    panic("failed to register ramfs");
+  }
+
+  dentry_t *dentry = d_alloc(NULL, "/");
+  dentry->parent = dentry;
+  if (ramfs->mount(ramfs, NULL, dentry) < 0) {
+    panic("failed to mount root fs");
+  }
+  d_populate_dir(dentry);
+  fs_root = dentry;
+
+  if (mount_internal("/dev", NULL, ramfs) < 0) {
+    panic("failed to mount /dev");
+  }
+}
+
+int fs_register(file_system_t *fs) {
+  if (map_get(&fs_types, fs->name)) {
+    ERRNO = EINVAL;
+    return -1;
+  }
+  map_set(&fs_types, (char *) fs->name, fs);
+  return 0;
+}
+
+dev_t fs_register_blkdev(uint8_t minor, blkdev_t *blkdev) {
+  return register_blkdev(minor, blkdev);
+}
+
+dev_t fs_register_chrdev(uint8_t minor, chrdev_t *chrdev) {
+  return register_chrdev(minor, chrdev);
 }
 
 //
 
-int fs_mount(fs_driver_t *driver, const char *device, const char *path) {
-  kprintf("[fs] mount\n");
-  fs_node_t *dev_node;
-  NOT_NULL(dev_node = vfs_get_node(str_to_path(device), 0));
-
-  if (!IS_IFBLK(dev_node->mode)) {
-    errno = ENOTBLK;
+int fs_mount(const char *path, const char *device, const char *format) {
+  dentry_t *devnode = resolve_path(device, *current_process->pwd, 0, NULL);
+  if (devnode == NULL) {
+    ERRNO = ENODEV;
     return -1;
-  } else if (strcmp(path, "/") == 0) {
-    errno = EACCES;
+  } else if (!IS_IFBLK(devnode->mode)) {
+    ERRNO = ENOTBLK;
     return -1;
   }
 
-  path_t p = str_to_path(path);
-  fs_node_t *parent;
-  NOT_NULL(parent = vfs_get_node(path_dirname(p), O_DIRECTORY));
-
-  fs_device_t *dev = dev_node->ptr1;
-  fs_node_t *mount = vfs_create_node(parent, S_IFDIR | S_IFMNT);
-  // mount->ptr1 = parent;
-
-  path_t basename = path_basename(p);
-  char name[p_len(basename) + 1];
-  pathcpy(name, basename);
-
-  fs_node_t *child = vfs_find_child(parent, basename);
-  if (child == NULL) {
-    vfs_add_node(parent, mount, name);
-  } else {
-    vfs_swap_node(child, mount);
-  }
-
-  fs_t *instance = driver->impl->mount(dev->driver, mount);
-  if (instance == NULL) {
-    kfree(mount);
+  device_t *dev = locate_device(devnode->inode->dev);
+  if (dev == NULL) {
+    ERRNO = ENODEV;
     return -1;
   }
 
-  inode_remove(inode_get(mount));
-  mount->fs = instance;
-  inode_get(mount);
-
-  return 0;
+  file_system_t *fs = map_get(&fs_types, (char *) format);
+  return mount_internal(path, dev, fs);
 }
 
 int fs_unmount(const char *path) {
-  kprintf("[fs] unmount\n");
-  fs_node_t *mount;
-  NOT_NULL(mount = vfs_get_node(str_to_path(path), 0));
-
-  if (!IS_IFMNT(mount->mode)) {
-    errno = ENOTMNT;
-    return -1;
-  }
-
-  fs_t *instance = mount->fs;
-
-  // sync all data before unmounting
-  if (instance->driver->impl->sync(instance) < 0) {
-    return -1;
-  }
-  if (instance->impl->unmount(instance, mount) < 0) {
-    return -1;
-  }
-
-  if (mount->ptr1 == NULL) {
-    vfs_remove_node(mount);
-  } else {
-    vfs_swap_node(mount, mount->ptr1);
-  }
-
-  kfree(instance);
-  return 0;
+  ERRNO = ENOTSUP;
+  return -1;
 }
 
 //
 
-int fs_open(const char *filename, int flags, mode_t mode) {
-  kprintf("[fs] open\n");
-  fs_node_t *node = vfs_get_node(str_to_path(filename), flags);
-  if (node == NULL && errno != ENOENT && !(flags & O_CREAT)) {
-    return -1;
-  } else if (node != NULL && flags & O_CREAT && flags & O_EXCL) {
-    errno = EEXIST;
+int fs_open(const char *path, int flags, mode_t mode) {
+  mode = (mode & I_PERM_MASK) | (flags & O_DIRECTORY ? S_IFDIR : S_IFREG);
+
+  dentry_t *parent = NULL;
+  dentry_t *dentry = resolve_path(path, *current_process->pwd, 0, &parent);
+  if (dentry == NULL && parent == NULL) {
     return -1;
   }
 
-  path_t path = str_to_path(filename);
-  inode_t *inode = NULL;
-  if (node == NULL) {
-    // create the node
-    path_t dirname = path_dirname(path);
-    fs_node_t *parent;
-    NOT_NULL(parent = vfs_get_node(dirname, 0));
-
-    mode |= (flags & O_DIRECTORY) ? S_IFDIR : S_IFREG;
-
-    NOT_NULL(inode = inode_create(parent->fs, mode));
-
-    path_t basename = path_basename(path);
-    char name[p_len(basename) + 1];
-    pathcpy(name, basename);
-
-    node = vfs_create_from_inode(parent, inode);
-    vfs_add_node(parent, node, name);
-  } else {
-    NOT_NULL(inode = inode_get(node));
+  int result = validate_open_flags(dentry, flags);
+  if (result < 0) {
+    return -1;
   }
 
-  file_t *file;
-  NOT_NULL(file = file_create(node, flags));
+  if (dentry == NULL && flags & O_CREAT) {
+    dentry = dentry_from_basename(parent, path);
+    if (dentry == NULL) {
+      return -1;
+    }
+
+    if (flags & O_DIRECTORY) {
+      result = i_mkdir(parent->inode, dentry, mode);
+    } else {
+      result = i_create(parent->inode, dentry, mode);
+    }
+
+    if (result < 0) {
+      d_destroy(dentry);
+      return -1;
+    }
+  } else if (dentry != NULL && flags & O_TRUNC) {
+    i_truncate(dentry->inode);
+  }
+
+  file_t *file = f_alloc(dentry, flags, mode);
+  if (file == NULL) {
+    return -1;
+  }
+
+  result = f_open(file, dentry);
+  if (result < 0) {
+    return -1;
+  }
   return file->fd;
 }
 
+int fs_creat(const char *path, mode_t mode) {
+  return fs_open(path, O_WRONLY | O_CREAT | O_TRUNC, mode);
+}
+
+int fs_mkdir(const char *path, mode_t mode) {
+  dentry_t *parent = NULL;
+  dentry_t *dentry = resolve_path(path, *current_process->pwd, 0, &parent);
+  if (dentry != NULL) {
+    ERRNO = EEXIST;
+    return -1;
+  } else if (parent == NULL) {
+    return -1;
+  }
+
+  dentry = dentry_from_basename(parent, path);
+  if (dentry == NULL) {
+    return -1;
+  }
+
+  int result = i_mkdir(parent->inode, dentry, mode);
+  if (result < 0) {
+    d_destroy(dentry);
+    return -1;
+  }
+  return 0;
+}
+
+int fs_mknod(const char *path, mode_t mode, dev_t dev) {
+  mode_t type = mode & I_TYPE_MASK;
+  if ((type & (type - 1)) || (type & ~I_MKNOD_MASK)) {
+    // if more than one type flag is set or an incorrect
+    // type was specified
+    ERRNO = EINVAL;
+    return -1;
+  }
+
+  dentry_t *parent = NULL;
+  dentry_t *dentry = resolve_path(path, *current_process->pwd, 0, &parent);
+  if (dentry != NULL) {
+    ERRNO = EEXIST;
+    return -1;
+  } else if (parent == NULL) {
+    return -1;
+  }
+
+  dentry = dentry_from_basename(parent, path);
+  if (dentry == NULL) {
+    return -1;
+  }
+
+  int result = i_mknod(parent->inode, dentry, mode, dev);
+  if (result < 0) {
+    d_destroy(dentry);
+    return -1;
+  }
+  return 0;
+}
+
 int fs_close(int fd) {
-  kprintf("[fs] close\n");
-  file_t *file;
-  NOT_NULL(file = file_get(fd));
-  file_delete(file);
+  file_t *file = f_locate(fd);
+  if (file == NULL) {
+    ERRNO = EBADF;
+    return -1;
+  }
+
+  if (f_flush(file) < 0) {
+    return -1;
+  }
+
+  f_release(file);
   return 0;
 }
 
 //
 
 ssize_t fs_read(int fd, void *buf, size_t nbytes) {
-  kprintf("[fs] read\n");
-  file_t *file;
-  NOT_NULL(file = file_get(fd));
-  inode_t *inode;
-  NOT_NULL(inode = inode_get(file->node));
-  if (file->flags & O_APPEND) {
-    file->offset = inode->size;
+  file_t *file = f_locate(fd);
+  if (file == NULL) {
+    ERRNO = EBADF;
+    return -1;
   }
-
-  fs_t *fs = file->node->fs;
-  // aquire(file->lock);
-  mutex_lock(&inode->lock);
-  ssize_t nread = fs->impl->read(file->node->fs, inode, file->offset, nbytes, buf);
-  mutex_unlock(&inode->lock);
-  // release(file->lock);
-
-  file->offset += nread;
-  return nread;
+  return f_read(file, buf, nbytes);
 }
 
 ssize_t fs_write(int fd, void *buf, size_t nbytes) {
-  kprintf("[fs] write\n");
-  file_t *file;
-  NOT_NULL(file = file_get(fd));
-  inode_t *inode;
-  NOT_NULL(inode = inode_get(file->node));
+  file_t *file = f_locate(fd);
+  if (file == NULL) {
+    ERRNO = EBADF;
+    return -1;
+  }
 
-  fs_t *fs = file->node->fs;
-  // aquire(file->lock);
-  mutex_lock(&inode->lock);
-  ssize_t nwritten = fs->impl->write(file->node->fs, inode, file->offset, nbytes, buf);
-  mutex_unlock(&inode->lock);
-  // release(file->lock);
-
-  file->offset += nwritten;
-  return nwritten;
+  if (file->flags & O_APPEND) {
+    file->pos = file->dentry->inode->size;
+  }
+  return f_write(file, buf, nbytes);
 }
 
 off_t fs_lseek(int fd, off_t offset, int whence) {
-  kprintf("[fs] lseek\n");
-  file_t *file;
-  NOT_NULL(file = file_get(fd));
-
-  if (IS_IFIFO(file->node->mode)) {
-    errno = ESPIPE;
+  file_t *file = f_locate(fd);
+  if (file == NULL) {
+    ERRNO = EBADF;
     return -1;
   }
 
-  inode_t *inode;
-  NOT_NULL(inode = inode_get(file->node));
+  if (IS_IFIFO(file->dentry->mode)) {
+    ERRNO = ESPIPE;
+    return -1;
+  }
+  return f_lseek(file, offset, whence);
+}
 
-  off_t pos;
-  if (whence == SEEK_SET) {
-    pos = offset;
-  } else if (whence == SEEK_CUR) {
-    pos = file->offset + offset;
-  } else if (whence == SEEK_END) {
-    pos = inode->size + offset;
+//
+
+dentry_t *fs_readdir(int fd) {
+  file_t *dir = f_locate(fd);
+  if (dir == NULL) {
+    ERRNO = EBADF;
+    return NULL;
+  } else if (!IS_IFDIR(dir->mode)) {
+    ERRNO = ENOTDIR;
+    return NULL;
+  }
+  return f_readdir(dir);
+}
+
+long fs_telldir(int fd) {
+  file_t *dir = f_locate(fd);
+  if (dir == NULL || !IS_IFDIR(dir->mode)) {
+    ERRNO = EBADF;
+    return -1;
+  }
+  return dir->pos;
+}
+
+void fs_seekdir(int fd, long loc) {
+  file_t *dir = f_locate(fd);
+  if (dir == NULL || !IS_IFDIR(dir->mode) || loc < 0 || loc == dir->pos) {
+    ERRNO = EBADF;
+    return;
+  }
+
+  dentry_t *dentry;
+  if (dir->pos == 0) {
+    dentry = LIST_FIRST(&dir->dentry->children);
   } else {
-    errno = EINVAL;
-    return -1;
+    dentry = dir->dentry;
   }
 
-  file->offset = pos;
-  return 0;
+  long pos = dir->pos;
+  while (dentry && pos != loc) {
+    if (pos > loc) {
+      pos--;
+      dentry = LIST_PREV(dentry, siblings);
+    } else {
+      pos++;
+      dentry = LIST_NEXT(dentry, siblings);
+    }
+  }
+
+  if (dentry == NULL) {
+    return;
+  }
+
+  if (pos == 0) {
+    dir->dentry = dentry->parent;
+  } else {
+    dir->dentry = LIST_PREV(dentry, siblings);
+  }
+  dir->pos = pos;
+}
+
+void fs_rewinddir(int fd) {
+  file_t *dir = f_locate(fd);
+  if (dir == NULL || !IS_IFDIR(dir->mode) || dir->pos == 0) {
+    return;
+  }
+
+  dir->dentry = dir->dentry->parent;
+  dir->pos = 0;
 }
 
 //
 
 int fs_link(const char *path1, const char *path2) {
-  kprintf("[fs] link\n");
-  path_t path = str_to_path(path2);
-
-  fs_node_t *orig;
-  NOT_NULL(orig = vfs_get_node(str_to_path(path1), 0));
-  fs_node_t *parent;
-  NOT_NULL(parent = vfs_get_node(path_dirname(path), 0));
-
-  if (!IS_IFDIR(parent->mode)) {
-    errno = ENOTDIR;
-    return -1;
-  } else if (vfs_find_child(parent, path_basename(path)) != NULL) {
-    errno = EEXIST;
+  dentry_t *a = resolve_path(path1, *current_process->pwd, 0, NULL);
+  if (a == NULL) {
     return -1;
   }
 
-  inode_t *inode;
-  NOT_NULL(inode = inode_get(orig));
+  dentry_t *parent = NULL;
+  dentry_t *b = resolve_path(path2, *current_process->pwd, 0, &parent);
+  if (b != NULL) {
+    ERRNO = EEXIST;
+    return -1;
+  } else if (parent == NULL) {
+    return -1;
+  }
 
-  fs_node_t *node = vfs_create_from_inode(parent, inode);
-  node->fs = parent->fs;
+  inode_t *inode = a->inode;
+  if (inode->blkdev != parent->inode->blkdev) {
+    ERRNO = EXDEV;
+    return -1;
+  } else if (IS_IFDIR(inode->mode)) {
+    ERRNO = EISDIR;
+    return -1;
+  }
 
-  char name[MAX_FILE_NAME];
-  pathcpy(name, path_basename(path));
-  return vfs_add_node(parent, node, name);
+  dentry_t *dentry = dentry_from_basename(parent, path2);
+  if (dentry == NULL) {
+    return -1;
+  }
+  return i_link(parent->inode, a, dentry);
 }
 
 int fs_unlink(const char *path) {
-  kprintf("[fs] unlink\n");
-  path_t p = str_to_path(path);
-  fs_node_t *node;
-  NOT_NULL(node = vfs_get_node(p, 0));
-
-  return vfs_remove_node(node);
+  dentry_t *dentry = resolve_path(path, *current_process->pwd, 0, NULL);
+  if (dentry == NULL) {
+    return -1;
+  }
+  return i_unlink(dentry->parent->inode, dentry);
 }
 
 int fs_symlink(const char *path1, const char *path2) {
-  kprintf("[fs] symlink\n");
-  fs_node_t *orig;
-  NOT_NULL(orig = vfs_get_node(str_to_path(path1), 0));
-
-  path_t path = str_to_path(path2);
-  fs_node_t *dest;
-  NOT_NULL(dest = vfs_get_node(path_dirname(path), 0));
-
-  if (!IS_IFDIR(dest->mode)) {
-    errno = ENOTDIR;
-    return -1;
-  } else if (vfs_find_child(dest, path_basename(path)) != NULL) {
-    errno = EEXIST;
+  char path[MAX_PATH + 1];
+  int result = expand_path(path1, *current_process->pwd, path, MAX_PATH + 1);
+  if (result < 0) {
     return -1;
   }
 
-  fs_node_t *node;
-  NOT_NULL(node = vfs_create_node(dest, S_IFLNK));
-  path_t link_path = str_to_path(path1);
-  node->ptr1 = path_to_str(link_path);
-
-  inode_t *inode;
-  NOT_NULL(inode = inode_get(node));
-
-  char name[MAX_FILE_NAME];
-  pathcpy(name, path_basename(path));
-  if (vfs_add_node(dest, node, name) < 0) {
-    kfree(node);
+  dentry_t *parent = NULL;
+  dentry_t *dentry = resolve_path(path2, *current_process->pwd, 0, &parent);
+  if (dentry != NULL) {
+    ERRNO = EEXIST;
+    return -1;
+  } else if (parent == NULL) {
     return -1;
   }
 
-  size_t plen = strlen(path1);
-  ssize_t nwritten = node->fs->impl->write(node->fs, inode, 0, plen + 1, (char *) path1);
-  if (nwritten < 0 || nwritten != plen + 1) {
+  dentry = dentry_from_basename(parent, path2);
+  if (dentry == NULL) {
     return -1;
   }
 
-  vfs_add_link(path1, orig);
+  result = i_symlink(parent->inode, dentry, path);
+  if (result < 0) {
+    d_destroy(dentry);
+    return -1;
+  }
   return 0;
 }
 
 int fs_rename(const char *oldfile, const char *newfile) {
-  kprintf("[fs] rename\n");
+  dentry_t *oldf = resolve_path(oldfile, *current_process->pwd, 0, NULL);
+  if (oldf == NULL) {
+    return -1;
+  }
 
-  errno = ENOSYS;
-  return -1;
+  dentry_t *parent;
+  dentry_t *dentry = resolve_path(oldfile, *current_process->pwd, 0, &parent);
+  if (dentry != NULL) {
+    ERRNO = EEXIST;
+    return -1;
+  } else if (parent == NULL) {
+    return -1;
+  }
+
+  dentry = dentry_from_basename(parent, newfile);
+  if (dentry == NULL) {
+    return -1;
+  }
+
+  int result = i_rename(oldf->parent->inode, oldf, parent->inode, dentry);
+  if (result < 0) {
+    d_destroy(dentry);
+    return -1;
+  }
+  return 0;
+}
+
+int fs_rmdir(const char *path) {
+  dentry_t *dentry = resolve_path(path, *current_process->pwd, 0, NULL);
+  if (dentry == NULL) {
+    return -1;
+  }
+
+  if (!IS_IFDIR(dentry->mode)) {
+    ERRNO = ENOTDIR;
+    return -1;
+  }
+  // check empty
+
+  return i_rmdir(dentry->parent->inode, dentry);
+}
+
+int fs_chdir(const char *path) {
+  dentry_t *dentry = resolve_path(path, *current_process->pwd, 0, NULL);
+  if (dentry == NULL) {
+    return -1;
+  }
+  current_process->pwd = &dentry;
+  return 0;
 }
 
 int fs_chmod(const char *path, mode_t mode) {
-  kprintf("[fs] chmod\n");
-  mode = mode & I_PERM_MASK;
-
-  errno = ENOSYS;
+  ERRNO = ENOTSUP;
   return -1;
 }
 
 int fs_chown(const char *path, uid_t owner, gid_t group) {
-  kprintf("[fs] chown\n");
-  if (owner == (uid_t) -1 && group == (gid_t) -1) {
-    return 0;
-  }
-
-  errno = ENOSYS;
+  ERRNO = ENOTSUP;
   return -1;
 }
-
-//
-
-DIR *fs_opendir(const char *dirname) {
-  kprintf("[fs] opendir\n");
-  int flags = DIR_FILE_FLAGS;
-  fs_node_t *node;
-  NNOT_NULL(node = vfs_get_node(str_to_path(dirname), flags));
-  file_t *file;
-  NNOT_NULL(file = file_create(node, flags));
-  file->node = node->ptr1;
-  return file;
-}
-
-int fs_closedir(DIR *dirp) {
-  kprintf("[fs] closedir\n");
-  NOT_ERROR(file_exists(dirp));
-  file_delete(dirp);
-  return 0;
-}
-
-dirent_t *fs_readdir(DIR *dirp) {
-  // kprintf("[fs] readdir\n");
-  NNOT_ERROR(file_exists(dirp));
-  if (dirp->flags != DIR_FILE_FLAGS) {
-    errno = EBADF;
-    return NULL;
-  }
-
-  if (dirp->offset == 0) {
-    dirp->offset += sizeof(dirent_t);
-    return dirp->node->dirent;
-  } else if (dirp->node->next == NULL) {
-    dirp->offset += sizeof(dirent_t);
-    return NULL;
-  }
-
-  dirp->offset += sizeof(dirent_t);
-  dirp->node = dirp->node->next;
-  return dirp->node->dirent;
-}
-
-void fs_rewinddir(DIR *dirp) {
-  if (file_exists(dirp) < 0 || dirp->flags != DIR_FILE_FLAGS) {
-    return;
-  }
-
-  fs_node_t *first = dirp->node;
-  while (first->prev) {
-    first = first->prev;
-  }
-
-  dirp->offset = 0;
-  dirp->node = first;
-}
-
-void fs_seekdir(DIR *dirp, long loc) {
-  kprintf("[fs] seekdir\n");
-  if (file_exists(dirp) < 0 || dirp->flags != DIR_FILE_FLAGS ||
-    loc < 0 || loc % sizeof(dirent_t) != 0) {
-    return;
-  }
-
-  fs_node_t *node = dirp->node;
-  off_t offset = dirp->offset;
-  while (offset != loc) {
-    if (loc < offset) {
-      offset += sizeof(dirent_t);
-      if (node->next == NULL) {
-        break;
-      }
-      node = node->next;
-    } else if (loc > offset) {
-      offset -= sizeof(dirent_t);
-      if (node->prev == NULL) {
-        break;
-      }
-      node = node->prev;
-    }
-  }
-
-  dirp->offset = offset;
-  dirp->node = node;
-}
-
-long fs_telldir(DIR *dirp) {
-  kprintf("[fs] telldir\n");
-  if (file_exists(dirp) < 0 || dirp->flags != DIR_FILE_FLAGS) {
-    return -1;
-  }
-  return dirp->offset;
-}
-
-//
-
-int fs_mkdir(const char *path, mode_t mode) {
-  kprintf("[fs] mkdir\n");
-
-  path_t p = str_to_path(path);
-  fs_node_t *parent;
-  NOT_NULL(parent = vfs_get_node(path_dirname(p), 0));
-
-  path_t basename = path_basename(p);
-  if (vfs_find_child(parent, basename) != NULL) {
-    errno = EEXIST;
-    return -1;
-  }
-
-  fs_node_t *dir;
-  mode = S_IFDIR | (mode & I_PERM_MASK);
-  NOT_NULL(dir = vfs_create_node(parent, mode));
-
-  char name[MAX_FILE_NAME];
-  pathcpy(name, basename);
-  if (vfs_add_node(parent, dir, name) < 0) {
-    vfs_remove_node(dir);
-    return -1;
-  }
-  return 0;
-}
-
-int fs_chdir(const char *dirname) {
-  kprintf("[fs] chdir\n");
-  int flags = DIR_FILE_FLAGS;
-  fs_node_t *node;
-  NOT_NULL(node = vfs_get_node(str_to_path(dirname), flags));
-
-  current_process->pwd = node;
-  return 0;
-}
-
-

@@ -3,106 +3,57 @@
 //
 
 #include <device.h>
-#include <atomic.h>
+#include <thread.h>
 #include <printf.h>
-#include <vfs.h>
-#include <mm.h>
-#include <rb_tree.h>
+#include <queue.h>
 
-rb_tree_t *device_tree;
 
-static inline dev_t next_device_id() {
-  rb_iter_t *iter = rb_tree_iter(device_tree);
-  rb_node_t *node;
+static uint8_t __minor_ids[3] = {};
+LIST_HEAD(device_t) devices[3][32] = {};
+spinlock_t lock = {};
 
-  dev_t id = 0;
-  while ((node = rb_iter_next(iter))) {
-    fs_device_t *device = node->data;
-    if (device->id > id) {
-      break;
+
+dev_t register_device(uint8_t major, uint8_t minor, void *data) {
+  uint8_t u = 0;
+  device_t *d;
+  LIST_FOREACH(d, &devices[major][minor], devices) {
+    u = unit(d->dev);
+  }
+
+  device_t *device = kmalloc(sizeof(device_t));
+  memset(device, 0, sizeof(device_t));
+
+  u++;
+  device->dev = makedev(major, minor, u);
+  device->device = data;
+
+  LIST_ADD(&devices[major][minor], device, devices);
+  return makedev(major, minor, u);
+}
+
+//
+
+dev_t register_blkdev(uint8_t minor, blkdev_t *blkdev) {
+  return register_device(DEVICE_BLKDEV, minor, blkdev);
+}
+
+dev_t register_chrdev(uint8_t minor, chrdev_t *chrdev) {
+  return register_device(DEVICE_CHRDEV, minor, chrdev);
+}
+
+device_t *locate_device(dev_t dev) {
+  uint8_t maj = major(dev);
+  uint8_t min = minor(dev);
+  uint8_t uni = unit(dev);
+
+  device_t *d;
+  LIST_FOREACH(d, &devices[maj][min], devices) {
+    if (unit(d->dev) == uni) {
+      return d;
     }
-    id = device->id + 1;
   }
-  return id;
+
+  ERRNO = ENODEV;
+  return NULL;
 }
 
-static inline dev_t next_device_num(fs_dev_type_t type) {
-  rb_iter_t *iter = rb_tree_iter(device_tree);
-  rb_node_t *node;
-
-  dev_t num = 0;
-  while ((node = rb_iter_next(iter))) {
-    fs_device_t *device = node->data;
-    if (device->type != type) {
-      continue;
-    }
-
-    if (device->num > num) {
-      break;
-    }
-    num = device->num + 1;
-  }
-  return num;
-}
-
-static char *get_device_name(fs_dev_type_t type, dev_t num) {
-  const char *prefix;
-  bool letter = false;
-  switch (type) {
-    case DEV_FB:
-      prefix = "fb";
-      break;
-    case DEV_HD:
-      prefix = "hd";
-      letter = true;
-      break;
-    case DEV_TTY:
-      prefix = "tty";
-      break;
-    case DEV_SD:
-      prefix = "sd";
-      letter = true;
-      break;
-    default:
-      return NULL;
-  }
-
-  char *buffer = kmalloc(8);
-  if (letter) {
-    ksnprintf(buffer, 8, "%s%c", prefix, num + 'a');
-  } else {
-    ksnprintf(buffer, 8, "%s%d", prefix, num);
-  }
-  return buffer;
-}
-
-
-void fs_device_init() {
-  device_tree = create_rb_tree();
-
-  // add special devices (null, random, zero)
-}
-
-
-dev_t fs_register_device(fs_dev_type_t type, void *driver) {
-  if (device_tree->nodes >= FS_MAX_DEVICES) {
-    errno = EOVERFLOW;
-    return -1;
-  }
-
-  dev_t id = next_device_id();
-  dev_t num = next_device_num(type);
-  char *name = get_device_name(type, num);
-
-  kprintf("[fs] registering device (%s)\n", name);
-  fs_device_t *device = kmalloc(sizeof(fs_device_t));
-  device->id = id;
-  device->num = num;
-  device->type = type;
-  device->name = name;
-  device->driver = driver;
-  if (vfs_add_device(device) < 0) {
-    return -1;
-  }
-  return device->id;
-}

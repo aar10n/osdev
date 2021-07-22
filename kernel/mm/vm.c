@@ -672,8 +672,8 @@ void vm_unmap_page(page_t *page) {
     curr = curr->next;
   }
 
-  kfree(area);
   intvl_tree_delete(VM->tree, intvl);
+  kfree(area);
 
   tlb_flush();
 }

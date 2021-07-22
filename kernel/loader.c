@@ -4,6 +4,7 @@
 
 #include <loader.h>
 #include <cpu/cpu.h>
+#include <thread.h>
 #include <mm.h>
 #include <elf.h>
 #include <elf64.h>
@@ -50,7 +51,7 @@ int load_elf_segment(Elf64_Phdr *pheader, void *buf) {
 int load_elf(void *buf, void **entry) {
   Elf64_Ehdr *elf = buf;
   if (!IS_ELF(*elf)) {
-    errno = ENOEXEC;
+    ERRNO = ENOEXEC;
     return -1;
   }
 

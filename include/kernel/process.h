@@ -7,6 +7,7 @@
 
 #include <base.h>
 #include <fs.h>
+#include <file.h>
 
 #define DEFAULT_RFLAGS 0x246
 #define PROC_STACK_SIZE 0x2000
@@ -45,7 +46,7 @@ typedef struct process {
 
   uid_t uid;           // user id
   gid_t gid;           // group id
-  dentry_t *pwd;      // process working directory
+  dentry_t **pwd;      // process working directory
   file_table_t *files; // open file table
 
   thread_t *main;      // main thread (first)

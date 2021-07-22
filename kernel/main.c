@@ -10,9 +10,7 @@
 #include <cpu/gdt.h>
 #include <cpu/idt.h>
 
-#include <mm/mm.h>
-#include <mm/vm.h>
-#include <mm/heap.h>
+#include <mm.h>
 
 #include <acpi.h>
 #include <percpu.h>
@@ -30,11 +28,10 @@
 
 #include <loader.h>
 #include <fs.h>
-#include <fs/proc/proc.h>
 #include <fs/utils.h>
 #include <fs/path.h>
 #include <fs/blkdev.h>
-#include <fat/fat.h>
+// #include <fat/fat.h>
 
 #include <bus/pcie.h>
 #include <usb/usb.h>
@@ -52,6 +49,7 @@ void launch() {
   timer_init();
 
   kprintf("[pid %d] launch\n", ID);
+
   fs_init();
 
   pcie_init();
@@ -59,18 +57,8 @@ void launch() {
 
   usb_init();
 
-  // usb_device_t *drive = usb_get_device(0);
-
-  // fs_lsdir("/dev");
-
-  // // inode_t *inode = kmalloc(sizeof(inode_t));
-  // fs_t *fatfs = fat_mount(blkdev, NULL);
-  // fatfs->device = blkdev;
-  // fat_locate(fatfs, NULL, 0);
-
-  fs_mount(fatfs_driver, "/dev/sda", "/test");
-
-  fs_lsdir("/test");
+  fs_lsdir("/");
+  fs_lsdir("/dev");
 
   kprintf("done!\n");
   thread_block();

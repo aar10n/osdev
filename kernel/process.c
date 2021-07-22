@@ -50,7 +50,7 @@ process_t *process_alloc(pid_t pid, pid_t ppid, void *(start_routine)(void *), v
 
   process->uid = -1;
   process->gid = -1;
-  process->pwd = fs_root;
+  process->pwd = &fs_root;
   process->files = create_file_table();
 
   thread_t *main = thread_alloc(0, start_routine, arg);

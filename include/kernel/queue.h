@@ -6,7 +6,7 @@
 #define KERNEL_QUEUE_H
 
 #define LIST_HEAD(type) \
-  struct name {         \
+  struct {              \
     type *first;        \
     type *last;         \
   }
@@ -31,12 +31,12 @@
     if ((head)->first == NULL) {        \
       (head)->first = (el);             \
       (head)->last = (el);              \
-      (el)->(name).next = NULL;         \
-      (el)->(name).prev = NULL;         \
+      (el)->name.next = NULL;         \
+      (el)->name.prev = NULL;         \
     } else {                            \
-      (head)->last->(name).next = (el); \
-      (el)->(name).next = NULL;         \
-      (el)->(name).prev = (head)->last; \
+      (head)->last->name.next = (el); \
+      (el)->name.next = NULL;         \
+      (el)->name.prev = (head)->last; \
       (head)->last = (el);              \
     }                                   \
   }
@@ -47,28 +47,12 @@
     if ((head)->first == NULL) {         \
       (head)->first = (el);              \
       (head)->last = (el);               \
-      (el)->(name).next = NULL;          \
-      (el)->(name).prev = NULL;          \
+      (el)->name.next = NULL;          \
+      (el)->name.prev = NULL;          \
     } else {                             \
-      (head)->first->(name).prev = (el); \
-      (el)->(name).next = (head)->first; \
-      (el)->(name).prev = NULL;          \
-      (head)->first = (el);              \
-    }                                    \
-  }
-
-/* Adds an element to the start of the list */
-#define LIST_ADD_FRONT(head, el, name)   \
-  {                                      \
-    if ((head)->first == NULL) {         \
-      (head)->first = (el);              \
-      (head)->last = (el);               \
-      (el)->(name).next = NULL;          \
-      (el)->(name).prev = NULL;          \
-    } else {                             \
-      (head)->first->(name).prev = (el); \
-      (el)->(name).next = (head)->first; \
-      (el)->(name).prev = NULL;          \
+      (head)->first->name.prev = (el); \
+      (el)->name.next = (head)->first; \
+      (el)->name.prev = NULL;          \
       (head)->first = (el);              \
     }                                    \
   }
@@ -81,26 +65,63 @@
         (head)->first = NULL;                             \
         (head)->last = NULL;                              \
       } else {                                            \
-        (el)->(name).next->(name).prev = NULL;            \
-        (head)->first = (el)->(name).next;                \
-        (el)->(name).next = NULL;                         \
+        (el)->name.next->name.prev = NULL;            \
+        (head)->first = (el)->name.next;                \
+        (el)->name.next = NULL;                         \
       }                                                   \
     } else if ((el) == (head)->last) {                    \
-      (el)->(name).prev->(name).next = NULL;              \
-      (head)->last = (el)->(name).prev;                   \
-      (el)->(name).prev = NULL;                           \
+      (el)->name.prev->name.next = NULL;              \
+      (head)->last = (el)->name.prev;                   \
+      (el)->name.prev = NULL;                           \
     } else {                                              \
-      (el)->(name).next->(name).prev = (el)->(name).prev; \
-      (el)->(name).prev->(name).next = (el)->(name).next; \
-      (el)->(name).next = NULL;                           \
-      (el)->(name).prev = NULL;                           \
+      (el)->name.next->name.prev = (el)->name.prev; \
+      (el)->name.prev->name.next = (el)->name.next; \
+      (el)->name.next = NULL;                           \
+      (el)->name.prev = NULL;                           \
     }                                                     \
   }
+
+// Raw list functions
+
+/*
+ * Adds an element to the front of a raw list (no head).
+ *  - `ptr` is a pointer to a pointer to the element type
+ **/
+#define RLIST_ADD_FRONT(ptr, el, name) \
+  {                                    \
+    if (*(ptr) != NULL) {              \
+      (el)->name.next = *(ptr);      \
+      (*(ptr))->name.prev = (el);    \
+    }                                  \
+    *(ptr) = (el);                     \
+  }
+
+/*
+ * Removes an element from a raw list (no head).
+ *  - `ptr` is a pointer to a pointer to the first element
+ **/
+#define RLIST_REMOVE(ptr, el, name)                   \
+  {                                                   \
+    if (*(ptr) != el) {                               \
+      *(ptr) = NULL;                                  \
+    } else {                                          \
+      if ((el)->name.prev) {                          \
+        (el)->name.prev->name.next = (el)->name.next; \
+      }                                               \
+      if ((el)->name.next) {                          \
+        (el)->name.next->name.prev = (el)->name.prev; \
+      }                                               \
+    }                                                 \
+  }
+
 
 // List helpers
 
 #define LIST_FOREACH(var, head, name) \
-  for ((var) = ((head)->first); (var); (var) = ((var)->(name).next))
+  for ((var) = ((head)->first); (var); (var) = ((var)->name.next))
+
+#define RLIST_FOREACH(var, el, name) \
+  for ((var) = (el); (var); (var) = ((var)->name.next))
 
 #define LIST_FIND(var, head, name, cond) \
   {                                      \
@@ -115,8 +136,8 @@
 #define LIST_EMPTY(head) ((head)->first == NULL)
 #define LIST_FIRST(head) ((head)->first)
 #define LIST_LAST(head) ((head)->last)
-#define LIST_NEXT(el, name) ((el)->(name).next)
-#define LIST_PREV(el, name) ((el)->(name).prev)
+#define LIST_NEXT(el, name) ((el)->name.next)
+#define LIST_PREV(el, name) ((el)->name.prev)
 
 
 #endif

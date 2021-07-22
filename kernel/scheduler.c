@@ -225,6 +225,7 @@ void scheduler_sched(sched_reason_t reason) {
 
   uint64_t count = sched->count;
 
+  // sched_log("schedule");
   sched_trace_debug("schedule");
   if (curr == sched->idle) {
     curr->status = THREAD_READY;

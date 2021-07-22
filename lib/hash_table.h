@@ -71,7 +71,7 @@ typedef struct {
   map_free_(&(m)->map)
 
 #define map_get(m, key) \
-  ((m)->ref = map_get_(&(m)->map, key))
+  ({ (m)->ref = map_get_(&(m)->map, key); (m)->ref ? *(m)->ref : NULL; })
 
 #define map_set(m, key, value) \
   ((m)->tmp = (value), map_set_(&(m)->map, key, &(m)->tmp, sizeof((m)->tmp)))
@@ -101,7 +101,7 @@ typedef map_t(char) map_char_t;
 typedef map_t(float) map_float_t;
 typedef map_t(double) map_double_t;
 
-typedef iter_result_t(void*) iter_result_void_t;
+typedef iter_result_t(void) iter_result_void_t;
 typedef iter_result_t(char*) iter_result_str_t;
 typedef iter_result_t(int) iter_result_int_t;
 typedef iter_result_t(char) iter_result_char_t;

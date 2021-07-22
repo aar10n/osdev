@@ -4,8 +4,11 @@
 
 #include <path.h>
 #include <string.h>
-#include <mm/heap.h>
+#include <murmur3.h>
+#include <mm.h>
 #include <printf.h>
+
+#define HASH_SEED 0xDEADBEEF
 
 const char *slash = "/";
 const char *dot = ".";
@@ -97,6 +100,13 @@ char *path_to_str(path_t path) {
   memcpy(str, path.start, len);
   str[len] = '\0';
   return str;
+}
+
+uint32_t path_to_hash(path_t path) {
+  size_t len = path.end - path.start;
+  uint32_t out;
+  murmur_hash_x86_32(path.start, len, HASH_SEED, &out);
+  return out;
 }
 
 //
@@ -219,14 +229,6 @@ path_t path_suffix(path_t path) {
   return path_null;
 }
 
-void path_print(path_t path) {
-  char str[p_len(path) + 1];
-  pathcpy(str, path);
-  kprintf("path: %s\n", str);
-}
-
-//
-
 path_t path_next_part(path_t path) {
   if (path.start >= path.str + path.len) {
     return path_null;
@@ -254,4 +256,43 @@ path_t path_next_part(path_t path) {
   }
 
   return (path_t){ path.str, path.len, path.count + 1, start, end };
+}
+
+void path_print(path_t path) {
+  char str[p_len(path) + 1];
+  pathcpy(str, path);
+  kprintf("path: %s\n", str);
+}
+
+//
+
+// returns a path with exactly one '/' separating all components
+// and no trailing slashes
+int path_cleanup(const char *path, char *buf, size_t len) {
+  if (len == 0) {
+    return -ENOBUFS;
+  }
+
+  size_t index = 0;
+  path_t part = str_to_path(path);
+
+  path_t prefix = path_prefix(part);
+  if (p_is_dot(prefix)) {
+    buf[index++] = '.';
+  }
+
+  while (!p_is_null(part = path_next_part(part))) {
+    if (index + p_len(part) + 1 >= len) {
+      return -ENOBUFS;
+    }
+
+    buf[index++] = '/';
+    pathcpy(buf + index, part);
+  }
+
+  if (index >= len) {
+    return -ENOBUFS;
+  }
+  buf[index++] = '\0';
+  return index - 1;
 }

@@ -77,10 +77,12 @@ void post_delete_callback(rb_tree_t *tree, rb_node_t *z, rb_node_t *x) {
 }
 
 void replace_node_callback(rb_tree_t *tree, rb_node_t *u, rb_node_t *v) {
-  intvl_node_t *ud = u->data;
-  intvl_node_t *vd = v->data;
-  vd->max = ud->max;
-  vd->min = ud->min;
+  if (v->data) {
+    intvl_node_t *ud = u->data;
+    intvl_node_t *vd = v->data;
+    vd->max = ud->max;
+    vd->min = ud->min;
+  }
 }
 
 void duplicate_node_callback(rb_tree_t *tree, rb_tree_t *new_tree, rb_node_t *u, rb_node_t *v) {
