@@ -6,21 +6,21 @@ less working, but they still need to be put together before this is considered f
 
 ```
 .
-├── boot          custom uefi bootloader
+├── boot          uefi bootloader
 ├── drivers       external device drivers
-├── fs            vfs and filesystem drivers (in-progress)
+├── fs            filesystem and filesystem drivers
 ├── include       header files
 ├── kernel        core kernel code
 │  ├── bus          pci & pcie drivers
 │  ├── cpu          cpu related code and assembly routines
 │  ├── device       apic, ioapic and other related drivers
-│  ├── gui          future home of graphics code
+│  ├── gui          graphics code [not started]
 │  ├── mm           memory management (physical and virtual)
 │  └── usb          usb and usb device drivers
-├── lib           useful datastructure implementations
+├── lib           datastructure implementations
 ├── libc          minimal C standard library for use in kernel
-├── scripts       build related scripts
-├── sys           userspace files will live here
+├── scripts       build scripts
+├── sys           userspace programs [not started]
 ├── third-party   third party tools (currently only edk2)
 └── tools         other useful tools that require compilation 
 ``` 
