@@ -84,7 +84,7 @@ dentry_t *dentry_from_basename(dentry_t *parent, const char *path) {
 }
 
 int mount_internal(const char *path, device_t *device, file_system_t *fs) {
-  if (device && major(device->dev) == DEVICE_BLKDEV) {
+  if (device && major(device->dev) != DEVICE_BLKDEV) {
     ERRNO = ENOTBLK;
     return -1;
   }
@@ -104,18 +104,20 @@ int mount_internal(const char *path, device_t *device, file_system_t *fs) {
     return -1;
   }
 
-  super_block_t *sb = fs->mount(fs, device ? device->device : NULL, dentry);
-  if (sb == NULL) {
+  if (i_mkdir(parent->inode, dentry, S_IFMNT | S_IFDIR) < 0) {
     d_destroy(dentry);
     return -1;
   }
 
-  if (d_populate_dir(dentry) < 0) {
+  blkdev_t *blkdev = device ? device->device : NULL;
+  super_block_t *sb = fs->mount(fs, blkdev, dentry);
+  if (sb == NULL) {
     return -1;
   }
-
-  d_add_child(parent, dentry);
-  dentry->inode->sb = sb;
+  sb->fs = fs;
+  sb->dev = blkdev;
+  sb->ops = fs->sb_ops;
+  sb->root = dentry;
   return 0;
 }
 
@@ -137,10 +139,6 @@ void fs_init() {
     panic("failed to register ramfs");
   }
 
-  inode_t *inode = kmalloc(sizeof(inode_t));
-  memset(inode, 0, sizeof(inode_t));
-
-
   dentry_t *dentry = d_alloc(NULL, "/");
   dentry->parent = dentry;
   if (ramfs->mount(ramfs, NULL, dentry) < 0) {
@@ -149,6 +147,9 @@ void fs_init() {
   d_populate_dir(dentry);
   fs_root = dentry;
 
+  // done mounting root
+
+  // mount device filesystem
   if (mount_internal("/dev", NULL, ramfs) < 0) {
     panic("failed to mount /dev");
   }

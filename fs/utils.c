@@ -17,7 +17,7 @@ void fs_lsdir(const char *path) {
     return;
   }
 
-  kprintf("listing directory \"%s\"\n", path);
+  kprintf("[utils] listing directory \"%s\"\n", path);
   dentry_t *dentry;
   while ((dentry = fs_readdir(fd)) != NULL) {
     kprintf("%s\n", dentry->name);

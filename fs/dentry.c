@@ -30,8 +30,10 @@ void d_attach(dentry_t *dentry, inode_t *inode) {
 
   dentry->ino = inode->ino;
   dentry->mode = (inode->mode & (I_TYPE_MASK | I_PERM_MASK)) | S_ISLDD;
-  dentry->ops = inode->sb->fs->dentry_ops;
   dentry->inode = inode;
+  if (inode->sb) {
+    dentry->ops = inode->sb->fs->dentry_ops;
+  }
 
   LIST_ADD(&inode->dentries, dentry, dentries);
   inode->nlink++;

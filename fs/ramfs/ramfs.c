@@ -55,16 +55,19 @@ super_block_t *ramfs_mount(file_system_t *fs, blkdev_t *dev, dentry_t *mount) {
   super_block_t *sb = kmalloc(sizeof(super_block_t));
   sb->flags = 0;
   sb->blksize = PAGE_SIZE;
-  sb->root = mount;
   sb->dev = dev;
-  sb->ops = fs->sb_ops;
   sb->fs = fs;
+  sb->ops = fs->sb_ops;
+  sb->root = mount;
   sb->data = rsb;
 
-  inode_t *root = sb_alloc_inode(sb);
-  root->mode = S_IFMNT | S_IFDIR;
-  root->sb = sb;
-  d_attach(mount, root);
+  // handle special case on root mount
+  if (mount->inode == NULL) {
+    inode_t *root = sb_alloc_inode(sb);
+    root->mode = S_IFMNT | S_IFDIR;
+    root->sb = sb;
+    d_attach(mount, root);
+  }
   return sb;
 }
 

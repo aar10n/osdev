@@ -13,19 +13,21 @@
 // allocates a new inode struct
 // NOTE: this does not allocate an inode on disk
 inode_t *i_alloc(ino_t ino, super_block_t *sb) {
-  file_system_t *fs = sb->fs;
   inode_t *inode = kmalloc(sizeof(inode_t));
   memset(inode, 0, sizeof(inode_t));
-
   inode->ino = ino;
-  inode->ops = fs->inode_ops;
-  inode->blkdev = sb->dev;
   // inode->ctime =
   // inode->mtime =
   // inode->atime =
   rw_lock_init(&inode->lock);
 
-  // LIST_ADD(&sb->inodes, inode, inodes);
+  if (sb) {
+    file_system_t *fs = sb->fs;
+    inode->ops = fs->inode_ops;
+    inode->blkdev = sb->dev;
+    // LIST_ADD(&sb->inodes, inode, inodes);
+  }
+
   return inode;
 }
 
@@ -45,7 +47,7 @@ inode_t *i_alloc(ino_t ino, super_block_t *sb) {
  */
 int i_create(inode_t *dir, dentry_t *dentry, mode_t mode) {
   kassert(IS_IFDIR(dir->mode));
-  if (!dir->ops->create) {
+  if (!(dir->ops && dir->ops->create)) {
     ERRNO = ENOTSUP;
     return -1;
   }
@@ -71,7 +73,7 @@ int i_create(inode_t *dir, dentry_t *dentry, mode_t mode) {
  */
 dentry_t *i_lookup(inode_t *dir, const char *name) {
   kassert(IS_IFDIR(dir->mode));
-  if (dir->ops->lookup) {
+  if (dir->ops && dir->ops->lookup) {
     return dir->ops->lookup(dir, name, false);
   }
 
@@ -106,7 +108,7 @@ int i_link(inode_t *dir, dentry_t *dentry, dentry_t *new_dentry) {
   kassert(IS_IFDIR(dir->mode));
   kassert(dentry->inode->blkdev == dir->blkdev);
   dentry_t *parent = LIST_FIRST(&dir->dentries);
-  if (dir->ops->link) {
+  if (dir->ops && dir->ops->link) {
     int result = dir->ops->link(dir, dentry, new_dentry);
     if (result < 0) {
       return -1;
@@ -134,7 +136,7 @@ int i_link(inode_t *dir, dentry_t *dentry, dentry_t *new_dentry) {
 int i_unlink(inode_t *dir, dentry_t *dentry) {
   kassert(IS_IFDIR(dir->mode));
   dentry_t *parent = LIST_FIRST(&dir->dentries);
-  if (dir->ops->unlink) {
+  if (dir->ops && dir->ops->unlink) {
     int result = dir->ops->unlink(dir, dentry);
     if (result < 0) {
       return -1;
@@ -162,7 +164,7 @@ int i_unlink(inode_t *dir, dentry_t *dentry) {
  */
 int i_symlink(inode_t *dir, dentry_t *dentry, const char *path) {
   kassert(IS_IFDIR(dir->mode));
-  if (!dir->ops->symlink) {
+  if (!(dir->ops && dir->ops->symlink)) {
     ERRNO = ENOTSUP;
     return -1;
   }
@@ -193,7 +195,7 @@ int i_symlink(inode_t *dir, dentry_t *dentry, const char *path) {
  */
 int i_mkdir(inode_t *dir, dentry_t *dentry, mode_t mode) {
   kassert(IS_IFDIR(dir->mode));
-  if (!dir->ops->mkdir) {
+  if (!(dir->ops && dir->ops->mkdir)) {
     ERRNO = ENOTSUP;
     return -1;
   }
@@ -208,13 +210,13 @@ int i_mkdir(inode_t *dir, dentry_t *dentry, mode_t mode) {
   d_add_child(parent, dentry);
   if (result == 0) {
     dentry_t *dot = d_alloc(dentry, ".");
-    if (i_link(dir, parent, dot) < 0) {
+    if (i_link(dentry->inode, parent, dot) < 0) {
       d_destroy(dot);
       return -1;
     }
 
     dentry_t *dotdot = d_alloc(dentry, "..");
-    if (i_link(dir, pparent, dotdot) < 0) {
+    if (i_link(dentry->inode, pparent, dotdot) < 0) {
       d_destroy(dotdot);
       return -1;
     }
@@ -238,7 +240,7 @@ int i_rmdir(inode_t *dir, dentry_t *dentry) {
   dentry_t *parent = LIST_FIRST(&dir->dentries);
   kassert(LIST_FIRST(&parent->children) == NULL);
 
-  if (dir->ops->rmdir) {
+  if (dir->ops && dir->ops->rmdir) {
     int result = dir->ops->rmdir(dir, dentry);
     if (result < 0) {
       return -1;
@@ -271,7 +273,7 @@ int i_rmdir(inode_t *dir, dentry_t *dentry) {
  */
 int i_mknod(inode_t *dir, dentry_t *dentry, mode_t mode, dev_t dev) {
   kassert(IS_IFDIR(dir->mode));
-  if (!dir->ops->mknod) {
+  if (!(dir->ops && dir->ops->mknod)) {
     ERRNO = ENOTSUP;
     return -1;
   }
@@ -304,7 +306,7 @@ int i_mknod(inode_t *dir, dentry_t *dentry, mode_t mode, dev_t dev) {
 int i_rename(inode_t *old_dir, dentry_t *old_dentry, inode_t *new_dir, dentry_t *new_dentry) {
   kassert(IS_IFDIR(old_dir->mode));
   kassert(IS_IFDIR(new_dir->mode));
-  if (!old_dir->ops->rename) {
+  if (!(old_dir->ops && old_dir->ops->rename)) {
     ERRNO = ENOTSUP;
     return -1;
   }
@@ -335,7 +337,7 @@ int i_rename(inode_t *old_dir, dentry_t *old_dentry, inode_t *new_dir, dentry_t 
  */
 int i_readlink(dentry_t *dentry, char *buffer, int buflen) {
   kassert(IS_IFLNK(dentry->mode));
-  if (!dentry->inode->ops->readlink) {
+  if (!(dentry->inode->ops && dentry->inode->ops->readlink)) {
     ERRNO = ENOTSUP;
     return -1;
   }
@@ -350,7 +352,7 @@ int i_readlink(dentry_t *dentry, char *buffer, int buflen) {
  */
 void i_truncate(inode_t *inode) {
   kassert(IS_IFREG(inode->mode));
-  if (inode->ops->truncate) {
+  if (inode->ops && inode->ops->truncate) {
     inode->ops->truncate(inode);
     return;
   }

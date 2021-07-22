@@ -57,6 +57,10 @@ void launch() {
 
   usb_init();
 
+  if (fs_mount("/test", "/dev/loop", "ramfs") < 0) {
+    kprintf("%s\n", strerror(ERRNO));
+  }
+
   fs_lsdir("/");
   fs_lsdir("/dev");
 
