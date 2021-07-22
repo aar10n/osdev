@@ -7,6 +7,9 @@ fs += acl.c blkdev.c chrdev.c dcache.c dentry.c \
 	device.c file.c fs.c inode.c path.c super.c \
 	utils.c
 
+# fs/ext2
+fs += ext2/ext2.c ext2/file.c ext2/inode.c ext2/super.c
+
 # fs/fat
 #fs += fat/fat.c fat/file.c fat/inode.c fat/super.c
 
