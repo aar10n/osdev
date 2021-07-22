@@ -6,13 +6,12 @@
 #define FS_FAT_H
 
 #include <base.h>
-#include <blkdev.h>
 #include <fs.h>
 
 #define FAT_SIG_WORD 0x55AA
 #define FAT_BACKUP_BPB_SECT 6
 
-typedef enum {
+typedef enum fat_volume_type {
   FAT12,
   FAT16,
   FAT32,
@@ -42,10 +41,8 @@ typedef enum {
 //   0xF8 -> "fixed" (non-removable) media
 //
 
-extern fs_driver_t *fatfs_driver;
-
 // BPB common to all FAT volumes
-typedef struct packed {
+typedef struct packed fat_bpb {
   uint8_t bs_jmp_boot[3]; // jump instructions to boot code
   char oem_name[8];       // oem name identifier
   uint16_t byts_per_sec;  // number of bytes per sector
@@ -62,7 +59,7 @@ typedef struct packed {
   uint32_t tot_sec_32;    // 32-bit total count of sectors of this volume
 } fat_bpb_t;
 
-typedef struct packed {
+typedef struct packed fat_dentry {
   char name[11];          // short file name
   uint8_t attr;           // file attributes
   uint8_t ntres;          // ? (set to 0)
@@ -75,10 +72,10 @@ typedef struct packed {
   uint16_t wrt_date;      // last modification (write) date
   uint16_t fst_clus_lo;   // low word of first data cluster (FAT32 only)
   uint32_t file_size;     // 32-bit file size in bytes
-} fat_dirent_t;
+} fat_dentry_t;
 
 // long name directory entry
-typedef struct packed {
+typedef struct packed fat_lname_dirent {
   uint8_t order;        // the order of this entry in the name
   char name1[10];       // a portion of the file name (part 1)
   uint8_t type;         // must be set to 0
@@ -96,7 +93,7 @@ typedef struct packed {
 //   0x29 -> either of the following two fields are non-zero
 
 // Extended BPB for FAT12 and FAT16 volumes
-typedef struct packed {
+typedef struct packed fat_legacy_ebpb {
   uint8_t drv_num;        // drive number for interrupt 0x13
   uint8_t reserved1;      // reserved - set to 0
   uint8_t boot_sig;       // extended boot signature
@@ -113,7 +110,7 @@ typedef struct packed {
 // FAT32
 //
 
-typedef union packed {
+typedef union packed fat32_ext_flags {
   uint16_t raw;
   struct {
     uint16_t active_fat : 4; // index of active FAT (valid if mirrored = 1)
@@ -121,33 +118,33 @@ typedef union packed {
     uint16_t fat_mode : 1;   // 0 = mirrored | 1 = one FAT active
     uint16_t : 8;            // reserved
   };
-} fat32_ext_flags;
+} fat32_ext_flags_t;
 
 // `boot_sig` field:
 //   0x29 -> either of the following two fields are non-zero
 
 // Extended BPB for FAT32 volumes
-typedef struct packed {
-  uint32_t fat_sz_32;        // 32-bit count of sectors occupied by one FAT
-  fat32_ext_flags ext_flags; // extended flags
-  uint16_t fs_ver;           // high byte = major rev num, low byte = minor rev num
-  uint32_t root_clus;        // cluster number of first cluster of root directory (minimum 2)
-  uint16_t fs_info;          // sector number of fsinfo structure
-  uint16_t bk_boot_sec;      // set to 0 or 6 (non-zero indicates sector number of copy)
-  uint8_t reserved0[12];     // reserved - set to 0
-  uint8_t drv_num;           // drive number for interrupt 0x13
-  uint8_t reserved1;         // reserved - set to 0
-  uint8_t boot_sig;          // extended boot signature
-  uint32_t vol_id;           // volume serial number
-  char vol_lab[11];          // volume label
-  char fil_sys_type[8];      // human readable string
-  uint8_t reserved2[420];    // reserved - set to 0
-  uint16_t sig_word;         // signature word (0x55 and 0xAA)
+typedef struct packed fat32_ebpb {
+  uint32_t fat_sz_32;          // 32-bit count of sectors occupied by one FAT
+  fat32_ext_flags_t ext_flags; // extended flags
+  uint16_t fs_ver;             // high byte = major rev num, low byte = minor rev num
+  uint32_t root_clus;          // cluster number of first cluster of root directory (minimum 2)
+  uint16_t fs_info;            // sector number of fsinfo structure
+  uint16_t bk_boot_sec;        // set to 0 or 6 (non-zero indicates sector number of copy)
+  uint8_t reserved0[12];       // reserved - set to 0
+  uint8_t drv_num;             // drive number for interrupt 0x13
+  uint8_t reserved1;           // reserved - set to 0
+  uint8_t boot_sig;            // extended boot signature
+  uint32_t vol_id;             // volume serial number
+  char vol_lab[11];            // volume label
+  char fil_sys_type[8];        // human readable string
+  uint8_t reserved2[420];      // reserved - set to 0
+  uint16_t sig_word;           // signature word (0x55 and 0xAA)
 } fat32_ebpb_t;
 
 //
 
-typedef struct {
+typedef struct fat_super {
   fat_volume_type_t type;
   uint32_t fat_size;
   uint32_t total_sectors;
@@ -157,16 +154,12 @@ typedef struct {
 
   fat_bpb_t *bpb;
   void *fat;
-  fat_dirent_t *root;
-} fs_fat_t;
+  fat_dentry_t *root;
+} fat_super_t;
 
 //
 // Common functions
 //
 
-fs_t *fat_mount(blkdev_t *dev, fs_node_t *mount);
-inode_t *fat_locate(fs_t *fs, inode_t *parent, ino_t ino);
-
-ssize_t fat_read(fs_t *fs, inode_t *inode, off_t offset, size_t nbytes, void *buf);
 
 #endif

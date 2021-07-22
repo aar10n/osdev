@@ -215,7 +215,9 @@ typedef struct dentry {
 } dentry_t;
 
 typedef struct dentry_ops {
-  int (*delete)(dentry_t *dentry);
+  int (*create)(dentry_t *dentry);
+  // int (*delete)(dentry_t *dentry);
+  // int (*compare)(dentry_t *dentry, )
 } dentry_ops_t;
 
 /* ----- File ----- */
