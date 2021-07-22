@@ -137,6 +137,10 @@ void fs_init() {
     panic("failed to register ramfs");
   }
 
+  inode_t *inode = kmalloc(sizeof(inode_t));
+  memset(inode, 0, sizeof(inode_t));
+
+
   dentry_t *dentry = d_alloc(NULL, "/");
   dentry->parent = dentry;
   if (ramfs->mount(ramfs, NULL, dentry) < 0) {
@@ -147,6 +151,12 @@ void fs_init() {
 
   if (mount_internal("/dev", NULL, ramfs) < 0) {
     panic("failed to mount /dev");
+  }
+
+  // loopback device
+  dev_t loop = register_blkdev(0, NULL);
+  if (fs_mknod("/dev/loop", S_IFBLK, loop) < 0) {
+    panic("failed to create /dev/loop");
   }
 }
 

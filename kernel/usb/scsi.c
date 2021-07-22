@@ -56,7 +56,7 @@ void *scsi_device_init(usb_device_t *dev) {
   kfree(csw);
 
   blkdev_t *blkdev = blkdev_init(dev, scsi_read, scsi_write);
-  dev_t d = fs_register_blkdev(1, blkdev);
+  dev_t d = fs_register_blkdev(0, blkdev);
   kassert(d > 0);
 
   char suffix = sd_suffix;

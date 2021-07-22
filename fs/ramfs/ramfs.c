@@ -60,7 +60,6 @@ super_block_t *ramfs_mount(file_system_t *fs, blkdev_t *dev, dentry_t *mount) {
   sb->ops = fs->sb_ops;
   sb->fs = fs;
   sb->data = rsb;
-  sb->root = mount;
 
   inode_t *root = sb_alloc_inode(sb);
   root->mode = S_IFMNT | S_IFDIR;

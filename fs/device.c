@@ -6,14 +6,19 @@
 #include <thread.h>
 #include <printf.h>
 #include <queue.h>
+#include <atomic.h>
 
 
-static uint8_t __minor_ids[3] = {};
+static uint8_t __minor_ids[3] = { 1, 1, 1 };
 LIST_HEAD(device_t) devices[3][32] = {};
 spinlock_t lock = {};
 
 
 dev_t register_device(uint8_t major, uint8_t minor, void *data) {
+  if (minor == 0) {
+    minor = atomic_fetch_add(&__minor_ids[major], 1);
+  }
+
   uint8_t u = 0;
   device_t *d;
   LIST_FOREACH(d, &devices[major][minor], devices) {
