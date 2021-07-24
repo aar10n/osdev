@@ -287,6 +287,21 @@ typedef struct file_ops {
   // ssize_t (*writev)(file_t *file, const iovec_t *vector, unsigned long count, off_t *offset);
 } file_ops_t;
 
+// stat
+
+typedef struct kstat {
+  dev_t dev;
+  ino_t ino;
+  mode_t mode;
+  nlink_t nlink;
+  uid_t uid;
+  gid_t gid;
+  off_t size;
+  blksize_t blksize;
+  blkcnt_t blkcnt;
+  inode_t *inode;
+} kstat_t;
+
 /* ----- API ----- */
 
 void fs_init();
@@ -302,6 +317,9 @@ int fs_creat(const char *path, mode_t mode);
 int fs_mkdir(const char *path, mode_t mode);
 int fs_mknod(const char *path, mode_t mode, dev_t dev);
 int fs_close(int fd);
+
+int fs_stat(const char *path, kstat_t *statbuf);
+int fs_fstat(int fd, kstat_t *statbuf);
 
 ssize_t fs_read(int fd, void *buf, size_t nbytes);
 ssize_t fs_write(int fd, void *buf, size_t nbytes);

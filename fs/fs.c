@@ -335,6 +335,59 @@ int fs_close(int fd) {
 
 //
 
+int fs_stat(const char *path, kstat_t *statbuf) {
+  if (statbuf == NULL) {
+    ERRNO = ENOBUFS;
+    return -1;
+  }
+
+  dentry_t *dentry = resolve_path(path, *current_process->pwd, 0, NULL);
+  if (dentry == NULL) {
+    return -1;
+  }
+
+  inode_t *inode = dentry->inode;
+  statbuf->dev = inode->dev;
+  statbuf->ino = inode->ino;
+  statbuf->mode = inode->mode;
+  statbuf->nlink = inode->nlink;
+  statbuf->uid = inode->uid;
+  statbuf->gid = inode->gid;
+  statbuf->size = inode->size;
+  statbuf->blksize = inode->blksize;
+  statbuf->blkcnt = inode->blocks;
+  statbuf->inode = inode;
+  return 0;
+}
+
+int fs_fstat(int fd, kstat_t *statbuf) {
+  if (statbuf == NULL) {
+    ERRNO = ENOBUFS;
+    return -1;
+  }
+
+  file_t *file = f_locate(fd);
+  if (file == NULL) {
+    ERRNO = EBADF;
+    return -1;
+  }
+
+  inode_t *inode = file->dentry->inode;
+  statbuf->dev = inode->dev;
+  statbuf->ino = inode->ino;
+  statbuf->mode = inode->mode;
+  statbuf->nlink = inode->nlink;
+  statbuf->uid = inode->uid;
+  statbuf->gid = inode->gid;
+  statbuf->size = inode->size;
+  statbuf->blksize = inode->blksize;
+  statbuf->blkcnt = inode->blocks;
+  statbuf->inode = inode;
+  return 0;
+}
+
+//
+
 ssize_t fs_read(int fd, void *buf, size_t nbytes) {
   file_t *file = f_locate(fd);
   if (file == NULL) {

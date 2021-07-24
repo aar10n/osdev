@@ -25,6 +25,9 @@ int ext2_open(file_t *file, dentry_t *dentry) {
 }
 
 int ext2_flush(file_t *file) {
+  if (file->dentry->inode->pages) {
+    free_pages(file->dentry->inode->pages);
+  }
   return 0;
 }
 
