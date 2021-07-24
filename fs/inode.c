@@ -23,6 +23,7 @@ inode_t *i_alloc(ino_t ino, super_block_t *sb) {
 
   if (sb) {
     file_system_t *fs = sb->fs;
+    inode->sb = sb;
     inode->ops = fs->inode_ops;
     inode->blkdev = sb->dev;
     // LIST_ADD(&sb->inodes, inode, inodes);

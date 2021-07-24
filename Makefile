@@ -22,7 +22,7 @@ QEMUFLAGS = \
 	-debugcon file:$(BUILD)/uefi_debug.log \
 	-serial file:$(BUILD)/stdio \
 	-drive file=$(BUILD)/osdev.img,id=boot,format=raw,if=none \
-	-drive file=$(BUILD)/fat.img,id=stick,format=raw,if=none \
+	-drive file=$(BUILD)/ext2.img,id=stick,format=raw,if=none \
 	-device ahci,id=ahci \
 	-device qemu-xhci,id=xhci \
 	-device usb-kbd,bus=xhci.0 \
@@ -87,7 +87,7 @@ ramdisk: initrd $(BUILD)/initrd.img
 # -------------- #
 
 # USB bootable image
-$(BUILD)/osdev.img: $(BUILD)/bootx64.efi $(BUILD)/kernel.elf config.ini $(BUILD)/fat.img $(BUILD)/hello.elf
+$(BUILD)/osdev.img: $(BUILD)/bootx64.efi $(BUILD)/kernel.elf config.ini $(BUILD)/ext2.img $(BUILD)/hello.elf
 	dd if=/dev/zero of=$@ bs=1k count=1440
 	mformat -i $@ -f 1440 -v osdev ::
 	mmd -i $@ ::/EFI
@@ -119,6 +119,17 @@ $(BUILD)/hello.elf: $(sys-y)
 
 
 # External Data
+
+$(BUILD)/ext2.img: config.ini $(BUILD)/hello.elf
+	dd if=/dev/zero of=$@ bs=1m count=16
+	mke2fs -L Untitled -t ext2 $@
+	e2mkdir $@ /usr/local
+	e2cp $(BUILD)/text $@:/text.txt
+	echo "# here is a config file" > $(BUILD)/sys.conf
+	e2cp $(BUILD)/file.txt $@:/usr/sys.conf
+	e2cp config.ini $@:/usr/config.ini
+	e2cp $(BUILD)/file.txt $@:/hello.txt
+	e2cp $(BUILD)/hello.elf $@:/usr/local/hello
 
 $(BUILD)/fat.img: config.ini $(BUILD)/hello.elf
 	dd if=/dev/zero of=$@ bs=1m count=128

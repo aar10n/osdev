@@ -15,7 +15,7 @@
 
 #define usb_log(str, args...) kprintf("[usb] " str "\n", ##args)
 
-#define USB_DEBUG
+// #define USB_DEBUG
 #ifdef USB_DEBUG
 #define usb_trace_debug(str, args...) kprintf("[usb] " str "\n", ##args)
 #else

@@ -11,6 +11,7 @@
 #include <mutex.h>
 #include <queue.h>
 #include <mm.h>
+#include <rb_tree.h>
 
 #define MAX_PATH 256
 #define MAX_SYMLINKS 8
@@ -36,6 +37,7 @@ extern dentry_t *fs_root;
 
 // filesystem flags
 #define FS_READONLY 0x001 // read-only
+#define FS_NO_ROOT  0x002 // no root inode
 
 typedef struct file_system {
   char *name;                // filesystem name
@@ -92,6 +94,7 @@ typedef struct super_block {
   LIST_HEAD(inode_t) inodes; // all inodes from this fs
   file_system_t *fs;         // filesystem type
   super_block_ops_t *ops;    // superblock operations
+  rb_tree_t *inode_cache;    // inode cache
   void *data;                // filesystem specific data
 } super_block_t;
 
@@ -114,6 +117,7 @@ typedef struct super_block_ops {
 #define I_FILE_MASK (S_IFREG | S_IFDIR | S_IFLNK)
 #define I_MKNOD_MASK (S_IFIFO | S_IFCHR | S_IFDIR | S_IFBLK | S_IFREG)
 
+#define S_ISFLL  0x3000000 // Dentry is full.
 #define S_ISDTY  0x2000000 // Inode is dirty.
 #define S_ISLDD  0x1000000 // Inode is loaded.
 
@@ -152,6 +156,7 @@ typedef struct super_block_ops {
 
 #define IS_LOADED(mode) ((mode) & S_ISLDD)
 #define IS_DIRTY(mode) ((mode) & S_ISDTY)
+#define IS_FULL(mode) ((mode) & S_ISFLL)
 
 typedef struct inode {
   ino_t ino;                    // inode number

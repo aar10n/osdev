@@ -4,6 +4,7 @@
 
 #include <super.h>
 #include <inode.h>
+#include <dentry.h>
 #include <process.h>
 #include <thread.h>
 #include <panic.h>
@@ -35,6 +36,15 @@ int sb_read_inode(dentry_t *dentry) {
     return 0;
   }
 
+  super_block_t *sb = dentry->parent->inode->sb;
+  if (sb->inode_cache) {
+    rb_node_t *node = rb_tree_find(sb->inode_cache, dentry->ino);
+    if (node != NULL) {
+      d_attach(dentry, node->data);
+      return 0;
+    }
+  }
+
   inode_t *inode = dentry->inode;
   if (dentry->inode == NULL) {
     dentry_t *parent = dentry->parent;
@@ -46,6 +56,10 @@ int sb_read_inode(dentry_t *dentry) {
   int result = inode->sb->ops->read_inode(inode->sb, inode);
   if (result < 0) {
     return -1;
+  }
+
+  if (sb->inode_cache) {
+    rb_tree_insert(sb->inode_cache, dentry->ino, inode);
   }
 
   dentry->mode |= S_ISLDD | S_ISDTY;

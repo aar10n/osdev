@@ -75,7 +75,7 @@ super_block_t *ramfs_mount(file_system_t *fs, blkdev_t *dev, dentry_t *mount) {
 
 file_system_t ramfs_file_system = {
   .name = "ramfs",
-  .flags = 0,
+  .flags = FS_NO_ROOT,
   .mount = ramfs_mount,
   .sb_ops = &ramfs_super_ops,
   .inode_ops = &ramfs_inode_ops,

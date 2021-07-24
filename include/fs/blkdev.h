@@ -11,9 +11,9 @@
 #define SEC_SIZE 512
 #define SIZE_TO_SECS(size) (align(size, SEC_SIZE) / 512)
 
-typedef struct {
+// flags
+#define BLKDEV_NOCACHE 0x0001
 
-} block_cache_t;
 
 // Block Device
 typedef struct blkdev {
@@ -29,7 +29,9 @@ typedef struct blkdev {
 
 blkdev_t *blkdev_init(void *self, void *read, void *write);
 void *blkdev_read(blkdev_t *dev, uint64_t lba, uint32_t count);
+void *blkdev_readx(blkdev_t *dev, uint64_t lba, uint32_t count, int flags);
 int blkdev_write(blkdev_t *dev, uint64_t lba, uint32_t count, void *buf);
 int blkdev_readbuf(blkdev_t *dev, uint64_t lba, uint32_t count, void *buf);
+void blkdev_freebuf(void *ptr);
 
 #endif

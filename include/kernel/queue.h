@@ -81,7 +81,26 @@
     }                                                     \
   }
 
+/* Adds a list to the end of another */
+#define LIST_CONCAT(head, start, end, name)               \
+  {                                                       \
+    if ((head)->first == NULL) {                          \
+      (head)->first = (start);                            \
+      (head)->last = (end);                               \
+    } else {                                              \
+      (head)->last->name.next = (start);                  \
+      (start)->name.prev = (head)->last;                  \
+      (head)->last = (end);                               \
+    }                                                     \
+  }
+
 // Raw list functions
+
+#define RLIST_ADD(el1, el2, name) \
+  {                               \
+    (el1)->name.next = (el2);     \
+    (el2)->name.prev = (el1);     \
+  }
 
 /*
  * Adds an element to the front of a raw list (no head).
@@ -129,6 +148,13 @@
       if (cond)                          \
         break;                           \
     }                                    \
+  }
+
+#define RLIST_GET_LAST(el, name)              \
+  {                                           \
+    while ((el) && (el)->name.next != NULL) { \
+      (el) = (el)->name.next;                 \
+    }                                         \
   }
 
 // List accessors

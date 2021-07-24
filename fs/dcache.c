@@ -242,9 +242,13 @@ dentry_t *locate_child(dentry_t *parent, const char *name) {
     return NULL;
   }
 
-  inode_t *inode = parent->inode;
   dentry_t *child = i_lookup(parent->inode, name);
   if (child == NULL) {
+    return NULL;
+  }
+
+  result = sb_read_inode(child);
+  if (result < 0) {
     return NULL;
   }
   return child;

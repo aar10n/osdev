@@ -30,6 +30,10 @@ blkdev_t *blkdev_init(void *self, void *read, void *write) {
 }
 
 void *blkdev_read(blkdev_t *dev, uint64_t lba, uint32_t count) {
+  return blkdev_readx(dev, lba, count, 0);
+}
+
+void *blkdev_readx(blkdev_t *dev, uint64_t lba, uint32_t count, int flags) {
   if (count == 0) {
     return NULL;
   }
@@ -37,8 +41,8 @@ void *blkdev_read(blkdev_t *dev, uint64_t lba, uint32_t count) {
   interval_t ivl = intvl(lba, lba + count);
   intvl_node_t *node = intvl_tree_find(dev->cache, ivl);
   if (node != NULL) {
-    if (contains(node->interval, ivl)) {
-      kprintf("[blkdev] using cache\n");
+    if (contains(node->interval, ivl) && !(flags & BLKDEV_NOCACHE)) {
+      // kprintf("[blkdev] using cache\n");
       // requested data has already been fully read in
       uint64_t offset = ivl.start - node->interval.start;
       page_t *buffer = node->data;
@@ -47,19 +51,25 @@ void *blkdev_read(blkdev_t *dev, uint64_t lba, uint32_t count) {
     } else {
       free_buffer(node->data);
       intvl_tree_delete(dev->cache, node->interval);
-      return blkdev_read(dev, lba, count);
+      return blkdev_readx(dev, lba, count, flags);
     }
   }
 
-  kprintf("[blkdev] reading from disk\n");
+  // kprintf("[blkdev] reading from disk\n");
   page_t *buffer = alloc_buffer(count);
-  ssize_t result = dev->read(dev->self, lba, count, (void *) buffer->addr);
-  if (result < 0) {
-    free_buffer(buffer);
-    return NULL;
+  while (count > 0) {
+    size_t ccount = min(count, 64);
+    ssize_t result = dev->read(dev->self, lba, ccount, (void *) buffer->addr);
+    if (result < 0) {
+      free_buffer(buffer);
+      return NULL;
+    }
+    count -= ccount;
   }
 
-  intvl_tree_insert(dev->cache, ivl, buffer);
+  if (flags & BLKDEV_NOCACHE) {
+    intvl_tree_insert(dev->cache, ivl, buffer);
+  }
   return (void *) buffer->addr;
 }
 
@@ -92,7 +102,7 @@ int blkdev_readbuf(blkdev_t *dev, uint64_t lba, uint32_t count, void *buf) {
   intvl_node_t *node = intvl_tree_find(dev->cache, ivl);
   if (node != NULL) {
     if (contains(node->interval, ivl)) {
-      kprintf("[blkdev] using cache\n");
+      // kprintf("[blkdev] using cache\n");
       // requested data has already been fully read in
       uint64_t offset = ivl.start - node->interval.start;
       page_t *buffer = node->data;
@@ -106,10 +116,17 @@ int blkdev_readbuf(blkdev_t *dev, uint64_t lba, uint32_t count, void *buf) {
     }
   }
 
-  kprintf("[blkdev] reading from disk\n");
-  ssize_t result = dev->read(dev->self, lba, count, virt_to_phys_ptr(buf));
+  // kprintf("[blkdev] reading from disk\n");
+  ssize_t result = dev->read(dev->self, lba, count, buf);
   if (result < 0) {
     return -EFAILED;
   }
   return 0;
+}
+
+void blkdev_freebuf(void *ptr) {
+  if (ptr == NULL) {
+    return;
+  }
+  free_buffer(ptr);
 }

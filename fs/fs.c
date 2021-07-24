@@ -15,6 +15,7 @@
 #include <panic.h>
 
 #include <ramfs/ramfs.h>
+#include <ext2/ext2.h>
 
 // #define FS_DEBUG
 #ifdef FS_DEBUG
@@ -104,16 +105,21 @@ int mount_internal(const char *path, device_t *device, file_system_t *fs) {
     return -1;
   }
 
-  if (i_mkdir(parent->inode, dentry, S_IFMNT | S_IFDIR) < 0) {
-    d_destroy(dentry);
-    return -1;
+  if (fs->flags & FS_NO_ROOT) {
+    if (i_mkdir(parent->inode, dentry, S_IFMNT | S_IFDIR) < 0) {
+      d_destroy(dentry);
+      return -1;
+    }
   }
 
   blkdev_t *blkdev = device ? device->device : NULL;
   super_block_t *sb = fs->mount(fs, blkdev, dentry);
   if (sb == NULL) {
     return -1;
+  } else if (!(fs->flags & FS_NO_ROOT)) {
+    d_add_child(parent, dentry);
   }
+  dentry->mode |= S_ISLDD;
   sb->fs = fs;
   sb->dev = blkdev;
   sb->ops = fs->sb_ops;
@@ -133,6 +139,7 @@ void fs_init() {
   map_init(&fs_types);
 
   ramfs_init();
+  ext2_init();
 
   file_system_t *ramfs = map_get(&fs_types, "ramfs");
   if (ramfs == NULL) {
