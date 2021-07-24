@@ -50,7 +50,6 @@ int sb_read_inode(dentry_t *dentry) {
     dentry_t *parent = dentry->parent;
     kassert(IS_LOADED(parent->mode));
     inode = i_alloc(dentry->ino, parent->inode->sb);
-    dentry->inode = inode;
   }
 
   int result = inode->sb->ops->read_inode(inode->sb, inode);
@@ -58,6 +57,7 @@ int sb_read_inode(dentry_t *dentry) {
     return -1;
   }
 
+  d_attach(dentry, inode);
   if (sb->inode_cache) {
     rb_tree_insert(sb->inode_cache, dentry->ino, inode);
   }
