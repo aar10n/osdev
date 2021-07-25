@@ -4,11 +4,36 @@
 
 #include <format.h>
 #include <string.h>
-#include <math.h>
 
 #define max(a, b) (((a) > (b)) ? (a) : (b))
 #define abs(a) (((a) < 0) ? (-(a)) : (a))
 
+//
+
+double fmod(double x, double y) {
+  return x - ((int) x / y) * y;
+}
+
+double pow(double x, double y) {
+  if (x == 0) return 0;
+  if (y == 0) return 1;
+
+  if (fmod(y, 1) == 0) {
+    double value = 0;
+    while (y) {
+      value += x;
+      if (y < 0) {
+        y++;
+      } else {
+        y--;
+      }
+    }
+    return value;
+  }
+  return -1;
+}
+
+//
 
 typedef enum {
   START,
