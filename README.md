@@ -18,9 +18,9 @@ less working, but they still need to be put together before this is considered f
 │  ├── mm           memory management (physical and virtual)
 │  └── usb          usb and usb device drivers
 ├── lib           datastructure implementations
-├── libc          minimal C standard library for use in kernel
+├── libc          userspace C standard library
 ├── scripts       build scripts
-├── sys           userspace programs [not started]
+├── sys           userspace
 ├── third-party   third party tools (currently only edk2)
 └── tools         other useful tools that require compilation 
 ``` 
