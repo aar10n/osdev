@@ -44,6 +44,6 @@ void tlb_flush();
 void enable_sse();
 
 int syscall(int call);
-void sysret(uintptr_t rip, uintptr_t rsp);
+noreturn void sysret(uintptr_t rip, uintptr_t rsp);
 
 #endif

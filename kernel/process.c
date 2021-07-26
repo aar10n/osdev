@@ -13,7 +13,8 @@
 #include <mm/vm.h>
 
 #include <fs.h>
-#include <panic.h>
+#include <file.h>
+#include <loader.h>
 
 #include <printf.h>
 
@@ -126,6 +127,40 @@ pid_t process_fork() {
 
   scheduler_add(main);
   return process->pid;
+}
+
+int process_execve(const char *path, char *const argv[], char *const envp[]) {
+  int fd = fs_open(path, O_RDONLY, 0);
+  if (fd < 0) {
+    return -1;
+  }
+
+  kstat_t stat;
+  if (fs_fstat(fd, &stat) < 0) {
+    fs_close(fd);
+    return -1;
+  }
+
+  page_t *program = alloc_pages(SIZE_TO_PAGES(stat.size), PE_WRITE);
+  ssize_t nread = fs_read(fd, (void *) program->addr, stat.size);
+  if (nread < 0) {
+    free_pages(program);
+    fs_close(fd);
+    return -1;
+  }
+
+  void *entry;
+  int result = load_elf((void *) program->addr, &entry);
+  if (result < 0) {
+    free_pages(program);
+    fs_close(fd);
+    return -1;
+  }
+
+  uintptr_t rsp = current_thread->stack->addr;
+  rsp += THREAD_STACK_SIZE - 1;
+
+  sysret((uintptr_t) entry, rsp);
 }
 
 pid_t getpid() {

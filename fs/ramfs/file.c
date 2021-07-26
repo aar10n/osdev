@@ -60,3 +60,14 @@ ssize_t ramfs_write(file_t *file, const char *buf, size_t count, off_t *offset) 
   *offset += count;
   return count;
 }
+
+//
+
+file_ops_t file_ops = {
+  .open = ramfs_open,
+  .flush = ramfs_flush,
+  .read = ramfs_read,
+  .write = ramfs_write,
+};
+
+file_ops_t *ramfs_file_ops = &file_ops;

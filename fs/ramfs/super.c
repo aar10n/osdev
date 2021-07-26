@@ -38,3 +38,14 @@ int ramfs_read_inode(super_block_t *sb, inode_t *inode) {
 int ramfs_write_inode(super_block_t *sb, inode_t *inode) {
   return 0;
 }
+
+//
+
+super_block_ops_t super_ops = {
+  ramfs_alloc_inode,
+  ramfs_destroy_inode,
+  ramfs_read_inode,
+  ramfs_write_inode,
+};
+
+super_block_ops_t *ramfs_super_ops = &super_ops;

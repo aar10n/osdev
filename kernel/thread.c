@@ -62,7 +62,7 @@ thread_t *thread_alloc(id_t tid, void *(start_routine)(void *), void *arg) {
 
   // create thread stack
   size_t num_pages = SIZE_TO_PAGES(THREAD_STACK_SIZE);
-  page_t *stack_pages = alloc_zero_pages(num_pages, PE_WRITE);
+  page_t *stack_pages = alloc_zero_pages(num_pages, PE_USER | PE_WRITE);
   uintptr_t *stack_top = (void *) stack_pages->addr + THREAD_STACK_SIZE;
   // make arguments accessible to entry stub
   stack_top[-1] = (uintptr_t) start_routine;

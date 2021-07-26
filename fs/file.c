@@ -4,6 +4,7 @@
 
 #include <file.h>
 #include <dentry.h>
+#include <device.h>
 #include <rb_tree.h>
 #include <process.h>
 #include <thread.h>
@@ -81,6 +82,18 @@ file_t *f_alloc(dentry_t *dentry, int flags, mode_t mode) {
   file->mode = mode;
   file->pos = 0;
   file->ops = dentry->inode->sb->fs->file_ops;
+
+  if (IS_IFCHR(mode)) {
+    device_t *device = locate_device(dentry->inode->dev);
+    if (device == NULL) {
+      f_release(file);
+      ERRNO = ENODEV;
+      return NULL;
+    }
+
+    chrdev_t *chrdev = device->device;
+    file->ops = chrdev->ops;
+  }
 
   spin_lock(&FILES->lock);
   rb_tree_insert(FILES->files, fd, file);

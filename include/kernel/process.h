@@ -7,7 +7,6 @@
 
 #include <base.h>
 #include <fs.h>
-#include <file.h>
 
 #define DEFAULT_RFLAGS 0x246
 #define PROC_STACK_SIZE 0x2000
@@ -22,6 +21,7 @@ typedef enum {
 
 typedef struct vm vm_t;
 typedef struct thread thread_t;
+typedef struct file_table file_table_t;
 
 typedef struct {
   uint64_t rax;    // 0x00
@@ -60,6 +60,7 @@ process_t *create_root_process(void (function)());
 pid_t process_create(void (start_routine)());
 pid_t process_create_1(void (start_routine)(), void *arg);
 pid_t process_fork();
+int process_execve(const char *path, char *const argv[], char *const envp[]);
 
 pid_t getpid();
 pid_t getppid();

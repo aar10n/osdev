@@ -286,6 +286,7 @@ int i_mknod(inode_t *dir, dentry_t *dentry, mode_t mode, dev_t dev) {
 
   dentry_t *parent = LIST_FIRST(&dir->dentries);
   d_add_child(parent, dentry);
+  dentry->inode->dev = dev;
   // register device
   return 0;
 }
