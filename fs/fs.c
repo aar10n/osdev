@@ -15,6 +15,7 @@
 #include <panic.h>
 
 #include <ramfs/ramfs.h>
+#include <devfs/devfs.h>
 #include <ext2/ext2.h>
 
 // #define FS_DEBUG
@@ -124,6 +125,10 @@ int mount_internal(const char *path, device_t *device, file_system_t *fs) {
   sb->dev = blkdev;
   sb->ops = fs->sb_ops;
   sb->root = dentry;
+
+  if (fs->post_mount) {
+    return fs->post_mount(fs, sb);
+  }
   return 0;
 }
 
@@ -139,12 +144,11 @@ void fs_init() {
   map_init(&fs_types);
 
   ramfs_init();
+  devfs_init();
   ext2_init();
 
   file_system_t *ramfs = map_get(&fs_types, "ramfs");
-  if (ramfs == NULL) {
-    panic("failed to register ramfs");
-  }
+  kassert(ramfs != NULL);
 
   dentry_t *dentry = d_alloc(NULL, "/");
   dentry->parent = dentry;
@@ -154,18 +158,14 @@ void fs_init() {
   d_populate_dir(dentry);
   fs_root = dentry;
 
-  // done mounting root
-
   // mount device filesystem
-  if (mount_internal("/dev", NULL, ramfs) < 0) {
+  file_system_t *devfs = map_get(&fs_types, "devfs");
+  kassert(ramfs != NULL);
+
+  if (mount_internal("/dev", NULL, devfs) < 0) {
     panic("failed to mount /dev");
   }
 
-  // loopback device
-  dev_t loop = register_blkdev(0, NULL);
-  if (fs_mknod("/dev/loop", S_IFBLK, loop) < 0) {
-    panic("failed to create /dev/loop");
-  }
 }
 
 int fs_register(file_system_t *fs) {

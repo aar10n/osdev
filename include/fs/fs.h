@@ -44,6 +44,7 @@ typedef struct file_system {
   uint32_t flags;            // filesystem flags
 
   super_block_t *(*mount)(file_system_t *fs, blkdev_t *dev, dentry_t *mount);
+  int (*post_mount)(file_system_t *fs, super_block_t *sb);
 
   super_block_ops_t *sb_ops; // superblock operations
   inode_ops_t *inode_ops;    // inode operations
@@ -260,14 +261,16 @@ typedef struct dentry_ops {
 #define SEEK_END 3
 
 typedef struct file {
-  int fd;           // file descriptor
-  dentry_t *dentry; // associated dentry
-  int flags;        // flags specified on open
-  mode_t mode;      // file access mode
-  off_t pos;        // file offset
-  uid_t uid;        // user id
-  gid_t gid;        // group id
-  file_ops_t *ops;  // file operations
+  int fd;              // file descriptor
+  dentry_t *dentry;    // associated dentry
+  int flags;           // flags specified on open
+  mode_t mode;         // file access mode
+  off_t pos;           // file offset
+  uid_t uid;           // user id
+  gid_t gid;           // group id
+  rw_lock_t rw_lock;   // read/write lock
+  cond_t data_ready;   // data ready for read
+  file_ops_t *ops;     // file operations
 } file_t;
 
 typedef struct file_ops {

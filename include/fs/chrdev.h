@@ -5,6 +5,9 @@
 #ifndef FS_CHRDEV_H
 #define FS_CHRDEV_H
 
+#include <base.h>
+#include <mutex.h>
+
 typedef struct file_ops file_ops_t;
 
 

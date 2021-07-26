@@ -3,6 +3,7 @@
 //
 
 #include <chrdev.h>
+#include <mm.h>
 
 chrdev_t *chrdev_init(file_ops_t *ops) {
   chrdev_t *chrdev = kmalloc(sizeof(chrdev_t));

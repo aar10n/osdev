@@ -82,6 +82,8 @@ file_t *f_alloc(dentry_t *dentry, int flags, mode_t mode) {
   file->mode = mode;
   file->pos = 0;
   file->ops = dentry->inode->sb->fs->file_ops;
+  rw_lock_init(&file->rw_lock);
+  cond_init(&file->data_ready, 0);
 
   if (IS_IFCHR(mode)) {
     device_t *device = locate_device(dentry->inode->dev);
@@ -173,6 +175,9 @@ ssize_t f_write(file_t *file, const char *buf, size_t count) {
 off_t f_lseek(file_t *file, off_t offset, int whence) {
   if (file->ops->lseek) {
     return file->ops->lseek(file, offset, whence);
+  } else if (IS_IFCHR(file->mode)) {
+    ERRNO = ENOTSUP;
+    return -1;
   }
 
   if (whence == SEEK_SET) {
