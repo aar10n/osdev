@@ -8,7 +8,7 @@ fs += acl.c blkdev.c chrdev.c dcache.c dentry.c \
 	utils.c
 
 # fs/devfs
-fs += devfs/devfs.c devfs/stdio.c
+fs += devfs/devfs.c
 
 # fs/ext2
 fs += ext2/ext2.c ext2/file.c ext2/inode.c ext2/super.c

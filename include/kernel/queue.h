@@ -17,6 +17,11 @@
     type *prev;          \
   }
 
+#define SLIST_ENTRY(type) \
+  struct {                \
+    type *next;           \
+  }
+
 // List functions
 
 #define LIST_INIT(head)   \

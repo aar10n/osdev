@@ -268,8 +268,6 @@ typedef struct file {
   off_t pos;           // file offset
   uid_t uid;           // user id
   gid_t gid;           // group id
-  rw_lock_t rw_lock;   // read/write lock
-  cond_t data_ready;   // data ready for read
   file_ops_t *ops;     // file operations
 } file_t;
 

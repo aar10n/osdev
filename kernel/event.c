@@ -3,8 +3,17 @@
 //
 
 #include <event.h>
+#include <mutex.h>
+#include <thread.h>
+#include <atomic.h>
+#include <bitmap.h>
 
-char key_to_character_lower[] = {
+#define MAX_HANDLERS 32
+
+static bitmap_t *handler_indexes;
+static thread_t *handlers[MAX_HANDLERS];
+
+const char key_to_character_lower[] = {
   [VK_KEYCODE_A] = 'a',
   [VK_KEYCODE_B] = 'b',
   [VK_KEYCODE_C] = 'c',
@@ -58,7 +67,7 @@ char key_to_character_lower[] = {
   [VK_KEYCODE_SLASH] = '/',
 };
 
-char key_to_character_upper[] = {
+const char key_to_character_upper[] = {
   [VK_KEYCODE_A] = 'A',
   [VK_KEYCODE_B] = 'B',
   [VK_KEYCODE_C] = 'C',
@@ -114,8 +123,35 @@ char key_to_character_upper[] = {
 
 //
 
-void queue_key_event(key_event_t *event) {
+void events_init() {
+  bitmap_t *bmp = create_bitmap(1024);
+  handler_indexes = bmp;
+}
 
+key_event_t *wait_for_key_event() {
+  index_t idx = bitmap_get_set_free(handler_indexes);
+  if (idx < 0) {
+    ERRNO = EINVAL;
+    return NULL;
+  }
+  handlers[idx] = current_thread;
+  cond_wait(&current_thread->data_ready);
+  handlers[idx] = NULL;
+  bitmap_clear(handler_indexes, idx);
+  return current_thread->data;
+}
+
+void dispatch_key_event(key_event_t *event) {
+  current_thread->preempt_count++;
+  for (int i = 0; i < MAX_HANDLERS; i++) {
+    thread_t *t = handlers[i];
+    if (t == NULL) {
+      break;
+    }
+    t->data = event;
+    cond_signal(&t->data_ready);
+  }
+  current_thread->preempt_count--;
 }
 
 bool is_printable_key(key_code_t key) {

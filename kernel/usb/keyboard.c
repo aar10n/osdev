@@ -7,8 +7,10 @@
 #include <usb/hid-report.h>
 #include <usb/hid-usage.h>
 #include <event.h>
-#include <gui/screen.h>
 #include <printf.h>
+
+key_event_t *event_queue_first = NULL;
+key_event_t *event_queue_last = NULL;
 
 key_code_t hid_keyboard_layout[] = {
   [HID_KEYBOARD_A] = VK_KEYCODE_A,
@@ -143,6 +145,8 @@ void hid_keyboard_handle_input(hid_device_t *device, const uint8_t *buffer) {
   // }
   // kprintf("\n");
 
+  key_event_t *ptr = event_queue_first;
+
   uint8_t char_idx = kb->buffer_offset;
   uint8_t char_max = char_idx + kb->buffer_size;
   for (int i = char_idx; i < char_max; i++) {
@@ -158,27 +162,23 @@ void hid_keyboard_handle_input(hid_device_t *device, const uint8_t *buffer) {
       }
     }
 
-    key_event_t event = {
-      .modifiers = modifiers,
-      .key_code = hid_keyboard_layout[buffer[i]],
-      .release = false,
-      .next = NULL
-    };
-
-    if (event.key_code == VK_KEYCODE_RETURN) {
-      screen_print_char('\n');
-    } else if (event.key_code == VK_KEYCODE_DELETE) {
-      screen_print_char('\b');
+    if (ptr == NULL) {
+      ptr = kmalloc(sizeof(key_event_t));
+      if (event_queue_first == NULL) {
+        event_queue_first = ptr;
+        event_queue_last = ptr;
+      } else {
+        event_queue_last->next = ptr;
+        event_queue_last = ptr;
+      }
     }
-
-    char ch = key_event_to_character(&event);
-    if (ch != 0) {
-      // kprintf("%c\n", ch);
-      screen_print_char(ch);
-    }
-
+    ptr->modifiers = modifiers;
+    ptr->key_code = hid_keyboard_layout[buffer[i]];
+    ptr->next = NULL;
+    ptr = ptr->next;
     label(cont);
   }
 
   memcpy(kb->prev_buffer, buffer, device->size);
+  dispatch_key_event(event_queue_first);
 }

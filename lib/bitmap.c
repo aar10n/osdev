@@ -32,7 +32,7 @@ void bitmap_init(bitmap_t *bmp, size_t n) {
   size_t na = align(n, BIT_SIZE);
   size_t bytes = na / BIT_SIZE;
 
-  bmp->map = _malloc(bytes / BYTE_SIZE);
+  bmp->map = _malloc(min(bytes / BYTE_SIZE, 1));
   bmp->size = bytes;
   bmp->used = 0;
   bmp->free = n;

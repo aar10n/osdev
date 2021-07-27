@@ -36,6 +36,7 @@ void fs_readfile(const char *path) {
   char *buf = kmalloc(128);
   ssize_t nbytes;
   while ((nbytes = fs_read(fd, buf, 128)) > 0) {
+    buf[nbytes] = '\0';
     kprintf("%s", buf);
   }
 

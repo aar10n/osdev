@@ -12,5 +12,6 @@
 
 void serial_init(int port);
 void serial_write(int port, const char *s);
+void serial_nwrite(int port, const char *s, size_t l);
 
 #endif

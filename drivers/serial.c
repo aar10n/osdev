@@ -25,8 +25,13 @@ void serial_write_char(int port, char a) {
 }
 
 void serial_write(int port, const char *s) {
+  size_t l = strlen(s);
+  serial_nwrite(port, s, l);
+}
+
+void serial_nwrite(int port, const char *s, size_t l) {
   lock(serial_lock);
-  for (int i = 0; i < strlen(s); i++) {
+  for (int i = 0; i < l; i++) {
     serial_write_char(port, s[i]);
   }
   unlock(serial_lock);
