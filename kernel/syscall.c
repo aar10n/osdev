@@ -43,10 +43,6 @@ static off_t sys_lseek(int fd, off_t offset, int whence) {
   return newoff;
 }
 
-static void sys_puts(const char *str) {
-  kprintf("%s", str);
-}
-
 // function table
 
 static syscall_t syscalls[] = {
@@ -56,7 +52,6 @@ static syscall_t syscalls[] = {
   [SYS_READ]  = to_syscall(sys_read),
   [SYS_WRITE] = to_syscall(sys_write),
   [SYS_LSEEK] = to_syscall(sys_lseek),
-  [SYS_PUTS]  = to_syscall(sys_puts)
 };
 static int num_syscalls = sizeof(syscalls) / sizeof(void *);
 
