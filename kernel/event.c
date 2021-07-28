@@ -166,6 +166,8 @@ bool is_printable_key(key_code_t key) {
 char key_event_to_character(key_event_t *event) {
   if (!is_printable_key(event->key_code)) {
     return '\0';
+  } else if (event->release) {
+    return '\0';
   }
 
   if (event->modifiers & L_SHIFT || event->modifiers & R_SHIFT) {

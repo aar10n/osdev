@@ -36,6 +36,8 @@
 #include <bus/pcie.h>
 #include <usb/usb.h>
 #include <usb/scsi.h>
+#include <event.h>
+#include <gui/screen.h>
 
 
 boot_info_t *boot_info;
@@ -56,13 +58,29 @@ void launch() {
   pcie_discover();
 
   usb_init();
+  events_init();
 
-  if (fs_mount("/test", "/dev/loop", "ramfs") < 0) {
-    kprintf("%s\n", strerror(ERRNO));
-  }
+  int fd = fs_open("/dev/fb0", O_RDWR, 0);
+  kstat_t stat;
+  fs_fstat(fd, &stat);
 
-  fs_lsdir("/");
+  void *fb = fs_mmap(NULL, stat.size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+
+  // if (fs_mount("/mount", "/dev/sda", "ext2") < 0) {
+  //   kprintf("%s\n", strerror(ERRNO));
+  // }
+
   fs_lsdir("/dev");
+
+  // char buf[32];
+  // int fd = fs_open("/dev/stdin", O_RDONLY, 0);
+  // ssize_t nread;
+  // while ((nread = fs_read(fd, buf, 32))) {
+  //   buf[nread] = '\0';
+  //   screen_print_str(buf);
+  // }
+
+  // process_execve("/mount/usr/local/hello", NULL, NULL);
 
   kprintf("done!\n");
   thread_block();

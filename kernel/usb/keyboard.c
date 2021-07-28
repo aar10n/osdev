@@ -140,18 +140,24 @@ void hid_keyboard_handle_input(hid_device_t *device, const uint8_t *buffer) {
   hid_keyboard_t *kb = device->data;
   uint32_t modifiers = buffer[kb->modifier_offset];
 
-  // for (int i = 0; i < device->size; i++) {
-  //   kprintf("%#x ", (int) buffer[i]);
-  // }
-  // kprintf("\n");
-
   key_event_t *ptr = event_queue_first;
 
   uint8_t char_idx = kb->buffer_offset;
   uint8_t char_max = char_idx + kb->buffer_size;
   for (int i = char_idx; i < char_max; i++) {
+    bool release = false;
+    key_code_t code = 0;
     if (buffer[i] == 0) {
+      for (int j = char_idx; j < char_max; j++) {
+        if (kb->prev_buffer[j] != 0) {
+          release = true;
+          code = hid_keyboard_layout[kb->prev_buffer[j]];
+          goto make_event;
+        }
+      }
       break;
+    } else {
+      code = hid_keyboard_layout[buffer[i]];
     }
 
     for (int j = char_idx; j < char_max; j++) {
@@ -162,6 +168,7 @@ void hid_keyboard_handle_input(hid_device_t *device, const uint8_t *buffer) {
       }
     }
 
+   make_event: NULL;
     if (ptr == NULL) {
       ptr = kmalloc(sizeof(key_event_t));
       if (event_queue_first == NULL) {
@@ -173,7 +180,8 @@ void hid_keyboard_handle_input(hid_device_t *device, const uint8_t *buffer) {
       }
     }
     ptr->modifiers = modifiers;
-    ptr->key_code = hid_keyboard_layout[buffer[i]];
+    ptr->key_code = code;
+    ptr->release = release;
     ptr->next = NULL;
     ptr = ptr->next;
     label(cont);
