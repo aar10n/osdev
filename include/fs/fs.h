@@ -8,6 +8,7 @@
 #include <base.h>
 #include <blkdev.h>
 #include <chrdev.h>
+#include <framebuf.h>
 #include <mutex.h>
 #include <queue.h>
 #include <mm.h>
@@ -21,7 +22,7 @@
 
 typedef struct file_system file_system_t;
 typedef struct device device_t;
-typedef struct device_ops device_opts_t;
+typedef struct device_ops device_ops_t;
 typedef struct super_block super_block_t;
 typedef struct super_block_ops super_block_ops_t;
 typedef struct inode inode_t;
@@ -77,11 +78,12 @@ static inline uint16_t unit(dev_t dev) {
 typedef struct device {
   dev_t dev;                    // device id (major + minor)
   void *device;                 // device driver (blkdev, chrdev)
+  device_ops_t *ops;            // common device operations
   LIST_ENTRY(device_t) devices; // devices list
 } device_t;
 
 typedef struct device_ops {
-
+  void (*fill_inode)(device_t *device, inode_t *inode);
 } device_ops_t;
 
 /* ----- Superblock ----- */
@@ -113,15 +115,16 @@ typedef struct super_block_ops {
 #define AT_SYMLINK_NOFOLLOW 0x00001
 
 // inode mode flags
-#define I_TYPE_MASK 0x0FFF0000
+#define I_TYPE_MASK 0x1FFF0000
 #define I_PERM_MASK 0x0000FFFF
 #define I_FILE_MASK (S_IFREG | S_IFDIR | S_IFLNK)
-#define I_MKNOD_MASK (S_IFIFO | S_IFCHR | S_IFDIR | S_IFBLK | S_IFREG)
+#define I_MKNOD_MASK (S_IFFBF | S_IFIFO | S_IFCHR | S_IFDIR | S_IFBLK | S_IFREG)
 
-#define S_ISFLL  0x3000000 // Dentry is full.
-#define S_ISDTY  0x2000000 // Inode is dirty.
-#define S_ISLDD  0x1000000 // Inode is loaded.
+#define S_ISFLL  0x8000000 // Dentry is full.
+#define S_ISDTY  0x4000000 // Inode is dirty.
+#define S_ISLDD  0x2000000 // Inode is loaded.
 
+#define S_IFFBF  0x1000000 // Framebuffer special.
 #define S_IFMNT  0x0800000 // Filesystem mount.
 #define S_IFCHR  0x0400000 // Character special (tty).
 #define S_IFIFO  0x0200000 // FIFO special (pipe).
@@ -146,6 +149,7 @@ typedef struct super_block_ops {
 #define S_IWOTH  0x0000002 // Write permission, others.
 #define S_IXOTH  0x0000001 // Execute/search permission, others.
 
+#define IS_IFFBF(mode) ((mode) & S_IFFBF)
 #define IS_IFMNT(mode) ((mode) & S_IFMNT)
 #define IS_IFCHR(mode) ((mode) & S_IFCHR)
 #define IS_IFIFO(mode) ((mode) & S_IFIFO)
@@ -280,7 +284,7 @@ typedef struct file_ops {
   int (*readdir)(file_t *file, dentry_t *dirent, bool fill);
   // unsigned int (*poll)(file_t *file, poll_table_struct_t *poll_table);
   // int (*ioctl)(inode_t *inode, file_t *file, unsigned int cmd, unsigned long arg);
-  // int (*mmap)(file_t *file, vm_area_t *vma);
+  int (*mmap)(file_t *file, uintptr_t vaddr, size_t len, uint16_t flags);
   // int (*release)(inode_t *inode, file_t *file);
   // int (*fsync)(file_t *file, dentry_t *dentry, int datasync);
   // int (*lock)(file_t *file, int cmd, file_lock_t *lock);
@@ -303,12 +307,29 @@ typedef struct kstat {
   inode_t *inode;
 } kstat_t;
 
+/* ----- Mmap ----- */
+
+// prot
+#define PROT_NONE  0x0
+#define PROT_READ  0x1
+#define PROT_WRITE 0x2
+#define PROT_EXEC  0x4
+
+// flags
+#define MAP_SHARED    0
+#define MAP_PRIVATE   1
+#define MAP_FIXED     2
+
+#define MAP_FAILED NULL
+
+
 /* ----- API ----- */
 
 void fs_init();
 int fs_register(file_system_t *fs);
-dev_t fs_register_blkdev(uint8_t minor, blkdev_t *blkdev);
-dev_t fs_register_chrdev(uint8_t minor, chrdev_t *chrdev);
+dev_t fs_register_blkdev(uint8_t minor, blkdev_t *blkdev, device_ops_t *ops);
+dev_t fs_register_chrdev(uint8_t minor, chrdev_t *chrdev, device_ops_t *ops);
+dev_t fs_register_framebuf(uint8_t minor, framebuf_t *framebuf, device_ops_t *ops);
 
 int fs_mount(const char *path, const char *device, const char *format);
 int fs_unmount(const char *path);
@@ -339,5 +360,7 @@ int fs_rmdir(const char *path);
 int fs_chdir(const char *path);
 int fs_chmod(const char *path, mode_t mode);
 int fs_chown(const char *path, uid_t owner, gid_t group);
+
+void *fs_mmap(void *addr, size_t len, int prot, int flags, int fd, off_t off);
 
 #endif

@@ -109,9 +109,8 @@ int devfs_post_mount(file_system_t *fs, super_block_t *sb) {
   // special devices
   //
 
-
   // /dev/loop
-  dev_t dev_loop = fs_register_blkdev(0, NULL);
+  dev_t dev_loop = fs_register_blkdev(0, NULL, NULL);
   kassert(dev_loop != 0);
   if (fs_mknod("/dev/loop", S_IFBLK, dev_loop) < 0) {
     panic("failed to create /dev/loop");
@@ -119,7 +118,7 @@ int devfs_post_mount(file_system_t *fs, super_block_t *sb) {
 
   // /dev/null
   chrdev_t *chrdev_null = chrdev_init(&null_file_ops);
-  dev_t dev_null = fs_register_chrdev(0, chrdev_null);
+  dev_t dev_null = fs_register_chrdev(0, chrdev_null, NULL);
   kassert(dev_null != 0);
   if (fs_mknod("/dev/null", S_IFCHR, dev_null) < 0) {
     panic("failed to create /dev/null");
@@ -127,7 +126,7 @@ int devfs_post_mount(file_system_t *fs, super_block_t *sb) {
 
   // /dev/zero
   chrdev_t *chrdev_zero = chrdev_init(&zero_file_ops);
-  dev_t dev_zero = fs_register_chrdev(0, chrdev_zero);
+  dev_t dev_zero = fs_register_chrdev(0, chrdev_zero, NULL);
   kassert(dev_zero != 0);
   if (fs_mknod("/dev/zero", S_IFCHR, dev_zero) < 0) {
     panic("failed to create /dev/zero");
@@ -135,7 +134,7 @@ int devfs_post_mount(file_system_t *fs, super_block_t *sb) {
 
   // /dev/stdin
   chrdev_t *chrdev_stdin = chrdev_init(&stdin_file_ops);
-  dev_t dev_stdin = fs_register_chrdev(0, chrdev_stdin);
+  dev_t dev_stdin = fs_register_chrdev(0, chrdev_stdin, NULL);
   kassert(dev_stdin != 0);
   if (fs_mknod("/dev/stdin", S_IFCHR, dev_stdin) < 0) {
     panic("failed to create /dev/stdin");
@@ -143,7 +142,7 @@ int devfs_post_mount(file_system_t *fs, super_block_t *sb) {
 
   // /dev/stdout
   chrdev_t *chrdev_stdout = chrdev_init(&stdout_file_ops);
-  dev_t dev_stdout = fs_register_chrdev(0, chrdev_stdout);
+  dev_t dev_stdout = fs_register_chrdev(0, chrdev_stdout, NULL);
   kassert(dev_stdout != 0);
   if (fs_mknod("/dev/stdout", S_IFCHR, dev_stdout) < 0) {
     panic("failed to create /dev/stdout");
@@ -151,7 +150,7 @@ int devfs_post_mount(file_system_t *fs, super_block_t *sb) {
 
   // /dev/stderr
   chrdev_t *chrdev_stderr = chrdev_init(&stderr_file_ops);
-  dev_t dev_stderr = fs_register_chrdev(0, chrdev_stderr);
+  dev_t dev_stderr = fs_register_chrdev(0, chrdev_stderr, NULL);
   kassert(dev_stderr != 0);
   if (fs_mknod("/dev/stderr", S_IFCHR, dev_stderr) < 0) {
     panic("failed to create /dev/stderr");

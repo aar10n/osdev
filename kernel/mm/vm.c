@@ -581,11 +581,19 @@ void *vm_map_vaddr(uintptr_t virt_addr, uintptr_t phys_addr, size_t len, uint16_
   len = align(len, PAGE_SIZE);
   interval_t interval = intvl(virt_addr, virt_addr + len);
   intvl_node_t *existing = intvl_tree_find(VM->tree, interval);
+  vm_area_t *area = NULL;
   if (existing) {
-    panic("[vm] failed to map address - already in use\n");
+    area = existing->data;
+    if (!(area->attr & AREA_RESERVED) || area->size != len) {
+      panic("[vm] failed to map address - already in use\n");
+    }
+
+    area->attr ^= AREA_RESERVED;
+    area->attr |= AREA_PHYS;
+  } else {
+    area = alloc_area(virt_addr, len, AREA_USED | AREA_PHYS);
   }
 
-  vm_area_t *area = alloc_area(virt_addr, len, AREA_USED | AREA_PHYS);
   area->phys = phys_addr;
   flags |= PE_PRESENT;
   return map_area(area, flags);

@@ -67,6 +67,8 @@ int validate_open_flags(dentry_t *dentry, int flags) {
   return 0;
 }
 
+//
+
 dentry_t *dentry_from_basename(dentry_t *parent, const char *path) {
   path_t p = str_to_path(path);
   if (p_len(p) >= MAX_PATH) {
@@ -166,6 +168,8 @@ void fs_init() {
     panic("failed to mount /dev");
   }
 
+  // initialize framebuf
+  framebuf_init();
 }
 
 int fs_register(file_system_t *fs) {
@@ -177,12 +181,16 @@ int fs_register(file_system_t *fs) {
   return 0;
 }
 
-dev_t fs_register_blkdev(uint8_t minor, blkdev_t *blkdev) {
-  return register_blkdev(minor, blkdev);
+dev_t fs_register_blkdev(uint8_t minor, blkdev_t *blkdev, device_ops_t *ops) {
+  return register_blkdev(minor, blkdev, ops);
 }
 
-dev_t fs_register_chrdev(uint8_t minor, chrdev_t *chrdev) {
-  return register_chrdev(minor, chrdev);
+dev_t fs_register_chrdev(uint8_t minor, chrdev_t *chrdev, device_ops_t *ops) {
+  return register_chrdev(minor, chrdev, ops);
+}
+
+dev_t fs_register_framebuf(uint8_t minor, framebuf_t *framebuf, device_ops_t *ops) {
+  return register_framebuf(minor, framebuf, ops);
 }
 
 //
@@ -624,4 +632,43 @@ int fs_chmod(const char *path, mode_t mode) {
 int fs_chown(const char *path, uid_t owner, gid_t group) {
   ERRNO = ENOTSUP;
   return -1;
+}
+
+//
+
+void *fs_mmap(void *addr, size_t len, int prot, int flags, int fd, off_t off) {
+  file_t *file = f_locate(fd);
+  if (fd != -1 && file == NULL) {
+    ERRNO = EBADF;
+    return MAP_FAILED;
+  }
+
+  if (prot & PROT_WRITE && file->flags & O_RDONLY) {
+    ERRNO = EACCES;
+    return MAP_FAILED;
+  }
+  if (prot & PROT_EXEC && !(file->flags & O_EXEC)) {
+    ERRNO = EACCES;
+    return MAP_FAILED;
+  }
+
+  uintptr_t va = (uintptr_t) addr;
+  if (!vm_find_free_area(ABOVE, &va, len)) {
+    ERRNO = ENOMEM;
+    return MAP_FAILED;
+  }
+  vm_mark_reserved(va, len);
+
+  uint16_t pflags = PE_USER;
+  if (flags & PROT_WRITE) {
+    pflags |= PE_WRITE;
+  }
+  if (flags & PROT_EXEC) {
+    pflags |= PE_EXEC;
+  }
+
+  if (f_mmap(file, va, len, pflags) < 0) {
+    return NULL;
+  }
+  return (void *) va;
 }

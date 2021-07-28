@@ -14,7 +14,7 @@ LIST_HEAD(device_t) devices[3][32] = {};
 spinlock_t lock = {};
 
 
-dev_t register_device(uint8_t major, uint8_t minor, void *data) {
+dev_t register_device(uint8_t major, uint8_t minor, void *data, device_ops_t *ops) {
   if (minor == 0) {
     minor = atomic_fetch_add(&__minor_ids[major], 1);
   }
@@ -31,6 +31,7 @@ dev_t register_device(uint8_t major, uint8_t minor, void *data) {
   u++;
   device->dev = makedev(major, minor, u);
   device->device = data;
+  device->ops = ops;
 
   LIST_ADD(&devices[major][minor], device, devices);
   return makedev(major, minor, u);
@@ -38,12 +39,16 @@ dev_t register_device(uint8_t major, uint8_t minor, void *data) {
 
 //
 
-dev_t register_blkdev(uint8_t minor, blkdev_t *blkdev) {
-  return register_device(DEVICE_BLKDEV, minor, blkdev);
+dev_t register_blkdev(uint8_t minor, blkdev_t *blkdev, device_ops_t *ops) {
+  return register_device(DEVICE_BLKDEV, minor, blkdev, ops);
 }
 
-dev_t register_chrdev(uint8_t minor, chrdev_t *chrdev) {
-  return register_device(DEVICE_CHRDEV, minor, chrdev);
+dev_t register_chrdev(uint8_t minor, chrdev_t *chrdev, device_ops_t *ops) {
+  return register_device(DEVICE_CHRDEV, minor, chrdev, ops);
+}
+
+dev_t register_framebuf(uint8_t minor, framebuf_t *frambuf, device_ops_t *ops) {
+  return register_device(DEVICE_FB, minor, frambuf, ops);
 }
 
 device_t *locate_device(dev_t dev) {

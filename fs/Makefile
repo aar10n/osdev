@@ -4,8 +4,8 @@
 
 # fs
 fs += acl.c blkdev.c chrdev.c dcache.c dentry.c \
-	device.c file.c fs.c inode.c path.c super.c \
-	utils.c
+	device.c file.c framebuf.c fs.c inode.c path.c \
+	super.c utils.c
 
 # fs/devfs
 fs += devfs/devfs.c

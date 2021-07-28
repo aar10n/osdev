@@ -33,6 +33,6 @@ ssize_t f_read(file_t *file, char *buf, size_t count);
 ssize_t f_write(file_t *file, const char *buf, size_t count);
 off_t f_lseek(file_t *file, off_t offset, int whence);
 dentry_t *f_readdir(file_t *file);
-
+int f_mmap(file_t *file, uintptr_t vaddr, size_t len, uint16_t flags);
 
 #endif

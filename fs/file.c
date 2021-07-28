@@ -93,6 +93,16 @@ file_t *f_alloc(dentry_t *dentry, int flags, mode_t mode) {
 
     chrdev_t *chrdev = device->device;
     file->ops = chrdev->ops;
+  } else if (IS_IFFBF(dentry->mode)) {
+    device_t *device = locate_device(dentry->inode->dev);
+    if (device == NULL) {
+      f_release(file);
+      ERRNO = ENODEV;
+      return NULL;
+    }
+
+    framebuf_t *fb = device->device;
+    file->ops = fb->ops;
   }
 
   spin_lock(&FILES->lock);
@@ -200,6 +210,9 @@ dentry_t *f_readdir(file_t *file) {
       return NULL;
     }
     return next;
+  } else if (!IS_IFDIR(file->dentry->mode)) {
+    ERRNO = ENOTSUP;
+    return NULL;
   }
 
   dentry_t *next;
@@ -214,4 +227,12 @@ dentry_t *f_readdir(file_t *file) {
     file->dentry = next;
   }
   return next;
+}
+
+int f_mmap(file_t *file, uintptr_t vaddr, size_t len, uint16_t flags) {
+  if (!file->ops->mmap) {
+    ERRNO = ENOTSUP;
+    return -1;
+  }
+  return file->ops->mmap(file, vaddr, len, flags);
 }
