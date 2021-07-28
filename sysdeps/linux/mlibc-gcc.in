@@ -1,0 +1,2 @@
+#!/bin/sh
+exec "${REALGCC:-gcc}" "$@" -specs "@PREFIX@/@LIBDIR@/mlibc-gcc.specs"

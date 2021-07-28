@@ -1,0 +1,424 @@
+
+#include <abi-bits/abi.h>
+#include <bits/ensure.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <limits.h>
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+#include <unistd.h>
+#include <sys/ioctl.h>
+#include <sys/stat.h>
+
+#include <frg/vector.hpp>
+#include <mlibc/allocator.hpp>
+#include <mlibc/debug.hpp>
+#include <mlibc/posix-sysdeps.hpp>
+
+namespace {
+	constexpr bool debugPathResolution = false;
+}
+
+// Borrowed from musl
+static uint32_t init[] = {
+0x00000000,0x5851f42d,0xc0b18ccf,0xcbb5f646,
+0xc7033129,0x30705b04,0x20fd5db4,0x9a8b7f78,
+0x502959d8,0xab894868,0x6c0356a7,0x88cdb7ff,
+0xb477d43f,0x70a3a52b,0xa8e4baf1,0xfd8341fc,
+0x8ae16fd9,0x742d2f7a,0x0d1f0796,0x76035e09,
+0x40f7702c,0x6fa72ca5,0xaaa84157,0x58a0df74,
+0xc74a0364,0xae533cc4,0x04185faf,0x6de3b115,
+0x0cab8628,0xf043bfa4,0x398150e9,0x37521657};
+
+static int n = 31;
+static int i = 3;
+static int j = 0;
+static uint32_t *x = init + 1;
+
+
+static uint32_t lcg31(uint32_t x) {
+	return (1103515245 * x + 12345) & 0x7fffffff;
+}
+
+static uint64_t lcg64(uint64_t x) {
+	return 6364136223846793005ull * x + 1;
+}
+
+static void *savestate(void) {
+	x[-1] = (n << 16) | (i << 8) | j;
+	return x - 1;
+}
+
+static void loadstate(uint32_t *state) {
+	x = state + 1;
+	n = x[-1] >> 16;
+	i = (x[-1] >> 8) & 0xff;
+	j = x[-1] & 0xff;
+}
+
+long random(void) {
+	long k;
+
+	if(n == 0) {
+		k = x[0] = lcg31(x[0]);
+		return k;
+	}
+	x[i] += x[j];
+	k = x[i] >> 1;
+	if(++i == n)
+		i = 0;
+	if(++j == n)
+		j = 0;
+
+	return k;
+}
+
+double drand48(void) {
+	__ensure(!"Not implemented");
+	__builtin_unreachable();
+}
+
+void srand48(long int seedval) {
+	__ensure(!"Not implemented");
+	__builtin_unreachable();
+}
+
+// Borrowed from musl
+void srandom(unsigned int seed) {
+	int k;
+	uint64_t s = seed;
+
+	if(n == 0) {
+		x[0] = s;
+		return;
+	}
+	i = n == 31 || n == 7 ? 3 : 1;
+	j = 0;
+	for(k = 0; k < n; k++) {
+		s = lcg64(s);
+		x[k] = s >> 32;
+	}
+	// Make sure x contains at least one odd number
+	x[0] |= 1;
+}
+
+char *initstate(unsigned int seed, char *state, size_t size) {
+	void *old;
+
+	if(size < 8)
+		return 0;
+	old = savestate();
+	if(size < 32)
+		n = 0;
+	else if(size < 64)
+		n = 7;
+	else if(size < 128)
+		n = 15;
+	else if(size < 256)
+		n = 31;
+	else
+		n = 63;
+	x = (uint32_t *)state + 1;
+	srandom(seed);
+	savestate();
+	return (char *)old;
+}
+
+char *setstate(char *state) {
+	void *old;
+
+	old = savestate();
+	loadstate((uint32_t *)state);
+	return (char *)old;
+}
+
+// ----------------------------------------------------------------------------
+// Path handling.
+// ----------------------------------------------------------------------------
+
+int mkostemp(char *pattern, int flags) {
+	auto n = strlen(pattern);
+	__ensure(n >= 6);
+	if(n < 6) {
+		errno = EINVAL;
+		return -1;
+	}
+	for(size_t i = 0; i < 6; i++) {
+		if(pattern[n - 6 + i] == 'X')
+			continue;
+		errno = EINVAL;
+		return -1;
+	}
+
+	// TODO: Do an exponential search.
+	for(size_t i = 0; i < 999999; i++) {
+		__ensure(sprintf(pattern + (n - 6), "%06zu", i) == 6);
+//		mlibc::infoLogger() << "mlibc: mkstemp candidate is "
+//				<< (const char *)pattern << frg::endlog;
+
+		// TODO: Add a mode argument to sys_open().
+		int fd;
+		if(int e = mlibc::sys_open(pattern, O_RDWR | O_CREAT | O_EXCL | flags, /*S_IRUSR | S_IWUSR,*/ &fd); !e) {
+			return fd;
+		}else if(e != EEXIST) {
+			errno = e;
+			return -1;
+		}
+	}
+
+	errno = EEXIST;
+	return -1;
+}
+
+int mkstemp(char *path) {
+	return mkostemp(path, 0);
+}
+
+char *mkdtemp(char *pattern) {
+	mlibc::infoLogger() << "mlibc mkdtemp(" << pattern << ") called" << frg::endlog;
+	auto n = strlen(pattern);
+	__ensure(n >= 6);
+	if(n < 6) {
+		errno = EINVAL;
+		return NULL;
+	}
+	for(size_t i = 0; i < 6; i++) {
+		if(pattern[n - 6 + i] == 'X')
+			continue;
+		errno = EINVAL;
+		return NULL;
+	}
+
+	// TODO: Do an exponential search.
+	for(size_t i = 0; i < 999999; i++) {
+		__ensure(sprintf(pattern + (n - 6), "%06zu", i) == 6);
+		if(int e = mlibc::sys_mkdir(pattern); !e) {
+			return pattern;
+		}else if(e != EEXIST) {
+			errno = e;
+			return NULL;
+		}
+	}
+
+	errno = EEXIST;
+	return NULL;
+}
+
+char *realpath(const char *path, char *out) {
+	if(debugPathResolution)
+		mlibc::infoLogger() << "mlibc realpath(): Called on '" << path << "'" << frg::endlog;
+	frg::string_view path_view{path};
+
+	// TODO: Replace by a small_vector to avoid allocations.
+	// In case of the root, the string only contains the null-terminator.
+	frg::vector<char, MemoryAllocator> resolv{getAllocator()};
+	size_t ps;
+
+	// If the path is relative, we have to preprend the working directory.
+	if(path[0] == '/') {
+		resolv.push_back(0);
+		ps = 1;
+	}else{
+		if(!mlibc::sys_getcwd) {
+			MLIBC_MISSING_SYSDEP();
+			errno = ENOSYS;
+			return nullptr;
+		}
+
+		// Try to getcwd() until the buffer is large enough.
+		resolv.resize(128);
+		while(true) {
+			int e = mlibc::sys_getcwd(resolv.data(), resolv.size());
+			if(e == ERANGE) {
+				resolv.resize(2 * resolv.size());
+			}else if(!e) {
+				break;
+			}else{
+				errno = e;
+				return nullptr;
+			}
+		}
+		frg::string_view cwd_view{resolv.data()};
+		if(cwd_view == "/") {
+			// Restore our invariant that we only store the null-terminator for the root.
+			resolv.resize(1);
+			resolv[0] = 0;
+		}else{
+			resolv.resize(cwd_view.size() + 1);
+		}
+		ps = 0;
+	}
+
+	// TODO: Replace by a small_vector to avoid allocations.
+	// Contains unresolved links as a relative path compared to resolv.
+	frg::vector<char, MemoryAllocator> lnk{getAllocator()};
+	size_t ls = 0;
+
+	auto process_segment = [&] (frg::string_view s_view) -> int {
+		if(debugPathResolution)
+			mlibc::infoLogger() << "mlibc realpath(): resolv is '" << resolv.data() << "'"
+					<< ", segment is " << s_view.data()
+					<< ", size: " << s_view.size() << frg::endlog;
+
+		if(!s_view.size() || s_view == ".") {
+			// Keep resolv invariant.
+			return 0;
+		}else if(s_view == "..") {
+			// Remove a single segment from resolv.
+			if(resolv.size() > 1) {
+				auto slash = strrchr(resolv.data(), '/');
+				__ensure(slash); // We never remove the leading sla.
+				resolv.resize((slash - resolv.data()) + 1);
+				*slash = 0; // Replace the slash by a null-terminator.
+			}
+			return 0;
+		}
+
+		// Append the segment to resolv.
+		auto rsz = resolv.size();
+		resolv[rsz - 1] = '/'; // Replace null-terminator by a slash.
+		resolv.resize(rsz + s_view.size() + 1);
+		memcpy(resolv.data() + rsz, s_view.data(), s_view.size());
+		resolv[rsz + s_view.size()] = 0;
+
+		// stat() the path to (1) see if it exists and (2) see if it is a link.
+		if(!mlibc::sys_stat) {
+			MLIBC_MISSING_SYSDEP();
+			errno = ENOSYS;
+			return -1;
+		}
+		if(debugPathResolution)
+			mlibc::infoLogger() << "mlibc realpath(): stat()ing '"
+					<< resolv.data() << "'" << frg::endlog;
+		struct stat st;
+		if(int e = mlibc::sys_stat(mlibc::fsfd_target::path,
+				-1, resolv.data(), AT_SYMLINK_NOFOLLOW, &st); e)
+			return e;
+
+		if(S_ISLNK(st.st_mode)) {
+			if(debugPathResolution) {
+				mlibc::infoLogger() << "mlibc realpath(): Encountered symlink '" << resolv.data() << "'" << frg::endlog;
+			}
+			char path[512];
+			readlink(resolv.data(), path, 512);
+			if(debugPathResolution) {
+				mlibc::infoLogger() << "mlibc realpath(): symlink resolves to '" << path << "'" << frg::endlog;
+			}
+			realpath(path, NULL);
+		}
+		// TODO: If it is a link, prepend it to lnk, adjust ls and revert the change to resolv.
+		return 0;
+	};
+
+	// Each iteration of this outer loop consumes segment of the input path.
+	// This design avoids copying the input path into lnk;
+	// the latter could often involve additional allocations.
+	while(ps < path_view.size()) {
+		frg::string_view ps_view;
+		if(auto slash = strchr(path + ps, '/'); slash) {
+			ps_view = frg::string_view{path + ps, static_cast<size_t>(slash - (path + ps))};
+		}else{
+			ps_view = frg::string_view{path + ps, strlen(path) - ps};
+		}
+		ps += ps_view.size() + 1;
+
+		// Handle one segment from the input path.
+		if(int e = process_segment(ps_view); e) {
+			errno = e;
+			return nullptr;
+		}
+
+		// This inner loop consumes segments of lnk.
+		while(ls < lnk.size()) {
+			frg::string_view ls_view;
+			if(auto slash = strchr(lnk.data() + ls, '/'); slash) {
+				ls_view = frg::string_view{lnk.data() + ls, static_cast<size_t>(slash - (lnk.data() + ls))};
+			}else{
+				ls_view = frg::string_view{lnk.data() + ls, strlen(lnk.data()) - ls};
+			}
+			ls += ls_view.size() + 1;
+
+			// Handle one segment from the link
+			if(int e = process_segment(ls_view); e) {
+				errno = e;
+				return nullptr;
+			}
+		}
+	}
+
+	if(debugPathResolution)
+		mlibc::infoLogger() << "mlibc realpath(): Returns '" << resolv.data() << "'" << frg::endlog;
+
+	if(resolv.size() > PATH_MAX) {
+		errno = ENAMETOOLONG;
+		return nullptr;
+	}
+
+	if(!out)
+		out = reinterpret_cast<char *>(getAllocator().allocate(resolv.size()));
+	strcpy(out, resolv.data());
+	return out;
+}
+
+// ----------------------------------------------------------------------------
+// Pseudoterminals
+// ----------------------------------------------------------------------------
+
+int ptsname_r(int fd, char *buffer, size_t length) {
+	int index;
+	if(ioctl(fd, TIOCGPTN, &index))
+		return -1;
+	if(snprintf(buffer, length, "/dev/pts/%d", index) >= length) {
+		errno = ERANGE;
+		return -1;
+	}
+	return 0;
+}
+
+char *ptsname(int fd) {
+	int index;
+	static char buffer[128];
+	if(ioctl(fd, TIOCGPTN, &index))
+		return NULL;
+	snprintf(buffer, 128, "/dev/pts/%d", index);
+	return buffer;
+}
+
+int posix_openpt(int flags) {
+	int fd;
+	if(int e = mlibc::sys_open("/dev/ptmx", flags, &fd); e) {
+		errno = e;
+		return -1;
+	}
+
+	return fd;
+}
+
+int unlockpt(int fd) {
+	return 0;
+}
+
+int grantpt(int fd) {
+	return 0;
+}
+
+double strtod_l(const char *__restrict__ nptr, char ** __restrict__ endptr, locale_t loc) {
+	__ensure(!"Not implemented");
+	__builtin_unreachable();
+}
+
+long double strtold_l(const char *__restrict__ nptr, char ** __restrict__ endptr, locale_t loc) {
+	__ensure(!"Not implemented");
+	__builtin_unreachable();
+}
+
+float strtof_l(const char *__restrict string, char **__restrict end, locale_t loc){
+	__ensure(!"Not implemented");
+	__builtin_unreachable();
+}
+
+int strcoll_l(const char *s1, const char *s2, locale_t locale){
+	__ensure(!"Not implemented");
+	__builtin_unreachable();
+}
