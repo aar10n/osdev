@@ -5,15 +5,17 @@ global syscall_handler:
 syscall_handler:
   push rbp
   mov rbp, rsp
-  push rcx
+  push rbx
 
-  mov rdi, rax
-  mov rsi, rbx
-  mov r8,  rdx
-  mov rdx, rcx
+  mov rdi, rax % rax -> rdi
+  mov rsi, rbx % rbx -> rsi
+  mov rax, rdx % rdx -> rax (temp)
+  mov rdx, rcx % rcx -> rdx
+  mov rcx, rax % rdx -> rax -> rcx
+
   call handle_syscall
 
-  pop rcx
+  pop rbx
   pop rbp
   sysret
 
