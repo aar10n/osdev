@@ -527,7 +527,22 @@ void *vm_map_page_vaddr(uintptr_t virt_addr, page_t *page) {
     curr = curr->next;
   }
 
-  vm_area_t *area = alloc_area(address, len, AREA_USED | AREA_PAGE);
+  interval_t interval = intvl(virt_addr, virt_addr + len);
+  intvl_node_t *existing = intvl_tree_find(VM->tree, interval);
+  vm_area_t *area = NULL;
+  if (existing) {
+    area = existing->data;
+    if (!(area->attr & AREA_RESERVED) || area->size != len) {
+      panic("[vm] failed to map address - already in use\n");
+    }
+
+    area->attr ^= AREA_RESERVED;
+    area->attr |= AREA_PAGE;
+  } else {
+    area = alloc_area(address, len, AREA_USED | AREA_PAGE);
+  }
+
+  area->base = page->frame;
   area->pages = page;
   return map_area(area, 0);
 }
@@ -656,6 +671,28 @@ void vm_update_pages(page_t *page, uint16_t flags) {
 }
 
 //
+
+int vm_unmap(uintptr_t virt_addr, size_t len) {
+  interval_t intvl = intvl(virt_addr, virt_addr + 1);
+  intvl_node_t *node = intvl_tree_find(VM->tree, intvl);
+  if (node == NULL) {
+    panic("[vm] page is not mapped");
+  }
+
+  vm_area_t *area = node->data;
+  if (area->size > len) {
+    panic("[vm] cant unmap more than one area");
+  }
+
+  if (area->attr & AREA_PHYS) {
+    vm_unmap_vaddr(area->phys);
+  } else if (area->attr & AREA_PAGE) {
+    vm_unmap_page(area->pages);
+  } else if (area->attr & AREA_FILE) {
+    vm_unmap_page(area->file->dentry->inode->pages);
+  }
+  return 0;
+}
 
 /**
  * Unmaps a mapped physical page or pages.

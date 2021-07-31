@@ -74,6 +74,7 @@ dentry_t *dcache_remove(const char *name, dentry_t *dentry) {
   RLIST_REMOVE(&dcache->buckets[idx], dentry, bucket);
   dcache->count--;
   spin_unlock(&dcache->lock);
+  return dentry;
 }
 
 /**

@@ -22,6 +22,7 @@ dentry_t *dcache_get(const char *name, uint32_t base_hash);
 void dcache_add(const char *name, dentry_t *dentry);
 dentry_t *dcache_remove(const char *name, dentry_t *dentry);
 
+int get_dentry_path(dentry_t *dentry, char *buf, size_t len, int *depth);
 int expand_path(const char *path, dentry_t *at, char *buf, size_t len);
 dentry_t *resolve_path(const char *path, dentry_t *at, int flags, dentry_t **parent);
 dentry_t *perform_fast_lookup(const char *path, dentry_t *at);

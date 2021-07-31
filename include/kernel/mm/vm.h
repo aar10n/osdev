@@ -84,6 +84,7 @@ void vm_mark_reserved(uintptr_t virt_addr, size_t len);
 void vm_update_page(page_t *page, uint16_t flags);
 void vm_update_pages(page_t *page, uint16_t flags);
 
+int vm_unmap(uintptr_t virt_addr, size_t len);
 void vm_unmap_page(page_t *page);
 void vm_unmap_vaddr(uintptr_t virt_addr);
 

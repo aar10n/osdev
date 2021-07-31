@@ -175,6 +175,16 @@ id_t gettid() {
   return current_thread->tid;
 }
 
+uid_t getuid() {
+  return current_process->uid;
+}
+
+gid_t getgid() {
+  return current_process->gid;
+}
+
+
+
 //
 
 void print_debug_process(process_t *process) {
