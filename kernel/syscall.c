@@ -46,12 +46,12 @@ static off_t sys_lseek(int fd, off_t offset, int whence) {
 // function table
 
 static syscall_t syscalls[] = {
-  [__SYS_exit]  = to_syscall(sys_exit),
-  [__SYS_open]  = to_syscall(sys_open),
-  [__SYS_close] = to_syscall(sys_close),
-  [__SYS_read]  = to_syscall(sys_read),
-  [__SYS_write] = to_syscall(sys_write),
-  [__SYS_lseek] = to_syscall(sys_lseek),
+  [SYS_EXIT]  = to_syscall(sys_exit),
+  [SYS_OPEN]  = to_syscall(sys_open),
+  [SYS_CLOSE] = to_syscall(sys_close),
+  [SYS_READ]  = to_syscall(sys_read),
+  [SYS_WRITE] = to_syscall(sys_write),
+  [SYS_LSEEK] = to_syscall(sys_lseek),
 };
 static int num_syscalls = sizeof(syscalls) / sizeof(void *);
 
@@ -79,7 +79,7 @@ __used int handle_syscall(
 
   syscall_t func = syscalls[syscall];
   uint64_t result = func(arg0, arg1, arg2, arg3);
-  if (syscall == __SYS_exit) {
+  if (syscall == SYS_EXIT) {
     kprintf("program exited\n");
     kprintf("haulting...\n");
 
