@@ -1,4 +1,3 @@
-#include <acpi.h>
 //
 // Created by Aaron Gill-Braun on 2020-10-03.
 //
@@ -738,6 +737,43 @@ vm_area_t *vm_get_vm_area(uintptr_t addr) {
   }
   return node->data;
 }
+
+/**
+ * Attatches a page struct to the vm_area pointed to by
+ * the `addr` parameter.
+ */
+int vm_attach_page(uintptr_t addr, page_t *page) {
+  intvl_node_t *node = intvl_tree_find(VM->tree, intvl(addr, addr + 1));
+  if (node == NULL) {
+    return -EINVAL;
+  }
+
+  vm_area_t *area = node->data;
+  kassert(!(area->attr & AREA_PAGE));
+  area->attr &= AREA_ATTR_MASK;
+  area->attr |= AREA_PAGE;
+  area->pages = page;
+  return 0;
+}
+
+/**
+ * Attatches a file struct to the vm_area pointed to by
+ * the `addr` parameter.
+ */
+int vm_attach_file(uintptr_t addr, file_t *file) {
+  intvl_node_t *node = intvl_tree_find(VM->tree, intvl(addr, addr + 1));
+  if (node == NULL) {
+    return -EINVAL;
+  }
+
+  vm_area_t *area = node->data;
+  kassert(!(area->attr & AREA_FILE));
+  area->attr &= AREA_ATTR_MASK;
+  area->attr |= AREA_FILE;
+  area->file = file;
+  return 0;
+}
+
 
 /**
  * Looks for an available address space of the given size
