@@ -7,3 +7,6 @@
 [submodule "third-party/binutils"]
 	path = third-party/binutils
 	url = git://sourceware.org/git/binutils-gdb.git
+[submodule "third-party/mlibc"]
+	path = third-party/mlibc
+	url = https://github.com/managarm/mlibc.git
