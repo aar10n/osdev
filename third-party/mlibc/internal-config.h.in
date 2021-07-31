@@ -1,6 +1,0 @@
-
-#mesondefine MLIBC_SYSTEM_NAME
-#mesondefine MLIBC_MAP_DSO_SEGMENTS
-#mesondefine MLIBC_MAP_FILE_WINDOWS
-#mesondefine MLIBC_STATIC_BUILD
-
