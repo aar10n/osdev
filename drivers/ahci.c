@@ -11,10 +11,11 @@
 #include <printf.h>
 #include <string.h>
 #include <vectors.h>
-#include <device.h>
+#include <fs.h>
 
 #include <asm/bits.h>
 
+char hd_suffix = 'a';
 
 typedef enum {
   DEVICE_TO_HOST, // read
@@ -173,8 +174,19 @@ void ahci_discover(ahci_controller_t *controller) {
       ahci_device_t *port = port_init(controller, i);
       ports[i] = port;
 
-      // blkdev_t *blkdev = blkdev_init(port, ahci_read, ahci_write);
-      // fs_register_device(DEV_HD, blkdev);
+      blkdev_t *blkdev = blkdev_init(port, ahci_read, ahci_write);
+      dev_t d = fs_register_blkdev(0, blkdev, NULL);
+      kassert(d > 0);
+
+      char suffix = hd_suffix;
+      hd_suffix++;
+
+      char path[12];
+      ksnprintf(path, 12, "/dev/hd%c", suffix);
+
+      if (fs_mknod(path, S_IFBLK, d) < 0) {
+        panic("failed to add device node");
+      }
     } else {
       ports[i] = NULL;
     }
@@ -319,43 +331,12 @@ void ahci_init() {
   kprintf("[ahci] done!\n");
 }
 
-// ssize_t ahci_read(fs_device_t *device, uint64_t lba, uint32_t count, void **buf) {
-//   page_t *pages = mm_alloc_pages(ZONE_DMA, SIZE_TO_PAGES(count * 512) + 1, PE_WRITE);
-//   void *ptr = vm_map_page(pages);
-//
-//   // save a pointer to the page struct in the first
-//   // page and return the page following the first
-//   page_t **saved = ptr;
-//   *saved = pages;
-//
-//   *buf = ptr + PAGE_SIZE;
-//   ahci_device_t *port = ((blkdev_t *) device->driver)->self;
-//   return transfer_dma(DEVICE_TO_HOST, port, lba, count, pages->next->frame);
-// }
-//
-// ssize_t ahci_write(fs_device_t *device, uint64_t lba, uint32_t count, void **buf) {
-//   page_t *pages = mm_alloc_pages(ZONE_DMA, SIZE_TO_PAGES(count * 512) + 1, PE_WRITE);
-//   void *ptr = vm_map_page(pages);
-//
-//   // save a pointer to the page struct in the first
-//   // page and return the page following the first
-//   page_t **saved = ptr;
-//   *saved = pages;
-//
-//   *buf = (void *)((uintptr_t) ptr + PAGE_SIZE);
-//   ahci_device_t *port = ((blkdev_t *) device->driver)->self;
-//   return transfer_dma(HOST_TO_DEVICE, port, lba, count, pages->next->frame);
-// }
-//
-// int ahci_release(fs_device_t *device, void *buf) {
-//   // retrieve the stored page struct pointer at the start
-//   // of the page preceeding the transfer buffer
-//   page_t **pages_ptr = (void *)((uintptr_t) buf - PAGE_SIZE);
-//   page_t *pages = *pages_ptr;
-//
-//   vm_unmap_page(pages);
-//   free_frame(pages);
-//   return 0;
-// }
+ssize_t ahci_read(ahci_device_t *port, uint64_t lba, uint32_t count, void *buf) {
+  return transfer_dma(DEVICE_TO_HOST, port, lba, count, (uintptr_t) virt_to_phys_ptr(buf));
+}
+
+ssize_t ahci_write(ahci_device_t *port, uint64_t lba, uint32_t count, void *buf) {
+  return transfer_dma(HOST_TO_DEVICE, port, lba, count, (uintptr_t) virt_to_phys_ptr(buf));
+}
 
 //
