@@ -1,44 +1,44 @@
 diff --git a/bfd/config.bfd b/bfd/config.bfd
-index ebda78f60a7..449c528d8db 100644
+index ebda78f60a7..3d832b10b4d 100644
 --- a/bfd/config.bfd
 +++ b/bfd/config.bfd
-@@ -679,6 +679,11 @@ case "${targ}" in
+@@ -688,6 +688,11 @@ case "${targ}" in
+     targ_selvecs=i386_elf32_vec
      want64=true
-     targ_underscore=no
      ;;
 +  x86_64-*-osdev*)
 +    targ_defvec=x86_64_elf64_vec
-+    targ_selvecs="i386_elf32_vec x86_64_elf32_vec"
++    targ_selvecs=i386_elf32_vec
 +    want64=true
 +    ;;
-   x86_64-*-rdos*)
-     targ_defvec=x86_64_elf64_vec
-     want64=true
+ #endif
+   i[3-7]86-*-lynxos*)
+     targ_defvec=i386_elf32_vec
 diff --git a/config.sub b/config.sub
-index 7384e9198b4..5d1b80815f8 100755
+index 7384e9198b4..76e55073fe2 100755
 --- a/config.sub
 +++ b/config.sub
-@@ -1704,7 +1704,7 @@ case $os in
- 	     | hpux* | unos* | osf* | luna* | dgux* | auroraux* | solaris* \
- 	     | sym* |  plan9* | psp* | sim* | xray* | os68k* | v88r* \
- 	     | hiux* | abug | nacl* | netware* | windows* \
--	     | os9* | macos* | osx* | ios* \
-+	     | os9* | macos* | osx* | ios* | osdev* \
- 	     | mpw* | magic* | mmixware* | mon960* | lnews* \
- 	     | amigaos* | amigados* | msdos* | newsos* | unicos* | aof* \
- 	     | aos* | aros* | cloudabi* | sortix* | twizzler* \
+@@ -1729,7 +1729,7 @@ case $os in
+ 	     | skyos* | haiku* | rdos* | toppers* | drops* | es* \
+ 	     | onefs* | tirtos* | phoenix* | fuchsia* | redox* | bme* \
+ 	     | midnightbsd* | amdhsa* | unleashed* | emscripten* | wasi* \
+-	     | nsk* | powerunix* | genode* | zvmoe* | qnx* | emx*)
++	     | nsk* | powerunix* | genode* | zvmoe* | qnx* | emx* | osdev*)
+ 		;;
+ 	# This one is extra strict with allowed versions
+ 	sco3.2v2 | sco3.2v[4-9]* | sco5v6*)
 diff --git a/gas/configure.tgt b/gas/configure.tgt
-index 0be695bc61c..d2597ccabfc 100644
+index 0be695bc61c..a55bd046875 100644
 --- a/gas/configure.tgt
 +++ b/gas/configure.tgt
-@@ -233,6 +233,7 @@ case ${generic_target} in
-       x86_64*-linux-gnux32)		arch=x86_64:32 ;;
-     esac ;;
-   i386-*-lynxos*)			fmt=elf em=lynx ;;
+@@ -258,6 +258,7 @@ case ${generic_target} in
+   i386-*-*nt*)				fmt=coff em=pe ;;
+   i386-*-rdos*)				fmt=elf ;;
+   i386-*-darwin*)			fmt=macho ;;
 +  i386-*-osdev*)            fmt=elf ;;
-   i386-*-redox*)			fmt=elf ;;
-   i386-*-solaris*)			fmt=elf em=solaris ;;
-   i386-*-freebsd* \
+ 
+   ia16-*-elf*)				fmt=elf ;;
+ 
 diff --git a/ld/configure.tgt b/ld/configure.tgt
 index 6c535392183..f1dc185ea1b 100644
 --- a/ld/configure.tgt
@@ -53,6 +53,19 @@ index 6c535392183..f1dc185ea1b 100644
  x86_64-*-redox*)	targ_emul=elf_x86_64
  			targ_extra_emuls=elf_i386
  			;;
+diff --git a/ld/emulparams/elf_x86_64.sh b/ld/emulparams/elf_x86_64.sh
+index 48d0974711b..6e2c07106df 100644
+--- a/ld/emulparams/elf_x86_64.sh
++++ b/ld/emulparams/elf_x86_64.sh
+@@ -42,7 +42,7 @@ fi
+ # Linux/Solaris modify the default library search path to first include
+ # a 64-bit specific directory.
+ case "$target" in
+-  x86_64*-linux*|i[3-7]86-*-linux-*)
++  x86_64*-linux*|i[3-7]86-*-linux-*|x86_64*-osdev*)
+     case "$EMULATION_NAME" in
+       *64*)
+ 	LIBPATH_SUFFIX=64
 diff --git a/libiberty/rust-demangle.c b/libiberty/rust-demangle.c
 index 449941b56dc..fdfbfe55d7d 100644
 --- a/libiberty/rust-demangle.c

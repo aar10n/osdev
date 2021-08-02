@@ -10,9 +10,11 @@ if len(sys.argv) < 2:
 fname = sys.argv[1]
 ftext = os.path.splitext(fname)[0]
 fext = os.path.splitext(fname)[1]
+
+start_num = int(sys.argv[2]) if len(sys.argv) > 2 else 0
+num = start_num
 with open(fname, 'r') as file:
   with open(f'{ftext}_new{fext}', 'w') as new_file:
-    last_num = None
     for line in file:
       s = re.sub(r'^\s*|\s\s+', '', line.split('//')[0])
       if len(s) == 0:
@@ -24,13 +26,7 @@ with open(fname, 'r') as file:
         new_file.write(line)
         continue
 
-      num = int(match.group(2))
-      print(num, last_num)
-      if num == last_num:
-        new_line = line.replace(str(num), str(num + 1), 1)
-        print(new_line)
-        new_file.write(new_line)
-        last_num = num + 1
-      else:
-        last_num = num
-        new_file.write(line)
+      new_line = line.replace(match.group(2), str(num), 1)
+      new_file.write(new_line)
+      num += 1
+
