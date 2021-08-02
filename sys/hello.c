@@ -2,14 +2,9 @@
 // Created by Aaron Gill-Braun on 2020-11-10.
 //
 
-#include <stdbool.h>
-
-static int x = 123456789;
-const char *str = "Hello, world!\n";
-_Thread_local int y = 0xBEBE;
-
+#include <stdio.h>
 
 int main() {
-  int x = 5;
+  printf("hello, world");
   return 0;
 }

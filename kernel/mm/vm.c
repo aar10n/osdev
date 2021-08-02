@@ -776,6 +776,22 @@ vm_area_t *vm_get_vm_area(uintptr_t addr) {
 }
 
 /**
+ * Updates the attributes of a vm_area struct pointed to
+ * by `addr`
+ */
+int vm_update_attributes(uintptr_t addr, uint8_t attr, void *ptr) {
+  intvl_node_t *node = intvl_tree_find(VM->tree, intvl(addr, addr + 1));
+  if (node == NULL) {
+    return -EINVAL;
+  }
+
+  vm_area_t *area = node->data;
+  area->attr = (area->attr & ~AREA_ATTR_MASK) | (attr & AREA_ATTR_MASK);
+  area->phys = (uintptr_t) ptr;
+  return 0;
+}
+
+/**
  * Attatches a page struct to the vm_area pointed to by
  * the `addr` parameter.
  */
@@ -787,7 +803,7 @@ int vm_attach_page(uintptr_t addr, page_t *page) {
 
   vm_area_t *area = node->data;
   kassert(!(area->attr & AREA_PAGE));
-  area->attr &= AREA_ATTR_MASK;
+  area->attr &= ~AREA_ATTR_MASK;
   area->attr |= AREA_PAGE;
   area->pages = page;
   return 0;

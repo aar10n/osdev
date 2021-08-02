@@ -361,6 +361,9 @@ int fs_chdir(const char *path);
 int fs_chmod(const char *path, mode_t mode);
 int fs_chown(const char *path, uid_t owner, gid_t group);
 
+char *fs_getcwd(char *buf, size_t size);
+
 void *fs_mmap(void *addr, size_t len, int prot, int flags, int fd, off_t off);
+int fs_munmap(void *addr, size_t len);
 
 #endif

@@ -34,6 +34,7 @@
 #define AREA_PHYS     0x10  // area uses physical address
 #define AREA_PAGE     0x20  // area uses pages
 #define AREA_FILE     0x40  // area is an mmap'd file
+#define AREA_MMAP     0x80  // area was allocated with mmap
 
 #define PF_PRESENT  0x01
 #define PF_WRITE    0x02
@@ -90,6 +91,7 @@ void vm_unmap_vaddr(uintptr_t virt_addr);
 
 page_t *vm_get_page(uintptr_t addr);
 vm_area_t *vm_get_vm_area(uintptr_t addr);
+int vm_update_attributes(uintptr_t addr, uint8_t attr, void *ptr);
 int vm_attach_page(uintptr_t addr, page_t *page);
 int vm_attach_file(uintptr_t addr, file_t *file);
 bool vm_find_free_area(vm_search_t search_type, uintptr_t *addr, size_t len);

@@ -5,10 +5,13 @@
 #include <syscall.h>
 #include <cpu/cpu.h>
 #include <printf.h>
+#include <scheduler.h>
+#include <process.h>
+#include <thread.h>
 #include <fs.h>
 
 extern void syscall_handler();
-typedef uint64_t (*syscall_t)(uint64_t, uint64_t, uint64_t, uint64_t);
+typedef uint64_t (*syscall_t)(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
 
 #define to_syscall(func) ((syscall_t) func)
 
@@ -18,40 +21,58 @@ static int sys_exit(int ret) {
   return 0;
 }
 
-static int sys_open(const char *filename, int flags, mode_t mode) {
-  int fd = fs_open(filename, flags, mode);
-  return fd;
+static uint32_t sys_sleep(uint32_t seconds) {
+  scheduler_sleep(seconds * US_PER_SEC);
+  return 0;
 }
 
-static int sys_close(int fd) {
-  int status = fs_close(fd);
-  return status;
-}
-
-static ssize_t sys_read(int fd, void *buf, size_t nbytes) {
-  ssize_t read = fs_read(fd, buf, nbytes);
-  return read;
-}
-
-static ssize_t sys_write(int fd, void *buf, size_t nbytes) {
-  ssize_t written = fs_write(fd, buf, nbytes);
-  return written;
-}
-
-static off_t sys_lseek(int fd, off_t offset, int whence) {
-  off_t newoff = fs_lseek(fd, offset, whence);
-  return newoff;
+static int sys_yield() {
+  return scheduler_yield();
 }
 
 // function table
 
 static syscall_t syscalls[] = {
-  [SYS_EXIT]  = to_syscall(sys_exit),
-  [SYS_OPEN]  = to_syscall(sys_open),
-  [SYS_CLOSE] = to_syscall(sys_close),
-  [SYS_READ]  = to_syscall(sys_read),
-  [SYS_WRITE] = to_syscall(sys_write),
-  [SYS_LSEEK] = to_syscall(sys_lseek),
+  [SYS_EXIT] = to_syscall(sys_exit),
+  [SYS_EXEC] = to_syscall(process_execve),
+  [SYS_OPEN] = to_syscall(fs_open),
+  [SYS_CLOSE] = to_syscall(fs_close),
+  [SYS_READ] = to_syscall(fs_read),
+  [SYS_WRITE] = to_syscall(fs_write),
+  [SYS_POLL] = NULL,
+  [SYS_LSEEK] = to_syscall(fs_lseek),
+  [SYS_CREATE] = to_syscall(fs_creat),
+  [SYS_MKNOD] = to_syscall(fs_mknod),
+  [SYS_MKDIR] = to_syscall(fs_mkdir),
+  [SYS_LINK] = to_syscall(fs_link),
+  [SYS_UNLINK] = to_syscall(fs_unlink),
+  [SYS_SYMLINK] = to_syscall(fs_symlink),
+  [SYS_RENAME] = to_syscall(fs_rename),
+  [SYS_READLINK] = NULL,
+  [SYS_READDIR] = to_syscall(fs_readdir),
+  [SYS_TELLDIR] = to_syscall(fs_telldir),
+  [SYS_SEEKDIR] = to_syscall(fs_seekdir),
+  [SYS_REWINDDIR] = to_syscall(fs_rewinddir),
+  [SYS_RMDIR] = to_syscall(fs_rmdir),
+  [SYS_CHDIR] = to_syscall(fs_chdir),
+  [SYS_CHMOD] = to_syscall(fs_chmod),
+  [SYS_STAT] = to_syscall(fs_stat),
+  [SYS_FSTAT] = to_syscall(fs_fstat),
+  [SYS_SLEEP] = to_syscall(sys_sleep),
+  [SYS_NANOSLEEP] = NULL,
+  [SYS_YIELD] = to_syscall(sys_yield),
+  [SYS_GETPID] = to_syscall(getpid),
+  [SYS_GETPPID] = to_syscall(getppid),
+  [SYS_GETTID] = to_syscall(gettid),
+  [SYS_GETUID] = to_syscall(getuid),
+  [SYS_GETGID] = to_syscall(getgid),
+  [SYS_GET_CWD] = to_syscall(fs_getcwd),
+  [SYS_MMAP] = to_syscall(fs_mmap),
+  [SYS_MUNMAP] = to_syscall(fs_munmap),
+  [SYS_FORK] = to_syscall(process_fork),
+  [SYS_PREAD] = NULL,
+  [SYS_PWRITE] = NULL,
+  [SYS_IOCTL] = NULL,
 };
 static int num_syscalls = sizeof(syscalls) / sizeof(void *);
 
@@ -69,7 +90,9 @@ __used int handle_syscall(
   uint64_t arg0,
   uint64_t arg1,
   uint64_t arg2,
-  uint64_t arg3
+  uint64_t arg3,
+  uint64_t arg4,
+  uint64_t arg5
 ) {
   kprintf(">>> syscall %d <<<\n", syscall);
   if (syscall > num_syscalls - 1) {
@@ -78,7 +101,7 @@ __used int handle_syscall(
   }
 
   syscall_t func = syscalls[syscall];
-  uint64_t result = func(arg0, arg1, arg2, arg3);
+  uint64_t result = func(arg0, arg1, arg2, arg3, arg4, arg5);
   if (syscall == SYS_EXIT) {
     kprintf("program exited\n");
     kprintf("haulting...\n");

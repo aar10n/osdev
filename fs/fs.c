@@ -634,6 +634,20 @@ int fs_chown(const char *path, uid_t owner, gid_t group) {
   return -1;
 }
 
+char *fs_getcwd(char *buf, size_t size) {
+  if (buf == NULL || size == 0) {
+    ERRNO = EINVAL;
+    return NULL;
+  }
+
+  int result = get_dentry_path(*current_process->pwd, buf, size, NULL);
+  if (result < 0) {
+    ERRNO = ERANGE;
+    return NULL;
+  }
+  return buf;
+}
+
 //
 
 void *fs_mmap(void *addr, size_t len, int prot, int flags, int fd, off_t off) {
@@ -667,8 +681,32 @@ void *fs_mmap(void *addr, size_t len, int prot, int flags, int fd, off_t off) {
     pflags |= PE_EXEC;
   }
 
-  if (f_mmap(file, va, len, pflags) < 0) {
+  if (fd == -1) {
+    page_t *pages = alloc_frames(SIZE_TO_PAGES(len), pflags);
+    vm_map_page_vaddr(va, pages);
+    vm_update_attributes(va, AREA_PAGE | AREA_MMAP, pages);
+  } else if (f_mmap(file, va, len, pflags) < 0) {
     return NULL;
   }
+
+  if (fd != 0) {
+    vm_attach_file(va, file);
+    vm_update_attributes(va, AREA_FILE | AREA_MMAP, file);
+  }
   return (void *) va;
+}
+
+int fs_munmap(void *addr, size_t len) {
+  vm_area_t *area = vm_get_vm_area((uintptr_t) addr);
+  if (area == NULL || len == 0) {
+    ERRNO = EINVAL;
+    return -1;
+  }
+
+  if (!(area->attr & AREA_MMAP)) {
+    ERRNO = EINVAL;
+    return -1;
+  }
+
+  return vm_unmap((uintptr_t) addr, len);
 }
