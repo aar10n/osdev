@@ -114,8 +114,9 @@ $(BUILD)/kernel.elf: $(kernel-y) $(fs-y) $(drivers-y) $(lib-y)
 	$(call toolchain,$<,LD) $(call flags,$<,LDFLAGS) $^ -o $@
 
 ## Program
-$(BUILD)/hello.elf: $(sys-y) $(libc-y)
+$(BUILD)/hello.elf: $(sys-y)
 	$(call toolchain,$<,LD) $(call flags,$<,LDFLAGS) $^ -o $@
+
 
 
 # External Data
