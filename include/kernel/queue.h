@@ -126,8 +126,8 @@
  **/
 #define RLIST_REMOVE(ptr, el, name)                   \
   {                                                   \
-    if (*(ptr) != el) {                               \
-      *(ptr) = NULL;                                  \
+    if (*(ptr) == el) {                               \
+      *(ptr) = (el)->name.next;                       \
     } else {                                          \
       if ((el)->name.prev) {                          \
         (el)->name.prev->name.next = (el)->name.next; \
