@@ -8,7 +8,7 @@ CC-sys = $(SYS_ROOT)/bin/x86_64-osdev-gcc
 LD-sys = $(SYS_ROOT)/bin/x86_64-osdev-ld
 
 CFLAGS-sys = -gdwarf -Wall
-LDFLAGS-sys = -static -lc -lm --verbose --with-sysroot=$(SYS_ROOT)
+LDFLAGS-sys = -lc
 INCLUDE-sys = -I
 
 # sys

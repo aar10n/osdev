@@ -4,6 +4,7 @@ TARGET = x86_64
 
 BUILD = build
 BUILD_DIR = $(BUILD)/$(NAME)
+SYS_ROOT = $(BUILD)/sysroot
 
 CFLAGS  +=
 LDFLAGS +=
@@ -122,15 +123,12 @@ $(BUILD)/hello.elf: $(sys-y)
 # External Data
 
 $(BUILD)/ext2.img: config.ini $(BUILD)/hello.elf
-	dd if=/dev/zero of=$@ bs=1m count=16
+	dd if=/dev/zero of=$@ bs=1m count=512
 	mke2fs -L Untitled -t ext2 $@
-	e2mkdir $@ /usr/local
-	e2cp $(BUILD)/text $@:/text.txt
-	echo "# here is a config file" > $(BUILD)/sys.conf
-	e2cp $(BUILD)/file.txt $@:/usr/sys.conf
-	e2cp config.ini $@:/usr/config.ini
-	e2cp $(BUILD)/file.txt $@:/hello.txt
-	e2cp $(BUILD)/hello.elf $@:/usr/local/hello
+	cd $(SYS_ROOT) && find . -type f ! -name ".DS_Store" -exec e2cp {} ../../$@:/{} \;
+	e2mkdir $@ /usr/bin
+	e2cp $(BUILD)/hello.elf $@:/usr/bin/hello
+	-e2rm $@:/lost+found
 
 $(BUILD)/fat.img: config.ini $(BUILD)/hello.elf
 	dd if=/dev/zero of=$@ bs=1m count=128
