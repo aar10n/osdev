@@ -47,7 +47,13 @@ dentry_t *ext2_lookup(inode_t *dir, const char *name, bool filldir) {
   dentry_t *child = parent ? LIST_FIRST(&parent->children) : NULL;
   while (child) {
     if (strcmp(child->name, name) == 0) {
-      if (!filldir || IS_FULL(parent->mode)) {
+      // filldir == true && IS_FULL(dir->mode) -> true
+      // filldir == true && !IS_FULL(dir->mode) -> false
+      // !filldir -> false
+      //
+      // filldir && !IS_FULL(dir->mode)
+      //
+      if (IS_FULL(dir->mode) || !filldir) {
         return child;
       }
       // continue loading children

@@ -63,8 +63,8 @@ ssize_t ext2_write(file_t *file, const char *buf, size_t count, off_t *offset) {
 // off_t ext2_lseek(file_t *file, off_t offset, int origin) {}
 
 int ext2_readdir(file_t *file, dentry_t *dirent, bool fill) {
-  if (!IS_FULL(file->dentry->mode)) {
-    if (ext2_lookup(file->dentry->parent->inode, ".", true) == NULL) {
+  if (file->pos == 0 && !IS_FULL(file->dentry->mode)) {
+    if (ext2_lookup(file->dentry->inode, ".", true) == NULL) {
       return -1;
     }
   }

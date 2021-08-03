@@ -61,8 +61,11 @@ super_block_t *ext2_mount(file_system_t *fs, blkdev_t *dev, dentry_t *mount) {
 
   uint32_t blocksz = 1024 << esb->s_log_block_size;
   uint32_t group_count = 1 + (esb->s_blocks_count - 1) / esb->s_blocks_per_group;
-  uint32_t dlist_size = SIZE_TO_SECS(group_count * sizeof(ext2_bg_desc_t));
-  ext2_bg_desc_t *bgdt = blkdev_read(dev, 4, dlist_size);
+  // 1
+  // 1kib -> (1) 1024 + 1024 = 4
+  // 4kib -> (0) 4096 = 8
+  uint32_t bgdt_off = (esb->s_first_data_block * blocksz) + blocksz;
+  ext2_bg_desc_t *bgdt = blkdev_read(dev, SIZE_TO_SECS(bgdt_off), EXT2_BLK(blocksz, 1));
   if (bgdt == NULL) {
     return NULL;
   }
@@ -74,7 +77,7 @@ super_block_t *ext2_mount(file_system_t *fs, blkdev_t *dev, dentry_t *mount) {
 
   super_block_t *sb = kmalloc(sizeof(super_block_t));
   memset(sb, 0, sizeof(super_block_t));
-  memcpy(esb->s_volume_name, sb->id, 16);
+  memcpy(sb->id, esb->s_volume_name, 16);
   sb->flags = FS_READONLY;
   sb->blksize = blocksz;
   sb->dev = dev;

@@ -221,16 +221,23 @@ int ext2_destroy_inode(super_block_t *sb, inode_t *inode) {
 
 int ext2_read_inode(super_block_t *sb, inode_t *inode) {
   ext2_data_t *data = ext2sb(sb);
-  uint32_t table_block = ino_to_table_block(data, inode->ino);
-  uint32_t index = ino_to_block_offset(data, inode->ino);
+  ext2_super_t *esb = data->sb;
+  ino_t ino = inode->ino;
 
-  ext2_inode_t *table = EXT2_READ(sb, table_block, 1);
+  uint32_t block_group = (ino - 1) / esb->s_inodes_per_group;
+  uint32_t group_index = (ino - 1) % esb->s_inodes_per_group;
+  uint32_t inodes_per_block = (1024 << esb->s_log_block_size) / esb->s_inode_size;
+  uint32_t table_block = group_index / inodes_per_block;
+  uint32_t local_index = group_index % inodes_per_block;
+
+  ext2_bg_desc_t *bg = &data->bgdt[block_group];
+  void *table = EXT2_READ(sb, bg->bg_inode_table + table_block, 1);
   if (table == NULL) {
     ERRNO = EFAILED;
     return -1;
   }
 
-  ext2_inode_t *e2i = &table[index];
+  ext2_inode_t *e2i = offset_ptr(table, local_index * esb->s_inode_size);
   inode->mode = ext2_mode_convert(e2i->i_mode);
   inode->nlink = e2i->i_links_count;
   inode->uid = e2i->i_uid;

@@ -210,9 +210,6 @@ dentry_t *f_readdir(file_t *file) {
       return NULL;
     }
     return next;
-  } else if (!IS_IFDIR(file->dentry->mode)) {
-    ERRNO = ENOTSUP;
-    return NULL;
   }
 
   dentry_t *next;
