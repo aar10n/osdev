@@ -48,6 +48,7 @@ void d_detach(dentry_t *dentry) {
   inode->nlink--;
   LIST_REMOVE(&inode->dentries, dentry, dentries);
   dentry->inode = NULL;
+  dentry->mode = 0;
 }
 
 // sync a dentry and inode

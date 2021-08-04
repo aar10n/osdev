@@ -87,6 +87,61 @@ dentry_t *dentry_from_basename(dentry_t *parent, const char *path) {
   return d_alloc(parent, name);
 }
 
+int mount_root(device_t *device, file_system_t *fs) {
+  kassert(!(fs->flags & FS_NO_ROOT));
+
+  dentry_t *old_root = fs_root;
+  dentry_t *dentry = d_alloc(NULL, "/");
+  dentry->parent = dentry;
+
+  blkdev_t *blkdev = device ? device->device : NULL;
+  super_block_t *sb = fs->mount(fs, blkdev, dentry);
+  if (sb == NULL) {
+    return -1;
+  }
+
+  dentry->mode |= S_ISLDD;
+  sb->fs = fs;
+  sb->dev = blkdev;
+  sb->ops = fs->sb_ops;
+  sb->root = dentry;
+
+  if (fs->post_mount && fs->post_mount(fs, sb) < 0) {
+    return -1;
+  }
+
+  //
+
+  current_thread->preempt_count++;
+  dentry_t *child = LIST_FIRST(&old_root->children);
+  while (child) {
+    if (strcmp(child->name, ".") == 0 || strcmp(child->name, "..") == 0) {
+      child = LIST_NEXT(child, siblings);
+      continue;
+    }
+
+    if (IS_IFMNT(child->mode)) {
+      LIST_REMOVE(&old_root->children, child, siblings);
+      LIST_ADD(&dentry->children, child, siblings);
+
+      dentry_t *cchild = NULL;
+      LIST_FOREACH(cchild, &child->children, siblings) {
+        if (strcmp(cchild->name, "..") == 0) {
+          d_detach(cchild);
+          d_attach(cchild, dentry->inode);
+          break;
+        }
+      }
+    }
+
+    child = LIST_NEXT(child, siblings);
+  }
+
+  fs_root = dentry;
+  current_thread->preempt_count--;
+  return 0;
+}
+
 int mount_internal(const char *path, device_t *device, file_system_t *fs) {
   if (device && major(device->dev) != DEVICE_BLKDEV) {
     ERRNO = ENOTBLK;
@@ -95,7 +150,9 @@ int mount_internal(const char *path, device_t *device, file_system_t *fs) {
 
   dentry_t *parent = NULL;
   dentry_t *dentry = resolve_path(path, *current_process->pwd, 0, &parent);
-  if (dentry != NULL) {
+  if (dentry == fs_root) {
+    return mount_root(device, fs);
+  } else if (dentry != NULL) {
     ERRNO = EEXIST;
     return -1;
   } else if (parent == NULL) {
@@ -122,7 +179,7 @@ int mount_internal(const char *path, device_t *device, file_system_t *fs) {
   } else if (!(fs->flags & FS_NO_ROOT)) {
     d_add_child(parent, dentry);
   }
-  dentry->mode |= S_ISLDD;
+  dentry->mode |= S_IFMNT | S_ISLDD;
   sb->fs = fs;
   sb->dev = blkdev;
   sb->ops = fs->sb_ops;
@@ -131,6 +188,7 @@ int mount_internal(const char *path, device_t *device, file_system_t *fs) {
   if (fs->post_mount) {
     return fs->post_mount(fs, sb);
   }
+
   return 0;
 }
 
