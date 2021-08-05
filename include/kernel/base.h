@@ -45,9 +45,9 @@
 
 #define label(lbl) lbl: NULL
 
-#define barrier() asm volatile("":::"memory");
-#define cpu_pause() asm volatile("pause":::"memory");
-#define cpu_hlt() asm volatile("hlt")
+#define barrier() __asm volatile("":::"memory");
+#define cpu_pause() __asm volatile("pause":::"memory");
+#define cpu_hlt() __asm volatile("hlt")
 
 #define bswap16(v) __builtin_bswap16(v)
 #define bswap32(v) __builtin_bswap32(v)
