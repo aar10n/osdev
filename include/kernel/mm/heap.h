@@ -6,7 +6,7 @@
 #define KERNEL_MM_HEAP_H
 
 #include <mm/mm.h>
-
+#include <queue.h>
 
 #define CHUNK_MIN_SIZE   8
 #define CHUNK_MAX_SIZE   8192
@@ -18,15 +18,15 @@
 
 // 16 bytes
 typedef struct chunk {
-  uint16_t magic;         // magic number
-  uint16_t size;          // chunk size
-  uint16_t prev_size;     // prev chunk size
-  uint16_t free : 1;      // chunk free/used
-  uint16_t prev_free : 1; // prev chunk free/used
-  uint16_t : 14;          // reserved
-  struct chunk *next;     // a pointer to the next used chunk
+  uint16_t magic;                // magic number
+  uint16_t size;                 // chunk size
+  uint16_t prev_size;            // prev chunk size
+  uint16_t free : 1;             // chunk free/used
+  uint16_t prev_free : 1;        // prev chunk free/used
+  uint16_t : 14;                 // reserved
+  LIST_ENTRY(struct chunk) list; // a pointer to the next used chunk
 } chunk_t;
-static_assert(sizeof(chunk_t) == 16);
+static_assert(sizeof(chunk_t) == 24);
 
 typedef struct heap {
   // page_t *source;       // the source of the heap memory
@@ -36,7 +36,8 @@ typedef struct heap {
   size_t size;          // the size of the heap
   size_t used;          // the total number of bytes used
   chunk_t *last_chunk;  // the last created chunk
-  chunk_t *chunks;      // a linked list of free chunks
+  // chunk_t *chunks;      // a linked list of free chunks
+  LIST_HEAD(chunk_t) chunks; // a linked list of free chunks
 } heap_t;
 
 void kheap_init();

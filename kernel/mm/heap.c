@@ -87,8 +87,8 @@ static inline chunk_t *get_chunk(void *ptr) {
 static inline chunk_t *get_next_chunk(chunk_t *chunk) {
   if (chunk == kheap->last_chunk) {
     return NULL;
-  } else if (chunk->next != NULL) {
-    return chunk->next;
+  } else if (LIST_NEXT(chunk, list) != NULL) {
+    return LIST_NEXT(chunk, list);
   }
 
   size_t size = chunk->magic == HOLE_MAGIC ? 0 : chunk->size;
@@ -133,7 +133,7 @@ void kheap_init() {
   kheap->max_addr = kheap->start_addr;
   kheap->size = heap_size;
   kheap->used = 0;
-  kheap->chunks = NULL;
+  LIST_INIT(&kheap->chunks);
   kheap->last_chunk = NULL;
   spin_init(&kheap_lock);
   mutex_init(&kheap_mutex, MUTEX_REENTRANT);
@@ -160,56 +160,41 @@ void *__kmalloc(size_t size, size_t alignment, int flags) {
 
   aquire_heap();
 
-  // otherwise proceed with the normal allocation
+  // otherwise, proceed with the normal allocation
   size = align(max(size, CHUNK_MIN_SIZE), CHUNK_SIZE_ALIGN);
 
   // first search for the best fitting chunk in the list
   // of available chunks. If one is not found, we will
   // create a new chunk in the unmanaged heap memory.
-  if (kheap->chunks) {
+  if (LIST_FIRST(&kheap->chunks)) {
     // kprintf("[kmalloc] searching used chunks\n");
-    chunk_t *chunk = NULL;
-    chunk_t *chunk_last = NULL;
 
-    chunk_t *curr = kheap->chunks;
-    chunk_t *last = NULL;
-    while (curr) {
+    chunk_t *chunk = NULL;
+    chunk_t *curr = NULL;
+    LIST_FOREACH(curr, &kheap->chunks, list) {
       if (!is_chunk_aligned(curr, alignment)) {
-        last = curr;
-        curr = curr->next;
         continue;
       }
 
-      if (curr->size > size) {
-        if (!chunk || (curr->size < chunk->size)) {
+      if (curr->size >= size) {
+        if (chunk == NULL || (curr->size < chunk->size)) {
           chunk = curr;
-          chunk_last = last;
         }
       } else if (curr->size == size) {
         // if current chunk is exact match use it right away
         chunk = curr;
-        chunk_last = last;
         break;
       }
-
-      last = curr;
-      curr = curr->next;
     }
 
     if (chunk) {
       // kprintf("[kmalloc] used chunk found (size %d)\n", chunk->size);
       // if a chunk was found remove it from the list
-      if (chunk_last) {
-        chunk_last->next = chunk->next;
-      } else if (chunk == kheap->chunks) {
-        kheap->chunks = chunk->next;
-      }
-
-      if (chunk->next) {
-        chunk->next->prev_free = false;
+      LIST_REMOVE(&kheap->chunks, chunk, list);
+      if (LIST_NEXT(chunk, list)) {
+        LIST_NEXT(chunk, list)->prev_free = false;
       }
       chunk->free = false;
-      chunk->next = NULL;
 
       // return pointer to user data
       kheap->used += size + sizeof(chunk_t);
@@ -292,15 +277,20 @@ void kfree(void *ptr) {
 
   aquire_heap();
   chunk_t *chunk = get_chunk(ptr);
+  if (chunk->free) {
+    return;
+  }
+
+  if (!(LIST_NEXT(chunk, list) == NULL && LIST_PREV(chunk, list) == NULL)) {
+    panic("oh oh");
+  }
   chunk_t *next_chunk = get_next_chunk(chunk);
   // kprintf("[kfree] freeing pointer %p\n", ptr);
 
-  // finally mark the chunk as used and add it to the used list
+  // finally, mark the chunk as used and add it to the used list
   chunk->free = true;
-  chunk->next = kheap->chunks;
-
+  LIST_ADD_FRONT(&kheap->chunks, chunk, list);
   kheap->used -= (chunk->size) + sizeof(chunk_t);
-  kheap->chunks = chunk;
   release_heap();
 }
 
@@ -395,23 +385,7 @@ void *krealloc(void *ptr, size_t size) {
     // kprintf("[krealloc] expanding into next chunk\n");
 
     // find the chunk before this next one in the used list
-    chunk_t *curr = kheap->chunks;
-    chunk_t *last = NULL;
-    while (curr) {
-      if (curr == next_chunk) {
-        break;
-      }
-
-      last = curr;
-      curr = curr->next;
-    }
-
-    // remove it from the used list
-    if (last == NULL) {
-      kheap->chunks = next_chunk->next;
-    } else {
-      last->next = next_chunk->next;
-    }
+    LIST_REMOVE(&kheap->chunks, next_chunk, list);
 
     if (kheap->last_chunk == next_chunk) {
       // if the next chunk was the last chunk created, set it
@@ -421,7 +395,7 @@ void *krealloc(void *ptr, size_t size) {
 
       kheap->last_chunk = chunk;
     } else {
-      // otherwise we have to move the next chunks header to the
+      // otherwise, we have to move the next chunks header to the
       // end of the next chunk, and then set its magic number to
       // the special HOLE_MAGIC value marking it as a memory 'hole'.
       // these 'holes' are unusable and unreclaimable which is
