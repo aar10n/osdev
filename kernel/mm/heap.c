@@ -7,6 +7,7 @@
 #include <printf.h>
 #include <string.h>
 #include <spinlock.h>
+#include <mutex.h>
 
 #include <panic.h>
 #include <mm/heap.h>
@@ -17,6 +18,7 @@
 
 heap_t *kheap = NULL;
 static spinlock_t kheap_lock;
+static mutex_t kheap_mutex;
 
 // math functions
 #define LT(n) n, n, n, n, n, n, n, n, n, n, n, n, n, n, n, n
@@ -25,7 +27,6 @@ static const char log2_lookup[256] = {
   3,     3,     3,     3,     3,     LT(4), LT(5), LT(5), LT(6), LT(6), LT(6),
   LT(6), LT(7), LT(7), LT(7), LT(7), LT(7), LT(7), LT(7), LT(7),
 };
-
 
 static int log2(unsigned int v) {
   unsigned int r;
@@ -101,6 +102,22 @@ static inline chunk_t *get_next_chunk(chunk_t *chunk) {
   return NULL;
 }
 
+static inline void aquire_heap() {
+  if (current_thread != NULL) {
+    mutex_lock(&kheap_mutex);
+  } else {
+    spin_lock(&kheap_lock);
+  }
+}
+
+static inline void release_heap() {
+  if (current_thread != NULL) {
+    mutex_unlock(&kheap_mutex);
+  } else {
+    spin_unlock(&kheap_lock);
+  }
+}
+
 // ----- heap creation -----
 
 void kheap_init() {
@@ -119,6 +136,7 @@ void kheap_init() {
   kheap->chunks = NULL;
   kheap->last_chunk = NULL;
   spin_init(&kheap_lock);
+  mutex_init(&kheap_mutex, MUTEX_REENTRANT);
 }
 
 // ----- kmalloc -----
@@ -140,7 +158,7 @@ void *__kmalloc(size_t size, size_t alignment, int flags) {
     panic("[kmalloc] error - request too large\n");
   }
 
-  spin_lock(&kheap_lock);
+  aquire_heap();
 
   // otherwise proceed with the normal allocation
   size = align(max(size, CHUNK_MIN_SIZE), CHUNK_SIZE_ALIGN);
@@ -195,7 +213,7 @@ void *__kmalloc(size_t size, size_t alignment, int flags) {
 
       // return pointer to user data
       kheap->used += size + sizeof(chunk_t);
-      spin_unlock(&kheap_lock);
+      release_heap();
       return (void *) chunk_mem_start(chunk);
     }
   }
@@ -251,7 +269,7 @@ void *__kmalloc(size_t size, size_t alignment, int flags) {
   // kheap->used += chunk_start
   kheap->max_addr = chunk_end;
   kheap->last_chunk = chunk;
-  spin_unlock(&kheap_lock);
+  release_heap();
   return (void *) chunk_mem_start(chunk);
 }
 
@@ -272,8 +290,7 @@ void kfree(void *ptr) {
     return;
   }
 
-  spin_lock(&kheap_lock);
-
+  aquire_heap();
   chunk_t *chunk = get_chunk(ptr);
   chunk_t *next_chunk = get_next_chunk(chunk);
   // kprintf("[kfree] freeing pointer %p\n", ptr);
@@ -284,7 +301,7 @@ void kfree(void *ptr) {
 
   kheap->used -= (chunk->size) + sizeof(chunk_t);
   kheap->chunks = chunk;
-  spin_unlock(&kheap_lock);
+  release_heap();
 }
 
 // ----- kcalloc -----
@@ -330,7 +347,7 @@ void *krealloc(void *ptr, size_t size) {
     return NULL;
   }
 
-  spin_lock(&kheap_lock);
+  aquire_heap();
   size_t aligned = next_pow2(max(size, CHUNK_MIN_SIZE));
   chunk_t *chunk = get_chunk(ptr);
   size_t old_size = chunk->size;
@@ -344,7 +361,7 @@ void *krealloc(void *ptr, size_t size) {
   if (aligned <= old_size) {
     // kprintf("[krealloc] no changes needed\n");
     kheap->used -= old_size - aligned;
-    spin_unlock(&kheap_lock);
+    release_heap();
     return ptr;
   }
 
@@ -362,7 +379,7 @@ void *krealloc(void *ptr, size_t size) {
       kheap->size -= old_size + sizeof(chunk_t);
       kheap->size += aligned + sizeof(chunk_start);
       kheap->max_addr = chunk_end;
-      spin_unlock(&kheap_lock);
+      release_heap();
       return ptr;
     } else {
       panic("[krealloc] out of memory - expand heap");
@@ -425,7 +442,7 @@ void *krealloc(void *ptr, size_t size) {
 
     kheap->used += next_size;
     chunk->size = log2(old_size + next_size);
-    spin_unlock(&kheap_lock);
+    release_heap();
     return ptr;
   }
 
@@ -436,13 +453,13 @@ void *krealloc(void *ptr, size_t size) {
 
   void *new_ptr = kmalloc(aligned);
   if (new_ptr == NULL) {
-    spin_unlock(&kheap_lock);
+    release_heap();
     return NULL;
   }
 
   // kprintf("[krealloc] freeing old chunk\n");
   memcpy(new_ptr, ptr, old_size);
   kfree(ptr);
-  spin_unlock(&kheap_lock);
+  release_heap();
   return new_ptr;
 }
