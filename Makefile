@@ -6,7 +6,7 @@ BUILD = build
 BUILD_DIR = $(BUILD)/$(NAME)
 SYS_ROOT = $(BUILD)/sysroot
 
-CFLAGS  +=
+CFLAGS  += -std=gnu17
 LDFLAGS +=
 ASFLAGS +=
 NASMFLAGS += -g
@@ -64,6 +64,13 @@ run-debug: $(BUILD)/osdev.img
 
 .PHONY: clean
 clean:
+	rm -f $(BUILD)/*.efi
+	rm -f $(BUILD)/*.elf
+	rm -rf $(BUILD_DIR)
+	mkdir $(BUILD_DIR)
+
+.PHONY: clean-all
+clean-all:
 	rm -f $(BUILD)/*.img
 	rm -f $(BUILD)/*.efi
 	rm -f $(BUILD)/*.elf
@@ -122,7 +129,7 @@ $(BUILD)/hello.elf: $(sys-y)
 
 # External Data
 
-$(BUILD)/ext2.img: config.ini $(BUILD)/hello.elf
+$(BUILD)/ext2.img: config.ini
 	dd if=/dev/zero of=$@ bs=1m count=512
 	mke2fs -L Untitled -t ext2 $@
 	cd $(SYS_ROOT) && find . -type f ! -name ".DS_Store" -exec e2cp {} ../../$@:/{} \;

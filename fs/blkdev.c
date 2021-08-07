@@ -67,7 +67,7 @@ void *blkdev_readx(blkdev_t *dev, uint64_t lba, uint32_t count, int flags) {
     count -= ccount;
   }
 
-  if (flags & BLKDEV_NOCACHE) {
+  if (!(flags & BLKDEV_NOCACHE)) {
     intvl_tree_insert(dev->cache, ivl, buffer);
   }
   return (void *) buffer->addr;
@@ -128,5 +128,10 @@ void blkdev_freebuf(void *ptr) {
   if (ptr == NULL) {
     return;
   }
-  free_buffer(ptr);
+
+  vm_area_t *area = vm_get_vm_area((uintptr_t) ptr);
+  if (area == NULL || !(area->attr & AREA_PAGE)) {
+    return;
+  }
+  free_buffer(area->pages);
 }
