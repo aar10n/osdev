@@ -7,22 +7,22 @@
 
 #include <base.h>
 #include <spinlock.h>
+#include <queue.h>
 
 typedef struct thread thread_t;
 
-typedef struct tqueue {
-  thread_t *head; // queue head
-  thread_t *tail; // queue tail
-} tqueue_t;
-
+typedef LIST_HEAD(thread_t) tqueue_t;
 
 // -------- Mutexes --------
 
-#define MUTEX_LOCKED  0x1 // mutex lock
+#define MUTEX_LOCKED  0x1   // mutex locked initially
+#define MUTEX_REENTRANT 0x2 // mutex is reentrant
 
 typedef struct mutex {
   volatile uint32_t flags; // flags
   tqueue_t queue;          // queue
+  thread_t *aquired_by;    // owning thread
+  uint8_t aquire_count;    // reentrant count
 } mutex_t;
 
 void mutex_init(mutex_t *mutex, uint32_t flags);
@@ -35,8 +35,8 @@ int mutex_unlock(mutex_t *mutex);
 #define COND_NOEMPTY  0x2 // signal doesnt work if queue is empty
 
 typedef struct cond {
-  volatile uint32_t flags;  // flags
-  tqueue_t queue;           // queue
+  volatile uint32_t flags; // flags
+  tqueue_t queue;          // queue
 } cond_t;
 
 void cond_init(cond_t *cond, uint32_t flags);

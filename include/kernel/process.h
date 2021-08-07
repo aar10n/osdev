@@ -7,6 +7,7 @@
 
 #include <base.h>
 #include <fs.h>
+#include <queue.h>
 
 #define DEFAULT_RFLAGS 0x246
 #define PROC_STACK_SIZE 0x2000
@@ -22,6 +23,7 @@ typedef enum {
 typedef struct vm vm_t;
 typedef struct thread thread_t;
 typedef struct file_table file_table_t;
+typedef struct process process_t;
 
 typedef struct {
   uint64_t rax;    // 0x00
@@ -40,20 +42,18 @@ typedef struct {
 } context_t;
 
 typedef struct process {
-  pid_t pid;           // process id
-  pid_t ppid;          // parent pid
-  vm_t *vm;            // virtual memory space
+  pid_t pid;                   // process id
+  pid_t ppid;                  // parent pid
+  vm_t *vm;                    // virtual memory space
 
-  uid_t uid;           // user id
-  gid_t gid;           // group id
-  dentry_t **pwd;      // process working directory
-  file_table_t *files; // open file table
+  uid_t uid;                   // user id
+  gid_t gid;                   // group id
+  dentry_t **pwd;              // process working directory
+  file_table_t *files;         // open file table
 
-  thread_t *main;      // main thread (first)
-  thread_t *threads;   // pointer to thread group
-
-  struct process *next;
-  struct process *prev;
+  thread_t *main;              // main thread
+  LIST_HEAD(thread_t) threads; // process threads (group)
+  LIST_HEAD(process_t) list;   // process list
 } process_t;
 
 process_t *create_root_process(void (function)());

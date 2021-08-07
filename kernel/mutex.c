@@ -57,52 +57,42 @@ static inline void inline_unlock(volatile uint32_t *flags, uint64_t rflags) {
 
 void safe_enqeue(volatile uint32_t *flags, tqueue_t *queue, thread_t *thread) {
   uint64_t rflags = inline_lock(flags);
-  // ------
-  thread_t *next = queue->head;
-  queue->head = thread;
-  thread->next = next;
-  // thread->prev = NULL;
-  if (next != NULL) {
-    next->prev = thread;
-  } else {
-    queue->tail = thread;
-  }
-  // ------
+  LIST_ADD_FRONT(queue, thread, list);
   inline_unlock(flags, rflags);
 }
 
 thread_t *safe_dequeue(volatile uint32_t *flags, tqueue_t *queue) {
   uint64_t rflags = inline_lock(flags);
-  // ------
-  thread_t *last = queue->tail;
-  if (last != NULL && last->prev != NULL) {
-    queue->tail = last->prev;
-    last->prev->next = NULL;
-  } else {
-    queue->head = NULL;
-    queue->tail = NULL;
+  thread_t *thread = LIST_LAST(queue);
+  if (thread != NULL) {
+    LIST_REMOVE(queue, thread, list);
   }
-  // last->next = NULL;
-  // last->prev = NULL;
-  // ------
   inline_unlock(flags, rflags);
-  return last;
+  return thread;
 }
 
 // Mutexes
 
 void mutex_init(mutex_t *mutex, uint32_t flags) {
   mutex->flags = flags;
-  mutex->queue.head = NULL;
-  mutex->queue.tail = NULL;
+  LIST_INIT(&mutex->queue);
+  mutex->aquired_by = NULL;
+  mutex->aquire_count = 0;
 }
 
 int mutex_lock(mutex_t *mutex) {
   thread_t *thread = current_thread;
 
   mutex_trace_debug("locking mutex (%d:%d)", getpid(), gettid());
-  thread->preempt_count++;
+  // thread->preempt_count++;
   if (atomic_bit_test_and_set(&mutex->flags, B_LOCKED)) {
+    if (mutex->flags & MUTEX_REENTRANT && mutex->aquired_by == thread) {
+      if (mutex->aquire_count == UINT8_MAX - 1) {
+        panic("reentrancy too deep");
+      }
+      goto done;
+    }
+
     // mutex is already locked
     mutex_trace_debug("failed to aquire mutex (%d:%d)", getpid(), gettid());
     mutex_trace_debug("blocking");
@@ -111,7 +101,10 @@ int mutex_lock(mutex_t *mutex) {
     safe_enqeue(&mutex->flags, &mutex->queue, thread);
     scheduler_block(thread);
   }
-  thread->preempt_count--;
+  label(done);
+  mutex->aquired_by = thread;
+  mutex->aquire_count++;
+  // thread->preempt_count--;
   mutex_trace_debug("mutex aquired (%d:%d)", getpid(), gettid());
   return 0;
 }
@@ -121,11 +114,22 @@ int mutex_unlock(mutex_t *mutex) {
   if (!(mutex->flags & MUTEX_LOCKED)) {
     return -EINVAL;
   }
+  kassert(mutex->aquired_by == current_thread);
 
   mutex_trace_debug("unlocking mutex (%d:%d)", getpid(), gettid());
   thread->preempt_count++;
+  if (mutex->flags & MUTEX_REENTRANT) {
+    kassert(mutex->aquire_count > 0);
+    mutex->aquire_count--;
+    if (mutex->aquire_count > 0) {
+      thread->preempt_count--;
+      return 0;
+    }
+  }
+
   thread_t *next = safe_dequeue(&mutex->flags, &mutex->queue);
   atomic_bit_test_and_reset(&mutex->flags, B_LOCKED);
+  mutex->aquired_by = NULL;
   if (next != NULL) {
     scheduler_unblock(next);
   }
@@ -146,8 +150,7 @@ static void cond_timeout_cb(void *arg) {
 
 void cond_init(cond_t *cond, uint32_t flags) {
   cond->flags = flags;
-  cond->queue.head = NULL;
-  cond->queue.tail = NULL;
+  LIST_INIT(&cond->queue);
 }
 
 int cond_wait(cond_t *cond) {
@@ -161,10 +164,8 @@ int cond_wait(cond_t *cond) {
   cond_trace_debug("thread %d:%d blocked by condition",
                    thread->process->pid, thread->tid);
 
-  thread->preempt_count++;
   thread->flags |= F_THREAD_OWN_BLOCKQ;
   safe_enqeue(&cond->flags, &cond->queue, thread);
-  thread->preempt_count--;
   scheduler_block(thread);
   return 0;
 }
@@ -187,14 +188,13 @@ int cond_wait_timeout(cond_t *cond, uint64_t us) {
 
 int cond_signal(cond_t *cond) {
   thread_t *thread = current_thread;
-  if (cond->queue.tail == NULL) {
+  if (LIST_LAST(&cond->queue) == NULL) {
     if (!(cond->flags & COND_NOEMPTY)) {
       cond->flags |= M_LOCKED;
     }
     return 0;
   }
 
-  thread->preempt_count++;
   thread_t *signaled = safe_dequeue(&cond->flags, &cond->queue);
   scheduler_unblock(signaled);
 
@@ -202,24 +202,20 @@ int cond_signal(cond_t *cond) {
           signaled->process->pid, signaled->tid,
           thread->process->pid, thread->tid);
 
-  thread->preempt_count--;
-
   return 0;
 }
 
 int cond_broadcast(cond_t *cond) {
   thread_t *thread = current_thread;
-  if (cond->queue.tail == NULL) {
+  if (LIST_LAST(&cond->queue) == NULL) {
     cond->flags |= M_LOCKED;
     return 0;
   }
 
-  thread->preempt_count++;
   thread_t *signaled;
   while ((signaled = safe_dequeue(&cond->flags, &cond->queue))) {
     scheduler_unblock(signaled);
   }
-  thread->preempt_count--;
   return 0;
 }
 

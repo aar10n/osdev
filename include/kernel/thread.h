@@ -7,6 +7,7 @@
 
 #include <base.h>
 #include <mutex.h>
+#include <queue.h>
 
 #define ERRNO (current_thread->errno)
 
@@ -54,33 +55,30 @@ typedef struct {
 } thread_ctx_t;
 
 typedef struct thread {
-  id_t tid;               // thread id
-  uint32_t reserved;      // reserved
-  thread_ctx_t *ctx;      // thread context
-  process_t *process;     // owning process
-  tls_block_t *tls;       // thread local storage
+  id_t tid;                   // thread id
+  uint32_t reserved;          // reserved
+  thread_ctx_t *ctx;          // thread context
+  process_t *process;         // owning process
+  tls_block_t *tls;           // thread local storage
 
-  uint8_t cpu_id;         // current/last cpu used
-  uint8_t policy;         // thread scheduling policy
-  uint16_t priority;      // thread priority
-  thread_status_t status; // thread status
+  uint8_t cpu_id;             // current/last cpu used
+  uint8_t policy;             // thread scheduling policy
+  uint16_t priority;          // thread priority
+  thread_status_t status;     // thread status
 
-  mutex_t mutex;          // thread mutex
-  cond_t data_ready;      // thread data ready condition
-  uint32_t signal;        // signal mask
-  uint32_t flags;         // flags mask
+  mutex_t mutex;              // thread mutex
+  cond_t data_ready;          // thread data ready condition
+  uint32_t signal;            // signal mask
+  uint32_t flags;             // flags mask
 
-  int errno;              // thread local errno
-  int preempt_count;      // preempt disable counter
-  void *data;             // thread data pointer
+  int errno;                  // thread local errno
+  int preempt_count;          // preempt disable counter
+  void *data;                 // thread data pointer
 
-  page_t *stack;          // stack pages
+  page_t *stack;              // stack pages
 
-  struct thread *g_next;  // next thread in group
-  struct thread *g_prev;  // previous thread in group
-
-  struct thread *next;    // next thread
-  struct thread *prev;    // previous thread
+  LIST_ENTRY(thread_t) group; // thread group
+  LIST_ENTRY(thread_t) list;  // thread list
 } thread_t;
 
 thread_t *thread_alloc(id_t tid, void *(start_routine)(void *), void *arg);

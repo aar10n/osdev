@@ -20,7 +20,9 @@
 #define SCHEDULER (PERCPU->scheduler)
 #define CURRENT (PERCPU->curr)
 
-#define SCHED_PERIOD   200
+#include <queue.h>
+
+#define SCHED_PERIOD   500
 #define SCHED_POLICIES 2
 #define PTABLE_SIZE    1024
 #define SCHED_QUEUES   4
@@ -33,11 +35,6 @@ typedef enum {
   TERMINATED,
   YIELDED,
 } sched_reason_t;
-
-typedef struct thread_queue {
-  thread_t *front;
-  thread_t *back;
-} thread_queue_t;
 
 // scheduling policies
 #define SCHED_DRIVER 0
@@ -68,7 +65,7 @@ typedef struct {
 
 typedef struct {
   uint64_t count;
-  thread_queue_t queues[3];
+  LIST_HEAD(thread_t) queues[3];
 } policy_fprr_t;
 
 // multi-level feedback queue
@@ -85,7 +82,7 @@ typedef struct scheduler {
   uint64_t count;
   thread_t *idle;
 
-  thread_queue_t blocked;
+  LIST_HEAD(thread_t) blocked;
 
   sched_policy_t *policies[SCHED_POLICIES];
   void *policy_data[SCHED_POLICIES];

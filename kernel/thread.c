@@ -151,16 +151,13 @@ void thread_free(thread_t *thread) {
 
 thread_t *thread_create(void *(start_routine)(void *), void *arg) {
   process_t *process = current_process;
-  id_t tid = process->threads->tid + 1;
+  id_t tid = LIST_LAST(&process->threads)->tid + 1;
   thread_trace_debug("creating thread %d | process %d", tid, process->pid);
 
   thread_t *thread = thread_alloc(tid, start_routine, arg);
   thread->process = process;
-  thread->g_next = process->threads;
 
-  process->threads->g_prev = thread;
-  process->threads = thread;
-
+  LIST_ADD(&process->threads, thread, group);
   scheduler_add(thread);
   return thread;
 }

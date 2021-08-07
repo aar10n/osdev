@@ -57,17 +57,16 @@ process_t *process_alloc(pid_t pid, pid_t ppid, void *(start_routine)(void *), v
   thread_t *main = thread_alloc(0, start_routine, arg);
   main->process = process;
   process->main = main;
-  process->threads = main;
-
-  process->next = NULL;
-  process->prev = NULL;
+  LIST_INIT(&process->threads);
+  LIST_INIT(&process->list);
+  LIST_ADD_FRONT(&process->threads, main, group);
   return process;
 }
 
 void process_free(process_t *process) {
   thread_t *thread = process->main;
   while (thread) {
-    thread_t *next = thread->next;
+    thread_t *next = LIST_NEXT(thread, group);
     thread_free(thread);
     thread = next;
   }
@@ -123,44 +122,50 @@ pid_t process_fork() {
   kprintf("[process] rsp: %p\n", rsp);
 
   process->main = main;
-  process->threads = main;
+  LIST_ADD_FRONT(&process->threads, main, list);
 
   scheduler_add(main);
   return process->pid;
 }
 
 int process_execve(const char *path, char *const argv[], char *const envp[]) {
-  int fd = fs_open(path, O_RDONLY, 0);
-  if (fd < 0) {
-    return -1;
-  }
-
-  kstat_t stat;
-  if (fs_fstat(fd, &stat) < 0) {
-    fs_close(fd);
-    return -1;
-  }
-
-  page_t *program = alloc_pages(SIZE_TO_PAGES(stat.size), PE_WRITE);
-  ssize_t nread = fs_read(fd, (void *) program->addr, stat.size);
-  if (nread < 0) {
-    free_pages(program);
-    fs_close(fd);
-    return -1;
-  }
-
-  void *entry;
-  int result = load_elf((void *) program->addr, &entry);
-  if (result < 0) {
-    free_pages(program);
-    fs_close(fd);
+  // int program_fd = fs_open(path, O_RDONLY, 0);
+  // if (program_fd < 0) {
+  //   return -1;
+  // }
+  //
+  // kstat_t stat;
+  // if (fs_fstat(program_fd, &stat) < 0) {
+  //   fs_close(program_fd);
+  //   return -1;
+  // }
+  //
+  // page_t *program = alloc_pages(SIZE_TO_PAGES(stat.size), PE_WRITE);
+  // ssize_t nread = fs_read(program_fd, (void *) program->addr, stat.size);
+  // if (nread < 0) {
+  //   free_pages(program);
+  //   fs_close(program_fd);
+  //   return -1;
+  // }
+  //
+  // elf_program_t prog;
+  // int result = load_elf((void *) program->addr, &info);
+  // if (result < 0) {
+  //   free_pages(program);
+  //   fs_close(program_fd);
+  //   return -1;
+  // }
+  elf_program_t prog;
+  memset(&prog, 0, sizeof(elf_program_t));
+  if (load_elf_file(path, &prog) < 0) {
+    kprintf("error: %s\n", strerror(ERRNO));
     return -1;
   }
 
   uintptr_t rsp = current_thread->stack->addr;
   rsp += THREAD_STACK_SIZE - 1;
 
-  sysret((uintptr_t) entry, rsp);
+  sysret((uintptr_t) prog.entry, rsp);
 }
 
 pid_t getpid() {
@@ -192,9 +197,9 @@ void print_debug_process(process_t *process) {
   kprintf("  pid: %d\n", process->pid);
   kprintf("  ppid: %d\n", process->ppid);
 
-  thread_t *thread = process->main;
+  thread_t *thread = LIST_FIRST(&process->threads);
   while (thread) {
     print_debug_thread(thread);
-    thread = thread->g_next;
+    thread = LIST_NEXT(thread, list);
   }
 }

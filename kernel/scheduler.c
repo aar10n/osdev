@@ -38,32 +38,21 @@
 
 #define IS_TERMINATED(thread) ((thread)->status == THREAD_TERMINATED)
 
-#define THREAD_QUEUE_ADD(queue, thread) {      \
-    if ((queue)->front == NULL) {              \
-      (queue)->front = (thread);               \
-      (queue)->back = (thread);                \
-    } else {                                   \
-      (queue)->back->next = (thread);          \
-      (thread)->prev = (queue)->back;          \
-      (queue)->back = (thread);                \
-    }                                          \
-  }
-
-#define THREAD_QUEUE_REMOVE(queue, thread) {   \
-    if ((thread) == (queue)->front)            \
-      (queue)->front = (thread)->next;         \
-    if ((thread) == (queue)->back)             \
-      (queue)->back = (thread)->prev;          \
-    if ((thread)->prev)                        \
-      (thread)->prev->next = (thread)->next;   \
-    if ((thread)->next)                        \
-      (thread)->next->prev = (thread)->prev;   \
-    (thread)->next = NULL;                     \
-    (thread)->prev = NULL;                     \
-  }
-
 extern void tick_handler();
 void thread_switch(thread_t *thread);
+
+scheduler_t *scheduler;
+policy_fprr_t *fprr1;
+policy_fprr_t *fprr2;
+
+const char *status_str[] = {
+  [THREAD_READY] = "THREAD_READY",
+  [THREAD_RUNNING] = "THREAD_RUNNING",
+  [THREAD_BLOCKED] = "THREAD_BLOCKED",
+  [THREAD_SLEEPING] = "THREAD_SLEEPING",
+  [THREAD_TERMINATED] = "THREAD_TERMINATED",
+  [THREAD_KILLED] = "THREAD_KILLED"
+};
 
 static process_t *ptable[PTABLE_SIZE] = {};
 static size_t ptable_size = 0;
@@ -97,7 +86,7 @@ int fprr_add_thread(void *self, thread_t *thread, sched_reason_t reason) {
   uint8_t priority = max(thread->priority, FPRR_NUM_PRIORITIES - 1);
   thread->priority = priority;
 
-  THREAD_QUEUE_ADD(&fprr->queues[priority], thread);
+  LIST_ADD(&fprr->queues[priority], thread, list);
   fprr->count++;
   SCHEDULER->count++;
   return 0;
@@ -107,7 +96,7 @@ int fprr_remove_thread(void *self, thread_t *thread) {
   policy_fprr_t *fprr = self;
   uint8_t priority = thread->priority;
 
-  THREAD_QUEUE_REMOVE(&fprr->queues[priority], thread);
+  LIST_REMOVE(&fprr->queues[priority], thread, list);
   fprr->count--;
   SCHEDULER->count--;
   return 0;
@@ -124,7 +113,7 @@ thread_t *fprr_get_next_thread(void *self) {
   }
 
   for (int i = 0; i < FPRR_NUM_PRIORITIES; i++) {
-    thread_t *thread = fprr->queues[i].front;
+    thread_t *thread = LIST_FIRST(&fprr->queues[i]);
     if (thread == NULL) {
       continue;
     }
@@ -135,7 +124,9 @@ thread_t *fprr_get_next_thread(void *self) {
   return NULL;
 }
 
-void fprr_update_self(void *self) {}
+void fprr_update_self(void *self) {
+  policy_fprr_t *fprr = self;
+}
 
 
 sched_policy_t policy_fprr = {
@@ -159,7 +150,12 @@ sched_policy_t policy_fprr = {
 //
 
 noreturn void *idle_task(void *arg) {
+  percpu_t *p = PERCPU;
+  scheduler_t *sched = SCHEDULER;
   while (true) {
+    if (sched->count > 0) {
+      scheduler_yield();
+    }
     cpu_pause();
   }
 }
@@ -231,10 +227,10 @@ void scheduler_sched(sched_reason_t reason) {
     curr->status = THREAD_READY;
   } else {
     curr->status = get_new_status(reason);
-    sched_trace_debug("cur status: %d (%d:%d)", curr->status, curr->process->pid, curr->tid);
+    sched_trace_debug("cur status: %s (%d:%d)", status_str[curr->status], curr->process->pid, curr->tid);
     if (IS_BLOCKED(curr)) {
       if (!(curr->flags & F_THREAD_OWN_BLOCKQ)) {
-        THREAD_QUEUE_ADD(&sched->blocked, curr);
+        LIST_ADD(&sched->blocked, curr, list);
       }
     } else if (!IS_TERMINATED(curr)) {
       int result = DISPATCH(curr->policy, add_thread, curr, reason);
@@ -268,15 +264,19 @@ void scheduler_sched(sched_reason_t reason) {
 }
 
 void scheduler_tick() {
+  thread_t *thread = current_thread;
   SCHEDULER->timer_event = true;
   sched_trace_debug("tick");
-  scheduler_sched(PREEMPTED);
+  // scheduler_sched(PREEMPTED);
+  if (current_thread == SCHEDULER->idle) {
+    scheduler_sched(PREEMPTED);
+  }
 }
 
 void scheduler_wakeup(thread_t *thread) {
   sched_trace_debug("wakeup (%d:%d)", thread->process->pid, thread->tid);
   scheduler_t *sched = SCHEDULER;
-  THREAD_QUEUE_REMOVE(&sched->blocked, thread);
+  LIST_REMOVE(&sched->blocked, thread, list);
   DISPATCH(thread->policy, add_thread, thread, RESERVED);
   thread->status = THREAD_READY;
   scheduler_sched(PREEMPTED);
@@ -287,27 +287,27 @@ void scheduler_wakeup(thread_t *thread) {
 void scheduler_init(process_t *root) {
   sched_trace_debug("initializing");
 
-  thread_t *idle = thread_alloc(root->threads->tid + 1, idle_task, NULL);
+  thread_t *idle = thread_alloc(LIST_LAST(&root->threads)->tid + 1, idle_task, NULL);
   idle->process = root;
   idle->priority = 255;
   idle->policy = 255;
 
-  idle->g_next = root->threads;
-  root->threads->g_prev = idle;
-  root->threads = idle;
-
+  LIST_ADD(&root->threads, idle, group);
   scheduler_t *sched = kmalloc(sizeof(scheduler_t));
   sched->cpu_id = PERCPU->id;
   sched->count = 0;
   sched->idle = idle;
-  sched->blocked.front = NULL;
-  sched->blocked.back = NULL;
+  LIST_INIT(&sched->blocked);
   sched->timer_event = false;
 
   SCHEDULER = sched;
+  scheduler = sched;
 
   REGISTER_POLICY(SCHED_DRIVER, &policy_fprr);
   REGISTER_POLICY(SCHED_SYSTEM, &policy_fprr);
+
+  fprr1 = sched->policy_data[0];
+  fprr2 = sched->policy_data[1];
 
   idt_gate_t gate = gate((uintptr_t) tick_handler, KERNEL_CS, 0, INTERRUPT_GATE, 0, 1);
   idt_set_gate(VECTOR_SCHED_TIMER, gate);
@@ -348,7 +348,7 @@ int scheduler_remove(thread_t *thread) {
     scheduler_sched(TERMINATED);
     unreachable;
   } else if (IS_BLOCKED(thread)) {
-    THREAD_QUEUE_REMOVE(&sched->blocked, thread);
+    LIST_REMOVE(&sched->blocked, thread, list);
   } else {
     DISPATCH(thread->policy, remove_thread, thread);
   }
@@ -399,13 +399,15 @@ int scheduler_unblock(thread_t *thread) {
 
   scheduler_t *sched = SCHEDULER;
   if (!(thread->flags & F_THREAD_OWN_BLOCKQ)) {
-    THREAD_QUEUE_REMOVE(&sched->blocked, thread);
+    LIST_REMOVE(&sched->blocked, thread, list);
   } else {
     thread->flags ^= F_THREAD_OWN_BLOCKQ;
   }
   DISPATCH(thread->policy, add_thread, thread, RESERVED);
   thread->status = THREAD_READY;
-  scheduler_sched(PREEMPTED);
+  if (thread->policy == current_thread->policy && thread->priority > current_thread->priority) {
+    scheduler_sched(PREEMPTED);
+  }
   return 0;
 }
 
