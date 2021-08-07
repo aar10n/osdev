@@ -99,6 +99,35 @@
     }                                                     \
   }
 
+// Single linked list
+
+/* Adds an element to the end of the single list */
+#define SLIST_ADD(head, el, name)       \
+  {                                     \
+    if ((head)->first == NULL) {        \
+      (head)->first = (el);             \
+      (head)->last = (el);              \
+      (el)->name.next = NULL;           \
+    } else {                            \
+      (head)->last->name.next = (el);   \
+      (el)->name.next = NULL;           \
+      (head)->last = (el);              \
+    }                                   \
+  }
+
+/* Adds an element to the start of the list */
+#define SLIST_ADD_FRONT(head, el, name)  \
+  {                                      \
+    if ((head)->first == NULL) {         \
+      (head)->first = (el);              \
+      (head)->last = (el);               \
+      (el)->name.next = NULL;            \
+    } else {                             \
+      (el)->name.next = (head)->first;   \
+      (head)->first = (el);              \
+    }                                    \
+  }
+
 // Raw list functions
 
 #define RLIST_ADD(el1, el2, name) \
