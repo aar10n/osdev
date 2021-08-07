@@ -41,11 +41,7 @@
 extern void tick_handler();
 void thread_switch(thread_t *thread);
 
-scheduler_t *scheduler;
-policy_fprr_t *fprr1;
-policy_fprr_t *fprr2;
-
-const char *status_str[] = {
+static const char *status_str[] = {
   [THREAD_READY] = "THREAD_READY",
   [THREAD_RUNNING] = "THREAD_RUNNING",
   [THREAD_BLOCKED] = "THREAD_BLOCKED",
@@ -151,7 +147,7 @@ sched_policy_t policy_fprr = {
 
 noreturn void *idle_task(void *arg) {
   percpu_t *p = PERCPU;
-  scheduler_t *sched = SCHEDULER;
+  scheduler_t *sched = p->scheduler;
   while (true) {
     if (sched->count > 0) {
       scheduler_yield();
@@ -160,7 +156,7 @@ noreturn void *idle_task(void *arg) {
   }
 }
 
-thread_status_t get_new_status(sched_reason_t reason) {
+static inline thread_status_t get_new_status(sched_reason_t reason) {
   switch (reason) {
     case BLOCKED: return THREAD_BLOCKED;
     case PREEMPTED: return THREAD_READY;
@@ -263,14 +259,17 @@ void scheduler_sched(sched_reason_t reason) {
   thread_switch(next);
 }
 
-void scheduler_tick() {
-  thread_t *thread = current_thread;
-  SCHEDULER->timer_event = true;
+__used void scheduler_tick() {
+  scheduler_t *sched = SCHEDULER;
+  sched->timer_event = true;
   sched_trace_debug("tick");
-  // scheduler_sched(PREEMPTED);
-  if (current_thread == SCHEDULER->idle) {
-    scheduler_sched(PREEMPTED);
+  if (current_thread == sched->idle && sched->count == 0) {
+    // no other threads are available to run so return from the
+    // interrupt handler and continue idling
+    return;
   }
+  // preempt the current thread
+  scheduler_sched(PREEMPTED);
 }
 
 void scheduler_wakeup(thread_t *thread) {
@@ -301,13 +300,9 @@ void scheduler_init(process_t *root) {
   sched->timer_event = false;
 
   SCHEDULER = sched;
-  scheduler = sched;
 
   REGISTER_POLICY(SCHED_DRIVER, &policy_fprr);
   REGISTER_POLICY(SCHED_SYSTEM, &policy_fprr);
-
-  fprr1 = sched->policy_data[0];
-  fprr2 = sched->policy_data[1];
 
   idt_gate_t gate = gate((uintptr_t) tick_handler, KERNEL_CS, 0, INTERRUPT_GATE, 0, 1);
   idt_set_gate(VECTOR_SCHED_TIMER, gate);
