@@ -8,7 +8,7 @@
 int ramfs_open(file_t *file, dentry_t *dentry) {
   inode_t *inode = file->dentry->inode;
   if (inode->pages == NULL && !IS_IFDIR(file->mode)) {
-    inode->pages = alloc_page(PE_WRITE | PE_USER);
+    inode->pages = alloc_page(PE_WRITE);
     inode->blocks = 1;
   } else if (inode->pages && !inode->pages->flags.present) {
     map_pages(inode->pages);
@@ -45,7 +45,7 @@ ssize_t ramfs_write(file_t *file, const char *buf, size_t count, off_t *offset) 
   if (free < count) {
     size_t remaining = count - free;
     inode->blocks += SIZE_TO_PAGES(remaining);
-    page_t *pages = alloc_pages(SIZE_TO_PAGES(remaining), PE_WRITE | PE_USER);
+    page_t *pages = alloc_pages(SIZE_TO_PAGES(remaining), PE_WRITE);
     if (inode->pages) {
       unmap_pages(inode->pages);
       inode->pages->next = pages;

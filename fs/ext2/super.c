@@ -245,6 +245,7 @@ int ext2_read_inode(super_block_t *sb, inode_t *inode) {
   inode->uid = e2i->i_uid;
   inode->gid = e2i->i_gid;
   inode->size = e2i->i_size;
+  inode->dev = sb->devid;
   inode->atime = e2i->i_atime;
   inode->ctime = e2i->i_ctime;
   inode->mtime = e2i->i_mtime;

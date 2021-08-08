@@ -22,6 +22,6 @@ typedef struct ramfs_super {
 } ramfs_super_t;
 
 void ramfs_init();
-super_block_t *ramfs_mount(file_system_t *fs, blkdev_t *dev, dentry_t *mount);
+super_block_t *ramfs_mount(file_system_t *fs, dev_t devid, blkdev_t *dev, dentry_t *mount);
 
 #endif

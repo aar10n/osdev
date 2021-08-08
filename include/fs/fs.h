@@ -44,7 +44,7 @@ typedef struct file_system {
   char *name;                // filesystem name
   uint32_t flags;            // filesystem flags
 
-  super_block_t *(*mount)(file_system_t *fs, blkdev_t *dev, dentry_t *mount);
+  super_block_t *(*mount)(file_system_t *fs, dev_t devid, blkdev_t *dev, dentry_t *mount);
   int (*post_mount)(file_system_t *fs, super_block_t *sb);
 
   super_block_ops_t *sb_ops; // superblock operations
@@ -94,6 +94,7 @@ typedef struct super_block {
   blksize_t blksize;         // block size in bytes
   dentry_t *root;            // mount dentry
   blkdev_t *dev;             // associated block device
+  dev_t devid;               // device id
   LIST_HEAD(inode_t) inodes; // all inodes from this fs
   file_system_t *fs;         // filesystem type
   super_block_ops_t *ops;    // superblock operations
@@ -273,6 +274,7 @@ typedef struct file {
   uid_t uid;           // user id
   gid_t gid;           // group id
   file_ops_t *ops;     // file operations
+  device_t *device;    // file device
 } file_t;
 
 typedef struct file_ops {

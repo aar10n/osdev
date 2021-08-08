@@ -48,7 +48,7 @@ dentry_ops_t ext2_dentry_ops = {};
 
 //
 
-super_block_t *ext2_mount(file_system_t *fs, blkdev_t *dev, dentry_t *mount) {
+super_block_t *ext2_mount(file_system_t *fs, dev_t devid, blkdev_t *dev, dentry_t *mount) {
   ext2_super_t *esb = blkdev_read(dev, 2, 2);
   if (esb == NULL) {
     return NULL;
@@ -81,6 +81,7 @@ super_block_t *ext2_mount(file_system_t *fs, blkdev_t *dev, dentry_t *mount) {
   sb->flags = FS_READONLY;
   sb->blksize = blocksz;
   sb->dev = dev;
+  sb->devid = devid;
   sb->fs = fs;
   sb->ops = fs->sb_ops;
   sb->root = mount;

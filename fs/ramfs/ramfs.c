@@ -7,7 +7,7 @@
 #include <dentry.h>
 #include <panic.h>
 
-super_block_t *ramfs_mount(file_system_t *fs, blkdev_t *dev, dentry_t *mount) {
+super_block_t *ramfs_mount(file_system_t *fs, dev_t devid, blkdev_t *dev, dentry_t *mount) {
   ramfs_super_t *rsb = kmalloc(sizeof(ramfs_super_t));
   bitmap_init(&rsb->inodes, RAMFS_MAX_FILES);
   spin_init(&rsb->lock);
@@ -16,6 +16,7 @@ super_block_t *ramfs_mount(file_system_t *fs, blkdev_t *dev, dentry_t *mount) {
   sb->flags = 0;
   sb->blksize = PAGE_SIZE;
   sb->dev = dev;
+  sb->devid = devid;
   sb->fs = fs;
   sb->ops = fs->sb_ops;
   sb->root = mount;

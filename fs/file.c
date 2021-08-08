@@ -79,28 +79,22 @@ file_t *f_alloc(dentry_t *dentry, int flags, mode_t mode) {
   file->fd = fd;
   file->dentry = dentry;
   file->flags = flags;
-  file->mode = mode;
+  file->mode = dentry->mode;
   file->pos = 0;
   file->ops = dentry->inode->sb->fs->file_ops;
 
-  if (IS_IFCHR(dentry->mode)) {
-    device_t *device = locate_device(dentry->inode->dev);
-    if (device == NULL) {
-      f_release(file);
-      ERRNO = ENODEV;
-      return NULL;
-    }
+  device_t *device = locate_device(dentry->inode->dev);
+  if (device == NULL) {
+    f_release(file);
+    ERRNO = ENODEV;
+    return NULL;
+  }
+  file->device = device;
 
+  if (IS_IFCHR(dentry->mode)) {
     chrdev_t *chrdev = device->device;
     file->ops = chrdev->ops;
   } else if (IS_IFFBF(dentry->mode)) {
-    device_t *device = locate_device(dentry->inode->dev);
-    if (device == NULL) {
-      f_release(file);
-      ERRNO = ENODEV;
-      return NULL;
-    }
-
     framebuf_t *fb = device->device;
     file->ops = fb->ops;
   }
@@ -160,7 +154,17 @@ ssize_t f_read(file_t *file, char *buf, size_t count) {
     return -1;
   }
 
-  ssize_t nread = file->ops->read(file, buf, count, &file->pos);
+  ssize_t nread;
+  if (IS_IFBLK(file->mode)) {
+    uint64_t lba = SIZE_TO_SECS(file->pos);
+    nread = blkdev_readbuf(file->device->device, lba, count, buf);
+    if (nread > 0) {
+      file->pos += nread;
+    }
+  } else {
+    nread = file->ops->read(file, buf, count, &file->pos);
+  }
+
   if (nread < 0) {
     return -1;
   }

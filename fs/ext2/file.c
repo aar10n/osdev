@@ -19,7 +19,7 @@ int ext2_open(file_t *file, dentry_t *dentry) {
     return 0;
   }
 
-  page_t *pages = alloc_pages(SIZE_TO_PAGES(dentry->inode->size), PE_USER);
+  page_t *pages = alloc_pages(SIZE_TO_PAGES(dentry->inode->size), PE_WRITE);
   inode->pages = pages;
   return 0;
 }

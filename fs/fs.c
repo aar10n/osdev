@@ -94,8 +94,9 @@ int mount_root(device_t *device, file_system_t *fs) {
   dentry_t *dentry = d_alloc(NULL, "/");
   dentry->parent = dentry;
 
+  dev_t devid = device ? device->dev : 0;
   blkdev_t *blkdev = device ? device->device : NULL;
-  super_block_t *sb = fs->mount(fs, blkdev, dentry);
+  super_block_t *sb = fs->mount(fs, devid, blkdev, dentry);
   if (sb == NULL) {
     return -1;
   }
@@ -172,8 +173,9 @@ int mount_internal(const char *path, device_t *device, file_system_t *fs) {
     }
   }
 
+  dev_t devid = device ? device->dev : 0;
   blkdev_t *blkdev = device ? device->device : NULL;
-  super_block_t *sb = fs->mount(fs, blkdev, dentry);
+  super_block_t *sb = fs->mount(fs, devid, blkdev, dentry);
   if (sb == NULL) {
     return -1;
   } else if (!(fs->flags & FS_NO_ROOT)) {
@@ -212,7 +214,7 @@ void fs_init() {
 
   dentry_t *dentry = d_alloc(NULL, "/");
   dentry->parent = dentry;
-  if (ramfs->mount(ramfs, NULL, dentry) < 0) {
+  if (ramfs->mount(ramfs, 0, NULL, dentry) < 0) {
     panic("failed to mount root fs");
   }
   d_populate_dir(dentry);
