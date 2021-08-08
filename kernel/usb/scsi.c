@@ -10,6 +10,8 @@
 #include <panic.h>
 #include <printf.h>
 
+#define SCSI_MAX_XFER 64
+
 char sd_suffix = 'a';
 
 void setup_command_block(usb_ms_cbw_t *cbw, void *cb, size_t size, size_t trnsf_len, bool dir) {
@@ -75,12 +77,11 @@ void scsi_handle_event(usb_event_t *event, void *data) {
   // kprintf("[scsi] event\n");
 }
 
-// disk api
+// internal read/write
 
-ssize_t scsi_read(usb_device_t *dev, uint64_t lba, uint32_t count, void *buf) {
-  if (count == 0 || buf == NULL) {
-    return 0;
-  }
+ssize_t scsi_read_internal(usb_device_t *dev, uint64_t lba, uint32_t count, void *buf) {
+  kassert(count)
+  kassert(count > 0 && count <= SCSI_MAX_XFER);
 
   uint64_t size = count * 512;
   scsi_read16_cmd_t read_cmd = {
@@ -128,18 +129,16 @@ ssize_t scsi_read(usb_device_t *dev, uint64_t lba, uint32_t count, void *buf) {
   // kprintf("[scsi] read successful\n");
   return size;
 
- FAIL:
+  label(FAIL);
   kfree(cbw);
   kfree(csw);
   // kprintf("[scsi] read failed\n");
   return -EFAILED;
 }
 
-
-ssize_t scsi_write(usb_device_t *dev, uint64_t lba, uint32_t count, void *buf) {
-  if (count == 0 || buf == NULL) {
-    return 0;
-  }
+ssize_t scsi_write_internal(usb_device_t *dev, uint64_t lba, uint32_t count, void *buf) {
+  kassert(count)
+  kassert(count > 0 && count <= SCSI_MAX_XFER);
 
   uint64_t size = count * 512;
   scsi_write16_cmd_t write_cmd = {
@@ -183,12 +182,53 @@ ssize_t scsi_write(usb_device_t *dev, uint64_t lba, uint32_t count, void *buf) {
 
   kfree(cbw);
   kfree(csw);
-  kprintf("[scsi] write successful\n");
+  // kprintf("[scsi] write successful\n");
   return size;
 
- FAIL:
+  label(FAIL);
   kfree(cbw);
   kfree(csw);
-  kprintf("[scsi] write failed\n");
+  // kprintf("[scsi] write failed\n");
   return -EFAILED;
+}
+
+// disk api
+
+ssize_t scsi_read(usb_device_t *dev, uint64_t lba, uint32_t count, void *buf) {
+  if (count == 0 || buf == NULL) {
+    return 0;
+  }
+
+  size_t offset = 0;
+  while (count > 0) {
+    size_t ccount = min(count, SCSI_MAX_XFER);
+    ssize_t result = scsi_read_internal(dev, lba, ccount, buf + offset);
+    if (result < 0) {
+      return -1;
+    }
+
+    offset += result;
+    count -= ccount;
+  }
+  return offset;
+}
+
+
+ssize_t scsi_write(usb_device_t *dev, uint64_t lba, uint32_t count, void *buf) {
+  if (count == 0 || buf == NULL) {
+    return 0;
+  }
+
+  size_t offset = 0;
+  while (count > 0) {
+    size_t ccount = min(count, SCSI_MAX_XFER);
+    ssize_t result = scsi_write_internal(dev, lba, ccount, buf + offset);
+    if (result < 0) {
+      return -1;
+    }
+
+    offset += result;
+    count -= ccount;
+  }
+  return offset;
 }

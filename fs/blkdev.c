@@ -57,14 +57,10 @@ void *blkdev_readx(blkdev_t *dev, uint64_t lba, uint32_t count, int flags) {
 
   // kprintf("[blkdev] reading from disk\n");
   page_t *buffer = alloc_buffer(count);
-  while (count > 0) {
-    size_t ccount = min(count, 64);
-    ssize_t result = dev->read(dev->self, lba, ccount, (void *) buffer->addr);
-    if (result < 0) {
-      free_buffer(buffer);
-      return NULL;
-    }
-    count -= ccount;
+  ssize_t result = dev->read(dev->self, lba, count, (void *) buffer->addr);
+  if (result < 0) {
+    free_buffer(buffer);
+    return NULL;
   }
 
   if (!(flags & BLKDEV_NOCACHE)) {
