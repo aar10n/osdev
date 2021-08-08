@@ -53,8 +53,8 @@ bool bitmap_get(bitmap_t *bmp, index_t index) {
 bool bitmap_set(bitmap_t *bmp, index_t index) {
   _assert(index < bmp->used + bmp->free);
   uint8_t result = __bts64(bmp->map + (index / BIT_SIZE), index % BIT_SIZE);
-  bmp->used += result;
-  bmp->free -= result;
+  bmp->used += 1;
+  bmp->free -= 1;
   return result;
 }
 
@@ -145,7 +145,7 @@ index_t bitmap_get_nfree(bitmap_t *bmp, size_t n) {
     return -1;
   }
 
-  if (n < 64) {
+  if (n <= 64) {
     for (size_t i = 0; i < (bmp->size / BYTE_SIZE); i++) {
       // fast case when request is less than 64-bits
       register uint64_t qw = ~(bmp->map[i]);
@@ -220,7 +220,7 @@ index_t bitmap_get_set_nfree(bitmap_t *bmp, size_t n) {
     return -1;
   }
 
-  if (n < 64) {
+  if (n <= 64) {
     // fast case when request is less than 64-bits
     for (size_t i = 0; i < (bmp->size / BYTE_SIZE); i++) {
       register uint64_t qw = ~(bmp->map[i]);
@@ -243,6 +243,7 @@ index_t bitmap_get_set_nfree(bitmap_t *bmp, size_t n) {
         p += k;
         k = __bsf64(~qw);
         if (k >= n) {
+          bmp->used += n;
           bmp->free -= n;
           bmp->map[i] |= (MAX_NUM >> (BIT_SIZE - n)) << p;
           return (i * BIT_SIZE) + p;
@@ -254,24 +255,54 @@ index_t bitmap_get_set_nfree(bitmap_t *bmp, size_t n) {
     }
   } else {
     // slow case when request is larger than 64-bits
-    index_t region = bitmap_get_nfree(bmp, n);
-    if (region == -1) {
-      return -1;
+    // find the start index of enough consecutive 0's
+    // to satisfy the requested count
+    size_t max_index = bmp->size / BYTE_SIZE;
+    size_t chunk_count = (n / BIT_SIZE) + (n % BIT_SIZE > 0);
+    index_t index = -1;
+    for (size_t i = 0; i < max_index; i++) {
+      if (bmp->map[i] != 0) {
+        continue;
+      }
+
+      size_t found = 0;
+      for (size_t j = i; j < max_index; j++) {
+        if (bmp->map[j] != 0) {
+          i = j + 1;
+          goto outer; // keep searching
+        }
+
+        found++;
+        if (found >= chunk_count) {
+          break;
+        }
+      }
+
+      if (found < chunk_count) {
+        // the end of the map was reached but not enough
+        // free space was found
+        return -1;
+      }
+      index = i;
+      break;
+      label(outer);
     }
 
-    index_t index = region;
     size_t remaining = n;
-    size_t chunk_count = (n / BIT_SIZE) + (n % BIT_SIZE > 0);
     for (size_t i = 0; i < chunk_count; i++) {
-      if (i < chunk_count - 1) {
+      size_t v = min(remaining, BIT_SIZE);
+      if (v == BIT_SIZE) {
         bmp->map[index + i] = MAX_NUM;
         remaining -= BIT_SIZE;
       } else {
         // last index
         bmp->map[index + i] = (0xFFFFFFFFFFFFFFFF >> (BIT_SIZE - remaining));
-        return index * BIT_SIZE;
+        bmp->used += n;
+        bmp->free -= n;
+        return index;
       }
     }
+    unreachable;
   }
   return -1;
 }
