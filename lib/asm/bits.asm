@@ -8,17 +8,18 @@
 ; uint8_t __bt8(uint8_t byte, uint8_t bit)
 global __bt8
 __bt8:
-  mov dx, di ; get byte value
-  bt dx, si  ; bit test
-  setc al    ; get test result
+  mov dx, word [rdi] ; get byte value
+  bt dx, si          ; bit test
+  setc al            ; get test result
   ret
 
 ; uint8_t __bt64(uint64_t qword, uint8_t bit)
 global __bt64
 __bt64:
-  mov rdx, rdi ; get byte value
-  bt rdx, rsi  ; bit test
-  setc al      ; get test result
+  xor rax, rax         ; zero rax
+  mov rdx, qword [rdi] ; get byte value
+  bt rdx, rsi          ; bit test
+  setc al              ; get test result
   ret
 
 ;
@@ -38,7 +39,7 @@ __bts8:
 ; uint8_t __bts64(uint64_t *qword, uint8_t bit)
 global __bts64
 __bts64:
-  xor eax, eax         ; zero eax
+  xor rax, rax         ; zero rax
   mov rdx, qword [rdi] ; get qword value
   bts rdx, rsi         ; bit test set
   mov [rdi], rdx       ; set qword value
@@ -62,7 +63,7 @@ __btr8:
 ; uint8_t __btr64(uint64_t *qword, uint8_t bit)
 global __btr64
 __btr64:
-  xor eax, eax         ; zero eax
+  xor rax, rax         ; zero rax
   mov rdx, qword [rdi] ; get qword value
   btr rdx, rsi         ; bit test set
   mov [rdi], rdx       ; set qword value

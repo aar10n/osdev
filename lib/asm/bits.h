@@ -7,8 +7,8 @@
 
 #include <stdint.h>
 
-uint8_t __bt8(uint8_t byte, uint8_t bit);
-uint8_t __bt64(uint64_t qword, uint8_t bit);
+uint8_t __bt8(uint8_t *byte, uint8_t bit);
+uint8_t __bt64(uint64_t *qword, uint8_t bit);
 
 uint8_t __bts8(uint8_t *byte, uint8_t bit);
 uint8_t __bts64(uint64_t *qword, uint8_t bit);

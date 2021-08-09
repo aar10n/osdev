@@ -207,10 +207,12 @@ page_t *mm_alloc_pages(zone_type_t zone_type, size_t count, uint16_t flags) {
   if (count == 1) {
     // common case - fastest
     frame_index = bitmap_get_free(zone->pages);
+    kassert(frame_index >= 0);
     bitmap_set(zone->pages, frame_index);
   } else {
     // less common case - slower
     frame_index = bitmap_get_set_nfree(zone->pages, count);
+    kassert(frame_index >= 0);
   }
   spin_unlock(&zone->lock);
 

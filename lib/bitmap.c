@@ -43,7 +43,7 @@ void bitmap_init(bitmap_t *bmp, size_t n) {
  */
 bool bitmap_get(bitmap_t *bmp, index_t index) {
   _assert(index < bmp->used + bmp->free);
-  return __bt8(bmp->map[index / BIT_SIZE], index % BIT_SIZE);
+  return __bt64(bmp->map + (index / BIT_SIZE), index % BIT_SIZE);
 }
 
 /**
@@ -176,35 +176,40 @@ index_t bitmap_get_nfree(bitmap_t *bmp, size_t n) {
       }
     }
   } else {
-    // slow case when the request is larger than 64-bits
-    // in this case we always align the requests to the
-    // start of a qword.
+    // slow case when request is larger than 64-bits
+    // find the start index of enough consecutive 0's
+    // to satisfy the requested count
+    size_t max_index = bmp->size / BYTE_SIZE;
+    size_t chunk_count = (n / BIT_SIZE) + (n % BIT_SIZE > 0);
     index_t index = -1;
-    size_t remaining = n;
-    for (size_t i = 0; i < (bmp->size / BYTE_SIZE); i++) {
-      if (bmp->map[i] == 0) {
-        if (index == -1) {
-          // mark start of region
-          index = i;
+    for (size_t i = 0; i < max_index; i++) {
+      if (bmp->map[i] != 0) {
+        continue;
+      }
+
+      size_t found = 0;
+      for (size_t j = i; j < max_index; j++) {
+        if (bmp->map[j] != 0) {
+          i = j + 1;
+          goto outer; // keep searching
         }
-        remaining -= BIT_SIZE;
-      } else if (remaining < BIT_SIZE && __popcnt64(bmp->map[i]) >= remaining) {
-        // still valid
-        remaining = 0;
-      } else {
-        // reset index and count
-        index = -1;
-        remaining -= BIT_SIZE;
+
+        found++;
+        if (found >= chunk_count) {
+          break;
+        }
       }
 
-      if (remaining == 0) {
-        break;
+      if (found < chunk_count) {
+        // the end of the map was reached but not enough
+        // free space was found
+        return -1;
       }
+      index = i;
+      break;
+      label(outer);
     }
 
-    if (n != -1) {
-      bmp->free -= n;
-    }
     return index * BIT_SIZE;
   }
   return -1;
@@ -299,7 +304,7 @@ index_t bitmap_get_set_nfree(bitmap_t *bmp, size_t n) {
         bmp->map[index + i] = (0xFFFFFFFFFFFFFFFF >> (BIT_SIZE - remaining));
         bmp->used += n;
         bmp->free -= n;
-        return index;
+        return index * BIT_SIZE;
       }
     }
     unreachable;
