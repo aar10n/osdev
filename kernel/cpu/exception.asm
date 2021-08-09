@@ -20,8 +20,9 @@ extern stdio_unlock
 
 global page_fault_handler
 page_fault_handler:
-  mov rsi, [rsp] ; error code
-  mov rdi, cr2   ; faulting address
+  mov rsi, [rsp + 8] ; faulting rip
+  mov rdi, cr2       ; faulting address
+  mov rdx, [rsp]     ; error code
   call fault_handler
   ; if fault_handler returns -1 it means the
   ; fault couldn't be handled in a good way

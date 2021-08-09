@@ -59,6 +59,7 @@ static inline uint16_t fix_flags(uint16_t flags, uint16_t root, bool cow) {
       flags &= ~(PE_WRITE);
     }
     return flags | PE_USER;
+    // return flags;
   }
   return flags;
 }
@@ -303,13 +304,12 @@ void *map_area(vm_area_t *area, uint16_t flags) {
 
 //
 
-__used int fault_handler(uintptr_t addr, uint32_t err) {
-  kprintf("[vm] page fault at %p (0b%b)\n", addr, err);
-  // kprintf("err: %d | err: %d\n", err & PF_PRESENT);
+__used int fault_handler(uintptr_t rip_addr, uintptr_t fault_addr, uint32_t err) {
+  process_t *process = current_process;
+  kprintf("[vm] page fault at %p accessing %p (err 0b%b)\n", rip_addr, fault_addr, err);
   if (err & PF_WRITE) {
     // copy-on-write
     kprintf("[vm] copy on write\n");
-
     return -1;
   }
   return -1;
