@@ -8,7 +8,6 @@
 #include <fs.h>
 #include <mm.h>
 #include <panic.h>
-#include <printf.h>
 
 #define SCSI_MAX_XFER 64
 
@@ -199,18 +198,20 @@ ssize_t scsi_read(usb_device_t *dev, uint64_t lba, uint32_t count, void *buf) {
     return 0;
   }
 
-  size_t offset = 0;
+  size_t buf_offset = 0;
+  size_t lba_offset = 0;
   while (count > 0) {
     size_t ccount = min(count, SCSI_MAX_XFER);
-    ssize_t result = scsi_read_internal(dev, lba, ccount, buf + offset);
+    ssize_t result = scsi_read_internal(dev, lba + lba_offset, ccount, buf + buf_offset);
     if (result < 0) {
       return -1;
     }
 
-    offset += result;
+    buf_offset += result;
+    lba_offset += ccount;
     count -= ccount;
   }
-  return offset;
+  return buf_offset;
 }
 
 
@@ -219,16 +220,18 @@ ssize_t scsi_write(usb_device_t *dev, uint64_t lba, uint32_t count, void *buf) {
     return 0;
   }
 
-  size_t offset = 0;
+  size_t buf_offset = 0;
+  size_t lba_offset = 0;
   while (count > 0) {
     size_t ccount = min(count, SCSI_MAX_XFER);
-    ssize_t result = scsi_write_internal(dev, lba, ccount, buf + offset);
+    ssize_t result = scsi_write_internal(dev, lba + lba_offset, ccount, buf + buf_offset);
     if (result < 0) {
       return -1;
     }
 
-    offset += result;
+    buf_offset += result;
+    lba_offset += ccount;
     count -= ccount;
   }
-  return offset;
+  return buf_offset;
 }
