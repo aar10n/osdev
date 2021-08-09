@@ -7,13 +7,12 @@
 #include <printf.h>
 
 page_t *alloc_buffer(uint32_t count) {
-  page_t *buffer = alloc_zero_pages(SIZE_TO_PAGES(count * SEC_SIZE), PE_WRITE);
+  page_t *buffer = alloc_pages(SIZE_TO_PAGES(count * SEC_SIZE), PE_WRITE);
   return buffer;
 }
 
 void free_buffer(page_t *buffer) {
-  vm_unmap_page(buffer);
-  free_frame(buffer);
+  free_pages(buffer);
 }
 
 //

@@ -45,6 +45,8 @@ static rb_tree_events_t events = {
 
 void timer_handler() {
   cond_signal(&event);
+  kprintf("interrupting thread %d process %d\n", gettid(), getpid());
+  thread_yield();
 }
 
 noreturn void *timer_event_loop(void *arg) {

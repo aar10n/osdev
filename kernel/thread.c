@@ -212,15 +212,18 @@ int thread_receive(thread_t *thread, void **data) {
 }
 
 void thread_sleep(uint64_t us) {
-  // kprintf("[pid %d:%d] sleeping for %lf seconds\n", getpid(), gettid(), (double)(us) / 1e6);
+  thread_trace_debug("thread %d process %d sleeping for %lf seconds", gettid(), getpid(), (double)(us) / 1e6);
   scheduler_sleep(us * 1000);
+  thread_trace_debug("thread %d process %d wakeup", gettid(), getpid());
 }
 
 void thread_yield() {
+  thread_trace_debug("thread %d process %d yielded", gettid(), getpid());
   scheduler_yield();
 }
 
 void thread_block() {
+  thread_trace_debug("thread %d process %d blocked", gettid(), getpid());
   scheduler_block(current_thread);
 }
 
