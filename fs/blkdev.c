@@ -116,7 +116,7 @@ int blkdev_readbuf(blkdev_t *dev, uint64_t lba, uint32_t count, void *buf) {
   if (result < 0) {
     return -EFAILED;
   }
-  return 0;
+  return result;
 }
 
 void blkdev_freebuf(void *ptr) {

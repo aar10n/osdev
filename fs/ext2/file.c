@@ -43,7 +43,7 @@ ssize_t ext2_read(file_t *file, char *buf, size_t count, off_t *offset) {
       if (result < 0) {
         return -1;
       }
-      off += EXT2_BLK(inode->sb->blksize, chunk->len);
+      off += result;
       chunk = LIST_NEXT(chunk, chunks);
     }
     inode->mode |= S_ISFLL;
