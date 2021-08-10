@@ -58,8 +58,8 @@ static inline uint16_t fix_flags(uint16_t flags, uint16_t root, bool cow) {
       // kprintf("setting page to read only\n");
       flags &= ~(PE_WRITE);
     }
-    return flags | PE_USER;
-    // return flags;
+    // return flags | PE_USER;
+    return flags;
   }
   return flags;
 }
@@ -521,10 +521,15 @@ void *vm_map_page(page_t *page) {
 void *vm_map_page_vaddr(uintptr_t virt_addr, page_t *page) {
   uintptr_t address = virt_addr;
   size_t len = 0;
-  page_t * curr = page;
-  while (curr) {
-    len += page_to_size(curr);
-    curr = curr->next;
+
+  uintptr_t addr = virt_addr;
+  page_t *cur = page;
+  while (cur) {
+    size_t size = page_to_size(cur);
+    cur->addr = addr;
+    len += size;
+    addr += size;
+    cur = cur->next;
   }
 
   interval_t interval = intvl(virt_addr, virt_addr + len);
@@ -542,7 +547,7 @@ void *vm_map_page_vaddr(uintptr_t virt_addr, page_t *page) {
     area = alloc_area(address, len, AREA_USED | AREA_PAGE);
   }
 
-  area->base = page->frame;
+  area->base = virt_addr;
   area->pages = page;
   return map_area(area, 0);
 }
@@ -654,20 +659,52 @@ void vm_mark_reserved(uintptr_t virt_addr, size_t len) {
 
 //
 
-void vm_update_page(page_t *page, uint16_t flags) {
-  update_page_flags(page, flags);
-  if (page->entry != NULL) {
-    *page->entry &= PAGE_FRAME_MASK;
-    *page->entry &= page_to_flags(page);
+int vm_update_page_flags(uintptr_t virt_addr, size_t len, uint16_t flags) {
+  interval_t intvl = intvl(virt_addr, virt_addr + 1);
+  intvl_node_t *node = intvl_tree_find(VM->tree, intvl);
+  if (node == NULL) {
+    return -EADDRNOTAVAIL;
   }
-}
 
-void vm_update_pages(page_t *page, uint16_t flags) {
-  while (page) {
-    vm_update_page(page, flags);
+  vm_area_t *area = node->data;
+  if (area->size < len || !(area->attr & AREA_PAGE)) {
+    return -EINVAL;
+  }
+
+  uintptr_t addr = virt_addr;
+  page_t *page = area->pages;
+  while (page != NULL && len > 0) {
+    size_t page_size = page_to_size(page);
+    if (addr >= page->addr && addr < page->addr + page_size) {
+      // the flags are dependent on the size of
+      // the page and cannot be modified
+      uint16_t page_flags = flags & 0x3FF;
+      page_flags |= PE_PRESENT;
+      if (page->flags.page_size_2mb) {
+        page_flags |= PE_SIZE;
+        page_flags |= PE_2MB_SIZE;
+      } else if (page->flags.page_size_1gb) {
+        page_flags |= PE_SIZE;
+        page_flags |= PE_1GB_SIZE;
+      } else {
+        page_flags &= ~(PE_SIZE | PE_2MB_SIZE | PE_1GB_SIZE);
+      }
+
+      *page->entry = (page->frame | page_flags);
+      page->flags.raw &= PAGE_FLAGS_MASK;
+      page->flags.raw |= page_flags;
+
+      addr += page_size;
+      if (len < page_size) {
+        len = 0;
+      } else {
+        len -= page_size;
+      }
+    }
     page = page->next;
   }
-  tlb_flush();
+
+  return 0;
 }
 
 //
