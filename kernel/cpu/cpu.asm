@@ -214,5 +214,4 @@ sysret:
   mov rcx, rdi ; rip
   mov rsp, rsi ; rsp
   mov r11, 0   ; rflags
-;  push dword 0xDEADBEEF
   o64 sysret

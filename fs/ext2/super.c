@@ -80,7 +80,7 @@ static int direct_load_chunks(const uint32_t *blocks, size_t len, chunk_list_t *
     ext2_load_chunk_t *chunk = kmalloc(sizeof(ext2_load_chunk_t));
     memset(chunk, 0, sizeof(ext2_load_chunk_t));
     chunk->start = start;
-    chunk->len = last - start;
+    chunk->len = last - start + 1;
     LIST_ADD(chunks, chunk, chunks);
     start = 0;
     last = 0;
@@ -90,7 +90,7 @@ static int direct_load_chunks(const uint32_t *blocks, size_t len, chunk_list_t *
     ext2_load_chunk_t *chunk = kmalloc(sizeof(ext2_load_chunk_t));
     memset(chunk, 0, sizeof(ext2_load_chunk_t));
     chunk->start = start;
-    chunk->len = last == start ? 1 : last - start;
+    chunk->len = last - start + 1;
     LIST_ADD(chunks, chunk, chunks);
   }
 
