@@ -129,7 +129,7 @@ $(BUILD)/hello.elf: $(sys-y)
 
 # External Data
 
-$(BUILD)/ext2.img: config.ini
+$(BUILD)/ext2.img: config.ini $(BUILD)/hello.elf
 	dd if=/dev/zero of=$@ bs=1m count=512
 	mke2fs -L Untitled -t ext2 $@
 	cd $(SYS_ROOT) && find . -type f ! -name ".DS_Store" -exec e2cp {} ../../$@:/{} \;

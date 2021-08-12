@@ -54,99 +54,112 @@
 #define __select_syscall(_0,_1,_2,_3,_4,_5,_6,NAME,...) NAME
 #define __syscall(...) __select_syscall(__VA_ARGS__, _syscall6, _syscall5, _syscall4, _syscall3, _syscall2, _syscall1, _syscall0)(__VA_ARGS__)
 
-#define _syscall0(call)                                \
-  ({                                                   \
-    uint64_t _ret;                                     \
-    __asm volatile(                                      \
-      "syscall"                                        \
-      : "=a" (_ret)                                    \
-      : "a"(call)                                      \
-      : "memory"                                       \
-    );                                                 \
-    _ret;                                              \
+#define _syscall0(call)                                   \
+  ({                                                      \
+    uint64_t _ret;                                        \
+    __asm volatile(                                       \
+      "syscall"                                           \
+      : "=a" (_ret)                                       \
+      : "a"(call)                                         \
+      : "rcx", "r11", "memory"                            \
+    );                                                    \
+    _ret;                                                 \
   })
 
-#define _syscall1(call, arg1)                          \
-  ({                                                   \
-    uint64_t _ret;                                     \
-    __asm volatile(                                      \
-      "syscall"                                        \
-      : "=a" (_ret)                                    \
-      : "a"(call), "b"(arg1)                           \
-      : "memory"                                       \
-    );                                                 \
-    _ret;                                              \
+#define _syscall1(call, arg1)                             \
+  ({                                                      \
+    uint64_t _ret;                                        \
+    register uint64_t a __asm("rdi") = (uint64_t) arg1;   \
+    __asm volatile(                                       \
+      "syscall"                                           \
+      : "=a" (_ret)                                       \
+      : "a"(call), "r"(a)                                 \
+      : "rcx", "r11", "memory"                            \
+    );                                                    \
+    _ret;                                                 \
   })
 
-#define _syscall2(call, arg1, arg2)                    \
-  ({                                                   \
-    uint64_t _ret;                                     \
+#define _syscall2(call, arg1, arg2)                      \
+  ({                                                     \
+    uint64_t _ret;                                       \
+    register uint64_t a __asm("rdi") = (uint64_t) arg1;  \
+    register uint64_t b __asm("rsi") = (uint64_t) arg2;  \
     __asm volatile(                                      \
-      "syscall"                                        \
-      : "=a" (_ret)                                    \
-      : "a"(call), "b"(arg1), "c"(arg2)                \
-      : "memory"                                       \
-    );                                                 \
-    _ret;                                              \
+      "syscall"                                          \
+      : "=a" (_ret)                                      \
+      : "a"(call), "r"(a), "r"(b)                        \
+      : "rcx", "r11", "memory"                           \
+    );                                                   \
+    _ret;                                                \
   })
 
-#define _syscall3(call, arg1, arg2, arg3)              \
-  ({                                                   \
-    uint64_t _ret;                                     \
+#define _syscall3(call, arg1, arg2, arg3)                \
+  ({                                                     \
+    uint64_t _ret;                                       \
+    register uint64_t a __asm("rdi") = (uint64_t) arg1;  \
+    register uint64_t b __asm("rsi") = (uint64_t) arg2;  \
+    register uint64_t c __asm("rdx") = (uint64_t) arg3;  \
     __asm volatile(                                      \
-      "syscall"                                        \
-      : "=a" (_ret)                                    \
-      : "a"(call), "b"(arg1), "c"(arg2),               \
-        "d"(arg3)                                      \
-      : "memory"                                       \
-    );                                                 \
-    _ret;                                              \
+      "syscall"                                          \
+      : "=a" (_ret)                                      \
+      : "a"(call), "r"(a), "r"(b), "r"(c)                \
+      : "rcx", "r11", "memory"                           \
+    );                                                   \
+    _ret;                                                \
   })
 
-#define _syscall4(call, arg1, arg2, arg3, arg4)        \
-  ({                                                   \
-    uint64_t _ret;                                     \
-    register uint64_t r8 __asm("r8") = (uint64_t) arg4;  \
+#define _syscall4(call, arg1, arg2, arg3, arg4)          \
+  ({                                                     \
+    uint64_t _ret;                                       \
+    register uint64_t a __asm("rdi") = (uint64_t) arg1;  \
+    register uint64_t b __asm("rsi") = (uint64_t) arg2;  \
+    register uint64_t c __asm("rdx") = (uint64_t) arg3;  \
+    register uint64_t d __asm("r8") = (uint64_t) arg4;   \
     __asm volatile(                                      \
-      "syscall"                                        \
-      : "=a" (_ret)                                    \
-      : "a"(call), "b"(arg1), "c"(arg2),               \
-        "d"(arg3), "r"(arg4)                           \
-      : "memory"                                       \
-    );                                                 \
-    _ret;                                              \
+      "syscall"                                          \
+      : "=a" (_ret)                                      \
+      : "a"(call), "r"(a), "r"(b),                       \
+        "r"(c), "r"(d)                                   \
+      : "rcx", "r11", "memory"                           \
+    );                                                   \
+    _ret;                                                \
   })
 
-#define _syscall5(call, arg1, arg2, arg3, arg4, arg5)  \
-  ({                                                   \
-    uint64_t _ret;                                     \
-    register uint64_t r8 __asm("r8") = (uint64_t) arg4;  \
-    register uint64_t r9 __asm("r9") = (uint64_t) arg5;  \
+#define _syscall5(call, arg1, arg2, arg3, arg4, arg5)    \
+  ({                                                     \
+    uint64_t _ret;                                       \
+    register uint64_t a __asm("rdi") = (uint64_t) arg1;  \
+    register uint64_t b __asm("rsi") = (uint64_t) arg2;  \
+    register uint64_t c __asm("rdx") = (uint64_t) arg3;  \
+    register uint64_t d __asm("r8") = (uint64_t) arg4;   \
+    register uint64_t e __asm("r9") = (uint64_t) arg5;   \
     __asm volatile(                                      \
-      "syscall"                                        \
-      : "=a" (_ret)                                    \
-      : "a"(call), "b"(arg1), "c"(arg2),               \
-        "d"(arg3), "r"(r8), "r"(r9)                    \
-      : "memory"                                       \
-    );                                                 \
-    _ret;                                              \
+      "syscall"                                          \
+      : "=a" (_ret)                                      \
+      : "a"(call), "r"(a), "r"(b),                       \
+        "r"(c), "r"(d), "r"(e)                           \
+      : "rcx", "r11", "memory"                           \
+    );                                                   \
+    _ret;                                                \
   })
 
 #define _syscall6(call, arg1, arg2, arg3, arg4, arg5, arg6)  \
-  ({                                                   \
-    uint64_t _ret;                                     \
-    register uint64_t r8 __asm("r8") = (uint64_t) arg4;  \
-    register uint64_t r9 __asm("r9") = (uint64_t) arg5;  \
-    register uint64_t r10 __asm("r10") = (uint64_t) arg6;\
+  ({                                                     \
+    uint64_t _ret;                                       \
+    register uint64_t a __asm("rdi") = (uint64_t) arg1;  \
+    register uint64_t b __asm("rsi") = (uint64_t) arg2;  \
+    register uint64_t c __asm("rdx") = (uint64_t) arg3;  \
+    register uint64_t d __asm("r8") = (uint64_t) arg4;   \
+    register uint64_t e __asm("r9") = (uint64_t) arg5;   \
+    register uint64_t f __asm("r10") = (uint64_t) arg6;  \
     __asm volatile(                                      \
-      "syscall"                                        \
-      : "=a" (_ret)                                    \
-      : "a"(call), "b"(arg1), "c"(arg2),               \
-        "d"(arg3), "r"(r8), "r"(r9),                   \
-        "r"(r10)                                       \
-      : "memory"                                       \
-    );                                                 \
-    _ret;                                              \
+      "syscall"                                          \
+      : "=a" (_ret)                                      \
+      : "a"(call), "r"(a), "r"(b),                       \
+        "r"(c), "r"(d), "r"(e), "r"(f)                   \
+      : "rcx", "r11", "memory"                           \
+    );                                                   \
+    _ret;                                                \
   })
 
 
