@@ -58,8 +58,8 @@ static inline uint16_t fix_flags(uint16_t flags, uint16_t root, bool cow) {
       // kprintf("setting page to read only\n");
       flags &= ~(PE_WRITE);
     }
-    // return flags | PE_USER;
-    return flags;
+    return flags | PE_USER;
+    // return flags;
   }
   return flags;
 }

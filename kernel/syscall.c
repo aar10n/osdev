@@ -32,6 +32,49 @@ static int sys_yield() {
 
 // function table
 
+const char *syscall_names[] = {
+  [SYS_EXIT] = "SYS_EXIT",
+  [SYS_EXEC] = "SYS_EXEC",
+  [SYS_OPEN] = "SYS_OPEN",
+  [SYS_CLOSE] = "SYS_CLOSE",
+  [SYS_READ] = "SYS_READ",
+  [SYS_WRITE] = "SYS_WRITE",
+  [SYS_POLL] = "SYS_POLL",
+  [SYS_LSEEK] = "SYS_LSEEK",
+  [SYS_CREATE] = "SYS_CREATE",
+  [SYS_MKNOD] = "SYS_MKNOD",
+  [SYS_MKDIR] = "SYS_MKDIR",
+  [SYS_LINK] = "SYS_LINK",
+  [SYS_UNLINK] = "SYS_UNLINK",
+  [SYS_SYMLINK] = "SYS_SYMLINK",
+  [SYS_RENAME] = "SYS_RENAME",
+  [SYS_READLINK] = "SYS_READLINK",
+  [SYS_READDIR] = "SYS_READDIR",
+  [SYS_TELLDIR] = "SYS_TELLDIR",
+  [SYS_SEEKDIR] = "SYS_SEEKDIR",
+  [SYS_REWINDDIR] = "SYS_REWINDDIR",
+  [SYS_RMDIR] = "SYS_RMDIR",
+  [SYS_CHDIR] = "SYS_CHDIR",
+  [SYS_CHMOD] = "SYS_CHMOD",
+  [SYS_STAT] = "SYS_STAT",
+  [SYS_FSTAT] = "SYS_FSTAT",
+  [SYS_SLEEP] = "SYS_SLEEP",
+  [SYS_NANOSLEEP] = "SYS_NANOSLEEP",
+  [SYS_YIELD] = "SYS_YIELD",
+  [SYS_GETPID] = "SYS_GETPID",
+  [SYS_GETPPID] = "SYS_GETPPID",
+  [SYS_GETTID] = "SYS_GETTID",
+  [SYS_GETUID] = "SYS_GETUID",
+  [SYS_GETGID] = "SYS_GETGID",
+  [SYS_GET_CWD] = "SYS_GET_CWD",
+  [SYS_MMAP] = "SYS_MMAP",
+  [SYS_MUNMAP] = "SYS_MUNMAP",
+  [SYS_FORK] = "SYS_FORK",
+  [SYS_PREAD] = "SYS_PREAD",
+  [SYS_PWRITE] = "SYS_PWRITE",
+  [SYS_IOCTL] = "SYS_IOCTL",
+};
+
 static syscall_t syscalls[] = {
   [SYS_EXIT] = to_syscall(sys_exit),
   [SYS_EXEC] = to_syscall(process_execve),
@@ -99,6 +142,7 @@ __used int handle_syscall(
     kprintf("[syscall] bad syscall %d\n", syscall);
     return -1;
   }
+  kprintf(">>> %s <<<\n", syscall_names[syscall]);
 
   syscall_t func = syscalls[syscall];
   uint64_t result = func(arg0, arg1, arg2, arg3, arg4, arg5);

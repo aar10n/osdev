@@ -17,6 +17,7 @@
 #include <loader.h>
 
 #include <printf.h>
+#include <panic.h>
 
 #define PROCESS_DEBUG
 #ifdef PROCESS_DEBUG
@@ -26,6 +27,19 @@
 #endif
 
 static uint64_t __pid = 0;
+
+static inline int ptr_list_len(const uintptr_t *list) {
+  if (list == NULL) {
+    return 0;
+  }
+
+  int count = 0;
+  while (*list) {
+    list++;
+    count++;
+  }
+  return count;
+}
 
 uint64_t alloc_pid() {
   return atomic_fetch_add(&__pid, 1);
@@ -129,43 +143,66 @@ pid_t process_fork() {
 }
 
 int process_execve(const char *path, char *const argv[], char *const envp[]) {
-  // int program_fd = fs_open(path, O_RDONLY, 0);
-  // if (program_fd < 0) {
-  //   return -1;
-  // }
-  //
-  // kstat_t stat;
-  // if (fs_fstat(program_fd, &stat) < 0) {
-  //   fs_close(program_fd);
-  //   return -1;
-  // }
-  //
-  // page_t *program = alloc_pages(SIZE_TO_PAGES(stat.size), PE_WRITE);
-  // ssize_t nread = fs_read(program_fd, (void *) program->addr, stat.size);
-  // if (nread < 0) {
-  //   free_pages(program);
-  //   fs_close(program_fd);
-  //   return -1;
-  // }
-  //
-  // elf_program_t prog;
-  // int result = load_elf((void *) program->addr, &info);
-  // if (result < 0) {
-  //   free_pages(program);
-  //   fs_close(program_fd);
-  //   return -1;
-  // }
   elf_program_t prog;
   memset(&prog, 0, sizeof(elf_program_t));
   if (load_elf_file(path, &prog) < 0) {
     kprintf("error: %s\n", strerror(ERRNO));
     return -1;
   }
+  kassert(prog.linker != NULL);
 
-  uintptr_t rsp = current_thread->stack->addr;
-  rsp += THREAD_STACK_SIZE - 1;
+  size_t stack_size = SIZE_TO_PAGES(THREAD_STACK_SIZE);
+  page_t *stack_pages = alloc_zero_pages(stack_size, PE_USER | PE_WRITE);
+  uintptr_t stack_top = stack_pages->addr + THREAD_STACK_SIZE;
+  uint64_t *rsp = (void *) stack_top;
 
-  sysret((uintptr_t) prog.entry, rsp);
+  int argc = ptr_list_len((void *) argv);
+  int envc = ptr_list_len((void *) envp);
+
+  // AT_NULL
+  rsp -= 1;
+  *rsp = AT_NULL;
+  // AT_ENTRY
+  rsp -= 2;
+  *((auxv_t *) rsp) = (auxv_t){ AT_ENTRY, prog.entry };
+  // AT_PHENT
+  rsp -= 2;
+  *((auxv_t *) rsp) = (auxv_t){ AT_PHENT, prog.phent };
+  // AT_PHNUM
+  rsp -= 2;
+  *((auxv_t *) rsp) = (auxv_t){ AT_PHNUM, prog.phnum };
+  // AT_PHDR
+  rsp -= 2;
+  *((auxv_t *) rsp) = (auxv_t){ AT_PHDR, prog.phdr };
+  // zero
+  rsp -= 1;
+  *rsp = 0;
+  // environment pointers
+  if (envp) {
+    for (int i = envc; i > 0; i--) {
+      rsp -= 1;
+      *rsp = (uint64_t) envp[i - 1];
+    }
+  }
+  // zero
+  rsp -= 1;
+  *rsp = 0;
+  // argument pointers
+  if (argv) {
+    for (int i = argc; i > 0; i--) {
+      rsp -= 1;
+      *rsp = (uint64_t) argv[i - 1];
+    }
+  }
+  // argument count
+  rsp -= 1;
+  *rsp = argc;
+
+  // page_t *old_pages = current_thread->stack;
+  current_thread->stack = stack_pages;
+  // unmap_pages(old_pages);
+
+  sysret((uintptr_t) prog.linker->entry, (uintptr_t) rsp);
 }
 
 pid_t getpid() {
