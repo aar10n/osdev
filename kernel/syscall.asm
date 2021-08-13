@@ -8,7 +8,7 @@ syscall_handler:
   push rcx
   push r11
 
-  mov r11, rdi ; preserve rdi
+  mov r11, rdi ; preserve rdip
   mov rdi, rax ; rax -> rdi (call)
   mov rax, rsi ; preserve rsi
   mov rsi, r11 ; rdi -> rsi (arg1)
@@ -21,8 +21,9 @@ syscall_handler:
 
   call handle_syscall
 
+  pop r10
   pop r11
   pop rcx
   pop rbp
-  sysret
+  o64 sysret
 
