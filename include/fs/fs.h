@@ -311,16 +311,16 @@ typedef struct kstat {
 
 /* ----- Mmap ----- */
 
-// prot
-#define PROT_NONE  0x0
-#define PROT_READ  0x1
-#define PROT_WRITE 0x2
-#define PROT_EXEC  0x4
+#define PROT_NONE  0x00
+#define PROT_READ  0x01
+#define PROT_WRITE 0x02
+#define PROT_EXEC  0x04
 
-// flags
-#define MAP_SHARED    0
-#define MAP_PRIVATE   1
-#define MAP_FIXED     2
+#define MAP_PRIVATE   0x01
+#define MAP_SHARED    0x02
+#define MAP_FIXED     0x04
+#define MAP_ANON      0x08
+#define MAP_ANONYMOUS 0x08
 
 #define MAP_FAILED NULL
 

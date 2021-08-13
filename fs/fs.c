@@ -17,6 +17,7 @@
 #include <ramfs/ramfs.h>
 #include <devfs/devfs.h>
 #include <ext2/ext2.h>
+#include <printf.h>
 
 // #define FS_DEBUG
 #ifdef FS_DEBUG
@@ -711,19 +712,30 @@ char *fs_getcwd(char *buf, size_t size) {
 //
 
 void *fs_mmap(void *addr, size_t len, int prot, int flags, int fd, off_t off) {
-  file_t *file = f_locate(fd);
-  if (fd != -1 && file == NULL) {
-    ERRNO = EBADF;
-    return MAP_FAILED;
-  }
+  kprintf("fs_mmap(%p, %llu, %d, %d, %d, %lld)\n",
+          addr, len, prot, flags, fd, off);
 
-  if (prot & PROT_WRITE && file->flags & O_RDONLY) {
-    ERRNO = EACCES;
-    return MAP_FAILED;
-  }
-  if (prot & PROT_EXEC && !(file->flags & O_EXEC)) {
-    ERRNO = EACCES;
-    return MAP_FAILED;
+  file_t *file = NULL;
+  if (fd == -1) {
+    if (!(flags & MAP_ANONYMOUS)) {
+      ERRNO = EINVAL;
+      return MAP_FAILED;
+    }
+  } else {
+    file = f_locate(fd);
+    if (file == NULL) {
+      ERRNO = EBADF;
+      return MAP_FAILED;
+    }
+
+    if (prot & PROT_WRITE && file->flags & O_RDONLY) {
+      ERRNO = EACCES;
+      return MAP_FAILED;
+    }
+    if (prot & PROT_EXEC && !(file->flags & O_EXEC)) {
+      ERRNO = EACCES;
+      return MAP_FAILED;
+    }
   }
 
   uintptr_t va = (uintptr_t) addr;
@@ -734,10 +746,10 @@ void *fs_mmap(void *addr, size_t len, int prot, int flags, int fd, off_t off) {
   vm_mark_reserved(va, len);
 
   uint16_t pflags = PE_USER;
-  if (flags & PROT_WRITE) {
+  if (prot & PROT_WRITE) {
     pflags |= PE_WRITE;
   }
-  if (flags & PROT_EXEC) {
+  if (prot & PROT_EXEC) {
     pflags |= PE_EXEC;
   }
 
@@ -746,10 +758,11 @@ void *fs_mmap(void *addr, size_t len, int prot, int flags, int fd, off_t off) {
     vm_map_page_vaddr(va, pages);
     vm_update_attributes(va, AREA_PAGE | AREA_MMAP, pages);
   } else if (f_mmap(file, va, len, pflags) < 0) {
+    // TODO: unmark as reserved
     return NULL;
   }
 
-  if (fd != 0) {
+  if (fd >= 0) {
     vm_attach_file(va, file);
     vm_update_attributes(va, AREA_FILE | AREA_MMAP, file);
   }
