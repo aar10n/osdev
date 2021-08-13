@@ -88,11 +88,12 @@ end
 set disassembly-flavor intel
 add-symbol-file build/hello.elf
 add-symbol-file build/kernel.elf
-b syscall_handler
 b page_fault_handler
+#b syscall.asm:6
+#b syscall.asm:24
 b thread.asm:54
 
-break process.c:139
+break process.c:205
 commands
 add-symbol-file-all build/ld.so 0x7fc0000000
 end
