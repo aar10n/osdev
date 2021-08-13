@@ -296,12 +296,16 @@ index_t bitmap_get_set_nfree(bitmap_t *bmp, size_t n) {
     size_t remaining = n;
     for (size_t i = 0; i < chunk_count; i++) {
       size_t v = min(remaining, BIT_SIZE);
-      if (v == BIT_SIZE) {
+      remaining -= v;
+      if (remaining > 0) {
         bmp->map[index + i] = MAX_NUM;
-        remaining -= BIT_SIZE;
       } else {
         // last index
-        bmp->map[index + i] = (0xFFFFFFFFFFFFFFFF >> (BIT_SIZE - remaining));
+        if (v == 64) {
+          bmp->map[index + i] = MAX_NUM;
+        } else {
+          bmp->map[index + i] = (0xFFFFFFFFFFFFFFFF >> (BIT_SIZE - remaining));
+        }
         bmp->used += n;
         bmp->free -= n;
         return index * BIT_SIZE;
