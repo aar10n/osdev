@@ -96,7 +96,7 @@ int vm_attach_file(uintptr_t addr, file_t *file);
 bool vm_find_free_area(vm_search_t search_type, uintptr_t *addr, size_t len);
 
 void vm_print_debug_mappings();
-
+void vm_tree_to_graphviz();
 
 static inline intptr_t vm_virt_to_phys(uintptr_t addr) {
   vm_area_t *area = vm_get_vm_area(addr);

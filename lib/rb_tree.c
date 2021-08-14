@@ -177,10 +177,10 @@ void insert_node(rb_tree_t *tree, rb_node_t *z) {
   z->left = tree->nil;
   z->right = tree->nil;
 
-  callback(post_insert_node, tree, z);
-
   // repair the tree
   insert_fixup(tree, z);
+
+  callback(post_insert_node, tree, z);
 }
 
 //

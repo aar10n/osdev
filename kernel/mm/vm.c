@@ -499,12 +499,18 @@ __used void vm_swap_vmspace(vm_t *new_vm) {
 void *vm_map_page(page_t *page) {
   size_t len = 0;
   page_t *curr = page;
+  bool is_user = false;
   while (curr) {
+    if (curr->flags.user) {
+      is_user = true;
+    } else {
+      kassert(!is_user);
+    }
     len += page_to_size(curr);
     curr = curr->next;
   }
 
-  uintptr_t address = 0;
+  uintptr_t address = is_user ? LOW_HALF_START : HIGH_HALF_START;
   bool success = vm_find_free_area(ABOVE, &address, len);
   if (!success) {
     panic("[vm] no free address space");
@@ -940,5 +946,40 @@ void vm_print_debug_mappings() {
     kprintf("%018p - %018p | %llu\n", i.start, i.end, i.end - i.start);
   }
   kprintf("==============================\n");
+  kfree(iter);
+}
+
+void vm_tree_to_graphviz() {
+  intvl_iter_t *iter = intvl_iter_tree(VM->tree);
+  intvl_node_t *node;
+  rb_node_t *nil = VM->tree->tree->nil;
+  int null_count = 0;
+
+  kprintf("digraph BST {\n");
+  kprintf("  node [fontname=\"Arial\"];\n");
+  while ((node = intvl_iter_next(iter))) {
+    interval_t i = node->interval;
+    rb_node_t *rbnode = node->node;
+
+    kprintf("  %llu [label=\"start: %p\\nend: %p\\nmin: %p\\nmax: %p;\"];\n",
+            rbnode->key, i.start, i.end, node->min, node->max);
+
+    if (rbnode->left != nil) {
+      kprintf("  %llu -> %llu\n", rbnode->key, rbnode->left->key);
+    } else {
+      kprintf("  null%d [shape=point];\n", null_count);
+      kprintf("  %llu -> null%d;\n", rbnode->key, null_count);
+      null_count++;
+    }
+
+    if (rbnode->right != nil) {
+      kprintf("  %llu -> %llu\n", rbnode->key, rbnode->right->key);
+    } else {
+      kprintf("  null%d [shape=point];\n", null_count);
+      kprintf("  %llu -> null%d;\n", rbnode->key, null_count);
+      null_count++;
+    }
+  }
+  kprintf("}\n");
   kfree(iter);
 }
