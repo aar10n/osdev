@@ -261,9 +261,9 @@ typedef struct dentry_ops {
 #define O_TTY_INIT   0x020000
 
 // Seek constants
-#define SEEK_SET 1
-#define SEEK_CUR 2
-#define SEEK_END 3
+#define SEEK_CUR 1
+#define SEEK_END 2
+#define SEEK_SET 3
 
 typedef struct file {
   int fd;              // file descriptor

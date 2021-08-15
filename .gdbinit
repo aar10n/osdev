@@ -91,9 +91,14 @@ add-symbol-file build/kernel.elf
 b page_fault_handler
 #b syscall.asm:6
 #b syscall.asm:24
-b thread.asm:54
+b thread.asm:63
 
-break process.c:205
+b process.c:202
 commands
 add-symbol-file-all build/ld.so 0x7fc0000000
+#b generic.cpp:210
+#b linker.cpp:116
+#b linker.cpp:158
+#b sys_libc_log
 end
+

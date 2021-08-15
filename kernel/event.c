@@ -7,6 +7,7 @@
 #include <thread.h>
 #include <atomic.h>
 #include <bitmap.h>
+#include <printf.h>
 
 #define MAX_HANDLERS 32
 
@@ -52,6 +53,8 @@ const char key_to_character_lower[] = {
   [VK_KEYCODE_9] = '9',
   [VK_KEYCODE_0] = '0',
 
+  [VK_KEYCODE_RETURN] = '\n',
+  [VK_KEYCODE_DELETE] = '\b',
   [VK_KEYCODE_TAB] = '\t',
   [VK_KEYCODE_SPACE] = ' ',
   [VK_KEYCODE_MINUS] = '-',
@@ -106,6 +109,8 @@ const char key_to_character_upper[] = {
   [VK_KEYCODE_9] = '(',
   [VK_KEYCODE_0] = ')',
 
+  [VK_KEYCODE_RETURN] = '\n',
+  [VK_KEYCODE_DELETE] = '\b',
   [VK_KEYCODE_TAB] = '\t',
   [VK_KEYCODE_SPACE] = ' ',
   [VK_KEYCODE_MINUS] = '_',
@@ -157,7 +162,8 @@ void dispatch_key_event(key_event_t *event) {
 bool is_printable_key(key_code_t key) {
   if ((key >= VK_KEYCODE_A && key <= VK_KEYCODE_0) ||
       (key >= VK_KEYCODE_MINUS && key <= VK_KEYCODE_SLASH) ||
-      key == VK_KEYCODE_SPACE) {
+      key == VK_KEYCODE_SPACE || key == VK_KEYCODE_RETURN ||
+      key == VK_KEYCODE_DELETE) {
     return true;
   }
   return false;
@@ -171,7 +177,9 @@ char key_event_to_character(key_event_t *event) {
   }
 
   if (event->modifiers & L_SHIFT || event->modifiers & R_SHIFT) {
+    // kprintf("> %c\n", key_to_character_upper[event->key_code]);
     return key_to_character_upper[event->key_code];
   }
+  // kprintf("> %c\n", key_to_character_lower[event->key_code]);
   return key_to_character_lower[event->key_code];
 }

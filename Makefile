@@ -129,14 +129,15 @@ $(BUILD)/hello.elf: $(sys-y)
 
 # External Data
 
-$(BUILD)/ext2.img: config.ini $(BUILD)/hello.elf
+$(BUILD)/ext2.img: config.ini
 	dd if=/dev/zero of=$@ bs=1m count=512
 	mke2fs -L Untitled -t ext2 $@
 	cd $(SYS_ROOT) && find . -type f ! -name ".DS_Store" -exec e2cp {} ../../$@:/{} \;
 	e2mkdir $@ /usr/bin
 	e2cp $(BUILD)/hello.elf $@:/usr/bin/hello
 	-e2rm -r $@:/lost+found
-	cp $(SYS_ROOT)/usr/lib/ld.so $(BUILD)/ld.so
+	cp $(SYS_ROOT)/lib/ld.so $(BUILD)/ld.so
+	cp $(SYS_ROOT)/lib/libc.so $(BUILD)/libc.so
 
 $(BUILD)/fat.img: config.ini $(BUILD)/hello.elf
 	dd if=/dev/zero of=$@ bs=1m count=128

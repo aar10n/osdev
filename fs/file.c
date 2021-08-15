@@ -84,7 +84,7 @@ file_t *f_alloc(dentry_t *dentry, int flags, mode_t mode) {
   file->ops = dentry->inode->sb->fs->file_ops;
 
   device_t *device = locate_device(dentry->inode->dev);
-  if (device == NULL) {
+  if (device == NULL && dentry->inode->dev != 0) {
     f_release(file);
     ERRNO = ENODEV;
     return NULL;

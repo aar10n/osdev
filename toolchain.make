@@ -120,7 +120,7 @@ mlibc: mlibc-config mlibc-compile mlibc-install
 
 .PHONY: mlibc-config
 mlibc-config: $(mlibc_dir)/out $(BUILD)/mlibc-cross-file.txt | $(SYS_ROOT)
-	cd $(mlibc_src) && meson --cross-file $(BUILD)/mlibc-cross-file.txt --prefix=$(SYS_ROOT)/usr \
+	cd $(mlibc_src) && meson --cross-file $(BUILD)/mlibc-cross-file.txt --prefix=$(SYS_ROOT) \
     	--libdir=lib --buildtype=debug -Dmlibc_no_headers=true $<
 
 .PHONY: mlibc-compile

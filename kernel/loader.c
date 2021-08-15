@@ -11,27 +11,6 @@
 #include <printf.h>
 #include <string.h>
 #include <path.h>
-#include <fs/utils.h>
-
-// 1. look for PT_INTERP to find out the name of the dynamic linker binary
-// 2. load the executable into memory
-// 3. pick a base address for ld.so
-// 4. load ld.so at that base address (basically the same as loading the executable, except you add the base to all addresses)
-// 5. create an auxvector on the stack of the new process
-// 6. make the new process start executing at the ld.so entry point (as opposed to using the executable's entry point)
-
-static size_t get_total_memsz(Elf64_Ehdr *elf, void *buf) {
-  size_t size = 0;
-  Elf64_Phdr *phead = buf + elf->e_phoff;
-  for (uint32_t i = 0; i < elf->e_phnum; i++) {
-    if (phead[i].p_type == PT_LOAD && phead[i].p_memsz > 0) {
-      size += phead[i].p_memsz;
-    }
-  }
-  return size;
-}
-
-//
 
 int elf_pt_load(Elf64_Phdr *pheader, void *buf, elf_program_t *prog) {
   uint16_t flags = PE_USER;
@@ -46,11 +25,13 @@ int elf_pt_load(Elf64_Phdr *pheader, void *buf, elf_program_t *prog) {
   // disable write protection just long enough for us to
   // copy over and zero the allocated pages even if the
   // pages are not marked as writable
+  uint32_t rflags = cli_save();
   uint64_t cr0 = read_cr0();
   write_cr0(cr0 & ~(1 << 16)); // disable cr0.WP
   memcpy(addr, buf + pheader->p_offset, pheader->p_filesz);
   memset(offset_ptr(addr, pheader->p_filesz), 0, pheader->p_memsz - pheader->p_filesz);
   write_cr0(cr0); // re-enable cr0.WP
+  sti_restore(rflags);
 
   if (prog->prog_pages) {
     page_t *last = prog->prog_pages;
@@ -92,7 +73,7 @@ int load_elf(void *buf, elf_program_t *prog) {
     } else if (phead[i].p_type == PT_INTERP) {
       elf_pt_interp(&(phead[i]), buf, prog);
     } else if (phead[i].p_type == PT_PHDR) {
-      prog->phdr = phead[i].p_offset + prog->base;
+      prog->phdr = phead[i].p_vaddr + prog->base;
     }
   }
   return 0;
@@ -131,7 +112,7 @@ int load_elf_file(const char *path, elf_program_t *prog) {
     memset(linker, 0, sizeof(elf_program_t));
 
     linker->base = 0x7FC0000000;
-    if (load_elf_file("/usr/lib/ld.so", linker) < 0) {
+    if (load_elf_file("/lib/ld.so", linker) < 0) {
       free_pages(program);
       fs_close(fd);
     }
