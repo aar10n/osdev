@@ -41,6 +41,15 @@ static inline const char *get_status_str(thread_status_t status) {
   }
 }
 
+static inline page_t *create_stack(uintptr_t *sp, bool user) {
+  kassert(sp != NULL);
+  size_t size = user ? USER_STACK_SIZE : KERNEL_STACK_SIZE;
+  page_t *stack_pages = alloc_zero_pages(SIZE_TO_PAGES(size), (user ? PE_USER : 0) | PE_WRITE);
+  *sp = stack_pages->addr + size;
+  return stack_pages;
+}
+
+//
 
 id_t alloc_tid(id_t last_tid) {
   return atomic_fetch_add(&last_tid, 1);
@@ -60,13 +69,15 @@ thread_t *thread_alloc(id_t tid, void *(start_routine)(void *), void *arg) {
   thread_t *thread = kmalloc(sizeof(thread_t));
   memset(thread, 0, sizeof(thread_t));
 
-  // create thread stack
-  size_t num_pages = SIZE_TO_PAGES(THREAD_STACK_SIZE);
-  page_t *stack_pages = alloc_zero_pages(num_pages, PE_USER | PE_WRITE);
-  uintptr_t *stack_top = (void *) stack_pages->addr + THREAD_STACK_SIZE;
-  // make arguments accessible to entry stub
-  stack_top[-1] = (uintptr_t) start_routine;
-  stack_top[-2] = (uintptr_t) arg;
+  // create kernel stack
+  uintptr_t kernel_sp;
+  page_t *kernel_stack = create_stack(&kernel_sp, false);
+  uintptr_t user_sp;
+  page_t *user_stack = create_stack(&user_sp, true);
+
+  ((uint64_t *) kernel_sp)[-1] = (uintptr_t) start_routine;
+  ((uint64_t *) kernel_sp)[-2] = (uintptr_t) arg;
+  kernel_sp -= (2 * sizeof(uintptr_t));
 
   // create thread context
   thread_ctx_t *ctx = kmalloc(sizeof(thread_ctx_t));
@@ -74,7 +85,7 @@ thread_t *thread_alloc(id_t tid, void *(start_routine)(void *), void *arg) {
   ctx->rip = (uintptr_t) thread_entry_stub;
   ctx->cs = KERNEL_CS;
   ctx->rflags = DEFAULT_RFLAGS;
-  ctx->rsp = ((uintptr_t) stack_top) - (2 * sizeof(uintptr_t));
+  ctx->rsp = kernel_sp;
 
   // create thread local storage block but don't
   // allocate space for tls data until its requested
@@ -85,10 +96,13 @@ thread_t *thread_alloc(id_t tid, void *(start_routine)(void *), void *arg) {
 
   thread->tid = tid;
   thread->ctx = ctx;
-  thread->stack = stack_pages;
   thread->tls = tls;
+  thread->kernel_sp = kernel_sp;
+  thread->user_sp = user_sp;
   thread->status = THREAD_READY;
   thread->policy = SCHED_SYSTEM;
+  thread->kernel_stack = kernel_stack;
+  thread->user_stack = user_stack;
   mutex_init(&thread->mutex, MUTEX_LOCKED);
   cond_init(&thread->data_ready, 0);
   return thread;
@@ -97,27 +111,24 @@ thread_t *thread_alloc(id_t tid, void *(start_routine)(void *), void *arg) {
 thread_t *thread_copy(thread_t *other) {
   thread_t *thread = thread_alloc(0, NULL, NULL);
 
-  // copy the stack
-  size_t stack_size = SIZE_TO_PAGES(THREAD_STACK_SIZE);
-  memcpy((void *) thread->stack->addr, (void *) other->stack->addr, stack_size);
+  // copy the stacks
+  memcpy((void *) thread->kernel_stack->addr, (void *) other->kernel_stack->addr, KERNEL_STACK_SIZE);
+  memcpy((void *) thread->user_stack->addr, (void *) other->user_stack->addr, USER_STACK_SIZE);
+
+  uintptr_t kernel_sp_rel = other->kernel_sp - other->kernel_stack->addr;
+  uintptr_t user_sp_rel = other->user_sp - other->user_stack->addr;
 
   // copy the context
-  thread_ctx_t *ctx = kmalloc(sizeof(thread_ctx_t));
-  memcpy(ctx, other->ctx, sizeof(thread_ctx_t));
-
+  memcpy(thread->ctx, other->ctx, sizeof(thread_ctx_t));
   // copy the tls block
-  tls_block_t *tls = kmalloc(sizeof(tls_block_t));
-  memcpy(tls, other->tls, sizeof(tls_block_t));
+  memcpy(thread->tls, other->tls, sizeof(tls_block_t));
 
   // copy the tls data (if needed)
   // to do
 
-  thread->tid = 0;
-  thread->ctx = ctx;
-  thread->process = NULL;
-  thread->tls = tls;
-
-  thread->cpu_id = 0;
+  thread->kernel_sp = thread->kernel_stack->addr + kernel_sp_rel;
+  thread->user_sp = thread->user_stack->addr + user_sp_rel;
+  thread->cpu_id = ID;
   thread->policy = other->policy;
   thread->priority = other->priority;
   thread->status = other->status;
@@ -129,15 +140,16 @@ thread_t *thread_copy(thread_t *other) {
 }
 
 void thread_free(thread_t *thread) {
-  if (thread->stack) {
-    vm_unmap_page(thread->stack);
-    mm_free_page(thread->stack);
+  if (thread->kernel_stack) {
+    free_pages(thread->kernel_stack);
+  }
+  if (thread->user_stack) {
+    free_pages(thread->user_stack);
   }
   if (thread->tls) {
     tls_block_t *tls = thread->tls;
     if (tls->pages) {
-      vm_unmap_page(tls->pages);
-      mm_free_page(tls->pages);
+      free_pages(tls->pages);
     }
     kfree(tls);
   }

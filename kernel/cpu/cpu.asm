@@ -1,3 +1,4 @@
+%include "base.inc"
 FSBASE_MSR        equ 0xC0000100
 GSBASE_MSR        equ 0xC0000101
 KERNEL_GSBASE_MSR equ 0xC0000102
@@ -211,6 +212,10 @@ syscall:
 
 global sysret
 sysret:
+  mov KERNEL_SP, rsp
+  mov rsp, USER_SP
+  swapgs
+
   mov rcx, rdi ; rip
   mov rsp, rsi ; rsp
   mov r11, 0   ; rflags

@@ -5,25 +5,34 @@
 %define NULL 0x00
 
 ; percpu offsets
-%define PERCPU_ID       0x00
-%define PERCPU_THREAD   0x08
-%define PERCPU_PROCESS  0x10
+%define PERCPU_ID        0x00
+%define PERCPU_THREAD    0x08
+%define PERCPU_PROCESS   0x10
+%define PERCPU_KERNEL_SP 0x18
+%define PERCPU_USER_SP   0x20
+%define PERCPU_SELF      0x28
+%define PERCPU_RFLAGS    0x30
+
 %define CURRENT_THREAD  gs:PERCPU_THREAD
 %define CURRENT_PROCESS gs:PERCPU_PROCESS
+%define KERNEL_SP       gs:PERCPU_KERNEL_SP
+%define USER_SP         gs:PERCPU_USER_SP
 
 ; process offsets
-%define PROCESS_PID     0x00
-%define PROCESS_PPID    0x04
-%define PROCESS_VM      0x08
+%define PROCESS_PID      0x00
+%define PROCESS_PPID     0x04
+%define PROCESS_VM       0x08
 
 ; thread offsets
-%define THREAD_ID       0x00
-%define THREAD_CTX      0x08
-%define THREAD_PROCESS  0x10
-%define THREAD_TLS_BLCK 0x18
+%define THREAD_ID        0x00
+%define THREAD_CTX       0x08
+%define THREAD_PROCESS   0x10
+%define THREAD_TLS_BLCK  0x18
+%define THREAD_KERNEL_SP 0x20
+%define THREAD_USER_SP   0x28
 
 ; tls offsets
-%define TLS_BASE_ADDR   0x00
+%define TLS_BASE_ADDR    0x00
 
 ; thread context offsets
 %define CTX_RAX    0x00
@@ -51,6 +60,7 @@ thread_entry_stub:
   pop qword rdi   ; routine pointer
   call thread_entry
   ; this should never return
+  nop
   jmp $
 
 
@@ -62,7 +72,7 @@ thread_switch:
   ; rsi = next process
   ; rdx = current thread
   ; rcx = current process
-;  cli
+  ;  cli
   mov rsi, [rdi + THREAD_PROCESS]
   mov rdx, CURRENT_THREAD
   mov rcx, CURRENT_PROCESS
@@ -77,8 +87,14 @@ thread_switch:
   jmp .restore_ctx
 
 .save_ctx: ; save old context
-  pushfq
+  push rax
+  mov rax, KERNEL_SP
+  mov [rdx + THREAD_KERNEL_SP], rax
+  mov rax, USER_SP
+  mov [rdx + THREAD_USER_SP], rax
   mov rdx, [rdx + THREAD_CTX]
+  pop rax
+  pushfq
 
   mov [rdx + CTX_RAX], rax
   mov [rdx + CTX_RBX], rbx
@@ -128,6 +144,12 @@ thread_switch:
 
 .restore_ctx:
   ; restore new context
+  push rax
+  mov rax, [rdi + THREAD_KERNEL_SP]
+  mov KERNEL_SP, rax
+  mov rax, [rdi + THREAD_USER_SP]
+  mov USER_SP, rax
+  pop rax
   mov rsp, [rdi + THREAD_CTX]
 
   pop rax

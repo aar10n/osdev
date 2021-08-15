@@ -128,7 +128,7 @@ pid_t process_fork() {
   // clone main thread
   thread_t *main = thread_copy(parent_thread);
 
-  uintptr_t stack = main->stack->addr;
+  uintptr_t stack = main->kernel_stack->addr;
   uintptr_t frame = (uintptr_t) __builtin_frame_address(0);
   uintptr_t offset = frame - STACK_VA;
   uintptr_t rsp = stack + STACK_SIZE - offset;
@@ -151,9 +151,9 @@ int process_execve(const char *path, char *const argv[], char *const envp[]) {
   }
   kassert(prog.linker != NULL);
 
-  size_t stack_size = SIZE_TO_PAGES(THREAD_STACK_SIZE);
-  page_t *stack_pages = alloc_zero_pages(stack_size, PE_USER | PE_WRITE);
-  uintptr_t stack_top = stack_pages->addr + THREAD_STACK_SIZE;
+  thread_t *thread = current_thread;
+  uintptr_t stack_top = thread->user_stack->addr + USER_STACK_SIZE;
+  memset((void *) thread->user_stack->addr, 0, USER_STACK_SIZE);
   uint64_t *rsp = (void *) stack_top;
 
   int argc = ptr_list_len((void *) argv);
@@ -198,10 +198,7 @@ int process_execve(const char *path, char *const argv[], char *const envp[]) {
   rsp -= 1;
   *rsp = argc;
 
-  // page_t *old_pages = current_thread->stack;
-  current_thread->stack = stack_pages;
-  // unmap_pages(old_pages);
-
+  thread->user_sp = (uintptr_t) rsp;
   sysret((uintptr_t) prog.linker->entry, (uintptr_t) rsp);
 }
 

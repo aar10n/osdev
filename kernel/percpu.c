@@ -42,7 +42,6 @@ void percpu_init_cpu() {
   memset(area, 0, sizeof(percpu_t));
   area->id = id;
   area->self = ptr;
-  area->rflags = 0;
   area->idt = (void *)((uintptr_t) area + PAGE_SIZE);
   areas[id] = area;
 

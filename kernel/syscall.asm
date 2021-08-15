@@ -3,12 +3,16 @@ extern handle_syscall
 
 global syscall_handler:
 syscall_handler:
+  swapgs
+  mov USER_SP, rsp
+  mov rsp, KERNEL_SP
+
   push rbp
   mov rbp, rsp
   push rcx
   push r11
 
-  mov r11, rdi ; preserve rdip
+  mov r11, rdi ; preserve rdi
   mov rdi, rax ; rax -> rdi (call)
   mov rax, rsi ; preserve rsi
   mov rsi, r11 ; rdi -> rsi (arg1)
@@ -19,11 +23,15 @@ syscall_handler:
                ; r9  -> r9 (arg5)
   push r10     ; r10 -> stack (arg6)
 
+  xor rax, rax
   call handle_syscall
 
   pop r10
   pop r11
   pop rcx
   pop rbp
-  o64 sysret
 
+  mov KERNEL_SP, rsp
+  mov rsp, USER_SP
+  swapgs
+  o64 sysret

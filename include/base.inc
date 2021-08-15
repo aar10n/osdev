@@ -22,22 +22,39 @@
 
 %define COM1 0x3F8
 
-; Percpu Constants
-%define PERCPU_ID       0x00
-%define PERCPU_THREAD   0x08
-%define PERCPU_PROCESS  0x10
+%define NULL 0x00
+
+; percpu offsets
+%define PERCPU_ID        0x00
+%define PERCPU_THREAD    0x08
+%define PERCPU_PROCESS   0x10
+%define PERCPU_KERNEL_SP 0x18
+%define PERCPU_USER_SP   0x20
+%define PERCPU_SELF      0x28
+%define PERCPU_RFLAGS    0x30
+
 %define CURRENT_THREAD  gs:PERCPU_THREAD
 %define CURRENT_PROCESS gs:PERCPU_PROCESS
+%define KERNEL_SP       gs:PERCPU_KERNEL_SP
+%define USER_SP         gs:PERCPU_USER_SP
 
-; Thread Constants
-%define THREAD_ID       0x0
-%define THREAD_CTX      0x8
-%define THREAD_PROCESS  0x8
+; process offsets
+%define PROCESS_PID      0x00
+%define PROCESS_PPID     0x04
+%define PROCESS_VM       0x08
 
-; Process Constants
-%define PROCESS_ID      0x0
+; thread offsets
+%define THREAD_ID        0x00
+%define THREAD_CTX       0x08
+%define THREAD_PROCESS   0x10
+%define THREAD_TLS_BLCK  0x18
+%define THREAD_KERNEL_SP 0x20
+%define THREAD_USER_SP   0x28
 
-; Thread Context
+; tls offsets
+%define TLS_BASE_ADDR    0x00
+
+; thread context offsets
 %define CTX_RAX    0x00
 %define CTX_RBX    0x08
 %define CTX_RBP    0x10
@@ -45,7 +62,7 @@
 %define CTX_R13    0x20
 %define CTX_R14    0x28
 %define CTX_R15    0x30
-
+;
 %define CTX_RIP    0x38
 %define CTX_CS     0x40
 %define CTX_RFLAGS 0x48

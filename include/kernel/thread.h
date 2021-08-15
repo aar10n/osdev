@@ -11,8 +11,9 @@
 
 #define ERRNO (current_thread->errno)
 
-#define THREAD_STACK_SIZE 0x2000 // 8 KiB
-#define TLS_SIZE 0x // 8 KiB
+#define KERNEL_STACK_SIZE 0x2000 // 8 KiB
+#define USER_STACK_SIZE   0x1000 // 4 KiB
+#define TLS_SIZE          0x2000 // 8 KiB
 #define DEFAULT_RFLAGS 0x246
 
 typedef struct process process_t;
@@ -60,6 +61,8 @@ typedef struct thread {
   thread_ctx_t *ctx;          // thread context
   process_t *process;         // owning process
   tls_block_t *tls;           // thread local storage
+  uintptr_t kernel_sp;        // kernel stack pointer
+  uintptr_t user_sp;          // user stack pointer
 
   uint8_t cpu_id;             // current/last cpu used
   uint8_t policy;             // thread scheduling policy
@@ -75,7 +78,8 @@ typedef struct thread {
   int preempt_count;          // preempt disable counter
   void *data;                 // thread data pointer
 
-  page_t *stack;              // stack pages
+  page_t *kernel_stack;       // kernel stack pages
+  page_t *user_stack;         // user stack pages
 
   LIST_ENTRY(thread_t) group; // thread group
   LIST_ENTRY(thread_t) list;  // thread list
