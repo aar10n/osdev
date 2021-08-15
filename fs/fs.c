@@ -18,6 +18,7 @@
 #include <devfs/devfs.h>
 #include <ext2/ext2.h>
 #include <printf.h>
+#include <cpu/cpu.h>
 
 // #define FS_DEBUG
 #ifdef FS_DEBUG
@@ -757,6 +758,14 @@ void *fs_mmap(void *addr, size_t len, int prot, int flags, int fd, off_t off) {
     page_t *pages = alloc_frames(SIZE_TO_PAGES(len), pflags);
     vm_map_page_vaddr(va, pages);
     vm_update_attributes(va, AREA_PAGE | AREA_MMAP, pages);
+
+    // zero the allocated pages
+    uint64_t rflags = cli_save();
+    uint64_t cr0 = read_cr0();
+    write_cr0(cr0 & ~(1 << 16)); // disable cr0.WP
+    memset((void *) va, 0, len);
+    write_cr0(cr0); // re-enable cr0.WP
+    sti_restore(rflags);
   } else if (f_mmap(file, va, len, pflags) < 0) {
     // TODO: unmark as reserved
     return NULL;
