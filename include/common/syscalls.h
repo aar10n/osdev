@@ -47,6 +47,8 @@
 #define SYS_PREAD 37
 #define SYS_PWRITE 38
 #define SYS_IOCTL 39
+#define SYS_PANIC 40
+#define SYS_LOG 41
 
 
 #define _syscall(call, ...) __syscall(call, ##__VA_ARGS__)
@@ -74,7 +76,7 @@
       "syscall"                                           \
       : "=a" (_ret)                                       \
       : "a"(call), "r"(a)                                 \
-      : "rcx", "r11", "memory"                            \
+      : "rcx", "r11", "r12", "memory"                     \
     );                                                    \
     _ret;                                                 \
   })
@@ -88,7 +90,7 @@
       "syscall"                                          \
       : "=a" (_ret)                                      \
       : "a"(call), "r"(a), "r"(b)                        \
-      : "rcx", "r11", "memory"                           \
+      : "rcx", "r11", "r12", "memory"                    \
     );                                                   \
     _ret;                                                \
   })
@@ -103,7 +105,7 @@
       "syscall"                                          \
       : "=a" (_ret)                                      \
       : "a"(call), "r"(a), "r"(b), "r"(c)                \
-      : "rcx", "r11", "memory"                           \
+      : "rcx", "r11", "r12", "memory"                    \
     );                                                   \
     _ret;                                                \
   })
@@ -120,7 +122,7 @@
       : "=a" (_ret)                                      \
       : "a"(call), "r"(a), "r"(b),                       \
         "r"(c), "r"(d)                                   \
-      : "rcx", "r11", "memory"                           \
+      : "rcx", "r11", "r12", "memory"                    \
     );                                                   \
     _ret;                                                \
   })
@@ -138,7 +140,7 @@
       : "=a" (_ret)                                      \
       : "a"(call), "r"(a), "r"(b),                       \
         "r"(c), "r"(d), "r"(e)                           \
-      : "rcx", "r11", "memory"                           \
+      : "rcx", "r11", "r12", "memory"                    \
     );                                                   \
     _ret;                                                \
   })
@@ -157,7 +159,7 @@
       : "=a" (_ret)                                      \
       : "a"(call), "r"(a), "r"(b),                       \
         "r"(c), "r"(d), "r"(e), "r"(f)                   \
-      : "rcx", "r11", "memory"                           \
+      : "rcx", "r11", "r12", "memory"                    \
     );                                                   \
     _ret;                                                \
   })

@@ -9,6 +9,7 @@
 #include <process.h>
 #include <thread.h>
 #include <fs.h>
+#include <panic.h>
 
 extern void syscall_handler();
 typedef uint64_t (*syscall_t)(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
@@ -28,6 +29,14 @@ static uint32_t sys_sleep(uint32_t seconds) {
 
 static int sys_yield() {
   return scheduler_yield();
+}
+
+static void sys_panic(const char *message) {
+  panic(message);
+}
+
+static void sys_log(const char *message) {
+  kprintf("%s\n", message);
 }
 
 // function table
@@ -73,6 +82,8 @@ const char *syscall_names[] = {
   [SYS_PREAD] = "SYS_PREAD",
   [SYS_PWRITE] = "SYS_PWRITE",
   [SYS_IOCTL] = "SYS_IOCTL",
+  [SYS_PANIC] = "SYS_PANIC",
+  [SYS_LOG] = "SYS_LOG",
 };
 
 static syscall_t syscalls[] = {
@@ -116,6 +127,8 @@ static syscall_t syscalls[] = {
   [SYS_PREAD] = NULL,
   [SYS_PWRITE] = NULL,
   [SYS_IOCTL] = NULL,
+  [SYS_PANIC] = to_syscall(sys_panic),
+  [SYS_LOG] = to_syscall(sys_log),
 };
 static int num_syscalls = sizeof(syscalls) / sizeof(void *);
 
