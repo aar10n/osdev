@@ -105,7 +105,7 @@ index_t bitmap_get_free(bitmap_t *bmp) {
     if (qw == MAX_NUM) {
       continue;
     } else if (qw == 0) {
-      return i;
+      return i * BIT_SIZE;
     }
     return (i * BIT_SIZE) + __bsf64(~qw);
   }
