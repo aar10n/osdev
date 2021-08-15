@@ -117,6 +117,9 @@ static inline intptr_t vm_virt_to_phys(uintptr_t addr) {
         size = PAGE_SIZE_1GB;
       }
 
+      if (addr < page->addr + size) {
+        return page->frame + offset;
+      }
       offset -= size;
       page = page->next;
     }

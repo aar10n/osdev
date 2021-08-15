@@ -9,6 +9,7 @@
 #include <mm/heap.h>
 #include <mm/mm.h>
 #include <mm/vm.h>
+#include <cpu/cpu.h>
 
 #define kernel_phys_to_virt(x) (KERNEL_OFFSET + (x))
 
@@ -40,7 +41,16 @@ static inline page_t *alloc_zero_pages(size_t count, uint16_t flags) {
   if (pages == NULL)
     return NULL;
 
-  memset((void *) pages->addr, 0, PAGES_TO_SIZE(count));
+  if (!(flags & PE_WRITE)) {
+    uint32_t rflags = cli_save();
+    uint64_t cr0 = read_cr0();
+    write_cr0(cr0 & ~(1 << 16)); // disable cr0.WP
+    memset((void *) pages->addr, 0, PAGES_TO_SIZE(count));
+    write_cr0(cr0); // re-enable cr0.WP
+    sti_restore(rflags);
+  } else {
+    memset((void *) pages->addr, 0, PAGES_TO_SIZE(count));
+  }
   return pages;
 }
 

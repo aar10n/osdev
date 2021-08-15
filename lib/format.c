@@ -668,7 +668,7 @@ int print_format(const char *format, char *str, size_t size, va_list args, bool 
   }
 
   str[n] = '\0';
-  return n + 1;
+  return n;
 }
 
 //

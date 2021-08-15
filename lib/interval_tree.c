@@ -163,10 +163,6 @@ intvl_node_t *intvl_tree_find_closest(intvl_tree_t *tree, interval_t interval) {
     } else if (overlaps(i, get_interval(rb, node->right))) {
       return node->right->data;
     } else {
-      uint64_t diff = i.start < get_interval(rb, node).start ?
-                      udiff(i.end, get_interval(rb, node).start) :
-                      udiff(i.start, get_interval(rb, node).end);
-
       uint64_t ldiff = min(
         udiff(get_min(rb, node->left), i.start),
         udiff(get_max(rb, node->left), i.end)
@@ -175,10 +171,7 @@ intvl_node_t *intvl_tree_find_closest(intvl_tree_t *tree, interval_t interval) {
         udiff(get_min(rb, node->right), i.start),
         udiff(get_max(rb, node->right), i.end)
       );
-      if (diff <= ldiff && diff <= rdiff) {
-        // current node is closest
-        break;
-      } else if (ldiff <= rdiff) {
+      if (ldiff <= rdiff) {
         node = node->left;
       } else {
         node = node->right;

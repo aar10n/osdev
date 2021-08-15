@@ -371,11 +371,11 @@ void vm_init() {
   intvl_tree_insert(vm->tree, intvl(0, PAGE_SIZE), null_area);
 
   // non-canonical address space
-  uintptr_t non_cann_start = LOW_HALF_END + 1;
+  uintptr_t non_cann_start = LOW_HALF_END;
   uintptr_t non_cann_end = HIGH_HALF_START;
   size_t non_cann_size = non_cann_end - non_cann_start;
   vm_area_t *non_cann_area = alloc_area(non_cann_start, non_cann_size, AREA_UNUSABLE);
-  intvl_tree_insert(vm->tree, intvl(LOW_HALF_END + 1, HIGH_HALF_START), non_cann_area);
+  intvl_tree_insert(vm->tree, intvl(LOW_HALF_END, HIGH_HALF_START), non_cann_area);
 
   // recursively mapped region
   uintptr_t recurs_start = get_virt_addr(R_ENTRY, 0, 0, 0);
