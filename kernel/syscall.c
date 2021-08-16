@@ -31,6 +31,11 @@ static int sys_yield() {
   return scheduler_yield();
 }
 
+static void sys_set_fs_base(uintptr_t addr) {
+  current_thread->tls->addr = addr;
+  write_fsbase(addr);
+}
+
 static void sys_panic(const char *message) {
   panic(message);
 }
@@ -82,6 +87,7 @@ const char *syscall_names[] = {
   [SYS_PREAD] = "SYS_PREAD",
   [SYS_PWRITE] = "SYS_PWRITE",
   [SYS_IOCTL] = "SYS_IOCTL",
+  [SYS_SET_FS_BASE] = "SYS_SET_FS_BASE",
   [SYS_PANIC] = "SYS_PANIC",
   [SYS_LOG] = "SYS_LOG",
 };
@@ -127,6 +133,7 @@ static syscall_t syscalls[] = {
   [SYS_PREAD] = NULL,
   [SYS_PWRITE] = NULL,
   [SYS_IOCTL] = NULL,
+  [SYS_SET_FS_BASE] = to_syscall(sys_set_fs_base),
   [SYS_PANIC] = to_syscall(sys_panic),
   [SYS_LOG] = to_syscall(sys_log),
 };

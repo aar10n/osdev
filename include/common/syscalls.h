@@ -47,9 +47,9 @@
 #define SYS_PREAD 37
 #define SYS_PWRITE 38
 #define SYS_IOCTL 39
-#define SYS_PANIC 40
-#define SYS_LOG 41
-
+#define SYS_SET_FS_BASE 40
+#define SYS_PANIC 41
+#define SYS_LOG 42
 
 #define _syscall(call, ...) __syscall(call, ##__VA_ARGS__)
 
