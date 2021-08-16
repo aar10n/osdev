@@ -20,7 +20,6 @@ more or less working, but they still need to be put together before this is cons
 │  ├── mm           memory management (physical and virtual)
 │  └── usb          usb and usb device drivers
 ├── lib           datastructures and algorithms implementations
-├── libc          userspace C standard library (to be removed)
 ├── scripts       build scripts
 ├── sys           userspace
 ├── third-party   third party dependencies
