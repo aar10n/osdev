@@ -159,6 +159,25 @@ int process_execve(const char *path, char *const argv[], char *const envp[]) {
   int argc = ptr_list_len((void *) argv);
   int envc = ptr_list_len((void *) envp);
 
+  // copy all the strings into the stack so that they're
+  // accessible from userspace
+
+  uint64_t *argv_remap = kmalloc(argc * sizeof(uint64_t));
+  for (int i = 0; i < argc; i++) {
+    size_t len = strlen(argv[i]);
+    rsp -= len + 1;
+    memcpy((void *) rsp, argv[i], len + 1);
+    argv_remap[i] = (uint64_t) rsp;
+  }
+
+  uint64_t *envp_remap = kmalloc(envc * sizeof(uint64_t));
+  for (int i = 0; i < envc; i++) {
+    size_t len = strlen(envp[i]);
+    rsp -= len + 1;
+    memcpy((void *) rsp, envp[i], len + 1);
+    envp_remap[i] = (uint64_t) rsp;
+  }
+
   // AT_NULL
   rsp -= 1;
   *rsp = AT_NULL;
@@ -181,8 +200,9 @@ int process_execve(const char *path, char *const argv[], char *const envp[]) {
   if (envp) {
     for (int i = envc; i > 0; i--) {
       rsp -= 1;
-      *rsp = (uint64_t) envp[i - 1];
+      *rsp = (uint64_t) envp_remap[i - 1];
     }
+    kfree(envp_remap);
   }
   // zero
   rsp -= 1;
@@ -191,8 +211,9 @@ int process_execve(const char *path, char *const argv[], char *const envp[]) {
   if (argv) {
     for (int i = argc; i > 0; i--) {
       rsp -= 1;
-      *rsp = (uint64_t) argv[i - 1];
+      *rsp = (uint64_t) argv_remap[i - 1];
     }
+    kfree(argv_remap);
   }
   // argument count
   rsp -= 1;

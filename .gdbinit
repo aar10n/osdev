@@ -93,12 +93,17 @@ b page_fault_handler
 #b syscall.asm:24
 b thread.asm:63
 
-b process.c:202
+b process.c:223
 commands
-add-symbol-file-all build/ld.so 0x7fc0000000
-#b generic.cpp:210
-#b linker.cpp:116
-#b linker.cpp:158
-#b sys_libc_log
+  add-symbol-file-all build/ld.so 0x7fc0000000
+  b generic/main.cpp:263
+  commands
+    add-symbol-file-all build/libc.so 0x41000000
+  end
+
+  b generic/main.cpp:273
+  commands
+    add-symbol-file build/hello.elf
+  end
 end
 
