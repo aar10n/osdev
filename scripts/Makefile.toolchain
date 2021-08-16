@@ -8,7 +8,7 @@ TOOLCHAIN = x86_64-elf-
 QEMU = /Users/Aaron/Projects/qemu/build/qemu-system-x86_64
 
 CXX_STD = -std=c++20
-C_STD = -std=c11
+C_STD = -std=c17
 
 CC = $(TOOLCHAIN)gcc
 CXX = $(TOOLCHAIN)g++

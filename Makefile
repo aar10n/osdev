@@ -38,7 +38,7 @@ include scripts/Makefile.util
 #  Targets  #
 # --------- #
 
-targets = boot kernel fs drivers libc lib sys
+targets = boot kernel fs drivers lib sys
 
 # include the makefiles of all targets
 include $(foreach t,$(targets),$t/Makefile)
@@ -78,18 +78,6 @@ clean-all:
 	mkdir $(BUILD_DIR)
 	$(MAKE) -C tools clean
 
-# Tools
-
-.PHONY: tools
-tools:
-	$(MAKE) -C tools all
-
-.PHONY: initrd
-initrd:
-	$(MAKE) -C tools initrd
-
-ramdisk: initrd $(BUILD)/initrd.img
-
 # -------------- #
 #  Dependencies  #
 # -------------- #
@@ -118,14 +106,12 @@ $(BUILD)/loader.dll: $(boot-y)
 		/debug /lldmap @scripts/loader-libs.lst $^
 
 # Kernel
-$(BUILD)/kernel.elf: $(kernel-y) $(fs-y) $(drivers-y) $(lib-y)
+$(BUILD)/kernel.elf: $(kernel-y) $(fs-y) $(drivers-y) $(lib-y) | libc
 	$(call toolchain,$<,LD) $(call flags,$<,LDFLAGS) $^ -o $@
 
 ## Program
 $(BUILD)/hello.elf: $(sys-y)
 	$(call toolchain,$<,LD) $(call flags,$<,LDFLAGS) $^ -o $@
-
-
 
 # External Data
 
@@ -138,25 +124,6 @@ $(BUILD)/ext2.img: config.ini
 	-e2rm -r $@:/lost+found
 	cp $(SYS_ROOT)/lib/ld.so $(BUILD)/ld.so
 	cp $(SYS_ROOT)/lib/libc.so $(BUILD)/libc.so
-
-$(BUILD)/fat.img: config.ini $(BUILD)/hello.elf
-	dd if=/dev/zero of=$@ bs=1m count=128
-	mformat -i $@ -v "UNTITLED" -T 262144 ::
-	mmd -i $@ ::/usr
-	mmd -i $@ ::/usr/local
-	mcopy -i $@ $(BUILD)/text ::/text.txt
-	echo "# here is a config file" > $(BUILD)/sys.conf
-	mcopy -i $@ $(BUILD)/file.txt ::/usr/sys.conf
-	echo "Hello, world!" > $(BUILD)/file.txt
-	mcopy -i $@ config.ini ::/usr/config.ini
-	mcopy -i $@ $(BUILD)/file.txt ::/hello.txt
-	mcopy -i $@ $(BUILD)/hello.elf ::/usr/local/hello
-
-$(BUILD)/disk.img:
-	scripts/create-disk.sh $@
-
-$(BUILD)/initrd.img: $(BUILD)/initrd
-	scripts/create-initrd.sh $< $@
 
 # ------------------- #
 #  Compilation Rules  #
