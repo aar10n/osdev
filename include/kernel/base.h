@@ -6,7 +6,7 @@
 #define INCLUDE_BASE_H
 #define __KERNEL__
 
-#include <common/types.h>
+#include <abi/types.h>
 #include <boot.h>
 #include <percpu.h>
 #include <errno.h>

@@ -6,7 +6,7 @@
 #define KERNEL_LOADER_H
 
 #include <base.h>
-#include <common/auxv.h>
+#include <abi/auxv.h>
 #include <mm.h>
 
 typedef struct{

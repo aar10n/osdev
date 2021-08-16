@@ -6,6 +6,11 @@
 #define FS_FS_H
 
 #include <base.h>
+#include <abi/fcntl.h>
+#include <abi/seek-whence.h>
+#include <abi/stat.h>
+#include <abi/vm-flags.h>
+
 #include <blkdev.h>
 #include <chrdev.h>
 #include <framebuf.h>
@@ -125,31 +130,6 @@ typedef struct super_block_ops {
 #define S_ISDTY  0x4000000 // Inode is dirty.
 #define S_ISLDD  0x2000000 // Inode is loaded.
 
-#define S_IFFBF  0x1000000 // Framebuffer special.
-#define S_IFMNT  0x0800000 // Filesystem mount.
-#define S_IFCHR  0x0400000 // Character special (tty).
-#define S_IFIFO  0x0200000 // FIFO special (pipe).
-#define S_IFLNK  0x0100000 // Symbolic link.
-#define S_IFSOCK 0x0080000 // Socket.
-#define S_IFBLK  0x0040000 // Block special.
-#define S_IFDIR  0x0020000 // Directory.
-#define S_IFREG  0x0010000 // Regular.
-
-#define S_ISUID  0x0004000 // Set-user-ID on execution.
-#define S_ISGID  0x0002000 // Set-group-ID on execution.
-#define S_IRWXU  0x0000700 // Read, write, execute/search by owner.
-#define S_IRUSR  0x0000400 // Read permission, owner.
-#define S_IWUSR  0x0000200 // Write permission, owner.
-#define S_IXUSR  0x0000100 // Execute/search permission, owner.
-#define S_IRWXG  0x0000070 // Read, write, execute/search by group.
-#define S_IRGRP  0x0000040 // Read permission, group.
-#define S_IWGRP  0x0000020 // Write permission, group.
-#define S_IXGRP  0x0000010 // Execute/search permission, group.
-#define S_IRWXO  0x0000007 // Read, write, execute/search by others.
-#define S_IROTH  0x0000004 // Read permission, others.
-#define S_IWOTH  0x0000002 // Write permission, others.
-#define S_IXOTH  0x0000001 // Execute/search permission, others.
-
 #define IS_IFFBF(mode) ((mode) & S_IFFBF)
 #define IS_IFMNT(mode) ((mode) & S_IFMNT)
 #define IS_IFCHR(mode) ((mode) & S_IFCHR)
@@ -239,32 +219,6 @@ typedef struct dentry_ops {
 #define MAX_PROC_FILES 1024
 #define DIR_FILE_FLAGS (O_DIRECTORY | O_RDONLY)
 
-// open file flags
-#define O_EXEC       0x000001
-#define O_RDONLY     0x000002
-#define O_RDWR       0x000004
-#define O_SEARCH     0x000008
-#define O_WRONLY     0x000010
-
-#define O_APPEND     0x000020
-#define O_CLOEXEC    0x000040
-#define O_CREAT      0x000080
-#define O_DIRECTORY  0x000100
-#define O_DSYNC      0x000200
-#define O_EXCL       0x000400
-#define O_NOCTTY     0x000800
-#define O_NOFOLLOW   0x001000
-#define O_NONBLOCK   0x002000
-#define O_RSYNC      0x004000
-#define O_SYNC       0x008000
-#define O_TRUNC      0x010000
-#define O_TTY_INIT   0x020000
-
-// Seek constants
-#define SEEK_CUR 1
-#define SEEK_END 2
-#define SEEK_SET 3
-
 typedef struct file {
   int fd;              // file descriptor
   dentry_t *dentry;    // associated dentry
@@ -310,17 +264,6 @@ typedef struct kstat {
 } kstat_t;
 
 /* ----- Mmap ----- */
-
-#define PROT_NONE  0x00
-#define PROT_READ  0x01
-#define PROT_WRITE 0x02
-#define PROT_EXEC  0x04
-
-#define MAP_PRIVATE   0x01
-#define MAP_SHARED    0x02
-#define MAP_FIXED     0x04
-#define MAP_ANON      0x08
-#define MAP_ANONYMOUS 0x08
 
 #define MAP_FAILED NULL
 

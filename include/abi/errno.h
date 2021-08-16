@@ -2,8 +2,8 @@
 // Created by Aaron Gill-Braun on 2021-07-27.
 //
 
-#ifndef INCLUDE_COMMON_ERRNO_H
-#define INCLUDE_COMMON_ERRNO_H
+#ifndef INCLUDE_ABI_ERRNO_H
+#define INCLUDE_ABI_ERRNO_H
 
 #define E2BIG 1            // Argument list too long.
 #define EACCES 2           // Permission denied.

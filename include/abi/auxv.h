@@ -2,8 +2,8 @@
 // Created by Aaron Gill-Braun on 2021-08-03.
 //
 
-#ifndef INCLUDE_COMMON_AUXV_H
-#define INCLUDE_COMMON_AUXV_H
+#ifndef INCLUDE_ABI_AUXV_H
+#define INCLUDE_ABI_AUXV_H
 
 // Auxillary Vectors
 #define AT_NULL   0
