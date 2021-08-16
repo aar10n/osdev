@@ -49,7 +49,10 @@ ssize_t ext2_read(file_t *file, char *buf, size_t count, off_t *offset) {
     inode->mode |= S_ISFLL;
   }
 
-  size_t len = min(*offset + count, inode->size - *offset);
+  size_t len = count;
+  if (*offset + count >= inode->size) {
+    len = inode->size - *offset;
+  }
   memcpy(buf, addr + *offset, len);
   *offset += len;
   return len;

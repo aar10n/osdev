@@ -740,7 +740,7 @@ void *fs_mmap(void *addr, size_t len, int prot, int flags, int fd, off_t off) {
   }
 
   uintptr_t va = (uintptr_t) addr;
-  if (!vm_find_free_area(ABOVE, &va, len)) {
+  if (!vm_find_free_area(flags & MAP_FIXED ? EXACTLY : ABOVE, &va, len)) {
     ERRNO = ENOMEM;
     return MAP_FAILED;
   }
@@ -758,7 +758,6 @@ void *fs_mmap(void *addr, size_t len, int prot, int flags, int fd, off_t off) {
     page_t *pages = alloc_frames(SIZE_TO_PAGES(len), pflags);
     vm_map_page_vaddr(va, pages);
     vm_update_attributes(va, AREA_PAGE | AREA_MMAP, pages);
-
     // zero the allocated pages
     uint64_t rflags = cli_save();
     uint64_t cr0 = read_cr0();
