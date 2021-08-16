@@ -304,7 +304,7 @@ index_t bitmap_get_set_nfree(bitmap_t *bmp, size_t n) {
         if (v == 64) {
           bmp->map[index + i] = MAX_NUM;
         } else {
-          bmp->map[index + i] = (0xFFFFFFFFFFFFFFFF >> (BIT_SIZE - remaining));
+          bmp->map[index + i] = (MAX_NUM >> (BIT_SIZE - remaining));
         }
         bmp->used += n;
         bmp->free -= n;
@@ -320,20 +320,26 @@ index_t bitmap_get_set_nfree(bitmap_t *bmp, size_t n) {
  * Clears a region of `n` bits.
  */
 ssize_t bitmap_clear_n(bitmap_t *bmp, index_t index, size_t n) {
-  ssize_t cleared = 0;
-  size_t remaining = n;
+  kassert(bmp->used >= n);
+  ssize_t cleared = n;
   size_t chunk_count = (n / BIT_SIZE) + (n % BIT_SIZE > 0);
+  size_t start_index = index / BIT_SIZE;
+  size_t start_bit = index % BIT_SIZE;
   for (size_t i = 0; i < chunk_count; i++) {
-    if (i < chunk_count - 1) {
-      bmp->map[index + i] = 0;
-
-      remaining -= BIT_SIZE;
-      cleared += BIT_SIZE;
+    size_t m = min(n, BIT_SIZE);
+    uint64_t mask;
+    if (i == 0) {
+      mask = ((1 << m) - 1) << start_bit;
+    } else if (i == chunk_count - 1 && n < BIT_SIZE) {
+      mask = (1 << m) - 1;
     } else {
-      // last index
-      bmp->map[index + i] ^= (0xFFFFFFFFFFFFFFFF >> (BIT_SIZE - remaining));
-      return cleared + remaining;
+      mask = MAX_NUM;
     }
+
+    bmp->map[start_index + i] &= ~mask;
+    bmp->used -= m;
+    bmp->free += m;
+    n -= m;
   }
   return cleared;
 }
