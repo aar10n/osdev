@@ -223,6 +223,7 @@ typedef struct file {
   int fd;              // file descriptor
   dentry_t *dentry;    // associated dentry
   int flags;           // flags specified on open
+  int fd_flags;        // file descriptor flags
   mode_t mode;         // file access mode
   off_t pos;           // file offset
   uid_t uid;           // user id
@@ -248,20 +249,25 @@ typedef struct file_ops {
   // ssize_t (*writev)(file_t *file, const iovec_t *vector, unsigned long count, off_t *offset);
 } file_ops_t;
 
-// stat
+// dirent
 
-typedef struct kstat {
-  dev_t dev;
-  ino_t ino;
-  mode_t mode;
-  nlink_t nlink;
-  uid_t uid;
-  gid_t gid;
-  off_t size;
-  blksize_t blksize;
-  blkcnt_t blkcnt;
-  inode_t *inode;
-} kstat_t;
+#define DT_UNKNOWN 0
+#define DT_FIFO 1
+#define DT_CHR 2
+#define DT_DIR 4
+#define DT_BLK 6
+#define DT_REG 8
+#define DT_LNK 10
+#define DT_SOCK 12
+#define DT_WHT 14
+
+typedef struct dirent {
+  ino_t d_ino;
+  off_t d_off;
+  unsigned short d_reclen;
+  unsigned char d_type;
+  char d_name[1024];
+} dirent_t;
 
 /* ----- Mmap ----- */
 
@@ -285,12 +291,14 @@ int fs_mkdir(const char *path, mode_t mode);
 int fs_mknod(const char *path, mode_t mode, dev_t dev);
 int fs_close(int fd);
 
-int fs_stat(const char *path, kstat_t *statbuf);
-int fs_fstat(int fd, kstat_t *statbuf);
+int fs_stat(const char *path, struct stat *statbuf);
+int fs_fstat(int fd, struct stat *statbuf);
 
 ssize_t fs_read(int fd, void *buf, size_t nbytes);
 ssize_t fs_write(int fd, void *buf, size_t nbytes);
 off_t fs_lseek(int fd, off_t offset, int whence);
+
+int fs_fcntl(int fd, int cmd, uint64_t arg);
 
 dentry_t *fs_readdir(int fd);
 long fs_telldir(int fd);
@@ -301,6 +309,7 @@ int fs_link(const char *path1, const char *path2);
 int fs_unlink(const char *path);
 int fs_symlink(const char *path1, const char *path2);
 int fs_rename(const char *oldfile, const char *newfile);
+ssize_t fs_readlink(const char *restrict path, char *restrict buf, size_t bufsize);
 int fs_rmdir(const char *path);
 int fs_chdir(const char *path);
 int fs_chmod(const char *path, mode_t mode);

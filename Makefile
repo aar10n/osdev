@@ -83,7 +83,7 @@ clean-all:
 # -------------- #
 
 # USB bootable image
-$(BUILD)/osdev.img: $(BUILD)/bootx64.efi $(BUILD)/kernel.elf config.ini $(BUILD)/ext2.img $(BUILD)/hello.elf
+$(BUILD)/osdev.img: $(BUILD)/bootx64.efi $(BUILD)/kernel.elf $(BUILD)/hello.elf config.ini $(BUILD)/ext2.img
 	dd if=/dev/zero of=$@ bs=1k count=1440
 	mformat -i $@ -f 1440 -v osdev ::
 	mmd -i $@ ::/EFI
@@ -106,12 +106,16 @@ $(BUILD)/loader.dll: $(boot-y)
 		/debug /lldmap @scripts/loader-libs.lst $^
 
 # Kernel
-$(BUILD)/kernel.elf: $(kernel-y) $(fs-y) $(drivers-y) $(lib-y) | libc
+$(BUILD)/kernel.elf: $(kernel-y) $(fs-y) $(drivers-y) $(lib-y)
 	$(call toolchain,$<,LD) $(call flags,$<,LDFLAGS) $^ -o $@
 
 ## Program
-$(BUILD)/hello.elf: $(sys-y)
+$(BUILD)/hello.elf: $(sys-y) | $(BUILD)/ext2.img
 	$(call toolchain,$<,LD) $(call flags,$<,LDFLAGS) $^ -o $@
+	e2cp $(BUILD)/hello.elf $(BUILD)/ext2.img:/usr/bin/hello
+
+$(BUILD)/dummy: $(sys-y) $(sys-headers)
+
 
 # External Data
 
@@ -120,7 +124,6 @@ $(BUILD)/ext2.img: config.ini
 	mke2fs -L Untitled -t ext2 $@
 	cd $(SYS_ROOT) && find . -type f ! -name ".DS_Store" -exec e2cp {} ../../$@:/{} \;
 	e2mkdir $@ /usr/bin
-	e2cp $(BUILD)/hello.elf $@:/usr/bin/hello
 	-e2rm -r $@:/lost+found
 	cp $(SYS_ROOT)/lib/ld.so $(BUILD)/ld.so
 	cp $(SYS_ROOT)/lib/libc.so $(BUILD)/libc.so
@@ -133,11 +136,11 @@ include $(wildcard *.d)
 
 $(BUILD_DIR)/%.c.o: %.c
 	@mkdir -p $(@D)
-	$(call toolchain,$<,CC) $(call flags,$<,INCLUDE) $(call flags,$<,CFLAGS) -c $< -o $@
+	$(call toolchain,$<,CC) $(call flags,$<,INCLUDE) $(call flags,$<,CFLAGS) -o $@ -c $<
 
 $(BUILD_DIR)/%.cpp.o: %.cpp
 	@mkdir -p $(@D)
-	$(call toolchain,$<,CXX) $(call flags,$<,INCLUDE) $(call flags,$<,CXXFLAGS) -c $< -o $@
+	$(call toolchain,$<,CXX) $(call flags,$<,INCLUDE) $(call flags,$<,CXXFLAGS) -o $@ -c $<
 
 $(BUILD_DIR)/%.s.o: %.s
 	@mkdir -p $(@D)

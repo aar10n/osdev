@@ -155,7 +155,6 @@ mlibc-headers-install:
 $(BUILD)/mlibc-cross-file.txt: scripts/mlibc-cross-file.m4
 	m4 $< -DPREFIX=$(SYS_ROOT)/bin > $@
 
-
 $(SYS_ROOT):
 	@mkdir -p $@
 	@mkdir $@/usr

@@ -25,6 +25,25 @@ __used void duplicate_file(rb_tree_t *tree, rb_tree_t *new_tree, rb_node_t *node
   new_node->data = copy;
 }
 
+static inline uint16_t mode_to_dirent_type(mode_t mode) {
+  if (IS_IFREG(mode)) {
+    return DT_REG;
+  } else if (IS_IFDIR(mode)) {
+    return DT_DIR;
+  } else if (IS_IFBLK(mode)) {
+    return DT_BLK;
+  } else if (IS_IFCHR(mode)) {
+    return DT_CHR;
+  } else if (IS_IFLNK(mode)) {
+    return DT_LNK;
+  } else if (IS_IFIFO(mode)) {
+    return DT_FIFO;
+  } else if (IS_IFSOCK(mode)) {
+    return DT_SOCK;
+  }
+  return DT_UNKNOWN;
+}
+
 //
 
 file_table_t *create_file_table() {
@@ -64,7 +83,7 @@ file_table_t *copy_file_table(file_table_t *table) {
 
 //
 
-file_t *f_alloc(dentry_t *dentry, int flags, mode_t mode) {
+file_t *f_alloc(dentry_t *dentry, int flags) {
   spin_lock(&FILES->lock);
   index_t fd = bitmap_get_set_free(FILES->fds);
   spin_unlock(&FILES->lock);
@@ -79,9 +98,13 @@ file_t *f_alloc(dentry_t *dentry, int flags, mode_t mode) {
   file->fd = fd;
   file->dentry = dentry;
   file->flags = flags;
+  file->fd_flags = 0;
   file->mode = dentry->mode;
   file->pos = 0;
   file->ops = dentry->inode->sb->fs->file_ops;
+  if (flags & O_CLOEXEC) {
+    file->fd_flags |= FD_CLOEXEC;
+  }
 
   device_t *device = locate_device(dentry->inode->dev);
   if (device == NULL && dentry->inode->dev != 0) {
@@ -155,7 +178,29 @@ ssize_t f_read(file_t *file, char *buf, size_t count) {
   }
 
   ssize_t nread;
-  if (IS_IFBLK(file->mode)) {
+  if (IS_IFDIR(file->mode)) {
+    if (count < sizeof(dirent_t)) {
+      ERRNO = ENOBUFS;
+      return -1;
+    }
+
+    dentry_t dentry;
+    int result = file->ops->readdir(file, &dentry, true);
+    if (result < 0) {
+      return -1;
+    }
+
+    size_t name_len = strlen(dentry.name);
+    dirent_t dirent = {
+      .d_ino = dentry.ino,
+      .d_off = file->pos,
+      .d_reclen = sizeof(dirent_t),
+      .d_type = mode_to_dirent_type(file->mode)
+    };
+    memcpy(dirent.d_name, dentry.name, name_len + 1);
+    memcpy(buf, &dirent, sizeof(dirent_t));
+    nread = sizeof(dirent_t);
+  } else if (IS_IFBLK(file->mode)) {
     uint64_t lba = SIZE_TO_SECS(file->pos);
     nread = blkdev_readbuf(file->device->device, lba, count, buf);
     if (nread > 0) {
@@ -187,9 +232,11 @@ ssize_t f_write(file_t *file, const char *buf, size_t count) {
 off_t f_lseek(file_t *file, off_t offset, int whence) {
   if (file->ops->lseek) {
     return file->ops->lseek(file, offset, whence);
-  } else if (IS_IFCHR(file->dentry->mode)) {
-    ERRNO = ENOTSUP;
+  } else if (IS_IFIFO(file->dentry->mode)) {
+    ERRNO = ESPIPE;
     return -1;
+  } else if (IS_IFCHR(file->dentry->mode)) {
+    return 0;
   }
 
   if (whence == SEEK_SET) {

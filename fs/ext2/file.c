@@ -83,7 +83,7 @@ int ext2_readdir(file_t *file, dentry_t *dirent, bool fill) {
     return -1;
   }
 
-  file->pos++;
+  file->pos += sizeof(dentry_t);
   file->dentry = next;
 
   sb_read_inode(next);

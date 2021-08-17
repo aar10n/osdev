@@ -318,7 +318,7 @@ int fs_open(const char *path, int flags, mode_t mode) {
     i_truncate(dentry->inode);
   }
 
-  file_t *file = f_alloc(dentry, flags, mode);
+  file_t *file = f_alloc(dentry, flags);
   if (file == NULL) {
     return -1;
   }
@@ -405,7 +405,7 @@ int fs_close(int fd) {
 
 //
 
-int fs_stat(const char *path, kstat_t *statbuf) {
+int fs_stat(const char *path, stat_t *statbuf) {
   if (statbuf == NULL) {
     ERRNO = ENOBUFS;
     return -1;
@@ -417,20 +417,23 @@ int fs_stat(const char *path, kstat_t *statbuf) {
   }
 
   inode_t *inode = dentry->inode;
-  statbuf->dev = inode->dev;
-  statbuf->ino = inode->ino;
-  statbuf->mode = inode->mode;
-  statbuf->nlink = inode->nlink;
-  statbuf->uid = inode->uid;
-  statbuf->gid = inode->gid;
-  statbuf->size = inode->size;
-  statbuf->blksize = inode->blksize;
-  statbuf->blkcnt = inode->blocks;
-  statbuf->inode = inode;
+  statbuf->st_dev = inode->dev;
+  statbuf->st_ino = inode->ino;
+  statbuf->st_mode = inode->mode;
+  statbuf->st_nlink = inode->nlink;
+  statbuf->st_uid = inode->uid;
+  statbuf->st_gid = inode->gid;
+  statbuf->st_rdev = 0;
+  statbuf->st_size = inode->size;
+  statbuf->st_atim = (struct timespec) { .tv_sec = inode->atime };
+  statbuf->st_mtim = (struct timespec) { .tv_sec = inode->mtime };
+  statbuf->st_ctim = (struct timespec) { .tv_sec = inode->ctime };
+  statbuf->st_blksize = inode->blksize;
+  statbuf->st_blocks = inode->blocks;
   return 0;
 }
 
-int fs_fstat(int fd, kstat_t *statbuf) {
+int fs_fstat(int fd, stat_t *statbuf) {
   if (statbuf == NULL) {
     ERRNO = ENOBUFS;
     return -1;
@@ -443,16 +446,19 @@ int fs_fstat(int fd, kstat_t *statbuf) {
   }
 
   inode_t *inode = file->dentry->inode;
-  statbuf->dev = inode->dev;
-  statbuf->ino = inode->ino;
-  statbuf->mode = inode->mode;
-  statbuf->nlink = inode->nlink;
-  statbuf->uid = inode->uid;
-  statbuf->gid = inode->gid;
-  statbuf->size = inode->size;
-  statbuf->blksize = inode->blksize;
-  statbuf->blkcnt = inode->blocks;
-  statbuf->inode = inode;
+  statbuf->st_dev = inode->dev;
+  statbuf->st_ino = inode->ino;
+  statbuf->st_mode = inode->mode;
+  statbuf->st_nlink = inode->nlink;
+  statbuf->st_uid = inode->uid;
+  statbuf->st_gid = inode->gid;
+  statbuf->st_rdev = 0;
+  statbuf->st_size = inode->size;
+  statbuf->st_atim = (struct timespec) { .tv_sec = inode->atime };
+  statbuf->st_mtim = (struct timespec) { .tv_sec = inode->mtime };
+  statbuf->st_ctim = (struct timespec) { .tv_sec = inode->ctime };
+  statbuf->st_blksize = inode->blksize;
+  statbuf->st_blocks = inode->blocks;
   return 0;
 }
 
@@ -486,12 +492,50 @@ off_t fs_lseek(int fd, off_t offset, int whence) {
     ERRNO = EBADF;
     return -1;
   }
+  return f_lseek(file, offset, whence);
+}
 
-  if (IS_IFIFO(file->dentry->mode)) {
-    ERRNO = ESPIPE;
+//
+
+int fs_fcntl(int fd, int cmd, uint64_t arg) {
+  file_t *file = f_locate(fd);
+  if (file == NULL) {
+    ERRNO = EBADF;
     return -1;
   }
-  return f_lseek(file, offset, whence);
+
+  if (cmd == F_DUPFD) {
+    // duplicate file descriptor
+  } else if (cmd == F_DUPFD_CLOEXEC) {
+    // duplicate file descriptor and set close-on-exec flag
+  } else if (cmd == F_GETFD) {
+    // get file descriptor flags
+    return file->fd_flags;
+  } else if (cmd == F_SETFD) {
+    // set file descriptor flags
+    file->fd_flags = (int) arg;
+    return 0;
+  } else if (cmd == F_GETFL) {
+    // get file status flags
+  } else if (cmd == F_SETFL) {
+    // set file status flags
+  } else if (cmd == F_SETLK) {
+    // aquire or release file lock
+  } else if (cmd == F_SETLKW) {
+    // same as F_SETLK but wait for conflicting
+    // lock to be freed
+  } else if (cmd == F_GETLK) {
+    // checks for a conflicting file lock
+  } else if (cmd == F_GETOWN) {
+    // get process that is receiving SIGIO and SIGURG
+    // signals for events on the file
+  } else if (cmd == F_SETOWN) {
+    // set process that will receive SIGIO and SIGURG
+    // signals for events on the file
+  }
+
+  ERRNO = ENOTSUP;
+  return -1;
 }
 
 //
@@ -662,6 +706,11 @@ int fs_rename(const char *oldfile, const char *newfile) {
   return 0;
 }
 
+ssize_t fs_readlink(const char *restrict path, char *restrict buf, size_t bufsize) {
+  ERRNO = ENOTSUP;
+  return -1;
+}
+
 int fs_rmdir(const char *path) {
   dentry_t *dentry = resolve_path(path, *current_process->pwd, 0, NULL);
   if (dentry == NULL) {
@@ -713,8 +762,8 @@ char *fs_getcwd(char *buf, size_t size) {
 //
 
 void *fs_mmap(void *addr, size_t len, int prot, int flags, int fd, off_t off) {
-  kprintf("fs_mmap(%p, %llu, %d, %d, %d, %lld)\n",
-          addr, len, prot, flags, fd, off);
+  // kprintf("fs_mmap(%p, %llu, %d, %d, %d, %lld)\n",
+  //         addr, len, prot, flags, fd, off);
 
   file_t *file = NULL;
   if (fd == -1) {

@@ -15,34 +15,7 @@ extern void syscall_handler();
 typedef uint64_t (*syscall_t)(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
 
 #define to_syscall(func) ((syscall_t) func)
-
-
-static int sys_exit(int ret) {
-  kprintf(">>>> exit %d <<<<\n", ret);
-  return 0;
-}
-
-static uint32_t sys_sleep(uint32_t seconds) {
-  scheduler_sleep(seconds * US_PER_SEC);
-  return 0;
-}
-
-static int sys_yield() {
-  return scheduler_yield();
-}
-
-static void sys_set_fs_base(uintptr_t addr) {
-  current_thread->tls->addr = addr;
-  write_fsbase(addr);
-}
-
-static void sys_panic(const char *message) {
-  panic(message);
-}
-
-static void sys_log(const char *message) {
-  kprintf("%s\n", message);
-}
+#define as_void(value) ((void *)((uint64_t)(value)))
 
 // function table
 
@@ -55,6 +28,7 @@ const char *syscall_names[] = {
   [SYS_WRITE] = "SYS_WRITE",
   [SYS_POLL] = "SYS_POLL",
   [SYS_LSEEK] = "SYS_LSEEK",
+  [SYS_FCNTL] = "SYS_FCNTL",
   [SYS_CREATE] = "SYS_CREATE",
   [SYS_MKNOD] = "SYS_MKNOD",
   [SYS_MKDIR] = "SYS_MKDIR",
@@ -90,34 +64,264 @@ const char *syscall_names[] = {
   [SYS_SET_FS_BASE] = "SYS_SET_FS_BASE",
   [SYS_PANIC] = "SYS_PANIC",
   [SYS_LOG] = "SYS_LOG",
-};
+  };
+
+
+static int sys_exit(int ret) {
+  kprintf(">>>> exit %d <<<<\n", ret);
+  return 0;
+}
+
+static int sys_execve(const char *path, char *const argv[], char *const envp[]) {
+  int result = process_execve(path, argv, envp);
+  if (result < 0) {
+    return -ERRNO;
+  }
+  return result;
+}
+
+static int sys_open(const char *path, int flags, mode_t mode) {
+  int result = fs_open(path, flags, mode);
+  if (result < 0) {
+    return -ERRNO;
+  }
+  return result;
+}
+
+static int sys_close(int fd) {
+  int result = fs_close(fd);
+  if (result < 0) {
+    return -ERRNO;
+  }
+  return result;
+}
+
+static ssize_t sys_read(int fd, void *buf, size_t nbytes) {
+  ssize_t result = fs_read(fd, buf, nbytes);
+  if (result < 0) {
+    return -ERRNO;
+  }
+  return result;
+}
+
+static ssize_t sys_write(int fd, void *buf, size_t nbytes) {
+  ssize_t result = fs_write(fd, buf, nbytes);
+  if (result < 0) {
+    return -ERRNO;
+  }
+  return result;
+}
+
+// int sys_poll(struct pollfd fds[], nfds_t nfds, int timeout) {
+//
+// }
+
+static off_t sys_lseek(int fd, off_t offset, int whence) {
+  off_t result = fs_lseek(fd, offset, whence);
+  if (result < 0) {
+    return -ERRNO;
+  }
+  return result;
+}
+
+static int sys_fnctl(int fd, int cmd, uint64_t arg) {
+  int result = fs_fcntl(fd, cmd, arg);
+  if (result < 0) {
+    return -ERRNO;
+  }
+  return result;
+}
+
+static int sys_creat(const char *path, mode_t mode) {
+  int result = fs_creat(path, mode);
+  if (result < 0) {
+    return -ERRNO;
+  }
+  return result;
+}
+
+static int sys_mknod(const char *path, mode_t mode, dev_t dev) {
+  int result = fs_mknod(path, mode, dev);
+  if (result < 0) {
+    return -ERRNO;
+  }
+  return result;
+}
+
+static int sys_mkdir(const char *path, mode_t mode) {
+  int result = fs_mkdir(path, mode);
+  if (result < 0) {
+    return -ERRNO;
+  }
+  return result;
+}
+
+static int sys_link(const char *path1, const char *path2) {
+  int result = fs_link(path1, path2);
+  if (result < 0) {
+    return -ERRNO;
+  }
+  return result;
+}
+
+static int sys_unlink(const char *path) {
+  int result = fs_unlink(path);
+  if (result < 0) {
+    return -ERRNO;
+  }
+  return result;
+}
+
+static int sys_symlink(const char *path1, const char *path2) {
+  int result = fs_symlink(path1, path2);
+  if (result < 0) {
+    return -ERRNO;
+  }
+  return result;
+}
+
+static int sys_rename(const char *oldfile, const char *newfile) {
+  int result = fs_rename(oldfile, newfile);
+  if (result < 0) {
+    return -ERRNO;
+  }
+  return result;
+}
+
+static ssize_t sys_readlink(const char *restrict path, char *restrict buf, size_t bufsize) {
+  ssize_t result = fs_readlink(path, buf, bufsize);
+  if (result < 0) {
+    return -ERRNO;
+  }
+  return 0;
+}
+
+// SYS_READDIR
+// SYS_TELLDIR
+// SYS_SEEKDIR
+// SYS_REWINDDIR
+
+static int sys_rmdir(const char *path) {
+  int result = fs_rmdir(path);
+  if (result < 0) {
+    return -ERRNO;
+  }
+  return 0;
+}
+
+static int sys_chdir(const char *path) {
+  int result = fs_chdir(path);
+  if (result < 0) {
+    return -ERRNO;
+  }
+  return 0;
+}
+
+static int sys_chmod(const char *path, mode_t mode) {
+  int result = fs_chmod(path, mode);
+  if (result < 0) {
+    return -ERRNO;
+  }
+  return 0;
+}
+
+static int sys_stat(const char *path, struct stat *statbuf) {
+  int result = fs_stat(path, statbuf);
+  if (result < 0) {
+    return -ERRNO;
+  }
+  return 0;
+}
+
+static int sys_fstat(int fd, struct stat *statbuf) {
+  int result = fs_fstat(fd, statbuf);
+  if (result < 0) {
+    return -ERRNO;
+  }
+  return 0;
+}
+
+static int sys_sleep(uint32_t seconds) {
+  scheduler_sleep(seconds * US_PER_SEC);
+  return 0;
+}
+
+// SYS_NANOSLEEP
+
+static int sys_yield() {
+  return scheduler_yield();
+}
+
+static void *sys_mmap(void *addr, size_t len, int prot, int flags, int fd, off_t off) {
+  void *result = fs_mmap(addr, len, prot, flags, fd, off);
+  if (result == MAP_FAILED) {
+    return as_void(-ERRNO);
+  }
+  return result;
+}
+
+static int sys_munmap(void *addr, size_t length) {
+  int result = fs_munmap(addr, length);
+  if (result < 0) {
+    return -ERRNO;
+  }
+  return 0;
+}
+
+static pid_t sys_fork() {
+  pid_t result = process_fork();
+  if (result < 0) {
+    return -ERRNO;
+  }
+  return result;
+}
+
+// SYS_PREAD
+// SYS_PWRITE
+// SYS_IOCTL
+
+static void sys_set_fs_base(uintptr_t addr) {
+  current_thread->tls->addr = addr;
+  write_fsbase(addr);
+}
+
+static void sys_panic(const char *message) {
+  panic(message);
+}
+
+static void sys_log(const char *message) {
+  kprintf("%s\n", message);
+}
+
+//
 
 static syscall_t syscalls[] = {
   [SYS_EXIT] = to_syscall(sys_exit),
   [SYS_EXEC] = to_syscall(process_execve),
-  [SYS_OPEN] = to_syscall(fs_open),
-  [SYS_CLOSE] = to_syscall(fs_close),
-  [SYS_READ] = to_syscall(fs_read),
-  [SYS_WRITE] = to_syscall(fs_write),
+  [SYS_OPEN] = to_syscall(sys_open),
+  [SYS_CLOSE] = to_syscall(sys_close),
+  [SYS_READ] = to_syscall(sys_read),
+  [SYS_WRITE] = to_syscall(sys_write),
   [SYS_POLL] = NULL,
-  [SYS_LSEEK] = to_syscall(fs_lseek),
-  [SYS_CREATE] = to_syscall(fs_creat),
-  [SYS_MKNOD] = to_syscall(fs_mknod),
-  [SYS_MKDIR] = to_syscall(fs_mkdir),
-  [SYS_LINK] = to_syscall(fs_link),
-  [SYS_UNLINK] = to_syscall(fs_unlink),
-  [SYS_SYMLINK] = to_syscall(fs_symlink),
-  [SYS_RENAME] = to_syscall(fs_rename),
-  [SYS_READLINK] = NULL,
-  [SYS_READDIR] = to_syscall(fs_readdir),
-  [SYS_TELLDIR] = to_syscall(fs_telldir),
-  [SYS_SEEKDIR] = to_syscall(fs_seekdir),
-  [SYS_REWINDDIR] = to_syscall(fs_rewinddir),
-  [SYS_RMDIR] = to_syscall(fs_rmdir),
-  [SYS_CHDIR] = to_syscall(fs_chdir),
-  [SYS_CHMOD] = to_syscall(fs_chmod),
-  [SYS_STAT] = to_syscall(fs_stat),
-  [SYS_FSTAT] = to_syscall(fs_fstat),
+  [SYS_LSEEK] = to_syscall(sys_lseek),
+  [SYS_FCNTL] = to_syscall(sys_fnctl),
+  [SYS_CREATE] = to_syscall(sys_creat),
+  [SYS_MKNOD] = to_syscall(sys_mknod),
+  [SYS_MKDIR] = to_syscall(sys_mkdir),
+  [SYS_LINK] = to_syscall(sys_link),
+  [SYS_UNLINK] = to_syscall(sys_unlink),
+  [SYS_SYMLINK] = to_syscall(sys_symlink),
+  [SYS_RENAME] = to_syscall(sys_rename),
+  [SYS_READLINK] = to_syscall(sys_readlink),
+  [SYS_READDIR] = NULL,
+  [SYS_TELLDIR] = NULL,
+  [SYS_SEEKDIR] = NULL,
+  [SYS_REWINDDIR] = NULL,
+  [SYS_RMDIR] = to_syscall(sys_rmdir),
+  [SYS_CHDIR] = to_syscall(sys_chdir),
+  [SYS_CHMOD] = to_syscall(sys_chmod),
+  [SYS_STAT] = to_syscall(sys_stat),
+  [SYS_FSTAT] = to_syscall(sys_fstat),
   [SYS_SLEEP] = to_syscall(sys_sleep),
   [SYS_NANOSLEEP] = NULL,
   [SYS_YIELD] = to_syscall(sys_yield),
@@ -127,9 +331,9 @@ static syscall_t syscalls[] = {
   [SYS_GETUID] = to_syscall(getuid),
   [SYS_GETGID] = to_syscall(getgid),
   [SYS_GET_CWD] = to_syscall(fs_getcwd),
-  [SYS_MMAP] = to_syscall(fs_mmap),
-  [SYS_MUNMAP] = to_syscall(fs_munmap),
-  [SYS_FORK] = to_syscall(process_fork),
+  [SYS_MMAP] = to_syscall(sys_mmap),
+  [SYS_MUNMAP] = to_syscall(sys_munmap),
+  [SYS_FORK] = to_syscall(sys_fork),
   [SYS_PREAD] = NULL,
   [SYS_PWRITE] = NULL,
   [SYS_IOCTL] = NULL,
@@ -140,13 +344,11 @@ static syscall_t syscalls[] = {
 static int num_syscalls = sizeof(syscalls) / sizeof(void *);
 
 
-
 void syscalls_init() {
   write_msr(IA32_LSTAR_MSR, (uintptr_t) syscall_handler);
   write_msr(IA32_SFMASK_MSR, 0);
   write_msr(IA32_STAR_MSR, 0x10LL << 48 | KERNEL_CS << 32);
 }
-
 
 __used int handle_syscall(
   int syscall,
@@ -175,6 +377,6 @@ __used int handle_syscall(
     }
   }
 
-  kprintf("result: %d\n", result);
+  // kprintf("result: %d\n", result);
   return result;
 }

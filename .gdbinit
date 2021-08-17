@@ -86,7 +86,6 @@ RemoveSymbolFileAll()
 end
 
 set disassembly-flavor intel
-add-symbol-file build/hello.elf
 add-symbol-file build/kernel.elf
 b page_fault_handler
 #b syscall.asm:6
@@ -101,9 +100,15 @@ commands
     add-symbol-file-all build/libc.so 0x41000000
   end
 
-  b generic/main.cpp:273
+  b entry.S:9
   commands
     add-symbol-file build/hello.elf
+    break main
+    break file-io.cpp:190
+    break file-io.cpp:455
+    break file-io.cpp:482
+    break file-io.cpp:313
+    break file-io.cpp:414
   end
 end
 

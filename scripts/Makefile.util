@@ -57,3 +57,6 @@ toolchain = $(call _get_generic,$(call file_dir,$(call _get_file,$1)),$2)
 
 # Returns the specified flags for a given file.
 flags = $(call _get_flags,$(call _get_file,$1),$(call file_dir,$(call _get_file,$1)),$2)
+
+# Returns the header dependencies for a given file.
+headers = $($(call normalized_top_dir,$1)-headers)

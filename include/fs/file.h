@@ -22,7 +22,7 @@ file_table_t *copy_file_table(file_table_t *table);
 
 //
 
-file_t *f_alloc(dentry_t *dentry, int flags, mode_t mode);
+file_t *f_alloc(dentry_t *dentry, int flags);
 void f_release(file_t *file);
 file_t *f_locate(int fd);
 
