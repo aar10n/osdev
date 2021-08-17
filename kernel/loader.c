@@ -87,14 +87,14 @@ int load_elf_file(const char *path, elf_program_t *prog) {
     return -1;
   }
 
-  kstat_t stat;
+  stat_t stat;
   if (fs_fstat(fd, &stat) < 0) {
     fs_close(fd);
     return -1;
   }
 
-  page_t *program = alloc_pages(SIZE_TO_PAGES(stat.size), PE_WRITE);
-  ssize_t nread = fs_read(fd, (void *) program->addr, stat.size);
+  page_t *program = alloc_pages(SIZE_TO_PAGES(stat.st_size), PE_WRITE);
+  ssize_t nread = fs_read(fd, (void *) program->addr, stat.st_size);
   if (nread < 0) {
     free_pages(program);
     fs_close(fd);
