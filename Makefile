@@ -48,7 +48,7 @@ include $(foreach t,$(targets),$t/Makefile)
 #  Targets  #
 # --------- #
 
-all: $(BUILD)/osdev.img tools
+all: $(BUILD)/osdev.img sys-all tools
 
 run: $(BUILD)/osdev.img
 	$(QEMU) $(QEMUFLAGS) -monitor stdio
@@ -67,6 +67,7 @@ clean:
 	rm -f $(BUILD)/*.efi
 	rm -f $(BUILD)/*.elf
 	rm -rf $(BUILD_DIR)
+	rm -rf $(BUILD)/apps
 	mkdir $(BUILD_DIR)
 
 .PHONY: clean-all
@@ -114,8 +115,12 @@ $(BUILD)/hello.elf: $(sys-y) | $(BUILD)/ext2.img
 	$(call toolchain,$<,LD) $(call flags,$<,LDFLAGS) $^ -o $@
 	e2cp $(BUILD)/hello.elf $(BUILD)/ext2.img:/usr/bin/hello
 
-$(BUILD)/dummy: $(sys-y) $(sys-headers)
 
+.PHONY: sys-all
+sys-all: $(sys-targets) | $(BUILD)/ext2.img
+	for target in $(sys-targets); do \
+  		e2cp $${target} $(BUILD)/ext2.img:/usr/bin/`basename $${target}`; \
+  	done
 
 # External Data
 
@@ -133,6 +138,9 @@ $(BUILD)/ext2.img: config.ini
 # ------------------- #
 
 include $(wildcard *.d)
+
+$(BUILD)/apps/%: $(BUILD)/ext2.img
+	e2cp $@ $<:/usr/bin/$(notdir $@)
 
 $(BUILD_DIR)/%.c.o: %.c
 	@mkdir -p $(@D)

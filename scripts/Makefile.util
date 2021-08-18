@@ -35,6 +35,11 @@ sources = $(patsubst %.o,%,$1)
 # rather than the sources for those targets.
 target-objects = $(foreach t,$1,$(call objects,$t,$2))
 
+source_file = $(patsubst %.o,%,$(subst $(BUILD_DIR)/,,$1))
+programs = $(patsubst %,$(BUILD)/apps/%,$1)
+all-paths = $(shell ./scripts/paths.sh $(dir $1))
+to-prefixes = $(subst /,-,$(call all-paths,$1))
+
 #
 # Overriding Defaults
 #
@@ -44,19 +49,20 @@ target-objects = $(foreach t,$1,$(call objects,$t,$2))
 # flags, the defaults can be easily overriden by defining variables in
 # the form: `<DEFAULT>-<target>`.
 
-_get_generic = $(if $(strip $($2-$1)),$($2-$1),$(if $(strip $3),$3,$($2)))
+_get_generic = $(if $(strip $($2-$1)),$($2-$1),$(if $(strip $3),$3,))
 _get_flags_debug = $(if $(strip $($3-$2)),$3-$2 $3-$1,$3 $3-$1)
 _get_flags = $(if $(strip $($3-$2)),$($3-$2) $($3-$1),$($3) $($3-$1))
 _get_file = $(call normalized_top_dir,$1)/$(call sources,$(notdir $1))
+_flags = $(strip $(subst \(\),,$(foreach prefix,$(call to-prefixes,$1),\($(call _get_generic,$(prefix),$2)\)) \($($2)\)))
 
 # Returns the dependents from a list of first-dependents.
 deps = $(call _get_generic,$(call file_dir,$(call _get_file,$(firstword $1))),DEPS,$1)
 
 # Returns the specified program in the toolchain of a given file.
-toolchain = $(call _get_generic,$(call file_dir,$(call _get_file,$1)),$2)
+toolchain = $(firstword $(foreach prefix,$(call to-prefixes,$(call source_file,$1)) $2,$(call _get_generic,$(prefix),$2)) $($2))
 
 # Returns the specified flags for a given file.
-flags = $(call _get_flags,$(call _get_file,$1),$(call file_dir,$(call _get_file,$1)),$2)
+flags = $(subst \,,$(shell echo '$(call _flags,$(call source_file,$1),$2)' | sed -f scripts/first-group.sed))
 
 # Returns the header dependencies for a given file.
 headers = $($(call normalized_top_dir,$1)-headers)
