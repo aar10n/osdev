@@ -202,24 +202,50 @@ page_t *mm_alloc_pages(zone_type_t zone_type, size_t count, uint16_t flags) {
     }
   }
 
+  bool use_2mb_pages = flags & PE_2MB_SIZE;
+  bool use_1gb_pages = flags & PE_1GB_SIZE;
+  bool use_large_pages = use_2mb_pages | use_1gb_pages;
+  bool force = flags & PE_FORCE;
+
+  size_t frame_count = 0;
+  size_t temp_count = count;
+  while (temp_count > 0) {
+    size_t frames;
+    if (temp_count >= SIZE_TO_PAGES(PAGE_SIZE_2MB) && (use_large_pages || !force)) {
+      frames = SIZE_TO_PAGES(PAGE_SIZE_2MB);
+      use_2mb_pages = true;
+      use_large_pages = true;
+    } else if (temp_count >= SIZE_TO_PAGES(PAGE_SIZE_1GB) && (use_large_pages || !force)) {
+      frames = SIZE_TO_PAGES(PAGE_SIZE_1GB);
+      use_1gb_pages = true;
+      use_large_pages = true;
+    } else {
+      frames = temp_count;
+    }
+
+    frame_count += frames;
+    temp_count -= frames;
+  }
+
   spin_lock(&zone->lock);
   index_t frame_index;
-  if (count == 1) {
+  if (frame_count == 1) {
     // common case - fastest
     frame_index = bitmap_get_free(zone->pages);
     kassert(frame_index >= 0);
     bitmap_set(zone->pages, frame_index);
   } else {
     // less common case - slower
-    frame_index = bitmap_get_set_nfree(zone->pages, count);
+    size_t align = 0;
+    if (use_1gb_pages) {
+      align = SIZE_TO_PAGES(PAGE_SIZE_1GB);
+    } else if (use_2mb_pages) {
+      align = SIZE_TO_PAGES(PAGE_SIZE_2MB);
+    }
+    frame_index = bitmap_get_set_nfree(zone->pages, frame_count, align);
     kassert(frame_index >= 0);
   }
   spin_unlock(&zone->lock);
-
-  bool use_2mb_pages = flags & PE_2MB_SIZE;
-  bool use_1gb_pages = flags & PE_1GB_SIZE;
-  bool use_large_pages = use_2mb_pages | use_1gb_pages;
-  bool force = flags & PE_FORCE;
 
   page_t *first = NULL;
   page_t *last = NULL;

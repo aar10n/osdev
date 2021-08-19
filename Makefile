@@ -84,7 +84,7 @@ clean-all:
 # -------------- #
 
 # USB bootable image
-$(BUILD)/osdev.img: $(BUILD)/bootx64.efi $(BUILD)/kernel.elf $(BUILD)/hello.elf config.ini $(BUILD)/ext2.img
+$(BUILD)/osdev.img: $(BUILD)/bootx64.efi $(BUILD)/kernel.elf config.ini $(BUILD)/ext2.img | sys-all
 	dd if=/dev/zero of=$@ bs=1k count=1440
 	mformat -i $@ -f 1440 -v osdev ::
 	mmd -i $@ ::/EFI
@@ -92,8 +92,6 @@ $(BUILD)/osdev.img: $(BUILD)/bootx64.efi $(BUILD)/kernel.elf $(BUILD)/hello.elf 
 	mcopy -i $@ $(BUILD)/bootx64.efi ::/EFI/boot
 	mcopy -i $@ config.ini ::/EFI/boot
 	mcopy -i $@ $(BUILD)/kernel.elf ::/EFI
-	mcopy -i $@ $(BUILD)/hello.txt ::/
-	mcopy -i $@ $(BUILD)/hello.elf ::/
 
 # EFI Bootloader
 $(BUILD)/bootx64.efi: $(BUILD)/loader.dll
@@ -109,12 +107,6 @@ $(BUILD)/loader.dll: $(boot-y)
 # Kernel
 $(BUILD)/kernel.elf: $(kernel-y) $(fs-y) $(drivers-y) $(lib-y)
 	$(call toolchain,$<,LD) $(call flags,$<,LDFLAGS) $^ -o $@
-
-## Program
-$(BUILD)/hello.elf: $(sys-y) | $(BUILD)/ext2.img
-	$(call toolchain,$<,LD) $(call flags,$<,LDFLAGS) $^ -o $@
-	e2cp $(BUILD)/hello.elf $(BUILD)/ext2.img:/usr/bin/hello
-
 
 .PHONY: sys-all
 sys-all: $(sys-targets) | $(BUILD)/ext2.img
@@ -136,8 +128,6 @@ $(BUILD)/ext2.img: config.ini
 # ------------------- #
 #  Compilation Rules  #
 # ------------------- #
-
-include $(wildcard *.d)
 
 $(BUILD)/apps/%: $(BUILD)/ext2.img
 	e2cp $@ $<:/usr/bin/$(notdir $@)

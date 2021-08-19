@@ -220,12 +220,16 @@ index_t bitmap_get_nfree(bitmap_t *bmp, size_t n) {
  * 0 bits and sets them to 1. If no such region could be found,
  * `-1` is returned.
  */
-index_t bitmap_get_set_nfree(bitmap_t *bmp, size_t n) {
+index_t bitmap_get_set_nfree(bitmap_t *bmp, size_t n, size_t align) {
   if (n > bmp->free) {
+    return -1;
+  } else if ((align & (align - 1)) != 0) {
+    // align must be a power of two
     return -1;
   }
 
   if (n <= 64) {
+    kassert(align == 0);
     // fast case when request is less than 64-bits
     for (size_t i = 0; i < (bmp->size / BYTE_SIZE); i++) {
       register uint64_t qw = ~(bmp->map[i]);
@@ -259,6 +263,10 @@ index_t bitmap_get_set_nfree(bitmap_t *bmp, size_t n) {
       }
     }
   } else {
+    if (align == 0) {
+      align = 1;
+    }
+
     // slow case when request is larger than 64-bits
     // find the start index of enough consecutive 0's
     // to satisfy the requested count
@@ -266,7 +274,7 @@ index_t bitmap_get_set_nfree(bitmap_t *bmp, size_t n) {
     size_t chunk_count = (n / BIT_SIZE) + (n % BIT_SIZE > 0);
     index_t index = -1;
     for (size_t i = 0; i < max_index; i++) {
-      if (bmp->map[i] != 0) {
+      if (bmp->map[i] != 0 || (i * BIT_SIZE) % align != 0) {
         continue;
       }
 
