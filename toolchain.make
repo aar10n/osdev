@@ -121,15 +121,15 @@ mlibc: mlibc-config mlibc-compile mlibc-install
 .PHONY: mlibc-config
 mlibc-config: $(mlibc_dir)/out $(BUILD)/mlibc-cross-file.txt | $(SYS_ROOT)
 	cd $(mlibc_src) && meson --cross-file $(BUILD)/mlibc-cross-file.txt --prefix=$(SYS_ROOT) \
-    	--libdir=lib --buildtype=debug -Dmlibc_no_headers=true $<
+    	--libdir=lib --buildtype=debug -Dmlibc_no_headers=true build
 
 .PHONY: mlibc-compile
 mlibc-compile:
-	cd $(mlibc_dir)/out && ninja
+	cd $(mlibc_src)/build && ninja
 
 .PHONY: mlibc-install
 mlibc-install:
-	cd $(mlibc_dir)/out && ninja install
+	cd $(mlibc_src)/build && ninja install
 
 #
 # mlibc headers

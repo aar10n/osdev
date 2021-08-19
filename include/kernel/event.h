@@ -5,7 +5,13 @@
 #ifndef KERNEL_EVENT_H
 #define KERNEL_EVENT_H
 
+#ifdef __KERNEL__
 #include <base.h>
+#else
+#include <stddef.h>
+#include <stdint.h>
+#include <stdbool.h>
+#endif
 
 // modifiers
 #define L_CONTROL (1 << 0)
@@ -119,9 +125,11 @@ typedef struct {
 } key_event_queue_t;
 
 
+#ifdef __KERNEL__
 void events_init();
 key_event_t *wait_for_key_event();
 void dispatch_key_event(key_event_t *event);
 char key_event_to_character(key_event_t *event);
+#endif
 
 #endif

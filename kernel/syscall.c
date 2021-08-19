@@ -367,6 +367,10 @@ __used int handle_syscall(
   kprintf(">>> %s <<<\n", syscall_names[syscall]);
 
   syscall_t func = syscalls[syscall];
+  if (func == NULL) {
+    panic("not implemented");
+  }
+
   uint64_t result = func(arg0, arg1, arg2, arg3, arg4, arg5);
   if (syscall == SYS_EXIT) {
     kprintf("program exited\n");

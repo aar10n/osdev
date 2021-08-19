@@ -51,10 +51,6 @@ static inline page_t *create_stack(uintptr_t *sp, bool user) {
 
 //
 
-id_t alloc_tid(id_t last_tid) {
-  return atomic_fetch_add(&last_tid, 1);
-}
-
 void *thread_entry(void *(start_routine)(void *), void *arg) {
   void *result = start_routine(arg);
   thread_exit(result);

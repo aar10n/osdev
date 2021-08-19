@@ -43,7 +43,7 @@ file_ops_t zero_file_ops = {
 // stdin
 ssize_t devfs_stdin_read(file_t *file, char *buf, size_t count, off_t *offset) {
   off_t off = 0;
- wait_for_event:;
+  label(wait_for_event);
   key_event_t *event = wait_for_key_event();
   while (event != NULL && off < count) {
     char ch = key_event_to_character(event);
@@ -102,6 +102,39 @@ file_ops_t stderr_file_ops = {
   .write = devfs_stderr_write,
 };
 
+// /dev/events
+ssize_t devfs_events_read(file_t *file, char *buf, size_t count, off_t *offset) {
+  off_t off = 0;
+  label(wait_for_event);
+  key_event_t *event = wait_for_key_event();
+  while (event != NULL && off < count) {
+    if (count - off < sizeof(key_event_t)) {
+      *offset = 0;
+      return 0;
+    }
+
+    memcpy(buf + off, event, sizeof(key_event_t));
+    off += sizeof(key_event_t);
+    event = event->next;
+  }
+
+  if (off == 0) {
+    goto wait_for_event;
+  }
+  *offset = 0;
+  return off;
+}
+ssize_t devfs_events_write(file_t *file, const char *buf, size_t count, off_t *offset) {
+  *offset = 0;
+  return 0;
+}
+
+file_ops_t events_file_ops = {
+  .read = devfs_events_read,
+  .write = devfs_events_write,
+};
+
+
 //
 
 int devfs_post_mount(file_system_t *fs, super_block_t *sb) {
@@ -154,6 +187,14 @@ int devfs_post_mount(file_system_t *fs, super_block_t *sb) {
   kassert(dev_stderr != 0);
   if (fs_mknod("/dev/stderr", S_IFCHR, dev_stderr) < 0) {
     panic("failed to create /dev/stderr");
+  }
+
+  // /dev/events
+  chrdev_t *chrdev_events = chrdev_init(&events_file_ops);
+  dev_t dev_events = fs_register_chrdev(0, chrdev_events, NULL);
+  kassert(dev_events != 0);
+  if (fs_mknod("/dev/events", S_IFCHR, dev_events) < 0) {
+    panic("failed to create /dev/events");
   }
 
   return 0;
