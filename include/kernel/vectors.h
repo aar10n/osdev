@@ -14,8 +14,8 @@
 #define VECTOR_SYSCALL       0x80
 
 // Priority 0x4 - Timer vectors
-#define VECTOR_SCHED_TIMER   0x45
-#define VECTOR_HPET_TIMER    0x44
+#define VECTOR_HPET_TIMER    0x50
+#define VECTOR_SCHED_TIMER   0x44
 #define VECTOR_APIC_LINT1    0x43
 #define VECTOR_APIC_LINT0    0x42
 #define VECTOR_APIC_PERFC    0x41

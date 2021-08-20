@@ -256,7 +256,7 @@ void xhci_setup_devices() {
   // setup devices
   xhci_port_t *port = xhci->ports;
   while (port) {
-    // if (port->number != 3) {
+    // if (port->number == 5) {
     //   port = port->next;
     //   continue;
     // }

@@ -262,6 +262,7 @@ void scheduler_sched(sched_reason_t reason) {
 __used void scheduler_tick() {
   scheduler_t *sched = SCHEDULER;
   sched->timer_event = true;
+  kprintf("!!!tick!!!\n");
   sched_trace_debug("tick");
   if (current_thread == sched->idle && sched->count == 0) {
     // no other threads are available to run so return from the
@@ -307,7 +308,7 @@ void scheduler_init(process_t *root) {
   idt_gate_t gate = gate((uintptr_t) tick_handler, KERNEL_CS, 0, INTERRUPT_GATE, 0, 1);
   idt_set_gate(VECTOR_SCHED_TIMER, gate);
 
-  apic_init_periodic(SCHED_PERIOD);
+  // apic_init_periodic(SCHED_PERIOD);
   sched_trace_debug("done!");
 
   root->main->status = THREAD_RUNNING;

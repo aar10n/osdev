@@ -145,7 +145,7 @@ void *hid_device_init(usb_device_t *dev) {
   kprintf(">>> setting device mode\n");
   dev->mode = USB_DEVICE_POLLING;
   dev->value = 16000;
-  // dev->value = 2000000;
+  // dev->value = 500000;
 
   void *fn_ptr = NULL;
   void *data_ptr = NULL;

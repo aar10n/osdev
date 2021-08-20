@@ -359,12 +359,12 @@ __used int handle_syscall(
   uint64_t arg4,
   uint64_t arg5
 ) {
-  kprintf(">>> syscall %d <<<\n", syscall);
+  // kprintf(">>> syscall %d <<<\n", syscall);
   if (syscall > num_syscalls - 1) {
     kprintf("[syscall] bad syscall %d\n", syscall);
     return -1;
   }
-  kprintf(">>> %s <<<\n", syscall_names[syscall]);
+  // kprintf(">>> %s <<<\n", syscall_names[syscall]);
 
   syscall_t func = syscalls[syscall];
   if (func == NULL) {

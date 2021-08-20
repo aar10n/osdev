@@ -111,6 +111,9 @@ ssize_t devfs_events_read(file_t *file, char *buf, size_t count, off_t *offset) 
     if (count - off < sizeof(key_event_t)) {
       *offset = 0;
       return 0;
+    } else if (event->release) {
+      // don't send key release events
+      break;
     }
 
     memcpy(buf + off, event, sizeof(key_event_t));
