@@ -16,7 +16,7 @@
 #define chunk_mem_start(c) (((uintptr_t)(c)) + sizeof(chunk_t))
 #define is_chunk_aligned(c, a) (chunk_mem_start(c) % (a) == 0)
 
-heap_t *kheap = NULL;
+static heap_t *kheap = NULL;
 static spinlock_t kheap_lock;
 static mutex_t kheap_mutex;
 
@@ -278,6 +278,7 @@ void kfree(void *ptr) {
   aquire_heap();
   chunk_t *chunk = get_chunk(ptr);
   if (chunk->free) {
+    release_heap();
     return;
   }
 
