@@ -298,6 +298,8 @@ ssize_t fs_read(int fd, void *buf, size_t nbytes);
 ssize_t fs_write(int fd, void *buf, size_t nbytes);
 off_t fs_lseek(int fd, off_t offset, int whence);
 
+int fs_dup(int fd);
+int fs_dup2(int fd, int fd2);
 int fs_fcntl(int fd, int cmd, uint64_t arg);
 
 dentry_t *fs_readdir(int fd);

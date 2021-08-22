@@ -23,6 +23,7 @@ file_table_t *copy_file_table(file_table_t *table);
 //
 
 file_t *f_alloc(dentry_t *dentry, int flags);
+file_t *f_dup(file_t *file, int fd);
 void f_release(file_t *file);
 file_t *f_locate(int fd);
 

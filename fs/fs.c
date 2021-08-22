@@ -497,6 +497,43 @@ off_t fs_lseek(int fd, off_t offset, int whence) {
 
 //
 
+
+int fs_dup(int fd) {
+  file_t *file = f_locate(fd);
+  if (file == NULL) {
+    ERRNO = EBADF;
+    return -1;
+  }
+
+  file_t *dup = f_dup(file, -1);
+  if (dup == NULL) {
+    return -1;
+  }
+  return dup->fd;
+}
+
+int fs_dup2(int fd, int fd2) {
+  file_t *file = f_locate(fd);
+  if (file == NULL) {
+    ERRNO = EBADF;
+    return -1;
+  }
+
+  file_t *file2 = f_locate(fd2);
+  if (file2 != NULL) {
+    int result = fs_close(fd2);
+    if (result < 0) {
+      return -1;
+    }
+  }
+
+  file_t *dup = f_dup(file, fd2);
+  if (dup == NULL) {
+    return -1;
+  }
+  return fd2;
+}
+
 int fs_fcntl(int fd, int cmd, uint64_t arg) {
   file_t *file = f_locate(fd);
   if (file == NULL) {

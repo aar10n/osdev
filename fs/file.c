@@ -128,6 +128,36 @@ file_t *f_alloc(dentry_t *dentry, int flags) {
   return file;
 }
 
+file_t *f_dup(file_t *file, int fd) {
+  int new_fd = 0;
+  if (fd == -1) {
+    // allocate new fd
+    spin_lock(&FILES->lock);
+    new_fd = bitmap_get_set_free(FILES->fds);
+    spin_unlock(&FILES->lock);
+  } else {
+    // use given fd
+    spin_lock(&FILES->lock);
+    kassert(bitmap_set(FILES->fds, fd) == 0);
+    spin_unlock(&FILES->lock);
+    new_fd = fd;
+  }
+
+  if (new_fd < 0) {
+    ERRNO = EMFILE;
+    return NULL;
+  }
+
+  file_t *dup = kmalloc(sizeof(file_t));
+  memcpy(dup, file, sizeof(file_t));
+  dup->fd = new_fd;
+
+  spin_lock(&FILES->lock);
+  rb_tree_insert(FILES->files, new_fd, file);
+  spin_unlock(&FILES->lock);
+  return dup;
+}
+
 void f_release(file_t *file) {
   spin_lock(&FILES->lock);
   bitmap_clear(FILES->fds, file->fd);

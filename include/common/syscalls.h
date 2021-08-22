@@ -54,6 +54,8 @@
 #define SYS_KILL 44
 #define SYS_SIGNAL 45
 #define SYS_SIGACTION 46
+#define SYS_DUP 47
+#define SYS_DUP2 48
 
 #define _syscall(call, ...) __syscall(call, ##__VA_ARGS__)
 

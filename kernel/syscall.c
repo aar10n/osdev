@@ -68,6 +68,8 @@ const char *syscall_names[] = {
   [SYS_KILL] = "SYS_KILL",
   [SYS_SIGNAL] = "SYS_SIGNAL",
   [SYS_SIGACTION] = "SYS_SIGACTION",
+  [SYS_DUP] = "SYS_DUP",
+  [SYS_DUP2] = "SYS_DUP2",
 };
 
 
@@ -297,7 +299,6 @@ static void sys_log(const char *message) {
   kprintf("%s\n", message);
 }
 
-// SYS_KILL
 static int sys_kill(pid_t pid, int sig) {
   int result = signal_getaction(pid, sig, NULL);
   if (result < 0) {
@@ -311,7 +312,6 @@ static int sys_kill(pid_t pid, int sig) {
   return 0;
 }
 
-// SYS_SIGNAL
 static int sys_signal(int sig, void (*func)(int)) {
   int result = signal_getaction(current_process->pid, sig, NULL);
   if (result < 0) {
@@ -331,6 +331,23 @@ static int sys_signal(int sig, void (*func)(int)) {
 }
 
 // SYS_SIGACTION
+
+static int sys_dup(int fd) {
+  int result = fs_dup(fd);
+  if (result < 0) {
+    return -ERRNO;
+  }
+  return result;
+}
+
+// SYS_DUP2
+static int sys_dup2(int fd, int fd2) {
+  int result = fs_dup2(fd, fd2);
+  if (result < 0) {
+    return -ERRNO;
+  }
+  return result;
+}
 
 //
 
@@ -382,6 +399,8 @@ static syscall_t syscalls[] = {
   [SYS_KILL] = to_syscall(sys_kill),
   [SYS_SIGNAL] = to_syscall(sys_signal),
   [SYS_SIGACTION] = NULL,
+  [SYS_DUP] = to_syscall(sys_dup),
+  [SYS_DUP2] = to_syscall(sys_dup2),
 };
 static int num_syscalls = sizeof(syscalls) / sizeof(void *);
 
