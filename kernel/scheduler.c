@@ -50,7 +50,7 @@ static const char *status_str[] = {
   [THREAD_KILLED] = "THREAD_KILLED"
 };
 
-static process_t *ptable[PTABLE_SIZE] = {};
+static process_t *ptable[MAX_PROCS] = {};
 static size_t ptable_size = 0;
 static spinlock_t ptable_lock =  {
   .locked = 0,
@@ -327,7 +327,7 @@ int scheduler_add(thread_t *thread) {
   }
 
   spin_lock(&ptable_lock);
-  if (ptable_size == PTABLE_SIZE) {
+  if (ptable_size == MAX_PROCS) {
     panic("[scheduler] process table is full");
   } else if (ptable[process->pid] == NULL) {
     ptable[process->pid] = process;
@@ -427,6 +427,13 @@ sched_policy_t *scheduler_get_policy(uint8_t policy) {
     return NULL;
   }
   return SCHEDULER->policies[policy];
+}
+
+process_t *scheduler_get_process(pid_t pid) {
+  if (pid >= MAX_PROCS || pid < 0) {
+    return NULL;
+  }
+  return ptable[pid];
 }
 
 //

@@ -26,6 +26,7 @@ typedef uint32_t mode_t;     // Used for some file attributes.
 typedef uint16_t nlink_t;    // Used for link counts.
 typedef int64_t off_t;       // Used for file sizes.
 typedef int32_t pid_t;       // Used for process IDs and process group IDs.
+typedef uint64_t sigset_t;   // Used for signal bit sets.
 /* pthread typedefs */
 typedef uint64_t size_t;     // Used for sizes of objects.
 typedef int64_t ssize_t;     // Used for a count of bytes or an error indication.

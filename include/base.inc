@@ -46,10 +46,11 @@
 ; thread offsets
 %define THREAD_ID        0x00
 %define THREAD_CTX       0x08
-%define THREAD_PROCESS   0x10
-%define THREAD_TLS_BLCK  0x18
-%define THREAD_KERNEL_SP 0x20
-%define THREAD_USER_SP   0x28
+%define THREAD_META_CTX  0x10
+%define THREAD_PROCESS   0x18
+%define THREAD_TLS_BLCK  0x20
+%define THREAD_KERNEL_SP 0x28
+%define THREAD_USER_SP   0x30
 
 ; tls offsets
 %define TLS_BASE_ADDR    0x00

@@ -39,7 +39,7 @@ typedef struct {
   page_t *pages;  // pages used for tls
 } tls_block_t;
 
-typedef struct {
+typedef struct thread_ctx {
   uint64_t rax;    // 0x00
   uint64_t rbx;    // 0x00
   uint64_t rbp;    // 0x08
@@ -55,34 +55,43 @@ typedef struct {
   uint64_t ss;     // 0x50
 } thread_ctx_t;
 
+typedef struct thread_meta_ctx {
+  thread_ctx_t ctx;            // thread contex
+  uintptr_t kernel_sp;         // kernel stack pointer
+  uintptr_t user_sp;           // user stack pointer
+  thread_status_t status;      // thread status
+  int errno;                   // thread local errno
+} thread_meta_ctx_t;
+
 typedef struct thread {
-  id_t tid;                   // thread id
-  uint32_t reserved;          // reserved
-  thread_ctx_t *ctx;          // thread context
-  process_t *process;         // owning process
-  tls_block_t *tls;           // thread local storage
-  uintptr_t kernel_sp;        // kernel stack pointer
-  uintptr_t user_sp;          // user stack pointer
+  id_t tid;                    // thread id
+  uint32_t reserved;           // reserved
+  thread_ctx_t *ctx;           // thread context
+  thread_meta_ctx_t *mctx;     // thread meta context
+  process_t *process;          // owning process
+  tls_block_t *tls;            // thread local storage
+  uintptr_t kernel_sp;         // kernel stack pointer
+  uintptr_t user_sp;           // user stack pointer
 
-  uint8_t cpu_id;             // current/last cpu used
-  uint8_t policy;             // thread scheduling policy
-  uint16_t priority;          // thread priority
-  thread_status_t status;     // thread status
+  uint8_t cpu_id;              // current/last cpu used
+  uint8_t policy;              // thread scheduling policy
+  uint16_t priority;           // thread priority
+  thread_status_t status;      // thread status
 
-  mutex_t mutex;              // thread mutex
-  cond_t data_ready;          // thread data ready condition
-  uint32_t signal;            // signal mask
-  uint32_t flags;             // flags mask
+  mutex_t mutex;               // thread mutex
+  cond_t data_ready;           // thread data ready condition
+  sigset_t signal;             // signal mask
+  uint32_t flags;              // thread flags
 
-  int errno;                  // thread local errno
-  int preempt_count;          // preempt disable counter
-  void *data;                 // thread data pointer
+  int errno;                   // thread local errno
+  int preempt_count;           // preempt disable counter
+  void *data;                  // thread data pointer
 
-  page_t *kernel_stack;       // kernel stack pages
-  page_t *user_stack;         // user stack pages
+  page_t *kernel_stack;        // kernel stack pages
+  page_t *user_stack;          // user stack pages
 
-  LIST_ENTRY(thread_t) group; // thread group
-  LIST_ENTRY(thread_t) list;  // thread list
+  LIST_ENTRY(thread_t) group;  // thread group
+  LIST_ENTRY(thread_t) list;   // thread list
 } thread_t;
 
 thread_t *thread_alloc(id_t tid, void *(start_routine)(void *), void *arg);

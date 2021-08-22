@@ -24,7 +24,6 @@
 
 #define SCHED_PERIOD   500
 #define SCHED_POLICIES 2
-#define PTABLE_SIZE    1024
 #define SCHED_QUEUES   4
 
 typedef enum {
@@ -101,6 +100,7 @@ int scheduler_yield();
 int scheduler_sleep(uint64_t ns);
 
 sched_policy_t *scheduler_get_policy(uint8_t policy);
+process_t *scheduler_get_process(pid_t pid);
 
 void preempt_disable();
 void preempt_enable();

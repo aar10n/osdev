@@ -125,11 +125,11 @@ mlibc-config: $(mlibc_dir)/out $(BUILD)/mlibc-cross-file.txt | $(SYS_ROOT)
 
 .PHONY: mlibc-compile
 mlibc-compile:
-	cd $(mlibc_src)/build && ninja
+	cd $(mlibc_dir)/out && ninja
 
 .PHONY: mlibc-install
 mlibc-install:
-	cd $(mlibc_src)/build && ninja install
+	cd $(mlibc_dir)/out && ninja install
 
 #
 # mlibc headers

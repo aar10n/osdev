@@ -9,6 +9,7 @@
 #include <process.h>
 #include <thread.h>
 #include <fs.h>
+#include <signal.h>
 #include <panic.h>
 
 extern void syscall_handler();
@@ -64,7 +65,10 @@ const char *syscall_names[] = {
   [SYS_SET_FS_BASE] = "SYS_SET_FS_BASE",
   [SYS_PANIC] = "SYS_PANIC",
   [SYS_LOG] = "SYS_LOG",
-  };
+  [SYS_KILL] = "SYS_KILL",
+  [SYS_SIGNAL] = "SYS_SIGNAL",
+  [SYS_SIGACTION] = "SYS_SIGACTION",
+};
 
 
 static int sys_exit(int ret) {
@@ -293,11 +297,46 @@ static void sys_log(const char *message) {
   kprintf("%s\n", message);
 }
 
+// SYS_KILL
+static int sys_kill(pid_t pid, int sig) {
+  int result = signal_getaction(pid, sig, NULL);
+  if (result < 0) {
+    return -ERRNO;
+  }
+
+  result = signal_send(pid, sig, (sigval_t){ 0 });
+  if (result < 0) {
+    return -ERRNO;
+  }
+  return 0;
+}
+
+// SYS_SIGNAL
+static int sys_signal(int sig, void (*func)(int)) {
+  int result = signal_getaction(current_process->pid, sig, NULL);
+  if (result < 0) {
+    return -ERRNO;
+  }
+
+  sigaction_t action = {
+    .sa_flags = 0,
+    .sa_mask = 0,
+    .sa_handler = func,
+  };
+  result = signal_setaction(current_process->pid, sig, SIG_ACTION, &action);
+  if (result < 0) {
+    return -ERRNO;
+  }
+  return 0;
+}
+
+// SYS_SIGACTION
+
 //
 
 static syscall_t syscalls[] = {
   [SYS_EXIT] = to_syscall(sys_exit),
-  [SYS_EXEC] = to_syscall(process_execve),
+  [SYS_EXEC] = to_syscall(sys_execve),
   [SYS_OPEN] = to_syscall(sys_open),
   [SYS_CLOSE] = to_syscall(sys_close),
   [SYS_READ] = to_syscall(sys_read),
@@ -340,6 +379,9 @@ static syscall_t syscalls[] = {
   [SYS_SET_FS_BASE] = to_syscall(sys_set_fs_base),
   [SYS_PANIC] = to_syscall(sys_panic),
   [SYS_LOG] = to_syscall(sys_log),
+  [SYS_KILL] = to_syscall(sys_kill),
+  [SYS_SIGNAL] = to_syscall(sys_signal),
+  [SYS_SIGACTION] = NULL,
 };
 static int num_syscalls = sizeof(syscalls) / sizeof(void *);
 
@@ -359,12 +401,12 @@ __used int handle_syscall(
   uint64_t arg4,
   uint64_t arg5
 ) {
-  // kprintf(">>> syscall %d <<<\n", syscall);
+  kprintf(">>> syscall %d <<<\n", syscall);
   if (syscall > num_syscalls - 1) {
     kprintf("[syscall] bad syscall %d\n", syscall);
     return -1;
   }
-  // kprintf(">>> %s <<<\n", syscall_names[syscall]);
+  kprintf(">>> %s <<<\n", syscall_names[syscall]);
 
   syscall_t func = syscalls[syscall];
   if (func == NULL) {

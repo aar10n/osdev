@@ -26,10 +26,11 @@
 ; thread offsets
 %define THREAD_ID        0x00
 %define THREAD_CTX       0x08
-%define THREAD_PROCESS   0x10
-%define THREAD_TLS_BLCK  0x18
-%define THREAD_KERNEL_SP 0x20
-%define THREAD_USER_SP   0x28
+%define THREAD_META_CTX  0x10
+%define THREAD_PROCESS   0x18
+%define THREAD_TLS_BLCK  0x20
+%define THREAD_KERNEL_SP 0x28
+%define THREAD_USER_SP   0x30
 
 ; tls offsets
 %define TLS_BASE_ADDR    0x00
@@ -163,7 +164,6 @@ thread_switch:
   sti
   iretq
 
-
 ; fast path to return to current thread
 ; void thread_continue()
 global thread_continue
@@ -180,3 +180,20 @@ thread_continue:
   pop r15
 
   iretq
+
+; sysret to signal handler
+; void thread_sighandle(uintptr_t fn, uintptr_t rsp)
+global thread_sighandle
+thread_sighandle:
+  mov KERNEL_SP, rsp
+  mov rsp, USER_SP
+  swapgs
+
+  mov rcx, rdi ; rip
+  mov rsp, rsi ; rsp
+  mov r11, 0   ; rflags
+
+  pop qword rsi
+  pop qword rdi
+  pop qword rdx
+  o64 sysret

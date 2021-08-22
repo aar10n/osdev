@@ -9,51 +9,33 @@
 #include <fs.h>
 #include <queue.h>
 
-#define DEFAULT_RFLAGS 0x246
-#define PROC_STACK_SIZE 0x2000
-
-typedef enum {
-  PROC_READY,
-  PROC_RUNNING,
-  PROC_BLOCKED,
-  PROC_SLEEPING,
-  PROC_KILLED
-} proc_status_t;
+#define MAX_PROCS       1024
+#define DEFAULT_RFLAGS  0x246
 
 typedef struct vm vm_t;
 typedef struct thread thread_t;
 typedef struct file_table file_table_t;
 typedef struct process process_t;
-
-typedef struct {
-  uint64_t rax;    // 0x00
-  uint64_t rbx;    // 0x00
-  uint64_t rbp;    // 0x08
-  uint64_t r12;    // 0x10
-  uint64_t r13;    // 0x18
-  uint64_t r14;    // 0x20
-  uint64_t r15;    // 0x28
-  //
-  uint64_t rip;    // 0x30
-  uint64_t cs;     // 0x38
-  uint64_t rflags; // 0x40
-  uint64_t rsp;    // 0x48
-  uint64_t ss;     // 0x50
-} context_t;
+typedef struct signal signal_t;
+typedef struct sig_handler sig_handler_t;
 
 typedef struct process {
-  pid_t pid;                   // process id
-  pid_t ppid;                  // parent pid
-  vm_t *vm;                    // virtual memory space
+  pid_t pid;                     // process id
+  pid_t ppid;                    // parent pid
+  vm_t *vm;                      // virtual memory space
 
-  uid_t uid;                   // user id
-  gid_t gid;                   // group id
-  dentry_t **pwd;              // process working directory
-  file_table_t *files;         // open file table
+  uid_t uid;                     // user id
+  gid_t gid;                     // group id
+  dentry_t **pwd;                // process working directory
+  file_table_t *files;           // open file table
 
-  thread_t *main;              // main thread
-  LIST_HEAD(thread_t) threads; // process threads (group)
-  LIST_HEAD(process_t) list;   // process list
+  mutex_t sig_mutex;             // signal mutex
+  sig_handler_t **sig_handlers;  // signal handlers
+  thread_t **sig_threads;        // signal handling threads
+
+  thread_t *main;                // main thread
+  LIST_HEAD(thread_t) threads;   // process threads (group)
+  LIST_HEAD(process_t) list;     // process list
 } process_t;
 
 process_t *create_root_process(void (function)());
@@ -67,6 +49,8 @@ pid_t getppid();
 id_t gettid();
 uid_t getuid();
 gid_t getgid();
+
+thread_t *process_get_sigthread(process_t *process, int sig);
 
 void print_debug_process(process_t *process);
 

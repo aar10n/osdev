@@ -8,7 +8,7 @@
 #include <panic.h>
 #include <process.h>
 #include <scheduler.h>
-#include <atomic.h>
+#include <signal.h>
 #include <mutex.h>
 #include <mm.h>
 
@@ -51,7 +51,7 @@ static inline page_t *create_stack(uintptr_t *sp, bool user) {
 
 //
 
-void *thread_entry(void *(start_routine)(void *), void *arg) {
+__used void *thread_entry(void *(start_routine)(void *), void *arg) {
   void *result = start_routine(arg);
   thread_exit(result);
   return NULL;
@@ -83,6 +83,10 @@ thread_t *thread_alloc(id_t tid, void *(start_routine)(void *), void *arg) {
   ctx->rflags = DEFAULT_RFLAGS;
   ctx->rsp = kernel_sp;
 
+  // create thread meta context
+  thread_meta_ctx_t *mctx = kmalloc(sizeof(thread_meta_ctx_t));
+  memset(mctx, 0, sizeof(thread_meta_ctx_t));
+
   // create thread local storage block but don't
   // allocate space for tls data until its requested
   tls_block_t *tls = kmalloc(sizeof(tls_block_t));
@@ -92,13 +96,16 @@ thread_t *thread_alloc(id_t tid, void *(start_routine)(void *), void *arg) {
 
   thread->tid = tid;
   thread->ctx = ctx;
+  thread->mctx = mctx;
   thread->tls = tls;
   thread->kernel_sp = kernel_sp;
   thread->user_sp = user_sp;
   thread->status = THREAD_READY;
   thread->policy = SCHED_SYSTEM;
+
   thread->kernel_stack = kernel_stack;
   thread->user_stack = user_stack;
+
   mutex_init(&thread->mutex, MUTEX_LOCKED);
   cond_init(&thread->data_ready, 0);
   return thread;
@@ -116,6 +123,8 @@ thread_t *thread_copy(thread_t *other) {
 
   // copy the context
   memcpy(thread->ctx, other->ctx, sizeof(thread_ctx_t));
+  // copy the meta context
+  memcpy(thread->mctx, other->mctx, sizeof(thread_meta_ctx_t));
   // copy the tls block
   memcpy(thread->tls, other->tls, sizeof(tls_block_t));
 

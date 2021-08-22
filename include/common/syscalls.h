@@ -51,6 +51,9 @@
 #define SYS_SET_FS_BASE 41
 #define SYS_PANIC 42
 #define SYS_LOG 43
+#define SYS_KILL 44
+#define SYS_SIGNAL 45
+#define SYS_SIGACTION 46
 
 #define _syscall(call, ...) __syscall(call, ##__VA_ARGS__)
 

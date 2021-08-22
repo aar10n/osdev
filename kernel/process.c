@@ -7,6 +7,7 @@
 #include <string.h>
 #include <atomic.h>
 #include <thread.h>
+#include <signal.h>
 
 #include <mm/heap.h>
 #include <mm/mm.h>
@@ -18,15 +19,17 @@
 
 #include <printf.h>
 #include <panic.h>
+#include <bitmap.h>
 
-#define PROCESS_DEBUG
+// #define PROCESS_DEBUG
 #ifdef PROCESS_DEBUG
 #define proc_trace_debug(str, args...) kprintf("[process] " str "\n", ##args)
 #else
 #define proc_trace_debug(str, args...)
 #endif
 
-static uint64_t __pid = 0;
+static bitmap_t *pid_nums = NULL;
+static spinlock_t pid_nums_lock;
 
 static inline int ptr_list_len(const uintptr_t *list) {
   if (list == NULL) {
@@ -41,8 +44,16 @@ static inline int ptr_list_len(const uintptr_t *list) {
   return count;
 }
 
-uint64_t alloc_pid() {
-  return atomic_fetch_add(&__pid, 1);
+pid_t alloc_pid() {
+  if (pid_nums == NULL) {
+    pid_nums = create_bitmap(MAX_PROCS);
+  }
+
+  spin_lock(&pid_nums_lock);
+  index_t pid = bitmap_get_set_free(pid_nums);
+  spin_unlock(&pid_nums_lock);
+  kassert(pid >= 0);
+  return (pid_t) pid;
 }
 
 noreturn void *root_process_wrapper(void *root_fn) {
@@ -67,6 +78,13 @@ process_t *process_alloc(pid_t pid, pid_t ppid, void *(start_routine)(void *), v
   process->gid = -1;
   process->pwd = &fs_root;
   process->files = create_file_table();
+
+  mutex_init(&process->sig_mutex, MUTEX_REENTRANT);
+  process->sig_handlers = kmalloc(NSIG * sizeof(uintptr_t));
+  memset(process->sig_handlers, 0, NSIG * sizeof(uintptr_t));
+  process->sig_threads = kmalloc(NSIG * sizeof(uintptr_t));
+  memset(process->sig_threads, 0, NSIG * sizeof(uintptr_t));
+  signal_init_handlers(process);
 
   thread_t *main = thread_alloc(0, start_routine, arg);
   main->process = process;
@@ -243,7 +261,29 @@ gid_t getgid() {
   return current_process->gid;
 }
 
+//
 
+thread_t *process_get_sigthread(process_t *process, int sig) {
+  kassert(sig > 0 && sig < NSIG);
+
+  thread_t *handler = process->sig_threads[sig];
+  if (handler) {
+    if (!sig_masked(handler, sig)) {
+      return handler;
+    }
+    process->sig_threads[sig] = NULL;
+  }
+
+  handler = LIST_FIRST(&process->threads);
+  while (handler != NULL) {
+    if (!sig_masked(handler, sig)) {
+      process->sig_threads[sig] = handler;
+      return handler;
+    }
+    handler = LIST_NEXT(handler, group);
+  }
+  return NULL;
+}
 
 //
 
