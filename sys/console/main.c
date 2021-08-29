@@ -9,7 +9,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <osdev/event.h>
-
+#include <ui.h>
 
 int main(int argc, const char **argv) {
   int events = open("/dev/events", O_RDONLY);
@@ -22,6 +22,9 @@ int main(int argc, const char **argv) {
   if (framebuf < 0) {
     fprintf(stderr, "failed to open /dev/fb0: %s\n", strerror(errno));
   }
+
+  int result = ui_test(5);
+  printf("result = %d\n", result);
 
   key_event_t event;
   while ((read(events, &event, sizeof(key_event_t))) > 0) {

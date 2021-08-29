@@ -67,8 +67,23 @@ clean:
 	rm -f $(BUILD)/*.efi
 	rm -f $(BUILD)/*.elf
 	rm -rf $(BUILD_DIR)
-	rm -rf $(BUILD)/apps
 	mkdir $(BUILD_DIR)
+
+.PHONY: clean-kernel
+clean-kernel:
+	rm -f $(BUILD)/*.efi
+	rm -f $(BUILD)/*.elf
+	rm -rf $(BUILD_DIR)
+	mkdir $(BUILD_DIR)
+
+.PHONY: clean-sys
+clean-sys:
+	rm -rf $(BUILD_DIR)/sys
+	mkdir $(BUILD_DIR)/sys
+	rm -rf $(BUILD)/apps
+	rm -rf $(BUILD)/libs
+	mkdir $(BUILD)/apps
+	mkdir $(BUILD)/libs
 
 .PHONY: clean-all
 clean-all:
@@ -84,7 +99,7 @@ clean-all:
 # -------------- #
 
 # USB bootable image
-$(BUILD)/osdev.img: $(BUILD)/bootx64.efi $(BUILD)/kernel.elf config.ini $(BUILD)/ext2.img | sys-all sys-install
+$(BUILD)/osdev.img: $(BUILD)/bootx64.efi $(BUILD)/kernel.elf config.ini $(BUILD)/ext2.img | sys-install
 	dd if=/dev/zero of=$@ bs=1k count=1440
 	mformat -i $@ -f 1440 -v osdev ::
 	mmd -i $@ ::/EFI

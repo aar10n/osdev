@@ -35,9 +35,9 @@ prefix = patsubst([$2],[\s*])
 prefix[]-y = $(call objects,prefix,$(BUILD_DIR)/target)
 prefix[]-targets += $(BUILD)/apps/$1
 target[]-targets += prefix
-$(BUILD)/apps/$1: $(prefix[]-y)
+$(BUILD)/apps/$1: $(prefix[]-y) | $(prefix[]-deps)
 	@mkdir -p $(@D)
-	$(call toolchain,$<,LD) $(call flags,$<,LDFLAGS) $^ -o $[]@ dnl
+	$(call toolchain,$<,LD) $(call flags,$<,LDFLAGS) $(prefix[]-libs) $^ -o $[]@ dnl
 divert(1)prefix divert[]dnl
 ])
 
@@ -99,6 +99,20 @@ prefix[]-install: $(prefix[]-targets)
 	@scripts/copy-sysroot.sh $(SYS_ROOT) $(foreach t,$^,$(t):libdir)
 	@scripts/copy-sysroot.sh $(SYS_ROOT) $(foreach t,$(prefix[]-headers),$(t):includedir)dnl
 divert(2)prefix divert[]dnl
+])
+
+dnl # link_library(<name>, <library>, [static])
+define([link_library], [dnl
+  ifdef([target], dnl
+    [define([prefix], target[-]$1[]) define([_prefix], target[]-)], dnl
+    [define([target], []) define([prefix], $1) define([_prefix], [])] dnl
+  )dnl
+  ifelse(regexp([libgui], [lib*]), -1, dnl
+    [define([libname], [lib[]$2]) define([shortname], [$2])], dnl
+    [define([libname], [$2]) define([shortname], [substr([$2], 3)])] dnl
+  )
+prefix[]-deps += _prefix[]libname[]-install
+prefix[]-libs += -l[]ifelse([$3], [static], [:libname.a], [shortname])
 ])
 
 dnl # generate_targets()

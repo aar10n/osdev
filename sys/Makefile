@@ -10,15 +10,19 @@ CFLAGS-sys = -gdwarf -g3 -O0 -Wall
 LDFLAGS-sys = -g3
 INCLUDE-sys = -Iinclude/sys
 
+                 
+sys-console-deps += sys-libgui-install
+sys-console-libs += -lgui
+
   
 # console
 sys-console = console/main.c
 sys-console-y = $(call objects,sys-console,$(BUILD_DIR)/sys)
 sys-console-targets += $(BUILD)/apps/console
 sys-targets += sys-console
-$(BUILD)/apps/console: $(sys-console-y)
+$(BUILD)/apps/console: $(sys-console-y) | $(sys-console-deps)
 	@mkdir -p $(@D)
-	$(call toolchain,$<,LD) $(call flags,$<,LDFLAGS) $^ -o $@    
+	$(call toolchain,$<,LD) $(call flags,$<,LDFLAGS) $(sys-console-libs) $^ -o $@    
     
 .PHONY: sys-console-install
 sys-console-install: $(sys-console-targets)
@@ -31,9 +35,9 @@ sys-hello = hello/main.c
 sys-hello-y = $(call objects,sys-hello,$(BUILD_DIR)/sys)
 sys-hello-targets += $(BUILD)/apps/hello
 sys-targets += sys-hello
-$(BUILD)/apps/hello: $(sys-hello-y)
+$(BUILD)/apps/hello: $(sys-hello-y) | $(sys-hello-deps)
 	@mkdir -p $(@D)
-	$(call toolchain,$<,LD) $(call flags,$<,LDFLAGS) $^ -o $@    
+	$(call toolchain,$<,LD) $(call flags,$<,LDFLAGS) $(sys-hello-libs) $^ -o $@    
     
 .PHONY: sys-hello-install
 sys-hello-install: $(sys-hello-targets)
@@ -54,13 +58,12 @@ $(BUILD)/libs/libgui.so: $(sys-libgui-y)
 	@mkdir -p $(@D)
 	$(call toolchain,$<,LD) $(call flags,$<,LDFLAGS) $^ -shared -o $@
         
-  
 .PHONY: sys-libgui-install
 sys-libgui-install: $(sys-libgui-targets)
-	@mkdir -p $(SYS_ROOT)/usr/lib/gui
-	@mkdir -p $(SYS_ROOT)/usr/include/gui
-	@scripts/copy-sysroot.sh $(SYS_ROOT) $(foreach t,$^,$(t):/usr/lib/gui)
-	@scripts/copy-sysroot.sh $(SYS_ROOT) $(foreach t,$(sys-libgui-headers),$(t):/usr/include/gui)
+	@mkdir -p $(SYS_ROOT)/usr/lib/
+	@mkdir -p $(SYS_ROOT)/usr/include/
+	@scripts/copy-sysroot.sh $(SYS_ROOT) $(foreach t,$^,$(t):/usr/lib/)
+	@scripts/copy-sysroot.sh $(SYS_ROOT) $(foreach t,$(sys-libgui-headers),$(t):/usr/include/)
 
   
 # targets

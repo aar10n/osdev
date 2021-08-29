@@ -12,6 +12,7 @@ override(CFLAGS, -gdwarf -g3 -O0 -Wall)
 override(LDFLAGS, -g3)
 override(INCLUDE, -Iinclude/sys)
 
+link_library(console, libgui)
 add_executable(console, console/main.c) dnl
 install_executable(console, /)
 
@@ -19,7 +20,7 @@ add_executable(hello, hello/main.c) dnl
 install_executable(hello, /usr)
 
 add_library(libgui, libgui/ui.c, libgui/ui.h, static|dynamic) dnl
-install_library(libgui, /usr, gui)
+install_library(libgui, /usr)
 
 generate_targets()
 generate_install_targets()
