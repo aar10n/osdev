@@ -36,7 +36,6 @@ sources = $(patsubst %.o,%,$1)
 target-objects = $(foreach t,$1,$(call objects,$t,$2))
 
 source_file = $(patsubst %.o,%,$(subst $(BUILD_DIR)/,,$1))
-programs = $(patsubst %,$(BUILD)/apps/%,$1)
 all-paths = $(shell ./scripts/paths.sh $(dir $1))
 to-prefixes = $(subst /,-,$(call all-paths,$1))
 
@@ -63,6 +62,3 @@ toolchain = $(firstword $(foreach prefix,$(call to-prefixes,$(call source_file,$
 
 # Returns the specified flags for a given file.
 flags = $(subst \,,$(shell echo '$(call _flags,$(call source_file,$1),$2)' | sed -f scripts/first-group.sed))
-
-# Returns the header dependencies for a given file.
-headers = $($(call normalized_top_dir,$1)-headers)

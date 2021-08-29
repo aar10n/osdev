@@ -31,8 +31,8 @@ QEMUFLAGS = \
 	-device usb-storage,drive=stick,bus=xhci.0 \
 	-trace events=$(BUILD)/traces
 
-include scripts/Makefile.toolchain
-include scripts/Makefile.util
+include scripts/toolchain.make
+include scripts/utils.make
 
 # --------- #
 #  Targets  #
@@ -84,7 +84,7 @@ clean-all:
 # -------------- #
 
 # USB bootable image
-$(BUILD)/osdev.img: $(BUILD)/bootx64.efi $(BUILD)/kernel.elf config.ini $(BUILD)/ext2.img | sys-all
+$(BUILD)/osdev.img: $(BUILD)/bootx64.efi $(BUILD)/kernel.elf config.ini $(BUILD)/ext2.img | sys-all sys-install
 	dd if=/dev/zero of=$@ bs=1k count=1440
 	mformat -i $@ -f 1440 -v osdev ::
 	mmd -i $@ ::/EFI
@@ -109,10 +109,11 @@ $(BUILD)/kernel.elf: $(kernel-y) $(fs-y) $(drivers-y) $(lib-y)
 	$(call toolchain,$<,LD) $(call flags,$<,LDFLAGS) $^ -o $@
 
 .PHONY: sys-all
-sys-all: $(sys-targets) | $(BUILD)/ext2.img
-	for target in $(sys-targets); do \
-  		e2cp $${target} $(BUILD)/ext2.img:/usr/bin/`basename $${target}`; \
-  	done
+sys-all: $(sys-targets)
+
+.PHONY: sys-install
+sys-install: $(sys-install-targets)
+
 
 # External Data
 
