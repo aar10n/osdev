@@ -10,3 +10,9 @@
 [submodule "third-party/mlibc"]
 	path = third-party/mlibc
 	url = https://github.com/managarm/mlibc.git
+[submodule "third-party/harfbuzz"]
+	path = third-party/harfbuzz
+	url = https://github.com/harfbuzz/harfbuzz.git
+[submodule "third-party/freetype"]
+	path = third-party/freetype
+	url = https://gitlab.freedesktop.org/freetype/freetype.git

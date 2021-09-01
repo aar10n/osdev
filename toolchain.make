@@ -121,7 +121,7 @@ mlibc: mlibc-config mlibc-compile mlibc-install
 .PHONY: mlibc-config
 mlibc-config: $(mlibc_dir)/out $(BUILD)/mlibc-cross-file.txt | $(SYS_ROOT)
 	cd $(mlibc_src) && meson --cross-file $(BUILD)/mlibc-cross-file.txt --prefix=$(SYS_ROOT) \
-    	--libdir=lib --buildtype=debug -Dmlibc_no_headers=true build
+    	--libdir=lib --buildtype=debug -Dmlibc_no_headers=true $<
 
 .PHONY: mlibc-compile
 mlibc-compile:
@@ -140,7 +140,7 @@ mlibc-headers: mlibc-headers-config mlibc-headers-install
 
 .PHONY: mlibc-headers-config
 mlibc-headers-config: $(mlibc_dir)/headers $(BUILD)/mlibc-cross-file.txt | $(SYS_ROOT)
-	cd $(mlibc_src) && meson --cross-file $(BUILD)/mlibc-cross-file.txt --prefix=$(PREFIX)/usr \
+	cd $(mlibc_src) && meson --cross-file $(BUILD)/mlibc-cross-file.txt --prefix=$(PREFIX) \
 		-Dheaders_only=true $<
 
 .PHONY: mlibc-headers-install
@@ -153,7 +153,7 @@ mlibc-headers-install:
 #
 
 $(BUILD)/mlibc-cross-file.txt: scripts/mlibc-cross-file.m4
-	m4 $< -DPREFIX=$(SYS_ROOT)/bin > $@
+	m4 -DPREFIX=$(SYS_ROOT)/bin $< > $@
 
 $(SYS_ROOT):
 	@mkdir -p $@

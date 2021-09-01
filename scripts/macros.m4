@@ -33,11 +33,12 @@ define([add_executable], [dnl
 # $1
 prefix = patsubst([$2],[\s*])
 prefix[]-y = $(call objects,prefix,$(BUILD_DIR)/target)
+INCLUDE-prefix += $(INCLUDE-target)
 prefix[]-targets += $(BUILD)/apps/$1
 target[]-targets += prefix
 $(BUILD)/apps/$1: $(prefix[]-y) | $(prefix[]-deps)
 	@mkdir -p $(@D)
-	$(call toolchain,$<,LD) $(call flags,$<,LDFLAGS) $(prefix[]-libs) $^ -o $[]@ dnl
+	$(call toolchain,$<,LD) $(call flags,$<,LDFLAGS) $^ $(prefix[]-libs) -o $[]@ dnl
 divert(1)prefix divert[]dnl
 ])
 
@@ -51,6 +52,7 @@ define([add_library], [dnl
 prefix = patsubst([$2],[\s*])
 prefix[]-headers = $([patsubst] %, target/%, patsubst([$3],[\s*]))
 prefix[]-y = $(call objects,prefix,$(BUILD_DIR)/target)
+INCLUDE-prefix += $(INCLUDE-target)
 ifelse(list_contains([$4], [|], static), 1, dnl
 prefix[]-targets += $(BUILD)/libs/$1.a
 $(BUILD)/libs/$1.a: $(prefix[]-y)
@@ -77,7 +79,7 @@ define([install_executable], [dnl
 .PHONY: prefix[]-install
 prefix[]-install: $(prefix[]-targets)
 	@mkdir -p $(SYS_ROOT)[]bindir
-	@scripts/copy-sysroot.sh $(SYS_ROOT) $(foreach t,$^,$(t):bindir)dnl
+	@scripts/copy-sysroot.sh $(SYS_ROOT) $(BUILD) $(foreach t,$^,$(t):bindir)dnl
 divert(2)prefix divert[]dnl
 ])
 
@@ -96,30 +98,39 @@ define([install_library], [dnl
 prefix[]-install: $(prefix[]-targets)
 	@mkdir -p $(SYS_ROOT)[]libdir
 	@mkdir -p $(SYS_ROOT)[]includedir
-	@scripts/copy-sysroot.sh $(SYS_ROOT) $(foreach t,$^,$(t):libdir)
-	@scripts/copy-sysroot.sh $(SYS_ROOT) $(foreach t,$(prefix[]-headers),$(t):includedir)dnl
+	@scripts/copy-sysroot.sh $(SYS_ROOT) $(BUILD) $(foreach t,$^,$(t):libdir)
+	@scripts/copy-sysroot.sh $(SYS_ROOT) $(BUILD) $(foreach t,$(prefix[]-headers),$(t):includedir)dnl
 divert(2)prefix divert[]dnl
 ])
 
-dnl # link_library(<name>, <library>, [static])
+dnl # link_library(<name>, <library>, [ext|static])
 define([link_library], [dnl
   ifdef([target], dnl
     [define([prefix], target[-]$1[]) define([_prefix], target[]-)], dnl
     [define([target], []) define([prefix], $1) define([_prefix], [])] dnl
   )dnl
   ifelse(regexp([libgui], [lib*]), -1, dnl
-    [define([libname], [lib[]$2]) define([shortname], [$2])], dnl
-    [define([libname], [$2]) define([shortname], [substr([$2], 3)])] dnl
+    [define([libname], [lib[]$2]) define([shortname], [$2])],
+    [define([libname], [$2]) define([shortname], [substr([$2], 3)])]
   )
-prefix[]-deps += _prefix[]libname[]-install
-prefix[]-libs += -l[]ifelse([$3], [static], [:libname.a], [shortname])
+ifelse(list_contains([$3], [|], [ext]), 0, [prefix[]-deps += _prefix[]libname[]-install], [])
+ifelse(list_contains([$3], [|], [static]), 1,[prefix[]-libs += -l:libname.a], [prefix[]-libs += -l[]shortname])]
+)
+
+dnl # include_directory(<name>, <dir>)
+define([include_directory], [dnl
+  ifdef([target], dnl
+    [define([prefix], target[-]$1[])], dnl
+    [define([target], []) define([prefix], $1)] dnl
+  )
+INCLUDE-prefix[] += -I$(SYS_ROOT)[]$2
 ])
 
 dnl # generate_targets()
 define([generate_targets], [dnl
-  ifdef([target],
-    [define([prefix], target[-]$1[])],
-    [define([target], []) define([prefix], $1)]
+  ifdef([target], dnl
+    [define([prefix], target[-]$1[])], dnl
+    [define([target], []) define([prefix], $1)] dnl
   )
 # targets
 target[]-targets = $(foreach t,undivert(1),$($(t)-targets))dnl
