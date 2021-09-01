@@ -287,7 +287,7 @@ void scheduler_wakeup(thread_t *thread) {
 void scheduler_init(process_t *root) {
   sched_trace_debug("initializing");
 
-  thread_t *idle = thread_alloc(LIST_LAST(&root->threads)->tid + 1, idle_task, NULL);
+  thread_t *idle = thread_alloc(LIST_LAST(&root->threads)->tid + 1, idle_task, NULL, false);
   idle->process = root;
   idle->priority = 255;
   idle->policy = 255;

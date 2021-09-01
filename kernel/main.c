@@ -38,6 +38,7 @@
 #include <usb/scsi.h>
 #include <event.h>
 #include <gui/screen.h>
+#include <signal.h>
 
 boot_info_t *boot_info;
 percpu_t *cpu;
@@ -46,7 +47,6 @@ const char *argv[] = {
   "/usr/bin/hello",
   NULL
 };
-
 
 //
 // Kernel launch process
@@ -71,8 +71,10 @@ void launch() {
     kprintf("%s\n", strerror(ERRNO));
   }
 
-  fs_lsdir("/usr/bin");
-  process_execve("/usr/bin/hello", (void *) argv, NULL);
+  fs_open("/dev/stdin", O_RDONLY, 0);
+  fs_open("/dev/stdout", O_WRONLY, 0);
+  fs_open("/dev/stderr", O_WRONLY, 0);
+  process_execve("/bin/console", (void *) argv, NULL);
 
   kprintf("done!\n");
   thread_block();

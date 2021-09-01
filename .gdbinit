@@ -92,15 +92,13 @@ b page_fault_handler
 #b syscall.asm:24
 b thread.asm:63
 
-b process.c:223
+b process.c:245
 commands
+  dir third-party/mlibc/sysdeps
   add-symbol-file-all build/ld.so 0x7fc0000000
-  b generic/main.cpp:263
-  commands
-    add-symbol-file-all build/libc.so 0x41000000
-  end
+  add-symbol-file-all build/libc.so 0x41000000
 
-  # b entry.S:9
+  b entry.S:9
   commands
     add-symbol-file build/apps/console
     # add-symbol-file build/apps/hello

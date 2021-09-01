@@ -86,7 +86,7 @@ process_t *process_alloc(pid_t pid, pid_t ppid, void *(start_routine)(void *), v
   memset(process->sig_threads, 0, NSIG * sizeof(uintptr_t));
   signal_init_handlers(process);
 
-  thread_t *main = thread_alloc(0, start_routine, arg);
+  thread_t *main = thread_alloc(0, start_routine, arg, false);
   main->process = process;
   process->main = main;
   LIST_INIT(&process->threads);
@@ -169,9 +169,13 @@ int process_execve(const char *path, char *const argv[], char *const envp[]) {
   }
   kassert(prog.linker != NULL);
 
+
   thread_t *thread = current_thread;
-  uintptr_t stack_top = thread->user_stack->addr + USER_STACK_SIZE;
-  memset((void *) thread->user_stack->addr, 0, USER_STACK_SIZE);
+  if (thread->user_stack == NULL) {
+    thread_alloc_stack(thread, true); // allocate user stack
+    memset((void *) thread->user_stack->addr, 0, USER_PSTACK_SIZE);
+  }
+  uintptr_t stack_top = thread->user_stack->addr + USER_PSTACK_SIZE;
   uint64_t *rsp = (void *) stack_top;
 
   int argc = ptr_list_len((void *) argv);

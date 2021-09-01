@@ -127,12 +127,15 @@ $(BUILD)/kernel.elf: $(kernel-y) $(fs-y) $(drivers-y) $(lib-y)
 sys-all: $(sys-targets)
 
 .PHONY: sys-install
-sys-install: $(sys-install-targets)
+sys-install: $(BUILD)/ext2.img $(sys-install-targets)
 
 
 # External Data
 
 $(BUILD)/ext2.img: config.ini
+	@mkdir -p $(SYS_ROOT)/usr/share/fonts/truetype
+	cp $(BUILD)/arial.ttf $(SYS_ROOT)/usr/share/fonts/truetype
+	cp $(BUILD)/routed-gothic.ttf $(SYS_ROOT)/usr/share/fonts/truetype
 	dd if=/dev/zero of=$@ bs=1m count=512
 	mke2fs -L Untitled -t ext2 $@
 	cd $(SYS_ROOT) && find . -type f ! -name ".DS_Store" -exec e2cp {} ../../$@:/{} \;

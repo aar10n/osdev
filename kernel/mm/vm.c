@@ -551,9 +551,9 @@ void *vm_map_page_vaddr(uintptr_t virt_addr, page_t *page) {
     area->attr |= AREA_PAGE;
   } else {
     area = alloc_area(address, len, AREA_USED | AREA_PAGE);
+    area->base = virt_addr;
   }
 
-  area->base = virt_addr;
   area->pages = page;
   return map_area(area, 0);
 }
@@ -822,7 +822,7 @@ vm_area_t *vm_get_vm_area(uintptr_t addr) {
  * Updates the attributes of a vm_area struct pointed to
  * by `addr`
  */
-int vm_update_attributes(uintptr_t addr, uint8_t attr, void *ptr) {
+int vm_update_attributes(uintptr_t addr, uint32_t attr, void *ptr) {
   intvl_node_t *node = intvl_tree_find(VM->tree, intvl(addr, addr + 1));
   if (node == NULL) {
     return -EINVAL;
@@ -830,7 +830,9 @@ int vm_update_attributes(uintptr_t addr, uint8_t attr, void *ptr) {
 
   vm_area_t *area = node->data;
   area->attr = (area->attr & ~AREA_ATTR_MASK) | (attr & AREA_ATTR_MASK);
-  area->phys = (uintptr_t) ptr;
+  if (ptr != NULL) {
+    area->phys = (uintptr_t) ptr;
+  }
   return 0;
 }
 

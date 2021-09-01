@@ -11,9 +11,10 @@
 
 #define ERRNO (current_thread->errno)
 
-#define KERNEL_STACK_SIZE 0x2000 // 8 KiB
-#define USER_STACK_SIZE   0x1000 // 4 KiB
-#define TLS_SIZE          0x2000 // 8 KiB
+#define KERNEL_STACK_SIZE 0x2000   // 8 KiB
+#define USER_VSTACK_SIZE  0x20000  // 128 KiB
+#define USER_PSTACK_SIZE  0x20000  // 128 KiB
+#define TLS_SIZE          0x2000   // 8 KiB
 #define DEFAULT_RFLAGS 0x246
 
 typedef struct process process_t;
@@ -94,7 +95,7 @@ typedef struct thread {
   LIST_ENTRY(thread_t) list;   // thread list
 } thread_t;
 
-thread_t *thread_alloc(id_t tid, void *(start_routine)(void *), void *arg);
+thread_t *thread_alloc(id_t tid, void *(start_routine)(void *), void *arg, bool user);
 thread_t *thread_copy(thread_t *other);
 void thread_free(thread_t *thread);
 
@@ -106,6 +107,8 @@ int thread_receive(thread_t *thread, void **data);
 void thread_sleep(uint64_t us);
 void thread_yield();
 void thread_block();
+
+int thread_alloc_stack(thread_t *thread, bool user);
 
 int thread_setpolicy(thread_t *thread, uint8_t policy);
 int thread_setpriority(thread_t *thread, uint16_t priority);

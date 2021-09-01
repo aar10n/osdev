@@ -43,9 +43,21 @@ static inline const char *get_status_str(thread_status_t status) {
 
 static inline page_t *create_stack(uintptr_t *sp, bool user) {
   kassert(sp != NULL);
-  size_t size = user ? USER_STACK_SIZE : KERNEL_STACK_SIZE;
-  page_t *stack_pages = alloc_zero_pages(SIZE_TO_PAGES(size), (user ? PE_USER : 0) | PE_WRITE);
-  *sp = stack_pages->addr + size;
+  size_t virt_size = user ? USER_VSTACK_SIZE : KERNEL_STACK_SIZE;
+  size_t phys_size = user ? USER_PSTACK_SIZE : KERNEL_STACK_SIZE;
+
+  uintptr_t va = user ? LOW_HALF_START : HIGH_HALF_START;
+  if (!vm_find_free_area(ABOVE, &va, virt_size)) {
+    panic("failed to find free area for stack");
+  }
+  vm_mark_reserved(va, virt_size);
+
+  uintptr_t rsp = va + virt_size;
+  uintptr_t map_addr = rsp - phys_size;
+  page_t *stack_pages = alloc_zero_pages(SIZE_TO_PAGES(phys_size), (user ? PE_USER : 0) | PE_WRITE);
+  vm_map_page_vaddr(map_addr, stack_pages);
+
+  *sp = rsp;
   return stack_pages;
 }
 
@@ -61,15 +73,18 @@ __used void *thread_entry(void *(start_routine)(void *), void *arg) {
 // Thread Allocation
 //
 
-thread_t *thread_alloc(id_t tid, void *(start_routine)(void *), void *arg) {
+thread_t *thread_alloc(id_t tid, void *(start_routine)(void *), void *arg, bool user) {
   thread_t *thread = kmalloc(sizeof(thread_t));
   memset(thread, 0, sizeof(thread_t));
 
   // create kernel stack
-  uintptr_t kernel_sp;
+  uintptr_t kernel_sp = 0;
   page_t *kernel_stack = create_stack(&kernel_sp, false);
-  uintptr_t user_sp;
-  page_t *user_stack = create_stack(&user_sp, true);
+  uintptr_t user_sp = 0;
+  page_t *user_stack = NULL;
+  if (user) {
+    user_stack = create_stack(&user_sp, true);
+  }
 
   ((uint64_t *) kernel_sp)[-1] = (uintptr_t) start_routine;
   ((uint64_t *) kernel_sp)[-2] = (uintptr_t) arg;
@@ -112,14 +127,20 @@ thread_t *thread_alloc(id_t tid, void *(start_routine)(void *), void *arg) {
 }
 
 thread_t *thread_copy(thread_t *other) {
-  thread_t *thread = thread_alloc(0, NULL, NULL);
+  bool user = other->user_stack != NULL;
+  thread_t *thread = thread_alloc(0, NULL, NULL, user);
 
   // copy the stacks
   memcpy((void *) thread->kernel_stack->addr, (void *) other->kernel_stack->addr, KERNEL_STACK_SIZE);
-  memcpy((void *) thread->user_stack->addr, (void *) other->user_stack->addr, USER_STACK_SIZE);
+  if (user) {
+    memcpy((void *) thread->user_stack->addr, (void *) other->user_stack->addr, USER_PSTACK_SIZE);
+  }
 
   uintptr_t kernel_sp_rel = other->kernel_sp - other->kernel_stack->addr;
-  uintptr_t user_sp_rel = other->user_sp - other->user_stack->addr;
+  uintptr_t user_sp_rel = 0;
+  if (user) {
+    user_sp_rel = other->user_sp - other->user_stack->addr;
+  }
 
   // copy the context
   memcpy(thread->ctx, other->ctx, sizeof(thread_ctx_t));
@@ -132,7 +153,7 @@ thread_t *thread_copy(thread_t *other) {
   // to do
 
   thread->kernel_sp = thread->kernel_stack->addr + kernel_sp_rel;
-  thread->user_sp = thread->user_stack->addr + user_sp_rel;
+  thread->user_sp = user ? thread->user_stack->addr + user_sp_rel : 0;
   thread->cpu_id = ID;
   thread->policy = other->policy;
   thread->priority = other->priority;
@@ -171,7 +192,7 @@ thread_t *thread_create(void *(start_routine)(void *), void *arg) {
   id_t tid = LIST_LAST(&process->threads)->tid + 1;
   thread_trace_debug("creating thread %d | process %d", tid, process->pid);
 
-  thread_t *thread = thread_alloc(tid, start_routine, arg);
+  thread_t *thread = thread_alloc(tid, start_routine, arg, false);
   thread->process = process;
 
   LIST_ADD(&process->threads, thread, group);
@@ -242,6 +263,19 @@ void thread_yield() {
 void thread_block() {
   thread_trace_debug("thread %d process %d blocked", gettid(), getpid());
   scheduler_block(current_thread);
+}
+
+//
+
+int thread_alloc_stack(thread_t *thread, bool user) {
+  kassert(user == true);
+  kassert(thread->user_stack == NULL);
+
+  uintptr_t user_sp = 0;
+  page_t *stack = create_stack(&user_sp, user);
+  thread->user_stack = stack;
+  thread->user_sp = user_sp;
+  return 0;
 }
 
 //
