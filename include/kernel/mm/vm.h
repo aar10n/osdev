@@ -69,6 +69,7 @@ typedef enum {
 } vm_search_t;
 
 void vm_init();
+vm_t *vm_create_new();
 vm_t *vm_duplicate();
 void *vm_create_ap_tables();
 void vm_swap_vmspace(vm_t *new_vm);

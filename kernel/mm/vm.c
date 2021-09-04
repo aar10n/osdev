@@ -421,6 +421,71 @@ void vm_init() {
 }
 
 /**
+ * Creates a fresh memory space.
+ */
+vm_t *vm_create_new() {
+  page_t *pml4_page = alloc_frame(PE_WRITE | PE_ASSERT);
+  uint64_t *pml4 = vm_map_page(pml4_page);
+  memset(pml4, 0, PAGE_SIZE);
+
+  uint64_t *old_pml4 = VM->pml4;
+  for (int i = 256; i < 512; i++) {
+    pml4[i] = old_pml4[i];
+  }
+  pml4[R_ENTRY] = pml4_page->frame | PE_WRITE | PE_PRESENT;
+
+  //
+  // Virtual Address Space Layout
+  //
+
+  vm_t *vm = kmalloc(sizeof(vm_t));
+  vm->tree = create_intvl_tree();
+  vm->pml4 = (void *) pml4_page->addr;
+  vm->temp_dir = VM->temp_dir;
+
+  // null page (fault on null reference)
+  vm_area_t *null_area = alloc_area(0, PAGE_SIZE, AREA_USED | AREA_PHYS);
+  intvl_tree_insert(vm->tree, intvl(0, PAGE_SIZE), null_area);
+
+  // non-canonical address space
+  uintptr_t non_cann_start = LOW_HALF_END;
+  uintptr_t non_cann_end = HIGH_HALF_START;
+  size_t non_cann_size = non_cann_end - non_cann_start;
+  vm_area_t *non_cann_area = alloc_area(non_cann_start, non_cann_size, AREA_UNUSABLE);
+  intvl_tree_insert(vm->tree, intvl(LOW_HALF_END, HIGH_HALF_START), non_cann_area);
+
+  // recursively mapped region
+  uintptr_t recurs_start = get_virt_addr(R_ENTRY, 0, 0, 0);
+  uintptr_t recurs_end = get_virt_addr(R_ENTRY, K_ENTRY, K_ENTRY, K_ENTRY);
+  size_t recurs_size = recurs_end - recurs_start;
+  vm_area_t *recurse_area = alloc_area(recurs_start, recurs_size, AREA_UNUSABLE);
+  intvl_tree_insert(vm->tree, intvl(recurs_start, recurs_end), recurse_area);
+
+  // temporary page space
+  interval_t temp = intvl(TEMP_PAGE, HIGH_HALF_END);
+  size_t temp_size = HIGH_HALF_END - TEMP_PAGE;
+  vm_area_t *temp_area = alloc_area(TEMP_PAGE, temp_size, AREA_UNUSABLE);
+  intvl_tree_insert(vm->tree, temp, temp_area);
+
+  // kernel space
+  uintptr_t kernel_start = KERNEL_VA;
+  uintptr_t kernel_end = KERNEL_VA + KERNEL_RESERVED;
+  size_t kernel_size = kernel_end - kernel_start;
+  vm_area_t *kernel_area = alloc_area(kernel_start, kernel_size, AREA_UNUSABLE | AREA_PHYS);
+  kernel_area->phys = boot_info->kernel_phys;
+  intvl_tree_insert(vm->tree, intvl(kernel_start, kernel_end), kernel_area);
+
+  // virtual stack space
+  uint64_t logical_cores = boot_info->num_cores * boot_info->num_threads;
+  uint64_t stack_size = logical_cores * (STACK_SIZE + 1);
+  uintptr_t stack_start = STACK_VA - stack_size;
+  uintptr_t stack_end = STACK_VA;
+  intvl_tree_insert(vm->tree, intvl(stack_start, stack_end), NULL);
+
+  return vm;
+}
+
+/**
  * Duplicates the current memory space.
  */
 vm_t *vm_duplicate() {
