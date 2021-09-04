@@ -18,6 +18,7 @@ typedef struct file_table file_table_t;
 typedef struct process process_t;
 typedef struct signal signal_t;
 typedef struct sig_handler sig_handler_t;
+typedef struct message message_t;
 
 typedef struct process {
   pid_t pid;                     // process id
@@ -32,6 +33,11 @@ typedef struct process {
   mutex_t sig_mutex;             // signal mutex
   sig_handler_t **sig_handlers;  // signal handlers
   thread_t **sig_threads;        // signal handling threads
+
+  mutex_t ipc_mutex;             // ipc mutex
+  cond_t ipc_cond_avail;         // ipc message available
+  cond_t ipc_cond_recvd;         // ipc message received
+  message_t *ipc_msg;            // ipc message buffer
 
   thread_t *main;                // main thread
   LIST_HEAD(thread_t) threads;   // process threads (group)

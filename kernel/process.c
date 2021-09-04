@@ -20,6 +20,7 @@
 #include <printf.h>
 #include <panic.h>
 #include <bitmap.h>
+#include <ipc.h>
 
 // #define PROCESS_DEBUG
 #ifdef PROCESS_DEBUG
@@ -79,16 +80,22 @@ process_t *process_alloc(pid_t pid, pid_t ppid, void *(start_routine)(void *), v
   process->pwd = &fs_root;
   process->files = create_file_table();
 
-  mutex_init(&process->sig_mutex, MUTEX_REENTRANT);
+  mutex_init(&process->sig_mutex, MUTEX_REENTRANT | MUTEX_SHARED);
   process->sig_handlers = kmalloc(NSIG * sizeof(uintptr_t));
   memset(process->sig_handlers, 0, NSIG * sizeof(uintptr_t));
   process->sig_threads = kmalloc(NSIG * sizeof(uintptr_t));
   memset(process->sig_threads, 0, NSIG * sizeof(uintptr_t));
   signal_init_handlers(process);
 
+  mutex_init(&process->ipc_mutex, MUTEX_SHARED);
+  cond_init(&process->ipc_cond_avail, 0);
+  cond_init(&process->ipc_cond_recvd, 0);
+  process->ipc_msg = NULL;
+
   thread_t *main = thread_alloc(0, start_routine, arg, false);
   main->process = process;
   process->main = main;
+
   LIST_INIT(&process->threads);
   LIST_INIT(&process->list);
   LIST_ADD_FRONT(&process->threads, main, group);
