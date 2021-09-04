@@ -136,7 +136,7 @@ void kheap_init() {
   LIST_INIT(&kheap->chunks);
   kheap->last_chunk = NULL;
   spin_init(&kheap_lock);
-  mutex_init(&kheap_mutex, MUTEX_REENTRANT);
+  mutex_init(&kheap_mutex, MUTEX_REENTRANT | MUTEX_SHARED);
 }
 
 // ----- kmalloc -----
@@ -437,4 +437,11 @@ void *krealloc(void *ptr, size_t size) {
   kfree(ptr);
   release_heap();
   return new_ptr;
+}
+
+//
+
+bool is_kheap_ptr(void *ptr) {
+  uintptr_t p = (uintptr_t) ptr;
+  return p >= kheap->start_addr && p <= kheap->end_addr;
 }

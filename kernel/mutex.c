@@ -76,12 +76,19 @@ thread_t *safe_dequeue(volatile uint32_t *flags, tqueue_t *queue) {
 void mutex_init(mutex_t *mutex, uint32_t flags) {
   mutex->flags = flags;
   LIST_INIT(&mutex->queue);
-  mutex->aquired_by = NULL;
+  if (flags & MUTEX_SHARED) {
+    mutex->aquired_by = NULL;
+  } else if (current_process) {
+    mutex->aquired_by = current_process->main;
+  }
   mutex->aquire_count = 0;
 }
 
 int mutex_lock(mutex_t *mutex) {
   thread_t *thread = current_thread;
+  if (!(mutex->flags & MUTEX_SHARED) && (mutex->aquired_by && thread->process != mutex->aquired_by->process)) {
+    panic("mutex belongs to another process");
+  }
 
   mutex_trace_debug("locking mutex (%d:%d)", getpid(), gettid());
   // thread->preempt_count++;
@@ -129,12 +136,43 @@ int mutex_unlock(mutex_t *mutex) {
 
   thread_t *next = safe_dequeue(&mutex->flags, &mutex->queue);
   atomic_bit_test_and_reset(&mutex->flags, B_LOCKED);
-  mutex->aquired_by = NULL;
+  if (mutex->flags & MUTEX_SHARED) {
+    mutex->aquired_by = NULL;
+  } else {
+    mutex->aquired_by = thread->process->main;
+  }
   if (next != NULL) {
     scheduler_unblock(next);
   }
   thread->preempt_count--;
   mutex_trace_debug("mutex unlocked (%d:%d)", getpid(), gettid());
+  return 0;
+}
+
+int mutex_trylock(mutex_t *mutex) {
+  thread_t *thread = current_thread;
+  if (!(mutex->flags & MUTEX_SHARED) && thread->process != mutex->aquired_by->process) {
+    panic("mutex belongs to another process");
+  }
+
+  mutex_trace_debug("trying to lock mutex (%d:%d)", getpid(), gettid());
+  // thread->preempt_count++;
+  if (atomic_bit_test_and_set(&mutex->flags, B_LOCKED)) {
+    if (mutex->flags & MUTEX_REENTRANT && mutex->aquired_by == thread) {
+      if (mutex->aquire_count == UINT8_MAX - 1) {
+        panic("reentrancy too deep");
+      }
+      goto done;
+    }
+
+    // mutex is already locked
+    return -1;
+  }
+  label(done);
+  mutex->aquired_by = thread;
+  mutex->aquire_count++;
+  // thread->preempt_count--;
+  mutex_trace_debug("mutex aquired (%d:%d)", getpid(), gettid());
   return 0;
 }
 
@@ -216,6 +254,15 @@ int cond_broadcast(cond_t *cond) {
   while ((signaled = safe_dequeue(&cond->flags, &cond->queue))) {
     scheduler_unblock(signaled);
   }
+  return 0;
+}
+
+int cond_signaled(cond_t *cond) {
+  return cond->flags & M_LOCKED;
+}
+
+int cond_clear_signal(cond_t *cond) {
+  cond->flags &= ~M_LOCKED;
   return 0;
 }
 

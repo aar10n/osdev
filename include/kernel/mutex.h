@@ -17,6 +17,7 @@ typedef LIST_HEAD(thread_t) tqueue_t;
 
 #define MUTEX_LOCKED  0x1   // mutex locked initially
 #define MUTEX_REENTRANT 0x2 // mutex is reentrant
+#define MUTEX_SHARED 0x4    // mutex can be shared between processes
 
 typedef struct mutex {
   volatile uint32_t flags; // flags
@@ -28,6 +29,7 @@ typedef struct mutex {
 void mutex_init(mutex_t *mutex, uint32_t flags);
 int mutex_lock(mutex_t *mutex);
 int mutex_unlock(mutex_t *mutex);
+int mutex_trylock(mutex_t *mutex);
 
 // -------- Conditions --------
 
@@ -44,6 +46,8 @@ int cond_wait(cond_t *cond);
 int cond_wait_timeout(cond_t *cond, uint64_t us);
 int cond_signal(cond_t *cond);
 int cond_broadcast(cond_t *cond);
+int cond_signaled(cond_t *cond);
+int cond_clear_signal(cond_t *cond);
 
 // -------- Read/Write Locks --------
 
