@@ -73,7 +73,7 @@ process_t *process_alloc(pid_t pid, pid_t ppid, void *(start_routine)(void *), v
 
   process->pid = pid;
   process->ppid = ppid;
-  process->vm = vm_create_new();
+  process->vm = VM;
 
   process->uid = -1;
   process->gid = -1;
