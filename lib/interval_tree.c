@@ -102,6 +102,20 @@ void duplicate_node_callback(rb_tree_t *tree, rb_tree_t *new_tree, rb_node_t *u,
   }
 }
 
+bool duplicate_node_pred(rb_tree_t *tree, rb_node_t *node, void *pred) {
+  if (node->data) {
+    if (pred) {
+      intvl_node_t *vd = node->data;
+      bool result = ((intvl_pred_t) pred)(tree, vd);
+      return result;
+    } else {
+      return true;
+    }
+  } else {
+    return false;
+  }
+}
+
 //
 
 intvl_tree_t *create_intvl_tree() {
@@ -124,6 +138,13 @@ intvl_tree_t *create_intvl_tree() {
 intvl_tree_t *copy_intvl_tree(intvl_tree_t *tree) {
   intvl_tree_t *new_tree = _malloc(sizeof(intvl_tree_t));
   new_tree->tree = copy_rb_tree(tree->tree);
+  new_tree->events = tree->events;
+  return new_tree;
+}
+
+intvl_tree_t *copy_intvl_tree_pred(intvl_tree_t *tree, intvl_pred_t pred) {
+  intvl_tree_t *new_tree = _malloc(sizeof(intvl_tree_t));
+  new_tree->tree = copy_rb_tree_pred(tree->tree, duplicate_node_pred, pred);
   new_tree->events = tree->events;
   return new_tree;
 }
@@ -163,6 +184,10 @@ intvl_node_t *intvl_tree_find_closest(intvl_tree_t *tree, interval_t interval) {
     } else if (overlaps(i, get_interval(rb, node->right))) {
       return node->right->data;
     } else {
+      uint64_t cdiff = min(
+        udiff(get_interval(rb, node).start, i.start),
+        udiff(get_interval(rb, node).end, i.end)
+      );
       uint64_t ldiff = min(
         udiff(get_min(rb, node->left), i.start),
         udiff(get_max(rb, node->left), i.end)
@@ -171,7 +196,10 @@ intvl_node_t *intvl_tree_find_closest(intvl_tree_t *tree, interval_t interval) {
         udiff(get_min(rb, node->right), i.start),
         udiff(get_max(rb, node->right), i.end)
       );
-      if (ldiff <= rdiff) {
+
+      if (cdiff < ldiff && cdiff < rdiff) {
+        return node->data;
+      } else if (ldiff <= rdiff) {
         node = node->left;
       } else {
         node = node->right;

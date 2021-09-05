@@ -8,6 +8,8 @@
 #include <base.h>
 
 typedef struct rb_tree rb_tree_t;
+typedef struct rb_node rb_node_t;
+typedef bool (*rb_pred_t)(rb_tree_t *, rb_node_t *, void *);
 
 typedef enum {
   RED,
@@ -70,6 +72,7 @@ typedef struct {
 
 rb_tree_t *create_rb_tree();
 rb_tree_t *copy_rb_tree(rb_tree_t *tree);
+rb_tree_t *copy_rb_tree_pred(rb_tree_t *tree, rb_pred_t pred, void *arg);
 rb_node_t *rb_tree_find(rb_tree_t *tree, uint64_t key);
 rb_node_t *rb_tree_find_closest(rb_tree_t *tree, uint64_t key);
 void rb_tree_insert(rb_tree_t *tree, uint64_t key, void *data);

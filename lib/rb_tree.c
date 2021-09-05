@@ -294,8 +294,11 @@ void delete_node(rb_tree_t *tree, rb_node_t *z) {
 
 //
 
-rb_node_t *duplicate_node(rb_tree_t *tree, rb_tree_t *new_tree, rb_node_t *parent, rb_node_t *node) {
-  if (node == new_tree->nil) {
+rb_node_t *duplicate_node(rb_tree_t *tree, rb_tree_t *new_tree, rb_node_t *parent, rb_node_t *node, rb_pred_t pred, void *arg) {
+  if (node == tree->nil) {
+    return new_tree->nil;
+  } else if (pred && !pred(tree, node, arg)) {
+    // node did not match predicate
     return new_tree->nil;
   }
 
@@ -303,11 +306,12 @@ rb_node_t *duplicate_node(rb_tree_t *tree, rb_tree_t *new_tree, rb_node_t *paren
   copy->key = node->key;
   copy->data = NULL;
   copy->color = node->color;
-  copy->left = duplicate_node(tree, new_tree, copy, node->left);
-  copy->right = duplicate_node(tree, new_tree, copy, node->right);
+  copy->left = duplicate_node(tree, new_tree, copy, node->left, pred, arg);
+  copy->right = duplicate_node(tree, new_tree, copy, node->right, pred, arg);
   copy->parent = parent;
+  new_tree->nodes++;
 
-  if (tree->events->duplicate_node) {
+  if (tree->events && tree->events->duplicate_node) {
     callback(duplicate_node, tree, new_tree, node, copy);
   } else {
     copy->data = node->data;
@@ -346,14 +350,32 @@ rb_tree_t *create_rb_tree() {
 }
 
 rb_tree_t *copy_rb_tree(rb_tree_t *tree) {
-  rb_tree_t *new_tree = _malloc(sizeof(rb_tree_t));
-  new_tree->nil = tree->nil;
-  new_tree->min = tree->nil;
-  new_tree->max = tree->nil;
-  new_tree->nodes = tree->nodes;
+  rb_tree_t *new_tree = create_rb_tree();
+  new_tree->events = tree->events;
+  new_tree->root = duplicate_node(tree, new_tree, tree->nil, tree->root, NULL, NULL);
+  return new_tree;
+}
+
+rb_tree_t *copy_rb_tree_pred(rb_tree_t *tree, rb_pred_t pred, void *arg) {
+  rb_tree_t *new_tree = create_rb_tree();
   new_tree->events = tree->events;
 
-  new_tree->root = duplicate_node(tree, new_tree, tree->nil, tree->root);
+  rb_iter_t *iter = rb_tree_iter(tree);
+  rb_node_t *node;
+  while ((node = rb_iter_next(iter))) {
+    if (pred(tree, node, arg)) {
+      void *data = NULL;
+      if (tree->events && tree->events->duplicate_node) {
+        rb_node_t copy;
+        callback(duplicate_node, tree, new_tree, node, &copy);
+        data = copy.data;
+      } else {
+        data = node->data;
+      }
+
+      rb_tree_insert(new_tree, node->key, data);
+    }
+  }
   return new_tree;
 }
 

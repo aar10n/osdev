@@ -21,6 +21,8 @@
 
 extern void page_fault_handler();
 
+//
+
 static inline vm_area_t *alloc_area(uintptr_t base, size_t size, uint32_t attr) {
   vm_area_t *area = kmalloc(sizeof(vm_area_t));
   area->base = base;
@@ -29,8 +31,6 @@ static inline vm_area_t *alloc_area(uintptr_t base, size_t size, uint32_t attr) 
   area->attr = attr;
   return area;
 }
-
-//
 
 static inline size_t page_to_size(page_t *page) {
   if (page->flags.page_size_2mb) {
@@ -249,6 +249,11 @@ uint64_t *copy_table(const uint64_t *table, uint16_t level, uint16_t root) {
   return new_table;
 }
 
+bool copy_high_half_pred(rb_tree_t *tree, intvl_node_t *node) {
+  uintptr_t start = node->interval.start;
+  return start == 0 || start >= LOW_HALF_END;
+}
+
 void *duplicate_intvl_node(void *data) {
   vm_area_t *area = data;
   if (data == NULL) {
@@ -260,7 +265,7 @@ void *duplicate_intvl_node(void *data) {
   return new_area;
 }
 
-void *map_area(vm_area_t *area, uint16_t flags) {
+void *map_area(vm_area_t *area, uint16_t flags, bool insert) {
   uintptr_t virt_addr = area->base;
 
   if (area->attr & AREA_PAGE) {
@@ -298,7 +303,9 @@ void *map_area(vm_area_t *area, uint16_t flags) {
     }
   }
 
-  intvl_tree_insert(VM->tree, intvl(area->base, area->base + area->size), area);
+  if (insert) {
+    intvl_tree_insert(VM->tree, intvl(area->base, area->base + area->size), area);
+  }
   return (void *) area->base;
 }
 
@@ -430,57 +437,18 @@ vm_t *vm_create_new() {
 
   uint64_t *old_pml4 = VM->pml4;
   for (int i = 256; i < 512; i++) {
-    pml4[i] = old_pml4[i];
+    if (i == R_ENTRY) {
+      pml4[i] = pml4_page->frame | PE_WRITE | PE_PRESENT;
+    } else {
+      pml4[i] = old_pml4[i];
+    }
   }
-  pml4[R_ENTRY] = pml4_page->frame | PE_WRITE | PE_PRESENT;
-
-  //
-  // Virtual Address Space Layout
-  //
 
   vm_t *vm = kmalloc(sizeof(vm_t));
-  vm->tree = create_intvl_tree();
-  vm->pml4 = (void *) pml4_page->addr;
+  vm->tree = copy_intvl_tree_pred(VM->tree, copy_high_half_pred);
+  vm_print_debug_mappings(vm->tree);
+  vm->pml4 = pml4;
   vm->temp_dir = VM->temp_dir;
-
-  // null page (fault on null reference)
-  vm_area_t *null_area = alloc_area(0, PAGE_SIZE, AREA_USED | AREA_PHYS);
-  intvl_tree_insert(vm->tree, intvl(0, PAGE_SIZE), null_area);
-
-  // non-canonical address space
-  uintptr_t non_cann_start = LOW_HALF_END;
-  uintptr_t non_cann_end = HIGH_HALF_START;
-  size_t non_cann_size = non_cann_end - non_cann_start;
-  vm_area_t *non_cann_area = alloc_area(non_cann_start, non_cann_size, AREA_UNUSABLE);
-  intvl_tree_insert(vm->tree, intvl(LOW_HALF_END, HIGH_HALF_START), non_cann_area);
-
-  // recursively mapped region
-  uintptr_t recurs_start = get_virt_addr(R_ENTRY, 0, 0, 0);
-  uintptr_t recurs_end = get_virt_addr(R_ENTRY, K_ENTRY, K_ENTRY, K_ENTRY);
-  size_t recurs_size = recurs_end - recurs_start;
-  vm_area_t *recurse_area = alloc_area(recurs_start, recurs_size, AREA_UNUSABLE);
-  intvl_tree_insert(vm->tree, intvl(recurs_start, recurs_end), recurse_area);
-
-  // temporary page space
-  interval_t temp = intvl(TEMP_PAGE, HIGH_HALF_END);
-  size_t temp_size = HIGH_HALF_END - TEMP_PAGE;
-  vm_area_t *temp_area = alloc_area(TEMP_PAGE, temp_size, AREA_UNUSABLE);
-  intvl_tree_insert(vm->tree, temp, temp_area);
-
-  // kernel space
-  uintptr_t kernel_start = KERNEL_VA;
-  uintptr_t kernel_end = KERNEL_VA + KERNEL_RESERVED;
-  size_t kernel_size = kernel_end - kernel_start;
-  vm_area_t *kernel_area = alloc_area(kernel_start, kernel_size, AREA_UNUSABLE | AREA_PHYS);
-  kernel_area->phys = boot_info->kernel_phys;
-  intvl_tree_insert(vm->tree, intvl(kernel_start, kernel_end), kernel_area);
-
-  // virtual stack space
-  uint64_t logical_cores = boot_info->num_cores * boot_info->num_threads;
-  uint64_t stack_size = logical_cores * (STACK_SIZE + 1);
-  uintptr_t stack_start = STACK_VA - stack_size;
-  uintptr_t stack_end = STACK_VA;
-  intvl_tree_insert(vm->tree, intvl(stack_start, stack_end), NULL);
 
   return vm;
 }
@@ -583,7 +551,7 @@ void *vm_map_page(page_t *page) {
 
   vm_area_t *area = alloc_area(address, len, AREA_USED | AREA_PAGE);
   area->pages = page;
-  return map_area(area, 0);
+  return map_area(area, 0, true);
 }
 
 /**
@@ -616,11 +584,10 @@ void *vm_map_page_vaddr(uintptr_t virt_addr, page_t *page) {
     area->attr |= AREA_PAGE;
   } else {
     area = alloc_area(address, len, AREA_USED | AREA_PAGE);
-    area->base = virt_addr;
   }
 
   area->pages = page;
-  return map_area(area, 0);
+  return map_area(area, 0, existing == NULL);
 }
 
 /**
@@ -644,7 +611,7 @@ void *vm_map_page_search(page_t *page, vm_search_t search_type, uintptr_t vaddr)
 
   vm_area_t *area = alloc_area(address, len, AREA_USED | AREA_PAGE);
   area->pages = page;
-  return map_area(area, 0);
+  return map_area(area, 0, true);
 }
 
 /**
@@ -661,7 +628,7 @@ void *vm_map_addr(uintptr_t phys_addr, size_t len, uint16_t flags) {
   vm_area_t *area = alloc_area(address, len, AREA_USED | AREA_PHYS);
   area->phys = phys_addr;
   flags |= PE_PRESENT;
-  return map_area(area, flags);
+  return map_area(area, flags, true);
 }
 
 /**
@@ -686,7 +653,7 @@ void *vm_map_vaddr(uintptr_t virt_addr, uintptr_t phys_addr, size_t len, uint16_
 
   area->phys = phys_addr;
   flags |= PE_PRESENT;
-  return map_area(area, flags);
+  return map_area(area, flags, existing == NULL);
 }
 
 //
@@ -1003,23 +970,23 @@ bool vm_find_free_area(vm_search_t search_type, uintptr_t *addr, size_t size) {
 // Debugging
 //
 
-void vm_print_debug_mappings() {
-  intvl_iter_t *iter = intvl_iter_tree(VM->tree);
+void vm_print_debug_mappings(intvl_tree_t *tree) {
+  intvl_iter_t *iter = intvl_iter_tree(tree ? tree : VM->tree);
   intvl_node_t *node;
 
-  kprintf("====== Virtual Mappings ======\n");
+  kprintf("============ Virtual Mappings ============\n");
   while ((node = intvl_iter_next(iter))) {
     interval_t i = node->interval;
     kprintf("%018p - %018p | %llu\n", i.start, i.end, i.end - i.start);
   }
-  kprintf("==============================\n");
+  kprintf("==========================================\n");
   kfree(iter);
 }
 
-void vm_tree_to_graphviz() {
-  intvl_iter_t *iter = intvl_iter_tree(VM->tree);
+void vm_tree_to_graphviz(intvl_tree_t *tree) {
+  intvl_iter_t *iter = intvl_iter_tree(tree ? tree : VM->tree);
   intvl_node_t *node;
-  rb_node_t *nil = VM->tree->tree->nil;
+  rb_node_t *nil = tree ? tree->tree->nil : VM->tree->tree->nil;
   int null_count = 0;
 
   kprintf("digraph BST {\n");

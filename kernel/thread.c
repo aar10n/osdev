@@ -54,7 +54,7 @@ static inline page_t *create_stack(uintptr_t *sp, bool user) {
 
   uintptr_t rsp = va + virt_size;
   uintptr_t map_addr = rsp - phys_size;
-  page_t *stack_pages = alloc_zero_pages(SIZE_TO_PAGES(phys_size), (user ? PE_USER : 0) | PE_WRITE);
+  page_t *stack_pages = alloc_frames(SIZE_TO_PAGES(phys_size), (user ? PE_USER : 0) | PE_WRITE);
   vm_map_page_vaddr(map_addr, stack_pages);
 
   *sp = rsp;

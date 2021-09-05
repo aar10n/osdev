@@ -72,7 +72,6 @@ void vm_init();
 vm_t *vm_create_new();
 vm_t *vm_duplicate();
 void *vm_create_ap_tables();
-void vm_swap_vmspace(vm_t *new_vm);
 
 void *vm_map_page(page_t *page);
 void *vm_map_page_vaddr(uintptr_t virt_addr, page_t *page);
@@ -96,8 +95,8 @@ int vm_attach_page(uintptr_t addr, page_t *page);
 int vm_attach_file(uintptr_t addr, file_t *file);
 bool vm_find_free_area(vm_search_t search_type, uintptr_t *addr, size_t len);
 
-void vm_print_debug_mappings();
-void vm_tree_to_graphviz();
+void vm_print_debug_mappings(intvl_tree_t *tree);
+void vm_tree_to_graphviz(intvl_tree_t *tree);
 
 static inline intptr_t vm_virt_to_phys(uintptr_t addr) {
   vm_area_t *area = vm_get_vm_area(addr);

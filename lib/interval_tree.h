@@ -72,9 +72,11 @@ typedef struct intvl_tree {
 } intvl_tree_t;
 
 typedef rb_iter_t intvl_iter_t;
+typedef bool (*intvl_pred_t)(rb_tree_t *, intvl_node_t *);
 
 intvl_tree_t *create_intvl_tree();
 intvl_tree_t *copy_intvl_tree(intvl_tree_t *tree);
+intvl_tree_t *copy_intvl_tree_pred(intvl_tree_t *tree, intvl_pred_t pred);
 intvl_node_t *intvl_tree_find(intvl_tree_t *tree, interval_t interval);
 intvl_node_t *intvl_tree_find_closest(intvl_tree_t *tree, interval_t interval);
 void intvl_tree_insert(intvl_tree_t *tree, interval_t interval, void *data);
