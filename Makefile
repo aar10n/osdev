@@ -6,7 +6,7 @@ BUILD = build
 BUILD_DIR = $(BUILD)/$(NAME)
 SYS_ROOT = $(BUILD)/sysroot
 
-CFLAGS  += -std=gnu17
+CFLAGS  += -std=gnu17 -D__KERNEL__
 LDFLAGS +=
 ASFLAGS +=
 NASMFLAGS += -g

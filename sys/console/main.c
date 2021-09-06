@@ -9,7 +9,7 @@
 #include <string.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
-#include <osdev/event.h>
+#include <kernel/event.h>
 
 #include <ft2build.h>
 #include FT_FREETYPE_H

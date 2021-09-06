@@ -15,14 +15,14 @@ int ipc_send(pid_t pid, message_t *message) {
   if (process == NULL) {
     ERRNO = ESRCH;
     return -1;
-  } else if (!is_kheap_ptr(message)) {
-    ERRNO = EINVAL;
-    return -1;
   }
+
+  message_t *msg = kmalloc(sizeof(message_t));
+  memcpy(msg, message, sizeof(message_t));
 
   mutex_lock(&process->ipc_mutex);
   cond_clear_signal(&process->ipc_cond_recvd);
-  process->ipc_msg = message;
+  process->ipc_msg = msg;
   cond_signal(&process->ipc_cond_avail);
   cond_wait(&process->ipc_cond_recvd);
   mutex_unlock(&process->ipc_mutex);
