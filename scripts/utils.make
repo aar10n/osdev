@@ -36,7 +36,7 @@ sources = $(patsubst %.o,%,$1)
 target-objects = $(foreach t,$1,$(call objects,$t,$2))
 
 source_file = $(patsubst %.o,%,$(subst $(BUILD_DIR)/,,$1))
-all-paths = $(shell ./scripts/paths.sh $(dir $1))
+all-paths = $(shell $(ROOT)/scripts/paths.sh $(dir $1))
 to-prefixes = $(subst /,-,$(call all-paths,$1))
 
 #
@@ -61,4 +61,4 @@ deps = $(call _get_generic,$(call file_dir,$(call _get_file,$(firstword $1))),DE
 toolchain = $(firstword $(foreach prefix,$(call to-prefixes,$(call source_file,$1)) $2,$(call _get_generic,$(prefix),$2)) $($2))
 
 # Returns the specified flags for a given file.
-flags = $(subst \,,$(shell echo '$(call _flags,$(call source_file,$1),$2)' | sed -f scripts/first-group.sed))
+flags = $(subst \,,$(shell echo '$(call _flags,$(call source_file,$1),$2)' | sed -f $(ROOT)/scripts/first-group.sed))

@@ -6,9 +6,11 @@ define([target], [sys]) dnl
 #
 
 override(CC, $(SYS_ROOT)/bin/x86_64-osdev-gcc)
+override(CXX, $(SYS_ROOT)/bin/x86_64-osdev-g++)
 override(LD, $(SYS_ROOT)/bin/x86_64-osdev-gcc)
 
 override(CFLAGS, -gdwarf -g3 -O0 -Wall)
+override(CXXFLAGS, -gdwarf -g3 -O0 -Wall)
 override(LDFLAGS, -g3)
 override(INCLUDE, -Iinclude/sys)
 
@@ -23,6 +25,9 @@ install_executable(hello, /usr)
 
 add_library(libgui, libgui/ui.c, libgui/ui.h, static|dynamic) dnl
 install_library(libgui, /usr)
+
+add_target(winserv, winserv/)
+install_target(winserv)
 
 generate_targets()
 generate_install_targets()

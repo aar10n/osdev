@@ -25,8 +25,10 @@ GDB = $(TOOLCHAIN)gdb
 
 CFLAGS += -gdwarf -Wall -m64 -ffreestanding -nostdlib \
 	-mcmodel=large -mno-red-zone -fno-stack-protector -MMD \
-	-fno-omit-frame-pointer
-CXXFLAGS += $(CFLAGS) -fno-rtti -fno-exceptions
+	-fno-omit-frame-pointer -std=gnu17
+CXXFLAGS += -gdwarf -Wall -m64 -ffreestanding -nostdlib \
+	-mcmodel=large -mno-red-zone -fno-stack-protector -MMD \
+	-fno-omit-frame-pointer -fno-rtti -fno-exceptions
 ASFLAGS += -gdwarf-5
 NASMFLAGS += -f elf64 -g -F dwarf
 LDFLAGS += -m elf_x86_64 -Tlinker.ld -nostdlib -z max-page-size=0x1000

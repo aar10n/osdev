@@ -4,9 +4,11 @@
 #
 
 CC-sys = $(SYS_ROOT)/bin/x86_64-osdev-gcc
+CXX-sys = $(SYS_ROOT)/bin/x86_64-osdev-g++
 LD-sys = $(SYS_ROOT)/bin/x86_64-osdev-gcc
 
 CFLAGS-sys = -gdwarf -g3 -O0 -Wall
+CXXFLAGS-sys = -gdwarf -g3 -O0 -Wall
 LDFLAGS-sys = -g3
 INCLUDE-sys = -Iinclude/sys
 
@@ -70,9 +72,23 @@ sys-libgui-install: $(sys-libgui-targets)
 	@scripts/copy-sysroot.sh $(SYS_ROOT) $(BUILD) $(foreach t,$^,$(t):/usr/lib/)
 	@scripts/copy-sysroot.sh $(SYS_ROOT) $(BUILD) $(foreach t,$(sys-libgui-headers),$(t):/usr/include/)
 
+  
+# winserv
+sys-winserv = sys/winserv/Makefile
+sys-winserv-targets += sys-winserv
+
+.PHONY: sys-winserv
+sys-winserv:
+	$(MAKE) -f $(sys-winserv)  
+  
+.PHONY: sys-winserv-install
+sys-winserv-install: sys-winserv
+	$(MAKE) -f $(sys-winserv) install
+
+
       
 # targets
-sys-targets = $(foreach t,sys-console sys-hello sys-libgui ,$($(t)-targets))
+sys-targets = $(foreach t,sys-console sys-hello sys-libgui sys-winserv ,$($(t)-targets))
   
 # install targets
-sys-install-targets = $(foreach t,sys-console sys-hello sys-libgui ,$(t)-install)
+sys-install-targets = $(foreach t,sys-console sys-hello sys-libgui sys-winserv ,$(t)-install)
