@@ -39,6 +39,7 @@
 #include <event.h>
 #include <gui/screen.h>
 #include <signal.h>
+#include <ipc.h>
 
 boot_info_t *boot_info;
 percpu_t *cpu;
@@ -47,6 +48,16 @@ const char *argv[] = {
   "/usr/bin/hello",
   NULL
 };
+
+noreturn void example_process() {
+  kprintf("receiving message\n");
+  message_t *msg = ipc_receive();
+  kprintf("msg->origin: %d\n", msg->origin);
+  kprintf("msg->type: %d\n", msg->type);
+  kfree(msg);
+  thread_block();
+  while (true) {};
+}
 
 //
 // Kernel launch process
@@ -71,10 +82,17 @@ void launch() {
     kprintf("%s\n", strerror(ERRNO));
   }
 
+  // pid_t target = process_create(example_process);
+  // message_t msg = {
+  //   .origin = 1,
+  //   .type = 2,
+  // };
+  // ipc_send(target, &msg);
+
   fs_open("/dev/stdin", O_RDONLY, 0);
   fs_open("/dev/stdout", O_WRONLY, 0);
   fs_open("/dev/stderr", O_WRONLY, 0);
-  process_execve("/bin/console", (void *) argv, NULL);
+  process_execve("/bin/winserv", (void *) argv, NULL);
 
   kprintf("done!\n");
   thread_block();

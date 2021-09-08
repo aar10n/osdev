@@ -2,6 +2,7 @@ NAME = osdev
 VERSION = 1.0
 TARGET = x86_64
 
+ROOT := $(patsubst %/,%,$(dir $(abspath $(lastword $(MAKEFILE_LIST)))))
 BUILD = build
 BUILD_DIR = $(BUILD)/$(NAME)
 SYS_ROOT = $(BUILD)/sysroot
@@ -33,6 +34,7 @@ QEMUFLAGS = \
 
 include scripts/toolchain.make
 include scripts/utils.make
+export
 
 # --------- #
 #  Targets  #

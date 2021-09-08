@@ -1,5 +1,5 @@
 CompileFlags:
-  Add: [-std=gnu17]
+  Add: []
 Diagnostics:
   ClangTidy:
     Remove: bugprone-*

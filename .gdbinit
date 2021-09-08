@@ -92,7 +92,7 @@ b page_fault_handler
 #b syscall.asm:24
 b thread.asm:63
 
-b process.c:245
+b process.c:252
 commands
   dir third-party/mlibc/sysdeps
   add-symbol-file-all build/ld.so 0x7fc0000000
@@ -100,14 +100,10 @@ commands
 
   b entry.S:9
   commands
-    add-symbol-file build/apps/console
+    #add-symbol-file build/apps/console
+    add-symbol-file build/apps/winserv
     # add-symbol-file build/apps/hello
     break main
-    # break file-io.cpp:190
-    # break file-io.cpp:455
-    # break file-io.cpp:482
-    # break file-io.cpp:313
-    # break file-io.cpp:414
   end
 end
 

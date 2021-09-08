@@ -87,10 +87,12 @@ static int sys_execve(const char *path, char *const argv[], char *const envp[]) 
 }
 
 static int sys_open(const char *path, int flags, mode_t mode) {
+  kprintf("sys_open(\"%s\", %d, %ud)\n", path, flags, mode);
   int result = fs_open(path, flags, mode);
   if (result < 0) {
     return -ERRNO;
   }
+  kprintf("-> %d\n", result);
   return result;
 }
 
@@ -259,10 +261,14 @@ static int sys_yield() {
 }
 
 static void *sys_mmap(void *addr, size_t len, int prot, int flags, int fd, off_t off) {
+  kprintf("sys_mmap(%p, %llu, %d, %d, %d, %lld)\n",
+          addr, len, prot, flags, fd, off);
+
   void *result = fs_mmap(addr, len, prot, flags, fd, off);
   if (result == MAP_FAILED) {
     return as_void(-ERRNO);
   }
+  kprintf("-> %p\n", result);
   return result;
 }
 

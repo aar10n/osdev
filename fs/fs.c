@@ -798,9 +798,6 @@ char *fs_getcwd(char *buf, size_t size) {
 //
 
 void *fs_mmap(void *addr, size_t len, int prot, int flags, int fd, off_t off) {
-  kprintf("fs_mmap(%p, %llu, %d, %d, %d, %lld)\n",
-          addr, len, prot, flags, fd, off);
-
   file_t *file = NULL;
   if (fd == -1) {
     if (!(flags & MAP_ANONYMOUS)) {
@@ -859,7 +856,6 @@ void *fs_mmap(void *addr, size_t len, int prot, int flags, int fd, off_t off) {
     vm_attach_file(va, file);
     vm_update_attributes(va, AREA_FILE | AREA_MMAP, file);
   }
-  kprintf("-> %p\n", va);
   return (void *) va;
 }
 
