@@ -29,13 +29,13 @@ more or less working, but they still need to be put together before this is cons
 ### Goals
 
 **Short Term:**
-- Finish dynamic linker and get userspace applications running with standard library
+- Implement a windowing system
 - Implement a system console
-- Get DOOM running
+- Port DOOM
 
 **Long Term:**
 - POSIX compatibility
-- Add a GUI
+- Add a full GUI
 - Networking
 - Proper SMP Support
 
