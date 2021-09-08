@@ -68,6 +68,22 @@ $(BUILD)/libs/$1.so: $(prefix[]-y)
 divert(1)prefix divert[]dnl
 ])
 
+dnl # add_target(<name>, <dir>, [<Makefile>], [<recipie>])
+define([add_target], [dnl
+  ifdef([target],
+    [define([prefix], target[-]$1[])],
+    [define([target], []) define([prefix], $1)]
+  )
+# $1
+prefix = target/$2[]ifempty([$3], [Makefile], [$3])
+prefix[]-targets += prefix
+
+.PHONY: prefix
+prefix:
+	$(MAKE) -f $(prefix) $4 dnl
+divert(1)prefix divert[]dnl
+])
+
 dnl # install_executable(<name>, <path>)
 define([install_executable], [dnl
   ifdef([target],
@@ -100,6 +116,18 @@ prefix[]-install: $(prefix[]-targets)
 	@mkdir -p $(SYS_ROOT)[]includedir
 	@scripts/copy-sysroot.sh $(SYS_ROOT) $(BUILD) $(foreach t,$^,$(t):libdir)
 	@scripts/copy-sysroot.sh $(SYS_ROOT) $(BUILD) $(foreach t,$(prefix[]-headers),$(t):includedir)dnl
+divert(2)prefix divert[]dnl
+])
+
+dnl # install_target(<name>, [<install-target>])
+define([install_target], [dnl
+  ifdef([target],
+    [define([prefix], target[-]$1[])],
+    [define([target], []) define([prefix], $1)]
+  )
+.PHONY: prefix[]-install
+prefix[]-install: prefix
+	$(MAKE) -f $(prefix) ifempty([$2], [install], [$2])
 divert(2)prefix divert[]dnl
 ])
 
