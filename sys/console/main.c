@@ -14,6 +14,7 @@
 #include <ft2build.h>
 #include FT_FREETYPE_H
 
+
 #define FB_WIDTH 1024
 #define FB_HEIGHT 768
 #define FB_PPS 1024

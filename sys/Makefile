@@ -12,8 +12,18 @@ CXXFLAGS-sys = -gdwarf -g3 -O0 -Wall
 LDFLAGS-sys = -g3
 INCLUDE-sys = -Iinclude/sys
 
-      
+          
+  
+
+sys-console-libs += -lfreetype
+           
+  
+
+sys-console-libs += -lharfbuzz
+       
 INCLUDE-sys-console += -I$(SYS_ROOT)/usr/include/freetype2
+       
+INCLUDE-sys-console += -I$(SYS_ROOT)/usr/include/harfbuzz
    
 # console
 sys-console = console/main.c

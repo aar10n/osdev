@@ -29,8 +29,8 @@ freetype_url = https://download.savannah.gnu.org/releases/freetype/freetype-2.10
 freetype_dir = $(BUILD)/$(freetype)
 
 # harfbuzz
-harfbuzz = harfbuzz
-harfbuzz_src = third-party/harfbuzz
+harfbuzz = harfbuzz-2.9.1
+harfbuzz_url = https://github.com/harfbuzz/harfbuzz/releases/download/2.9.1/harfbuzz-2.9.1.tar.xz
 harfbuzz_dir = $(BUILD)/$(harfbuzz)
 
 #
@@ -87,11 +87,11 @@ freetype-config: $(freetype_dir)/src | $(SYS_ROOT)
 #	scripts/apply-patch.sh $< scripts/freetype.patch
 	cd $< && CC=$(SYS_ROOT)/bin/x86_64-osdev-gcc \
 		RANLIB=$(SYS_ROOT)/bin/x86_64-osdev-ranlib \
-		AR=$(SYS_ROOT)/bin/x86_64-osdev-ar CFLAGS="-std=c99" \
-		PKG_CONFIG_PATH=$(SYS_ROOT)/usr/lib \
+		AR=$(SYS_ROOT)/bin/x86_64-osdev-ar CFLAGS="-std=c99 -fPIC" \
+		PKG_CONFIG_PATH=$(SYS_ROOT)/usr/lib LDFLAGS="-fPIC" \
 		./configure --host=x86_64-unknown-elf --prefix=$(SYS_ROOT)/usr \
-			--with-png=yes --with-bzip2=no --with-harfbuzz=no --with-fsspec=no --with-fsref=no \
-			--with-quickdraw-toolbox=no --with-quickdraw-carbon=no --with-ats=no --with-zlib=yes
+			--with-png=no --with-bzip2=no --with-harfbuzz=yes --with-fsspec=no --with-fsref=no \
+			--with-quickdraw-toolbox=no --with-quickdraw-carbon=no --with-ats=no --with-zlib=no
 
 .PHONY: freetype-compile
 freetype-compile:
@@ -101,10 +101,32 @@ freetype-compile:
 freetype-install:
 	$(MAKE) -C $(freetype_dir)/src install
 #
+# harfbuzz
+#
+
+.PHONY: harfbuzz
+harfbuzz: harfbuzz-config harfbuzz-compile
+
+.PHONY: harfbuzz-config
+harfbuzz-config: $(harfbuzz_dir)/src $(BUILD)/mlibc-cross-file.txt | $(SYS_ROOT)
+	cd $< && CMAKE_C_FLAGS=-fPIC meson --cross-file=$(BUILD)/mlibc-cross-file.txt --prefix=$(SYS_ROOT)/usr build
+
+.PHONY: harfbuzz-compile
+harfbuzz-compile:
+	cd $(harfbuzz_dir)/src && CMAKE_C_FLAGS=-fPIC meson compile -C build
+
+.PHONY: harfbuzz-install
+harfbuzz-install:
+	cd $(harfbuzz_dir)/src && meson install -C build
+
+#
 #
 #
 
 get_name = $(firstword $(subst _, ,$(subst -, ,$(notdir $1))))
+
+$(BUILD)/mlibc-cross-file.txt: scripts/mlibc-cross-file.m4
+	m4 -DPREFIX=$(SYS_ROOT) $< > $@
 
 $(SYS_ROOT):
 	@mkdir -p $@
@@ -112,7 +134,7 @@ $(SYS_ROOT):
 
 $(BUILD)/%/src: $(BUILD)/%.tar.gz
 	@mkdir -p $@
-	tar -xf $< -C $@ --strip-components 1
+	tar xf $< -C $@ --strip-components 1
 
 $(BUILD)/%/out:
 	@mkdir -p $@
@@ -120,4 +142,9 @@ $(BUILD)/%/out:
 .PRECIOUS:
 $(BUILD)/%.tar.gz:
 	@mkdir -p $(dir $*)
-	curl $($(call get_name, $@)_url) > $@
+	curl -L $($(call get_name, $@)_url) > $@
+
+.PRECIOUS:
+$(BUILD)/%.tar.xz:
+	@mkdir -p $(dir $*)
+	curl -L $($(call get_name, $@)_url) > $@
