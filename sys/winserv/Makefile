@@ -6,7 +6,7 @@ LD = $(SYS_ROOT)/bin/x86_64-osdev-g++
 
 CFLAGS = -gdwarf -g3 -O0 -Wall
 CXXFLAGS = -gdwarf -g3 -O0 -Wall
-LDFLAGS = -g3
+LDFLAGS = -g3 -lfreetype -lpng
 
 INCLUDE =
 

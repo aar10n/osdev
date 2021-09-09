@@ -23,7 +23,6 @@ gcc_dir = $(BUILD)/$(gcc)
 mlibc = mlibc
 mlibc_src = third-party/mlibc
 mlibc_dir = $(BUILD)/$(mlibc)
-#mlibc_src = https://github.com/managarm/mlibc/archive/refs/tags/2.0.0.tar.gz
 
 
 get_name = $(firstword $(subst _, ,$(subst -, ,$(notdir $1))))
@@ -67,7 +66,7 @@ gcc-config: $(gcc_dir)/src $(gcc_dir)/out
 	cd $</libstdc++-v3 && autoconf
 	cd $(gcc_dir)/out && $</configure --srcdir=$< --target=x86_64-osdev \
 		--prefix=$(PREFIX) --with-sysroot=$(SYS_ROOT) --enable-languages=c,c++ \
-		--disable-multilib --enable-initfini-array CFLAGS=-O2 CXXFLAGS=-O2
+		--disable-multilib --enable-initfini-array
 
 .PHONY: gcc-compile
 # binutils mlibc-headers

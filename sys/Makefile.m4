@@ -15,7 +15,6 @@ override(LDFLAGS, -g3)
 override(INCLUDE, -Iinclude/sys)
 
 dnl link_library(console, libgui) dnl
-link_library(console, libfreetype, ext) dnl
 include_directory(console, /usr/include/freetype2) dnl
 add_executable(console, console/main.c) dnl
 install_executable(console, /)
