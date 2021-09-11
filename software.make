@@ -86,12 +86,16 @@ freetype: freetype-config freetype-compile freetype-install
 freetype-config: $(freetype_dir)/src | $(SYS_ROOT)
 #	scripts/apply-patch.sh $< scripts/freetype.patch
 	cd $< && CC=$(SYS_ROOT)/bin/x86_64-osdev-gcc \
+		LD=$(SYS_ROOT)/bin/x86_64-osdev-ld \
 		RANLIB=$(SYS_ROOT)/bin/x86_64-osdev-ranlib \
+		STRIP=$(SYS_ROOT)/bin/x86_64-osdev-strip \
 		AR=$(SYS_ROOT)/bin/x86_64-osdev-ar CFLAGS="-std=c99 -fPIC" \
+		LIBTOOL=$(SYS_ROOT)/bin/x86_64-osdev-libtool \
 		PKG_CONFIG_PATH=$(SYS_ROOT)/usr/lib LDFLAGS="-fPIC" \
-		./configure --host=x86_64-unknown-elf --prefix=$(SYS_ROOT)/usr \
-			--with-png=no --with-bzip2=no --with-harfbuzz=yes --with-fsspec=no --with-fsref=no \
-			--with-quickdraw-toolbox=no --with-quickdraw-carbon=no --with-ats=no --with-zlib=no
+		./configure --host=x86_64-osdev --prefix=$(SYS_ROOT)/usr --with-sysroot=$(SYS_ROOT) \
+			--with-png=no --with-bzip2=no --with-harfbuzz=no --with-fsspec=no --with-fsref=no \
+			--with-quickdraw-toolbox=no --with-quickdraw-carbon=no --with-ats=no --with-zlib=no \
+			--enable-static=yes --enable-shared=yes
 
 .PHONY: freetype-compile
 freetype-compile:
@@ -109,11 +113,12 @@ harfbuzz: harfbuzz-config harfbuzz-compile
 
 .PHONY: harfbuzz-config
 harfbuzz-config: $(harfbuzz_dir)/src $(BUILD)/mlibc-cross-file.txt | $(SYS_ROOT)
-	cd $< && CMAKE_C_FLAGS=-fPIC meson --cross-file=$(BUILD)/mlibc-cross-file.txt --prefix=$(SYS_ROOT)/usr build
+	cd $< && CMAKE_C_FLAGS=-fPIC CMAKE_CXX_FLAGS=-fPIC \
+ 		meson --cross-file=$(BUILD)/mlibc-cross-file.txt --prefix=$(SYS_ROOT)/usr build
 
 .PHONY: harfbuzz-compile
 harfbuzz-compile:
-	cd $(harfbuzz_dir)/src && CMAKE_C_FLAGS=-fPIC meson compile -C build
+	cd $(harfbuzz_dir)/src && CMAKE_C_FLAGS=-fPIC CMAKE_CXX_FLAGS=-fPIC meson compile -C build
 
 .PHONY: harfbuzz-install
 harfbuzz-install:

@@ -6,12 +6,12 @@ LD = $(SYS_ROOT)/bin/x86_64-osdev-g++
 
 CFLAGS = -gdwarf -g3 -O0 -Wall
 CXXFLAGS = -gdwarf -g3 -O0 -Wall
-LDFLAGS = -g3 -lfreetype -lpng
+LDFLAGS = -g3 -l:libfreetype.a -lpng -l:libharfbuzz.a
 
-INCLUDE =
+INCLUDE = -Isys/winserv/include -I$(SYS_ROOT)/usr/include/harfbuzz
 
-winserv = main.cpp
-winserv-y = $(call objects,winserv,$(BUILD_DIR)/sys/winserv)
+winserv += main.cpp core/Buffer.cpp core/Drawable.cpp
+winserv-y = $(call objects,winserv,$(BUILD_DIR)/sys/winserv/src)
 
 .PHONY: all
 all: $(BUILD)/apps/winserv

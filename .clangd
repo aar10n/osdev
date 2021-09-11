@@ -2,4 +2,4 @@ CompileFlags:
   Add: []
 Diagnostics:
   ClangTidy:
-    Remove: bugprone-*
+    Remove: bugprone-* modernize-use-nodiscard

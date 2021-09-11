@@ -15,11 +15,7 @@ INCLUDE-sys = -Iinclude/sys
           
   
 
-sys-console-libs += -lfreetype
-           
-  
-
-sys-console-libs += -lharfbuzz
+sys-console-libs += -l:libfreetype.a
        
 INCLUDE-sys-console += -I$(SYS_ROOT)/usr/include/freetype2
        

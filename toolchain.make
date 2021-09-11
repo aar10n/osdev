@@ -19,6 +19,11 @@ gcc = gcc-11.2.0
 gcc_url = https://ftp.gnu.org/gnu/gcc/$(gcc)/$(gcc).tar.gz
 gcc_dir = $(BUILD)/$(gcc)
 
+# libtool
+libtool = libtool-2.4.6
+libtool_url = https://ftpmirror.gnu.org/libtool/libtool-2.4.6.tar.gz
+libtool_dir = $(BUILD)/$(libtool)
+
 # mlibc
 mlibc = mlibc
 mlibc_src = third-party/mlibc
@@ -40,7 +45,7 @@ binutils-config: $(binutils_dir)/src $(binutils_dir)/out | $(SYS_ROOT)
 	scripts/apply-patch.sh $< scripts/binutils.patch
 	cd $(binutils_dir)/out && $</configure --srcdir=$< --target=x86_64-osdev \
 		--prefix=$(PREFIX) --with-sysroot=$(SYS_ROOT) \
-    	--disable-werror --enable-targets=x86_64-elf CFLAGS=-O2
+    	--disable-werror --enable-targets=x86_64-elf
 
 .PHONY: binutils-compile
 binutils-compile:
@@ -111,6 +116,29 @@ libstdc++-install:
 	$(MAKE) -C $(gcc_dir)/out install-target-libstdc++-v3
 
 #
+# libtool
+#
+
+.PHONY: libtool
+libtool: libtool-config libtool-compile libtool-install
+
+.PHONY: libtool-config
+libtool-config: $(libtool_dir)/src $(libtool_dir)/out | $(SYS_ROOT)
+	cd $(libtool_dir)/out && CC=$(SYS_ROOT)/bin/x86_64-osdev-gcc \
+	  	$</configure --srcdir=$< --host=x86_64-none-elf \
+			--prefix=$(PREFIX) --program-prefix=x86_64-osdev- --with-sysroot=$(SYS_ROOT) \
+			--host=x86_64-osdev-elf
+
+
+.PHONY: libtool-compile
+libtool-compile:
+	$(MAKE) -C $(libtool_dir)/out -j$(NPROC)
+
+.PHONY: libtool-install
+libtool-install:
+	$(MAKE) -C $(libtool_dir)/out install
+
+#
 # mlibc
 #
 
@@ -170,4 +198,4 @@ $(BUILD)/%/headers:
 .PRECIOUS:
 $(BUILD)/%.tar.gz:
 	@mkdir -p $(dir $*)
-	curl $($(call get_name, $@)_url) > $*.tar.gz
+	curl -L $($(call get_name, $@)_url) > $@
