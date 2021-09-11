@@ -137,6 +137,8 @@ typedef struct {
 report_format_t *hid_parse_report_descriptor(uint8_t *desc, size_t length);
 bool is_usage(item_node_t *item, uint32_t usage_page, uint32_t usage);
 bool is_usage_range(item_node_t *item, uint32_t usage_page, uint32_t usage_min, uint32_t usage_max);
+usage_node_t *get_usage(item_node_t *item, uint32_t usage_page, uint32_t usage_min, uint32_t usage_max);
+int get_usage_offset(item_node_t *node, usage_node_t *usage);
 int get_item_size_bits(item_node_t *node);
 
 #endif

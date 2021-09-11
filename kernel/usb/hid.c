@@ -6,6 +6,7 @@
 #include <usb/hid-report.h>
 #include <usb/hid-usage.h>
 #include <usb/keyboard.h>
+#include <usb/mouse.h>
 #include <usb/usb.h>
 #include <usb/xhci.h>
 #include <printf.h>
@@ -155,8 +156,13 @@ void *hid_device_init(usb_device_t *dev) {
   if (usage_page == GENERIC_DESKTOP_PAGE) {
     if (usage == MOUSE_USAGE) {
       hid_trace_debug("mouse");
-      hid_log("hid device not supported: Mouse");
-      return NULL;
+      fn_ptr = hid_mouse_handle_input;
+      data_ptr = hid_mouse_init(format);
+      // hid_set_idle(dev->device, 0);
+      if (data_ptr == NULL) {
+        hid_log("failed to initialize mouse driver");
+        return NULL;
+      }
     } else if (usage == KEYBOARD_USAGE) {
       hid_trace_debug("keyboard");
       fn_ptr = hid_keyboard_handle_input;

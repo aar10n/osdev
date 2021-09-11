@@ -532,6 +532,32 @@ bool is_usage_range(item_node_t *item, uint32_t usage_page, uint32_t usage_min, 
   return false;
 }
 
+usage_node_t *get_usage(item_node_t *item, uint32_t usage_page, uint32_t usage_min, uint32_t usage_max) {
+  if (item == NULL || item->usage_page != usage_page || item->usages == NULL) {
+    return NULL;
+  }
+
+  usage_node_t *node = item->usages;
+  while (node != NULL) {
+    if ((usage_min == usage_max && node->usage == usage_min) ||
+        (node->usage_min <= usage_min && node->usage_max >= usage_max)) {
+      return node;
+    }
+    node = (void *) node->next;
+  }
+  return NULL;
+}
+
+int get_usage_offset(item_node_t *node, usage_node_t *usage) {
+  int offset = 0;
+  usage_node_t *u = node->usages;
+  while (u != usage) {
+    offset += node->report_size;
+    u = (usage_node_t *) u->next;
+  }
+  return offset / 8;
+}
+
 int get_item_size_bits(item_node_t *node) {
   int bits = node->report_size * node->report_count;
   if (bits % 8 == 0 && node->data & 1) {

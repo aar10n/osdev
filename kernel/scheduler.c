@@ -215,8 +215,6 @@ void scheduler_sched(sched_reason_t reason) {
     return;
   }
 
-  uint64_t count = sched->count;
-
   // sched_log("schedule");
   sched_trace_debug("schedule");
   if (curr == sched->idle) {
@@ -229,6 +227,11 @@ void scheduler_sched(sched_reason_t reason) {
         LIST_ADD(&sched->blocked, curr, list);
       }
     } else if (!IS_TERMINATED(curr)) {
+      if (sched->count == 0) {
+        curr->status = THREAD_RUNNING;
+        return;
+      }
+
       int result = DISPATCH(curr->policy, add_thread, curr, reason);
       if (result != 0) {
         panic("[scheduler] add_thread failed: %d", result);
@@ -236,7 +239,7 @@ void scheduler_sched(sched_reason_t reason) {
     }
   }
 
-  if (count == 0) {
+  if (sched->count == 0) {
     // switch to idle thread
     sched->timer_event = false;
     sched_trace_debug("idling...");
@@ -318,7 +321,7 @@ void scheduler_init(process_t *root) {
 int scheduler_add(thread_t *thread) {
   process_t *process = thread->process;
   if (!is_valid_thread(thread)) {
-    return EINVAL;
+    return -EINVAL;
   }
 
   int result = DISPATCH(thread->policy, add_thread, thread, RESERVED);
@@ -356,7 +359,7 @@ int scheduler_update(thread_t *thread, uint8_t policy, uint16_t priority) {
   scheduler_t *sched = SCHEDULER;
   sched_policy_t *pol = sched->policies[policy];
   if (!pol->config.can_change_priority && priority != thread->priority) {
-    return ENOTSUP;
+    return -ENOTSUP;
   }
 
   if (thread == current_thread || IS_BLOCKED(thread)) {
@@ -378,7 +381,7 @@ int scheduler_block(thread_t *thread) {
   } else if (thread->status == THREAD_READY) {
     DISPATCH(thread->policy, remove_thread, thread);
   } else {
-    return EINVAL;
+    return -EINVAL;
   }
 
   thread->status = THREAD_BLOCKED;
@@ -390,7 +393,7 @@ int scheduler_block(thread_t *thread) {
 
 int scheduler_unblock(thread_t *thread) {
   if (thread->status != THREAD_BLOCKED) {
-    return EINVAL;
+    return -EINVAL;
   }
 
   scheduler_t *sched = SCHEDULER;

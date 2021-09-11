@@ -27,10 +27,12 @@ QEMUFLAGS = \
 	-drive file=$(BUILD)/ext2.img,id=stick,format=raw,if=none \
 	-device ahci,id=ahci \
 	-device qemu-xhci,id=xhci \
-	-device usb-kbd,bus=xhci.0 \
+	-device usb-mouse,bus=xhci.0 \
 	-device usb-storage,drive=boot,bus=xhci.0 \
-	-device usb-storage,drive=stick,bus=xhci.0 \
 	-trace events=$(BUILD)/traces
+
+# -device usb-kbd,bus=xhci.0 \
+# -device usb-storage,drive=stick,bus=xhci.0 \
 
 include scripts/toolchain.make
 include scripts/utils.make
