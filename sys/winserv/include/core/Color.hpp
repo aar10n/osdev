@@ -12,6 +12,7 @@ struct Color {
   Color(uint8_t r, uint8_t g, uint8_t b) : r(r), g(g), b(b), a(255) {};
   Color(uint8_t r, uint8_t g, uint8_t b, float a) : r(r), g(g), b(b), a(a * 255) {};
 
+  // 1, 129, 129
   uint32_t getValueBGR() const {
     return (b << 0) | (g << 8) | (r << 16) | (a << 24);
   }

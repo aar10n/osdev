@@ -18,7 +18,7 @@
 
 
 #define FB_WIDTH 1024
-#define FB_HEIGHT 768
+#define FB_HEIGHT 600
 #define FB_PPS 1024
 #define FB_SIZE (FB_PPS * FB_HEIGHT * sizeof(uint32_t))
 #define fb_index(i, j) ((y * 8) + (i)) * FB_PPS + ((x * 8) + (j))
