@@ -158,7 +158,7 @@ void *hid_device_init(usb_device_t *dev) {
       hid_trace_debug("mouse");
       fn_ptr = hid_mouse_handle_input;
       data_ptr = hid_mouse_init(format);
-      // hid_set_idle(dev->device, 0);
+      hid_set_idle(dev->device, 0);
       if (data_ptr == NULL) {
         hid_log("failed to initialize mouse driver");
         return NULL;

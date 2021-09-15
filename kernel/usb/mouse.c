@@ -10,10 +10,6 @@
 
 uint16_t mouse_x = 0;
 uint16_t mouse_y = 0;
-cond_t mouse_moved = {
-  .flags = 0,
-  .queue = { .first = NULL, .last = NULL }
-};
 
 hid_mouse_t *hid_mouse_init(report_format_t *format) {
   collection_node_t *collection = (void *) format->root->children;
@@ -64,8 +60,6 @@ void hid_mouse_handle_input(hid_device_t *device, const uint8_t *buffer) {
 
   mouse_x = min(mouse_x + pos_x, boot_info->fb_width);
   mouse_y = min(mouse_y + pos_y, boot_info->fb_height);
-  kprintf("mouse_x: %d\n", mouse_x);
-  kprintf("mouse_y: %d\n", mouse_y);
   // kprintf("MOUSE\n");
   // kprintf("  buttons: %b\n", buttons);
   // kprintf("  x: %d\n", pos_x);

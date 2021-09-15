@@ -40,6 +40,7 @@
 #include <gui/screen.h>
 #include <signal.h>
 #include <ipc.h>
+#include <cpuid.h>
 
 boot_info_t *boot_info;
 percpu_t *cpu;
@@ -114,6 +115,29 @@ _Noreturn void launch() {
   usb_init();
   events_init();
 
+  //
+
+  uint32_t a, b, c, d;
+  if (!__get_cpuid(1, &a, &b, &c, &d)) {
+    panic("[acpi] cpuid failed");
+  }
+
+  kprintf("mmx: %d\n", (d & bit_MMX) != 0);
+  kprintf("sse: %d\n", (d & bit_SSE) != 0);
+  kprintf("sse2: %d\n", (d & bit_SSE2) != 0);
+  kprintf("sse3: %d\n", (c & bit_SSE3) != 0);
+  kprintf("ssse3: %d\n", (c & bit_SSSE3) != 0);
+  kprintf("sse4.1: %d\n", (c & bit_SSE4_1) != 0);
+  kprintf("sse4.2: %d\n", (c & bit_SSE4_2) != 0);
+  kprintf("avx: %d\n", (c & bit_AVX) != 0);
+
+  if (!__get_cpuid(7, &a, &b, &c, &d)) {
+    panic("[acpi] cpuid failed");
+  }
+  kprintf("avx2: %d\n", (b & bit_AVX2) != 0);
+
+  //
+
   // if (fs_mount("/", "/dev/sdb", "ext2") < 0) {
   //   kprintf("%s\n", strerror(ERRNO));
   // }
@@ -129,21 +153,14 @@ _Noreturn void launch() {
   // fs_open("/dev/stdout", O_WRONLY, 0);
   // fs_open("/dev/stderr", O_WRONLY, 0);
   // process_execve("/bin/winserv", (void *) argv, NULL);
-  process_create(wakeup_process);
-  uint32_t color = (129 << 16) | (129 << 8) | (1 << 0);
 
+  // process_create(wakeup_process);
   uint32_t width = boot_info->fb_width;
   uint32_t height = boot_info->fb_height;
   size_t len = width * height;
   uint32_t *fb = (void *) FRAMEBUFFER_VA;
   while (true) {
-    kprintf("[main] mouse_x: %d\n", mouse_x);
-    kprintf("[main] mouse_y: %d\n", mouse_y);
-    kassert(mouse_x <= width);
-    kassert(mouse_y <= height);
-    for (int i = 0; i < len; i++) {
-      fb[i] = color;
-    }
+    __memset32(fb, 0xFF018181, len);
 
     int max_y = min(19, height - mouse_y);
     int max_x = min(12, width - mouse_y);

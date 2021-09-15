@@ -375,19 +375,19 @@ int scheduler_update(thread_t *thread, uint8_t policy, uint16_t priority) {
 }
 
 int scheduler_block(thread_t *thread) {
-  bool reschedule = false;
+  scheduler_t *sched = SCHEDULER;
   if (thread->status == THREAD_RUNNING) {
-    reschedule = true;
+    scheduler_sched(BLOCKED);
   } else if (thread->status == THREAD_READY) {
+    thread->status = THREAD_BLOCKED;
     DISPATCH(thread->policy, remove_thread, thread);
+    if (!(thread->flags & F_THREAD_OWN_BLOCKQ)) {
+      LIST_ADD(&sched->blocked, thread, list);
+    }
   } else {
     return -EINVAL;
   }
 
-  thread->status = THREAD_BLOCKED;
-  if (reschedule) {
-    scheduler_sched(BLOCKED);
-  }
   return 0;
 }
 
