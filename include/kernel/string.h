@@ -23,4 +23,9 @@ int utf16_strlen(const char16_t *s);
 int utf16_iconv_ascii(char *dest, const char16_t *src);
 int utf16_iconvn_ascii(char *dest, const char16_t *src, size_t n);
 
+void *__memset_slow(void *dest, int val, size_t len);
+void *__memset8(void *dest, uint8_t val, size_t len);
+void *__memset32(void *dest, uint32_t val, size_t len);
+void *__memset64(void *dest, uint64_t val, size_t len);
+
 #endif

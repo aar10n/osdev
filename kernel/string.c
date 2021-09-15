@@ -6,6 +6,8 @@
 
 extern const char *errno_str[];
 
+//
+
 int memcmp(const void *str1, const void *str2, size_t count) {
   const unsigned char *s1 = str1;
   const unsigned char *s2 = str2;
@@ -52,7 +54,7 @@ void *memmove(void *dest, const void *src, size_t len) {
   return dest;
 }
 
-void *memset(void *dest, int val, size_t len) {
+void *old_memset(void *dest, int val, size_t len) {
   unsigned char *ptr = dest;
   while (len-- > 0) {
     *ptr++ = val;
@@ -150,3 +152,10 @@ int utf16_iconvn_ascii(char *dest, const char16_t *src, size_t n) {
   return count;
 }
 
+//
+// function resolvers
+//
+
+static void (*resolve_memset (void)) (void) {
+  return (void *) __memset8;
+}
