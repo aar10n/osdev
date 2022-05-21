@@ -1,18 +1,6 @@
 [submodule "third-party/edk2"]
 	path = third-party/edk2
 	url = https://github.com/tianocore/edk2.git
-[submodule "third-party/gcc"]
-	path = third-party/gcc
-	url = git://gcc.gnu.org/git/gcc.git
-[submodule "third-party/binutils"]
-	path = third-party/binutils
-	url = git://sourceware.org/git/binutils-gdb.git
 [submodule "third-party/mlibc"]
 	path = third-party/mlibc
 	url = https://github.com/managarm/mlibc.git
-[submodule "third-party/harfbuzz"]
-	path = third-party/harfbuzz
-	url = https://github.com/harfbuzz/harfbuzz.git
-[submodule "third-party/freetype"]
-	path = third-party/freetype
-	url = https://gitlab.freedesktop.org/freetype/freetype.git
