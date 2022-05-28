@@ -1,0 +1,19 @@
+## Local options
+
+DEBUG = 1
+QEMU_DEBUG = 1
+
+ATTACH_USB_KEYBOARD = 1
+# ATTACH_USB_MOUSE = 1
+ATTACH_USB_DISK = 1
+
+# -------------- #
+#  QEMU Options  #
+# -------------- #
+
+# QEMU_CPU_CORES = 1
+# QEMU_CPU_THREADS = 1
+# QEMU_MEM = 256M
+# QEMU_EXTRA_OPTIONS =
+
+

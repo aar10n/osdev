@@ -6,4 +6,4 @@
 drivers += ahci.c serial.c
 
 # drivers-y
-drivers-y = $(call objects,drivers,$(BUILD_DIR)/drivers)
+drivers-y = $(call target-objects,drivers)

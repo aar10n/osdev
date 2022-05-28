@@ -3,11 +3,11 @@
 #
 
 [Defines]
-  PLATFORM_NAME                  = App
+  PLATFORM_NAME                  = Loader
   PLATFORM_GUID                  = 587CE499-6CBE-43cd-94E2-186218569478
   PLATFORM_VERSION               = 1.0
   DSC_SPECIFICATION              = 0x00010005
-  OUTPUT_DIRECTORY               = Build/App
+  OUTPUT_DIRECTORY               = Build/Loader
   SUPPORTED_ARCHITECTURES        = X64
   BUILD_TARGETS                  = DEBUG|RELEASE
   SKUID_IDENTIFIER               = DEFAULT
@@ -29,10 +29,11 @@
   IoLib|MdePkg/Library/BaseIoLibIntrinsic/BaseIoLibIntrinsic.inf
   PciLib|MdePkg/Library/BasePciLibCf8/BasePciLibCf8.inf
   PciExpressLib|MdePkg/Library/BasePciExpressLib/BasePciExpressLib.inf
+  RegisterFilterLib|MdePkg/Library/RegisterFilterLibNull/RegisterFilterLibNull.inf
   UefiCpuLib|UefiCpuPkg/Library/BaseUefiCpuLib/BaseUefiCpuLib.inf
   LocalApicLib|UefiCpuPkg/Library/BaseXApicX2ApicLib/BaseXApicX2ApicLib.inf
   MtrrLib|UefiCpuPkg/Library/MtrrLib/MtrrLib.inf
-  MpInitLib|UefiCpuPkg/Library/MpInitLib/DxeMpInitLib.inf
+  #MpInitLib|UefiCpuPkg/Library/MpInitLib/PeiMpInitLib.inf
 
   #
   # UEFI & PI
@@ -76,4 +77,4 @@
     FileHandleLib|MdePkg/Library/UefiFileHandleLib/UefiFileHandleLib.inf
 
 [Components]
-  AppPkg/Loader.inf
+  LoaderPkg/Loader.inf

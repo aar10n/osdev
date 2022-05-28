@@ -7,7 +7,7 @@ BUILD_DIR = $(BUILD)/$(NAME)
 CFLAGS  = -g -Wall -Wextra
 INCLUDE =
 
-include ../scripts/Makefile.util
+include ../Makefile.util
 
 # --------- #
 #  Sources  #

@@ -35,4 +35,4 @@ kernel += usb/hid.c usb/hid-report.c usb/hid-usage.c \
 
 
 # kernel-y
-kernel-y = $(call objects,kernel,$(BUILD_DIR)/kernel)
+kernel-y = $(call target-objects,kernel)

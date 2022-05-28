@@ -1,0 +1,172 @@
+diff -ruN a/config.sub b/config.sub
+--- a/config.sub	2022-05-06 03:30:56.000000000 -0400
++++ b/config.sub	2022-05-21 13:32:58.000000000 -0400
+@@ -1749,7 +1749,7 @@
+ 	     | onefs* | tirtos* | phoenix* | fuchsia* | redox* | bme* \
+ 	     | midnightbsd* | amdhsa* | unleashed* | emscripten* | wasi* \
+ 	     | nsk* | powerunix* | genode* | zvmoe* | qnx* | emx* | zephyr* \
+-	     | fiwix* )
++	     | fiwix* | osdev* )
+ 		;;
+ 	# This one is extra strict with allowed versions
+ 	sco3.2v2 | sco3.2v[4-9]* | sco5v6*)
+diff -ruN a/fixincludes/mkfixinc.sh b/fixincludes/mkfixinc.sh
+--- a/fixincludes/mkfixinc.sh	2022-05-06 03:30:56.000000000 -0400
++++ b/fixincludes/mkfixinc.sh	2022-05-21 14:13:19.000000000 -0400
+@@ -14,6 +14,7 @@
+     i?86-*-cygwin* | \
+     i?86-*-mingw32* | \
+     x86_64-*-mingw32* | \
++    x86_64-*-osdev* | \
+     powerpc-*-eabisim* | \
+     powerpc-*-eabi*    | \
+     powerpc-*-rtems*   | \
+diff -ruN a/gcc/config/osdev.h b/gcc/config/osdev.h
+--- /dev/null               1969-12-31 19:00:00.000000000 -0500
++++ b/gcc/config/osdev.h	2022-05-21 14:04:26.000000000 -0400
+@@ -0,0 +1,30 @@
++#undef TARGET_OSDEV
++#define TARGET_OSDEV 1
++
++#undef LIB_SPEC
++#define LIB_SPEC "-lc -lm"
++
++#undef STARTFILE_SPEC
++#define STARTFILE_SPEC "%{!shared:crt0.o%s} crti.o%s %{shared:crtbeginS.o%s;:crtbegin.o%s}"
++
++#undef ENDFILE_SPEC
++#define ENDFILE_SPEC "%{shared:crtendS.o%s;:crtend.o%s} crtn.o%s"
++
++#define GNU_USER_LINK_EMULATION32 "elf_i386"
++#define GNU_USER_LINK_EMULATION64 "elf_x86_64"
++#define GNU_USER_LINK_EMULATIONX32 "elf32_x86_64"
++
++#define GNU_USER_DYNAMIC_LINKER32 "/usr/lib/ld_i386.so"
++#define GNU_USER_DYNAMIC_LINKER64 "/usr/lib/ld.so"
++#define GNU_USER_DYNAMIC_LINKERX32 "/usr/lib/ld32.so"
++
++#undef TARGET_OS_CPP_BUILTINS
++#define TARGET_OS_CPP_BUILTINS()     \
++  do {                               \
++    builtin_define ("__osdev__");    \
++    builtin_define ("__unix__");     \
++    builtin_assert ("system=osdev"); \
++    builtin_assert ("system=unix");  \
++    builtin_assert ("system=posix"); \
++} while (0);
++
+diff -ruN a/gcc/config.gcc b/gcc/config.gcc
+--- a/gcc/config.gcc	2022-05-06 03:30:56.000000000 -0400
++++ b/gcc/config.gcc	2022-05-21 13:46:55.000000000 -0400
+@@ -895,6 +895,15 @@
+       ;;
+   esac
+   ;;
++*-*-osdev*)
++  extra_options="$extra_options gnu-user.opt"
++  gas=yes
++  gnu_ld=yes
++  default_use_cxa_atexit=yes
++  use_gcc_stdint=wrap
++  tmake_file="${tmake_file} t-slibgcc"
++  //thread_file='posix'
++  ;;
+ *-*-netbsd*)
+   tm_p_file="${tm_p_file} netbsd-protos.h"
+   tmake_file="t-netbsd t-slibgcc"
+@@ -2043,6 +2052,10 @@
+ 	done
+ 	TM_MULTILIB_CONFIG=`echo $TM_MULTILIB_CONFIG | sed 's/^,//'`
+ 	;;
++x86_64-*-osdev*)
++	tm_file="${tm_file} i386/unix.h i386/att.h dbxelf.h elfos.h gnu-user.h glibc-stdint.h \
++		i386/x86-64.h i386/gnu-user-common.h i386/gnu-user64.h osdev.h"
++	;;
+ i[34567]86-pc-msdosdjgpp*)
+ 	xm_file=i386/xm-djgpp.h
+ 	tm_file="dbxcoff.h ${tm_file} i386/unix.h i386/bsd.h i386/gas.h i386/djgpp.h i386/djgpp-stdint.h"
+diff -ruN a/gcc/config.host b/gcc/config.host
+--- a/gcc/config.host	2022-05-06 03:30:56.000000000 -0400
++++ b/gcc/config.host	2022-05-21 13:49:28.000000000 -0400
+@@ -279,6 +279,8 @@
+     out_host_hook_obj=host-linux.o
+     host_xmake_file="${host_xmake_file} x-linux"
+     ;;
++  *-*-osdev*)
++    ;;
+   *-*-openbsd*)
+     out_host_hook_obj=host-openbsd.o
+     host_xmake_file="${host_xmake_file} x-openbsd"
+diff -ruN a/libgcc/config.host b/libgcc/config.host
+--- a/libgcc/config.host	2022-05-06 03:30:59.000000000 -0400
++++ b/libgcc/config.host	2022-05-21 14:09:40.000000000 -0400
+@@ -278,6 +278,11 @@
+     extra_parts="$extra_parts vtv_start.o vtv_end.o vtv_start_preinit.o vtv_end_preinit.o"
+   fi
+   ;;
++*-*-osdev*)
++  extra_parts="$extra_parts crti.o crtbegin.o crtbeginS.o crtend.o crtendS.o crtn.o"
++  tmake_file="$tmake_file t-crtstuff-pic"
++  tmake_file="$tmake_file t-slibgcc t-slibgcc-gld t-slibgcc-elf-ver t-libgcc-pic"
++  ;;
+ *-*-lynxos*)
+   tmake_file="$tmake_file t-lynx $cpu_type/t-crtstuff t-crtstuff-pic t-libgcc-pic"
+   extra_parts="crtbegin.o crtbeginS.o crtend.o crtendS.o"
+@@ -722,6 +727,9 @@
+ 	    ;;
+ 	esac
+ 	;;
++x86_64-*-osdev*)
++	tmake_file="$tmake_file i386/t-crtstuff"
++	;;
+ x86_64-*-fuchsia*)
+ 	tmake_file="$tmake_file t-libgcc-pic"
+ 	;;
+diff -ruN a/libstdc++-v3/crossconfig.m4 b/libstdc++-v3/crossconfig.m4
+--- a/libstdc++-v3/crossconfig.m4	2022-05-06 03:31:00.000000000 -0400
++++ b/libstdc++-v3/crossconfig.m4	2022-05-21 13:53:53.000000000 -0400
+@@ -198,6 +198,13 @@
+     AC_CHECK_FUNCS(uselocale)
+     AM_ICONV
+     ;;
++  *-osdev*)
++    GLIBCXX_CHECK_COMPILER_FEATURES
++    GLIBCXX_CHECK_LINKER_FEATURES
++    GLIBCXX_CHECK_MATH_SUPPORT
++    GLIBCXX_CHECK_STDLIB_SUPPORT
++    AC_CHECK_FUNCS(aligned_alloc posix_memalign memalign _aligned_malloc)
++    ;;
+   *-mingw32*)
+     GLIBCXX_CHECK_LINKER_FEATURES
+     GLIBCXX_CHECK_MATH_SUPPORT
+diff -ruN a/libtool.m4 b/libtool.m4
+--- a/libtool.m4	2022-05-06 03:31:01.000000000 -0400
++++ b/libtool.m4	2022-05-21 13:52:20.000000000 -0400
+@@ -2491,6 +2491,16 @@
+   dynamic_linker='GNU/Linux ld.so'
+   ;;
+ 
++osdev*)
++  version_type=linux
++  need_lib_prefix=no
++  need_version=no
++  library_names_spec='${libname}${release}${shared_ext}$versuffix ${libname}${release}${shared_ext}${major} ${libname}${shared_ext}'
++  soname_spec='${libname}${release}${shared_ext}$major'
++  shlibpath_var=LD_LIBRARY_PATH
++  hardcode_into_libs=yes
++  ;;
++
+ netbsd*)
+   version_type=sunos
+   need_lib_prefix=no
+@@ -3090,6 +3100,10 @@
+   lt_cv_deplibs_check_method=pass_all
+   ;;
+ 
++osdev*)
++  lt_cv_deplibs_check_method=pass_all
++  ;;
++
+ netbsd*)
+   if echo __ELF__ | $CC -E - | $GREP __ELF__ > /dev/null; then
+     lt_cv_deplibs_check_method='match_pattern /lib[[^/]]+(\.so\.[[0-9]]+\.[[0-9]]+|_pic\.a)$'

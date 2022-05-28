@@ -20,8 +20,8 @@
   Memory.h
   Video.c
   Video.h
-  Elf64.h
-  ElfCommon.h
+  elf64.h
+  elf.h
   boot.h
 
 [Packages]
@@ -33,5 +33,4 @@
   UefiLib
   CpuLib
   UefiCpuLib
-  MpInitLib
 

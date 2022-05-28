@@ -1,8 +1,15 @@
 *.bin
 *.fd
-build
-cmake-build-debug
+*.o
+/build
+/out
+*.log
+
+.env
+.env.*
 compile_commands.json
+Makefile.local
+toolchain.txt
 
 ### CLion ###
 .idea

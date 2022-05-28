@@ -1,30 +1,30 @@
     
 #
-# sys makefile
+# apps makefile
 #
 
-CC-sys = $(SYS_ROOT)/bin/x86_64-osdev-gcc
-CXX-sys = $(SYS_ROOT)/bin/x86_64-osdev-g++
-LD-sys = $(SYS_ROOT)/bin/x86_64-osdev-gcc
+CC-apps = $(SYS_ROOT)/bin/x86_64-osdev-gcc
+CXX-apps = $(SYS_ROOT)/bin/x86_64-osdev-g++
+LD-apps = $(SYS_ROOT)/bin/x86_64-osdev-gcc
 
-CFLAGS-sys = -gdwarf -g3 -O0 -Wall
-CXXFLAGS-sys = -gdwarf -g3 -O0 -Wall
-LDFLAGS-sys = -g3
-INCLUDE-sys = -Iinclude/sys
+CFLAGS-apps = -gdwarf -g3 -O0 -Wall
+CXXFLAGS-apps = -gdwarf -g3 -O0 -Wall
+LDFLAGS-apps = -g3
+INCLUDE-apps = -Iinclude/sys
 
           
   
 
 sys-console-libs += -l:libfreetype.a
        
-INCLUDE-sys-console += -I$(SYS_ROOT)/usr/include/freetype2
+INCLUDE-apps-console += -I$(SYS_ROOT)/usr/include/freetype2
        
-INCLUDE-sys-console += -I$(SYS_ROOT)/usr/include/harfbuzz
+INCLUDE-apps-console += -I$(SYS_ROOT)/usr/include/harfbuzz
    
 # console
 sys-console = console/main.c
 sys-console-y = $(call objects,sys-console,$(BUILD_DIR)/sys)
-INCLUDE-sys-console += $(INCLUDE-sys)
+INCLUDE-apps-console += $(INCLUDE-apps)
 sys-console-targets += $(BUILD)/apps/console
 sys-targets += sys-console
 $(BUILD)/apps/console: $(sys-console-y) | $(sys-console-deps)
@@ -40,7 +40,7 @@ sys-console-install: $(sys-console-targets)
 # hello
 sys-hello = hello/main.c
 sys-hello-y = $(call objects,sys-hello,$(BUILD_DIR)/sys)
-INCLUDE-sys-hello += $(INCLUDE-sys)
+INCLUDE-apps-hello += $(INCLUDE-apps)
 sys-hello-targets += $(BUILD)/apps/hello
 sys-targets += sys-hello
 $(BUILD)/apps/hello: $(sys-hello-y) | $(sys-hello-deps)
@@ -57,7 +57,7 @@ sys-hello-install: $(sys-hello-targets)
 sys-libgui = libgui/ui.c
 sys-libgui-headers = $(patsubst %, sys/%, libgui/ui.h)
 sys-libgui-y = $(call objects,sys-libgui,$(BUILD_DIR)/sys)
-INCLUDE-sys-libgui += $(INCLUDE-sys)
+INCLUDE-apps-libgui += $(INCLUDE-apps)
 sys-libgui-targets += $(BUILD)/libs/libgui.a
 $(BUILD)/libs/libgui.a: $(sys-libgui-y)
 	@mkdir -p $(@D)

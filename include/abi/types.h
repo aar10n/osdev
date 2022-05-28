@@ -9,6 +9,8 @@
 #include <stdbool.h>
 #include <stddef.h>
 
+#pragma message "Compiling"
+
 typedef uint16_t char16_t;
 
 typedef int64_t blkcnt_t;    // Used for file block counts.

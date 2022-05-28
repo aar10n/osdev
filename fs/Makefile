@@ -19,4 +19,5 @@ fs += ext2/ext2.c ext2/file.c ext2/inode.c ext2/super.c
 # fs/ramfs
 fs += ramfs/file.c ramfs/inode.c ramfs/ramfs.c ramfs/super.c
 
-fs-y = $(call objects,fs,$(BUILD_DIR)/fs)
+# drivers-y
+fs-y = $(call target-objects,fs)

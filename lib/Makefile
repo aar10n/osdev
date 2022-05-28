@@ -14,4 +14,4 @@ lib += asm/atomic.asm asm/bits.asm
 
 
 # lib-y
-lib-y = $(call objects,lib,$(BUILD_DIR)/lib)
+lib-y = $(call target-objects,lib)
