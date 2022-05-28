@@ -8,8 +8,8 @@ EDK_DIR = $(BUILD_DIR)/edk2
 TOOLCHAIN_DIR = $(BUILD_DIR)/toolchain
 
 include scripts/utils.mk
-include toolchain/toolchain.mk
 include Makefile.local
+include toolchain/toolchain.mk
 
 CFLAGS += -std=gnu17 -Wall -MMD -ffreestanding -nostdlib
 CXXFLAGS += -std=gnu++17 -Wall -MMD -ffreestanding -nostdlib -fno-rtti -fno-exceptions

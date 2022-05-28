@@ -52,6 +52,5 @@ ifeq ($(QEMU_DEBUG),1)
 QEMU_OPTIONS += \
 	-serial file:$(BUILD_DIR)/kernel.log \
 	-global isa-debugcon.iobase=0x402 \
-	-debugcon file:$(BUILD_DIR)/uefi_debug.log \
-	-trace events=$(BUILD_DIR)/traces
+	-debugcon file:$(BUILD_DIR)/uefi_debug.log
 endif
