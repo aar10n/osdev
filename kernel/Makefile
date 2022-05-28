@@ -1,10 +1,7 @@
-#
-# Kernel Makefile
-#
+# Kernel sources
+$(call register,kernel,KERNEL)
 
-CFLAGS-kernel = $(CFLAGS) -fstrict-volatile-bitfields
-
-# kernel
+# kernel/
 kernel += entry.asm memory.asm smpboot.asm syscall.asm thread.asm \
 	acpi.c errno.c event.c ipc.c loader.c main.c mutex.c panic.c \
 	percpu.c printf.c process.c scheduler.c semaphore.c signal.c \
@@ -32,7 +29,3 @@ kernel += mm/heap.c mm/mm.c mm/vm.c
 kernel += usb/hid.c usb/hid-report.c usb/hid-usage.c \
 	usb/keyboard.c usb/mouse.c usb/scsi.c usb/usb.c \
 	usb/xhci.c
-
-
-# kernel-y
-kernel-y = $(call target-objects,kernel)

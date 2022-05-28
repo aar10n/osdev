@@ -3,10 +3,6 @@
 DEBUG = 1
 QEMU_DEBUG = 1
 
-ATTACH_USB_KEYBOARD = 1
-# ATTACH_USB_MOUSE = 1
-ATTACH_USB_DISK = 1
-
 # -------------- #
 #  QEMU Options  #
 # -------------- #
@@ -14,6 +10,8 @@ ATTACH_USB_DISK = 1
 # QEMU_CPU_CORES = 1
 # QEMU_CPU_THREADS = 1
 # QEMU_MEM = 256M
-# QEMU_EXTRA_OPTIONS =
 
+QEMU_EXTRA_OPTIONS += -device usb-kbd,bus=xhci.0
+# QEMU_EXTRA_OPTIONS += -device usb-mouse,bus=xhci.0
+QEMU_EXTRA_OPTIONS += -device usb-storage,drive=boot,bus=xhci.0
 

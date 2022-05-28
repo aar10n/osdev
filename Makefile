@@ -8,29 +8,45 @@ EDK_DIR = $(BUILD_DIR)/edk2
 TOOLCHAIN_DIR = $(BUILD_DIR)/toolchain
 
 include scripts/utils.mk
-
-ifeq ($(call exists,Makefile.local),true)
+include toolchain/toolchain.mk
 include Makefile.local
-endif
 
-include scripts/toolchain.mk
+CFLAGS += -std=gnu17 -Wall -MMD -ffreestanding -nostdlib
+CXXFLAGS += -std=gnu++17 -Wall -MMD -ffreestanding -nostdlib -fno-rtti -fno-exceptions
+LDFLAGS +=
+ASFLAGS +=
+NASMFLAGS +=
+
+INCLUDE += -Iinclude/
+
+ifeq ($(DEBUG),1)
+CFLAGS += -gdwarf
+CXXFLAGS += -gdwarf
+ASFLAGS += -gdwarf-5
+NASMFLAGS += -g -F dwarf
+endif
 
 # --------- #
 #  Targets  #
 # --------- #
 
-targets = boot kernel fs drivers lib apps
+modules := BOOT KERNEL USER
+targets = apps boot drivers fs kernel lib
 include $(foreach target,$(targets),$(target)/Makefile)
-
+$(call init-modules,$(modules))
 
 info:
+	@echo "File: $(FILE)"
 	@echo "ARCH: $(ARCH)"
 	@echo "WINARCH: $(WINARCH)"
 	@echo "TARGET: $(TARGET)"
-	@echo "Toolchain:"
-	@echo "  CC = $(call toolchain,$(FILE),CC)"
-	@echo "Deps: $(EXT2_DEPS)"
-	@echo "Deps: $(call pair-sources, $(EXT2_DEPS))"
+	@echo "--------------------------"
+	@echo "Target: $(call get-file-target,$(FILE))"
+	@echo "Module: $(call get-file-module,$(FILE))"
+	@echo "CC: $(call var,CC,$(FILE))"
+	@echo "CFLAGS: $(call var,CFLAGS,$(FILE))"
+	@echo "LDFLAGS: $(call var,LDFLAGS,$(FILE))"
+	@echo "Defines: $(call var,DEFINES,$(FILE))"
 
 # build targets
 
@@ -60,30 +76,49 @@ run-debug: $(BUILD_DIR)/osdev.img
 
 .PHONY: clean
 clean:
-	rm -f $(BUILD_DIR)/*.efi
-	rm -f $(BUILD_DIR)/*.elf
+	rm -f $(BUILD_DIR)/{*.efi,*.elf}
 	rm -rf $(OBJ_DIR)
 	mkdir $(OBJ_DIR)
 
-resolve:
-	@echo "VAR=$(VAR)"
-	@echo "TARGET=$(TARGET)"
-	@echo "-> $(call resolve,$(VAR),$(TARGET))"
+clean-bootloader:
+	rm -f $(BUILD_DIR)/boot$(WINARCH).efi
+	rm -f $(BUILD_DIR)/loader.dll
+	rm -rf $(OBJ_DIR)/{$(BOOT_TARGETS)}
 
-print-var:
-	@echo "VAR=$(VAR)"
-	@echo "-> $($(VAR))"
+clean-kernel:
+	rm -f $(BUILD_DIR)/osdev.img
+	rm -f $(BUILD_DIR)/kernel.elf
+	rm -rf $(OBJ_DIR)/{$(KERNEL_TARGETS)}
+
 
 # ------------------- #
 #     Bootloader      #
 # ------------------- #
 
+BOOT_CC = $(CLANG)
+
+BOOT_CFLAGS = $(CFLAGS) \
+	-target $(ARCH)-unknown-windows -fshort-wchar \
+	-mno-red-zone -Wno-microsoft-static-assert
+
+BOOT_LDFLAGS = \
+	/NOLOGO /NODEFAULTLIB /IGNORE:4001 /IGNORE:4254 /OPT:REF /OPT:ICF=10 \
+    /ALIGN:32 /FILEALIGN:32 /SECTION:.xdata,D /SECTION:.pdata,D /Machine:$(WINARCH) \
+    /DLL /ENTRY:_ModuleEntryPoint /SUBSYSTEM:EFI_BOOT_SERVICE_DRIVER /SAFESEH:NO \
+    /BASE:0 /MERGE:.rdata=.data /MLLVM:-exception-model=wineh
+
+BOOT_INCLUDE = $(INCLUDE) -Iinclude/boot \
+	-I$(EDK_DIR)/MdePkg/Include -I$(EDK_DIR)/MdePkg/Include/$(WINARCH) \
+	-I$(EDK_DIR)/MdeModulePkg -I$(EDK_DIR)/MdeModulePkg/Include \
+	-I$(EDK_DIR)/UefiCpuPkg/Include
+
+
 # edk2 library dependencies
 $(BUILD_DIR)/static_library_files.lst: boot/LoaderPkg.dsc boot/Loader.inf
 	@bash toolchain/edk2.sh build $(WINARCH) loader-lst
 
-$(BUILD_DIR)/loader.dll: $(BUILD_DIR)/static_library_files.lst $(boot-y)
-	$(call resolve,LD,boot) $(call resolve,LDFLAGS,boot) /lldmap @$< /OUT:$@
+$(BUILD_DIR)/loader.dll: $(BUILD_DIR)/static_library_files.lst $(BOOT_OBJECTS)
+	$(LLD_LINK) $(BOOT_LDFLAGS) /lldmap @$< /OUT:$@
 
 $(BUILD_DIR)/boot$(WINARCH).efi: $(BUILD_DIR)/loader.dll
 	$(EDK_DIR)/BaseTools/BinWrappers/PosixLike/GenFw -e UEFI_APPLICATION -o $@ $^
@@ -92,8 +127,17 @@ $(BUILD_DIR)/boot$(WINARCH).efi: $(BUILD_DIR)/loader.dll
 #       Kernel        #
 # ------------------- #
 
-$(BUILD_DIR)/kernel.elf: $(kernel-y) $(fs-y) $(drivers-y) $(lib-y)
-	$(call resolve,LD,kernel) $(call resolve,LDFLAGS,kernel) $^ -o $@
+KERNEL_CFLAGS = $(CFLAGS) -mcmodel=large -mno-red-zone -fno-stack-protector \
+				-fno-omit-frame-pointer -fstrict-volatile-bitfields $(KERNEL_DEFINES)
+KERNEL_LDFLAGS = $(LDFLAGS) -Tlinker.ld -nostdlib -z max-page-size=0x1000
+
+KERNEL_INCLUDE = $(INCLUDE) -Iinclude/kernel -Iinclude/fs -Ilib
+
+KERNEL_DEFINES = $(DEFINES) -D__KERNEL__
+
+
+$(BUILD_DIR)/kernel.elf: $(KERNEL_OBJECTS)
+	$(LD) $(LDFLAGS-kernel) $^ -o $@
 
 # bootable USB
 $(BUILD_DIR)/osdev.img: $(BUILD_DIR)/boot$(WINARCH).efi $(BUILD_DIR)/kernel.elf config.ini
@@ -119,22 +163,18 @@ $(BUILD_DIR)/ext2.img: $(SYS_ROOT) $(call pairs-src-paths, $(EXT2_DEPS))
 #  Compilation Rules  #
 # ------------------- #
 
-#.SECONDEXPANSION:
-#$(OBJ_DIR)/%.elf: $$($$*-y)
-#	$(call resolve,LD,$*) $(call resolve,LDFLAGS,$*) -r $^ -o $@
-
 $(OBJ_DIR)/%.c.o: $(PROJECT_DIR)/%.c
 	@mkdir -p $(@D)
-	$(call resolve,CC,$<) $(call resolve,INCLUDE,$<) $(call resolve,CFLAGS,$<) -o $@ -c $<
+	$(call var,CC,$<) $(call var,INCLUDE,$<) $(call var,CFLAGS,$<) $(call var,DEFINES,$<) -o $@ -c $<
 
 $(OBJ_DIR)/%.cpp.o: $(PROJECT_DIR)/%.cpp
 	@mkdir -p $(@D)
-	$(call resolve,CXX,$<) $(call resolve,INCLUDE,$<) $(call resolve,CXXFLAGS,$<) -o $@ -c $<
+	$(call var,CXX,$<) $(call var,INCLUDE,$<) $(call var,CXXFLAGS,$<) $(call var,DEFINES,$<) -o $@ -c $<
 
 $(OBJ_DIR)/%.s.o: $(PROJECT_DIR)/%.s
 	@mkdir -p $(@D)
-	$(call resolve,AS,$<) $(call resolve,INCLUDE,$<) $(call resolve,ASFLAGS,$<) -o $@ $<
+	$(call var,AS,$<) $(call var,INCLUDE,$<) $(call var,ASFLAGS,$<) -o $@ $<
 
 $(OBJ_DIR)/%.asm.o: $(PROJECT_DIR)/%.asm
 	@mkdir -p $(@D)
-	$(call resolve,NASM,$<) $(call resolve,INCLUDE,$<) $(call resolve,NASMFLAGS,$<) -o $@ $<
+	$(call var,NASM,$<) $(call var,INCLUDE,$<) $(call var,NASMFLAGS,$<) -o $@ $<

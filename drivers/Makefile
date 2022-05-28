@@ -1,9 +1,5 @@
-#
-# Drivers Makefile
-#
+# Drivers sources
+$(call register,drivers,KERNEL)
 
-# drivers
+# drivers/
 drivers += ahci.c serial.c
-
-# drivers-y
-drivers-y = $(call target-objects,drivers)

@@ -1,8 +1,7 @@
-#
-# Fs Makefile
-#
+# Fs sources
+$(call register,fs,KERNEL)
 
-# fs
+# fs/
 fs += acl.c blkdev.c chrdev.c dcache.c dentry.c \
 	device.c file.c framebuf.c fs.c inode.c path.c \
 	super.c utils.c
