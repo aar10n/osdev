@@ -35,18 +35,6 @@ targets = apps boot drivers fs kernel lib
 include $(foreach target,$(targets),$(target)/Makefile)
 $(call init-modules,$(modules))
 
-info:
-	@echo "File: $(FILE)"
-	@echo "ARCH: $(ARCH)"
-	@echo "WINARCH: $(WINARCH)"
-	@echo "TARGET: $(TARGET)"
-	@echo "--------------------------"
-	@echo "Target: $(call get-file-target,$(FILE))"
-	@echo "Module: $(call get-file-module,$(FILE))"
-	@echo "CC: $(call var,CC,$(FILE))"
-	@echo "CFLAGS: $(call var,CFLAGS,$(FILE))"
-	@echo "LDFLAGS: $(call var,LDFLAGS,$(FILE))"
-	@echo "Defines: $(call var,DEFINES,$(FILE))"
 
 # build targets
 
@@ -82,8 +70,12 @@ clean:
 
 clean-bootloader:
 	rm -f $(BUILD_DIR)/boot$(WINARCH).efi
-	rm -f $(BUILD_DIR)/loader.dll
+	rm -f $(BUILD_DIR)/loader{.dll,.lib}
 	rm -rf $(OBJ_DIR)/{$(BOOT_TARGETS)}
+
+clean-bootloader-all: clean-bootloader
+	rm -f $(BUILD_DIR)/static_library_files.lst
+	rm -rf $(EDK_DIR)/Build/Loader
 
 clean-kernel:
 	rm -f $(BUILD_DIR)/osdev.img
@@ -115,10 +107,10 @@ BOOT_INCLUDE = $(INCLUDE) -Iinclude/boot \
 
 # edk2 library dependencies
 $(BUILD_DIR)/static_library_files.lst: boot/LoaderPkg.dsc boot/Loader.inf
-	@bash toolchain/edk2.sh build $(WINARCH) loader-lst
+	@EDK2_DIR=$(EDK_DIR) EDK2_BUILD_TYPE=$(EDK2_BUILD) bash toolchain/edk2.sh build $(WINARCH) loader-lst
 
 $(BUILD_DIR)/loader.dll: $(BUILD_DIR)/static_library_files.lst $(BOOT_OBJECTS)
-	$(LLD_LINK) $(BOOT_LDFLAGS) /lldmap @$< /OUT:$@
+	$(LLD_LINK) $(BOOT_LDFLAGS) /lldmap @$< /OUT:$@ $(BOOT_OBJECTS)
 
 $(BUILD_DIR)/boot$(WINARCH).efi: $(BUILD_DIR)/loader.dll
 	$(EDK_DIR)/BaseTools/BinWrappers/PosixLike/GenFw -e UEFI_APPLICATION -o $@ $^
@@ -154,7 +146,7 @@ $(BUILD_DIR)/osdev.img: $(BUILD_DIR)/boot$(WINARCH).efi $(BUILD_DIR)/kernel.elf 
 # ------------------- #
 
 $(BUILD_DIR)/OVMF_$(WINARCH).fd:
-	@EDK2_DIR=$(EDK_DIR) bash toolchain/edk2.sh build $(WINARCH) ovmf
+	@EDK2_DIR=$(EDK_DIR) EDK2_BUILD_TYPE=$(EDK2_BUILD) bash toolchain/edk2.sh build $(WINARCH) ovmf
 
 $(BUILD_DIR)/ext2.img: $(SYS_ROOT) $(call pairs-src-paths, $(EXT2_DEPS))
 	scripts/mkdisk.pl -o $@ -s 256M $(SYS_ROOT):/ $(EXT2_DEPS)

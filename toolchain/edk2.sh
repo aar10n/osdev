@@ -134,7 +134,11 @@ toolchain::edk2::build() {
     echo "copied output to ${BUILD_DIR}/boot.efi"
   elif [[ ${package_name} == "loader-lst" ]]; then
     local output_dir=${edk2_dir}/Build/Loader/${build_type}_CLANGPDB/${arch}/LoaderPkg/Loader/OUTPUT
+    local lst_file=${output_dir}/static_library_files.lst
+    local autogen_obj=${output_dir}/AutoGen.obj
+
     cp ${output_dir}/static_library_files.lst ${BUILD_DIR}/static_library_files.lst
+    sed -i "1s#.*#${autogen_obj}#" ${BUILD_DIR}/static_library_files.lst
     echo "copied output to ${BUILD_DIR}/static_library_files.lst"
   elif [[ ${package_name} == "ovmf" ]]; then
     cp ${edk2_dir}/Build/Ovmf${arch}/${build_type}_CLANGPDB/FV/OVMF.fd ${BUILD_DIR}/OVMF_${arch}.fd

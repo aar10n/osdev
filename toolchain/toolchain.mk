@@ -29,6 +29,12 @@ QEMU ?= qemu-system-$(ARCH)
 
 include toolchain/arch/$(ARCH).mk
 
+ifeq ($(DEBUG),1)
+EDK2_BUILD = DEBUG
+else
+EDK2_BUILD = RELEASE
+endif
+
 # -------------- #
 #  QEMU Options  #
 # -------------- #
