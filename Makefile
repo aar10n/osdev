@@ -71,7 +71,7 @@ clean:
 clean-bootloader:
 	rm -f $(BUILD_DIR)/boot$(WINARCH).efi
 	rm -f $(BUILD_DIR)/loader{.dll,.lib}
-	rm -rf $(OBJ_DIR)/{$(BOOT_TARGETS)}
+	rm -rf $(OBJ_DIR)/{$(call join-comma,$(BOOT_TARGETS))}
 
 clean-bootloader-all: clean-bootloader
 	rm -f $(BUILD_DIR)/static_library_files.lst
@@ -80,7 +80,7 @@ clean-bootloader-all: clean-bootloader
 clean-kernel:
 	rm -f $(BUILD_DIR)/osdev.img
 	rm -f $(BUILD_DIR)/kernel.elf
-	rm -rf $(OBJ_DIR)/{$(KERNEL_TARGETS)}
+	rm -rf $(OBJ_DIR)/{$(call join-comma,$(KERNEL_TARGETS))}
 
 
 # ------------------- #
@@ -129,7 +129,7 @@ KERNEL_DEFINES = $(DEFINES) -D__KERNEL__
 
 
 $(BUILD_DIR)/kernel.elf: $(KERNEL_OBJECTS)
-	$(LD) $(LDFLAGS-kernel) $^ -o $@
+	$(LD) $(KERNEL_LDFLAGS) $^ -o $@
 
 # bootable USB
 $(BUILD_DIR)/osdev.img: $(BUILD_DIR)/boot$(WINARCH).efi $(BUILD_DIR)/kernel.elf config.ini
@@ -139,7 +139,7 @@ $(BUILD_DIR)/osdev.img: $(BUILD_DIR)/boot$(WINARCH).efi $(BUILD_DIR)/kernel.elf 
 	mmd -i $@ ::/EFI/BOOT
 	mcopy -i $@ $< ::/EFI/BOOT
 	mcopy -i $@ config.ini ::/EFI/BOOT
-	mcopy -i $@ $(BUILD_DIR)/kernel.elf ::/EFI
+	mcopy -i $@ $(BUILD_DIR)/kernel.elf ::/EFI/BOOT
 
 # ------------------- #
 #      External       #

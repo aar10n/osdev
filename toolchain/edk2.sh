@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+shopt -s nullglob
 
 PROJECT_DIR=$(realpath `dirname ${BASH_SOURCE[0]}`/..)
 source "${PROJECT_DIR}/toolchain/common.sh"
@@ -17,10 +18,10 @@ toolchain::edk2::copy_boot_sources() {
   fi
 
   mkdir -p ${pkg_dir}
-  cp -t ${pkg_dir} ${PROJECT_DIR}/boot/{LoaderPkg.dsc,Loader.inf}
-  cp -t ${pkg_dir} ${PROJECT_DIR}/boot/*.c
-  cp -t ${pkg_dir} ${PROJECT_DIR}/include/boot/*.h
-  cp -t ${pkg_dir} ${PROJECT_DIR}/include/{boot,elf,elf64}.h
+  cp ${PROJECT_DIR}/boot/{LoaderPkg.dsc,Loader.inf} ${pkg_dir}
+  cp ${PROJECT_DIR}/boot/{*.c,*.h} ${pkg_dir}
+  cp ${PROJECT_DIR}/include/boot/*.h ${pkg_dir}
+  cp ${PROJECT_DIR}/include/{boot,elf,elf64}.h ${pkg_dir}
 }
 
 # download and setup edk2
@@ -112,7 +113,8 @@ toolchain::edk2::build() {
   esac
   shift 2
 
-  if [[ ${package_name} =~ "loader(-lst)?" ]]; then
+  if [[ ${package_name} =~ loader(-lst)? ]]; then
+    echo "copying bootloader sources"
     toolchain::edk2::copy_boot_sources
   fi
 

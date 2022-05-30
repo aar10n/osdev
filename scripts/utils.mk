@@ -3,6 +3,7 @@ space := $(subst ,, )
 
 lowercase = $(shell echo '$1' | tr 'A-Z' 'a-z')
 uppercase = $(shell echo '$1' | tr 'a-z' 'A-Z')
+join-comma = $(subst $(space),$(comma),$(1))
 
 # Returns true if the given path exists, false otherwise.
 # args:
