@@ -2,17 +2,11 @@
 // Created by Aaron Gill-Braun on 2020-09-27.
 //
 
-#include <Uefi.h>
-#include <Library/UefiLib.h>
-#include <Library/BaseLib.h>
-#include <Library/BaseMemoryLib.h>
-#include <Library/MemoryAllocationLib.h>
+#include <Config.h>
+#include <File.h>
 
-#include "Config.h"
-
-#define SyntaxError(Msg) \
-  ErrorPrint(L"[Loader] INI Syntax Error: " \
-             Msg " (%d:%d)\n", Line, Column)
+#define SYNTAX_ERROR(string) \
+  PRINT_WARN(string L" (%d:%d)", Line, Column)
 
 typedef enum {
   IniStartOfLine,
@@ -25,6 +19,8 @@ typedef struct _INI_BUCKET {
   INI_VARIABLE *Variable;
   struct _INI_BUCKET *Next;
 } INI_BUCKET;
+
+const CHAR16 *ConfigFilePath = L"/EFI/BOOT/config.ini";
 
 // The number of allocated elements in the HashMap array
 static UINTN HashMapLength = 0;
@@ -137,8 +133,6 @@ BOOLEAN EFIAPI OnlyWhitespaceBefore(CHAR8 Char, CHAR8 *Ptr, const CHAR8 *PtrEnd)
   return TRUE;
 }
 
-//
-
 EFI_STATUS EFIAPI ConfigParse(void *Buffer, UINTN BufferSize) {
   if (HashMap != NULL) {
     return RETURN_ABORTED;
@@ -177,7 +171,7 @@ EFI_STATUS EFIAPI ConfigParse(void *Buffer, UINTN BufferSize) {
         if (State == IniMiddleOfLine || State == IniParseValue) {
           goto SaveVariable;
         } else if (KeyLen > 0) {
-          SyntaxError(L"Unexpected EOL");
+          SYNTAX_ERROR("Unexpected EOL");
         }
 
         goto EndOfLine;
@@ -187,7 +181,7 @@ EFI_STATUS EFIAPI ConfigParse(void *Buffer, UINTN BufferSize) {
         // check if an assignment is valid
         if (KeyLen == 0) {
           // invalid syntax
-          SyntaxError(L"Unexepected token '='");
+          SYNTAX_ERROR("Unexepected token '='");
           // recover by skipping line
           goto EndOfLine;
         }
@@ -210,10 +204,10 @@ EFI_STATUS EFIAPI ConfigParse(void *Buffer, UINTN BufferSize) {
             break;
           }
 
-          // // invalid syntax
-          // SyntaxError(L"Invalid whitespace in key");
-          // // recover by skipping line
-          // goto EndOfLine;
+          // invalid syntax
+          SYNTAX_ERROR("Invalid whitespace in key");
+          // recover by skipping line
+          goto EndOfLine;
         }
 
         if (ValueEnd == 0) {
@@ -235,7 +229,7 @@ EFI_STATUS EFIAPI ConfigParse(void *Buffer, UINTN BufferSize) {
 
           if (KeyLen >= INI_MAX_KEY_LEN) {
             // key too long
-            SyntaxError(L"Key is too long");
+            SYNTAX_ERROR("Key is too long");
             // recover by skipping line
             goto EndOfLine;
           }
@@ -247,7 +241,7 @@ EFI_STATUS EFIAPI ConfigParse(void *Buffer, UINTN BufferSize) {
 
           if (ValueLen >= INI_MAX_VALUE_LEN) {
             // key too long
-            SyntaxError(L"Value is too long");
+            SYNTAX_ERROR("Value is too long");
             // recover by skipping line
             goto EndOfLine;
           }
@@ -281,7 +275,7 @@ EFI_STATUS EFIAPI ConfigParse(void *Buffer, UINTN BufferSize) {
     CopyMem(Key, CurrentKey, KeyLen);
     CopyMem(Value, CurrentValue, ValueLen);
 
-    Print(L"[Loader] INI: %a = '%a'\n", Key, Value);
+    PRINT_INFO("INI: %a=%a", Key, Value);
     Variable->Key = Key;
     Variable->Value = Value;
 
@@ -306,8 +300,43 @@ EFI_STATUS EFIAPI ConfigParse(void *Buffer, UINTN BufferSize) {
     Ptr++;
   }
 
-  Print(L"[Loader] %d keys loaded\n", HashMapSize);
+  PRINT_INFO("INI: %d lines parsed", Line);
+  return EFI_SUCCESS;
+}
 
+//
+
+EFI_STATUS EFIAPI InitializeConfig() {
+  EFI_STATUS Status;
+
+  EFI_FILE *File = NULL;
+  Status = OpenFile(ConfigFilePath, &File);
+  if (EFI_ERROR(Status)) {
+    if (Status == EFI_NOT_FOUND) {
+      PRINT_WARN("No config file found at %s", ConfigFilePath);
+    } else {
+      PRINT_ERROR("Failed to open config file");
+    }
+    return Status;
+  }
+
+  UINTN ConfigFileSize = 0;
+  VOID *ConfigFile = NULL;
+  Status = ReadFile(File, &ConfigFileSize, &ConfigFile);
+  if (EFI_ERROR(Status)) {
+    PRINT_ERROR("Failed to read config file");
+    File->Close(File);
+    return Status;
+  }
+
+  Status = ConfigParse(ConfigFile, ConfigFileSize);
+  if (EFI_ERROR(Status)) {
+    PRINT_ERROR("Failed to parse config file");
+    File->Close(File);
+    return Status;
+  }
+
+  File->Close(File);
   return EFI_SUCCESS;
 }
 
@@ -349,10 +378,80 @@ EFI_STATUS EFIAPI ConfigSet(CHAR8 *Key, CHAR8 *Value) {
 // Typed 'Get' Functions
 //
 
-UINT64 EFIAPI ConfigGetNumeric(CHAR8 *Key) {
+BOOLEAN EFIAPI ConfigGetBooleanD(CHAR8 *Key, BOOLEAN Default) {
+  BOOLEAN Value;
+  EFI_STATUS Status = ConfigGetBooleanS(Key, &Value);
+  if (EFI_ERROR(Status)) {
+    return Default;
+  }
+  return Value;
+}
+
+EFI_STATUS EFIAPI ConfigGetBooleanS(CHAR8 *Key, BOOLEAN *Value) {
+  CHAR8 *ValueStr = ConfigGet(Key);
+  if (ValueStr == NULL) {
+    return EFI_NOT_FOUND;
+  }
+
+  UINTN ValueLen = AsciiStrLen(ValueStr);
+  CHAR8 Tmp[ValueLen + 1];
+  AsciiStrCpyS(Tmp, ValueLen + 1, ValueStr);
+  Tmp[ValueLen] = '\0';
+  for (UINTN i = 0; i < ValueLen; i++) {
+    if (Tmp[i] >= 'A' && Tmp[i] <= 'Z') {
+      Tmp[i] += 'A' - 'a';
+    }
+  }
+
+  if (AsciiStrCmp(ValueStr, "true") == 0 || (AsciiStrCmp(ValueStr, "1") == 0)) {
+    *Value = TRUE;
+  } else if (AsciiStrCmp(ValueStr, "false") == 0 || (AsciiStrCmp(ValueStr, "0") == 0)) {
+    *Value = FALSE;
+  } else {
+    return EFI_INVALID_PARAMETER;
+  }
+  return EFI_SUCCESS;
+}
+
+CHAR16 *EFIAPI ConfigGetStringD(CHAR8 *Key, CONST CHAR16 *Default) {
+  CHAR16 *String;
+  EFI_STATUS Status = ConfigGetStringS(Key, &String);
+  if (EFI_ERROR(Status)) {
+    UINTN Length = StrSize(Default);
+    String = AllocatePool((Length + 1) * sizeof(CHAR16));
+    if (String == NULL) {
+      return NULL;
+    }
+
+    CopyMem(String, Default, Length + 1);
+    return String;
+  }
+
+  return String;
+}
+
+EFI_STATUS EFIAPI ConfigGetStringS(CHAR8 *Key, CHAR16 **String) {
+  CHAR8 *Value = ConfigGet(Key);
+  if (String == NULL) {
+    return EFI_NOT_FOUND;
+  }
+
+  UINTN Length = AsciiStrLen(Value);
+  CHAR16 *WideString = AllocateZeroPool(Length + 1);
+  EFI_STATUS Status = AsciiStrToUnicodeStrS(Value, WideString, Length + 1);
+  if (EFI_ERROR(Status)) {
+    FreePool(WideString);
+    return Status;
+  }
+
+  *String = WideString;
+  return EFI_SUCCESS;
+}
+
+UINT64 EFIAPI ConfigGetNumericD(CHAR8 *Key, UINT64 Default) {
   UINT64 Result;
   if (EFI_ERROR(ConfigGetNumericS(Key, &Result))) {
-    return 0;
+    return Default;
   }
   return Result;
 }
@@ -373,10 +472,10 @@ EFI_STATUS EFIAPI ConfigGetNumericS(CHAR8 *Key, UINT64 *Result) {
 
 //
 
-UINT64 EFIAPI ConfigGetDecimal(CHAR8 *Key) {
+UINT64 EFIAPI ConfigGetDecimalD(CHAR8 *Key, UINT64 Default) {
   UINT64 Result;
   if (EFI_ERROR(ConfigGetDecimalS(Key, &Result))) {
-    return 0;
+    return Default;
   }
   return Result;
 }
@@ -396,10 +495,10 @@ EFI_STATUS EFIAPI ConfigGetDecimalS(CHAR8 *Key, UINT64 *Result) {
 
 //
 
-UINT64 EFIAPI ConfigGetHex(CHAR8 *Key) {
+UINT64 EFIAPI ConfigGetHexD(CHAR8 *Key, UINT64 Default) {
   UINT64 Result;
   if (EFI_ERROR(ConfigGetHexS(Key, &Result))) {
-    return 0;
+    return Default;
   }
   return Result;
 }
@@ -483,5 +582,56 @@ EFI_STATUS EFIAPI ConfigGetDimensions(CHAR8 *Key, UINT32 *X, UINT32 *Y) {
   FreePool(XDim);
   FreePool(YDim);
 
+  return EFI_SUCCESS;
+}
+
+EFI_STATUS EFIAPI ConfigGetDuration(CHAR8 *Key, UINT64 *Result) {
+  CHAR8 *Value = ConfigGet(Key);
+  if (Value == NULL) {
+    return EFI_NOT_FOUND;
+  }
+
+  UINT64 Number = 0;
+  CHAR8 *UnitPtr = Value;
+  while (*UnitPtr) {
+    if (*UnitPtr == 'u' || *UnitPtr == 'm' || *UnitPtr == 's' || *UnitPtr == 'h') {
+      break;
+    } else if (*UnitPtr >= '0' && *UnitPtr <= '9') {
+      Number = Number * 10 + (*UnitPtr - '0');
+      UnitPtr++;
+      continue;
+    }
+
+    return EFI_INVALID_PARAMETER;
+  }
+
+  if (*UnitPtr == 0) {
+    return EFI_INVALID_PARAMETER;
+  }
+
+  UINTN UnitLen = 0;
+  UINT64 ResultUs = 0;
+  if (UnitPtr[0] == 'u' && UnitPtr[1] == 's') {
+    ResultUs = Number;
+    UnitLen = 2;
+  } else if (UnitPtr[0] == 'm' && UnitPtr[1] == 's') {
+    ResultUs = Number * 1000;
+    UnitLen = 2;
+  } else if (UnitPtr[0] == 's') {
+    ResultUs = Number * 1000000;
+    UnitLen = 1;
+  } else if (*UnitPtr == 'm') {
+    ResultUs = Number * 60000000;
+    UnitLen = 1;
+  } else if (*UnitPtr == 'h') {
+    *Result = Number * 3600000;
+    UnitLen = 1;
+  }
+
+  if (UnitPtr[UnitLen] != 0) {
+    return EFI_INVALID_PARAMETER;
+  }
+
+  *Result = ResultUs;
   return EFI_SUCCESS;
 }

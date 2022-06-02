@@ -2,4 +2,4 @@
 $(call register,boot,BOOT)
 
 # boot/
-boot += Config.c Loader.c Memory.c Video.c
+boot += Main.c Config.c File.c Loader.c Memory.c Video.c
