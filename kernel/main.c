@@ -42,6 +42,8 @@
 #include <ipc.h>
 #include <cpuid.h>
 
+boot_info_v2_t __boot_data *boot_info_v2;
+
 boot_info_t *boot_info;
 percpu_t *cpu;
 
@@ -186,14 +188,18 @@ _Noreturn void launch() {
 // Kernel entry
 //
 
-__used void kmain(boot_info_t *info) {
-  boot_info = info;
-  percpu_init();
-  enable_sse();
-
-  cpu = PERCPU;
+__used void kmain() {
+  boot_info_v2_t *v2 = boot_info_v2;
+  // percpu_init();
+  // enable_sse();
+  //
+  // cpu = PERCPU;
   serial_init(COM1);
   kprintf("[kernel] initializing\n");
+  kprintf("[kernel] boot_info: %p\n", boot_info_v2);
+  while (true) {
+    cpu_pause();
+  }
 
   setup_gdt();
   setup_idt();
