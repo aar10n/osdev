@@ -12,27 +12,29 @@
 // to the kernel by the bootloader. The data structures
 // include information about system memory, devices
 
-#define KERNEL_PA      0x100000
-#define KERNEL_OFFSET  0xFFFFFF8000000000
-#define KERNEL_VA      0xFFFFFF8000100000
-#define STACK_VA       0xFFFFFFA000000000
-#define FRAMEBUFFER_VA 0xFFFFFFC000000000
-#define MMIO_BASE_VA   0xFFFFFFFFE0000000
-#define PROGRAM_VA     0xFFFFFF8000010000
 
-#define SMPBOOT_START  0x0000
-#define SMPDATA_START  0x1000
+// The bootloader will dynamically link the boot_info pointer
+// to variables annotated with the __boot_info attribute.
+#define __boot_data __attribute__((section(".boot_data")))
 
-#define STACK_SIZE      0x4000 // 8 KiB
-#define KERNEL_RESERVED 0x300000 // 3 MiB
-#define RESERVED_TABLES 6 // Number of preallocated page tables
+
+#define KERNEL_MAX_SIZE  SIZE_2MB
 
 // Memory map
-#define MEMORY_UNKNOWN  0
-#define MEMORY_RESERVED 1
-#define MEMORY_FREE     2
-#define MEMORY_ACPI     3
-#define MEMORY_MMIO     4
+#define MEMORY_UNKNOWN      0
+#define MEMORY_UNUSABLE     1
+#define MEMORY_USABLE       2
+#define MEMORY_RESERVED     3
+#define MEMORY_ACPI         4
+#define MEMORY_ACPI_NVS     5
+#define MEMORY_MAPPED_IO    6
+#define MEMORY_RUNTIME_CODE 7
+#define MEMORY_RUNTIME_DATA 8
+
+// Framebuffer pixel format
+#define FB_PIXEL_FORMAT_UNKNOWN 0x0
+#define FB_PIXEL_FORMAT_RGB     0x1
+#define FB_PIXEL_FORMAT_BGR     0x2
 
 #define BOOT_MAGIC "BOOT"
 #define BOOT_MAGIC0 'B'
@@ -53,23 +55,46 @@ typedef struct {
   uint32_t reserved_mask;
 } pixel_bitmask_t;
 
-
 // Memory Map
 
-typedef struct {
+typedef struct memory_region {
   uint32_t type;
-  uintptr_t phys_addr;
-  size_t size;
+  uint32_t : 32; // reserved
+  uint64_t size;
+  uint64_t base;
 } memory_region_t;
 
-typedef struct {
-  size_t mem_total;
-  size_t mmap_size;
-  size_t mmap_capacity;
-  memory_region_t *mmap;
+typedef struct memory_map {
+  uint32_t size;          // size of the memory map
+  uint32_t capacity;      // size allocated for the memory map
+  memory_region_t *map;   // pointer to the memory map
 } memory_map_t;
 
 // The full boot structure
+
+typedef struct boot_info_v2 {
+  uint8_t magic[4];               // boot signature ('BOOT')
+  // kernel info
+  uint32_t kernel_phys_addr;      // kernel physical address
+  uint64_t kernel_virt_addr;      // kernel virtual address
+  uint32_t kernel_size;           // kernel size in bytes
+  uint32_t pml4_addr;             // pml4 table address
+  // memory info
+  uint64_t mem_total;             // total memory
+  memory_map_t mem_map;           // system memory map
+  // framebuffer
+  uint64_t fb_addr;               // framebuffer base address
+  uint64_t fb_size;               // framebuffer size in bytes
+  uint32_t fb_width;              // framebuffer width
+  uint32_t fb_height;             // framebuffer height
+  uint32_t fb_pixel_format;       // framebuffer pixel format
+  uint32_t : 32;                  // reserved
+  // system configuration
+  uint32_t efi_runtime_services;  // EFI Runtime Services table
+  uint32_t acpi_ptr;              // ACPI RDSP table address
+  uint32_t smbios_ptr;            // SMBIOS Entry Point table address
+  uint32_t : 32;                  // reserved
+} boot_info_v2_t;
 
 typedef struct {
   uint8_t magic[4];                // 'BOOT' magic

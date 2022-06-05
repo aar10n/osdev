@@ -18,6 +18,7 @@
   Loader.c
   Main.c
   Memory.c
+  System.c
   Video.c
 
   Common.h
@@ -25,6 +26,7 @@
   File.h
   Loader.h
   Memory.h
+  System.h
   Video.h
 
 [Packages]
@@ -36,4 +38,5 @@
   UefiLib
   CpuLib
   UefiCpuLib
+  IoLib
 

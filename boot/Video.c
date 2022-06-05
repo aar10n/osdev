@@ -3,8 +3,9 @@
 //
 
 #include <Video.h>
-
 #include <Library/DevicePathLib.h>
+
+#include <boot.h>
 
 #define DELTA(a, b) ((a) > (b) ? (a) - (b) : (b) - (a))
 
@@ -66,6 +67,9 @@ EFI_STATUS EFIAPI InitializeVideoProtocols() {
 EFI_STATUS EFIAPI SelectVideoMode(UINT32 TargetX, UINT32 TargetY, OUT GRAPHICS_MODE_INFO **ModeInfo) {
   if (GraphicsDevice == NULL) {
     return EFI_UNSUPPORTED;
+  } else if (TargetX == 0 && TargetY == 0) {
+    *ModeInfo = GraphicsDevice->Mode->Info;
+    return EFI_SUCCESS;
   }
 
   EFI_STATUS Status;
@@ -141,6 +145,17 @@ EFI_STATUS EFIAPI GetFramebufferInfo(OUT UINT64 *Base, OUT UINTN *Size) {
   *Base = (UINT64)GraphicsDevice->Mode->FrameBufferBase;
   *Size = GraphicsDevice->Mode->FrameBufferSize;
   return EFI_SUCCESS;
+}
+
+UINT32 EFIAPI GetBootInfoPixelFormat(IN EFI_GRAPHICS_PIXEL_FORMAT Format) {
+  switch (Format) {
+    case PixelRedGreenBlueReserved8BitPerColor:
+      return FB_PIXEL_FORMAT_RGB;
+    case PixelBlueGreenRedReserved8BitPerColor:
+      return FB_PIXEL_FORMAT_BGR;
+    default:
+      return FB_PIXEL_FORMAT_UNKNOWN;
+  }
 }
 
 VOID EFIAPI DrawPixel(UINT32 X, UINT32 Y, UINT32 Color) {

@@ -266,17 +266,17 @@ void acpi_init() {
 
   kprintf("[acpi] mapping acpi tables\n");
   size_t mapped_count = 0;
-  memory_region_t *region = mem->mmap;
-  while ((uintptr_t) region < (uintptr_t) mem->mmap + mem->mmap_size) {
+  memory_region_t *region = mem->map;
+  while ((uintptr_t) region < (uintptr_t) mem->map + mem->size) {
     if (region->type != MEMORY_ACPI) {
       region++;
       continue;
     }
 
-    uintptr_t virt_addr = kernel_phys_to_virt(region->phys_addr);
+    uintptr_t virt_addr = kernel_phys_to_virt(region->base);
     size_t size = align(region->size, PAGE_SIZE);
 
-    vm_map_vaddr(virt_addr, region->phys_addr, size, 0);
+    vm_map_vaddr(virt_addr, region->base, size, 0);
     // kprintf("[acpi] mapped region (%p -> %p)\n",
     //         region->phys_addr, virt_addr);
 

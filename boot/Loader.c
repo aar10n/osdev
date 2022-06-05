@@ -10,6 +10,9 @@
 
 #define EHDR_OFFSET(ehdr, offset) ((VOID *)((UINTN)(ehdr) + (offset)))
 #define NEXT_PHDR(ehdr, phdr) ((Elf64_Phdr *)((UINTN)(phdr) + (ehdr)->e_phentsize))
+#define NEXT_SHDR(ehdr, shdr) ((Elf64_Shdr *)((UINTN)(shdr) + (ehdr)->e_shentsize))
+#define NEXT_SYM(shdr, sym) ((Elf64_Sym *)((UINTN)(sym) + (shdr)->sh_entsize))
+
 
 BOOLEAN ElfVerifyHeader(IN Elf64_Ehdr *ElfHdr) {
   UINT8 IdentMagic[4] = {ELFMAG0, ELFMAG1, ELFMAG2, ELFMAG3};
@@ -32,6 +35,91 @@ UINTN ElfGetTotalLoadSize(IN Elf64_Ehdr *ElfHdr) {
     Phdr = NEXT_PHDR(ElfHdr, Phdr);
   }
   return TotalSize;
+}
+
+CHAR8 *ElfGetStringForSymbol(IN Elf64_Ehdr *ElfHdr, IN Elf64_Shdr *SymTabHdr, IN Elf64_Sym *Sym) {
+  if (Sym->st_name == 0) {
+    return NULL;
+  }
+
+  UINTN StrTabOffset = ElfHdr->e_shentsize * SymTabHdr->sh_link;
+  Elf64_Shdr *StrTab = EHDR_OFFSET(ElfHdr, ElfHdr->e_shoff + StrTabOffset);
+  return EHDR_OFFSET(ElfHdr, StrTab->sh_offset + Sym->st_name);
+}
+
+Elf64_Phdr EFIAPI *ElfLocateProgramHeaderByType(IN Elf64_Ehdr *ElfHdr, Elf64_Phdr *Last, IN Elf64_Word ProgramType) {
+  Elf64_Phdr *Phdr = NULL;
+  if (Last == NULL) {
+    Phdr = EHDR_OFFSET(ElfHdr, ElfHdr->e_phoff);
+  } else {
+    Phdr = NEXT_PHDR(ElfHdr, Last);
+  }
+
+  for (UINTN Index = 0; Index < ElfHdr->e_phnum; Index++) {
+    if (Phdr->p_type == ProgramType) {
+      return Phdr;
+    }
+    Phdr = NEXT_PHDR(ElfHdr, Phdr);
+  }
+  return NULL;
+}
+
+Elf64_Shdr EFIAPI *ElfLocateSectionHeaderByType(IN Elf64_Ehdr *ElfHdr, IN Elf64_Word SectionType) {
+  Elf64_Shdr *Shdr = EHDR_OFFSET(ElfHdr, ElfHdr->e_shoff);
+  for (UINTN Index = 0; Index < ElfHdr->e_shnum; Index++) {
+    if (Shdr->sh_type == SectionType) {
+      return Shdr;
+    }
+    Shdr = NEXT_SHDR(ElfHdr, Shdr);
+  }
+
+  return NULL;
+}
+
+VOID EFIAPI *ElfLocateSectionHeaderByName(IN Elf64_Ehdr *ElfHdr, IN CONST CHAR8 *SectionName) {
+  Elf64_Shdr *Shdr = EHDR_OFFSET(ElfHdr, ElfHdr->e_shoff);
+  Elf64_Shdr *ShStrTab = EHDR_OFFSET(ElfHdr, ElfHdr->e_shoff + ElfHdr->e_shentsize * ElfHdr->e_shstrndx);
+
+  for (UINTN Index = 0; Index < ElfHdr->e_shnum; Index++) {
+    if (Shdr->sh_name == 0) {
+      Shdr = NEXT_SHDR(ElfHdr, Shdr);
+      continue;
+    }
+
+    CHAR8 *String = EHDR_OFFSET(ElfHdr, ShStrTab->sh_offset + Shdr->sh_name);
+    if (AsciiStrCmp(SectionName, String) == 0) {
+      return Shdr;
+    }
+    Shdr = NEXT_SHDR(ElfHdr, Shdr);
+  }
+  return NULL;
+}
+
+Elf64_Sym EFIAPI *ElfLocateSymbolByName(IN Elf64_Ehdr *ElfHdr, IN CONST CHAR8 *SymbolName) {
+  Elf64_Shdr *SymTab = ElfLocateSectionHeaderByType(ElfHdr, SHT_SYMTAB);
+  if (SymTab == NULL) {
+    return NULL;
+  }
+
+  UINTN StrTabOffset = ElfHdr->e_shentsize * SymTab->sh_link;
+  Elf64_Shdr *StrTab = EHDR_OFFSET(ElfHdr, ElfHdr->e_shoff + StrTabOffset);
+  Elf64_Sym *Sym = EHDR_OFFSET(ElfHdr, SymTab->sh_offset + SymTab->sh_entsize);
+  UINTN NumSymbols = SymTab->sh_size / SymTab->sh_entsize;
+  for (UINTN Index = 0; Index < NumSymbols; Index++) {
+    if (Sym->st_name == 0) {
+      Sym = NEXT_SYM(SymTab, Sym);
+      continue;
+    }
+
+    CHAR8 *SymName = EHDR_OFFSET(ElfHdr, StrTab->sh_offset + Sym->st_name);
+    if (AsciiStrCmp(SymbolName, SymName) == 0) {
+      return Sym;
+    }
+
+    Sym = NEXT_SYM(SymTab, Sym);
+  }
+
+  return NULL;
 }
 
 //
@@ -59,7 +147,7 @@ EFI_STATUS EFIAPI ReadElf(IN VOID *Buffer, OUT UINT64 *EntryPoint, OUT UINTN *Me
   return EFI_SUCCESS;
 }
 
-EFI_STATUS EFIAPI LoadElf(IN VOID *Buffer, IN UINT64 PhysAddr, OUT MEMORY_DESCRIPTOR **Pages) {
+EFI_STATUS EFIAPI LoadElf(IN VOID *Buffer, IN UINT64 PhysAddr, OUT PAGE_DESCRIPTOR **Pages) {
   Elf64_Ehdr *ElfHdr = Buffer;
   if (!ElfVerifyHeader(ElfHdr)) {
     PRINT_ERROR("Invalid ELF file");
@@ -67,7 +155,7 @@ EFI_STATUS EFIAPI LoadElf(IN VOID *Buffer, IN UINT64 PhysAddr, OUT MEMORY_DESCRI
   }
 
   // load the ELF segments
-  MEMORY_DESCRIPTOR *Desc = NULL;
+  PAGE_DESCRIPTOR *Desc = NULL;
   Elf64_Phdr *ProgramHdr = EHDR_OFFSET(ElfHdr, ElfHdr->e_phoff);
   for (UINTN Index = 0; Index < ElfHdr->e_phnum; Index++) {
     if (ProgramHdr->p_type == PT_NULL) {
@@ -77,23 +165,30 @@ EFI_STATUS EFIAPI LoadElf(IN VOID *Buffer, IN UINT64 PhysAddr, OUT MEMORY_DESCRI
       goto NEXT;
     }
 
+    UINTN FileSize = ALIGN_VALUE(ProgramHdr->p_filesz, ProgramHdr->p_align);
+    UINTN MemSize = ALIGN_VALUE(ProgramHdr->p_memsz, ProgramHdr->p_align);
+    UINT32 Flags = 0;
+    if (ProgramHdr->p_flags & PF_W)
+      Flags |= PD_WRITE;
+    if (ProgramHdr->p_flags & PF_X)
+      Flags |= PD_EXECUTE;
+
     // PT_LOAD segment
     BOOLEAN First = Desc == NULL;
     Desc = NewDescriptor(
       Desc,
-      EfiConventionalMemory,
-      ProgramHdr->p_vaddr,
       PhysAddr,
-      EFI_SIZE_TO_PAGES(ProgramHdr->p_memsz),
-      0
+      ProgramHdr->p_vaddr,
+      EFI_SIZE_TO_PAGES(MemSize),
+      Flags
     );
     if (First) {
       *Pages = Desc;
     }
 
-    CopyMem((VOID *) PhysAddr, EHDR_OFFSET(ElfHdr, ProgramHdr->p_offset), ProgramHdr->p_filesz);
-    ZeroMem((VOID *) (PhysAddr + ProgramHdr->p_filesz), ProgramHdr->p_memsz - ProgramHdr->p_filesz);
-    PhysAddr += ProgramHdr->p_memsz;
+    CopyMem((VOID *) PhysAddr, EHDR_OFFSET(ElfHdr, ProgramHdr->p_offset), FileSize);
+    ZeroMem((VOID *) (PhysAddr + FileSize), MemSize - FileSize);
+    PhysAddr += MemSize;
 
   NEXT:
     ProgramHdr = NEXT_PHDR(ElfHdr, ProgramHdr);
@@ -102,11 +197,54 @@ EFI_STATUS EFIAPI LoadElf(IN VOID *Buffer, IN UINT64 PhysAddr, OUT MEMORY_DESCRI
   return EFI_SUCCESS;
 }
 
+//
+
+Elf64_Sym EFIAPI *LocateKernelBootInfoSymbol(IN Elf64_Ehdr *ElfHdr) {
+  Elf64_Shdr *SymTabHdr = ElfLocateSectionHeaderByType(ElfHdr, SHT_SYMTAB);
+  Elf64_Shdr *BootDataHdr = ElfLocateSectionHeaderByName(ElfHdr, ".boot_data");
+  if (SymTabHdr == NULL || BootDataHdr == NULL || BootDataHdr->sh_type != SHT_PROGBITS) {
+    // no boot data section
+    PRINT_WARN("No .boot_data section found");
+    return NULL;
+  }
+
+  PRINT_INFO("Found .boot_data section");
+  PRINT_INFO("Looking for boot info symbol");
+
+  Elf64_Shdr *FirstShdr = EHDR_OFFSET(ElfHdr, ElfHdr->e_shoff);
+  UINTN BootDataIndex = BootDataHdr - FirstShdr;
+  Elf64_Sym *Sym = EHDR_OFFSET(ElfHdr, SymTabHdr->sh_offset + SymTabHdr->sh_entsize);
+  UINTN NumSymbols = SymTabHdr->sh_size / SymTabHdr->sh_entsize;
+  for (UINTN Index = 0; Index < NumSymbols; Index++) {
+    if (Sym->st_shndx != BootDataIndex) {
+      Sym = NEXT_SYM(SymTabHdr, Sym);
+      continue;
+    }
+
+    if (Sym->st_info & STT_OBJECT) {
+      CHAR8 *SymName = ElfGetStringForSymbol(ElfHdr, SymTabHdr, Sym);
+      if (SymName != NULL) {
+        PRINT_INFO("Found boot info symbol '%a'", SymName);
+      } else {
+        PRINT_INFO("Found boot info symbol in section: .boot_data");
+      }
+      return Sym;
+    }
+
+    PRINT_WARN("Found invalid non-object symbol in section: .boot_data");
+    Sym = NEXT_SYM(SymTabHdr, Sym);
+  }
+
+  return NULL;
+}
+
 EFI_STATUS EFIAPI LoadKernel(
   IN CONST CHAR16 *Path,
   IN UINT64 PhysAddr,
   OUT UINT64 *Entry,
-  OUT MEMORY_DESCRIPTOR **Pages
+  OUT UINTN *KernelSize,
+  OUT UINT64 *BootInfoSymbol,
+  OUT PAGE_DESCRIPTOR **Pages
 ) {
   EFI_STATUS Status;
 
@@ -126,6 +264,13 @@ EFI_STATUS EFIAPI LoadKernel(
     return Status;
   }
 
+  Status = KernelImageHandle->Close(KernelImageHandle);
+  if (EFI_ERROR(Status)) {
+    PRINT_ERROR("Failed to close kernel image handle");
+    FreePool(KernelImageBuffer);
+    return Status;
+  }
+
   PRINT_INFO("Kernel image size: %d", KernelImageSize);
 
   UINT64 KernelEntry;
@@ -133,6 +278,7 @@ EFI_STATUS EFIAPI LoadKernel(
   Status = ReadElf(KernelImageBuffer, &KernelEntry, &MemSize);
   if (EFI_ERROR(Status)) {
     PRINT_ERROR("Bad kernel image format");
+    FreePool(KernelImageBuffer);
     return Status;
   }
 
@@ -140,19 +286,26 @@ EFI_STATUS EFIAPI LoadKernel(
   PRINT_INFO("Kernel memory size: %d", MemSize);
 
   // load elf segments
-  MEMORY_DESCRIPTOR *KernelPages = NULL;
+  PAGE_DESCRIPTOR *KernelPages = NULL;
   Status = LoadElf(KernelImageBuffer, PhysAddr, &KernelPages);
   if (EFI_ERROR(Status)) {
     PRINT_ERROR("Failed to load kernel image");
+    FreePool(KernelImageBuffer);
     return Status;
   }
 
   PRINT_INFO("Kernel entry point: 0x%p", KernelEntry);
 
+  // locate boot_info symbol (if any)
+  Elf64_Sym *BootInfoSym = LocateKernelBootInfoSymbol(KernelImageBuffer);
+
   *Entry = KernelEntry;
+  *KernelSize = KernelImageSize;
+  *BootInfoSymbol = BootInfoSym != NULL ? BootInfoSym->st_value : 0;
   *Pages = KernelPages;
 
   PRINT_INFO("Kernel loaded!");
+  FreePool(KernelImageBuffer);
   return EFI_SUCCESS;
 }
 
@@ -160,7 +313,7 @@ EFI_STATUS EFIAPI LoadKernel(
 // Debugging
 //
 
-EFI_STATUS EFIAPI PrintElfHeader(IN VOID *Buffer) {
+EFI_STATUS EFIAPI PrintElfInfo(IN VOID *Buffer) {
   Elf64_Ehdr *ElfHdr = (Elf64_Ehdr *) Buffer;
   if (!ElfVerifyHeader(ElfHdr)) {
     PRINT_ERROR("Invalid ELF file");

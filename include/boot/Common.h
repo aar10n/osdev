@@ -13,26 +13,30 @@
 #include <Library/MemoryAllocationLib.h>
 #include <Library/UefiBootServicesTableLib.h>
 #include <Library/UefiRuntimeServicesTableLib.h>
+#include <Library/IoLib.h>
 #include <ProcessorBind.h>
 #include <stdint.h>
 
+#include <boot.h>
+
 #define EFIMAIN EFIAPI __attribute((used))
 
-#define CHECK_STATUS(Status) \
-  if (EFI_ERROR(Status)){ \
-    ErrorPrint(L"[Loader] Error code %d\n", Status); \
-    return Status; \
-  } \
-  NULL
-
-// [Loader] INFO:     Loading x
-// [Loader] ERROR:    Failed to load x
-// [Loader] WARNING:  Failed to load y
-// [Loader] Status: EFI_SUCCESS
+#define PRE_EXIT_BOOT_SERVICES (PostExitBootServices == FALSE)
+#define POST_EXIT_BOOT_SERVICES (PostExitBootServices == TRUE)
 
 #define PRINT_INFO(string, ...) Print(L"[Loader] INFO:     " L##string L"\n", ##__VA_ARGS__)
 #define PRINT_WARN(string, ...) ErrorPrint(L"[Loader] WARNING:  " L##string L"\n", ##__VA_ARGS__)
 #define PRINT_ERROR(string, ...) ErrorPrint(L"[Loader] ERROR:    " L##string L"\n", ##__VA_ARGS__)
 #define PRINT_STATUS(status) ErrorPrint(L"[Loader] Status: %r\n", status)
+
+#define MMAP_MAX_SIZE SIZE_8KB
+
+extern BOOLEAN PostExitBootServices;
+
+static inline VOID WaitForKeypress() {
+  gBS->WaitForEvent(1, &(gST->ConIn->WaitForKey), NULL);
+  EFI_INPUT_KEY Key;
+  gST->ConIn->ReadKeyStroke(gST->ConIn, &Key);
+}
 
 #endif

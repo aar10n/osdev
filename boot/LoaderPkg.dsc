@@ -80,4 +80,4 @@
   LoaderPkg/Loader.inf
 
 [BuildOptions]
-  *_CLANGPDB_*_CC_FLAGS         = -Wno-unused-function
+  *_CLANGPDB_*_CC_FLAGS         = -Wno-unused-function -Wno-unused-variable

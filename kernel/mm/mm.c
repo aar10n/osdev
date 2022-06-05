@@ -67,8 +67,8 @@ static const char *get_zone_name(zone_type_t zone) {
 }
 
 static bool does_cross_zone(memory_region_t *region) {
-  zone_type_t start = get_zone_type(region->phys_addr);
-  zone_type_t end = get_zone_type(region->phys_addr + region->size);
+  zone_type_t start = get_zone_type(region->base);
+  zone_type_t end = get_zone_type(region->base + region->size);
   return start != end;
 }
 
@@ -107,14 +107,14 @@ void mm_init() {
   memory_map_t *mem = boot_info->mem_map;
 
   memory_zone_t *last = NULL;
-  memory_region_t *region = mem->mmap;
-  while ((uintptr_t) region < (uintptr_t) mem->mmap + mem->mmap_size) {
-    if (region->type != MEMORY_FREE) {
+  memory_region_t *region = mem->map;
+  while ((uintptr_t) region < (uintptr_t) mem->map + mem->size) {
+    if (region->type != MEMORY_USABLE) {
       region++;
       continue;
     }
 
-    zone_type_t zone_type = get_zone_type(region->phys_addr);
+    zone_type_t zone_type = get_zone_type(region->base);
     if (does_cross_zone(region)) {
       kprintf("[mm] splitting region at zone limit\n");
 
@@ -122,13 +122,13 @@ void mm_init() {
       uintptr_t limit = get_zone_limit(zone_type);
 
       // split the memory map
-      kassert(mem->mmap_size < mem->mmap_capacity);
-      uintptr_t mmap_end = (uintptr_t) mem->mmap + mem->mmap_size;
+      kassert(mem->size < mem->capacity);
+      uintptr_t mmap_end = (uintptr_t) mem->map + mem->size;
       memmove(region + 1, region, mmap_end - (uintptr_t) region);
 
       size_t old_size = region->size;
-      region->size = limit - region->phys_addr - 1;
-      (region + 1)->phys_addr = limit;
+      region->size = limit - region->base - 1;
+      (region + 1)->base = limit;
       (region + 1)->size = old_size - region->size;
 
       continue;
@@ -136,7 +136,7 @@ void mm_init() {
 
     memory_zone_t *zone = kmalloc(sizeof(memory_zone_t));
     zone->type = zone_type;
-    zone->base_addr = region->phys_addr;
+    zone->base_addr = region->base;
     zone->size = region->size;
 
     size_t size = max((region->size / PAGE_SIZE) / 64, 1) * sizeof(uint64_t);

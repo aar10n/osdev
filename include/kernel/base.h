@@ -4,7 +4,6 @@
 
 #ifndef INCLUDE_BASE_H
 #define INCLUDE_BASE_H
-#define __KERNEL__
 
 #include <abi/types.h>
 #include <boot.h>
@@ -14,6 +13,21 @@
 //
 // General Definitions
 //
+
+#define KERNEL_PA      0x100000
+#define KERNEL_OFFSET  0xFFFFFF8000000000
+#define KERNEL_VA      0xFFFFFF8000100000
+#define STACK_VA       0xFFFFFFA000000000
+#define FRAMEBUFFER_VA 0xFFFFFFC000000000
+#define MMIO_BASE_VA   0xFFFFFFFFE0000000
+#define PROGRAM_VA     0xFFFFFF8000010000
+
+#define SMPBOOT_START  0x0000
+#define SMPDATA_START  0x1000
+
+#define STACK_SIZE      0x4000 // 8 KiB
+#define KERNEL_RESERVED 0x300000 // 3 MiB
+#define RESERVED_TABLES 6 // Number of preallocated page tables
 
 #define PAGE_SIZE 0x1000
 
