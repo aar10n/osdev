@@ -127,6 +127,11 @@ module-sources = $(foreach target,$($1_TARGETS),$(call target-sources,$(target))
 #   $(call module-objects,KERNEL) -> build/osdev/kernel/a.c.o build/osdev/fs/b.c.o
 module-objects = $(foreach target,$($1_TARGETS),$(call target-objects,$(target)))
 
+# Returns a list of .d compiler generated dependency files for a given module. (to be included)
+# args:
+#   $1 - module name
+module-header-deps = $(foreach module,$1,$($(module)_OBJECTS:%.o=%.d))
+
 # Resolves the value of the specified module variable.
 # args:
 #   $1 - variable name

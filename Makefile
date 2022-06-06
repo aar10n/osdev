@@ -120,7 +120,8 @@ $(BUILD_DIR)/boot$(WINARCH).efi: $(BUILD_DIR)/loader.dll
 # ------------------- #
 
 KERNEL_CFLAGS = $(CFLAGS) -mcmodel=large -mno-red-zone -fno-stack-protector \
-				-fno-omit-frame-pointer -fstrict-volatile-bitfields $(KERNEL_DEFINES)
+				-fno-omit-frame-pointer -fstrict-volatile-bitfields -fno-builtin-memset \
+				$(KERNEL_DEFINES)
 KERNEL_LDFLAGS = $(LDFLAGS) -Tlinker.ld -nostdlib -z max-page-size=0x1000
 
 KERNEL_INCLUDE = $(INCLUDE) -Iinclude/kernel -Iinclude/fs -Ilib
@@ -170,3 +171,5 @@ $(OBJ_DIR)/%.s.o: $(PROJECT_DIR)/%.s
 $(OBJ_DIR)/%.asm.o: $(PROJECT_DIR)/%.asm
 	@mkdir -p $(@D)
 	$(call var,NASM,$<) $(call var,INCLUDE,$<) $(call var,NASMFLAGS,$<) -o $@ $<
+
+-include $(call include-module-deps,$(modules))
