@@ -28,8 +28,10 @@
 #define MEMORY_ACPI         4
 #define MEMORY_ACPI_NVS     5
 #define MEMORY_MAPPED_IO    6
-#define MEMORY_RUNTIME_CODE 7
-#define MEMORY_RUNTIME_DATA 8
+#define MEMORY_KERNEL_CODE  7
+#define MEMORY_KERNEL_DATA  8
+#define MEMORY_RUNTIME_CODE 9
+#define MEMORY_RUNTIME_DATA 10
 
 // Framebuffer pixel format
 #define FB_PIXEL_FORMAT_UNKNOWN 0x0

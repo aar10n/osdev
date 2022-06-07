@@ -150,6 +150,18 @@ EFI_STATUS EFIAPI SetVirtualAddressMap(IN EFI_MEMORY_MAP *MemoryMap) {
 
 //
 
+BOOLEAN EFIAPI IsPageDescriptorInEfiMemoryRegion(IN PAGE_DESCRIPTOR *Desc, IN EFI_MEMORY_DESCRIPTOR *Region) {
+  if (Desc == NULL || Region == NULL) {
+    return FALSE;
+  }
+
+  UINTN DescSize = EFI_PAGES_TO_SIZE(Desc->NumPages);
+  UINTN EfiRegionSize = EFI_PAGES_TO_SIZE(Region->NumberOfPages);
+
+  return Desc->PhysAddr >= Region->PhysicalStart &&
+    Desc->PhysAddr + DescSize <= Region->PhysicalStart + EfiRegionSize;
+}
+
 EFI_STATUS EFIAPI GetMemoryRegionType(IN EFI_MEMORY_TYPE Type) {
   switch (Type) {
     case EfiUnusableMemory:
@@ -182,6 +194,7 @@ EFI_STATUS EFIAPI GetMemoryRegionType(IN EFI_MEMORY_TYPE Type) {
 
 EFI_STATUS EFIAPI ConvertEfiMemoryMapToBootFormat(
   IN EFI_MEMORY_MAP *EfiMemoryMap,
+  IN PAGE_DESCRIPTOR *KernelPages,
   OUT VOID *MapBuffer,
   IN OUT UINT32 *MapSize,
   OUT UINTN *TotalMem
@@ -197,9 +210,39 @@ EFI_STATUS EFIAPI ConvertEfiMemoryMapToBootFormat(
   UINTN Total = 0;
   UINTN NumEntries = 0;
   memory_region_t *Map = MapBuffer;
+  PAGE_DESCRIPTOR *KernelPage = KernelPages;
   EFI_MEMORY_DESCRIPTOR *Desc = EfiMemoryMap->Map;
   while (!AT_MEMORY_MAP_END(Desc, EfiMemoryMap)) {
+    if (Desc->NumberOfPages == 0) {
+      Desc = MEMORY_MAP_NEXT(Desc, EfiMemoryMap);
+      continue;
+    }
+
     uint32_t MemoryType = GetMemoryRegionType(Desc->Type);
+    if (KernelPage && IsPageDescriptorInEfiMemoryRegion(KernelPage, Desc)) {
+      // Add Entry for kernel pages
+      if (NumEntries >= MaxEntries) {
+        PRINT_ERROR("Not enough space for memory map");
+        return EFI_BUFFER_TOO_SMALL;
+      }
+
+      if (KernelPage->Flags & PD_EXECUTE) {
+        MemoryType = MEMORY_KERNEL_CODE;
+      } else {
+        MemoryType = MEMORY_KERNEL_DATA;
+      }
+
+      Map[NumEntries].type = MemoryType;
+      Map[NumEntries].size = KernelPage->NumPages * EFI_PAGE_SIZE;
+      Map[NumEntries].base = KernelPage->PhysAddr;
+      NumEntries++;
+
+      Total += KernelPage->NumPages * EFI_PAGE_SIZE;
+      Desc->NumberOfPages -= KernelPage->NumPages;
+      KernelPage = KernelPage->Next;
+      continue;
+    }
+
     if (NumEntries > 0 && Map[NumEntries - 1].type == MemoryType) {
       // merge adjacent regions of the same type
       Map[NumEntries - 1].size += Desc->NumberOfPages * EFI_PAGE_SIZE;
@@ -217,6 +260,11 @@ EFI_STATUS EFIAPI ConvertEfiMemoryMapToBootFormat(
 
     Total += Desc->NumberOfPages * EFI_PAGE_SIZE;
     Desc = MEMORY_MAP_NEXT(Desc, EfiMemoryMap);
+  }
+
+  if (KernelPage != NULL) {
+    PRINT_ERROR("Failed to add kernel pages to memory map");
+    return EFI_INVALID_PARAMETER;
   }
 
   // write out actual size of memory map and total memory
@@ -288,6 +336,7 @@ VOID EFIAPI FillTableWithEntries(
   IN UINTN StartIndex,
   IN UINTN NumEntries,
   IN UINT64 StartPhysAddr,
+  IN UINTN Stride,
   IN UINT16 Flags
 ) {
   ASSERT(Table != NULL);
@@ -297,7 +346,7 @@ VOID EFIAPI FillTableWithEntries(
   UINT64 PhysAddr = StartPhysAddr;
   for (UINTN Index = StartIndex; Index < StartIndex + NumEntries; Index++) {
     Table[Index] = PTE_ADDR(PhysAddr) | Flags;
-    PhysAddr += EFI_PAGE_SIZE;
+    PhysAddr += Stride;
   }
 }
 
@@ -305,7 +354,7 @@ EFI_STATUS EFIAPI SetupKernelPageTables(IN PAGE_DESCRIPTOR *Descriptors, OUT UIN
   ASSERT(PRE_EXIT_BOOT_SERVICES);
   ASSERT(Descriptors != NULL);
 
-  CONST UINTN NumPageTables = 5;
+  CONST UINTN NumPageTables = 7;
   VOID *PageTablePages = AllocateReservedPages(NumPageTables);
   if (PageTablePages == NULL) {
     PRINT_ERROR("Failed to allocate pages for page tables");
@@ -315,23 +364,31 @@ EFI_STATUS EFIAPI SetupKernelPageTables(IN PAGE_DESCRIPTOR *Descriptors, OUT UIN
 
   UINT64 *PML4 = TABLE_PTR(PageTablePages, 0);
   UINT64 *LowerPDPT = TABLE_PTR(PageTablePages, 1);
-  UINT64 *UpperPDPT = TABLE_PTR(PageTablePages, 2);
-  UINT64 *UpperPDT = TABLE_PTR(PageTablePages, 3);
-  UINT64 *UpperPT = TABLE_PTR(PageTablePages, 4);
+  UINT64 *LowerPDT = TABLE_PTR(PageTablePages, 2);
+  UINT64 *LowerPT = TABLE_PTR(PageTablePages, 3);
+  UINT64 *UpperPDPT = TABLE_PTR(PageTablePages, 4);
+  UINT64 *UpperPDT = TABLE_PTR(PageTablePages, 5);
+  UINT64 *UpperPT = TABLE_PTR(PageTablePages, 6);
 
   PML4[0] = PTE_ADDR(LowerPDPT) | PE_RW | PE_P;              // -> LowerPDPT
   PML4[511] = PTE_ADDR(UpperPDPT) | PE_RW |PE_P;             // -> UpperPDPT
 
-  LowerPDPT[0] = PTE_ADDR(0x00000000) | PE_S | PE_RW | PE_P; // -> 0-1GiB identity mapping
+  LowerPDPT[0] = PTE_ADDR(LowerPDT) | PE_RW | PE_P;          // -> LowerPDT
   LowerPDPT[1] = PTE_ADDR(0x40000000) | PE_S | PE_RW | PE_P; // -> 1-2GiB identity mapping
   LowerPDPT[2] = PTE_ADDR(0x80000000) | PE_S | PE_RW | PE_P; // -> 2-3GiB identity mapping
   LowerPDPT[3] = PTE_ADDR(0xC0000000) | PE_S | PE_RW | PE_P; // -> 3-4GiB identity mapping
+  LowerPDT[0] = PTE_ADDR(LowerPT) | PE_RW | PE_P;            // -> LowerPT
+
+  // Identity map lower 1GiB except for the first page
+  FillTableWithEntries(LowerPT, 1, TABLE_MAX_ENTRIES - 1, 0x1000, SIZE_4KB, PE_RW | PE_P);
+  FillTableWithEntries(LowerPDT, 1, TABLE_MAX_ENTRIES - 1, 0x200000, SIZE_2MB, PE_S | PE_RW | PE_P);
 
   UpperPDPT[0] = PTE_ADDR(UpperPDT) | PE_RW | PE_P;          // -> UpperPDT
   UpperPDT[0] = PTE_ADDR(UpperPT) | PE_RW | PE_P;            // -> UpperPT
-  // UpperPDT[1] = PTE_ADDR(SIZE_2MB) | PE_S | PE_RW | PE_P;    // -> 2MiB kernel reserved
+  UpperPDT[1] = PTE_ADDR(0x200000) | PE_S | PE_RW | PE_P;    // -> 2MiB kernel reserved
 
   UINTN Index = PT_OFFSET(KernelPhysAddr);
+  UINT64 PhysAddr = KernelPhysAddr;
   PAGE_DESCRIPTOR *KernelDescriptor = Descriptors;
   while (KernelDescriptor != NULL) {
     ASSERT(!(KernelDescriptor->Flags & PD_SIZE_2MB));
@@ -339,11 +396,15 @@ EFI_STATUS EFIAPI SetupKernelPageTables(IN PAGE_DESCRIPTOR *Descriptors, OUT UIN
 
     UINTN NumPages = KernelDescriptor->NumPages;
     UINT16 Flags = PageDescriptorFlagsToEntryFlags(KernelDescriptor->Flags) | PE_P;
-    FillTableWithEntries(UpperPT, Index, NumPages, KernelDescriptor->PhysAddr, Flags);
+    FillTableWithEntries(UpperPT, Index, NumPages, KernelDescriptor->PhysAddr, EFI_PAGE_SIZE, Flags);
 
     Index += NumPages;
+    PhysAddr += EFI_PAGES_TO_SIZE(NumPages);
     KernelDescriptor = KernelDescriptor->Next;
   }
+
+  FillTableWithEntries(UpperPT, 0, PT_OFFSET(KernelPhysAddr) - 1, 0, EFI_PAGE_SIZE, PE_RW | PE_P);
+  FillTableWithEntries(UpperPT, Index, TABLE_MAX_ENTRIES - Index, PhysAddr, EFI_PAGE_SIZE, PE_RW | PE_P);
 
   *PML4Address = (UINT64)PML4;
   return EFI_SUCCESS;

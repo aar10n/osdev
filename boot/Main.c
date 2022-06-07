@@ -249,6 +249,7 @@ EFI_STATUS EFIMAIN UefiMain(IN EFI_HANDLE ImageHandle, IN EFI_SYSTEM_TABLE *Syst
   BootInfo->mem_map.size = BootInfo->mem_map.capacity;
   Status = ConvertEfiMemoryMapToBootFormat(
     MemoryMap,
+    KernelPages,
     BootMemoryMapBuffer,
     &BootInfo->mem_map.size,
     &BootInfo->mem_total
