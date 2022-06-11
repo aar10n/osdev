@@ -27,6 +27,9 @@ LLD_LINK ?= lld-link
 GDB ?= gdb
 QEMU ?= qemu-system-$(ARCH)
 
+SSH ?= ssh
+RSYNC ?= rsync
+
 include toolchain/arch/$(ARCH).mk
 
 ifeq ($(DEBUG),1)
@@ -39,24 +42,31 @@ endif
 #  QEMU Options  #
 # -------------- #
 
-QEMU_CPU_CORES ?= 1
-QEMU_CPU_THREADS ?= 2
+DEBUG_DIR ?= $(BUILD_DIR)
+
+QEMU_NCORES ?= 1
+QEMU_NTHREADS ?= 2
+QEMU_SMP ?= cores=$(QEMU_NCORES),threads=$(QEMU_NTHREADS),sockets=1
 QEMU_MEM ?= 256M
+QEMU_MACHINE ?= q35
+
+QEMU_DEVICES ?= -device ahci,id=ahci -device qemu-xhci,id=xhci
+
+ifeq ($(QEMU_DEBUG),1)
+QEMU_DEBUG_OPTIONS ?= \
+	-serial file:$(DEBUG_DIR)/kernel.log \
+	-global isa-debugcon.iobase=0x402 \
+	-debugcon file:$(DEBUG_DIR)/uefi_debug.log
+endif
 
 QEMU_OPTIONS ?= \
 	-cpu $(QEMU_CPU) \
-	-smp cores=$(QEMU_CPU_CORES),threads=$(QEMU_CPU_THREADS),sockets=1 \
+	-smp $(QEMU_SMP) \
 	-m $(QEMU_MEM) \
-	-machine q35 \
+	-machine $(QEMU_MACHINE) \
 	-bios $(BUILD_DIR)/OVMF_$(WINARCH).fd \
 	-drive file=$(BUILD_DIR)/osdev.img,id=boot,format=raw,if=none \
-	-device ahci,id=ahci \
-	-device qemu-xhci,id=xhci \
-	$(QEMU_EXTRA_OPTIONS)
+	$(QEMU_DEVICES) \
+	$(QEMU_EXTRA_OPTIONS) \
+	$(QEMU_DEBUG_OPTIONS)
 
-ifeq ($(QEMU_DEBUG),1)
-QEMU_OPTIONS += \
-	-serial file:$(BUILD_DIR)/kernel.log \
-	-global isa-debugcon.iobase=0x402 \
-	-debugcon file:$(BUILD_DIR)/uefi_debug.log
-endif

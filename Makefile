@@ -60,6 +60,21 @@ debug: $(BUILD_DIR)/osdev.img
 run-debug: $(BUILD_DIR)/osdev.img
 	$(QEMU) -s -S $(QEMU_OPTIONS) -monitor telnet:127.0.0.1:55544,server,nowait &> $(BUILD_DIR)/output &
 
+
+remote-run: REMOTE_QEMU ?= $(QEMU)
+remote-run: REMOTE_QEMU_OPTIONS ?= $(QEMU_OPTIONS)
+remote-run: DEBUG_DIR = .
+remote-run: $(BUILD_DIR)/osdev.img ovmf $(REMOTE_RUN_DEPS)
+ifneq ($(call all-defined,REMOTE_USER REMOTE_HOST),true)
+	$(error REMOTE_USER and REMOTE_HOST must both be defined)
+endif
+	$(RSYNC) -av $(BUILD_DIR)/osdev.img $(REMOTE_USER)@$(REMOTE_HOST):~/
+	$(RSYNC) -av $(BUILD_DIR)/OVMF_$(WINARCH).fd $(REMOTE_USER)@$(REMOTE_HOST):~/
+	$(SSH) -t $(REMOTE_USER)@$(REMOTE_HOST) "$(REMOTE_QEMU) $(REMOTE_QEMU_OPTIONS) -monitor stdio"
+
+remote-tail-logs:
+	$(SSH) -t $(REMOTE_USER)@$(REMOTE_HOST) "tail -f kernel.log"
+
 # misc
 
 .PHONY: clean

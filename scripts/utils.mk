@@ -10,6 +10,12 @@ join-comma = $(subst $(space),$(comma),$(1))
 #   $1 - path
 exists = $(if $(realpath $(firstword $1)),true,false)
 
+# Returns true if all variable names in the given list are defined and contain
+# non-empty values, false otherwise.
+# args:
+#   $1 - list of variable names
+all-defined = $(if $(strip $(foreach var,$1,$(if $($(var)),,$(var)))),false,true)
+
 # Returns a list of <src> paths from a list of <src>:<dest> pairs.
 # args:
 #   $1 - list of <src>:<dest> pairs

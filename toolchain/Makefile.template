@@ -1,4 +1,4 @@
-## Local options
+## Local overrides
 
 DEBUG = 1
 QEMU_DEBUG = 1
@@ -7,11 +7,28 @@ QEMU_DEBUG = 1
 #  QEMU Options  #
 # -------------- #
 
-# QEMU_CPU_CORES = 1
-# QEMU_CPU_THREADS = 1
-# QEMU_MEM = 256M
+#QEMU_CPU = Nehalem
+#QEMU_NCORES = 1
+#QEMU_NTHREADS = 1
+#QEMU_MEM = 256M
 
 QEMU_EXTRA_OPTIONS += -device usb-kbd,bus=xhci.0
-# QEMU_EXTRA_OPTIONS += -device usb-mouse,bus=xhci.0
+#QEMU_EXTRA_OPTIONS += -device usb-mouse,bus=xhci.0
 QEMU_EXTRA_OPTIONS += -device usb-storage,drive=boot,bus=xhci.0
 
+# ---------------- #
+#  Remote Options  #
+# ---------------- #
+
+#REMOTE_USER = user
+#REMOTE_HOST = host
+
+#REMOTE_QEMU = qemu-system-$(ARCH)
+
+#REMOTE_QEMU_OPTIONS ?= \
+#	-cpu kvm64 \
+#	-bios OVMF_$(WINARCH).fd \
+#	-drive file=osdev.img,id=boot,format=raw,if=none \
+#	$(QEMU_DEVICES) \
+#	$(QEMU_EXTRA_OPTIONS) \
+#	$(QEMU_DEBUG_OPTIONS)

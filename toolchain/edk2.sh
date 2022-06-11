@@ -55,7 +55,7 @@ toolchain::edk2::setup() {
 # ===================
 # args:
 #   <1>: target triplet
-#   <2>: package [loader|loader-lst|ovmf]
+#   <2>: package [loader|loader-lst|ovmf|shell]
 # env:
 #   EDK2_DIR        - edk2 directory (default = <BUILD_DIR>/edk2)
 #   EDK2_BUILD_TYPE - build type [RELEASE|DEBUG] (default = RELEASE)
@@ -99,6 +99,9 @@ toolchain::edk2::build() {
   case "${package_name}" in
     ovmf)
       package="OvmfPkg/OvmfPkg${arch}.dsc"
+      ;;
+    shell)
+      package="ShellPkg/ShellPkg.dsc"
       ;;
     loader)
       package="LoaderPkg/LoaderPkg.dsc"
