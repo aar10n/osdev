@@ -55,7 +55,7 @@ typedef enum {
   L_SIZE,
 } fmt_length_t;
 
-typedef struct {
+typedef struct packed {
   // Flags
   uint16_t alt_form : 1;  // Use the alternate for numbers
   uint16_t pad_zero : 1;  // Pad with zeros instead of spaces
@@ -67,6 +67,7 @@ typedef struct {
   uint16_t is_uppercase : 1; // Use uppercase for letters
   uint16_t is_width_arg : 1; // Width is an argument index
   uint16_t is_prec_arg : 1;  // Precision is an argument index
+  uint16_t : 7;              // reserved
 
   // Length
   fmt_length_t length; // Length of argument
@@ -184,6 +185,12 @@ int apply_prefix(char *buf, bool negative, fmt_options_t *opts) {
 
 //
 
+int _unsupported(char *buf, fmt_options_t *opts) {
+  buf[0] = '<';
+  buf[1] = '?';
+  buf[2] = '>';
+  return 3;
+}
 
 int _ntoa(char *buf, unsigned long long value, int base, fmt_options_t *opts) {
   int prefix_len = 0;
@@ -369,6 +376,131 @@ int _ftoa(char *buf, double value, fmt_options_t *opts) {
   return index;
 }
 
+// number to human readable size string
+int _ntosza(char *buf, size_t value, fmt_options_t *opts) {
+  int padding_len;
+  int number_len;
+  int suffix_len;
+
+  int letter_offset = opts->is_uppercase ? 0 : ('a' - 'A');
+  bool use_decimal = false;
+
+  unsigned long long num_u;
+  double num_d;
+  const char *suffix;
+  if (value >= SIZE_1TB) {
+    num_u = value / SIZE_1TB;
+    num_d = ((double) value) / SIZE_1TB;
+    if (opts->is_uppercase) {
+      suffix = opts->alt_form ? "TB" : "T";
+    } else {
+      suffix = opts->alt_form ? "tb" : "t";
+    }
+  } else if (value >= SIZE_1GB) {
+    num_u = value / SIZE_1GB;
+    num_d = ((double) value) / SIZE_1GB;
+    if (opts->is_uppercase) {
+      suffix = opts->alt_form ? "GB" : "G";
+    } else {
+      suffix = opts->alt_form ? "gb" : "g";
+    }
+
+    if (value % SIZE_1GB != 0) {
+      use_decimal = true;
+    }
+  } else if (value >= SIZE_1MB) {
+    num_u = value / SIZE_1MB;
+    num_d = ((double) value) / SIZE_1MB;
+    if (opts->is_uppercase) {
+      suffix = opts->alt_form ? "MB" : "M";
+    } else {
+      suffix = opts->alt_form ? "mb" : "m";
+    }
+
+    if (value % SIZE_1MB != 0) {
+      use_decimal = true;
+    }
+  } else if (value >= SIZE_1KB) {
+    num_u = value / SIZE_1KB;
+    num_d = ((double) value) / SIZE_1KB;
+    if (opts->is_uppercase) {
+      suffix = opts->alt_form ? "KB" : "K";
+    } else {
+      suffix = opts->alt_form ? "kb" : "k";
+    }
+
+    if (value % SIZE_1KB != 0) {
+      use_decimal = true;
+    }
+  } else {
+    num_u = value;
+    num_d = (double) value;
+    if (opts->is_uppercase) {
+      suffix = opts->alt_form ? "B" : "";
+    } else {
+      suffix = opts->alt_form ? "b" : "";
+    }
+  }
+
+  if (opts->precision > 0 && !opts->is_prec_arg) {
+    use_decimal = true;
+  } else if (use_decimal) {
+    opts->precision = 2;
+  }
+  suffix_len = strlen(suffix);
+
+  char number[NTOA_BUFFER_SIZE];
+  if (use_decimal) {
+    if (opts->width >= suffix_len) {
+      opts->width -= suffix_len;
+    }
+    number_len = _ftoa(number, num_d, opts);
+  } else {
+    number_len = ntoa_unsigned(number, num_u, 10, opts);
+    number[number_len] = '\0';
+    reverse(number);
+  }
+
+  // calculate padding
+  uint32_t total_len = opts->width - (number_len + suffix_len);
+  padding_len = max(total_len, 0);
+
+  // | space padding - prefix - zero padding - number - right padding |
+  int index = 0;
+
+  // space padding
+  if (!opts->pad_right && (opts->precision || !opts->pad_zero)) {
+    for (int i = 0; i < padding_len; i++) {
+      buf[index] = ' ';
+      index++;
+    }
+  }
+
+  // zero padding
+  if (opts->pad_zero && !(opts->precision || opts->pad_right)) {
+    for (int i = 0; i < padding_len; i++) {
+      buf[index] = '0';
+      index++;
+    }
+  }
+
+  // number
+  memcpy(buf + index, number, number_len);
+  index += number_len;
+  memcpy(buf + index, suffix, suffix_len);
+  index += suffix_len;
+
+  // right padding
+  if (opts->pad_right) {
+    for (int i = 0; i < padding_len; i++) {
+      buf[index] = ' ';
+      index++;
+    }
+  }
+
+  return index;
+}
+
 //
 
 int _atoi(const char *str, int base) {
@@ -426,6 +558,69 @@ int parse_int(char *dest, const char *str) {
 // Public Functions
 //
 
+
+/*
+ * print_format - format a string using printf-like syntax
+ * =======================================================
+ *
+ * print_format(const char *format, char *buffer, size_t size, va_list args, bool limit);
+ *
+ * format: "%[flags][width][precision][length]<type>"
+ *
+ *
+ * Flags
+ *   '#' - Use alternate form for value. For 'x' and 'X' formatting,
+ *         append "0x" to the value. For 'b' formatting, append "0b"
+ *         to the value. For 'o' formatting, append "0" to the value.
+ *   '0' - The value should be zero padded. If a width value is
+ *         specified, pad with zeros instead of spaces
+ *   '-' - Pad the value from the right side (default left)
+ *   ' ' - If no signed is printed, insert a space before the value.
+ *   '+' - Force add the '+' sign in front of positive numbers.
+ *
+ *
+ * Field Width
+ *   An optional number specifying the minimum width of the
+ *   converted value. If the converted value is smaller than
+ *   the given width, it will be padded with spaces, or zeros
+ *   if the '0' flag is used. By default the padding is from
+ *   the left side, but can be changed with the '-' flag.
+ *   In the case of 's' formatting, the width is the maximum
+ *   number of characters to be printed from the string.
+ *
+ * Precision
+ * =========
+ *
+ * Field Length
+ * ============
+ *   'hh' - A char or unsigned char
+ *   'h'  - A short int or unsigned short int
+ *   'l'  - A long int or unsigned long int
+ *   'll' - A long long int or unsigned long long int
+ *   'z'  - A size_t or ssize_t
+ *
+ * Type Specifier
+ * ==============
+ *   'd' - Decimal
+ *   'i' - Decimal
+ *   'b' - Binary
+ *   'o' - Octal
+ *   'u' - Unsigned decimal
+ *   'x' - Hexadecimal (lowercase)
+ *   'X' - Hexadecimal (uppercase)
+ *   'e' - Scientific notation (lowercase)
+ *   'E' - Scientific notation (uppercase)
+ *   'f' - Floating point (lowercase)
+ *   'F' - Floating point (uppercase)
+ *   'c' - Character
+ *   's' - String
+ *   'p' - Pointer address
+ *   'm' - Memory quantity (lowercase)
+ *   'M' - Memory quantity (uppercase)
+ *   'n' - Number of characters printed
+ *   '%' - A '%' literal
+ *
+ */
 int print_format(const char *format, char *str, size_t size, va_list args, bool limit) {
   va_list valist;
   va_copy(valist, args);
@@ -555,7 +750,7 @@ int print_format(const char *format, char *str, size_t size, va_list args, bool 
       state = FORMAT;
       fmt_ptr++;
       continue;
-    } else if (state == FORMAT) {
+    } else {
       switch (ch) {
         case 'd':
         case 'i': {
@@ -603,6 +798,7 @@ int print_format(const char *format, char *str, size_t size, va_list args, bool 
         case 'e':
         case 'E':
           // scientific notation
+          format_len = _unsupported(buffer, &opts);
           break;
         case 'f':
         case 'F': {
@@ -618,9 +814,12 @@ int print_format(const char *format, char *str, size_t size, va_list args, bool 
         case 'g':
         case 'G':
           // double (in f/F or e/E notation)
+          format_len = _unsupported(buffer, &opts);
+          break;
         case 'a':
         case 'A':
           // double (in hex notation)
+          format_len = _unsupported(buffer, &opts);
           break;
         case 'c': {
           char value = va_arg(valist, int);
@@ -630,9 +829,30 @@ int print_format(const char *format, char *str, size_t size, va_list args, bool 
         }
         case 's': {
           char *value = va_arg(valist, char *);
-          int len = strlen(value);
-          memcpy(buffer, value, len);
-          format_len = len;
+          int len;
+          if (opts.width > 0 && !opts.is_width_arg) {
+            len = opts.width;
+          } else {
+            len = strlen(value);
+          }
+
+          for (int i = 0; i < len; i++) {
+            if (value[i] == '\0') {
+              break;
+            }
+            buffer[i] = value[i];
+            format_len++;
+          }
+          break;
+        }
+        case 'm':
+        case 'M': {
+          // memory quantity
+          if (ch == 'M') {
+            opts.is_uppercase = true;
+          }
+          size_t value = va_arg(valist, size_t);
+          format_len = _ntosza(buffer, value, &opts);
           break;
         }
         case 'n': {
