@@ -30,6 +30,12 @@
     (head)->last = NULL;  \
   }
 
+#define LIST_ENTRY_INIT(entry) \
+  {                            \
+    (entry)->next = NULL;      \
+    (entry)->prev = NULL;      \
+  }
+
 /* Adds an element to the end of the list */
 #define LIST_ADD(head, el, name)        \
   {                                     \

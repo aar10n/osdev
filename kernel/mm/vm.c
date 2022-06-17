@@ -2,23 +2,25 @@
 // Created by Aaron Gill-Braun on 2020-10-03.
 //
 
-#include <base.h>
+#include <mm/vm.h>
+#include <mm/mm.h>
+#include <mm/init.h>
+#include <mm/heap.h>
+
+#include <cpu/cpu.h>
+#include <cpu/idt.h>
+
 #include <panic.h>
 #include <string.h>
 #include <printf.h>
 #include <percpu.h>
 #include <vectors.h>
 
-#include <cpu/cpu.h>
-#include <cpu/idt.h>
-#include <mm/mm.h>
-#include <mm/heap.h>
-#include <mm/vm.h>
-
 #include <interval_tree.h>
 
 #define kernel_virt_to_phys(x) (((uintptr_t)(x)) - KERNEL_OFFSET)
 
+extern LIST_HEAD(mm_callback_t) vm_init_callbacks;
 extern void page_fault_handler();
 
 //
@@ -160,7 +162,7 @@ uint64_t *map_page(uintptr_t virt_addr, uintptr_t phys_addr, uint16_t flags) {
       // kprintf("[vm] page table: %p\n", page->frame);
       // temporarily map the page to zero it
       VM->temp_dir[TEMP_ENTRY] = page->frame | PE_WRITE | PE_PRESENT;
-      tlb_flush();
+      cpu_flush_tlb();
       memset((void *) TEMP_PAGE, 0, PAGE_SIZE);
 
       // map the intermediate table
@@ -184,7 +186,7 @@ uint64_t *map_page(uintptr_t virt_addr, uintptr_t phys_addr, uint16_t flags) {
 
   // kprintf("[vm] %p -> %p\n", phys_addr, virt_addr);
 
-  tlb_flush();
+  cpu_flush_tlb();
   return table + index;
 }
 
@@ -347,7 +349,7 @@ void vm_init() {
     // because the AP kernel tables come pre-setup as
     // recursive page tables
     pml4[R_ENTRY] = kernel_virt_to_phys((uintptr_t) pml4) | PE_WRITE | PE_PRESENT;
-    tlb_flush();
+    cpu_flush_tlb();
 
     // setup the page table for temporary mappings
     uint64_t *dir1 = (void *) (boot_info->reserved_base - PAGES_TO_SIZE(2));
@@ -359,14 +361,14 @@ void vm_init() {
     get_table(TEMP_PAGE, 3)[511] = kernel_virt_to_phys((uintptr_t) dir1) | PE_WRITE | PE_PRESENT;
     get_table(TEMP_PAGE, 2)[511] = kernel_virt_to_phys((uintptr_t) dir2) | PE_WRITE | PE_PRESENT;
     vm->temp_dir = get_table(TEMP_PAGE, 1);
-    tlb_flush();
+    cpu_flush_tlb();
   } else {
     // for the APs we can get the virtual address of the
     // pml4 and temp_dir through the recursive mappings
     pml4 = get_table(0, 4);
     vm->pml4 = pml4;
     vm->temp_dir = get_table(TEMP_PAGE, 1);
-    tlb_flush();
+    cpu_flush_tlb();
   }
 
   //
@@ -422,7 +424,8 @@ void vm_init() {
 
   // finally clear the uefi or bsp created identity mappings
   pml4[0] = 0;
-  tlb_flush();
+  cpu_flush_tlb();
+  
 
   kprintf("[vm] done!\n");
 }
@@ -520,7 +523,7 @@ __used void vm_swap_vmspace(vm_t *new_vm) {
   }
 
   uintptr_t frame = get_frame((uintptr_t) new_vm->pml4);
-  write_cr3(frame);
+  __write_cr3(frame);
   VM = new_vm;
 }
 
@@ -794,7 +797,7 @@ void vm_unmap_page(page_t *page) {
   intvl_tree_delete(VM->tree, intvl);
   kfree(area);
 
-  tlb_flush();
+  cpu_flush_tlb();
 }
 
 /**

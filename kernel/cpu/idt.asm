@@ -17,6 +17,7 @@ extern scheduler_tick
 %define SMPBOOT_START 0x0000
 %define SMPDATA_START 0x1000
 
+%define APIC_BASE     0xFEE00000
 %define APIC_BASE_VA  0xFFFFFFFFE0000000
 %define APIC_REG_ID   0x20
 %define APIC_REG_EOI  0x0B0
@@ -129,6 +130,10 @@ idt_stubs:
 
 interrupt_handler:
   add rsp, 8
+  mov eax, 0xDEADBEEF
+.stop:
+  pause
+  jmp .stop
   swapgs_if_needed
   sub rsp, 8
   pushcaller
@@ -150,7 +155,7 @@ ignore_irq:
 global hpet_handler
 hpet_handler:
   ; send apic eoi
-  mov dword [APIC_BASE_VA + APIC_REG_EOI], 0
+  mov dword [APIC_BASE + APIC_REG_EOI], 0
   pushall
   call timer_handler
   popall
@@ -158,7 +163,7 @@ hpet_handler:
 
 global tick_handler
 tick_handler:
-  mov dword [APIC_BASE_VA + APIC_REG_EOI], 0
+  mov dword [APIC_BASE + APIC_REG_EOI], 0
   pushall
   call scheduler_tick
   popall

@@ -2,20 +2,23 @@
 // Created by Aaron Gill-Braun on 2020-08-25.
 //
 
-#include <percpu.h>
-#include <cpu/cpu.h>
 #include <cpu/idt.h>
+#include <cpu/cpu.h>
+
+#include <mm/init.h>
+#include <device/apic.h>
+#include <vectors.h>
 #include <printf.h>
 
-#include <device/apic.h>
-
 extern uintptr_t idt_stubs;
+extern void page_fault_handler();
 // extern void sched_irq_hook(uint8_t vector);
 
 //
 
 __used void irq_handler(uint8_t vector, regs_t *regs) {
-  apic_send_eoi();
+  // apic_send_eoi();
+  kprintf("IRQ %d\n", vector);
   idt_handler_t handler = IDT_HANDLERS[vector];
   if (handler.fn) {
     handler.fn(vector, handler.data);
@@ -24,19 +27,28 @@ __used void irq_handler(uint8_t vector, regs_t *regs) {
 }
 
 void setup_idt() {
-  uintptr_t offset = (uintptr_t) &idt_stubs;
-  idt_t *idt_struct = PERCPU->idt;
+  size_t idt_page_count = SIZE_TO_PAGES(sizeof(idt_t));
+  uintptr_t pages = mm_early_alloc_pages(idt_page_count);
+  memset((void *) pages, 0, sizeof(idt_t));
 
-  idt_gate_t *idt = idt_struct->idt;
+  idt_t *idt = (void *) pages;
+  PERCPU->idt = idt;
+
+  uintptr_t asm_handler = (uintptr_t) &idt_stubs;
+  idt_gate_t *idt_gates = idt->idt;
   for (int i = 0; i < IDT_GATES; i++) {;
-    idt_gate_t gate = gate(offset, KERNEL_CS, 0, INTERRUPT_GATE, 0, 1);
-    idt[i] = gate;
-    offset += IDT_STUB_SIZE;
+    // idt_gates[i] = gate(asm_handler, KERNEL_CS, 0, INTERRUPT_GATE, 0, 1);
+    idt_gates[i] = gate(asm_handler, 0x38, 0, INTERRUPT_GATE, 0, 1);
+    asm_handler += IDT_STUB_SIZE;
   }
 
-  idt_struct->desc.limit = sizeof(idt_struct->idt)- 1;
-  idt_struct->desc.base = (uint64_t) &idt_struct->idt;
-  load_idt(&(idt_struct->desc));
+  // page fault handler
+  // idt_gates[VECTOR_PAGE_FAULT] = gate((uintptr_t) page_fault_handler, KERNEL_CS, 0, INTERRUPT_GATE, 0, 1);
+  idt_gates[VECTOR_PAGE_FAULT] = gate((uintptr_t) page_fault_handler, 0x38, 0, INTERRUPT_GATE, 0, 1);
+
+  idt->desc.limit = (sizeof(idt_gate_t) * IDT_GATES) - 1;
+  idt->desc.base = (uintptr_t) idt_gates;
+  load_idt(&idt->desc);
 }
 
 void idt_set_gate(uint8_t vector, idt_gate_t gate) {

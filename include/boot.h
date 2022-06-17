@@ -21,17 +21,15 @@
 #define KERNEL_MAX_SIZE  SIZE_2MB
 
 // Memory map
-#define MEMORY_UNKNOWN      0
-#define MEMORY_UNUSABLE     1
-#define MEMORY_USABLE       2
-#define MEMORY_RESERVED     3
-#define MEMORY_ACPI         4
-#define MEMORY_ACPI_NVS     5
-#define MEMORY_MAPPED_IO    6
-#define MEMORY_KERNEL_CODE  7
-#define MEMORY_KERNEL_DATA  8
-#define MEMORY_RUNTIME_CODE 9
-#define MEMORY_RUNTIME_DATA 10
+#define MEMORY_UNKNOWN          0
+#define MEMORY_UNUSABLE         1
+#define MEMORY_USABLE           2
+#define MEMORY_RESERVED         3
+#define MEMORY_ACPI             4
+#define MEMORY_ACPI_NVS         5
+#define MEMORY_MAPPED_IO        6
+#define MEMORY_EFI_RUNTIME_CODE 7
+#define MEMORY_EFI_RUNTIME_DATA 8
 
 // Framebuffer pixel format
 #define FB_PIXEL_FORMAT_UNKNOWN 0x0
@@ -59,17 +57,17 @@ typedef struct {
 
 // Memory Map
 
-typedef struct memory_region {
+typedef struct memory_map_entry {
   uint32_t type;
   uint32_t : 32; // reserved
-  uint64_t size;
   uint64_t base;
-} memory_region_t;
+  uint64_t size;
+} memory_map_entry_t;
 
 typedef struct memory_map {
-  uint32_t size;          // size of the memory map
-  uint32_t capacity;      // size allocated for the memory map
-  memory_region_t *map;   // pointer to the memory map
+  uint32_t size;           // size of the memory map
+  uint32_t capacity;       // size allocated for the memory map
+  memory_map_entry_t *map; // pointer to the memory map
 } memory_map_t;
 
 // The full boot structure

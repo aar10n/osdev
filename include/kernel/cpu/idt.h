@@ -6,7 +6,6 @@
 #define KERNEL_CPU_IDT_H
 
 #include <base.h>
-#include <cpu/cpu.h>
 #include <process.h>
 
 #define IDT (PERCPU->idt->idt)

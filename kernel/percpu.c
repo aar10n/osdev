@@ -9,22 +9,16 @@
 #include <string.h>
 #include <percpu.h>
 #include <atomic.h>
-#include <cpuid.h>
 #include <panic.h>
 #include <printf.h>
+
+
+uint32_t bsp_id = 0;
 
 // this is only ever accessed with atomic operations
 static uintptr_t next_area;
 static percpu_t *areas[256];
 bool percpu_initialized = false;
-
-static inline uint8_t get_cpu_id() {
-  uint32_t a, b, c, d;
-  if (!__get_cpuid(1, &a, &b, &c, &d)) {
-    panic("panic - cpuid failed");
-  }
-  return (b >> 24) & 0xFF;
-}
 
 //
 
@@ -32,7 +26,7 @@ static inline uint8_t get_cpu_id() {
 // that uses spinlocks, including `kprintf`
 
 void percpu_init_cpu() {
-  uint8_t id = get_cpu_id();
+  uint32_t id = cpu_get_id();
 
   uintptr_t ptr = atomic_fetch_add(&next_area, PERCPU_SIZE);
   write_gsbase(ptr);
@@ -49,22 +43,22 @@ void percpu_init_cpu() {
 }
 
 void percpu_init() {
-  if (!percpu_initialized) {
-    // allocate a percpu space for each logical core
-    uint64_t logical_cores = boot_info->num_cores * boot_info->num_threads;
-    uintptr_t addr = boot_info->reserved_base;
+  if (cpu_get_is_bsp()) {
+    // place the first percpu area immediately after the kernel
+    uintptr_t kernel_end = boot_info_v2->kernel_virt_addr + boot_info_v2->kernel_size;
+    boot_info_v2->kernel_size += PERCPU_SIZE;
+    percpu_t *area = (void *) kernel_end;
 
-    next_area = boot_info->reserved_base;
-    for (int i = 0; i < logical_cores; i++) {
-      void *area = (void *) addr;
-      memset(area, 0, PERCPU_SIZE);
-      addr += PERCPU_SIZE;
-      boot_info->reserved_base += PERCPU_SIZE;
-      boot_info->reserved_size -= PERCPU_SIZE;
-    }
-    percpu_initialized = true;
+    uint32_t id = cpu_get_id();
+    memset(area, 0, PERCPU_SIZE);
+    area->id = id;
+    area->self = (uintptr_t) area;
+
+    bsp_id = id;
+    write_gsbase((uintptr_t) area);
+    write_kernel_gsbase(0);
+  } else {
+    // initialize the AP percpu area
   }
-
-  percpu_init_cpu();
 }
 

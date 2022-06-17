@@ -224,7 +224,7 @@ void fs_init() {
 
   // mount device filesystem
   file_system_t *devfs = map_get(&fs_types, "devfs");
-  kassert(ramfs != NULL);
+  kassert(devfs != NULL);
 
   if (mount_internal("/dev", NULL, devfs) < 0) {
     panic("failed to mount /dev");

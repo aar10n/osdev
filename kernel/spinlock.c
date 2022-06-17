@@ -35,6 +35,10 @@ void spin_init(spinlock_t *lock) {
 }
 
 void spin_lock(spinlock_t *lock) {
+  if (lock == NULL) {
+    return;
+  }
+
   uint8_t id = PERCPU->id;
   __preempt_disable();
   if (atomic_bit_test_and_set(&lock->locked, 0)) {
@@ -55,6 +59,10 @@ void spin_lock(spinlock_t *lock) {
 }
 
 void spin_unlock(spinlock_t *lock) {
+  if (lock == NULL) {
+    return;
+  }
+
   uint64_t id = PERCPU->id;
   if (atomic_bit_test_and_set(&lock->locked, 0)) {
     // the lock was set

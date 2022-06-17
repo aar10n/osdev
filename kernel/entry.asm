@@ -3,40 +3,26 @@
 extern kmain
 extern ap_main
 
-
-%define BLUE_COLOR 0x000000FF
-%define GREEN_COLOR 0x0000FF00
-%define RED_COLOR 0x00FF0000
-
-%define fb_base_offset 48
-%define fb_size_offset 56
-
-; entry happens when cpu is already in long mode with paging enabled
-; it is called using sysv_abi convention
 global entry
 entry:
-;  ;jmp $ ; hang forever
-;  mov rsi, [rdi + fb_base_offset] ; get framebuffer address
-;  mov rax, [rdi + fb_size_offset] ; get framebuffer size
-;
-;  ; divide fb_size by 4
-;  xor rdx, rdx
-;  mov rcx, 4
-;  div rcx
-;
-;  ; fill screen
-;  mov rcx, rax
-;  xor rax, rax
-;.loop:
-;  mov dword [rsi + rax * 4], BLUE_COLOR
-;  inc rax
-;  cmp rax, rcx
-;  jl .loop
-;
-;  jmp $ ; hang forever
+  ; switch to new stack
+  mov rsp, entry_initial_stack_top
 
+  ; setup the bsp percpu structure
+  mov rax, entry_initial_cpu_reserved   ; PERCPU area
+  mov [rax + PERCPU_SELF], rax          ; PERCPU->self = rax
+  mov qword [rax + PERCPU_ID], 0        ; PERCPU->id = 0
+  mov rdx, rax
+  mov cl, 32
+  shr rdx, cl
+  mov ecx, GS_BASE_MSR
+  wrmsr
+
+  ; percpu is now ok to use
+  ;pop rdi
   cld
   cli
+
   call kmain   ; call the kernel
 .hang:
   hlt
@@ -55,3 +41,13 @@ ap_entry:
 .hang:
   hlt
   jmp .hang    ; hang
+
+
+section .data
+align 0x1000
+entry_initial_stack:
+  resb PAGE_SIZE
+entry_initial_stack_top:
+
+entry_initial_cpu_reserved:
+  resb PAGE_SIZE

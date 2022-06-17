@@ -1,9 +1,16 @@
 %include "base.inc"
-FSBASE_MSR        equ 0xC0000100
-GSBASE_MSR        equ 0xC0000101
-KERNEL_GSBASE_MSR equ 0xC0000102
 
 ; Interrupts
+
+global __disable_interrupts
+__disable_interrupts:
+  cli
+  ret
+
+global __enable_interrupts
+__enable_interrupts:
+  sti
+  ret
 
 global cli
 cli:
@@ -30,12 +37,52 @@ sti_restore:
 
 ; Registers
 
+global __read_tsc
+__read_tsc:
+  mov eax, 0x1
+  cpuid
+  rdtsc
+  mov cl, 32
+  shl rdx, cl
+  or rax, rdx
+  ret
+
+global __read_tscp
+__read_tscp:
+  mfence
+  rdtscp
+  lfence
+  mov cl, 32
+  shl rdx, cl
+  or rax, rdx
+  ret
+
 global read_tsc
 read_tsc:
   rdtsc
   mov cl, 32
   shl rdx, cl
   or rax, rdx
+  ret
+
+
+global __read_msr
+__read_msr:
+  mov ecx, edi
+  rdmsr
+
+  shl rdx, 32
+  or rax, rdx
+  ret
+
+global __write_msr
+__write_msr:
+  mov rax, rsi
+  mov rdx, rsi
+  shr rdx, 32
+
+  mov ecx, edi
+  wrmsr
   ret
 
 global read_msr
@@ -62,40 +109,40 @@ write_msr:
 
 global read_fsbase
 read_fsbase:
-  mov rdi, FSBASE_MSR
+  mov rdi, FS_BASE_MSR
   call read_msr
   ret
 
 global write_fsbase
 write_fsbase:
   mov rsi, rdi
-  mov rdi, FSBASE_MSR
+  mov rdi, FS_BASE_MSR
   call write_msr
   ret
 
 global read_gsbase
 read_gsbase:
-  mov rdi, GSBASE_MSR
+  mov rdi, GS_BASE_MSR
   call read_msr
   ret
 
 global write_gsbase
 write_gsbase:
   mov rsi, rdi
-  mov rdi, GSBASE_MSR
+  mov rdi, GS_BASE_MSR
   call write_msr
   ret
 
 global read_kernel_gsbase
 read_kernel_gsbase:
-  mov rdi, KERNEL_GSBASE_MSR
+  mov rdi, KERNEL_GS_BASE_MSR
   call read_msr
   ret
 
 global write_kernel_gsbase
 write_kernel_gsbase:
   mov rsi, rdi
-  mov rdi, KERNEL_GSBASE_MSR
+  mov rdi, KERNEL_GS_BASE_MSR
   call write_msr
   ret
 
@@ -155,27 +202,52 @@ write_cr0:
   mov cr0, rdi
   ret
 
-global read_cr3
-read_cr3:
+global __read_cr3
+__read_cr3:
   mov rax, cr3
   ret
 
-global write_cr3
-write_cr3:
+global __write_cr3
+__write_cr3:
   mov cr3, rdi
   ret
 
-global read_cr4
-read_cr4:
+global __read_cr4
+__read_cr4:
   mov rax, cr4
   ret
 
-global write_cr4
-write_cr4:
+global __write_cr4
+__write_cr4:
   mov cr4, rdi
   ret
 
+global __xgetbv
+__xgetbv:
+  mov ecx, edi
+  xgetbv
+  mov cl, 32
+  shl rdx, cl
+  or rax, rdx
+  ret
+
+global __xsetbv
+__xsetbv:
+  mov ecx, edi
+  mov rax, rsi
+  mov rdx, rsi
+  mov cl, 32
+  shr rdx, cl
+  xsetbv
+  ret
+
 ; Paging/TLB
+
+global __flush_tlb
+__flush_tlb:
+  mov rax, cr3
+  mov cr3, rax
+  ret
 
 global tlb_invlpg
 tlb_invlpg:

@@ -28,7 +28,6 @@
 #define PIT_MODE_6 0x2 // same as mode 2
 #define PIT_MODE_7 0x3 // same as mode 3
 
-void pit_init();
 void pit_mdelay(uint64_t ms);
 
 #endif

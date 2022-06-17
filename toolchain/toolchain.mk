@@ -53,7 +53,7 @@ QEMU_MACHINE ?= q35
 QEMU_DEVICES ?= -device ahci,id=ahci -device qemu-xhci,id=xhci
 
 ifeq ($(QEMU_DEBUG),1)
-QEMU_DEBUG_OPTIONS ?= \
+QEMU_DEBUG_OPTIONS += \
 	-serial file:$(DEBUG_DIR)/kernel.log \
 	-global isa-debugcon.iobase=0x402 \
 	-debugcon file:$(DEBUG_DIR)/uefi_debug.log

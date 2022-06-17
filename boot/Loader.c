@@ -168,10 +168,18 @@ EFI_STATUS EFIAPI LoadElf(IN VOID *Buffer, IN UINT64 PhysAddr, OUT PAGE_DESCRIPT
     UINTN FileSize = ALIGN_VALUE(ProgramHdr->p_filesz, ProgramHdr->p_align);
     UINTN MemSize = ALIGN_VALUE(ProgramHdr->p_memsz, ProgramHdr->p_align);
     UINT32 Flags = 0;
-    if (ProgramHdr->p_flags & PF_W)
+    if (ProgramHdr->p_flags & PF_W) {
+      PRINT_INFO("Loading data segment");
+      PRINT_INFO("  start: 0x%p", ProgramHdr->p_vaddr);
+      PRINT_INFO("  size: 0x%x (0x%x)", MemSize, ProgramHdr->p_memsz);
       Flags |= PD_WRITE;
-    if (ProgramHdr->p_flags & PF_X)
+    }
+    if (ProgramHdr->p_flags & PF_X) {
+      PRINT_INFO("Loading code segment");
+      PRINT_INFO("  start: 0x%p", ProgramHdr->p_vaddr);
+      PRINT_INFO("  size: 0x%x (0x%x)", MemSize, ProgramHdr->p_memsz);
       Flags |= PD_EXECUTE;
+    }
 
     // PT_LOAD segment
     BOOLEAN First = Desc == NULL;

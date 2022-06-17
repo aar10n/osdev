@@ -323,8 +323,8 @@ void ahci_init() {
   hba_mem->global_host_ctrl |= HBA_CTRL_AHCI_ENABLE;
   hba_mem->global_host_ctrl |= HBA_CTRL_INT_ENABLE;
 
-  ioapic_set_irq(0, pci_dev->int_line, VECTOR_AHCI_IRQ);
-  idt_hook(VECTOR_AHCI_IRQ, interrupt_handler, NULL);
+  // ioapic_set_irq(0, pci_dev->int_line, VECTOR_AHCI_IRQ);
+  // idt_hook(VECTOR_AHCI_IRQ, interrupt_handler, NULL);
 
   ahci_discover(controller);
 

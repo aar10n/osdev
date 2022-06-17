@@ -2,13 +2,15 @@
 // Created by Aaron Gill-Braun on 2020-09-30.
 //
 
-#include <base.h>
+#include <mm/mm.h>
+#include <mm/init.h>
+#include <mm/heap.h>
+
 #include <panic.h>
 #include <printf.h>
 #include <string.h>
-#include <printf.h>
-#include <mm/mm.h>
-#include <mm/heap.h>
+
+extern LIST_HEAD(mm_callback_t) mm_init_callbacks;
 
 static memory_zone_t *zones[ZONE_MAX];
 static bool did_initialize = false;
@@ -66,7 +68,7 @@ static const char *get_zone_name(zone_type_t zone) {
   }
 }
 
-static bool does_cross_zone(memory_region_t *region) {
+static bool does_cross_zone(memory_map_entry_t *region) {
   zone_type_t start = get_zone_type(region->base);
   zone_type_t end = get_zone_type(region->base + region->size);
   return start != end;
@@ -107,7 +109,7 @@ void mm_init() {
   memory_map_t *mem = boot_info->mem_map;
 
   memory_zone_t *last = NULL;
-  memory_region_t *region = mem->map;
+  memory_map_entry_t *region = mem->map;
   while ((uintptr_t) region < (uintptr_t) mem->map + mem->size) {
     if (region->type != MEMORY_USABLE) {
       region++;

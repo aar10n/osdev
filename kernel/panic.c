@@ -19,7 +19,7 @@ noreturn void panic(const char *fmt, ...) {
   va_end(valist);
   kprintf("\n");
 
-  while (1) {
+  while (true) {
     asm("hlt");
   }
 }

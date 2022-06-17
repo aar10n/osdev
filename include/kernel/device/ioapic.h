@@ -8,19 +8,7 @@
 #include <base.h>
 #include <cpu/cpu.h>
 
-#define IOREGSEL 0x00
-#define IOREGWIN 0x10
-
-#define get_rentry_index(irq) \
-  (IOAPIC_RENTRY_BASE + ((irq) * 2))
-
-typedef enum {
-  IOAPIC_ID          = 0x00,
-  IOAPIC_VERSION     = 0x01,
-  IOAPIC_ARB_ID      = 0x02,
-  IOAPIC_RENTRY_BASE = 0x10
-} ioapic_reg_t;
-
+// delivery mode
 #define IOAPIC_FIXED        0
 #define IOAPIC_LOWEST_PRIOR 1
 #define IOAPIC_SMI          2
@@ -28,20 +16,23 @@ typedef enum {
 #define IOAPIC_INIT         5
 #define IOAPIC_ExtINT       7
 
-#define IOAPIC_PHYSICAL 0
-#define IOAPIC_LOGICAL  1
+// destination mode
+#define IOAPIC_DEST_PHYSICAL 0
+#define IOAPIC_DEST_LOGICAL  1
 
+// delivery status
 #define IOAPIC_IDLE    1
 #define IOAPIC_PENDING 2
 
+// polarity
 #define IOAPIC_ACTIVE_HIGH 0
 #define IOAPIC_ACTIVE_LOW  1
 
+// trigger mode
 #define IOAPIC_EDGE  0
 #define IOAPIC_LEVEL 1
 
-
-typedef union packed {
+typedef union packed ioapic_rentry {
   uint32_t raw_lower;
   uint32_t raw_upper;
   struct {
@@ -63,8 +54,13 @@ typedef union packed {
     .polarity = p, .remote_irr = i, .trigger_mode = tm, .mask = m, .dest = dst \
   })
 
-void ioapic_init();
-void ioapic_set_irq(uint8_t id, uint8_t irq, uint8_t vector);
-void ioapic_set_mask(uint8_t id, uint8_t irq, uint8_t mask);
+void disable_legacy_pic();
+
+void register_ioapic(uint8_t id, uint32_t address, uint32_t gsi_base);
+void ioapic_set_irq_vector(uint8_t irq, uint8_t vector);
+void ioapic_set_irq_dest(uint8_t irq, uint8_t mode, uint8_t dest);
+void ioapic_set_irq_mask(uint8_t irq, bool mask);
+void ioapic_set_irq_rentry(uint8_t irq, ioapic_rentry_t rentry);
+
 
 #endif

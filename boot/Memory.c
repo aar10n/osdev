@@ -39,7 +39,7 @@ PAGE_DESCRIPTOR *NewDescriptor(
   IN UINT64 Flags
 ) {
   ASSERT(PRE_EXIT_BOOT_SERVICES);
-  PAGE_DESCRIPTOR *Descriptor = AllocateReservedPool(sizeof(PAGE_DESCRIPTOR));
+  PAGE_DESCRIPTOR *Descriptor = AllocatePool(sizeof(PAGE_DESCRIPTOR));
   if (Descriptor == NULL) {
     PRINT_ERROR("Failed to allocate memory for memory descriptor");
     return NULL;
@@ -90,7 +90,7 @@ EFI_STATUS EFIAPI GetMemoryMap(OUT EFI_MEMORY_MAP *MemoryMap) {
   MemoryMap->Size = 0;
 
 RETRY:
-  MemoryMap->Map = AllocateReservedPool(MemoryMap->Size);
+  MemoryMap->Map = AllocateRuntimePool(MemoryMap->Size);
   if (MemoryMap->Map == NULL) {
     PRINT_ERROR("Failed to allocate memory for memory map");
     return EFI_OUT_OF_RESOURCES;
@@ -150,29 +150,17 @@ EFI_STATUS EFIAPI SetVirtualAddressMap(IN EFI_MEMORY_MAP *MemoryMap) {
 
 //
 
-BOOLEAN EFIAPI IsPageDescriptorInEfiMemoryRegion(IN PAGE_DESCRIPTOR *Desc, IN EFI_MEMORY_DESCRIPTOR *Region) {
-  if (Desc == NULL || Region == NULL) {
-    return FALSE;
-  }
-
-  UINTN DescSize = EFI_PAGES_TO_SIZE(Desc->NumPages);
-  UINTN EfiRegionSize = EFI_PAGES_TO_SIZE(Region->NumberOfPages);
-
-  return Desc->PhysAddr >= Region->PhysicalStart &&
-    Desc->PhysAddr + DescSize <= Region->PhysicalStart + EfiRegionSize;
-}
-
-EFI_STATUS EFIAPI GetMemoryRegionType(IN EFI_MEMORY_TYPE Type) {
+EFI_STATUS EFIAPI GetMemoryEntryType(IN EFI_MEMORY_TYPE Type) {
   switch (Type) {
     case EfiUnusableMemory:
       return MEMORY_UNUSABLE;
     case EfiLoaderCode:
     case EfiLoaderData:
-    case EfiBootServicesCode:
-    case EfiBootServicesData:
     case EfiConventionalMemory:
       return MEMORY_USABLE;
     case EfiPalCode:
+    case EfiBootServicesCode:
+    case EfiBootServicesData:
     case EfiMemoryMappedIOPortSpace:
     case EfiReservedMemoryType:
       return MEMORY_RESERVED;
@@ -183,9 +171,9 @@ EFI_STATUS EFIAPI GetMemoryRegionType(IN EFI_MEMORY_TYPE Type) {
     case EfiMemoryMappedIO:
       return MEMORY_MAPPED_IO;
     case EfiRuntimeServicesCode:
-      return MEMORY_RUNTIME_CODE;
+      return MEMORY_EFI_RUNTIME_CODE;
     case EfiRuntimeServicesData:
-      return MEMORY_RUNTIME_DATA;
+      return MEMORY_EFI_RUNTIME_DATA;
     case EfiPersistentMemory:
     default:
       return MEMORY_UNKNOWN;
@@ -194,7 +182,6 @@ EFI_STATUS EFIAPI GetMemoryRegionType(IN EFI_MEMORY_TYPE Type) {
 
 EFI_STATUS EFIAPI ConvertEfiMemoryMapToBootFormat(
   IN EFI_MEMORY_MAP *EfiMemoryMap,
-  IN PAGE_DESCRIPTOR *KernelPages,
   OUT VOID *MapBuffer,
   IN OUT UINT32 *MapSize,
   OUT UINTN *TotalMem
@@ -204,13 +191,13 @@ EFI_STATUS EFIAPI ConvertEfiMemoryMapToBootFormat(
     return EFI_INVALID_PARAMETER;
   }
 
-  UINTN BufferSize = *MapSize;
-  UINTN MaxEntries = BufferSize / sizeof(memory_region_t);
+  ZeroMem(MapBuffer, *MapSize);
 
+  UINTN BufferSize = *MapSize;
+  UINTN MaxEntries = BufferSize / sizeof(memory_map_entry_t);
   UINTN Total = 0;
   UINTN NumEntries = 0;
-  memory_region_t *Map = MapBuffer;
-  PAGE_DESCRIPTOR *KernelPage = KernelPages;
+  memory_map_entry_t *Map = MapBuffer;
   EFI_MEMORY_DESCRIPTOR *Desc = EfiMemoryMap->Map;
   while (!AT_MEMORY_MAP_END(Desc, EfiMemoryMap)) {
     if (Desc->NumberOfPages == 0) {
@@ -218,43 +205,27 @@ EFI_STATUS EFIAPI ConvertEfiMemoryMapToBootFormat(
       continue;
     }
 
-    uint32_t MemoryType = GetMemoryRegionType(Desc->Type);
-    if (KernelPage && IsPageDescriptorInEfiMemoryRegion(KernelPage, Desc)) {
-      // Add Entry for kernel pages
-      if (NumEntries >= MaxEntries) {
-        PRINT_ERROR("Not enough space for memory map");
-        return EFI_BUFFER_TOO_SMALL;
+    uint32_t MemoryType = GetMemoryEntryType(Desc->Type);
+    BOOLEAN CanMerge = FALSE;
+    if (NumEntries > 0 && Map[NumEntries - 1].type == MemoryType) {
+      memory_map_entry_t *PrevEntry = &Map[NumEntries - 1];
+      if (PrevEntry->base + PrevEntry->size == Desc->PhysicalStart) {
+        CanMerge = TRUE;
       }
-
-      if (KernelPage->Flags & PD_EXECUTE) {
-        MemoryType = MEMORY_KERNEL_CODE;
-      } else {
-        MemoryType = MEMORY_KERNEL_DATA;
-      }
-
-      Map[NumEntries].type = MemoryType;
-      Map[NumEntries].size = KernelPage->NumPages * EFI_PAGE_SIZE;
-      Map[NumEntries].base = KernelPage->PhysAddr;
-      NumEntries++;
-
-      Total += KernelPage->NumPages * EFI_PAGE_SIZE;
-      Desc->NumberOfPages -= KernelPage->NumPages;
-      KernelPage = KernelPage->Next;
-      continue;
     }
 
-    if (NumEntries > 0 && Map[NumEntries - 1].type == MemoryType) {
-      // merge adjacent regions of the same type
+    if (CanMerge) {
+      // merge adjacent entries of the same type
       Map[NumEntries - 1].size += Desc->NumberOfPages * EFI_PAGE_SIZE;
     } else {
-      // add new region
+      // add new entry
       if (NumEntries >= MaxEntries) {
         PRINT_ERROR("Not enough space for memory map");
         return EFI_BUFFER_TOO_SMALL;
       }
       Map[NumEntries].type = MemoryType;
-      Map[NumEntries].size = Desc->NumberOfPages * EFI_PAGE_SIZE;
       Map[NumEntries].base = Desc->PhysicalStart;
+      Map[NumEntries].size = Desc->NumberOfPages * EFI_PAGE_SIZE;
       NumEntries++;
     }
 
@@ -262,13 +233,8 @@ EFI_STATUS EFIAPI ConvertEfiMemoryMapToBootFormat(
     Desc = MEMORY_MAP_NEXT(Desc, EfiMemoryMap);
   }
 
-  if (KernelPage != NULL) {
-    PRINT_ERROR("Failed to add kernel pages to memory map");
-    return EFI_INVALID_PARAMETER;
-  }
-
   // write out actual size of memory map and total memory
-  *MapSize = NumEntries * sizeof(memory_region_t);
+  *MapSize = NumEntries * sizeof(memory_map_entry_t);
   *TotalMem = Total;
   return EFI_SUCCESS;
 }
@@ -385,7 +351,7 @@ EFI_STATUS EFIAPI SetupKernelPageTables(IN PAGE_DESCRIPTOR *Descriptors, OUT UIN
 
   UpperPDPT[0] = PTE_ADDR(UpperPDT) | PE_RW | PE_P;          // -> UpperPDT
   UpperPDT[0] = PTE_ADDR(UpperPT) | PE_RW | PE_P;            // -> UpperPT
-  UpperPDT[1] = PTE_ADDR(0x200000) | PE_S | PE_RW | PE_P;    // -> 2MiB kernel reserved
+  // UpperPDT[1] = PTE_ADDR(0x200000) | PE_S | PE_RW | PE_P;    // -> 2MiB kernel reserved
 
   UINTN Index = PT_OFFSET(KernelPhysAddr);
   UINT64 PhysAddr = KernelPhysAddr;
@@ -403,8 +369,8 @@ EFI_STATUS EFIAPI SetupKernelPageTables(IN PAGE_DESCRIPTOR *Descriptors, OUT UIN
     KernelDescriptor = KernelDescriptor->Next;
   }
 
-  FillTableWithEntries(UpperPT, 0, PT_OFFSET(KernelPhysAddr) - 1, 0, EFI_PAGE_SIZE, PE_RW | PE_P);
-  FillTableWithEntries(UpperPT, Index, TABLE_MAX_ENTRIES - Index, PhysAddr, EFI_PAGE_SIZE, PE_RW | PE_P);
+  // FillTableWithEntries(UpperPT, 0, PT_OFFSET(KernelPhysAddr) - 1, 0, EFI_PAGE_SIZE, PE_RW | PE_P);
+  // FillTableWithEntries(UpperPT, Index, TABLE_MAX_ENTRIES - Index, PhysAddr, EFI_PAGE_SIZE, PE_RW | PE_P);
 
   *PML4Address = (UINT64)PML4;
   return EFI_SUCCESS;

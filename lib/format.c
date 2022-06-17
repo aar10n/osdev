@@ -769,9 +769,15 @@ int print_format(const char *format, char *str, size_t size, va_list args, bool 
         case 'o':
         case 'u':
         case 'p':
+        case 'P':
         case 'x':
         case 'X': {
           if (ch == 'p') {
+            opts.alt_form = true;
+            opts.length = L_LONGLONG;
+            ch = 'x';
+          } else if (ch == 'P') {
+            opts.is_uppercase = true;
             opts.alt_form = true;
             opts.length = L_LONGLONG;
             ch = 'x';
@@ -829,6 +835,10 @@ int print_format(const char *format, char *str, size_t size, va_list args, bool 
         }
         case 's': {
           char *value = va_arg(valist, char *);
+          if (value == NULL) {
+            value = "(null)";
+          }
+
           int len;
           if (opts.width > 0 && !opts.is_width_arg) {
             len = opts.width;

@@ -4,17 +4,10 @@
 
 #include <printf.h>
 #include <format.h>
-#include <lock.h>
-#include <drivers/serial.h>
+#include <console.h>
 
 #define BUFFER_SIZE 512
 
-static spinlock_t lock = {
-  .locked = 0,
-  .lock_count = 0,
-  .locked_by = 0,
-  .rflags = 0,
-};
 
 /*
  * snprintf - write formatted data to a sized buffer
@@ -117,27 +110,17 @@ void kprintf(const char *format, ...) {
   va_start(valist, format);
   print_format(format, str, BUFFER_SIZE, valist, true);
   va_end(valist);
-
-  lock(lock);
-  serial_write(COM1, str);
-  unlock(lock);
+  kputs(str);
 }
 
 void kvfprintf(const char *format, va_list valist) {
   char str[BUFFER_SIZE];
   print_format(format, str, BUFFER_SIZE, valist, true);
-
-  lock(lock);
-  serial_write(COM1, str);
-  unlock(lock);
+  kputs(str);
 }
 
 
-__used void stdio_lock() {
-  lock(lock);
-}
+__used void stdio_lock() {}
 
-__used void stdio_unlock() {
-  unlock(lock);
-}
+__used void stdio_unlock() {}
 

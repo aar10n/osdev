@@ -12,7 +12,6 @@
 
 #include <mm.h>
 
-#include <acpi.h>
 #include <percpu.h>
 #include <smpboot.h>
 #include <syscall.h>
@@ -31,7 +30,6 @@
 #include <fs/utils.h>
 #include <fs/path.h>
 #include <fs/blkdev.h>
-// #include <fat/fat.h>
 
 #include <bus/pcie.h>
 #include <usb/usb.h>
@@ -40,7 +38,10 @@
 #include <gui/screen.h>
 #include <signal.h>
 #include <ipc.h>
-#include <cpuid.h>
+
+#include <acpi/acpi.h>
+#include <console.h>
+#include <mm/init.h>
 
 boot_info_v2_t __boot_data *boot_info_v2;
 
@@ -119,27 +120,6 @@ _Noreturn void launch() {
 
   //
 
-  uint32_t a, b, c, d;
-  if (!__get_cpuid(1, &a, &b, &c, &d)) {
-    panic("[acpi] cpuid failed");
-  }
-
-  kprintf("mmx: %d\n", (d & bit_MMX) != 0);
-  kprintf("sse: %d\n", (d & bit_SSE) != 0);
-  kprintf("sse2: %d\n", (d & bit_SSE2) != 0);
-  kprintf("sse3: %d\n", (c & bit_SSE3) != 0);
-  kprintf("ssse3: %d\n", (c & bit_SSSE3) != 0);
-  kprintf("sse4.1: %d\n", (c & bit_SSE4_1) != 0);
-  kprintf("sse4.2: %d\n", (c & bit_SSE4_2) != 0);
-  kprintf("avx: %d\n", (c & bit_AVX) != 0);
-
-  if (!__get_cpuid(7, &a, &b, &c, &d)) {
-    panic("[acpi] cpuid failed");
-  }
-  kprintf("avx2: %d\n", (b & bit_AVX2) != 0);
-
-  //
-
   // if (fs_mount("/", "/dev/sdb", "ext2") < 0) {
   //   kprintf("%s\n", strerror(ERRNO));
   // }
@@ -189,52 +169,51 @@ _Noreturn void launch() {
 //
 
 __used void kmain() {
-  boot_info_v2_t *v2 = boot_info_v2;
-  // percpu_init();
-  // enable_sse();
-  //
-  // cpu = PERCPU;
-  serial_init(COM1);
-  kprintf("[kernel] initializing\n");
+  console_early_init();
+  cpu_init();
+
+  mm_early_init();
+  acpi_early_init();
+
+  kprintf("[kernel] initializing idt\n");
+  setup_idt();
+
   kprintf("[kernel] boot_info: %p\n", boot_info_v2);
+
+  // mm_init();
+  // vm_init();
+  //
+  // acpi_init();
+  //
+  // pic_init();
+  // apic_init();
+  // ioapic_init();
+  //
+  // syscalls_init();
+  // // smp_init();
+  //
+  // // root process
+  // process_t *root = create_root_process(launch);
+  // scheduler_init(root);
+
+  kprintf("haulting...\n");
   while (true) {
     cpu_pause();
   }
-
-  setup_gdt();
-  setup_idt();
-
-  kheap_init();
-
-  mm_init();
-  vm_init();
-
-  acpi_init();
-
-  pic_init();
-  apic_init();
-  ioapic_init();
-
-  syscalls_init();
-  // smp_init();
-
-  // root process
-  process_t *root = create_root_process(launch);
-  scheduler_init(root);
 }
 
 __used void ap_main() {
-  percpu_init();
-  enable_sse();
+  // percpu_init();
+  // enable_sse();
 
   kprintf("[CPU#%d] initializing\n", ID);
 
-  setup_gdt();
-  setup_idt();
+  // setup_gdt();
+  // setup_idt();
 
   vm_init();
-  apic_init();
-  ioapic_init();
+  // apic_init();
+  // ioapic_init();
 
   kprintf("[CPU#%d] done!\n", ID);
 }

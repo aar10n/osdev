@@ -24,12 +24,12 @@ struct scheduler;
 struct idt;
 
 typedef struct {
-  id_t id;                 // this cpu's id
+  uint64_t self;           // address of this struct
+  uint64_t id;             // this cpu's id
   struct thread *thread;   // current thread
   struct process *process; // current process
-  uintptr_t kernel_sp;     // kernel stack pointer
-  uintptr_t user_sp;       // user stack pointer
-  uintptr_t self;          // address of this struct
+  uint64_t kernel_sp;      // kernel stack pointer
+  uint64_t user_sp;        // user stack pointer
   uint64_t rflags;         // cpu flags (on cli)
   int errno;
   uid_t uid;

@@ -12,25 +12,26 @@
 %define SMPBOOT_START 0x0000
 %define SMPDATA_START 0x1000
 
+%define PAGE_SIZE 0x1000
+
 %define APIC_BASE_VA  0xFFFFFFFFE0000000
 %define APIC_REG_ID   0x20
 %define APIC_REG_EOI  0x0B0
 
-%define IA32_EFER_MSR 0x0C0000080
-%define FS_BASE_MSR   0xC0000100
-%define GS_BASE_MSR   0xC0000101
+%define IA32_EFER_MSR      0x0C0000080
+%define FS_BASE_MSR        0xC0000100
+%define GS_BASE_MSR        0xC0000101
+%define KERNEL_GS_BASE_MSR 0xC0000102
 
 %define COM1 0x3F8
 
-%define NULL 0x00
-
 ; percpu offsets
-%define PERCPU_ID        0x00
-%define PERCPU_THREAD    0x08
-%define PERCPU_PROCESS   0x10
-%define PERCPU_KERNEL_SP 0x18
-%define PERCPU_USER_SP   0x20
-%define PERCPU_SELF      0x28
+%define PERCPU_SELF      0x00
+%define PERCPU_ID        0x08
+%define PERCPU_THREAD    0x10
+%define PERCPU_PROCESS   0x18
+%define PERCPU_KERNEL_SP 0x20
+%define PERCPU_USER_SP   0x28
 %define PERCPU_RFLAGS    0x30
 
 %define CURRENT_THREAD  gs:PERCPU_THREAD

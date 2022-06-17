@@ -3,9 +3,12 @@ $(call register,kernel,KERNEL)
 
 # kernel/
 kernel += entry.asm memory.asm smpboot.asm syscall.asm thread.asm \
-	acpi.c errno.c event.c ipc.c loader.c main.c mutex.c panic.c \
-	percpu.c printf.c process.c scheduler.c semaphore.c signal.c \
+	acpi.c console.c errno.c event.c ipc.c loader.c main.c mutex.c \
+	panic.c percpu.c printf.c process.c scheduler.c semaphore.c signal.c \
 	smpboot.c spinlock.c string.c syscall.c thread.c timer.c queue.c
+
+# kernel/acpi
+kernel += acpi/acpi.c
 
 # kernel/bus
 kernel += bus/pci.c bus/pci_tables.c bus/pcie.c
@@ -13,7 +16,7 @@ kernel += bus/pci.c bus/pci_tables.c bus/pcie.c
 # kernel/cpu
 kernel += cpu/cpu.asm cpu/idt.asm \
 	cpu/io.asm cpu/exception.asm \
-	cpu/gdt.c cpu/idt.c
+	cpu/cpu.c cpu/gdt.c cpu/idt.c
 
 # kernel/device
 kernel += device/apic.c device/hpet.c \
@@ -23,7 +26,7 @@ kernel += device/apic.c device/hpet.c \
 kernel += gui/screen.c
 
 # kernel/mm
-kernel += mm/heap.c mm/mm.c mm/vm.c
+kernel += mm/init.c mm/heap.c mm/mm.c mm/vm.c
 
 # kernel/usb
 kernel += usb/hid.c usb/hid-report.c usb/hid-usage.c \

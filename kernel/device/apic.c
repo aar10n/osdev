@@ -2,15 +2,17 @@
 // Created by Aaron Gill-Braun on 2020-10-14.
 //
 
+#include <device/apic.h>
+#include <device/pit.h>
+
+#include <cpu/cpu.h>
+#include <mm/vm.h>
+
 #include <system.h>
 #include <panic.h>
 #include <printf.h>
 #include <percpu.h>
 #include <vectors.h>
-#include <cpu/cpu.h>
-#include <device/apic.h>
-#include <device/pit.h>
-#include <mm/vm.h>
 
 #define ms_to_count(ms) (apic_clock / (US_PER_SEC / ((ms) * 1000)))
 #define us_to_count(us) (apic_clock / (US_PER_SEC / (us)))
@@ -68,9 +70,9 @@ void get_cpu_clock() {
 
   min = UINT64_MAX;
   for (int i = 0; i < 5; i++) {
-    t0 = read_tsc();
+    t0 = __read_tsc();
     pit_mdelay(ms);
-    t1 = read_tsc();
+    t1 = __read_tsc();
 
     uint64_t diff = t1 - t0;
     if (diff < min) {

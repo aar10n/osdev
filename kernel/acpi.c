@@ -209,9 +209,9 @@ void get_hpet_info(system_info_t *info, acpi_hpetdt_t *hpetdt) {
 
 // MCFG Table
 
-void get_mcfg_info(system_info_t *info, acpi_mcfg_t *mcfg) {
+void get_mcfg_info(system_info_t *info, acpi_mcfg_header_t *mcfg) {
   mcfg_entry_t *entries = mcfg->entries;
-  uint32_t num_entries = (mcfg->length - sizeof(acpi_mcfg_t)) / sizeof(mcfg_entry_t);
+  uint32_t num_entries = (mcfg->length - sizeof(acpi_mcfg_header_t)) / sizeof(mcfg_entry_t);
 
   for (int i = 0; i < num_entries; i++) {
     mcfg_entry_t entry = entries[i];
@@ -266,7 +266,7 @@ void acpi_init() {
 
   kprintf("[acpi] mapping acpi tables\n");
   size_t mapped_count = 0;
-  memory_region_t *region = mem->map;
+  memory_map_entry_t *region = mem->map;
   while ((uintptr_t) region < (uintptr_t) mem->map + mem->size) {
     if (region->type != MEMORY_ACPI) {
       region++;
@@ -308,7 +308,7 @@ void acpi_init() {
   acpi_hpetdt_t *hpet = locate_header(sig_hpet);
   get_hpet_info(system_info, hpet);
 
-  acpi_mcfg_t *mcfg = locate_header(sig_mcfg);
+  acpi_mcfg_header_t *mcfg = locate_header(sig_mcfg);
   get_mcfg_info(system_info, mcfg);
 
   kprintf("[acpi] done!\n");

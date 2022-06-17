@@ -5,12 +5,10 @@
 #include <gui/screen.h>
 #include <gui/font8x8_basic.h>
 #include <string.h>
-#include <printf.h>
 
-#define WIDTH boot_info->fb_width
-#define HEIGHT boot_info->fb_height
-#define PPS boot_info->fb_pixels_per_scanline
-#define index(i, j) ((y * 8) + (i)) * PPS + ((x * 8) + (j))
+#define WIDTH boot_info_v2->fb_width
+#define HEIGHT boot_info_v2->fb_height
+#define index(i, j) ((y * 8) + (i)) * WIDTH + ((x * 8) + (j))
 
 static int x = 0;
 static int y = 0;

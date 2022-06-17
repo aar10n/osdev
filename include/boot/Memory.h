@@ -55,7 +55,6 @@ EFI_STATUS EFIAPI SetVirtualAddressMap(IN EFI_MEMORY_MAP *MemoryMap);
 
 EFI_STATUS EFIAPI ConvertEfiMemoryMapToBootFormat(
   IN EFI_MEMORY_MAP *EfiMemoryMap,
-  IN PAGE_DESCRIPTOR *KernelPages,
   OUT VOID *MapBuffer,
   OUT UINT32 *MapSize,
   OUT UINT64 *TotalMem

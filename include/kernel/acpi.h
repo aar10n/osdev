@@ -152,7 +152,7 @@ typedef struct packed {
   acpi_header;
   uint64_t reserved;
   mcfg_entry_t entries[];
-} acpi_mcfg_t;
+} acpi_mcfg_header_t;
 
 void acpi_init();
 

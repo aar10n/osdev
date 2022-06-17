@@ -24,9 +24,9 @@ page_fault_handler:
   je .handle_fault
   swapgs
 
-.handle_fault
-  mov rsi, [rsp + 8] ; faulting rip
-  mov rdi, cr2       ; faulting address
+.handle_fault:
+  mov rdi, [rsp + 8] ; faulting rip
+  mov rsi, cr2       ; faulting address
   mov rdx, [rsp]     ; error code
   call fault_handler
   ; if fault_handler returns -1 it means the
@@ -55,7 +55,7 @@ exception_handler:
   mov [rsp + 48], rax
 
   ; global lock
-  call stdio_lock
+  ;call stdio_lock
 
   ; get apic id
   push rbx
@@ -131,7 +131,7 @@ exception_handler:
   call kprintf
   add rsp, 8
 
-  call stdio_unlock
+  ;call stdio_unlock
 .hang:
   pause
   jmp .hang

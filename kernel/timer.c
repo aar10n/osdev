@@ -87,9 +87,9 @@ uint64_t timer_now() {
 
 void timer_init() {
   hpet_init();
-  ioapic_set_irq(0, 2, VECTOR_HPET_TIMER);
-  idt_gate_t gate = gate((uintptr_t) hpet_handler, KERNEL_CS, 0, INTERRUPT_GATE, 0, 1);
-  idt_set_gate(VECTOR_HPET_TIMER, gate);
+  // ioapic_set_irq(0, 2, VECTOR_HPET_TIMER);
+  // idt_gate_t gate = gate((uintptr_t) hpet_handler, KERNEL_CS, 0, INTERRUPT_GATE, 0, 1);
+  // idt_set_gate(VECTOR_HPET_TIMER, gate);
 
   tree = create_rb_tree();
   tree->events = &events;

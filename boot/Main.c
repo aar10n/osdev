@@ -7,7 +7,6 @@
 #include <File.h>
 #include <Memory.h>
 #include <Loader.h>
-#include <System.h>
 #include <Video.h>
 
 #include <Guid/Acpi.h>
@@ -30,8 +29,10 @@ typedef void (*KERNEL_ENTRY)(boot_info_v2_t*) __attribute__((sysv_abi));
 CHAR16 *DefaultKernelPath = L"/EFI/BOOT/kernel.elf";
 UINT64 KernelPhysAddr = 0x100000;
 
-EFI_GUID AcpiTableGuid = EFI_ACPI_20_TABLE_GUID;
+EFI_GUID Acpi10TableGuid = EFI_ACPI_TABLE_GUID;
+EFI_GUID Acpi20TableGuid = EFI_ACPI_20_TABLE_GUID;
 EFI_GUID SmbiosTableGuid = SMBIOS_TABLE_GUID;
+EFI_GUID Smbios3TableGuid = SMBIOS3_TABLE_GUID;
 
 // config variables
 BOOLEAN Debug;
@@ -104,6 +105,23 @@ VOID EFIAPI QemuDebugPrintMemoryMap(IN EFI_MEMORY_MAP *MemoryMap) {
     QemuDebugWriteStr("\n");
 
     Desc = MEMORY_MAP_NEXT(Desc, MemoryMap);
+  }
+}
+
+VOID EFIAPI QemuDebugPrintBootMemoryMap(IN memory_map_t *MemoryMap) {
+  UINTN NumEntries = MemoryMap->size / sizeof(memory_map_entry_t);
+  QemuDebugWriteStr("NumEntries: ");
+  QemuDebugWriteStr(DebugUInt64ToDecStr(NumEntries));
+  QemuDebugWriteStr("\n");
+  for (UINTN i = 0; i < NumEntries; i++) {
+    memory_map_entry_t *Entry = &MemoryMap->map[i];
+    QemuDebugWriteStr("Type: ");
+    QemuDebugWriteStr(DebugUInt64ToDecStr(Entry->type));
+    QemuDebugWriteStr(" | [0x");
+    QemuDebugWriteStr(DebugUInt64ToHexStr(Entry->base));
+    QemuDebugWriteStr(" - 0x");
+    QemuDebugWriteStr(DebugUInt64ToHexStr(Entry->base + Entry->size));
+    QemuDebugWriteStr("]\n");
   }
 }
 
@@ -216,17 +234,23 @@ EFI_STATUS EFIMAIN UefiMain(IN EFI_HANDLE ImageHandle, IN EFI_SYSTEM_TABLE *Syst
 
 
   UINT64 AcpiPtr = 0;
-  Status = EfiGetSystemConfigurationTable(&AcpiTableGuid, (VOID **) &AcpiPtr);
+  Status = EfiGetSystemConfigurationTable(&Acpi20TableGuid, (VOID **) &AcpiPtr);
   if (EFI_ERROR(Status)) {
-    PRINT_ERROR("No ACPI table found");
-    return Status;
+    Status = EfiGetSystemConfigurationTable(&Acpi10TableGuid, (VOID **) &AcpiPtr);
+    if (EFI_ERROR(Status)) {
+      PRINT_ERROR("No ACPI tables found");
+      return Status;
+    }
   }
 
   UINT64 SmbiosPtr = 0;
-  Status = EfiGetSystemConfigurationTable(&SmbiosTableGuid, (VOID **) &SmbiosPtr);
+  Status = EfiGetSystemConfigurationTable(&Smbios3TableGuid, (VOID **) &SmbiosPtr);
   if (EFI_ERROR(Status)) {
-    PRINT_ERROR("No SMBIOS table found");
-    return Status;
+    Status = EfiGetSystemConfigurationTable(&SmbiosTableGuid, (VOID **) &SmbiosPtr);
+    if (EFI_ERROR(Status)) {
+      PRINT_ERROR("No SMBIOS tables found");
+      return Status;
+    }
   }
 
   if (!FastBoot) {
@@ -249,7 +273,6 @@ EFI_STATUS EFIMAIN UefiMain(IN EFI_HANDLE ImageHandle, IN EFI_SYSTEM_TABLE *Syst
   BootInfo->mem_map.size = BootInfo->mem_map.capacity;
   Status = ConvertEfiMemoryMapToBootFormat(
     MemoryMap,
-    KernelPages,
     BootMemoryMapBuffer,
     &BootInfo->mem_map.size,
     &BootInfo->mem_total
@@ -269,18 +292,15 @@ EFI_STATUS EFIMAIN UefiMain(IN EFI_HANDLE ImageHandle, IN EFI_SYSTEM_TABLE *Syst
   // relocate efi services and prepare for virtual memory
   Status = SetVirtualAddressMap(MemoryMap);
   if (EFI_ERROR(Status)) {
-    DrawSquare(0, 0, 100, 100, RED_COLOR);
     // We cant print an error or return control to system firmware
     // here so we do a system reset instead.
     gRT->ResetSystem(EfiResetWarm, Status, 0, NULL);
     while (TRUE) CpuPause();
-  } else {
-    DrawSquare(0, 0, 100, 100, GREEN_COLOR);
   }
 
   // NOTE: Only get runtume services pointer after it has been relocated
   //       by the call to SetVirtualAddressMap.
-  BootInfo->efi_runtime_services = (UINT64) gST->RuntimeServices;
+  BootInfo->efi_runtime_services = (UINT32)((UINT64) gST->RuntimeServices);
   BootInfo->acpi_ptr = (UINT32) AcpiPtr;
   BootInfo->smbios_ptr = (UINT32) SmbiosPtr;
 

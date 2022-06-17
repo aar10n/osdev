@@ -16,6 +16,12 @@
 #define timer_fsb_irr_reg(n) \
   (HPET_TIMER_FSB_IRR_BASE + 0x20 * (n))
 
+
+typedef struct hpet_device {
+
+} hpet_device_t;
+
+
 typedef enum {
   HPET_ID     = 0x000,
   HPET_CONFIG = 0x010,

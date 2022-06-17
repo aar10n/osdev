@@ -22,14 +22,15 @@
 #define MMIO_BASE_VA   0xFFFFFFFFE0000000
 #define PROGRAM_VA     0xFFFFFF8000010000
 
+#define KERNEL_HEAP_VA 0xFFFFFF8000400000
+#define KERNEL_HEAP_SIZE SIZE_2MB
+
 #define SMPBOOT_START  0x0000
 #define SMPDATA_START  0x1000
 
 #define STACK_SIZE      0x4000 // 8 KiB
 #define KERNEL_RESERVED 0x300000 // 3 MiB
 #define RESERVED_TABLES 6 // Number of preallocated page tables
-
-#define PAGE_SIZE 0x1000
 
 #define KERNEL_CS 0x08ULL
 #define USER_DS   0x18ULL
@@ -40,14 +41,35 @@
 #define NS_PER_SEC 1000000000
 #define FS_PER_SEC 1000000000000000
 
+#define PAGE_SIZE 0x1000
+
+#define SIZE_1KB  0x400
+#define SIZE_2KB  0x800
+#define SIZE_4KB  0x1000
+#define SIZE_8KB  0x2000
+#define SIZE_16KB 0x4000
+#define SIZE_1MB  0x100000
+#define SIZE_2MB  0x200000
+#define SIZE_4MB  0x400000
+#define SIZE_8MB  0x800000
+#define SIZE_16MB 0x1000000
+#define SIZE_1GB  0x40000000
+#define SIZE_2GB  0x80000000
+#define SIZE_4GB  0x100000000
+#define SIZE_8GB  0x200000000
+#define SIZE_16GB 0x400000000
+#define SIZE_1TB  0x10000000000
+
 //
 // General Macros
 //
 
 #define static_assert(expr) _Static_assert(expr, "")
 
-#define offset_ptr(p, c) ((void *)(((uint8_t *)(p)) + (c)))
+#define offset_ptr(p, c) ((void *)(((uintptr_t)(p)) + (c)))
+#define offset_addr(p, c) (((uintptr_t)(p)) + (c))
 #define align(v, a) ((v) + (((a) - (v)) & ((a) - 1)))
+#define is_aligned(v, a) (((v) & ((a) - 1)) == 0)
 #define align_ptr(p, a) ((void *) (align((uintptr_t)(p), (a))))
 #define ptr_after(s) ((void *)(((uintptr_t)(s)) + (sizeof(*s))))
 
@@ -70,10 +92,14 @@
 
 #define big_endian(v) \
   _Generic(v,       \
-    uint16_t: __builtin_bswap16(v), \
-    uint32_t: __builtin_bswap32(v), \
-    uint64_t: __builtin_bswap64(v) \
+    uint16_t: bswap16(v), \
+    uint32_t: bswap32(v), \
+    uint64_t: bswap64(v) \
   )
+
+#define SIGNATURE_16(A, B) ((A) | ((B) << 8))
+#define SIGNATURE_32(A, B, C, D) (SIGNATURE_16(A, B) | (SIGNATURE_16(C, D) << 16))
+#define SIGNATURE_64(A, B, C, D, E, F, G, H) (SIGNATURE_32(A, B, C, D) | ((uint64_t) SIGNATURE_32(E, F, G, H) << 32))
 
 //
 // Compiler Attributes
@@ -106,5 +132,14 @@
 
 
 extern boot_info_t *boot_info;
+extern boot_info_v2_t *boot_info_v2;
+
+// linker provided symbols
+extern uintptr_t __kernel_address;
+extern uintptr_t __kernel_virtual_offset;
+extern uintptr_t __kernel_code_start;
+extern uintptr_t __kernel_code_end;
+extern uintptr_t __kernel_data_end;
+
 
 #endif
