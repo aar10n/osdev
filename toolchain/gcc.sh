@@ -32,7 +32,7 @@ toolchain::gcc:build() {
   local install_dir=${GCC_INSTALL_DIR:-${BUILD_DIR}/toolchain}
   local options="--target=${target} --prefix=${install_dir} \
       ${GCC_SYSROOT:+--with-sysroot=${GCC_SYSROOT}} --enable-languages=c,c++ \
-      ${GCC_OPTIONS:-"--disable-nls --disable-werror --disable-multilib --enable-initfini-array"}"
+      ${GCC_OPTIONS:-"--disable-nls --disable-werror --disable-multilib --enable-initfini-array --enable-gnu-indirect-function"}"
 
   local make_build_target=""
   local make_install_target=""
@@ -65,7 +65,6 @@ toolchain::gcc:build() {
   pushd ${build_dir}
     if [[ ! -d src ]]; then
       mkdir -p src
-      mkdir -p build
 
       wget -nc https://ftp.gnu.org/gnu/gcc/${gcc}/${gcc}.tar.gz
       tar -xf ${gcc}.tar.gz -C src --strip-components=1
@@ -78,6 +77,7 @@ toolchain::gcc:build() {
       popd
     fi
 
+    mkdir -p build
     pushd build
       toolchain::util::configure ../src/configure "${options}"
       toolchain::util::make_build ${make_build_target}
@@ -85,3 +85,26 @@ toolchain::gcc:build() {
     popd
   popd
 }
+
+#
+# main
+#
+
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  if [[ $# -eq 0 ]]; then
+    exit 1
+  fi
+
+  command="$1"
+  shift
+
+  case "${command}" in
+    build)
+      toolchain::gcc:build $@
+      ;;
+    *)
+      toolchain::util::error "unsupported command '${command}'"
+      exit 1
+      ;;
+  esac
+fi

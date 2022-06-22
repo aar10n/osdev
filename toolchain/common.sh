@@ -1,5 +1,3 @@
-#!/bin/bash
-
 # Common functions used across toolchain scripts
 #
 # Environment variables:
@@ -35,7 +33,7 @@ toolchain::util::check_args() {
       echo "${context}: argument $((count)) is empty" >&2
       exit 1
     fi
-    ((count++))
+    ((count=count+1))
   done
 
   if [[ ${count} -lt ${n} ]]; then
