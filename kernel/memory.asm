@@ -102,8 +102,8 @@ __memset_slow:
   ret
 
 ; void *__memset8(void *dest, uint8_t val, size_t len)
-global memset
-memset:
+;global memset
+;memset:
 global __memset8
 __memset8:
   memset_fast_top 1

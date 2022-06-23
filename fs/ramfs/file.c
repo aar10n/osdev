@@ -4,14 +4,15 @@
 
 #include <ramfs/ramfs.h>
 
+#include <string.h>
 
 int ramfs_open(file_t *file, dentry_t *dentry) {
   inode_t *inode = file->dentry->inode;
   if (inode->pages == NULL && !IS_IFDIR(file->mode)) {
-    inode->pages = alloc_page(PE_WRITE);
+    inode->pages = valloc_page(PG_WRITE);
     inode->blocks = 1;
-  } else if (inode->pages && !inode->pages->flags.present) {
-    map_pages(inode->pages);
+  } else if (inode->pages && !IS_PG_MAPPED(inode->pages->flags)) {
+    _vmap_pages(inode->pages);
   }
   return 0;
 }
@@ -19,7 +20,7 @@ int ramfs_open(file_t *file, dentry_t *dentry) {
 int ramfs_flush(file_t *file) {
   inode_t *inode = file->dentry->inode;
   if (inode->pages != NULL) {
-    unmap_pages(inode->pages);
+    vfree_pages(inode->pages);
   }
   return 0;
 }
@@ -31,7 +32,7 @@ ssize_t ramfs_read(file_t *file, char *buf, size_t count, off_t *offset) {
   }
 
   ssize_t len = min(*offset + count, inode->size - *offset);
-  char *data = (void *) inode->pages->addr;
+  char *data = (void *) PAGE_VIRT_ADDR(inode->pages);
   memcpy(buf, data, len);
   *offset += len;
   return len;
@@ -45,17 +46,18 @@ ssize_t ramfs_write(file_t *file, const char *buf, size_t count, off_t *offset) 
   if (free < count) {
     size_t remaining = count - free;
     inode->blocks += SIZE_TO_PAGES(remaining);
-    page_t *pages = alloc_pages(SIZE_TO_PAGES(remaining), PE_WRITE);
+    page_t *pages = _alloc_pages(SIZE_TO_PAGES(remaining), PG_WRITE);
     if (inode->pages) {
-      unmap_pages(inode->pages);
-      inode->pages->next = pages;
+      _vunmap_pages(inode->pages);
+      page_t *last = SLIST_GET_LAST(inode->pages, next);
+      SLIST_ADD_EL(last, pages, next);
     } else {
       inode->pages = pages;
     }
-    map_pages(inode->pages);
+    _vmap_pages(pages);
   }
 
-  char *data = (void *) inode->pages->addr;
+  char *data = (void *) PAGE_VIRT_ADDR(inode->pages);
   memcpy(data + *offset, buf, count);
   *offset += count;
   return count;

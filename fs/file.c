@@ -9,6 +9,7 @@
 #include <process.h>
 #include <thread.h>
 #include <panic.h>
+#include <string.h>
 
 #define FILES (current_process->files)
 

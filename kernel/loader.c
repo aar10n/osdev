@@ -11,38 +11,42 @@
 #include <printf.h>
 #include <string.h>
 #include <path.h>
+#include <panic.h>
+
+// TODO: Fix alignment
 
 int elf_pt_load(Elf64_Phdr *pheader, void *buf, elf_program_t *prog) {
-  uint16_t flags = PE_USER;
+  uint16_t flags = PG_USER;
   if (pheader->p_flags & PF_X)
-    flags |= PE_EXEC;
+    flags |= PG_EXEC;
   if (pheader->p_flags & PF_W)
-    flags |= PE_WRITE;
+    flags |= PG_WRITE;
 
-  page_t *pages = alloc_frames(SIZE_TO_PAGES(pheader->p_memsz), flags);
-  void *addr = vm_map_page_vaddr(pheader->p_vaddr + prog->base, pages);
-
-  // disable write protection just long enough for us to
-  // copy over and zero the allocated pages even if the
-  // pages are not marked as writable
-  uint32_t rflags = cli_save();
-  uint64_t cr0 = read_cr0();
-  write_cr0(cr0 & ~(1 << 16)); // disable cr0.WP
-  memcpy(addr, buf + pheader->p_offset, pheader->p_filesz);
-  memset(offset_ptr(addr, pheader->p_filesz), 0, pheader->p_memsz - pheader->p_filesz);
-  write_cr0(cr0); // re-enable cr0.WP
-  sti_restore(rflags);
-
-  if (prog->prog_pages) {
-    page_t *last = prog->prog_pages;
-    while (last->next != NULL) {
-      last = last->next;
-    }
-    last->next = pages;
-  } else {
-    prog->prog_pages = pages;
-  }
-  return 0;
+  unreachable;
+  // page_t *pages = alloc_frames(, flags);
+  // void *addr = vm_map_page_vaddr(pheader->p_vaddr + prog->base, pages);
+  //
+  // // disable write protection just long enough for us to
+  // // copy over and zero the allocated pages even if the
+  // // pages are not marked as writable
+  // uint32_t rflags = cli_save();
+  // uint64_t cr0 = read_cr0();
+  // write_cr0(cr0 & ~(1 << 16)); // disable cr0.WP
+  // memcpy(addr, buf + pheader->p_offset, pheader->p_filesz);
+  // memset(offset_ptr(addr, pheader->p_filesz), 0, pheader->p_memsz - pheader->p_filesz);
+  // write_cr0(cr0); // re-enable cr0.WP
+  // sti_restore(rflags);
+  //
+  // if (prog->prog_pages) {
+  //   page_t *last = prog->prog_pages;
+  //   while (last->next != NULL) {
+  //     last = last->next;
+  //   }
+  //   last->next = pages;
+  // } else {
+  //   prog->prog_pages = pages;
+  // }
+  // return 0;
 }
 
 int elf_pt_interp(Elf64_Phdr *pheader, void *buf, elf_program_t *prog) {
@@ -93,31 +97,32 @@ int load_elf_file(const char *path, elf_program_t *prog) {
     return -1;
   }
 
-  page_t *program = alloc_pages(SIZE_TO_PAGES(stat.st_size), PE_WRITE);
-  ssize_t nread = fs_read(fd, (void *) program->addr, stat.st_size);
-  if (nread < 0) {
-    free_pages(program);
-    fs_close(fd);
-    return -1;
-  }
-
-  prog->file_pages = program;
-  if (load_elf((void *) program->addr, prog) < 0) {
-    free_pages(program);
-    fs_close(fd);
-  }
-
-  if (prog->interp != NULL) {
-    elf_program_t *linker = kmalloc(sizeof(elf_program_t));
-    memset(linker, 0, sizeof(elf_program_t));
-
-    linker->base = 0x7FC0000000;
-    if (load_elf_file("/lib/ld.so", linker) < 0) {
-      free_pages(program);
-      fs_close(fd);
-    }
-
-    prog->linker = linker;
-  }
-  return 0;
+  unreachable;
+  // page_t *program = alloc_pages(SIZE_TO_PAGES(stat.st_size), PE_WRITE);
+  // ssize_t nread = fs_read(fd, (void *) program->addr, stat.st_size);
+  // if (nread < 0) {
+  //   free_pages(program);
+  //   fs_close(fd);
+  //   return -1;
+  // }
+  //
+  // prog->file_pages = program;
+  // if (load_elf((void *) program->addr, prog) < 0) {
+  //   free_pages(program);
+  //   fs_close(fd);
+  // }
+  //
+  // if (prog->interp != NULL) {
+  //   elf_program_t *linker = kmalloc(sizeof(elf_program_t));
+  //   memset(linker, 0, sizeof(elf_program_t));
+  //
+  //   linker->base = 0x7FC0000000;
+  //   if (load_elf_file("/lib/ld.so", linker) < 0) {
+  //     free_pages(program);
+  //     fs_close(fd);
+  //   }
+  //
+  //   prog->linker = linker;
+  // }
+  // return 0;
 }

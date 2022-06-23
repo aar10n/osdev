@@ -5,6 +5,8 @@
 #include <device/ioapic.h>
 
 #include <cpu/io.h>
+#include <init.h>
+#include <mm.h>
 #include <panic.h>
 
 #define MAX_IOAPICS 16
@@ -72,6 +74,14 @@ static int get_ioapic_for_interrupt(uint8_t irq) {
 
 //
 
+void remap_ioapic_registers(void *data) {
+  struct ioapic_device *ioapic = data;
+  ioapic->address = (uintptr_t) _vmap_mmio(ioapic->mmio_base, PAGE_SIZE, PG_WRITE | PG_NOCACHE);
+  _vmap_name_mapping(ioapic->address, PAGE_SIZE, "ioapic");
+}
+
+//
+
 void disable_legacy_pic() {
   outb(0x21, 0xFF); // legacy pic1
   outb(0xA1, 0xFF); // legacy pic2
@@ -102,6 +112,7 @@ void register_ioapic(uint8_t id, uint32_t address, uint32_t gsi_base) {
   }
 
   num_ioapics += 1;
+  register_init_address_space_callback(remap_ioapic_registers, &ioapics[id]);
 }
 
 void ioapic_set_irq_vector(uint8_t irq, uint8_t vector) {

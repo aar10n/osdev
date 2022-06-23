@@ -12,7 +12,7 @@
 
 extern LIST_HEAD(mm_callback_t) mm_init_callbacks;
 
-static memory_zone_t *zones[ZONE_MAX];
+static memory_zone_t *mem_zones[ZONE_MAX];
 static bool did_initialize = false;
 
 static zone_type_t get_zone_type(uintptr_t phys_addr) {
@@ -93,7 +93,7 @@ static void apply_page_flags(page_t *page, uint16_t flags) {
 
 void mark_page_reserved(uintptr_t frame) {
   zone_type_t zone_type = get_zone_type(frame);
-  memory_zone_t *zone = zones[zone_type];
+  memory_zone_t *zone = mem_zones[zone_type];
   if (zone == NULL) {
     return;
   }
@@ -164,7 +164,7 @@ void mm_init() {
     // kprintf("    map: %p\n", bitmap->map);
 
     if (last == NULL || last->type != zone->type) {
-      zones[zone->type] = zone;
+      mem_zones[zone->type] = zone;
       last = zone;
     } else if (last->type) {
       last->next = zone;
@@ -184,7 +184,7 @@ page_t *mm_alloc_pages(zone_type_t zone_type, size_t count, uint16_t flags) {
   kassert(did_initialize);
   kassert(zone_type < ZONE_MAX);
 
-  memory_zone_t *zone = zones[zone_type];
+  memory_zone_t *zone = mem_zones[zone_type];
   while (!zone || zone->pages->free < count) {
     if (!zone || !zone->next) {
       if (flags & PE_ASSERT) {
@@ -198,7 +198,7 @@ page_t *mm_alloc_pages(zone_type_t zone_type, size_t count, uint16_t flags) {
         panic("panic - out of memory\n");
       }
 
-      zone = zones[next_zone];
+      zone = mem_zones[next_zone];
     } else {
       zone = zone->next;
     }
@@ -291,7 +291,7 @@ page_t *mm_alloc_pages(zone_type_t zone_type, size_t count, uint16_t flags) {
 
 page_t *mm_alloc_frame(uintptr_t frame, uint16_t flags) {
   zone_type_t zone_type = get_zone_type(frame);
-  memory_zone_t *zone = zones[zone_type];
+  memory_zone_t *zone = mem_zones[zone_type];
   if (!zone) {
     if (flags & PE_ASSERT) {
       panic("panic - physical frame %p does not exist", frame);
@@ -326,7 +326,7 @@ page_t *mm_alloc_frame(uintptr_t frame, uint16_t flags) {
 
 void mm_free_page(page_t *page) {
   while (page) {
-    memory_zone_t *zone = zones[page->flags.zone];
+    memory_zone_t *zone = mem_zones[page->flags.zone];
     size_t num_4k_pages = 1;
     if (page->flags.page_size && page->flags.page_size_2mb) {
       num_4k_pages = SIZE_TO_PAGES(PAGE_SIZE_2MB);

@@ -821,55 +821,57 @@ void *fs_mmap(void *addr, size_t len, int prot, int flags, int fd, off_t off) {
     }
   }
 
-  uintptr_t va = (uintptr_t) addr;
-  if (!vm_find_free_area(flags & MAP_FIXED ? EXACTLY : ABOVE, &va, len)) {
-    ERRNO = ENOMEM;
-    return MAP_FAILED;
-  }
-  vm_mark_reserved(va, len);
-
-  uint16_t pflags = PE_USER;
-  if (prot & PROT_WRITE) {
-    pflags |= PE_WRITE;
-  }
-  if (prot & PROT_EXEC) {
-    pflags |= PE_EXEC;
-  }
-
-  if (fd == -1) {
-    page_t *pages = alloc_frames(SIZE_TO_PAGES(len), pflags);
-    vm_map_page_vaddr(va, pages);
-    vm_update_attributes(va, AREA_PAGE | AREA_MMAP, pages);
-    // zero the allocated pages
-    uint64_t rflags = cli_save();
-    uint64_t cr0 = read_cr0();
-    write_cr0(cr0 & ~(1 << 16)); // disable cr0.WP
-    memset((void *) va, 0, len);
-    write_cr0(cr0); // re-enable cr0.WP
-    sti_restore(rflags);
-  } else if (f_mmap(file, va, len, pflags) < 0) {
-    // TODO: unmark as reserved
-    return NULL;
-  }
-
-  if (fd >= 0) {
-    vm_attach_file(va, file);
-    vm_update_attributes(va, AREA_FILE | AREA_MMAP, file);
-  }
-  return (void *) va;
+  unreachable;
+  // uintptr_t va = (uintptr_t) addr;
+  // if (!vm_find_free_area(flags & MAP_FIXED ? EXACTLY : ABOVE, &va, len)) {
+  //   ERRNO = ENOMEM;
+  //   return MAP_FAILED;
+  // }
+  // vm_mark_reserved(va, len);
+  //
+  // uint16_t pflags = PE_USER;
+  // if (prot & PROT_WRITE) {
+  //   pflags |= PE_WRITE;
+  // }
+  // if (prot & PROT_EXEC) {
+  //   pflags |= PE_EXEC;
+  // }
+  //
+  // if (fd == -1) {
+  //   page_t *pages = alloc_frames(SIZE_TO_PAGES(len), pflags);
+  //   vm_map_page_vaddr(va, pages);
+  //   vm_update_attributes(va, AREA_PAGE | AREA_MMAP, pages);
+  //   // zero the allocated pages
+  //   uint64_t rflags = cli_save();
+  //   uint64_t cr0 = read_cr0();
+  //   write_cr0(cr0 & ~(1 << 16)); // disable cr0.WP
+  //   memset((void *) va, 0, len);
+  //   write_cr0(cr0); // re-enable cr0.WP
+  //   sti_restore(rflags);
+  // } else if (f_mmap(file, va, len, pflags) < 0) {
+  //   // TODO: unmark as reserved
+  //   return NULL;
+  // }
+  //
+  // if (fd >= 0) {
+  //   vm_attach_file(va, file);
+  //   vm_update_attributes(va, AREA_FILE | AREA_MMAP, file);
+  // }
+  // return (void *) va;
 }
 
 int fs_munmap(void *addr, size_t len) {
-  vm_area_t *area = vm_get_vm_area((uintptr_t) addr);
-  if (area == NULL || len == 0) {
-    ERRNO = EINVAL;
-    return -1;
-  }
-
-  if (!(area->attr & AREA_MMAP)) {
-    ERRNO = EINVAL;
-    return -1;
-  }
-
-  return vm_unmap((uintptr_t) addr, len);
+  unreachable;
+  // vm_area_t *area = vm_get_vm_area((uintptr_t) addr);
+  // if (area == NULL || len == 0) {
+  //   ERRNO = EINVAL;
+  //   return -1;
+  // }
+  //
+  // if (!(area->attr & AREA_MMAP)) {
+  //   ERRNO = EINVAL;
+  //   return -1;
+  // }
+  //
+  // return vm_unmap((uintptr_t) addr, len);
 }

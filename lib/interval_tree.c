@@ -4,6 +4,8 @@
 
 #include "interval_tree.h"
 
+#include <string.h>
+
 #ifndef _assert
 #include <panic.h>
 #define _assert(expr) kassert((expr))
@@ -120,7 +122,8 @@ bool duplicate_node_pred(rb_tree_t *tree, rb_node_t *node, void *pred) {
 
 intvl_tree_t *create_intvl_tree() {
   rb_tree_t *rb_tree = create_rb_tree();
-  rb_tree_events_t *events = kmalloc(sizeof(rb_tree_events_t));
+  rb_tree_events_t *events = _malloc(sizeof(rb_tree_events_t));
+  memset(events, 0, sizeof(rb_tree_events_t));
   events->post_rotate = post_rotate_callback;
   events->post_insert_node = post_insert_callback;
   events->post_delete_node = post_delete_callback;
@@ -207,7 +210,7 @@ intvl_node_t *intvl_tree_find_closest(intvl_tree_t *tree, interval_t interval) {
     }
   }
 
-  return closest->data;
+  return closest ? closest->data : NULL;
 }
 
 void intvl_tree_insert(intvl_tree_t *tree, interval_t interval, void *data) {

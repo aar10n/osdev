@@ -8,6 +8,7 @@
 #include <fs.h>
 #include <mm.h>
 #include <panic.h>
+#include <string.h>
 
 #define SCSI_MAX_XFER 64
 
@@ -46,9 +47,9 @@ void *scsi_device_init(usb_device_t *dev) {
   memset(info, 0, sizeof(scsi_device_info_t));
   device->info = info;
 
-  usb_add_transfer(dev, USB_OUT, (void *) heap_ptr_phys(cbw), sizeof(usb_ms_cbw_t));
-  usb_add_transfer(dev, USB_IN, (void *) heap_ptr_phys(info), sizeof(scsi_device_info_t));
-  usb_add_transfer(dev, USB_IN, (void *) heap_ptr_phys(csw), sizeof(usb_ms_csw_t));
+  usb_add_transfer(dev, USB_OUT, (void *) kheap_ptr_to_phys(cbw), sizeof(usb_ms_cbw_t));
+  usb_add_transfer(dev, USB_IN, (void *) kheap_ptr_to_phys(info), sizeof(scsi_device_info_t));
+  usb_add_transfer(dev, USB_IN, (void *) kheap_ptr_to_phys(csw), sizeof(usb_ms_csw_t));
   usb_start_transfer(dev, USB_OUT);
   usb_start_transfer(dev, USB_IN);
   usb_await_transfer(dev, USB_IN);
@@ -102,21 +103,21 @@ ssize_t scsi_read_internal(usb_device_t *dev, uint64_t lba, uint32_t count, void
   usb_ms_csw_t *csw = kmalloc(sizeof(usb_ms_csw_t));
   setup_command_block(cbw, &read_cmd, sizeof(scsi_read16_cmd_t), size, USB_IN);
 
-  usb_add_transfer(dev, USB_OUT, (void *) heap_ptr_phys(cbw), sizeof(usb_ms_cbw_t));
+  usb_add_transfer(dev, USB_OUT, (void *) kheap_ptr_to_phys(cbw), sizeof(usb_ms_cbw_t));
   usb_start_transfer(dev, USB_OUT);
   int result = usb_await_transfer(dev, USB_OUT);
   if (result != 0) {
     goto FAIL;
   }
 
-  usb_add_transfer(dev, USB_IN, virt_to_phys_ptr(buf), size);
+  usb_add_transfer(dev, USB_IN, (void *) _vm_virt_to_phys((uintptr_t) buf), size);
   usb_start_transfer(dev, USB_IN);
   result = usb_await_transfer(dev, USB_IN);
   if (result != 0) {
     goto FAIL;
   }
 
-  usb_add_transfer(dev, USB_IN, (void *) heap_ptr_phys(csw), sizeof(usb_ms_csw_t));
+  usb_add_transfer(dev, USB_IN, (void *) kheap_ptr_to_phys(csw), sizeof(usb_ms_csw_t));
   usb_start_transfer(dev, USB_IN);
   result = usb_await_transfer(dev, USB_IN);
   if (result != 0) {
@@ -158,21 +159,21 @@ ssize_t scsi_write_internal(usb_device_t *dev, uint64_t lba, uint32_t count, voi
   usb_ms_csw_t *csw = kmalloc(sizeof(usb_ms_csw_t));
   setup_command_block(cbw, &write_cmd, sizeof(scsi_read16_cmd_t), size, USB_OUT);
 
-  usb_add_transfer(dev, USB_OUT, (void *) heap_ptr_phys(cbw), sizeof(usb_ms_cbw_t));
+  usb_add_transfer(dev, USB_OUT, (void *) kheap_ptr_to_phys(cbw), sizeof(usb_ms_cbw_t));
   usb_start_transfer(dev, USB_OUT);
   int result = usb_await_transfer(dev, USB_OUT);
   if (result != 0) {
     goto FAIL;
   }
 
-  usb_add_transfer(dev, USB_OUT, virt_to_phys_ptr(buf), size);
+  usb_add_transfer(dev, USB_OUT, (void *) _vm_virt_to_phys((uintptr_t) buf), size);
   usb_start_transfer(dev, USB_OUT);
   result = usb_await_transfer(dev, USB_OUT);
   if (result != 0) {
     goto FAIL;
   }
 
-  usb_add_transfer(dev, USB_IN, (void *) heap_ptr_phys(csw), sizeof(usb_ms_csw_t));
+  usb_add_transfer(dev, USB_IN, (void *) kheap_ptr_to_phys(csw), sizeof(usb_ms_csw_t));
   usb_start_transfer(dev, USB_IN);
   result = usb_await_transfer(dev, USB_IN);
   if (result != 0) {

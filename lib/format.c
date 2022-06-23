@@ -839,11 +839,12 @@ int print_format(const char *format, char *str, size_t size, va_list args, bool 
             value = "(null)";
           }
 
-          int len;
+          uint32_t len;
+          size_t str_len = strlen(value);
           if (opts.width > 0 && !opts.is_width_arg) {
-            len = opts.width;
+            len = min(opts.width, str_len);
           } else {
-            len = strlen(value);
+            len = str_len;
           }
 
           for (int i = 0; i < len; i++) {
@@ -853,6 +854,14 @@ int print_format(const char *format, char *str, size_t size, va_list args, bool 
             buffer[i] = value[i];
             format_len++;
           }
+
+          if (str_len < len) {
+            for (int i = str_len; i < len; i++) {
+              buffer[i] = ' ';
+              format_len++;
+            }
+          }
+
           break;
         }
         case 'm':

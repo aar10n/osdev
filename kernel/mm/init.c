@@ -3,14 +3,12 @@
 //
 
 #include <mm/init.h>
-#include <mm/mm.h>
-#include <mm/vm.h>
 #include <mm/heap.h>
+#include <mm/pgtable.h>
 
 #include <cpu/cpu.h>
 #include <printf.h>
 #include <panic.h>
-#include <errno.h>
 
 uintptr_t kernel_address;
 uintptr_t kernel_virtual_offset;
@@ -23,17 +21,12 @@ uintptr_t kernel_reserved_end;
 uintptr_t kernel_reserved_ptr;
 memory_map_entry_t *reserved_map_entry;
 
-LIST_HEAD(mm_callback_t) mm_init_callbacks;
-LIST_HEAD(mm_callback_t) vm_init_callbacks;
-
 void mm_early_init() {
   kernel_address = (uintptr_t) &__kernel_code_start;
   kernel_virtual_offset = (uintptr_t) &__kernel_virtual_offset;
   kernel_code_start = (uintptr_t) &__kernel_code_start;
   kernel_code_end = (uintptr_t) &__kernel_code_end;
   kernel_data_end = (uintptr_t) &__kernel_data_end;
-  LIST_INIT(&mm_init_callbacks);
-  LIST_INIT(&vm_init_callbacks);
 
   size_t usable_mem_size = 0;
   memory_map_entry_t *kernel_entry = NULL;
@@ -109,91 +102,4 @@ uintptr_t mm_early_alloc_pages(size_t count) {
   reserved_map_entry->base = kernel_reserved_ptr;
   reserved_map_entry->size -= size;
   return addr;
-}
-
-void *mm_early_map_pages(uintptr_t virt_addr, uintptr_t phys_addr, size_t count, uint16_t flags) {
-  kassert(virt_addr % PAGE_SIZE == 0);
-  kassert(phys_addr % PAGE_SIZE == 0);
-  kassert(count > 0);
-
-  int map_level = 1;
-  size_t stride = PAGE_SIZE;
-  if (flags & PE_2MB_SIZE) {
-    kassert(is_aligned(virt_addr, SIZE_2MB));
-    kassert(is_aligned(phys_addr, SIZE_2MB));
-    map_level = 2;
-    stride = SIZE_2MB;
-    flags |= PE_SIZE;
-  } else if (flags & PE_1GB_SIZE) {
-    kassert(is_aligned(virt_addr, SIZE_1GB));
-    kassert(is_aligned(phys_addr, SIZE_1GB));
-    map_level = 3;
-    stride = SIZE_1GB;
-    flags |= PE_SIZE;
-    if (!cpu_query_feature(CPU_BIT_PDPE1GB)) {
-      kprintf("warning: 1GB mapping requested but not supported by CPU\n"
-              "         using 2MB mapping instead\n");
-      map_level = 2;
-      stride = SIZE_2MB;
-      count = (count * SIZE_1GB) / SIZE_2MB;
-    }
-  }
-
-  void *addr = (void *) virt_addr;
-  while (count > 0) {
-    uint64_t *pml4 = (void *) ((uint64_t) boot_info_v2->pml4_addr);
-    uint64_t *table = pml4;
-    int index;
-    for (int i = 4; i > 0; i--) {
-      index = (virt_addr >> page_level_to_shift(i)) & 0x1FF;
-      if (i == map_level) {
-        for (; index < 512; index++) {
-          table[index] = phys_addr | (flags & PAGE_FLAGS_MASK) | PE_PRESENT;
-          virt_addr += stride;
-          phys_addr += stride;
-          count--;
-        }
-        continue;
-      }
-
-      uintptr_t next_table = table[index] & PAGE_FRAME_MASK;
-      if (next_table == 0 && i != 1) {
-        // create new table
-        uintptr_t new_table = mm_early_alloc_pages(1);
-        memset((void *) new_table, 0, PAGE_SIZE);
-        table[index] = new_table | PE_WRITE | PE_PRESENT;
-        next_table = new_table;
-      }
-      table = (void *) next_table;
-    }
-  }
-
-  cpu_flush_tlb();
-  return addr;
-}
-
-int mm_register_mm_init_callback(void (*callback)(void *data), void *data) {
-  if (callback == NULL) {
-    return -EINVAL;
-  }
-
-  mm_callback_t *cb = kmalloc(sizeof(mm_callback_t));
-  cb->callback = callback;
-  cb->data = data;
-  LIST_ENTRY_INIT(&cb->list);
-  LIST_ADD(&mm_init_callbacks, cb, list);
-  return 0;
-}
-
-int mm_register_vm_init_callback(void (*callback)(void *data), void *data) {
-  if (callback == NULL) {
-    return -EINVAL;
-  }
-
-  mm_callback_t *cb = kmalloc(sizeof(mm_callback_t));
-  cb->callback = callback;
-  cb->data = data;
-  LIST_ENTRY_INIT(&cb->list);
-  LIST_ADD(&vm_init_callbacks, cb, list);
-  return 0;
 }

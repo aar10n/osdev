@@ -115,15 +115,15 @@ ahci_device_t *port_init(ahci_controller_t *controller, int port_num) {
   port_command_stop(port);
 
   // command list
-  page_t *cmd_list_page = alloc_zero_page(PE_WRITE | PE_CACHE_DISABLE);
-  void *cmd_list = (void *) cmd_list_page->addr;
-  port->cmd_list_base = (uintptr_t) cmd_list_page->frame;
+  page_t *cmd_list_page = valloc_zero_pages(1, PG_WRITE | PG_NOCACHE);
+  void *cmd_list = (void *) PAGE_VIRT_ADDR(cmd_list_page);
+  port->cmd_list_base = PAGE_PHYS_ADDR(cmd_list_page);
 
   // fis structure
-  page_t *fis_page = alloc_zero_page(PE_WRITE | PE_CACHE_DISABLE);
-  void *fis = (void *) fis_page->addr;
-  port->fis_base = fis_page->frame;
-  kprintf("[ahci] fis base: %p\n", fis_page->frame);
+  page_t *fis_page = valloc_zero_pages(1, PG_WRITE | PG_NOCACHE);
+  void *fis = (void *) PAGE_VIRT_ADDR(fis_page);
+  port->fis_base = PAGE_PHYS_ADDR(fis_page);
+  kprintf("[ahci] fis base: %p\n", fis);
 
   ahci_port->fis = fis;
 
@@ -137,12 +137,12 @@ ahci_device_t *port_init(ahci_controller_t *controller, int port_num) {
   ahci_slot_t **slots = kmalloc(sizeof(ahci_slot_t *) * num_slots);
   hba_cmd_header_t *headers = (void *) cmd_list;
   for (int i = 0; i < num_slots; i++) {
-    page_t *table_page = alloc_zero_page(PE_WRITE | PE_CACHE_DISABLE);
-    void *table = (void *) table_page->addr;
+    page_t *table_page = valloc_zero_pages(1, PG_WRITE | PG_NOCACHE);
+    void *table = (void *) PAGE_VIRT_ADDR(table_page);
 
     hba_cmd_header_t *header = &(headers[i]);
     header->prdt_length = 8;
-    header->cmd_table_base = table_page->frame;
+    header->cmd_table_base = PAGE_PHYS_ADDR(table_page);
 
     ahci_slot_t *slot = kmalloc(sizeof(ahci_slot_t));
     slot->num = i;
@@ -307,12 +307,7 @@ void ahci_init() {
   }
 
   pcie_bar_t *bar = pcie_get_bar(pci_dev, 5);
-  uintptr_t virt_addr = MMIO_BASE_VA;
-  if (!vm_find_free_area(ABOVE, &virt_addr, bar->size)) {
-    panic("[ahci] failed to map ahci registers");
-  }
-  vm_map_vaddr(virt_addr, bar->phys_addr, bar->size, PE_WRITE);
-  void *ahci_base = (void *) virt_addr;
+  void *ahci_base = _vmap_mmio(bar->phys_addr, bar->size, PG_WRITE);
 
   hba_reg_mem_t *hba_mem = ahci_base;
   ahci_controller_t *controller = kmalloc(sizeof(ahci_controller_t));
@@ -332,11 +327,13 @@ void ahci_init() {
 }
 
 ssize_t ahci_read(ahci_device_t *port, uint64_t lba, uint32_t count, void *buf) {
-  return transfer_dma(DEVICE_TO_HOST, port, lba, count, (uintptr_t) virt_to_phys_ptr(buf));
+  uintptr_t phys_ptr = _vm_virt_to_phys((uintptr_t) buf);
+  return transfer_dma(DEVICE_TO_HOST, port, lba, count, phys_ptr);
 }
 
 ssize_t ahci_write(ahci_device_t *port, uint64_t lba, uint32_t count, void *buf) {
-  return transfer_dma(HOST_TO_DEVICE, port, lba, count, (uintptr_t) virt_to_phys_ptr(buf));
+  uintptr_t phys_ptr = _vm_virt_to_phys((uintptr_t) buf);
+  return transfer_dma(HOST_TO_DEVICE, port, lba, count, phys_ptr);
 }
 
 //

@@ -54,7 +54,7 @@ void *memmove(void *dest, const void *src, size_t len) {
   return dest;
 }
 
-void *old_memset(void *dest, int val, size_t len) {
+void *memset(void *dest, int val, size_t len) {
   unsigned char *ptr = dest;
   while (len-- > 0) {
     *ptr++ = val;

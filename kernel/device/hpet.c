@@ -5,7 +5,7 @@
 #include <panic.h>
 #include <system.h>
 #include <device/hpet.h>
-#include <mm/vm.h>
+#include <mm.h>
 #include <printf.h>
 
 uintptr_t hpet_base;
@@ -39,13 +39,9 @@ void hpet_init() {
   }
 
   kprintf("[hpet] mapping hpet\n");
+  unreachable;
   uintptr_t phys_addr = system_info->hpet->phys_addr;
-  uintptr_t virt_addr = MMIO_BASE_VA;
-  if (!vm_find_free_area(ABOVE, &virt_addr, PAGE_SIZE)) {
-    panic("[hpet] failed to map hpet");
-  }
-
-  vm_map_vaddr(virt_addr, phys_addr, PAGE_SIZE, PE_WRITE);
+  uintptr_t virt_addr = (uintptr_t) _vmap_mmio(phys_addr, PAGE_SIZE, PG_WRITE | PG_NOCACHE);
   system_info->hpet->virt_addr = virt_addr;
   hpet_base = virt_addr;
 

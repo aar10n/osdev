@@ -276,7 +276,8 @@ void acpi_init() {
     uintptr_t virt_addr = kernel_phys_to_virt(region->base);
     size_t size = align(region->size, PAGE_SIZE);
 
-    vm_map_vaddr(virt_addr, region->base, size, 0);
+    unreachable;
+    // vm_map_vaddr(virt_addr, region->base, size, 0);
     // kprintf("[acpi] mapped region (%p -> %p)\n",
     //         region->phys_addr, virt_addr);
 

@@ -3,8 +3,7 @@
 //
 
 #include <bus/pcie.h>
-#include <mm/vm.h>
-#include <mm/heap.h>
+#include <mm.h>
 #include <printf.h>
 #include <panic.h>
 #include <system.h>
@@ -155,14 +154,9 @@ void add_device(pcie_device_t *device) {
 //
 
 void pcie_init() {
+  unreachable;
   pcie_desc_t *pcie = system_info->pcie;
-  uintptr_t addr = MMIO_BASE_VA;
-  if (!vm_find_free_area(ABOVE, &addr, PCIE_MMIO_SIZE)) {
-    panic("[pcie] no free address space");
-  }
-  pcie->virt_addr = addr;
-  vm_map_vaddr(pcie->virt_addr, pcie->phys_addr, PCIE_MMIO_SIZE, PE_WRITE);
-
+  pcie->virt_addr = (uintptr_t) _vmap_mmio(pcie->phys_addr, PCIE_MMIO_SIZE, PG_WRITE | PG_NOCACHE);
   memset(devices, 0, sizeof(devices));
 }
 

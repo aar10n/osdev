@@ -22,8 +22,9 @@ INCLUDE += -Iinclude/
 ifeq ($(DEBUG),1)
 CFLAGS += -gdwarf
 CXXFLAGS += -gdwarf
+LDFLAGS += -g
 ASFLAGS += -gdwarf-5
-NASMFLAGS += -g -F dwarf
+NASMFLAGS += -g -F dwarf -O0
 endif
 
 # --------- #

@@ -4,7 +4,7 @@
 
 #include <mm/heap.h>
 #include <mm/init.h>
-#include <mm/mm.h>
+#include <mm/pgtable.h>
 
 #include <printf.h>
 #include <string.h>
@@ -69,15 +69,19 @@ void mm_init_kheap() {
   size_t page_count = SIZE_TO_PAGES(KERNEL_HEAP_SIZE);
   uintptr_t phys_addr = mm_early_alloc_pages(page_count);
   uintptr_t virt_addr = KERNEL_HEAP_VA;
-  if (KERNEL_HEAP_SIZE >= SIZE_2MB && is_aligned(phys_addr, SIZE_2MB)) {
-    uintptr_t size_2mb_pages = KERNEL_HEAP_SIZE / SIZE_2MB;
-    page_count = page_count % SIZE_2MB;
-    mm_early_map_pages(virt_addr, phys_addr, size_2mb_pages, PE_WRITE | PE_2MB_SIZE);
-    phys_addr += size_2mb_pages * SIZE_2MB;
-    virt_addr += size_2mb_pages * SIZE_2MB;
+  if (KERNEL_HEAP_SIZE >= BIGPAGE_SIZE && is_aligned(phys_addr, BIGPAGE_SIZE)) {
+    uintptr_t num_bigpages = KERNEL_HEAP_SIZE / BIGPAGE_SIZE;
+    page_count = page_count % BIGPAGE_SIZE;
+    early_map_entries(virt_addr, phys_addr, num_bigpages, PG_WRITE | PG_BIGPAGE);
+    phys_addr += num_bigpages * BIGPAGE_SIZE;
+    virt_addr += num_bigpages * BIGPAGE_SIZE;
   }
-  mm_early_map_pages(virt_addr, phys_addr, page_count, PE_WRITE);
 
+  if (page_count > 0) {
+    early_map_entries(virt_addr, phys_addr, page_count, PG_WRITE);
+  }
+
+  kheap.phys_addr = phys_addr;
   kheap.start_addr = KERNEL_HEAP_VA;
   kheap.end_addr = KERNEL_HEAP_VA + KERNEL_HEAP_SIZE;
   kheap.size = KERNEL_HEAP_SIZE;
@@ -212,6 +216,10 @@ void *kmalloca(size_t size, size_t alignment) {
 // ----- kfree -----
 
 void kfree(void *ptr) {
+  if (ptr == NULL) {
+    return;
+  }
+
   mm_chunk_t *chunk = offset_ptr(ptr, -sizeof(mm_chunk_t));
   if (chunk->magic != CHUNK_MAGIC) {
     kprintf("[kfree] invalid pointer\n");
@@ -270,4 +278,14 @@ int kheap_is_valid_ptr(void *ptr) {
     return false;
   }
   return true;
+}
+
+uintptr_t kheap_ptr_to_phys(void *ptr) {
+  if ((uintptr_t) ptr == KERNEL_HEAP_VA) {
+    return kheap.phys_addr;
+  }
+
+  kassert(kheap_is_valid_ptr(ptr));
+  size_t offset = ((uintptr_t) ptr) - kheap.start_addr;
+  return kheap.phys_addr + offset;
 }

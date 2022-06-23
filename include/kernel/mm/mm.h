@@ -60,7 +60,7 @@
 #define PE_ASSERT   0x1000
 #define PE_FORCE    0x2000
 
-typedef enum {
+typedef enum mm_zone_type {
   ZONE_LOW,
   ZONE_DMA,
   ZONE_NORMAL,

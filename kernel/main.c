@@ -43,6 +43,8 @@
 #include <console.h>
 #include <mm/init.h>
 
+#include <string.h>
+
 boot_info_v2_t __boot_data *boot_info_v2;
 
 boot_info_t *boot_info;
@@ -168,6 +170,8 @@ _Noreturn void launch() {
 // Kernel entry
 //
 
+#include <init.h>
+
 __used void kmain() {
   console_early_init();
   cpu_init();
@@ -176,9 +180,19 @@ __used void kmain() {
   acpi_early_init();
 
   kprintf("[kernel] initializing idt\n");
-  setup_idt();
+  // setup_idt();
 
   kprintf("[kernel] boot_info: %p\n", boot_info_v2);
+
+  kprintf("init_mem_zones()\n");
+  init_mem_zones();
+  kprintf("init_address_space()\n");
+  init_address_space();
+
+  page_t *pages = _alloc_pages(1, PG_WRITE);
+  kprintf("[kernel] allocated page: %p\n", pages->address);
+
+  _vmap_pages(pages);
 
   // mm_init();
   // vm_init();
@@ -211,7 +225,7 @@ __used void ap_main() {
   // setup_gdt();
   // setup_idt();
 
-  vm_init();
+  // vm_init();
   // apic_init();
   // ioapic_init();
 

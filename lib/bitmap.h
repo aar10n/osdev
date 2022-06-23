@@ -7,7 +7,7 @@
 
 #include <base.h>
 
-typedef struct {
+typedef struct bitmap {
   uint64_t *map; // pointer to the actual bitmap
   size_t size;   // size of the bitmap in bytes
   size_t free;   // the number of free bits
@@ -23,6 +23,8 @@ bool bitmap_get(bitmap_t *bmp, index_t index);
 bool bitmap_set(bitmap_t *bmp, index_t index);
 bool bitmap_clear(bitmap_t *bmp, index_t index);
 bool bitmap_assign(bitmap_t *bmp, index_t index, bool v);
+size_t bitmap_get_n(bitmap_t *bmp, index_t index, size_t n);
+size_t bitmap_set_n(bitmap_t *bmp, index_t index, size_t n);
 index_t bitmap_get_free(bitmap_t *bmp);
 index_t bitmap_get_set_free(bitmap_t *bmp);
 index_t bitmap_get_nfree(bitmap_t *bmp, size_t n);

@@ -5,6 +5,7 @@
 #include <ext2/ext2.h>
 #include <super.h>
 #include <thread.h>
+#include <string.h>
 
 dentry_t *ext2_lookup(inode_t *dir, const char *name, bool filldir);
 
@@ -19,21 +20,21 @@ int ext2_open(file_t *file, dentry_t *dentry) {
     return 0;
   }
 
-  page_t *pages = alloc_pages(SIZE_TO_PAGES(dentry->inode->size), PE_WRITE);
+  page_t *pages = valloc_pages(SIZE_TO_PAGES(dentry->inode->size), PG_WRITE);
   inode->pages = pages;
   return 0;
 }
 
 int ext2_flush(file_t *file) {
   if (file->dentry->inode->pages) {
-    free_pages(file->dentry->inode->pages);
+    vfree_pages(file->dentry->inode->pages);
   }
   return 0;
 }
 
 ssize_t ext2_read(file_t *file, char *buf, size_t count, off_t *offset) {
   inode_t *inode = file->dentry->inode;
-  void *addr = (void *) inode->pages->addr;
+  void *addr = (void *) PAGE_VIRT_ADDR(inode->pages);
   if (!IS_FULL(inode->mode)) {
     uint64_t off = 0;
 

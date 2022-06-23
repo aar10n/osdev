@@ -5,9 +5,7 @@
 #include <acpi/acpi.h>
 
 #include <cpu/io.h>
-#include <mm/init.h>
 #include <device/ioapic.h>
-
 
 #include <printf.h>
 #include <panic.h>

@@ -10,9 +10,6 @@
 #include <vectors.h>
 #include <spinlock.h>
 
-#include <mm/heap.h>
-#include <mm/vm.h>
-
 #include <cpu/idt.h>
 #include <device/apic.h>
 #include <string.h>

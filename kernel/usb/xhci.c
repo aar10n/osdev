@@ -143,7 +143,7 @@ noreturn void *xhci_event_loop(void *arg) {
       thread_send(trb);
     }
 
-    uintptr_t addr = ring->page->frame + (ring->index * sizeof(xhci_trb_t));
+    uintptr_t addr = PAGE_PHYS_ADDR(ring->page) + (ring->index * sizeof(xhci_trb_t));
     xhci_op->usbsts.evt_int = 1;
     xhci_intr(0)->iman.ip = 1;
     xhci_intr(0)->erdp_r = addr | ERDP_BUSY;
@@ -173,7 +173,7 @@ noreturn void *xhci_device_event_loop(void *arg) {
       device->thread->data = trb;
     }
 
-    uintptr_t addr = ring->page->frame + (ring->index * sizeof(xhci_trb_t));
+    uintptr_t addr = PAGE_PHYS_ADDR(ring->page) + (ring->index * sizeof(xhci_trb_t));
     xhci_op->usbsts.evt_int = 1;
     xhci_intr(n)->iman.ip = 1;
     xhci_intr(n)->erdp_r = addr | ERDP_BUSY;
@@ -206,11 +206,7 @@ void xhci_init() {
   size_t size = bar->size;
 
   // map xhci registers
-  uintptr_t virt_addr = MMIO_BASE_VA;
-  if (!vm_find_free_area(ABOVE, &virt_addr, bar->size)) {
-    panic("[xhci] failed to map registers");
-  }
-  vm_map_vaddr(virt_addr, phys_addr, size, PE_WRITE);
+  uintptr_t virt_addr = (uintptr_t) _vmap_mmio(phys_addr, size, PG_WRITE | PG_NOCACHE);
   bar->virt_addr = virt_addr;
 
   xhci->pci_dev = device;
@@ -380,12 +376,12 @@ int xhci_init_controller(xhci_dev_t *xhci) {
   size_t dcbaap_size = sizeof(uintptr_t) * max_slots;
   void *dcbaap = kmalloca(dcbaap_size, 64);
   xhci->dcbaap = dcbaap;
-  xhci_op->dcbaap = heap_ptr_phys(dcbaap);
+  xhci_op->dcbaap = kheap_ptr_to_phys(dcbaap);
 
   // set up the command ring
   xhci_ring_t *ring = xhci_alloc_ring();
   xhci->cmd_ring = ring;
-  xhci_op->crcr_r |= ring->page->frame | CRCR_RCS;
+  xhci_op->crcr_r |= PAGE_PHYS_ADDR(ring->page) | CRCR_RCS;
 
   // set up the root interrupter
   xhci_intr_t *intrptr = xhci_setup_interrupter(xhci, irq_callback, xhci);
@@ -409,7 +405,7 @@ xhci_intr_t *xhci_setup_interrupter(xhci_dev_t *xhci, idt_function_t fn, void *d
   xhci_erst_entry_t *erst = kmalloca(erst_size, 64);
 
   xhci_ring_t *ring = xhci_alloc_ring();
-  erst[0].rs_addr = ring->page->frame;
+  erst[0].rs_addr = PAGE_PHYS_ADDR(ring->page);
   erst[0].rs_size = PAGE_SIZE / sizeof(xhci_trb_t);
 
   xhci_intr_t *intr = kmalloc(sizeof(xhci_intr_t));
@@ -420,8 +416,8 @@ xhci_intr_t *xhci_setup_interrupter(xhci_dev_t *xhci, idt_function_t fn, void *d
 
   xhci_intr(n)->imod.imodi = 4000;
   xhci_intr(n)->erstsz = 1;
-  xhci_intr(n)->erstba_r = heap_ptr_phys(erst);
-  xhci_intr(n)->erdp_r = ring->page->frame;
+  xhci_intr(n)->erstba_r = kheap_ptr_to_phys(erst);
+  xhci_intr(n)->erdp_r = PAGE_PHYS_ADDR(ring->page);
   xhci_intr(n)->iman.ie = 1;
   return intr;
 }
@@ -596,7 +592,7 @@ int xhci_enable_slot(xhci_dev_t *xhci) {
 
 int xhci_address_device(xhci_dev_t *xhci, xhci_device_t *device) {
   xhci_addr_dev_cmd_trb_t addr_cmd = { 0 };
-  addr_cmd.input_ctx = device->pages->frame;
+  addr_cmd.input_ctx = PAGE_PHYS_ADDR(device->pages);
   addr_cmd.trb_type = TRB_ADDR_DEV_CMD;
   addr_cmd.slot_id = device->slot_id;
 
@@ -612,7 +608,7 @@ int xhci_address_device(xhci_dev_t *xhci, xhci_device_t *device) {
 
 int xhci_configure_endpoint(xhci_dev_t *xhci, xhci_device_t *device) {
   xhci_config_ep_cmd_trb_t config_cmd = { 0 };
-  config_cmd.input_ctx = device->pages->frame;
+  config_cmd.input_ctx = PAGE_PHYS_ADDR(device->pages);
   config_cmd.trb_type = TRB_CONFIG_EP_CMD;
   config_cmd.slot_id = device->slot_id;
 
@@ -629,7 +625,7 @@ int xhci_configure_endpoint(xhci_dev_t *xhci, xhci_device_t *device) {
 
 int xhci_evaluate_context(xhci_dev_t *xhci, xhci_device_t *device) {
   xhci_eval_ctx_cmd_trb_t eval_cmd = { 0 };
-  eval_cmd.input_ctx = device->pages->frame;
+  eval_cmd.input_ctx = PAGE_PHYS_ADDR(device->pages);
   eval_cmd.trb_type = TRB_EVAL_CTX_CMD;
   eval_cmd.slot_id = device->slot_id;
 
@@ -674,8 +670,8 @@ bool xhci_has_event(xhci_intr_t *intr) {
 
 xhci_device_t *xhci_alloc_device(xhci_dev_t *xhci, xhci_port_t *port, uint8_t slot) {
   // input context
-  page_t *ictx_page = alloc_zero_page(PE_WRITE | PE_CACHE_DISABLE);
-  xhci_input_ctx_t *ictx = (void *) ictx_page->addr;
+  page_t *ictx_page = valloc_zero_pages(1, PG_WRITE | PG_NOCACHE);
+  xhci_input_ctx_t *ictx = (void *) PAGE_VIRT_ADDR(ictx_page);
   xhci_slot_ctx_t *slot_ctx = &ictx->slot;
   xhci_endpoint_ctx_t *ep_ctx = &ictx->endpoint[0];
 
@@ -694,7 +690,7 @@ xhci_device_t *xhci_alloc_device(xhci_dev_t *xhci, xhci_port_t *port, uint8_t sl
   ep_ctx->ep_type = XHCI_CTRL_BI_EP;
   ep_ctx->max_packt_sz = 512;
   ep_ctx->max_burst_sz = 0;
-  ep_ctx->tr_dequeue_ptr = ring->page->frame | 1;
+  ep_ctx->tr_dequeue_ptr = PAGE_PHYS_ADDR(ring->page) | 1;
   ep_ctx->avg_trb_length = 8;
   ep_ctx->interval = 0;
   ep_ctx->max_streams = 0;
@@ -702,9 +698,9 @@ xhci_device_t *xhci_alloc_device(xhci_dev_t *xhci, xhci_port_t *port, uint8_t sl
   ep_ctx->cerr = 3;
 
   // device context
-  page_t *dctx_page = alloc_zero_page(PE_WRITE | PE_CACHE_DISABLE);
-  xhci_device_ctx_t *dctx = (void *) dctx_page->addr;
-  xhci->dcbaap[slot] = dctx_page->frame;
+  page_t *dctx_page = valloc_zero_pages(1, PG_WRITE | PG_NOCACHE);
+  xhci_device_ctx_t *dctx = (void *) PAGE_VIRT_ADDR(dctx_page);
+  xhci->dcbaap[slot] = PAGE_PHYS_ADDR(dctx_page);
 
   ictx_page->next = dctx_page;
 
@@ -761,7 +757,7 @@ xhci_ep_t *xhci_alloc_device_ep(xhci_device_t *device, usb_ep_descriptor_t *desc
   ctx->interval = desc->interval;
   ctx->max_packt_sz = desc->max_pckt_sz;
   ctx->max_burst_sz = 0;
-  ctx->tr_dequeue_ptr = ep->ring->page->frame | 1;
+  ctx->tr_dequeue_ptr = PAGE_PHYS_ADDR(ep->ring->page) | 1;
   ctx->avg_trb_length = 8;
   ctx->max_streams = 0;
   ctx->mult = 0;
@@ -939,7 +935,7 @@ int xhci_queue_data(xhci_device_t *device, uintptr_t buffer, uint16_t size, bool
   clear_trb(&trb);
 
   trb.trb_type = TRB_DATA_STAGE;
-  trb.buf_ptr = vm_virt_to_phys(buffer);
+  trb.buf_ptr = _vm_virt_to_phys(buffer);
   trb.trs_length = size;
   trb.td_size = 0;
   trb.dir = dir;
@@ -1076,8 +1072,8 @@ char *xhci_get_string_descriptor(xhci_device_t *device, uint8_t index) {
 
 xhci_ring_t *xhci_alloc_ring() {
   xhci_ring_t *ring = kmalloc(sizeof(xhci_ring_t));
-  ring->page = alloc_zero_page(PE_WRITE);
-  ring->ptr = (void *) ring->page->addr;
+  ring->page = valloc_zero_pages(1, PG_WRITE);
+  ring->ptr = (void *) PAGE_VIRT_ADDR(ring->page);
   ring->index = 0;
   ring->rd_index = 0;
   ring->max_index = PAGE_SIZE / sizeof(xhci_trb_t);
@@ -1086,8 +1082,7 @@ xhci_ring_t *xhci_alloc_ring() {
 }
 
 void xhci_free_ring(xhci_ring_t *ring) {
-  vm_unmap_page(ring->page);
-  mm_free_page(ring->page);
+  vfree_pages(ring->page);
   kfree(ring);
 }
 
@@ -1101,7 +1096,7 @@ void xhci_ring_enqueue_trb(xhci_ring_t *ring, xhci_trb_t *trb) {
     link.trb_type = TRB_LINK;
     link.cycle = ring->ccs;
     link.toggle_cycle = 1;
-    link.rs_addr = ring->page->frame;
+    link.rs_addr = PAGE_PHYS_ADDR(ring->page);
     ring->ptr[ring->index++] = *as_trb(link);
 
     ring->index = 0;

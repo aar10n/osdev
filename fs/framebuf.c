@@ -21,7 +21,7 @@ int framebuf_mmap(file_t *file, uintptr_t vaddr, size_t len, uint16_t flags) {
   }
 
   framebuf_t *fb = dev->device;
-  fb->vaddr = vm_map_vaddr(vaddr, fb->paddr, len, flags);
+  fb->vaddr = _vmap_phys_addr(vaddr, fb->paddr, len, flags);
   return 0;
 }
 

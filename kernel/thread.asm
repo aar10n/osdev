@@ -50,9 +50,10 @@
 %define CTX_RSP    0x50
 %define CTX_SS     0x58
 
-extern thread_entry
 extern vm_swap_vmspace
-extern write_fsbase
+
+extern thread_entry
+extern __write_fsbase
 
 
 global thread_entry_stub
@@ -123,7 +124,7 @@ thread_switch:
   push rsi
   ; write tls base address
   mov rdi, rax
-  call write_fsbase
+  call __write_fsbase
   pop rsi
   pop rdi
 

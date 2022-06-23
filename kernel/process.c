@@ -9,9 +9,7 @@
 #include <thread.h>
 #include <signal.h>
 
-#include <mm/heap.h>
-#include <mm/mm.h>
-#include <mm/vm.h>
+#include <mm.h>
 
 #include <fs.h>
 #include <file.h>
@@ -21,6 +19,8 @@
 #include <panic.h>
 #include <bitmap.h>
 #include <ipc.h>
+
+#include <cpu/cpu.h>
 
 // #define PROCESS_DEBUG
 #ifdef PROCESS_DEBUG
@@ -73,7 +73,7 @@ process_t *process_alloc(pid_t pid, pid_t ppid, void *(start_routine)(void *), v
 
   process->pid = pid;
   process->ppid = ppid;
-  process->vm = VM;
+  // process->vm = VM;
 
   process->uid = -1;
   process->gid = -1;
@@ -148,12 +148,12 @@ pid_t process_fork() {
   process->ppid = parent->pid;
   process->pwd = parent->pwd;
   process->files = copy_file_table(parent->files);
-  process->vm = vm_duplicate();
+  // process->vm = vm_duplicate();
 
   // clone main thread
   thread_t *main = thread_copy(parent_thread);
 
-  uintptr_t stack = main->kernel_stack->addr;
+  uintptr_t stack = PAGE_VIRT_ADDR(main->kernel_stack);
   uintptr_t frame = (uintptr_t) __builtin_frame_address(0);
   uintptr_t offset = frame - STACK_VA;
   uintptr_t rsp = stack + STACK_SIZE - offset;
@@ -180,9 +180,9 @@ int process_execve(const char *path, char *const argv[], char *const envp[]) {
   thread_t *thread = current_thread;
   if (thread->user_stack == NULL) {
     thread_alloc_stack(thread, true); // allocate user stack
-    memset((void *) thread->user_stack->addr, 0, USER_PSTACK_SIZE);
+    memset((void *) PAGE_VIRT_ADDR(thread->user_stack), 0, USER_PSTACK_SIZE);
   }
-  uintptr_t stack_top = thread->user_stack->addr + USER_PSTACK_SIZE;
+  uintptr_t stack_top = PAGE_VIRT_ADDR(thread->user_stack) + USER_PSTACK_SIZE;
   uint64_t *rsp = (void *) stack_top;
 
   int argc = ptr_list_len((void *) argv);

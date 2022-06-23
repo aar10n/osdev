@@ -5,7 +5,7 @@
 #ifndef KERNEL_MM_HEAP_H
 #define KERNEL_MM_HEAP_H
 
-#include <mm/mm.h>
+#include <base.h>
 #include <queue.h>
 
 #define CHUNK_MIN_SIZE   8
@@ -28,7 +28,7 @@ typedef struct mm_chunk {
 static_assert(sizeof(mm_chunk_t) == 24);
 
 typedef struct mm_heap {
-  page_t *source;       // the source of the heap memory
+  uintptr_t phys_addr;  // physical address of heap
   uintptr_t start_addr; // the heap base address
   uintptr_t end_addr;   // the heap end address
   size_t size;          // the size of the heap
@@ -46,10 +46,6 @@ void kfree(void *ptr);
 void *kcalloc(size_t nmemb, size_t size) __malloc_like;
 
 int kheap_is_valid_ptr(void *ptr);
-
-// dirty hack until we have a better allocator for smaller
-// chunks of identity mapped memory
-#define heap_ptr_phys(ptr) ((uintptr_t)(ptr) - KERNEL_OFFSET)
-#define heap_ptr_virt(ptr) ((uintptr_t)(ptr) + KERNEL_OFFSET)
+uintptr_t kheap_ptr_to_phys(void *ptr);
 
 #endif

@@ -12,6 +12,7 @@
 #include <queue.h>
 #include <printf.h>
 #include <panic.h>
+#include <string.h>
 
 #define DCACHE_SIZE 512
 
@@ -30,8 +31,8 @@ uint32_t hash(const char *str) {
 /** Initializes the dentry cache. */
 void dcache_init() {
   dcache = kmalloc(sizeof(dentry_cache_t));
-  dcache->pages = alloc_zero_pages(SIZE_TO_PAGES(DCACHE_SIZE * sizeof(dentry_t *)), PE_WRITE);
-  dcache->buckets = (void *) dcache->pages->addr;
+  dcache->pages = valloc_zero_pages(SIZE_TO_PAGES(DCACHE_SIZE * sizeof(dentry_t *)), PG_WRITE);
+  dcache->buckets = (void *) PAGE_VIRT_ADDR(dcache->pages);
   dcache->nbuckets = DCACHE_SIZE;
   dcache->count = 0;
   spin_init(&dcache->lock);

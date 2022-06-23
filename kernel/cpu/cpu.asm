@@ -12,6 +12,18 @@ __enable_interrupts:
   sti
   ret
 
+global __save_clear_interrupts
+__save_clear_interrupts:
+  pushfq
+  pop rax
+  ret
+
+global __restore_interrupts
+__restore_interrupts:
+  push rdi
+  popfq
+  ret
+
 global cli
 cli:
   cli
@@ -120,6 +132,13 @@ write_fsbase:
   call write_msr
   ret
 
+global __write_fsbase
+__write_fsbase:
+  mov rsi, rdi
+  mov rdi, FS_BASE_MSR
+  call write_msr
+  ret
+
 global read_gsbase
 read_gsbase:
   mov rdi, GS_BASE_MSR
@@ -199,6 +218,16 @@ read_cr0:
 
 global write_cr0
 write_cr0:
+  mov cr0, rdi
+  ret
+
+global __read_cr0
+__read_cr0:
+  mov rax, cr0
+  ret
+
+global __write_cr0
+__write_cr0:
   mov cr0, rdi
   ret
 
@@ -284,8 +313,8 @@ syscall:
 
 global sysret
 sysret:
-  mov KERNEL_SP, rsp
-  mov rsp, USER_SP
+  mov [KERNEL_SP], rsp
+  mov rsp, [USER_SP]
   swapgs
 
   mov rcx, rdi ; rip

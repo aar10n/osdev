@@ -15,6 +15,8 @@
 void __flush_tlb();
 void __disable_interrupts();
 void __enable_interrupts();
+uint32_t __save_clear_interrupts();
+void __restore_interrupts(uint32_t rflags);
 
 // 0x1
 #define CPU_EDX_TSC        (1 << 4)
@@ -64,6 +66,10 @@ void __enable_interrupts();
 
 // 0x80000007
 #define CPU_EDX_INVTSC     (1 << 8)
+
+#define CPU_CR0_WP         (1 << 16)
+#define CPU_CR0_NW         (1 << 29)
+#define CPU_CR0_CD         (1 << 30)
 
 #define CPU_CR4_PGE        (1 << 7)
 #define CPU_CR4_OSFXSR     (1 << 9)
@@ -370,4 +376,14 @@ void cpu_disable_interrupts() {
 
 void cpu_enable_interrupts() {
   __enable_interrupts();
+}
+
+void cpu_disable_write_protection() {
+  uint64_t cr0 = __read_cr0();
+  __write_cr0(cr0 & ~CPU_CR0_WP);
+}
+
+void cpu_enable_write_protection() {
+  uint64_t cr0 = __read_cr0();
+  __write_cr0(cr0 | CPU_CR0_WP);
 }

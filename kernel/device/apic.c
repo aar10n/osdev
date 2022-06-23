@@ -6,7 +6,7 @@
 #include <device/pit.h>
 
 #include <cpu/cpu.h>
-#include <mm/vm.h>
+#include <mm.h>
 
 #include <system.h>
 #include <panic.h>
@@ -146,22 +146,9 @@ void apic_init() {
 
   // map apic registers into virtual address space
   kprintf("[apic] mapping local apic\n");
-  if (IS_BSP) {
-    uintptr_t phys_addr = system_info->apic_base;
-    uintptr_t virt_addr = MMIO_BASE_VA;
-    size_t apic_mmio_size = PAGE_SIZE;
-    if (!vm_find_free_area(EXACTLY, &virt_addr, apic_mmio_size)) {
-      panic("[apic] failed to map local apic");
-    }
-    vm_map_vaddr(virt_addr, phys_addr, apic_mmio_size, PE_WRITE);
-    apic_base = virt_addr;
-  } else {
-    // for APs we can just use the same virtual address
-    // as the BSP because it makes things easier
-    uintptr_t phys_addr = APIC_BASE_PA;
-    uintptr_t virt_addr = apic_base;
-    vm_map_vaddr(virt_addr, phys_addr, PAGE_SIZE, PE_WRITE);
-  }
+  uintptr_t phys_addr = APIC_BASE_PA;
+  uintptr_t virt_addr = (uintptr_t) _vmap_mmio(phys_addr, PAGE_SIZE, PG_WRITE | PG_NOCACHE);
+  apic_base = virt_addr;
 
   // ensure the apic is enabled
   uint64_t apic_msr = read_msr(IA32_APIC_BASE_MSR);

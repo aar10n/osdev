@@ -6,8 +6,7 @@
 #include <system.h>
 #include <cpu/gdt.h>
 #include <cpu/idt.h>
-#include <mm/mm.h>
-#include <mm/vm.h>
+#include <mm.h>
 #include <device/apic.h>
 #include <printf.h>
 #include <string.h>
@@ -47,10 +46,10 @@ int smp_boot_core(uint8_t id, smp_data_t *data) {
 }
 
 void smp_init() {
-  page_t *code_page = mm_alloc_frame(SMPBOOT_START, PE_WRITE | PE_FORCE);
-  page_t *data_page = mm_alloc_frame(SMPDATA_START, PE_WRITE | PE_FORCE);
-  void *code_ptr = vm_map_page(code_page);
-  void *data_ptr = vm_map_page(data_page);
+  page_t *code_page = _alloc_pages_at(SMPBOOT_START, 1, PG_WRITE);
+  page_t *data_page = _alloc_pages_at(SMPDATA_START, 1, PG_WRITE);
+  void *code_ptr = _vmap_pages(code_page);
+  void *data_ptr = _vmap_pages(data_page);
 
   memset(code_ptr, 0, PAGE_SIZE);
   memset(data_ptr, 0, PAGE_SIZE);
@@ -61,7 +60,9 @@ void smp_init() {
   kassert(sizeof(smp_data_t) < PAGE_SIZE);
   memcpy(code_ptr, smpboot_start, smpboot_size);
 
-  uintptr_t pml4 = (uintptr_t) vm_create_ap_tables();
+  // uintptr_t pml4 = (uintptr_t) vm_create_ap_tables();
+  unreachable;
+  uintptr_t pml4 = (uintptr_t) NULL;
   uintptr_t stack_ptr = STACK_VA - STACK_SIZE - PAGE_SIZE;
   for (int i = 0; i < system_info->core_count; i++) {
     core_desc_t core = system_info->cores[i];

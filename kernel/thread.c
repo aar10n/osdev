@@ -46,17 +46,10 @@ static inline page_t *create_stack(uintptr_t *sp, bool user) {
   size_t virt_size = user ? USER_VSTACK_SIZE : KERNEL_STACK_SIZE;
   size_t phys_size = user ? USER_PSTACK_SIZE : KERNEL_STACK_SIZE;
 
-  uintptr_t va = user ? LOW_HALF_START : HIGH_HALF_START;
-  if (!vm_find_free_area(ABOVE, &va, virt_size)) {
-    panic("failed to find free area for stack");
-  }
-  vm_mark_reserved(va, virt_size);
+  page_t *stack_pages = _alloc_pages(SIZE_TO_PAGES(phys_size), (user ? PG_USER : 0) | PG_WRITE);
+  void *va = _vmap_pages(stack_pages);
 
-  uintptr_t rsp = va + virt_size;
-  uintptr_t map_addr = rsp - phys_size;
-  page_t *stack_pages = alloc_frames(SIZE_TO_PAGES(phys_size), (user ? PE_USER : 0) | PE_WRITE);
-  vm_map_page_vaddr(map_addr, stack_pages);
-
+  uintptr_t rsp = (uintptr_t) va + virt_size;
   *sp = rsp;
   return stack_pages;
 }
@@ -131,15 +124,15 @@ thread_t *thread_copy(thread_t *other) {
   thread_t *thread = thread_alloc(0, NULL, NULL, user);
 
   // copy the stacks
-  memcpy((void *) thread->kernel_stack->addr, (void *) other->kernel_stack->addr, KERNEL_STACK_SIZE);
+  memcpy((void *) PAGE_VIRT_ADDR(thread->kernel_stack), (void *) PAGE_VIRT_ADDR(other->kernel_stack), KERNEL_STACK_SIZE);
   if (user) {
-    memcpy((void *) thread->user_stack->addr, (void *) other->user_stack->addr, USER_PSTACK_SIZE);
+    memcpy((void *) PAGE_VIRT_ADDR(thread->user_stack), (void *) PAGE_VIRT_ADDR(other->user_stack), USER_PSTACK_SIZE);
   }
 
-  uintptr_t kernel_sp_rel = other->kernel_sp - other->kernel_stack->addr;
+  uintptr_t kernel_sp_rel = other->kernel_sp - PAGE_VIRT_ADDR(other->kernel_stack);
   uintptr_t user_sp_rel = 0;
   if (user) {
-    user_sp_rel = other->user_sp - other->user_stack->addr;
+    user_sp_rel = other->user_sp - PAGE_VIRT_ADDR(other->user_stack);
   }
 
   // copy the context
@@ -152,8 +145,8 @@ thread_t *thread_copy(thread_t *other) {
   // copy the tls data (if needed)
   // to do
 
-  thread->kernel_sp = thread->kernel_stack->addr + kernel_sp_rel;
-  thread->user_sp = user ? thread->user_stack->addr + user_sp_rel : 0;
+  thread->kernel_sp = PAGE_VIRT_ADDR(thread->kernel_stack) + kernel_sp_rel;
+  thread->user_sp = user ? PAGE_VIRT_ADDR(thread->user_stack) + user_sp_rel : 0;
   thread->cpu_id = ID;
   thread->policy = other->policy;
   thread->priority = other->priority;
@@ -167,15 +160,15 @@ thread_t *thread_copy(thread_t *other) {
 
 void thread_free(thread_t *thread) {
   if (thread->kernel_stack) {
-    free_pages(thread->kernel_stack);
+    vfree_pages(thread->kernel_stack);
   }
   if (thread->user_stack) {
-    free_pages(thread->user_stack);
+    vfree_pages(thread->user_stack);
   }
   if (thread->tls) {
     tls_block_t *tls = thread->tls;
     if (tls->pages) {
-      free_pages(tls->pages);
+      vfree_pages(tls->pages);
     }
     kfree(tls);
   }

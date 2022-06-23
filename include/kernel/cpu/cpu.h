@@ -131,6 +131,9 @@ void cpu_flush_tlb();
 void cpu_disable_interrupts();
 void cpu_enable_interrupts();
 
+void cpu_disable_write_protection();
+void cpu_enable_write_protection();
+
 // assembly functions
 
 void cli();
@@ -165,6 +168,9 @@ void flush_gdt();
 
 uint64_t read_cr0();
 void write_cr0(uint64_t cr0);
+
+uint64_t __read_cr0();
+void __write_cr0(uint64_t cr0);
 uint64_t __read_cr3();
 void __write_cr3(uint64_t cr3);
 uint64_t __read_cr4();

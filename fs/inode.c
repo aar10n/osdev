@@ -8,7 +8,9 @@
 #include <process.h>
 #include <thread.h>
 #include <panic.h>
+#include <string.h>
 #include <murmur3.h>
+#include <mm.h>
 
 // allocates a new inode struct
 // NOTE: this does not allocate an inode on disk
@@ -368,7 +370,6 @@ void i_truncate(inode_t *inode) {
     return;
   }
 
-  vm_unmap_page(inode->pages);
-  mm_free_page(inode->pages);
+  vfree_pages(inode->pages);
   inode->pages = NULL;
 }

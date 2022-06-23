@@ -31,10 +31,10 @@ static inline hid_descriptor_t *get_hid_descriptor(xhci_device_t *device) {
 
 hid_buffer_t *hid_buffer_create(uint16_t alloc_size) {
   hid_buffer_t *buffer = kmalloc(sizeof(hid_buffer_t));
-  page_t *page = alloc_zero_page(PE_WRITE);
+  page_t *page = valloc_zero_pages(1, PG_WRITE);
 
-  buffer->alloc_ptr = page->frame;
-  buffer->read_ptr = page->addr;
+  buffer->alloc_ptr = PAGE_PHYS_ADDR(page);
+  buffer->read_ptr = PAGE_VIRT_ADDR(page);
   buffer->alloc_size = alloc_size;
   buffer->max_index = PAGE_SIZE / alloc_size;
   buffer->page = page;
@@ -43,9 +43,9 @@ hid_buffer_t *hid_buffer_create(uint16_t alloc_size) {
 
 uintptr_t hid_buffer_alloc(hid_buffer_t *buffer) {
   uintptr_t ptr = buffer->alloc_ptr;
-  int index = (ptr - buffer->page->frame) / buffer->alloc_size;
+  int index = (ptr - PAGE_PHYS_ADDR(buffer->page)) / buffer->alloc_size;
   if (index == buffer->max_index - 1) {
-    buffer->alloc_ptr = buffer->page->frame;
+    buffer->alloc_ptr = PAGE_PHYS_ADDR(buffer->page);
   } else {
     buffer->alloc_ptr += buffer->alloc_size;
   }
@@ -54,9 +54,9 @@ uintptr_t hid_buffer_alloc(hid_buffer_t *buffer) {
 
 void *hid_buffer_read(hid_buffer_t *buffer) {
   uintptr_t ptr = buffer->read_ptr;
-  int index = (ptr - buffer->page->addr) / buffer->alloc_size;
+  int index = (ptr - PAGE_VIRT_ADDR(buffer->page)) / buffer->alloc_size;
   if (index == buffer->max_index - 1) {
-    buffer->read_ptr = buffer->page->addr;
+    buffer->read_ptr = PAGE_VIRT_ADDR(buffer->page);
   } else {
     buffer->read_ptr += buffer->alloc_size;
   }
@@ -65,8 +65,8 @@ void *hid_buffer_read(hid_buffer_t *buffer) {
 
 void *hid_buffer_read_last(hid_buffer_t *buffer) {
   uintptr_t ptr = buffer->read_ptr;
-  if (ptr == buffer->page->addr) {
-    return (void *) buffer->page->addr + PAGE_SIZE - buffer->alloc_size;
+  if (ptr == PAGE_VIRT_ADDR(buffer->page)) {
+    return (void *) PAGE_VIRT_ADDR(buffer->page) + PAGE_SIZE - buffer->alloc_size;
   }
   return (void *) ptr - buffer->alloc_size;
 }

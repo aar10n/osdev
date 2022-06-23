@@ -6,6 +6,7 @@
 #include <asm/bits.h>
 
 #include <panic.h>
+#include <string.h>
 #include <mm/heap.h>
 
 #ifndef _assert
@@ -30,12 +31,15 @@ bitmap_t *create_bitmap(size_t n) {
 
 void bitmap_init(bitmap_t *bmp, size_t n) {
   size_t na = align(n, BIT_SIZE);
-  size_t bytes = na / BIT_SIZE;
+  size_t qwords = na / BIT_SIZE;
+  size_t bytes = max(qwords / BYTE_SIZE, 1);
 
-  bmp->map = _malloc(min(bytes / BYTE_SIZE, 1));
+  bmp->map = _malloc(bytes);
   bmp->size = bytes;
   bmp->used = 0;
   bmp->free = n;
+
+  memset(bmp->map, 0, bytes);
 }
 
 /**
@@ -87,6 +91,68 @@ bool bitmap_assign(bitmap_t *bmp, index_t index, bool v) {
   bmp->used -= result;
   bmp->free += result;
   return result;
+}
+
+/**
+ * Gets the number of 1 bits from the region of n bits starting at the specified index.
+ * Returns the total number of 1 bits in the region.
+ */
+size_t bitmap_get_n(bitmap_t *bmp, index_t index, size_t n) {
+  kassert(bmp->free >= n);
+  size_t count = 0;
+  size_t chunk_count = (n / BIT_SIZE) + (n % BIT_SIZE > 0);
+  size_t start_index = index / BIT_SIZE;
+  size_t start_bit = index % BIT_SIZE;
+  for (size_t i = 0; i < chunk_count; i++) {
+    size_t m = min(n, BIT_SIZE);
+    uint64_t mask;
+    if (i == 0) {
+      mask = ((1 << m) - 1) << start_bit;
+    } else if (i == chunk_count - 1 && n < BIT_SIZE) {
+      mask = (1 << m) - 1;
+    } else {
+      mask = MAX_NUM;
+    }
+
+    uint64_t value = bmp->map[start_index + i] & mask;
+    count += __popcnt64(value);
+    n -= m;
+  }
+
+  return count;
+}
+
+/**
+ * Sets the region of n bits starting at the specified index. Returns the
+ * number of bits whose value was 1 before the operation.
+ */
+size_t bitmap_set_n(bitmap_t *bmp, index_t index, size_t n) {
+  kassert(bmp->free >= n);
+  size_t count = 0;
+  size_t chunk_count = (n / BIT_SIZE) + (n % BIT_SIZE > 0);
+  size_t start_index = index / BIT_SIZE;
+  size_t start_bit = index % BIT_SIZE;
+  for (size_t i = 0; i < chunk_count; i++) {
+    size_t m = min(n, BIT_SIZE);
+    uint64_t mask;
+    if (i == 0) {
+      mask = ((1 << m) - 1) << start_bit;
+    } else if (i == chunk_count - 1 && n < BIT_SIZE) {
+      mask = (1 << m) - 1;
+    } else {
+      mask = MAX_NUM;
+    }
+
+    uint64_t value = bmp->map[start_index + i] & mask;
+    count += __popcnt64(value);
+
+    bmp->map[start_index + i] |= mask;
+    bmp->used += m;
+    bmp->free -= m;
+    n -= m;
+  }
+
+  return count;
 }
 
 /**
@@ -207,7 +273,7 @@ index_t bitmap_get_nfree(bitmap_t *bmp, size_t n) {
       }
       index = i;
       break;
-      label(outer);
+    outer:;
     }
 
     return index * BIT_SIZE;
@@ -298,7 +364,7 @@ index_t bitmap_get_set_nfree(bitmap_t *bmp, size_t n, size_t align) {
       }
       index = i;
       break;
-      label(outer);
+    outer:;
     }
 
     size_t remaining = n;

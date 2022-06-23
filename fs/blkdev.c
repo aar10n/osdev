@@ -4,15 +4,17 @@
 
 #include <fs/blkdev.h>
 #include <mm.h>
+
+#include <string.h>
 #include <printf.h>
 
 page_t *alloc_buffer(uint32_t count) {
-  page_t *buffer = alloc_pages(SIZE_TO_PAGES(count * SEC_SIZE), PE_WRITE);
+  page_t *buffer = valloc_pages(SIZE_TO_PAGES(count * SEC_SIZE), PG_WRITE);
   return buffer;
 }
 
 void free_buffer(page_t *buffer) {
-  free_pages(buffer);
+  vfree_pages(buffer);
 }
 
 //
@@ -45,7 +47,7 @@ void *blkdev_readx(blkdev_t *dev, uint64_t lba, uint32_t count, int flags) {
       // requested data has already been fully read in
       uint64_t offset = ivl.start - node->interval.start;
       page_t *buffer = node->data;
-      uintptr_t addr = buffer->addr + (SEC_SIZE * offset);
+      uintptr_t addr = PAGE_VIRT_ADDR(buffer) + (SEC_SIZE * offset);
       return (void *) addr;
     } else {
       free_buffer(node->data);
@@ -56,7 +58,7 @@ void *blkdev_readx(blkdev_t *dev, uint64_t lba, uint32_t count, int flags) {
 
   // kprintf("[blkdev] reading from disk\n");
   page_t *buffer = alloc_buffer(count);
-  ssize_t result = dev->read(dev->self, lba, count, (void *) buffer->addr);
+  ssize_t result = dev->read(dev->self, lba, count, (void *) PAGE_VIRT_ADDR(buffer));
   if (result < 0) {
     free_buffer(buffer);
     return NULL;
@@ -65,7 +67,7 @@ void *blkdev_readx(blkdev_t *dev, uint64_t lba, uint32_t count, int flags) {
   if (!(flags & BLKDEV_NOCACHE)) {
     intvl_tree_insert(dev->cache, ivl, buffer);
   }
-  return (void *) buffer->addr;
+  return (void *) PAGE_VIRT_ADDR(buffer);
 }
 
 
@@ -74,7 +76,7 @@ int blkdev_write(blkdev_t *dev, uint64_t lba, uint32_t count, void *buf) {
     return 0;
   }
 
-  page_t *buffer = vm_get_page((uintptr_t) buf);
+  page_t *buffer = _vm_virt_to_page((uintptr_t) buf);
   if (buffer == NULL) {
     return -EINVAL;
   }
@@ -101,7 +103,7 @@ int blkdev_readbuf(blkdev_t *dev, uint64_t lba, uint32_t count, void *buf) {
       // requested data has already been fully read in
       uint64_t offset = ivl.start - node->interval.start;
       page_t *buffer = node->data;
-      uintptr_t addr = buffer->addr + (SEC_SIZE * offset);
+      uintptr_t addr = PAGE_VIRT_ADDR(buffer) + (SEC_SIZE * offset);
       memcpy(buf, (void *) addr, count * SEC_SIZE);
       return 0;
     } else {
@@ -124,9 +126,9 @@ void blkdev_freebuf(void *ptr) {
     return;
   }
 
-  vm_area_t *area = vm_get_vm_area((uintptr_t) ptr);
-  if (area == NULL || !(area->attr & AREA_PAGE)) {
+  vm_mapping_t *mapping = _vm_virt_to_mapping((uintptr_t) ptr);
+  if (mapping == NULL || mapping->type != VM_TYPE_PAGE) {
     return;
   }
-  free_buffer(area->pages);
+  free_buffer(mapping->data.page);
 }

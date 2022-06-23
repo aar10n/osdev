@@ -8,18 +8,17 @@
 #include <base.h>
 #include <queue.h>
 
-typedef struct mm_callback {
-  void (*callback)(void *);
-  void *data;
-  LIST_ENTRY(struct mm_callback) list;
-} mm_callback_t;
+extern uintptr_t kernel_address;
+extern uintptr_t kernel_virtual_offset;
+extern uintptr_t kernel_code_start;
+extern uintptr_t kernel_code_end;
+extern uintptr_t kernel_data_end;
 
+extern uintptr_t kernel_reserved_start;
+extern uintptr_t kernel_reserved_end;
+extern uintptr_t kernel_reserved_ptr;
 
 void mm_early_init();
 uintptr_t mm_early_alloc_pages(size_t count);
-void *mm_early_map_pages(uintptr_t virt_addr, uintptr_t phys_addr, size_t count, uint16_t flags);
-
-int mm_register_mm_init_callback(void (*callback)(void *data), void *data);
-int mm_register_vm_init_callback(void (*callback)(void *data), void *data);
 
 #endif

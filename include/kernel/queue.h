@@ -17,12 +17,11 @@
     type *prev;          \
   }
 
-#define SLIST_ENTRY(type) \
-  struct {                \
-    type *next;           \
-  }
+#define SLIST_ENTRY(type) type *
 
 // List functions
+
+#define LIST_HEAD_INITR { NULL, NULL }
 
 #define LIST_INIT(head)   \
   {                       \
@@ -107,16 +106,18 @@
 
 // Single linked list
 
+#define SLIST_INITIALIZER { NULL }
+
 /* Adds an element to the end of the single list */
 #define SLIST_ADD(head, el, name)       \
   {                                     \
     if ((head)->first == NULL) {        \
       (head)->first = (el);             \
       (head)->last = (el);              \
-      (el)->name.next = NULL;           \
+      (el)->name = NULL;                \
     } else {                            \
-      (head)->last->name.next = (el);   \
-      (el)->name.next = NULL;           \
+      (head)->last->name = (el);        \
+      (el)->name = NULL;                \
       (head)->last = (el);              \
     }                                   \
   }
@@ -127,12 +128,27 @@
     if ((head)->first == NULL) {         \
       (head)->first = (el);              \
       (head)->last = (el);               \
-      (el)->name.next = NULL;            \
+      (el)->name = NULL;                 \
     } else {                             \
-      (el)->name.next = (head)->first;   \
+      (el)->name = (head)->first;        \
       (head)->first = (el);              \
     }                                    \
   }
+
+/* Concatenates two single-lists */
+#define SLIST_ADD_EL(end, other, name)   \
+  {                                      \
+    (end)->name = other;                 \
+  }
+
+#define SLIST_GET_LAST(el, name)         \
+  ({                                      \
+    typeof(el) ptr = el;                 \
+    while (ptr && ptr->name != NULL) {   \
+      ptr = ptr->name;                   \
+    }                                    \
+    ptr;                                 \
+  })
 
 // Raw list functions
 

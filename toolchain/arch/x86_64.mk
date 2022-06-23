@@ -6,7 +6,7 @@ CFLAGS += -m64
 CXXFLAGS += -m64
 LDFLAGS += -m elf_x86_64
 BOOT_NASMFLAGS += -f win64
-KERNEL_NASMFLAGS += -f elf64
+KERNEL_NASMFLAGS += $(NASMFLAGS) -f elf64
 
 QEMU_CPU ?= Nehalem
 
