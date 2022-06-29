@@ -30,7 +30,7 @@ struct ioapic_device {
   uint8_t max_rentry;
   uint8_t version;
   uint32_t gsi_base;
-  uintptr_t mmio_base;
+  uintptr_t phys_addr;
   uintptr_t address;
 };
 
@@ -76,8 +76,8 @@ static int get_ioapic_for_interrupt(uint8_t irq) {
 
 void remap_ioapic_registers(void *data) {
   struct ioapic_device *ioapic = data;
-  ioapic->address = (uintptr_t) _vmap_mmio(ioapic->mmio_base, PAGE_SIZE, PG_WRITE | PG_NOCACHE);
-  _vmap_name_mapping(ioapic->address, PAGE_SIZE, "ioapic");
+  ioapic->address = (uintptr_t) _vmap_mmio(ioapic->phys_addr, PAGE_SIZE, PG_WRITE | PG_NOCACHE);
+  _vmap_get_mapping(ioapic->address)->name = "ioapic";
 }
 
 //
@@ -97,7 +97,7 @@ void register_ioapic(uint8_t id, uint32_t address, uint32_t gsi_base) {
   ioapics[id].id = id;
   ioapics[id].used = 1;
   ioapics[id].gsi_base = gsi_base;
-  ioapics[id].mmio_base = address;
+  ioapics[id].phys_addr = address;
   ioapics[id].address = address;
 
   uint32_t version = ioapic_read(address, IOAPIC_VERSION);

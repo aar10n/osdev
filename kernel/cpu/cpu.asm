@@ -289,21 +289,6 @@ tlb_flush:
   mov cr3, rax
   ret
 
-; SSE
-
-global enable_sse
-enable_sse:
-  mov rdx, cr0
-  and rdx, ~(1 << 2) ; clear the EM bit
-  or rdx, 1 << 1     ; set the MP bit
-  mov cr0, rdx
-
-  mov rdx, cr4
-  or rdx, 1 << 8     ; set the OSFXSR bit
-  or rdx, 1 << 9     ; set the OSXMMEXCPT bit
-  mov cr4, rdx
-  ret
-
 ; Syscalls
 
 global syscall

@@ -2,7 +2,7 @@ ARCH = x86_64
 WINARCH = X64
 TARGET = x86_64-elf
 
-CFLAGS += -m64
+CFLAGS += -m64 -masm=intel
 CXXFLAGS += -m64
 LDFLAGS += -m elf_x86_64
 BOOT_NASMFLAGS += -f win64

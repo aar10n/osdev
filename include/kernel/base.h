@@ -7,30 +7,23 @@
 
 #include <abi/types.h>
 #include <boot.h>
-#include <percpu.h>
 #include <errno.h>
+
+#define __PER_CPU_BASE__
+#include <cpu/per_cpu.h>
+#undef __PER_CPU_BASE__
+
 
 //
 // General Definitions
 //
 
-#define KERNEL_PA      0x100000
-#define KERNEL_OFFSET  0xFFFFFF8000000000
-#define KERNEL_VA      0xFFFFFF8000100000
 #define STACK_VA       0xFFFFFFA000000000
-#define FRAMEBUFFER_VA 0xFFFFFFC000000000
-#define MMIO_BASE_VA   0xFFFFFFFFE0000000
-#define PROGRAM_VA     0xFFFFFF8000010000
-
-#define KERNEL_HEAP_VA 0xFFFFFF8000400000
-#define KERNEL_HEAP_SIZE SIZE_2MB
 
 #define SMPBOOT_START  0x0000
 #define SMPDATA_START  0x1000
 
 #define STACK_SIZE      0x4000 // 8 KiB
-#define KERNEL_RESERVED 0x300000 // 3 MiB
-#define RESERVED_TABLES 6 // Number of preallocated page tables
 
 #define KERNEL_CS 0x08ULL
 #define USER_DS   0x18ULL

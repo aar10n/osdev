@@ -6,14 +6,6 @@
 #define KERNEL_CPU_IDT_H
 
 #include <base.h>
-#include <process.h>
-
-#define IDT (PERCPU->idt->idt)
-#define IDT_DESC (PERCPU->idt->desc)
-#define IDT_HANDLERS (PERCPU->idt->handlers)
-
-#define IDT_GATES 256
-#define IDT_STUB_SIZE 32
 
 // IDT Gate Types
 #define CALL_GAGE 0xC
@@ -90,17 +82,6 @@ typedef struct {
   idt_function_t fn;
   void *data;
 } idt_handler_t;
-
-typedef struct packed {
-  uint16_t limit;
-  uint64_t base;
-} idt_desc_t;
-
-typedef struct idt {
-  idt_gate_t idt[IDT_GATES];
-  idt_handler_t handlers[IDT_GATES];
-  idt_desc_t desc;
-} idt_t;
 
 void setup_idt();
 void idt_set_gate(uint8_t vector, idt_gate_t gate);

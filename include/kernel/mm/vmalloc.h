@@ -11,6 +11,8 @@
 #include <mm_types.h>
 
 void init_address_space();
+address_space_t *new_address_space();
+address_space_t *fork_address_space();
 
 void *_vmap_pages(page_t *pages);
 void *_vmap_pages_addr(uintptr_t virt_addr, page_t *pages);
@@ -26,10 +28,8 @@ vm_mapping_t *_vmap_reserve(uintptr_t virt_addr, size_t size);
 void _vunmap_pages(page_t *pages);
 void _vunmap_addr(uintptr_t virt_addr, size_t size);
 
-int _vmap_name_mapping(uintptr_t virt_addr, size_t size, const char *name);
-
+vm_mapping_t *_vmap_get_mapping(uintptr_t virt_addr);
 uintptr_t _vm_virt_to_phys(uintptr_t virt_addr);
-vm_mapping_t *_vm_virt_to_mapping(uintptr_t virt_addr);
 page_t *_vm_virt_to_page(uintptr_t virt_addr);
 
 page_t *valloc_page(uint32_t flags);

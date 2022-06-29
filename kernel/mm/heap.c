@@ -48,7 +48,7 @@ static inline mm_chunk_t *get_next_chunk(mm_chunk_t *chunk) {
 }
 
 static inline void aquire_kheap() {
-  if (current_thread == NULL) {
+  if (PERCPU_THREAD == NULL) {
     spin_lock(&kheap_lock);
   } else {
     mutex_lock(&kheap_mutex);
@@ -56,7 +56,7 @@ static inline void aquire_kheap() {
 }
 
 static inline void release_kheap() {
-  if (current_thread == NULL) {
+  if (PERCPU_THREAD == NULL) {
     spin_unlock(&kheap_lock);
   } else {
     mutex_unlock(&kheap_mutex);
@@ -71,7 +71,7 @@ void mm_init_kheap() {
   uintptr_t virt_addr = KERNEL_HEAP_VA;
   if (KERNEL_HEAP_SIZE >= BIGPAGE_SIZE && is_aligned(phys_addr, BIGPAGE_SIZE)) {
     uintptr_t num_bigpages = KERNEL_HEAP_SIZE / BIGPAGE_SIZE;
-    page_count = page_count % BIGPAGE_SIZE;
+    page_count = PAGES_TO_SIZE(page_count) % BIGPAGE_SIZE;
     early_map_entries(virt_addr, phys_addr, num_bigpages, PG_WRITE | PG_BIGPAGE);
     phys_addr += num_bigpages * BIGPAGE_SIZE;
     virt_addr += num_bigpages * BIGPAGE_SIZE;

@@ -15,12 +15,4 @@
 // #include <mm/vm.h>
 // #include <cpu/cpu.h>
 
-#define kernel_phys_to_virt(x) (KERNEL_OFFSET + (x))
-
-#define virt_to_phys(ptr) vm_virt_to_phys((uintptr_t)(ptr))
-#define virt_to_phys_ptr(ptr) ((void *) vm_virt_to_phys((uintptr_t)(ptr)))
-
-
-
-
 #endif

@@ -319,6 +319,7 @@ VOID EFIAPI FillTableWithEntries(
 EFI_STATUS EFIAPI SetupKernelPageTables(IN PAGE_DESCRIPTOR *Descriptors, OUT UINT64 *PML4Address) {
   ASSERT(PRE_EXIT_BOOT_SERVICES);
   ASSERT(Descriptors != NULL);
+  UINTN KernelVirt = Descriptors->VirtAddr;
 
   CONST UINTN NumPageTables = 7;
   VOID *PageTablePages = AllocateReservedPages(NumPageTables);
@@ -336,22 +337,21 @@ EFI_STATUS EFIAPI SetupKernelPageTables(IN PAGE_DESCRIPTOR *Descriptors, OUT UIN
   UINT64 *UpperPDT = TABLE_PTR(PageTablePages, 5);
   UINT64 *UpperPT = TABLE_PTR(PageTablePages, 6);
 
-  PML4[0] = PTE_ADDR(LowerPDPT) | PE_RW | PE_P;              // -> LowerPDPT
-  PML4[511] = PTE_ADDR(UpperPDPT) | PE_RW |PE_P;             // -> UpperPDPT
+  PML4[0] = PTE_ADDR(LowerPDPT) | PE_RW | PE_P;                       // -> LowerPDPT
+  PML4[PML4_OFFSET(KernelVirt)] = PTE_ADDR(UpperPDPT) | PE_RW |PE_P;  // -> UpperPDPT
 
-  LowerPDPT[0] = PTE_ADDR(LowerPDT) | PE_RW | PE_P;          // -> LowerPDT
-  LowerPDPT[1] = PTE_ADDR(0x40000000) | PE_S | PE_RW | PE_P; // -> 1-2GiB identity mapping
-  LowerPDPT[2] = PTE_ADDR(0x80000000) | PE_S | PE_RW | PE_P; // -> 2-3GiB identity mapping
-  LowerPDPT[3] = PTE_ADDR(0xC0000000) | PE_S | PE_RW | PE_P; // -> 3-4GiB identity mapping
-  LowerPDT[0] = PTE_ADDR(LowerPT) | PE_RW | PE_P;            // -> LowerPT
+  LowerPDPT[0] = PTE_ADDR(LowerPDT) | PE_RW | PE_P;                   // -> LowerPDT
+  LowerPDPT[1] = PTE_ADDR(0x40000000) | PE_S | PE_RW | PE_P;          // -> 1-2GiB identity mapping
+  LowerPDPT[2] = PTE_ADDR(0x80000000) | PE_S | PE_RW | PE_P;          // -> 2-3GiB identity mapping
+  LowerPDPT[3] = PTE_ADDR(0xC0000000) | PE_S | PE_RW | PE_P;          // -> 3-4GiB identity mapping
+  LowerPDT[0] = PTE_ADDR(LowerPT) | PE_RW | PE_P;                     // -> LowerPT
 
   // Identity map lower 1GiB except for the first page
   FillTableWithEntries(LowerPT, 1, TABLE_MAX_ENTRIES - 1, 0x1000, SIZE_4KB, PE_RW | PE_P);
   FillTableWithEntries(LowerPDT, 1, TABLE_MAX_ENTRIES - 1, 0x200000, SIZE_2MB, PE_S | PE_RW | PE_P);
 
-  UpperPDPT[0] = PTE_ADDR(UpperPDT) | PE_RW | PE_P;          // -> UpperPDT
-  UpperPDT[0] = PTE_ADDR(UpperPT) | PE_RW | PE_P;            // -> UpperPT
-  // UpperPDT[1] = PTE_ADDR(0x200000) | PE_S | PE_RW | PE_P;    // -> 2MiB kernel reserved
+  UpperPDPT[PDPT_OFFSET(KernelVirt)] = PTE_ADDR(UpperPDT) | PE_RW | PE_P; // -> UpperPDT
+  UpperPDT[PDT_OFFSET(KernelVirt)] = PTE_ADDR(UpperPT) | PE_RW | PE_P;    // -> UpperPT
 
   UINTN Index = PT_OFFSET(KernelPhysAddr);
   UINT64 PhysAddr = KernelPhysAddr;

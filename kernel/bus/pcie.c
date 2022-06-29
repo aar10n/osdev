@@ -296,7 +296,7 @@ void pcie_enable_msi_vector(pcie_device_t *device, uint8_t index, uint8_t vector
   pcie_msix_entry_t *table = (void *)(bar->virt_addr + (msix_cap->tbl_ofst << 3));
   pcie_msix_entry_t *entry = &table[index];
 
-  entry->msg_addr = msi_msg_addr(PERCPU->id);
+  entry->msg_addr = msi_msg_addr(PERCPU_ID);
   entry->msg_data = msi_msg_data(vector, 1, 0);
   entry->masked = 0;
 

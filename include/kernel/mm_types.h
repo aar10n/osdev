@@ -72,19 +72,14 @@ typedef struct page {
 
 //
 
-#define USER_SPACE_START   0x0000000000000000
-#define USER_SPACE_END     0x00007FFFFFFFFFFF
-#define KERNEL_SPACE_START 0xFFFF800000000000
-#define KERNEL_SPACE_END   0xFFFFFFFFFFFFFFFF
-
 typedef struct address_space {
   struct intvl_tree *root;
   uintptr_t min_addr;
   uintptr_t max_addr;
   spinlock_t lock;
 
-  void *page_table;
-  LIST_HEAD(struct page) meta_pages;
+  uintptr_t page_table;
+  LIST_HEAD(struct page) table_pages;
 } address_space_t;
 
 // vm types
@@ -142,5 +137,18 @@ typedef struct mem_zone {
   struct bitmap *frames;
   LIST_ENTRY(struct mem_zone) list;
 } mem_zone_t;
+
+// address space layout
+
+#define USER_SPACE_START   0x0000000000000000ULL
+#define USER_SPACE_END     0x00007FFFFFFFFFFFULL
+#define KERNEL_SPACE_START 0xFFFF800000000000ULL
+#define KERNEL_SPACE_END   0xFFFFFFFFFFFFFFFFULL
+
+#define FRAMEBUFFER_VA     0xFFFFC00000000000ULL
+#define MMIO_BASE_VA       0xFFFFC00200000000ULL
+#define KERNEL_HEAP_VA     0xFFFFFF8000400000ULL
+
+#define KERNEL_HEAP_SIZE   SIZE_2MB
 
 #endif

@@ -11,7 +11,7 @@
 #include <panic.h>
 #include <string.h>
 
-#define FILES (current_process->files)
+#define FILES (PERCPU_PROCESS->files)
 
 static rb_tree_events_t *file_tree_events = NULL;
 

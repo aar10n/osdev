@@ -3,14 +3,16 @@
 //
 
 #include <thread.h>
+
+#include <mm.h>
+#include <mutex.h>
+#include <scheduler.h>
+
 #include <printf.h>
 #include <string.h>
 #include <panic.h>
 #include <process.h>
-#include <scheduler.h>
 #include <signal.h>
-#include <mutex.h>
-#include <mm.h>
 
 // #define THREAD_DEBUG
 #ifdef THREAD_DEBUG
@@ -130,7 +132,7 @@ thread_t *thread_copy(thread_t *other) {
   }
 
   uintptr_t kernel_sp_rel = other->kernel_sp - PAGE_VIRT_ADDR(other->kernel_stack);
-  uintptr_t user_sp_rel = 0;
+  uintptr_t user_sp_rel;
   if (user) {
     user_sp_rel = other->user_sp - PAGE_VIRT_ADDR(other->user_stack);
   }
@@ -147,7 +149,7 @@ thread_t *thread_copy(thread_t *other) {
 
   thread->kernel_sp = PAGE_VIRT_ADDR(thread->kernel_stack) + kernel_sp_rel;
   thread->user_sp = user ? PAGE_VIRT_ADDR(thread->user_stack) + user_sp_rel : 0;
-  thread->cpu_id = ID;
+  thread->cpu_id = PERCPU_ID;
   thread->policy = other->policy;
   thread->priority = other->priority;
   thread->status = other->status;
@@ -181,7 +183,7 @@ void thread_free(thread_t *thread) {
 //
 
 thread_t *thread_create(void *(start_routine)(void *), void *arg) {
-  process_t *process = current_process;
+  process_t *process = PERCPU_PROCESS;
   id_t tid = LIST_LAST(&process->threads)->tid + 1;
   thread_trace_debug("creating thread %d | process %d", tid, process->pid);
 
@@ -194,7 +196,7 @@ thread_t *thread_create(void *(start_routine)(void *), void *arg) {
 }
 
 void thread_exit(void *retval) {
-  thread_t *thread = current_thread;
+  thread_t *thread = PERCPU_THREAD;
   thread_trace_debug("thread %d process %d exiting", thread->tid, thread->process->pid);
   thread->data = retval;
   mutex_unlock(&thread->mutex);
@@ -202,7 +204,7 @@ void thread_exit(void *retval) {
 }
 
 int thread_join(thread_t *thread, void **retval) {
-  thread_t *curr = current_thread;
+  thread_t *curr = PERCPU_THREAD;
   if (thread->process != curr->process || thread == curr || thread->flags & F_THREAD_JOINING) {
     return EINVAL;
   }
@@ -222,7 +224,7 @@ int thread_join(thread_t *thread, void **retval) {
 
 int thread_send(void *data) {
   // send data to awaiting thread
-  thread_t *curr = current_thread;
+  thread_t *curr = PERCPU_THREAD;
   curr->data = data;
   cond_signal(&curr->data_ready);
   return 0;
@@ -230,7 +232,7 @@ int thread_send(void *data) {
 
 int thread_receive(thread_t *thread, void **data) {
   // wait for data to be sent from thread
-  thread_t *curr = current_thread;
+  thread_t *curr = PERCPU_THREAD;
   if (thread->process != curr->process || thread == curr) {
     return EINVAL;
   }
@@ -255,7 +257,7 @@ void thread_yield() {
 
 void thread_block() {
   thread_trace_debug("thread %d process %d blocked", gettid(), getpid());
-  scheduler_block(current_thread);
+  scheduler_block(PERCPU_THREAD);
 }
 
 //

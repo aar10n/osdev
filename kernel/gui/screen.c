@@ -5,6 +5,7 @@
 #include <gui/screen.h>
 #include <gui/font8x8_basic.h>
 #include <string.h>
+#include <mm_types.h>
 
 #define WIDTH boot_info_v2->fb_width
 #define HEIGHT boot_info_v2->fb_height

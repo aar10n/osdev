@@ -8,16 +8,53 @@
 #include <cpu/cpu.h>
 #include <mm.h>
 
-#include <system.h>
 #include <panic.h>
 #include <printf.h>
-#include <percpu.h>
 #include <vectors.h>
+
+#define APIC_BASE_PA 0xFEE00000
 
 #define ms_to_count(ms) (apic_clock / (US_PER_SEC / ((ms) * 1000)))
 #define us_to_count(us) (apic_clock / (US_PER_SEC / (us)))
 
-static uintptr_t apic_base;
+typedef enum apic_reg {
+  APIC_ID            = 0x020,
+  APIC_VERSION       = 0x030,
+  APIC_TPR           = 0x080,
+  APIC_APR           = 0x090,
+  APIC_PPR           = 0x0A0,
+  APIC_EOI           = 0x0B0,
+  APIC_RRD           = 0x0C0,
+  APIC_LDR           = 0x0D0,
+  APIC_DFR           = 0x0E0,
+  APIC_SVR           = 0x0F0,
+  APIC_ERROR         = 0x280,
+  APIC_LVT_CMCI      = 0x2F0,
+  APIC_ICR_LOW       = 0x300,
+  APIC_ICR_HIGH      = 0x310,
+  APIC_LVT_TIMER     = 0x320,
+  APIC_LVT_LINT0     = 0x350,
+  APIC_LVT_LINT1     = 0x360,
+  APIC_LVT_ERROR     = 0x370,
+  APIC_INITIAL_COUNT = 0x380,
+  APIC_CURRENT_COUNT = 0x390,
+  APIC_DIVIDE_CONFIG = 0x3E0,
+} apic_reg_t;
+
+struct apic_device {
+  uint8_t id;
+  uint8_t : 8;
+  uint16_t : 16;
+  uintptr_t phys_addr;
+  uintptr_t address;
+};
+
+// PERCPU_VAR(struct apic_device, apic);
+
+// static size_t num_ioapics = 0;
+// static struct ioapic_device ioapics[MAX_IOAPICS];
+
+static uintptr_t apic_base = APIC_BASE_PA;
 static uint64_t cpu_clock;  // ticks per second
 static uint32_t apic_clock; // ticks per second
 
@@ -58,6 +95,19 @@ static inline apic_reg_icr_t apic_read_icr() {
 static inline void apic_write_icr(apic_reg_icr_t icr) {
   apic_write(APIC_ICR_HIGH, icr.raw_high);
   apic_write(APIC_ICR_LOW, icr.raw_low);
+}
+
+//
+
+void remap_apic_registers(void *data) {
+
+}
+
+//
+
+void register_apic(uint8_t id) {
+  apic_reg_id_t current_id = { .raw = apic_read(APIC_ID) };
+  kprintf("APIC: registering APIC %d (current ID %d) [%d]\n", id, __read_msr(IA32_TSC_AUX_MSR), current_id.id);
 }
 
 //

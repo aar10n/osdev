@@ -6,45 +6,46 @@
 #define KERNEL_PROCESS_H
 
 #include <base.h>
-#include <fs.h>
 #include <queue.h>
+#include <mutex.h>
 
 #define MAX_PROCS       1024
 #define DEFAULT_RFLAGS  0x246
 
-typedef struct vm vm_t;
 typedef struct thread thread_t;
 typedef struct file_table file_table_t;
-typedef struct process process_t;
+typedef struct address_space address_space_t;
+typedef struct dentry dentry_t;
 typedef struct signal signal_t;
 typedef struct sig_handler sig_handler_t;
 typedef struct message message_t;
 
 typedef struct process {
-  pid_t pid;                     // process id
-  pid_t ppid;                    // parent pid
-  vm_t *vm;                      // virtual memory space
+  pid_t pid;                      // process id
+  pid_t ppid;                     // parent pid
+  address_space_t *address_space; // address space
 
-  uid_t uid;                     // user id
-  gid_t gid;                     // group id
-  dentry_t **pwd;                // process working directory
-  file_table_t *files;           // open file table
+  uid_t uid;                      // user id
+  gid_t gid;                      // group id
+  dentry_t **pwd;                 // process working directory
+  file_table_t *files;            // open file table
 
-  mutex_t sig_mutex;             // signal mutex
-  sig_handler_t **sig_handlers;  // signal handlers
-  thread_t **sig_threads;        // signal handling threads
+  mutex_t sig_mutex;              // signal mutex
+  sig_handler_t **sig_handlers;   // signal handlers
+  thread_t **sig_threads;         // signal handling threads
 
-  mutex_t ipc_mutex;             // ipc mutex
-  cond_t ipc_cond_avail;         // ipc message available
-  cond_t ipc_cond_recvd;         // ipc message received
-  message_t *ipc_msg;            // ipc message buffer
+  mutex_t ipc_mutex;              // ipc mutex
+  cond_t ipc_cond_avail;          // ipc message available
+  cond_t ipc_cond_recvd;          // ipc message received
+  message_t *ipc_msg;             // ipc message buffer
 
-  thread_t *main;                // main thread
-  LIST_HEAD(thread_t) threads;   // process threads (group)
-  LIST_HEAD(process_t) list;     // process list
+  thread_t *main;                 // main thread
+  LIST_HEAD(thread_t) threads;    // process threads (group)
+  LIST_HEAD(struct process) list; // process list
 } process_t;
 
-process_t *create_root_process(void (function)());
+process_t *process_create_root(void (function)());
+
 pid_t process_create(void (start_routine)());
 pid_t process_create_1(void (start_routine)(), void *arg);
 pid_t process_fork();

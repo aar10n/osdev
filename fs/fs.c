@@ -115,7 +115,7 @@ int mount_root(device_t *device, file_system_t *fs) {
 
   //
 
-  current_thread->preempt_count++;
+  PERCPU_THREAD->preempt_count++;
   dentry_t *child = LIST_FIRST(&old_root->children);
   while (child) {
     if (strcmp(child->name, ".") == 0 || strcmp(child->name, "..") == 0) {
@@ -141,7 +141,7 @@ int mount_root(device_t *device, file_system_t *fs) {
   }
 
   fs_root = dentry;
-  current_thread->preempt_count--;
+  PERCPU_THREAD->preempt_count--;
   return 0;
 }
 
@@ -152,7 +152,7 @@ int mount_internal(const char *path, device_t *device, file_system_t *fs) {
   }
 
   dentry_t *parent = NULL;
-  dentry_t *dentry = resolve_path(path, *current_process->pwd, 0, &parent);
+  dentry_t *dentry = resolve_path(path, *PERCPU_PROCESS->pwd, 0, &parent);
   if (dentry == fs_root) {
     return mount_root(device, fs);
   } else if (dentry != NULL) {
@@ -258,7 +258,7 @@ dev_t fs_register_framebuf(uint8_t minor, framebuf_t *framebuf, device_ops_t *op
 //
 
 int fs_mount(const char *path, const char *device, const char *format) {
-  dentry_t *devnode = resolve_path(device, *current_process->pwd, 0, NULL);
+  dentry_t *devnode = resolve_path(device, *PERCPU_PROCESS->pwd, 0, NULL);
   if (devnode == NULL) {
     ERRNO = ENODEV;
     return -1;
@@ -288,7 +288,7 @@ int fs_open(const char *path, int flags, mode_t mode) {
   mode = (mode & I_PERM_MASK) | (flags & O_DIRECTORY ? S_IFDIR : S_IFREG);
 
   dentry_t *parent = NULL;
-  dentry_t *dentry = resolve_path(path, *current_process->pwd, 0, &parent);
+  dentry_t *dentry = resolve_path(path, *PERCPU_PROCESS->pwd, 0, &parent);
   if (dentry == NULL && parent == NULL) {
     return -1;
   }
@@ -336,7 +336,7 @@ int fs_creat(const char *path, mode_t mode) {
 
 int fs_mkdir(const char *path, mode_t mode) {
   dentry_t *parent = NULL;
-  dentry_t *dentry = resolve_path(path, *current_process->pwd, 0, &parent);
+  dentry_t *dentry = resolve_path(path, *PERCPU_PROCESS->pwd, 0, &parent);
   if (dentry != NULL) {
     ERRNO = EEXIST;
     return -1;
@@ -367,7 +367,7 @@ int fs_mknod(const char *path, mode_t mode, dev_t dev) {
   }
 
   dentry_t *parent = NULL;
-  dentry_t *dentry = resolve_path(path, *current_process->pwd, 0, &parent);
+  dentry_t *dentry = resolve_path(path, *PERCPU_PROCESS->pwd, 0, &parent);
   if (dentry != NULL) {
     ERRNO = EEXIST;
     return -1;
@@ -411,7 +411,7 @@ int fs_stat(const char *path, stat_t *statbuf) {
     return -1;
   }
 
-  dentry_t *dentry = resolve_path(path, *current_process->pwd, 0, NULL);
+  dentry_t *dentry = resolve_path(path, *PERCPU_PROCESS->pwd, 0, NULL);
   if (dentry == NULL) {
     return -1;
   }
@@ -647,13 +647,13 @@ void fs_rewinddir(int fd) {
 //
 
 int fs_link(const char *path1, const char *path2) {
-  dentry_t *a = resolve_path(path1, *current_process->pwd, 0, NULL);
+  dentry_t *a = resolve_path(path1, *PERCPU_PROCESS->pwd, 0, NULL);
   if (a == NULL) {
     return -1;
   }
 
   dentry_t *parent = NULL;
-  dentry_t *b = resolve_path(path2, *current_process->pwd, 0, &parent);
+  dentry_t *b = resolve_path(path2, *PERCPU_PROCESS->pwd, 0, &parent);
   if (b != NULL) {
     ERRNO = EEXIST;
     return -1;
@@ -678,7 +678,7 @@ int fs_link(const char *path1, const char *path2) {
 }
 
 int fs_unlink(const char *path) {
-  dentry_t *dentry = resolve_path(path, *current_process->pwd, 0, NULL);
+  dentry_t *dentry = resolve_path(path, *PERCPU_PROCESS->pwd, 0, NULL);
   if (dentry == NULL) {
     return -1;
   }
@@ -687,13 +687,13 @@ int fs_unlink(const char *path) {
 
 int fs_symlink(const char *path1, const char *path2) {
   char path[MAX_PATH + 1];
-  int result = expand_path(path1, *current_process->pwd, path, MAX_PATH + 1);
+  int result = expand_path(path1, *PERCPU_PROCESS->pwd, path, MAX_PATH + 1);
   if (result < 0) {
     return -1;
   }
 
   dentry_t *parent = NULL;
-  dentry_t *dentry = resolve_path(path2, *current_process->pwd, 0, &parent);
+  dentry_t *dentry = resolve_path(path2, *PERCPU_PROCESS->pwd, 0, &parent);
   if (dentry != NULL) {
     ERRNO = EEXIST;
     return -1;
@@ -715,13 +715,13 @@ int fs_symlink(const char *path1, const char *path2) {
 }
 
 int fs_rename(const char *oldfile, const char *newfile) {
-  dentry_t *oldf = resolve_path(oldfile, *current_process->pwd, 0, NULL);
+  dentry_t *oldf = resolve_path(oldfile, *PERCPU_PROCESS->pwd, 0, NULL);
   if (oldf == NULL) {
     return -1;
   }
 
   dentry_t *parent;
-  dentry_t *dentry = resolve_path(oldfile, *current_process->pwd, 0, &parent);
+  dentry_t *dentry = resolve_path(oldfile, *PERCPU_PROCESS->pwd, 0, &parent);
   if (dentry != NULL) {
     ERRNO = EEXIST;
     return -1;
@@ -748,7 +748,7 @@ ssize_t fs_readlink(const char *restrict path, char *restrict buf, size_t bufsiz
 }
 
 int fs_rmdir(const char *path) {
-  dentry_t *dentry = resolve_path(path, *current_process->pwd, 0, NULL);
+  dentry_t *dentry = resolve_path(path, *PERCPU_PROCESS->pwd, 0, NULL);
   if (dentry == NULL) {
     return -1;
   }
@@ -763,11 +763,11 @@ int fs_rmdir(const char *path) {
 }
 
 int fs_chdir(const char *path) {
-  dentry_t *dentry = resolve_path(path, *current_process->pwd, 0, NULL);
+  dentry_t *dentry = resolve_path(path, *PERCPU_PROCESS->pwd, 0, NULL);
   if (dentry == NULL) {
     return -1;
   }
-  current_process->pwd = &dentry;
+  PERCPU_PROCESS->pwd = &dentry;
   return 0;
 }
 
@@ -787,7 +787,7 @@ char *fs_getcwd(char *buf, size_t size) {
     return NULL;
   }
 
-  int result = get_dentry_path(*current_process->pwd, buf, size, NULL);
+  int result = get_dentry_path(*PERCPU_PROCESS->pwd, buf, size, NULL);
   if (result < 0) {
     ERRNO = ERANGE;
     return NULL;

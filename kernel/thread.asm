@@ -50,7 +50,7 @@
 %define CTX_RSP    0x50
 %define CTX_SS     0x58
 
-extern vm_swap_vmspace
+extern swap_address_space
 
 extern thread_entry
 extern __write_fsbase
@@ -141,7 +141,7 @@ thread_switch:
   ; switch virtual memory
   push rdi
   mov rdi, rsi
-  call vm_swap_vmspace
+  call swap_address_space
   pop rdi
 
 .restore_ctx:

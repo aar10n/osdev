@@ -6,10 +6,10 @@
 #define KERNEL_THREAD_H
 
 #include <base.h>
-#include <mutex.h>
 #include <queue.h>
+#include <mutex.h>
 
-#define ERRNO (current_thread->errno)
+#define ERRNO (PERCPU_THREAD->errno)
 
 #define KERNEL_STACK_SIZE 0x2000   // 8 KiB
 #define USER_VSTACK_SIZE  0x20000  // 128 KiB

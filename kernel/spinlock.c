@@ -11,18 +11,18 @@ extern void preempt_disable();
 extern void preempt_enable();
 
 static inline void __preempt_disable() {
-  if (current_thread) {
+  if (PERCPU_THREAD != NULL) {
     preempt_disable();
   } else {
-    PERCPU->rflags = cli_save();
+    PERCPU_SET_RFLAGS(cli_save());
   }
 }
 
 static inline void __preempt_enable() {
-  if (current_thread) {
+  if (PERCPU_THREAD != NULL) {
     preempt_enable();
   } else {
-    sti_restore(PERCPU->rflags);
+    sti_restore(PERCPU_RFLAGS);
   }
 }
 
@@ -39,7 +39,7 @@ void spin_lock(spinlock_t *lock) {
     return;
   }
 
-  uint8_t id = PERCPU->id;
+  uint8_t id = PERCPU_ID;
   __preempt_disable();
   if (atomic_bit_test_and_set(&lock->locked, 0)) {
     if (lock->locked_by == id) {
@@ -63,7 +63,7 @@ void spin_unlock(spinlock_t *lock) {
     return;
   }
 
-  uint64_t id = PERCPU->id;
+  uint64_t id = PERCPU_ID;
   if (atomic_bit_test_and_set(&lock->locked, 0)) {
     // the lock was set
     kassert(lock->locked_by == id);

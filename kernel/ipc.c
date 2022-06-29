@@ -4,9 +4,11 @@
 
 #include <ipc.h>
 #include <process.h>
+#include <thread.h>
 #include <mutex.h>
 #include <scheduler.h>
-
+#include <string.h>
+#include <mm.h>
 
 // send - sends message to target process
 //        blocks process until message is received
@@ -32,7 +34,7 @@ int ipc_send(pid_t pid, message_t *message) {
 // receive - receives a message
 //           blocks process until message is available
 message_t *ipc_receive() {
-  process_t *process = current_process;
+  process_t *process = PERCPU_PROCESS;
   cond_wait(&process->ipc_cond_avail);
   message_t *ptr = process->ipc_msg;
   cond_signal(&process->ipc_cond_recvd);
@@ -42,7 +44,7 @@ message_t *ipc_receive() {
 // receive - receives a message (non-blocking)
 //           returns a recieved message if it exists
 message_t *ipc_receive_nb() {
-  process_t *process = current_process;
+  process_t *process = PERCPU_PROCESS;
   if (cond_signaled(&process->ipc_cond_avail)) {
     message_t *ptr = process->ipc_msg;
     cond_signal(&process->ipc_cond_recvd);

@@ -17,7 +17,9 @@
 
 #include <bus/pcie.h>
 
+#define KERNEL_OFFSET  0xFFFFFF8000000000
 #define get_header(ptr) ((acpi_header_t *) ptr)
+#define kernel_phys_to_virt(x) (KERNEL_OFFSET + (x))
 
 const char *sig_rsdp = "RSD PTR ";
 

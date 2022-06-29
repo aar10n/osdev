@@ -6,8 +6,7 @@
 #define KERNEL_SCHEDULER_H
 
 #include <base.h>
-#include <process.h>
-#include <thread.h>
+#include <queue.h>
 #include <cpu/idt.h>
 
 // Scheduling Classes
@@ -15,18 +14,15 @@
 // Interrupt
 // System
 // Interactive
-//
-
-#define SCHEDULER (PERCPU->scheduler)
-#define CURRENT (PERCPU->curr)
-
-#include <queue.h>
 
 #define SCHED_PERIOD   500
 #define SCHED_POLICIES 2
 #define SCHED_QUEUES   4
 
-typedef enum {
+typedef struct thread thread_t;
+typedef struct process process_t;
+
+typedef enum sched_reason {
   BLOCKED,
   PREEMPTED,
   RESERVED,
@@ -39,7 +35,7 @@ typedef enum {
 #define SCHED_DRIVER 0
 #define SCHED_SYSTEM 1
 
-typedef struct {
+typedef struct sched_policy {
   void *(*init)();
   int (*add_thread)(void *self, thread_t *thread, sched_reason_t reason);
   int (*remove_thread)(void *self, thread_t *thread);
@@ -62,17 +58,17 @@ typedef struct {
 #define PRIORITY_MEDIUM 1
 #define PRIORITY_LOW    2
 
-typedef struct {
+typedef struct sched_policy_fprr {
   uint64_t count;
   LIST_HEAD(thread_t) queues[3];
-} policy_fprr_t;
+} sched_policy_fprr_t;
 
 // multi-level feedback queue
 #define MLFQ_NUM_QUEUES  4
 
-typedef struct {
+typedef struct sched_policy_mlfq {
 
-} policy_mlfq_t;
+} sched_policy_mlfq_t;
 
 //
 

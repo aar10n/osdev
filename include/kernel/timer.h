@@ -9,8 +9,6 @@
 #include <spinlock.h>
 #include <rb_tree.h>
 
-#define EVENTS (PERCPU->events)
-
 typedef void (*timer_cb_t)(void *);
 
 typedef struct timer {

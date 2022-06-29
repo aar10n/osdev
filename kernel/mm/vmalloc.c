@@ -19,14 +19,10 @@
 #define VMAP_FIXED      (1 << 0)
 #define VMAP_USERSPACE  (1 << 1)
 
+void execute_init_address_space_callbacks();
 
 address_space_t *kernel_space;
 
-void execute_init_address_space_callbacks();
-
-void vm_swap_vmspace() {
-  panic("CHANGE ME");
-}
 
 __used int fault_handler(uintptr_t rip_addr, uintptr_t fault_addr, uint32_t err) {
   kprintf("[vm] page fault at %p accessing %p (err 0b%b)\n", rip_addr, fault_addr, err);
@@ -86,12 +82,14 @@ uintptr_t locate_free_address_region(address_space_t *space, uintptr_t base, siz
     bool contig = contiguous(i, j);
     if (!contig && i.start > addr && i.start - addr >= size) {
       kassert(addr + size <= space->max_addr);
+      kfree(iter);
       return addr;
     }
     addr = align(i.end, alignment);
     last = node;
   }
 
+  kfree(iter);
   return 0;
 }
 
@@ -146,7 +144,6 @@ vm_mapping_t *allocate_vm_mapping(address_space_t *space, uintptr_t addr, size_t
 //
 
 vm_mapping_t *vmap_pages_internal(page_t *pages, uintptr_t hint, uint32_t vm_flags) {
-  kassert(pages != NULL);
   kassert(pages->flags & PG_LIST_HEAD);
   if (vm_flags & VMAP_USERSPACE) {
     kassert(hint >= USER_SPACE_START && hint <= USER_SPACE_END);
@@ -170,7 +167,12 @@ vm_mapping_t *vmap_pages_internal(page_t *pages, uintptr_t hint, uint32_t vm_fla
   page_t *curr = pages;
   uintptr_t ptr = mapping->address;
   while (curr != NULL) {
-    // recursive_map_entry(ptr, curr->address, curr->flags);
+    page_t *out_table_pages = NULL;
+    recursive_map_entry(ptr, curr->address, curr->flags, &out_table_pages);
+    if (out_table_pages != NULL) {
+      SLIST_ADD(&space->table_pages, out_table_pages, next);
+    }
+
     curr->flags |= PG_MAPPED;
     curr->mapping = mapping;
 
@@ -209,7 +211,11 @@ vm_mapping_t *vmap_phys_internal(uintptr_t phys_addr, size_t size, uint32_t flag
   uintptr_t ptr = mapping->address;
   uintptr_t phys_ptr = phys_addr;
   while (count > 0) {
-    // recursive_map_entry(ptr, phys_ptr, flags);
+    page_t *out_table_pages = NULL;
+    recursive_map_entry(ptr, phys_ptr, flags, &out_table_pages);
+    if (out_table_pages != NULL) {
+      SLIST_ADD(&space->table_pages, out_table_pages, next);
+    }
 
     ptr += stride;
     phys_ptr += stride;
@@ -220,6 +226,16 @@ vm_mapping_t *vmap_phys_internal(uintptr_t phys_addr, size_t size, uint32_t flag
   return mapping;
 }
 
+// called from thread.asm
+__used void swap_address_space(address_space_t *new_space) {
+  address_space_t *current = PERCPU_ADDRESS_SPACE;
+  if (current->page_table == new_space->page_table) {
+    return;
+  }
+  set_current_pgtable(new_space->page_table);
+  PERCPU_SET_ADDRESS_SPACE(new_space);
+}
+
 //
 
 void init_address_space() {
@@ -227,7 +243,12 @@ void init_address_space() {
   kernel_space->root = create_intvl_tree();
   kernel_space->min_addr = KERNEL_SPACE_START;
   kernel_space->max_addr = KERNEL_SPACE_END;
+  LIST_INIT(&kernel_space->table_pages);
   spin_init(&kernel_space->lock);
+  PERCPU_SET_ADDRESS_SPACE(kernel_space);
+
+  uintptr_t pgtable = get_current_pgtable();
+  init_recursive_pgtable((void *) pgtable, pgtable);
 
   // kernel mapped low memory
   vm_mapping_t *kernel_lowmem_vm = _vmap_reserve(kernel_virtual_offset, kernel_address - kernel_virtual_offset);
@@ -240,7 +261,7 @@ void init_address_space() {
   kernel_code_vm->type = VM_TYPE_PHYS;
   kernel_code_vm->data.phys = kernel_code_start;
   // kernel data
-  vm_mapping_t *kernel_data_vm = _vmap_reserve(kernel_data_end, kernel_data_end - kernel_code_end);
+  vm_mapping_t *kernel_data_vm = _vmap_reserve(kernel_code_end, kernel_data_end - kernel_code_end);
   kernel_data_vm->name = "kernel data";
   kernel_data_vm->type = VM_TYPE_PHYS;
   kernel_data_vm->data.phys = kernel_data_end;
@@ -251,10 +272,54 @@ void init_address_space() {
   kheap_vm->data.phys = kheap_ptr_to_phys((void *) KERNEL_HEAP_VA);
 
   execute_init_address_space_callbacks();
+
+  kprintf("kernel space:\n");
+  _address_space_print_mappings(kernel_space);
 }
 
+address_space_t *new_address_space() {
+  address_space_t *space = kmalloc(sizeof(address_space_t));
+  space->root = create_intvl_tree();
+  space->min_addr = USER_SPACE_START;
+  space->max_addr = USER_SPACE_END;
+  LIST_INIT(&space->table_pages);
+  spin_init(&space->lock);
+
+  // create new page tables
+  page_t *meta_pages = NULL;
+  uintptr_t pgtable = deepcopy_fork_page_tables(&meta_pages);
+  space->page_table = pgtable;
+  SLIST_ADD_SLIST(&space->table_pages, meta_pages, SLIST_GET_LAST(meta_pages, next), next);
+
+  return space;
+}
+
+address_space_t *fork_address_space() {
+  address_space_t *current = PERCPU_ADDRESS_SPACE;
+  address_space_t *space = kmalloc(sizeof(address_space_t));
+  space->root = copy_intvl_tree(current->root);
+  space->min_addr = current->min_addr;
+  space->max_addr = current->max_addr;
+  LIST_INIT(&space->table_pages);
+  spin_init(&space->lock);
+
+  // fork page tables
+  page_t *meta_pages = NULL;
+  uintptr_t pgtable = deepcopy_fork_page_tables(&meta_pages);
+  space->page_table = pgtable;
+  SLIST_ADD_SLIST(&space->table_pages, meta_pages, SLIST_GET_LAST(meta_pages, next), next);
+
+  return space;
+}
+
+//
+
 void *_vmap_pages(page_t *pages) {
-  uint32_t vm_flags = VMAP_FIXED | (pages->flags & PG_USER ? VMAP_USERSPACE : 0);
+  if (pages == NULL) {
+    return NULL;
+  }
+
+  uint32_t vm_flags = (pages->flags & PG_USER ? VMAP_USERSPACE : 0);
   uintptr_t hint = select_vmap_hint(vm_flags);
   vm_mapping_t *mapping = vmap_pages_internal(pages, hint, vm_flags);
   if (mapping == NULL) {
@@ -265,6 +330,10 @@ void *_vmap_pages(page_t *pages) {
 }
 
 void *_vmap_pages_addr(uintptr_t virt_addr, page_t *pages) {
+  if (pages == NULL) {
+    return NULL;
+  }
+
   uint32_t vm_flags = VMAP_FIXED | (pages->flags & PG_USER ? VMAP_USERSPACE : 0);
   vm_mapping_t *mapping = vmap_pages_internal(pages, virt_addr, vm_flags);
   if (mapping == NULL) {
@@ -351,7 +420,10 @@ vm_mapping_t *_vmap_reserve(uintptr_t virt_addr, size_t size) {
 //
 
 void _vunmap_pages(page_t *pages) {
-  kassert(pages != NULL);
+  if (pages == NULL) {
+    return;
+  }
+
   kassert(IS_PG_MAPPED(pages->flags));
   kassert(pages->flags & PG_LIST_HEAD);
 
@@ -404,21 +476,15 @@ void _vunmap_addr(uintptr_t virt_addr, size_t size) {
 
 //
 
-int _vmap_name_mapping(uintptr_t virt_addr, size_t size, const char *name) {
+vm_mapping_t *_vmap_get_mapping(uintptr_t virt_addr) {
   address_space_t *space = select_address_space(virt_addr);
-  interval_t intvl = intvl(virt_addr, virt_addr + size);
+  interval_t intvl = intvl(virt_addr, virt_addr + PAGE_SIZE);
   intvl_node_t *node = intvl_tree_find(space->root, intvl);
   if (node == NULL) {
-    return -EFAULT;
+    return NULL;
   }
 
-  vm_mapping_t *mapping = node->data;
-  if (mapping->address != virt_addr || mapping->size != size) {
-    return -EINVAL;
-  }
-
-  mapping->name = name;
-  return 0;
+  return node->data;
 }
 
 uintptr_t _vm_virt_to_phys(uintptr_t virt_addr) {
@@ -446,17 +512,6 @@ uintptr_t _vm_virt_to_phys(uintptr_t virt_addr) {
 
   kprintf("vm_virt_to_phys: invalid mapping type");
   return 0;
-}
-
-vm_mapping_t *_vm_virt_to_mapping(uintptr_t virt_addr) {
-  address_space_t *space = select_address_space(virt_addr);
-  interval_t intvl = intvl(virt_addr, virt_addr + PAGE_SIZE);
-  intvl_node_t *node = intvl_tree_find(space->root, intvl);
-  if (node == NULL) {
-    return NULL;
-  }
-
-  return node->data;
 }
 
 page_t *_vm_virt_to_page(uintptr_t virt_addr) {
@@ -525,15 +580,17 @@ void vfree_pages(page_t *pages) {
 // debug functions
 
 void _address_space_print_mappings(address_space_t *space) {
+  if (space == NULL) {
+    space = kernel_space;
+  }
+
   intvl_iter_t *iter = intvl_iter_tree(space->root);
   intvl_node_t *node;
-
-  kprintf("============ Virtual Mappings ============\n");
   while ((node = intvl_iter_next(iter))) {
     interval_t i = node->interval;
-    kprintf("%018p - %018p | %llu\n", i.start, i.end, i.end - i.start);
+    vm_mapping_t *mapping = node->data;
+    kprintf("  [%018p-%018p] % 8llu %s\n", i.start, i.end, mapping->size, mapping->name);
   }
-  kprintf("==========================================\n");
   kfree(iter);
 }
 

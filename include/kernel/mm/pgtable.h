@@ -8,11 +8,18 @@
 #include <base.h>
 #include <mm_types.h>
 
-size_t pg_flags_to_size(uint32_t flags);
-
+void early_init_pgtable();
 void *early_map_entries(uintptr_t virt_addr, uintptr_t phys_addr, size_t count, uint32_t flags);
 
-uint64_t *recursive_map_entry(uintptr_t virt_addr, uintptr_t phys_addr, uint32_t flags);
+void init_recursive_pgtable(uint64_t *table_virt, uintptr_t table_phys);
+uint64_t *recursive_map_entry(uintptr_t virt_addr, uintptr_t phys_addr, uint32_t flags, page_t **out_pages);
 void recursive_unmap_entry(uintptr_t virt_addr, uint32_t flags);
+
+uintptr_t get_current_pgtable();
+void set_current_pgtable(uintptr_t table_phys);
+size_t pg_flags_to_size(uint32_t flags);
+
+uintptr_t create_new_page_tables(page_t **out_pages);
+uintptr_t deepcopy_fork_page_tables(page_t **out_pages);
 
 #endif

@@ -293,7 +293,7 @@ static pid_t sys_fork() {
 // SYS_IOCTL
 
 static void sys_set_fs_base(uintptr_t addr) {
-  current_thread->tls->addr = addr;
+  PERCPU_THREAD->tls->addr = addr;
   write_fsbase(addr);
 }
 
@@ -319,7 +319,7 @@ static int sys_kill(pid_t pid, int sig) {
 }
 
 static int sys_signal(int sig, void (*func)(int)) {
-  int result = signal_getaction(current_process->pid, sig, NULL);
+  int result = signal_getaction(PERCPU_PROCESS->pid, sig, NULL);
   if (result < 0) {
     return -ERRNO;
   }
@@ -329,7 +329,7 @@ static int sys_signal(int sig, void (*func)(int)) {
     .sa_mask = 0,
     .sa_handler = func,
   };
-  result = signal_setaction(current_process->pid, sig, SIG_ACTION, &action);
+  result = signal_setaction(PERCPU_PROCESS->pid, sig, SIG_ACTION, &action);
   if (result < 0) {
     return -ERRNO;
   }

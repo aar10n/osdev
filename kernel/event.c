@@ -139,15 +139,15 @@ key_event_t *wait_for_key_event() {
     ERRNO = EINVAL;
     return NULL;
   }
-  handlers[idx] = current_thread;
-  cond_wait(&current_thread->data_ready);
+  handlers[idx] = PERCPU_THREAD;
+  cond_wait(&PERCPU_THREAD->data_ready);
   handlers[idx] = NULL;
   bitmap_clear(handler_indexes, idx);
-  return current_thread->data;
+  return PERCPU_THREAD->data;
 }
 
 void dispatch_key_event(key_event_t *event) {
-  current_thread->preempt_count++;
+  PERCPU_THREAD->preempt_count++;
   for (int i = 0; i < MAX_HANDLERS; i++) {
     thread_t *t = handlers[i];
     if (t == NULL) {
@@ -156,7 +156,7 @@ void dispatch_key_event(key_event_t *event) {
     t->data = event;
     cond_signal(&t->data_ready);
   }
-  current_thread->preempt_count--;
+  PERCPU_THREAD->preempt_count--;
 }
 
 bool is_printable_key(key_code_t key) {

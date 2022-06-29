@@ -3,19 +3,20 @@
 //
 
 #include <timer.h>
-#include <atomic.h>
-#include <percpu.h>
-#include <vectors.h>
-#include <cpu/idt.h>
-#include <mm/heap.h>
-#include <device/ioapic.h>
-#include <device/hpet.h>
 
+#include <mm.h>
+#include <thread.h>
 #include <mutex.h>
 #include <spinlock.h>
 #include <printf.h>
+#include <vectors.h>
+
+#include <device/ioapic.h>
+#include <device/hpet.h>
+#include <cpu/idt.h>
+
+#include <atomic.h>
 #include <rb_tree.h>
-#include <thread.h>
 
 extern void hpet_handler();
 static id_t __id;
@@ -55,14 +56,14 @@ noreturn void *timer_event_loop(void *arg) {
 
     timer_event_t *timer = tree->min->data;
     clock_t expiry = timer->expiry;
-    if (/*lock.locked */false || timer->cpu != PERCPU->id) {
+    if (/*lock.locked */false || timer->cpu != PERCPU_ID) {
       continue;
     }
 
-    label(dispatch);
-    current_thread->preempt_count++;
+  dispatch:;
+    PERCPU_THREAD->preempt_count++;
     timer->callback(timer->data);
-    current_thread->preempt_count--;
+    PERCPU_THREAD->preempt_count--;
 
     // spinrw_aquire_write(&lock);
     rb_tree_delete_node(tree, tree->min);
@@ -71,7 +72,7 @@ noreturn void *timer_event_loop(void *arg) {
 
     kfree(timer);
     timer = tree->min->data;
-    if (timer && timer->cpu == PERCPU->id && timer->expiry == expiry) {
+    if (timer && timer->cpu == PERCPU_ID && timer->expiry == expiry) {
       goto dispatch;
     } else if (timer) {
       hpet_set_timer(timer->expiry);
@@ -104,7 +105,7 @@ void timer_init() {
 id_t create_timer(clock_t ns, timer_cb_t callback, void *data) {
   timer_event_t *timer = kmalloc(sizeof(timer_event_t));
   timer->id = alloc_id();
-  timer->cpu = PERCPU->id;
+  timer->cpu = PERCPU_ID;
   timer->expiry = ns;
   timer->callback = callback;
   timer->data = data;

@@ -12,7 +12,6 @@
 
 #include <mm.h>
 
-#include <percpu.h>
 #include <smpboot.h>
 #include <syscall.h>
 #include <timer.h>
@@ -48,7 +47,6 @@
 boot_info_v2_t __boot_data *boot_info_v2;
 
 boot_info_t *boot_info;
-percpu_t *cpu;
 
 extern uint16_t mouse_x;
 extern uint16_t mouse_y;
@@ -109,7 +107,7 @@ _Noreturn void launch() {
   sti();
   timer_init();
 
-  kprintf("[pid %d] launch\n", ID);
+  kprintf("[pid %d] launch\n", PERCPU_ID);
 
   fs_init();
 
@@ -170,7 +168,8 @@ _Noreturn void launch() {
 // Kernel entry
 //
 
-#include <init.h>
+void _print_pgtable_indexes(uintptr_t addr);
+void _print_pgtable_address(uint16_t l4, uint16_t l3, uint16_t l2, uint16_t l1);
 
 __used void kmain() {
   console_early_init();
@@ -178,6 +177,7 @@ __used void kmain() {
 
   mm_early_init();
   acpi_early_init();
+  cpu_map_topology();
 
   kprintf("[kernel] initializing idt\n");
   // setup_idt();
@@ -189,25 +189,30 @@ __used void kmain() {
   kprintf("init_address_space()\n");
   init_address_space();
 
-  page_t *pages = _alloc_pages(1, PG_WRITE);
-  kprintf("[kernel] allocated page: %p\n", pages->address);
+  page_t *pages = _alloc_pages(2, PG_WRITE);
+  kprintf("[kernel] allocated pages: %p\n", pages->address);
+  kprintf("[kernel] mapping pages\n");
+  void *ptr = _vmap_pages(pages);
+  kprintf("[kernel] mapped pages: %p\n", ptr);
 
-  _vmap_pages(pages);
+  _address_space_print_mappings(NULL);
 
-  // mm_init();
-  // vm_init();
-  //
-  // acpi_init();
-  //
-  // pic_init();
-  // apic_init();
-  // ioapic_init();
-  //
+  _print_pgtable_indexes(KERNEL_SPACE_START);
+  _print_pgtable_indexes(kernel_virtual_offset);
+  _print_pgtable_indexes(kernel_code_start);
+  _print_pgtable_indexes(STACK_VA);
+
+  _print_pgtable_address(270, 0, 0, 0);
+  _print_pgtable_address(384, 0, 0, 0);
+  _print_pgtable_address(384, 8, 0, 0);
+  _print_pgtable_address(510, 0, 0, 0);
+  _print_pgtable_address(511, 0, 0, 0);
+
   // syscalls_init();
-  // // smp_init();
-  //
-  // // root process
-  // process_t *root = create_root_process(launch);
+  // smp_init();
+
+  // root process
+  // process_t *root = process_create_root(launch);
   // scheduler_init(root);
 
   kprintf("haulting...\n");
@@ -220,7 +225,7 @@ __used void ap_main() {
   // percpu_init();
   // enable_sse();
 
-  kprintf("[CPU#%d] initializing\n", ID);
+  kprintf("[CPU#%d] initializing\n", PERCPU_ID);
 
   // setup_gdt();
   // setup_idt();
@@ -229,5 +234,5 @@ __used void ap_main() {
   // apic_init();
   // ioapic_init();
 
-  kprintf("[CPU#%d] done!\n", ID);
+  kprintf("[CPU#%d] done!\n", PERCPU_ID);
 }

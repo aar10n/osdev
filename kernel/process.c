@@ -3,22 +3,22 @@
 //
 
 #include <process.h>
-#include <scheduler.h>
-#include <string.h>
-#include <atomic.h>
-#include <thread.h>
-#include <signal.h>
 
 #include <mm.h>
+#include <mutex.h>
+#include <scheduler.h>
+#include <thread.h>
+#include <signal.h>
+#include <loader.h>
+#include <ipc.h>
 
 #include <fs.h>
 #include <file.h>
-#include <loader.h>
 
+#include <string.h>
 #include <printf.h>
 #include <panic.h>
 #include <bitmap.h>
-#include <ipc.h>
 
 #include <cpu/cpu.h>
 
@@ -73,7 +73,7 @@ process_t *process_alloc(pid_t pid, pid_t ppid, void *(start_routine)(void *), v
 
   process->pid = pid;
   process->ppid = ppid;
-  // process->vm = VM;
+  process->address_space = PERCPU_ADDRESS_SPACE;
 
   process->uid = -1;
   process->gid = -1;
@@ -117,20 +117,18 @@ void process_free(process_t *process) {
 
 //
 
-process_t *create_root_process(void (function)()) {
+process_t *process_create_root(void (function)()) {
   pid_t pid = alloc_pid();
   process_t *process = process_alloc(pid, -1, root_process_wrapper, function);
   return process;
 }
-
-//
 
 pid_t process_create(void (start_routine)()) {
   return process_create_1(start_routine, NULL);
 }
 
 pid_t process_create_1(void (start_routine)(), void *arg) {
-  process_t *parent = current_process;
+  process_t *parent = PERCPU_PROCESS;
   pid_t pid = alloc_pid();
   proc_trace_debug("creating process %d | parent %d", pid, parent->pid);
   process_t *process = process_alloc(pid, parent->pid, (void *) start_routine, arg);
@@ -140,15 +138,15 @@ pid_t process_create_1(void (start_routine)(), void *arg) {
 
 pid_t process_fork() {
   kprintf("[process] creating process\n");
-  process_t *parent = current_process;
-  thread_t *parent_thread = current_thread;
+  process_t *parent = PERCPU_PROCESS;
+  thread_t *parent_thread = PERCPU_THREAD;
 
   process_t *process = kmalloc(sizeof(process_t));
   process->pid = alloc_pid();
   process->ppid = parent->pid;
+  process->address_space = fork_address_space();
   process->pwd = parent->pwd;
   process->files = copy_file_table(parent->files);
-  // process->vm = vm_duplicate();
 
   // clone main thread
   thread_t *main = thread_copy(parent_thread);
@@ -176,8 +174,7 @@ int process_execve(const char *path, char *const argv[], char *const envp[]) {
   }
   kassert(prog.linker != NULL);
 
-
-  thread_t *thread = current_thread;
+  thread_t *thread = PERCPU_THREAD;
   if (thread->user_stack == NULL) {
     thread_alloc_stack(thread, true); // allocate user stack
     memset((void *) PAGE_VIRT_ADDR(thread->user_stack), 0, USER_PSTACK_SIZE);
@@ -253,23 +250,23 @@ int process_execve(const char *path, char *const argv[], char *const envp[]) {
 }
 
 pid_t getpid() {
-  return current_process->pid;
+  return PERCPU_PROCESS->pid;
 }
 
 pid_t getppid() {
-  return current_process->ppid;
+  return PERCPU_PROCESS->ppid;
 }
 
 id_t gettid() {
-  return current_thread->tid;
+  return PERCPU_THREAD->tid;
 }
 
 uid_t getuid() {
-  return current_process->uid;
+  return PERCPU_PROCESS->uid;
 }
 
 gid_t getgid() {
-  return current_process->gid;
+  return PERCPU_PROCESS->gid;
 }
 
 //

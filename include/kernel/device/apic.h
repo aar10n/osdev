@@ -12,33 +12,7 @@
 #define IA32_APIC_BASE_ENABLE 0x800
 #define IA32_TSC_DEADLINE_MSR 0x6E0
 
-#define APIC_BASE_PA 0xFEE00000
-
 /* --------- Enumerations ---------*/
-
-typedef enum {
-  APIC_ID            = 0x020,
-  APIC_VERSION       = 0x030,
-  APIC_TPR           = 0x080,
-  APIC_APR           = 0x090,
-  APIC_PPR           = 0x0A0,
-  APIC_EOI           = 0x0B0,
-  APIC_RRD           = 0x0C0,
-  APIC_LDR           = 0x0D0,
-  APIC_DFR           = 0x0E0,
-  APIC_SVR           = 0x0F0,
-  APIC_ERROR         = 0x280,
-  APIC_LVT_CMCI      = 0x2F0,
-  APIC_ICR_LOW       = 0x300,
-  APIC_ICR_HIGH      = 0x310,
-  APIC_LVT_TIMER     = 0x320,
-  APIC_LVT_LINT0     = 0x350,
-  APIC_LVT_LINT1     = 0x360,
-  APIC_LVT_ERROR     = 0x370,
-  APIC_INITIAL_COUNT = 0x380,
-  APIC_CURRENT_COUNT = 0x390,
-  APIC_DIVIDE_CONFIG = 0x3E0,
-} apic_reg_t;
 
 typedef enum {
   APIC_ID_MSR            = 0x802,
@@ -320,6 +294,8 @@ static_assert(sizeof(apic_reg_svr_t) == sizeof(uint32_t));
 
 uint8_t apic_get_id();
 uint8_t apic_get_version();
+
+void register_apic(uint8_t id);
 
 void apic_init();
 void apic_init_periodic(uint64_t ms);

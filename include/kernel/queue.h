@@ -141,6 +141,20 @@
     (end)->name = other;                 \
   }
 
+#define SLIST_ADD_SLIST(head, other_start, other_end, name) \
+  { \
+    if ((head)->first == NULL) {                            \
+      (head)->first = (other_start);                        \
+      (head)->last = (other_end);                           \
+      (other_end)->name = NULL;                             \
+    } else {                                                \
+      (head)->last->name = (other_start);                   \
+      (head)->last = (other_end);                           \
+      (other_end)->name = NULL;                             \
+    }                                                       \
+  }
+
+
 #define SLIST_GET_LAST(el, name)         \
   ({                                      \
     typeof(el) ptr = el;                 \

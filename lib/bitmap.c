@@ -9,6 +9,8 @@
 #include <string.h>
 #include <mm/heap.h>
 
+#include <printf.h>
+
 #ifndef _assert
 #define _assert(expr) kassert((expr))
 #endif

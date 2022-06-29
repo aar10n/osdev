@@ -163,7 +163,7 @@ page_t *_alloc_pages_zone(mem_zone_type_t zone_type, size_t count, uint32_t flag
   }
 
   size_t num_4k_pages = count;
-  size_t align = 1;
+  size_t align = 0;
   size_t stride = PAGE_SIZE;
   if (flags & PG_BIGPAGE) {
     kassert((flags & PG_HUGEPAGE) == 0);

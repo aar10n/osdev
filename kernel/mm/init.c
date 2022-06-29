@@ -27,6 +27,7 @@ void mm_early_init() {
   kernel_code_start = (uintptr_t) &__kernel_code_start;
   kernel_code_end = (uintptr_t) &__kernel_code_end;
   kernel_data_end = (uintptr_t) &__kernel_data_end;
+  early_init_pgtable();
 
   size_t usable_mem_size = 0;
   memory_map_entry_t *kernel_entry = NULL;
@@ -86,7 +87,7 @@ void mm_early_init() {
   kernel_reserved_ptr = kernel_reserved_start;
   reserved_map_entry = kernel_reserved_entry;
 
-  // initialize kernel heap
+  early_init_pgtable();
   mm_init_kheap();
 }
 

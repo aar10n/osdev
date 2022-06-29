@@ -3,14 +3,18 @@
 //
 
 #include <mutex.h>
+
+#include <process.h>
+#include <thread.h>
 #include <spinlock.h>
 #include <scheduler.h>
 #include <atomic.h>
-#include <thread.h>
 #include <timer.h>
 #include <mm.h>
 #include <printf.h>
 #include <panic.h>
+
+#include <cpu/cpu.h>
 
 // #define MUTEX_DEBUG
 #ifdef MUTEX_DEBUG
@@ -78,14 +82,14 @@ void mutex_init(mutex_t *mutex, uint32_t flags) {
   LIST_INIT(&mutex->queue);
   if (flags & MUTEX_SHARED) {
     mutex->aquired_by = NULL;
-  } else if (current_process) {
-    mutex->aquired_by = current_process->main;
+  } else if (PERCPU_PROCESS) {
+    mutex->aquired_by = PERCPU_PROCESS->main;
   }
   mutex->aquire_count = 0;
 }
 
 int mutex_lock(mutex_t *mutex) {
-  thread_t *thread = current_thread;
+  thread_t *thread = PERCPU_THREAD;
   if (!(mutex->flags & MUTEX_SHARED) && (mutex->aquired_by && thread->process != mutex->aquired_by->process)) {
     panic("mutex belongs to another process");
   }
@@ -108,7 +112,7 @@ int mutex_lock(mutex_t *mutex) {
     safe_enqeue(&mutex->flags, &mutex->queue, thread);
     scheduler_block(thread);
   }
-  label(done);
+done:;
   mutex->aquired_by = thread;
   mutex->aquire_count++;
   // thread->preempt_count--;
@@ -117,11 +121,11 @@ int mutex_lock(mutex_t *mutex) {
 }
 
 int mutex_unlock(mutex_t *mutex) {
-  thread_t *thread = current_thread;
+  thread_t *thread = PERCPU_THREAD;
   if (!(mutex->flags & MUTEX_LOCKED)) {
     return -EINVAL;
   }
-  kassert(mutex->aquired_by == current_thread);
+  kassert(mutex->aquired_by == PERCPU_THREAD);
 
   mutex_trace_debug("unlocking mutex (%d:%d)", getpid(), gettid());
   thread->preempt_count++;
@@ -150,7 +154,7 @@ int mutex_unlock(mutex_t *mutex) {
 }
 
 int mutex_trylock(mutex_t *mutex) {
-  thread_t *thread = current_thread;
+  thread_t *thread = PERCPU_THREAD;
   if (!(mutex->flags & MUTEX_SHARED) && thread->process != mutex->aquired_by->process) {
     panic("mutex belongs to another process");
   }
@@ -168,7 +172,7 @@ int mutex_trylock(mutex_t *mutex) {
     // mutex is already locked
     return -1;
   }
-  label(done);
+done:;
   mutex->aquired_by = thread;
   mutex->aquire_count++;
   // thread->preempt_count--;
@@ -192,7 +196,7 @@ void cond_init(cond_t *cond, uint32_t flags) {
 }
 
 int cond_wait(cond_t *cond) {
-  thread_t *thread = current_thread;
+  thread_t *thread = PERCPU_THREAD;
 
   if (cond->flags & M_LOCKED) {
     cond->flags ^= M_LOCKED;
@@ -225,7 +229,7 @@ int cond_wait_timeout(cond_t *cond, uint64_t us) {
 }
 
 int cond_signal(cond_t *cond) {
-  thread_t *thread = current_thread;
+  thread_t *thread = PERCPU_THREAD;
   if (LIST_LAST(&cond->queue) == NULL) {
     if (!(cond->flags & COND_NOEMPTY)) {
       cond->flags |= M_LOCKED;
@@ -244,7 +248,7 @@ int cond_signal(cond_t *cond) {
 }
 
 int cond_broadcast(cond_t *cond) {
-  thread_t *thread = current_thread;
+  thread_t *thread = PERCPU_THREAD;
   if (LIST_LAST(&cond->queue) == NULL) {
     cond->flags |= M_LOCKED;
     return 0;

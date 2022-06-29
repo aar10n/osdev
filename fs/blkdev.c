@@ -126,7 +126,7 @@ void blkdev_freebuf(void *ptr) {
     return;
   }
 
-  vm_mapping_t *mapping = _vm_virt_to_mapping((uintptr_t) ptr);
+  vm_mapping_t *mapping = _vmap_get_mapping((uintptr_t) ptr);
   if (mapping == NULL || mapping->type != VM_TYPE_PAGE) {
     return;
   }

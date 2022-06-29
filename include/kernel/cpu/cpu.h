@@ -13,6 +13,9 @@
 #define IA32_EFER_MSR    0xC0000080
 #define IA32_TSC_MSR     0x10
 #define IA32_TSC_AUX_MSR 0xC0000103
+#define IA32_FS_BASE_MSR        0xC0000100
+#define IA32_GS_BASE_MSR        0xC0000101
+#define IA32_KERNEL_GS_BASE_MSR 0xC0000102
 
 #define CPU_BIT_MMX           DEFINE_CPU_FEATURE(0, 0)
 #define CPU_BIT_SSE           DEFINE_CPU_FEATURE(0, 1)
@@ -27,6 +30,7 @@
 #define CPU_BIT_BMI1          DEFINE_CPU_FEATURE(0, 10)
 #define CPU_BIT_BMI2          DEFINE_CPU_FEATURE(0, 11)
 #define CPU_BIT_TBM           DEFINE_CPU_FEATURE(0, 12)
+#define CPU_BIT_HLE           DEFINE_CPU_FEATURE(0, 13)
 
 #define CPU_BIT_FXSR          DEFINE_CPU_FEATURE(1, 0)
 #define CPU_BIT_XSAVE         DEFINE_CPU_FEATURE(1, 1)
@@ -34,30 +38,35 @@
 #define CPU_BIT_RDPID         DEFINE_CPU_FEATURE(1, 3)
 #define CPU_BIT_RDTSCP        DEFINE_CPU_FEATURE(1, 4)
 #define CPU_BIT_SYSCALL       DEFINE_CPU_FEATURE(1, 5)
+#define CPU_BIT_WAITPKG       DEFINE_CPU_FEATURE(1, 6)
 
 #define CPU_BIT_NX            DEFINE_CPU_FEATURE(2, 0)
 #define CPU_BIT_PGE           DEFINE_CPU_FEATURE(2, 1)
-#define CPU_BIT_PDPE1GB       DEFINE_CPU_FEATURE(2, 2)
-#define CPU_BIT_PML5          DEFINE_CPU_FEATURE(2, 3)
+#define CPU_BIT_PAT           DEFINE_CPU_FEATURE(2, 2)
+#define CPU_BIT_MTRR          DEFINE_CPU_FEATURE(2, 3)
+#define CPU_BIT_PDPE1GB       DEFINE_CPU_FEATURE(2, 4)
+#define CPU_BIT_PML5          DEFINE_CPU_FEATURE(2, 5)
+#define CPU_BIT_TOPOEXT       DEFINE_CPU_FEATURE(2, 6)
 
 #define CPU_BIT_APIC          DEFINE_CPU_FEATURE(3, 0)
 #define CPU_BIT_APIC_EXT      DEFINE_CPU_FEATURE(3, 1)
 #define CPU_BIT_X2APIC        DEFINE_CPU_FEATURE(3, 2)
-#define CPU_BIT_TSC           DEFINE_CPU_FEATURE(3, 3)
-#define CPU_BIT_TSC_DEADLINE  DEFINE_CPU_FEATURE(3, 4)
-#define CPU_BIT_TSC_INVARIANT DEFINE_CPU_FEATURE(3, 5)
-#define CPU_BIT_TSC_ADJUST    DEFINE_CPU_FEATURE(3, 6)
-#define CPU_BIT_WDT           DEFINE_CPU_FEATURE(3, 7)
+#define CPU_BIT_ARAT          DEFINE_CPU_FEATURE(3, 3)
+#define CPU_BIT_TSC           DEFINE_CPU_FEATURE(3, 4)
+#define CPU_BIT_TSC_DEADLINE  DEFINE_CPU_FEATURE(3, 5)
+#define CPU_BIT_TSC_INVARIANT DEFINE_CPU_FEATURE(3, 6)
+#define CPU_BIT_TSC_ADJUST    DEFINE_CPU_FEATURE(3, 7)
+#define CPU_BIT_WDT           DEFINE_CPU_FEATURE(3, 8)
 
 #define CPU_BIT_UMIP          DEFINE_CPU_FEATURE(4, 0)
 
-#define CPU_BIT_HTT           DEFINE_CPU_FEATURE(5, 0)
-#define CPU_BIT_HYPERVISOR    DEFINE_CPU_FEATURE(5, 1)
-
-typedef struct cpu_info {
-  uint8_t cpu_id;
-  uint8_t apic_id;
-} cpu_info_t;
+#define CPU_BIT_HYPERVISOR    DEFINE_CPU_FEATURE(5, 0)
+#define CPU_BIT_HTT           DEFINE_CPU_FEATURE(5, 1)
+#define CPU_BIT_DE            DEFINE_CPU_FEATURE(5, 2)
+#define CPU_BIT_DS            DEFINE_CPU_FEATURE(5, 3)
+#define CPU_BIT_DS_CPL        DEFINE_CPU_FEATURE(5, 4)
+#define CPU_BIT_DTES64        DEFINE_CPU_FEATURE(5, 5)
+#define CPU_BIT_DBX           DEFINE_CPU_FEATURE(5, 6)
 
 typedef union cpu_features {
   struct {
@@ -75,7 +84,8 @@ typedef union cpu_features {
     uint16_t bmi1         : 1;
     uint16_t bmi2         : 1;
     uint16_t tbm          : 1;
-    uint16_t              : 3;
+    uint16_t hle          : 1;
+    uint16_t              : 2;
     // instruction support
     uint16_t fxsr         : 1;
     uint16_t xsave        : 1;
@@ -83,34 +93,51 @@ typedef union cpu_features {
     uint16_t rdpid        : 1;
     uint16_t rdtscp       : 1;
     uint16_t syscall      : 1;
-    uint16_t              : 10;
-    // memory features
+    uint16_t monitor      : 1;
+    uint16_t waitpkg      : 1;
+    uint16_t              : 8;
+    // other features
     uint16_t nx           : 1;
     uint16_t pge          : 1;
+    uint16_t pat          : 1;
+    uint16_t mtrr         : 1;
     uint16_t pdpe1gb      : 1;
     uint16_t pml5         : 1;
-    uint16_t              : 12;
+    uint16_t topoext	    : 1;
+    uint16_t              : 9;
     // on-chip devices
     uint16_t apic         : 1;
     uint16_t apic_ext     : 1;
     uint16_t x2apic       : 1;
+    uint16_t arat         : 1;
     uint16_t tsc          : 1;
     uint16_t tsc_deadline : 1;
     uint16_t tsc_inv      : 1;
     uint16_t tsc_adjust   : 1;
     uint16_t watchdog     : 1;
-    uint16_t              : 8;
+    uint16_t              : 7;
     // security features
     uint16_t umip         : 1;
     uint16_t              : 15;
     // other features
-    uint16_t htt          : 1;
     uint16_t hypervisor   : 1;
-    uint16_t              : 14;
+    uint16_t htt          : 1;
+    uint16_t de           : 1;
+    uint16_t ds           : 1;
+    uint16_t ds_cpl       : 1;
+    uint16_t dtes64       : 1;
+    uint16_t dbx          : 1;
+    uint16_t              : 9;
   };
   uint16_t bits[6];
 } cpu_features_t;
 static_assert(sizeof(cpu_features_t) == 12);
+
+typedef struct cpu_info {
+  uint8_t cpu_id;
+  uint8_t apic_id;
+  cpu_features_t features;
+} cpu_info_t;
 
 typedef struct cpu_registers {
 
@@ -118,6 +145,7 @@ typedef struct cpu_registers {
 
 
 void cpu_init();
+void cpu_map_topology();
 
 uint32_t cpu_get_id();
 int cpu_get_is_bsp();
@@ -166,9 +194,6 @@ void load_idt(void *idtr);
 void load_tr(uint16_t tss);
 void flush_gdt();
 
-uint64_t read_cr0();
-void write_cr0(uint64_t cr0);
-
 uint64_t __read_cr0();
 void __write_cr0(uint64_t cr0);
 uint64_t __read_cr3();
@@ -178,12 +203,6 @@ void __write_cr4(uint64_t cr4);
 
 uint64_t __xgetbv(uint32_t index);
 void __xsetbv(uint32_t index, uint64_t value);
-
-
-void tlb_invlpg(uint64_t addr);
-void tlb_flush();
-
-void enable_sse();
 
 int syscall(int call);
 noreturn void sysret(uintptr_t rip, uintptr_t rsp);

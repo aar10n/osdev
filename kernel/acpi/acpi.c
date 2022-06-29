@@ -5,6 +5,7 @@
 #include <acpi/acpi.h>
 
 #include <cpu/io.h>
+#include <device/apic.h>
 #include <device/ioapic.h>
 
 #include <printf.h>
@@ -95,6 +96,8 @@ void acpi_parse_madt() {
       } else if ((local_apic->flags & ACPI_MADT_APIC_FLAG_ONLINE_CAP) != 0) {
         online_capable_count++;
       }
+      kprintf("ACPI: APIC[%d]\n", local_apic->apic_id);
+      register_apic(local_apic->apic_id);
     } else if (entry->type == ACPI_MADT_TYPE_IO_APIC) {
       acpi_madt_io_apic_t *io_apic = (void *) entry;
       if (io_apic->global_interrupt_base < 256) {
