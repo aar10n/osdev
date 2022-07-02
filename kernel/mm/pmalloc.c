@@ -3,6 +3,7 @@
 //
 
 #include <mm/pmalloc.h>
+#include <mm/pgtable.h>
 #include <mm/init.h>
 
 #include <string.h>
@@ -88,6 +89,10 @@ page_t *make_page_structs(mem_zone_t *zone, uint64_t frame, size_t count, size_t
 //
 
 void init_mem_zones() {
+  // reserve pages in zone entry
+  size_t reserved_pages = 32;
+  mm_early_reserve_pages(reserved_pages);
+
   memory_map_t *memory_map = &boot_info_v2->mem_map;
   size_t num_entries = memory_map->size / sizeof(memory_map_entry_t);
   for (size_t i = 0; i < num_entries; i++) {
@@ -130,7 +135,28 @@ void init_mem_zones() {
     spin_init(&zone->lock);
 
     size_t page_count = SIZE_TO_PAGES(size);
-    zone->frames = create_bitmap(page_count);
+    size_t nbytes = align(page_count, 8) / 8;
+    if (nbytes >= PAGES_TO_SIZE(2)) {
+      // too large for kmalloc
+      size_t num_bmp_pages = SIZE_TO_PAGES(nbytes);
+      if (num_bmp_pages > reserved_pages) {
+        panic("no more reserved pages (%d)", num_bmp_pages);
+      }
+
+      uintptr_t buffer_phys = mm_early_alloc_pages(num_bmp_pages);
+      void *buffer = mm_early_map_pages_reserved(buffer_phys, num_entries, PG_WRITE);
+      memset(buffer, 0, nbytes);
+
+      zone->frames = kmalloc(sizeof(bitmap_t));
+      zone->frames->map = buffer;
+      zone->frames->free = page_count;
+      zone->frames->used = 0;
+      zone->frames->size = nbytes;
+
+      reserved_pages -= num_bmp_pages;
+    } else {
+      zone->frames = create_bitmap(page_count);
+    }
     LIST_ADD(&mem_zones[type], zone, list);
     zone_page_count[type] += page_count;
   }

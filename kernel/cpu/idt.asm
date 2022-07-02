@@ -25,6 +25,9 @@ extern scheduler_tick
 %define IDT_STUB_SIZE 32
 %define IDT_GATES 256
 
+%define PUSHALL_COUNT     15
+%define STACK_OFFSET(x) (x * 8)
+
 ; Saved registers
 %macro pushall 0
   push r15
@@ -86,29 +89,29 @@ extern scheduler_tick
   pop r11
 %endmacro
 
-%macro swapgs_if_needed 0
-  cmp word [rsp + 8], KERNEL_CS
+%macro swapgs_if_needed 1
+  cmp word [rsp + %1], KERNEL_CS
   je %%skip
   swapgs
   %%skip:
 %endmacro
 
 ; The follow stub is used for both exceptions
-; and regular interrupts. In the case of irq's
+; and regular interrupts. In the case of IRQs
 ; and exceptions which do not have an error code,
 ; 0 is pushed instead.
 %macro interrupt_stub 1
   %%start:
   %if %1 < 32
     %if (1 << %1) & 0x27D00 == 0
-      push 0
+      push qword 0
     %endif
-    push %1
-    jmp exception_handler
+    push qword %1
+;    jmp exception_handler
+    jmp __exception_handler
   %else
-    push %1
-    jmp interrupt_handler
-    iretq
+    push qword %1
+    jmp __interrupt_handler
   %endif
   times IDT_STUB_SIZE - ($ - %%start) db 0
 %endmacro
@@ -128,25 +131,50 @@ idt_stubs:
 ;   Interrupt Handling   ;
 ; ---------------------- ;
 
-interrupt_handler:
-  add rsp, 8
-  mov eax, 0xDEADBEEF
-.stop:
-  pause
-  jmp .stop
-  swapgs_if_needed
-  sub rsp, 8
-  pushcaller
-  cld
+__interrupt_handler:
+  ;        stack frame
+  ; rsp -> vector
+  swapgs_if_needed 16
+  pushall
 
-  mov rdi, [rsp + 72]
-  mov rsi, rsp
+  mov rdi, [rsp + STACK_OFFSET(PUSHALL_COUNT)] ; rdi <- vector
+
+  cld
   call irq_handler
 
-  popcaller
-  add rsp, 8
-  swapgs_if_needed
+  popall
+  swapgs_if_needed 16
+
+  add rsp, 8 ; skip vector
   iretq
+
+; ---------------------- ;
+;   Exception Handling   ;
+; ---------------------- ;
+
+__exception_handler:
+  ;        stack frame
+  ;        error code
+  ; rsp -> vector
+  swapgs_if_needed 24
+  pushall
+
+  mov rdi, [rsp + STACK_OFFSET(PUSHALL_COUNT)]     ; rdi <- vector
+  mov rsi, [rsp + STACK_OFFSET(PUSHALL_COUNT + 1)] ; rdi <- error code
+  mov rdx, rsp
+  add rdx, STACK_OFFSET(PUSHALL_COUNT + 2)         ; rdx <- interrupt stack frame pointer
+  mov rcx, rsp                                     ; rcx <- registers pointer
+
+  cld
+  call exception_handler
+
+  popall
+  swapgs_if_needed 24
+
+  add rsp, 16 ; skip vector + error code
+  iretq
+
+;
 
 global ignore_irq
 ignore_irq:

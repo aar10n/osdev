@@ -37,14 +37,14 @@ page_fault_handler:
   je .done
   mov rax, 0xE   ; page fault vector
   push rax
-  jmp exception_handler
+  jmp old_exception_handler
 
 .done:
   add rsp, 8     ; skip the error code
   iretq
 
-global exception_handler
-exception_handler:
+global old_exception_handler
+old_exception_handler:
   sub rsp, 56
   mov [rsp + 0], rdi
   mov [rsp + 8], rsi

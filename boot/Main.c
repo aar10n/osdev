@@ -248,8 +248,8 @@ EFI_STATUS EFIMAIN UefiMain(IN EFI_HANDLE ImageHandle, IN EFI_SYSTEM_TABLE *Syst
   if (EFI_ERROR(Status)) {
     Status = EfiGetSystemConfigurationTable(&SmbiosTableGuid, (VOID **) &SmbiosPtr);
     if (EFI_ERROR(Status)) {
-      PRINT_ERROR("No SMBIOS tables found");
-      return Status;
+      PRINT_WARN("No SMBIOS tables found");
+      SmbiosPtr = 0;
     }
   }
 

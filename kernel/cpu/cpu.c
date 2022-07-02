@@ -119,18 +119,18 @@ static inline void assert_cpu_feature(const char *feature, int supported) {
 //
 
 void cpu_init() {
-  // setup_gdt();
-  // setup_idt();
+  setup_gdt();
+  setup_idt();
 
-  // cpuid leaf 0x1
+  // cpuid leaf 0x00000001
   uint32_t a0_1, b0_1, c0_1, d0_1;
-  do_cpuid(0x1, &a0_1, &b0_1, &c0_1, &d0_1);
-  // cpuid leaf 0x7
+  do_cpuid(0x00000001, &a0_1, &b0_1, &c0_1, &d0_1);
+  // cpuid leaf 0x00000006
   uint32_t a0_6, b0_6, c0_6, d0_6;
-  do_cpuid(0x6, &a0_6, &b0_6, &c0_6, &d0_6);
-  // cpuid leaf 0x7
+  do_cpuid(0x00000006, &a0_6, &b0_6, &c0_6, &d0_6);
+  // cpuid leaf 0x00000007
   uint32_t a0_7, b0_7, c0_7, d0_7;
-  do_cpuid(0x7, &a0_7, &b0_7, &c0_7, &d0_7);
+  do_cpuid(0x00000007, &a0_7, &b0_7, &c0_7, &d0_7);
   // cpuid leaf 0x80000001
   uint32_t a8_1, b8_1, c8_1, d8_1;
   do_cpuid(0x80000001, &a8_1, &b8_1, &c8_1, &d8_1);
@@ -140,9 +140,6 @@ void cpu_init() {
   // cpuid leaf 0x80000008
   uint32_t a8_8, b8_8, c8_8, d8_8;
   do_cpuid(0x80000008, &a8_8, &b8_8, &c8_8, &d8_8);
-
-  cpu_print_info();
-  // cpu_print_features();
 
   // Get CPU features
   features.mmx = (d0_1 & CPU_EDX_MMX) != 0;
@@ -196,7 +193,9 @@ void cpu_init() {
   features.ds_cpl = (c0_1 & CPU_ECX_DS_CPL) != 0;
   features.dtes64 = (c0_1 & CPU_ECX_DTES64) != 0;
   features.dbx = (c8_1 & CPU_ECX_DBX) != 0;
-  cpu_print_features();
+
+  cpu_print_info();
+  // cpu_print_features();
 
   uint8_t max_addressable_cpu_ids = (b0_1 >> 16) & 0xFF;
   uint8_t local_apic_id = (b0_1 >> 24) & 0xFF;

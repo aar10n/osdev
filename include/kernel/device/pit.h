@@ -28,6 +28,10 @@
 #define PIT_MODE_6 0x2 // same as mode 2
 #define PIT_MODE_7 0x3 // same as mode 3
 
+void pit_timer_start();
+void pit_timer_stop();
+void pit_set_counter(uint8_t channel, uint16_t count);
+
 void pit_mdelay(uint64_t ms);
 
 #endif

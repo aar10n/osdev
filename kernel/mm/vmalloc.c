@@ -270,6 +270,11 @@ void init_address_space() {
   kheap_vm->name = "kernel heap";
   kheap_vm->type = VM_TYPE_PHYS;
   kheap_vm->data.phys = kheap_ptr_to_phys((void *) KERNEL_HEAP_VA);
+  // kernel reserved
+  vm_mapping_t *kreserved_vm = _vmap_reserve(KERNEL_RESERVED_VA, kernel_reserved_va_ptr - KERNEL_RESERVED_VA);
+  kreserved_vm->name = "kernel reserved";
+  kreserved_vm->type = VM_TYPE_PHYS;
+  kreserved_vm->data.phys = kernel_reserved_ptr - kreserved_vm->size;
 
   execute_init_address_space_callbacks();
 

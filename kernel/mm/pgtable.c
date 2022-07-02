@@ -49,6 +49,9 @@ typedef enum pg_level {
   PG_LEVEL_MAX
 } pg_level_t;
 
+void _print_pgtable_indexes(uintptr_t addr);
+void _print_pgtable_address(uint16_t l4, uint16_t l3, uint16_t l2, uint16_t l1);
+
 // kernel page table
 uint64_t *early_kernel_pgtable;
 

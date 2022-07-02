@@ -7,20 +7,25 @@
 #include <cpu/io.h>
 #include <device/apic.h>
 #include <device/ioapic.h>
+#include <device/hpet.h>
 
+#include <irq.h>
 #include <printf.h>
 #include <panic.h>
 
-size_t acpi_num_tables = 0;
-acpi_table_header_t **acpi_tables = NULL;
-uint8_t acpi_interrupt_sources[256];
+#define ISA_NUM_IRQS 16
 
+void acpi_parse_fadt();
 void acpi_parse_madt();
 void acpi_parse_mcfg();
 void acpi_parse_hpet();
 void acpi_parse_dmar();
 
 void acpi_print_address(acpi_address_t *addr);
+
+size_t acpi_num_tables = 0;
+acpi_table_header_t **acpi_tables = NULL;
+acpi_fadt_t *acpi_global_fadt = NULL;
 
 
 void acpi_early_init() {
@@ -51,6 +56,7 @@ void acpi_early_init() {
     kprintf("  %4s %p (v%d %6s)\n", &table->signature, table, table->revision, table->oem_id);
   }
 
+  acpi_parse_fadt();
   acpi_parse_madt();
   acpi_parse_mcfg();
   acpi_parse_hpet();
@@ -67,22 +73,34 @@ acpi_table_header_t *acpi_locate_table(uint32_t signature) {
   return NULL;
 }
 
+void acpi_parse_fadt() {
+  acpi_table_header_t *fadt_ptr = acpi_locate_table(ACPI_SIGNATURE_FADT);
+  if (fadt_ptr == NULL) {
+    kprintf("ACPI: warning: FADT not found");
+    return;
+  }
+
+  acpi_fadt_t *fadt = (void *) fadt_ptr;
+  acpi_global_fadt = fadt;
+}
+
 void acpi_parse_madt() {
   acpi_table_header_t *madt_ptr = acpi_locate_table(ACPI_SIGNATURE_MADT);
   if (madt_ptr == NULL) {
-    panic("ACPI MADT not found");
+    panic("ACPI: error: MADT not found");
   }
 
   uint32_t enabled_count = 0;
   uint32_t online_capable_count = 0;
+  acpi_madt_iso_t *isa_irq_overrides[ISA_NUM_IRQS] = {0};
   acpi_madt_header_t *header = (void *) madt_ptr;
   if (header->flags & ACPI_MADT_FLAG_PCAT_COMPAT) {
     kprintf("ACPI: MADT PCAT compatibility mode\n");
 
     // ISA IRQs identity map to GSIs
     disable_legacy_pic();
-    for (int i = 0; i < 16; i++) {
-      acpi_interrupt_sources[i] = i;
+    for (int i = 0; i < ISA_NUM_IRQS; i++) {
+      isa_irq_overrides[i] = NULL;
     }
   }
 
@@ -109,8 +127,8 @@ void acpi_parse_madt() {
     } else if (entry->type == ACPI_MADT_TYPE_INT_SRC) {
       acpi_madt_iso_t *iso = (void *) entry;
       kassert(iso->bus == 0);
-      kassert(iso->global_system_interrupt < 256);
-      acpi_interrupt_sources[iso->global_system_interrupt] = iso->source;
+      kassert(iso->global_system_interrupt < ISA_NUM_IRQS);
+      isa_irq_overrides[iso->source] = iso;
     } else {
       kprintf("ACPI: ");
       switch (entry->type) {
@@ -133,12 +151,17 @@ void acpi_parse_madt() {
 
   // finish re-routing legacy interrupts
   if (header->flags & ACPI_MADT_FLAG_PCAT_COMPAT) {
-    for (int gsi = 0; gsi < 16; gsi++) {
-      int source = acpi_interrupt_sources[gsi];
-      if (gsi != source) {
-        kprintf("ACPI: ISA interrupt %d remapped to IRQ%d\n", source, gsi);
+    for (int isa_irq = 0; isa_irq < ISA_NUM_IRQS; isa_irq++) {
+      acpi_madt_iso_t *iso = isa_irq_overrides[isa_irq];
+      if (iso == NULL) {
+        continue;
       }
-      ioapic_set_irq_vector(source, gsi);
+
+      uint8_t dest_irq = iso->global_system_interrupt;
+      if (isa_irq != dest_irq) {
+        kprintf("ACPI: ISA IRQ%d remapped to IRQ%d\n", isa_irq, dest_irq);
+      }
+      irq_override_isa_interrupt(isa_irq, dest_irq, iso->flags);
     }
   }
 
@@ -148,7 +171,8 @@ void acpi_parse_madt() {
 void acpi_parse_mcfg() {
   acpi_table_header_t *mcfg_ptr = acpi_locate_table(ACPI_SIGNATURE_MCFG);
   if (mcfg_ptr == NULL) {
-    panic("ACPI MCFG not found");
+    kprintf("ACPI: warning: MCFG not found\n");
+    return;
   }
 
   acpi_mcfg_header_t *header = (void *) mcfg_ptr;
@@ -167,22 +191,16 @@ void acpi_parse_mcfg() {
 void acpi_parse_hpet() {
   acpi_table_header_t *hpet_ptr = acpi_locate_table(ACPI_SIGNATURE_HPET);
   if (hpet_ptr == NULL) {
-    panic("ACPI HPET not found");
+    kprintf("ACPI: warning: HPET not found\n");
+    return;
   }
 
   acpi_hpet_header_t *header = (void *) hpet_ptr;
-  kprintf("HPET\n");
-  kprintf("Event Timer Block ID: %#x\n", header->event_timer_block_id);
-  kprintf("  Hardware Rev ID: %d\n", header->event_timer_block_id & 0xFF);
-  kprintf("  Number of Comparators: %d\n", (header->event_timer_block_id >> 8) & 0xF);
-  kprintf("  COUNT_SIZE_CAP counter size: %d\n", (header->event_timer_block_id >> 12) & 1);
-  kprintf("  Legacy Replacement IRQ Routing: %d\n", (header->event_timer_block_id >> 14) & 1);
-  kprintf("  PCI Vendor ID: %d\n", header->event_timer_block_id >> 16);
-  kprintf("Address:\n");
-  acpi_print_address(&header->base_address);
-  kprintf("Number: %d\n", header->hpet_number);
-  kprintf("Minimum Clock Ticks: %d\n", header->minimum_tick);
-  kprintf("Page Protection: %d\n", header->page_protection);
+  uint8_t id = header->hpet_number;
+  uintptr_t address = header->base_address.address;
+  uint8_t num_counters = ((header->event_timer_block_id >> 8) & 0x1F) + 1;
+  kprintf("ACPI: HPET[%d] address=%p counters=%d\n", id, address, num_counters);
+  register_hpet(id, address, header->minimum_tick);
 }
 
 void acpi_parse_dmar() {

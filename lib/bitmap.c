@@ -33,8 +33,7 @@ bitmap_t *create_bitmap(size_t n) {
 
 void bitmap_init(bitmap_t *bmp, size_t n) {
   size_t na = align(n, BIT_SIZE);
-  size_t qwords = na / BIT_SIZE;
-  size_t bytes = max(qwords / BYTE_SIZE, 1);
+  size_t bytes = na / BYTE_SIZE;
 
   bmp->map = _malloc(bytes);
   bmp->size = bytes;

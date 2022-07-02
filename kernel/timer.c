@@ -9,11 +9,7 @@
 #include <mutex.h>
 #include <spinlock.h>
 #include <printf.h>
-#include <vectors.h>
-
-#include <device/ioapic.h>
-#include <device/hpet.h>
-#include <cpu/idt.h>
+#include <panic.h>
 
 #include <atomic.h>
 #include <rb_tree.h>
@@ -24,6 +20,54 @@ static rb_tree_t *tree;
 static rb_tree_t *lookup_tree;
 static cond_t event;
 // static rw_spinlock_t lock;
+
+timer_device_t *global_timer_device;
+timer_device_t *global_periodic_timer;
+timer_device_t *global_one_shot_timer;
+
+LIST_HEAD(timer_device_t) timer_devices;
+
+void register_timer_device(timer_device_t *device) {
+  kassert(device != NULL);
+  if ((device->flags & TIMER_ONE_SHOT) == 0 && (device->flags & TIMER_PERIODIC) == 0) {
+    panic("timer device '%s' must support either one-shot or periodic mode", device->name);
+  }
+
+  LIST_ENTRY_INIT(&device->list);
+  LIST_ADD(&timer_devices, device, list);
+
+  kprintf("timer: registering timer device '%s'\n", device->name);
+}
+
+//
+
+void timer_init() {
+  timer_device_t *device = NULL;
+  global_timer_device = LIST_FIRST(&timer_devices);
+  LIST_FOREACH(device, &timer_devices, list) {
+    if (global_periodic_timer != NULL && global_one_shot_timer != NULL) {
+      break;
+    }
+
+    if (global_periodic_timer == NULL && device->flags & TIMER_PERIODIC) {
+      global_periodic_timer = device;
+    } else if (global_one_shot_timer == NULL && device->flags & TIMER_ONE_SHOT) {
+      global_one_shot_timer = device;
+    }
+  }
+
+  // kprintf("timer: initializing timer '%s'\n", global_periodic_timer->name);
+  // int result;
+  // result = global_periodic_timer->init(global_periodic_timer, TIMER_PERIODIC);
+  // kassert(result == 0);
+  //
+  // global_periodic_timer->setval(global_periodic_timer, 1e9);
+  //
+  // kprintf("timer: enabling timer '%s'\n", global_periodic_timer->name);
+  // global_periodic_timer->enable(global_periodic_timer);
+}
+
+//
 
 static inline id_t alloc_id() {
   return atomic_fetch_add(&__id, 1);
@@ -75,7 +119,7 @@ noreturn void *timer_event_loop(void *arg) {
     if (timer && timer->cpu == PERCPU_ID && timer->expiry == expiry) {
       goto dispatch;
     } else if (timer) {
-      hpet_set_timer(timer->expiry);
+
     }
   }
 }
@@ -83,11 +127,10 @@ noreturn void *timer_event_loop(void *arg) {
 //
 
 uint64_t timer_now() {
-  return hpet_get_time();
+  return 0;
 }
 
-void timer_init() {
-  hpet_init();
+void __timer_init() {
   // ioapic_set_irq(0, 2, VECTOR_HPET_TIMER);
   // idt_gate_t gate = gate((uintptr_t) hpet_handler, KERNEL_CS, 0, INTERRUPT_GATE, 0, 1);
   // idt_set_gate(VECTOR_HPET_TIMER, gate);
@@ -111,7 +154,7 @@ id_t create_timer(clock_t ns, timer_cb_t callback, void *data) {
   timer->data = data;
 
   if (tree->min == tree->nil || ns < tree->min->key) {
-    hpet_set_timer(ns);
+
   }
 
   // spinrw_aquire_write(&lock);

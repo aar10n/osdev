@@ -41,7 +41,10 @@ static inline uint8_t get_port(uint8_t channel) {
 //
 
 void pit_timer_start() {
-  uint8_t val = (inb(PIT2_GATE) | 1) & ~0x2;
+  uint8_t val = pit_control(0, PIT_MODE_3, PIT_ACCESS_WORD, PIT_CHANNEL_0);
+  outb(PIT_CONTROL, val);
+
+  val = (inb(PIT2_GATE) | 1) & ~0x2;
   outb(PIT2_GATE, val);
 }
 

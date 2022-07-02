@@ -18,7 +18,7 @@
     (offset) >> 16, (offset) >> 32                  \
   })
 
-typedef struct packed {
+typedef struct packed idt_gate {
   uint64_t low_offset : 16;  // low 16 bits of the isr address
   uint64_t selector : 16;    // segment selector for dest code segment
   uint64_t ist : 3;          // interrupt stack table
@@ -31,7 +31,7 @@ typedef struct packed {
   uint64_t high_offset : 32; // high 32 bits of the isr address
   uint64_t : 32;             // reserved
 } idt_gate_t;
-static_assert(sizeof(idt_gate_t) == (sizeof(uint64_t) * 2));
+static_assert(sizeof(idt_gate_t) == 16);
 
 typedef struct packed {
   union {
@@ -85,6 +85,7 @@ typedef struct {
 
 void setup_idt();
 void idt_set_gate(uint8_t vector, idt_gate_t gate);
+
 void idt_hook(uint8_t vector, idt_function_t fn, void *data);
 void *idt_unhook(uint8_t vector);
 

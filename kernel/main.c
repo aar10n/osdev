@@ -14,6 +14,7 @@
 
 #include <smpboot.h>
 #include <syscall.h>
+#include <clock.h>
 #include <timer.h>
 #include <scheduler.h>
 
@@ -23,7 +24,9 @@
 #include <device/apic.h>
 #include <device/ioapic.h>
 #include <device/pic.h>
+#include <device/pit.h>
 
+#include <irq.h>
 #include <loader.h>
 #include <fs.h>
 #include <fs/utils.h>
@@ -39,8 +42,8 @@
 #include <ipc.h>
 
 #include <acpi/acpi.h>
-#include <console.h>
 #include <mm/init.h>
+#include <console.h>
 
 #include <string.h>
 
@@ -105,7 +108,6 @@ noreturn void wakeup_process() {
 
 _Noreturn void launch() {
   sti();
-  timer_init();
 
   kprintf("[pid %d] launch\n", PERCPU_ID);
 
@@ -171,22 +173,20 @@ _Noreturn void launch() {
 void _print_pgtable_indexes(uintptr_t addr);
 void _print_pgtable_address(uint16_t l4, uint16_t l3, uint16_t l2, uint16_t l1);
 
+extern clock_source_t *current_clock_source;
+extern timer_device_t *global_timer_device;
+
 __used void kmain() {
   console_early_init();
   cpu_init();
 
   mm_early_init();
+  irq_early_init();
   acpi_early_init();
   cpu_map_topology();
 
-  kprintf("[kernel] initializing idt\n");
-  // setup_idt();
-
-  kprintf("[kernel] boot_info: %p\n", boot_info_v2);
-
-  kprintf("init_mem_zones()\n");
+  irq_init();
   init_mem_zones();
-  kprintf("init_address_space()\n");
   init_address_space();
 
   page_t *pages = _alloc_pages(2, PG_WRITE);
@@ -197,16 +197,14 @@ __used void kmain() {
 
   _address_space_print_mappings(NULL);
 
-  _print_pgtable_indexes(KERNEL_SPACE_START);
-  _print_pgtable_indexes(kernel_virtual_offset);
-  _print_pgtable_indexes(kernel_code_start);
-  _print_pgtable_indexes(STACK_VA);
+  clock_init();
+  timer_init();
 
-  _print_pgtable_address(270, 0, 0, 0);
-  _print_pgtable_address(384, 0, 0, 0);
-  _print_pgtable_address(384, 8, 0, 0);
-  _print_pgtable_address(510, 0, 0, 0);
-  _print_pgtable_address(511, 0, 0, 0);
+  global_timer_device->init(global_timer_device, TIMER_PERIODIC);
+  global_timer_device->setval(global_timer_device, 1e9);
+  global_timer_device->enable(global_timer_device);
+
+  cpu_enable_interrupts();
 
   // syscalls_init();
   // smp_init();

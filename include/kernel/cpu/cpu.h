@@ -17,6 +17,30 @@
 #define IA32_GS_BASE_MSR        0xC0000101
 #define IA32_KERNEL_GS_BASE_MSR 0xC0000102
 
+#define CPU_EXCEPTION_DE  0   // divide-by-zero error
+#define CPU_EXCEPTION_DB  1   // debug
+#define CPU_EXCEPTION_NMI 2   // non-maskable interrupt
+#define CPU_EXCEPTION_BP  3   // breakpoint
+#define CPU_EXCEPTION_OF  4   // overflow
+#define CPU_EXCEPTION_BR  5   // bound range
+#define CPU_EXCEPTION_UD  6   // invalid opcode
+#define CPU_EXCEPTION_NM  7   // device not available (x87)
+#define CPU_EXCEPTION_DF  8   // double fault
+#define CPU_EXCEPTION_TS  10  // invalid tss
+#define CPU_EXCEPTION_NP  11  // segment not present
+#define CPU_EXCEPTION_SS  12  // stack
+#define CPU_EXCEPTION_GP  13  // general protection fault
+#define CPU_EXCEPTION_PF  14  // page fault
+#define CPU_EXCEPTION_MF  16  // x87 floating-point exception pending
+#define CPU_EXCEPTION_AC  17  // alignment check
+#define CPU_EXCEPTION_MC  18  // machine check
+#define CPU_EXCEPTION_XF  19  // simd floating point
+#define CPU_EXCEPTION_CP  21  // control protection exception
+#define CPU_EXCEPTION_HV  28  // hypervisor injection exception
+#define CPU_EXCEPTION_VC  29  // vmm communication exception
+#define CPU_EXCEPTION_SX  30  // security exception
+#define CPU_MAX_EXCEPTION 31
+
 #define CPU_BIT_MMX           DEFINE_CPU_FEATURE(0, 0)
 #define CPU_BIT_SSE           DEFINE_CPU_FEATURE(0, 1)
 #define CPU_BIT_SSE2          DEFINE_CPU_FEATURE(0, 2)
@@ -140,8 +164,19 @@ typedef struct cpu_info {
 } cpu_info_t;
 
 typedef struct cpu_registers {
-
+  uint64_t rax, rbx, rcx, rdx;
+  uint64_t rdi, rsi, rbp;
+  uint64_t r8, r9, r10, r11;
+  uint64_t r12, r13, r14, r15;
 } cpu_registers_t;
+
+typedef struct cpu_irq_stack {
+  uint64_t rip;
+  uint64_t cs;
+  uint64_t rflags;
+  uint64_t rsp;
+  uint64_t ss;
+} cpu_irq_stack_t;
 
 
 void cpu_init();

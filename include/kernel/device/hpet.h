@@ -7,31 +7,6 @@
 
 #include <base.h>
 
-#define timer_config_reg(n) \
-  (HPET_TIMER_CONFIG_BASE + (0x20 * (n)))
-
-#define timer_value_reg(n) \
-  (HPET_TIMER_VALUE_BASE + (0x20 * (n)))
-
-#define timer_fsb_irr_reg(n) \
-  (HPET_TIMER_FSB_IRR_BASE + 0x20 * (n))
-
-
-typedef struct hpet_device {
-
-} hpet_device_t;
-
-
-typedef enum {
-  HPET_ID     = 0x000,
-  HPET_CONFIG = 0x010,
-  HPET_STATUS = 0x020,
-  HPET_COUNT  = 0x0F0,
-  HPET_TIMER_CONFIG_BASE = 0x100,
-  HPET_TIMER_VALUE_BASE  = 0x108,
-  HPET_TIMER_FSB_IRR_BASE = 0x110
-} hpet_reg_t;
-
 // Registers
 
 typedef union {
@@ -83,8 +58,9 @@ typedef union {
     .force_32bit = f32, .int_route = rt, .fsb_enabled = fsb \
   })
 
-void hpet_init();
-void hpet_set_timer(uint64_t ns);
-uint64_t hpet_get_time();
+void register_hpet(uint8_t id, uintptr_t address, uint16_t min_period);
+
+uint64_t hpet_get_count();
+uint32_t hpet_get_scale_ns();
 
 #endif

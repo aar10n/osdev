@@ -19,6 +19,7 @@ uintptr_t kernel_data_end;
 uintptr_t kernel_reserved_start;
 uintptr_t kernel_reserved_end;
 uintptr_t kernel_reserved_ptr;
+uintptr_t kernel_reserved_va_ptr;
 memory_map_entry_t *reserved_map_entry;
 
 void mm_early_init() {
@@ -85,10 +86,19 @@ void mm_early_init() {
   kernel_reserved_start = kernel_reserved_entry->base;
   kernel_reserved_end = kernel_reserved_start + kernel_reserved_entry->size;
   kernel_reserved_ptr = kernel_reserved_start;
+  kernel_reserved_va_ptr = KERNEL_RESERVED_VA;
   reserved_map_entry = kernel_reserved_entry;
 
   early_init_pgtable();
   mm_init_kheap();
+}
+
+void mm_early_reserve_pages(size_t count) {
+  reserved_map_entry->base += PAGES_TO_SIZE(count);
+  reserved_map_entry->size -= PAGES_TO_SIZE(count);
+  if (reserved_map_entry->base > kernel_reserved_end) {
+    panic("out of reserved memory");
+  }
 }
 
 uintptr_t mm_early_alloc_pages(size_t count) {
@@ -103,4 +113,11 @@ uintptr_t mm_early_alloc_pages(size_t count) {
   reserved_map_entry->base = kernel_reserved_ptr;
   reserved_map_entry->size -= size;
   return addr;
+}
+
+void *mm_early_map_pages_reserved(uintptr_t phys_addr, size_t count, uint32_t flags) {
+  uintptr_t va_ptr = kernel_reserved_va_ptr;
+  size_t size = pg_flags_to_size(flags) * count;
+  kernel_reserved_va_ptr += size;
+  return early_map_entries(va_ptr, phys_addr, count, flags);
 }

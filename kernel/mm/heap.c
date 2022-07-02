@@ -30,6 +30,10 @@ static inline mm_chunk_t *get_prev_chunk(mm_chunk_t *chunk) {
 }
 
 static inline mm_chunk_t *get_next_chunk(mm_chunk_t *chunk) {
+  if (chunk == kheap.last_chunk) {
+    return NULL;
+  }
+
   uintptr_t next_addr = offset_addr(chunk, sizeof(mm_chunk_t) + chunk->size);
   if (next_addr < kheap.end_addr && ((uint16_t *) next_addr)[0] == HOLE_MAGIC) {
     uint16_t hole_size = ((uint16_t *) next_addr)[1];

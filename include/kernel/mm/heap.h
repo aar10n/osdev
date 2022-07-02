@@ -9,7 +9,7 @@
 #include <queue.h>
 
 #define CHUNK_MIN_SIZE   8
-#define CHUNK_MAX_SIZE   8192
+#define CHUNK_MAX_SIZE   16384
 #define CHUNK_SIZE_ALIGN 8
 #define CHUNK_MIN_ALIGN  4
 

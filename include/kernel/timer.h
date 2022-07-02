@@ -6,11 +6,30 @@
 #define KERNEL_TIMER_H
 
 #include <base.h>
+#include <queue.h>
 #include <spinlock.h>
-#include <rb_tree.h>
+
+#define TIMER_ONE_SHOT 0x1
+#define TIMER_PERIODIC 0x2
+#define TIMER_CAP_PER_CPU  0x4
+
+typedef struct timer_device {
+  const char *name;
+  void *data;
+
+  uint8_t irq;
+  uint16_t flags;
+
+  int (*init)(struct timer_device *, uint16_t mode);
+  int (*enable)(struct timer_device *);
+  int (*disable)(struct timer_device *);
+  int (*setval)(struct timer_device *, uint64_t ns);
+
+  LIST_ENTRY(struct timer_device) list;
+} timer_device_t;
+
 
 typedef void (*timer_cb_t)(void *);
-
 typedef struct timer {
   id_t id;
   uint8_t cpu;
@@ -19,9 +38,14 @@ typedef struct timer {
   void *data;
 } timer_event_t;
 
-uint64_t timer_now();
+
+void register_timer_device(timer_device_t *device);
 
 void timer_init();
+
+
+uint64_t timer_now();
+
 id_t create_timer(clock_t ns, timer_cb_t callback, void *data);
 void *timer_cancel(id_t id);
 void timer_print_debug();
