@@ -59,6 +59,11 @@ QEMU_DEBUG_OPTIONS += \
 	-debugcon file:$(DEBUG_DIR)/uefi_debug.log
 endif
 
+ifdef QEMU_TRACE_FILE
+QEMU_DEBUG_OPTIONS += \
+	-trace events=$(QEMU_TRACE_FILE)
+endif
+
 QEMU_OPTIONS ?= \
 	-cpu $(QEMU_CPU) \
 	-smp $(QEMU_SMP) \

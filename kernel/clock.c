@@ -6,10 +6,11 @@
 
 #include <printf.h>
 #include <panic.h>
+#include <atomic.h>
 
 LIST_HEAD(clock_source_t) clock_sources;
 clock_source_t *current_clock_source;
-static uint64_t __clock_ticks;
+uint64_t kernel_elapsed_time_us;
 uint64_t clock_ticks;
 
 void register_clock_source(clock_source_t *source) {
@@ -45,7 +46,7 @@ uint64_t clock_now() {
 
   uint64_t now_ticks = current_clock_source->read(current_clock_source);
   current_clock_source->last_tick = now_ticks;
-  return clock_ticks;
+  return now_ticks;
 }
 
 uint64_t clock_now_ns() {
@@ -63,4 +64,27 @@ uint32_t clock_period_ns() {
     return 0;
   }
   return current_clock_source->scale_ns;
+}
+
+uint64_t clock_delta_ns() {
+  if (current_clock_source == NULL) {
+    return 0;
+  }
+
+  uint64_t last = current_clock_source->last_tick;
+  uint64_t current = current_clock_source->read(current_clock_source);
+  current_clock_source->last_tick = current;
+  return (current - last) * current_clock_source->scale_ns;
+}
+
+void clock_update_ticks() {
+  if (current_clock_source == NULL) {
+    return;
+  }
+
+  uint64_t last = current_clock_source->last_tick;
+  uint64_t current = current_clock_source->read(current_clock_source);
+  current_clock_source->last_tick = current;
+  uint64_t delta = (kernel_elapsed_time_us) * current_clock_source->scale_ns;
+  atomic_fetch_add(&clock_ticks, current - last);
 }

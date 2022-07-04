@@ -197,6 +197,14 @@ void cpu_enable_interrupts();
 void cpu_disable_write_protection();
 void cpu_enable_write_protection();
 
+uint64_t cpu_read_stack_pointer();
+void cpu_write_stack_pointer(uint64_t sp);
+
+void cpu_load_gdt(void *gdt);
+void cpu_load_idt(void *idt);
+void cpu_load_tr(uint16_t tr);
+void cpu_reload_segments();
+
 // assembly functions
 
 void cli();
@@ -231,6 +239,7 @@ void flush_gdt();
 
 uint64_t __read_cr0();
 void __write_cr0(uint64_t cr0);
+uint64_t __read_cr2();
 uint64_t __read_cr3();
 void __write_cr3(uint64_t cr3);
 uint64_t __read_cr4();

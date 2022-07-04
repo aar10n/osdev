@@ -5,10 +5,15 @@
 #include <acpi/acpi.h>
 
 #include <cpu/io.h>
+
 #include <device/apic.h>
 #include <device/ioapic.h>
 #include <device/hpet.h>
 
+#include <bus/pcie.h>
+
+#include <mm.h>
+#include <init.h>
 #include <irq.h>
 #include <printf.h>
 #include <panic.h>
@@ -27,6 +32,13 @@ size_t acpi_num_tables = 0;
 acpi_table_header_t **acpi_tables = NULL;
 acpi_fadt_t *acpi_global_fadt = NULL;
 
+//
+
+void remap_acpi_tables(void *data) {
+
+}
+
+//
 
 void acpi_early_init() {
   kassert(boot_info_v2->acpi_ptr != 0);
@@ -60,6 +72,8 @@ void acpi_early_init() {
   acpi_parse_madt();
   acpi_parse_mcfg();
   acpi_parse_hpet();
+
+  register_init_address_space_callback(remap_acpi_tables, NULL);
 }
 
 acpi_table_header_t *acpi_locate_table(uint32_t signature) {
@@ -185,6 +199,12 @@ void acpi_parse_mcfg() {
     kprintf("  PCI Segment Group Number: %d\n", entry->segment_group_number);
     kprintf("  Start Bus Number: %d\n", entry->start_bus_number);
     kprintf("  End Bus Number: %d\n", entry->end_bus_number);
+
+    uint16_t number = entry->segment_group_number;
+    uint8_t bus_start = entry->start_bus_number;
+    uint8_t bus_end = entry->end_bus_number;
+    uint64_t address = entry->base_address;
+    register_pcie_segment_group(number, bus_start, bus_end, address);
   }
 }
 

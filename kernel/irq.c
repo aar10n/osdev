@@ -9,6 +9,8 @@
 #include <device/apic.h>
 #include <device/ioapic.h>
 
+#include <bus/pcie.h>
+
 #include <spinlock.h>
 #include <bitmap.h>
 #include <printf.h>
@@ -46,18 +48,20 @@ __used void irq_handler(uint8_t vector) {
   irq_handler_t handler = irq_handlers[vector].handler;
   if (handler) {
     handler(vector - IRQ_VECTOR_BASE, irq_handlers[vector].data);
+  } else {
+    kprintf("--> IRQ%d\n", vector - IRQ_VECTOR_BASE);
   }
 }
 
 __used void exception_handler(uint8_t vector, uint32_t error, cpu_irq_stack_t *frame, cpu_registers_t *regs) {
   apic_send_eoi();
-  kprintf("--> EXCEPTION %d\n", vector);
   exception_handler_t handler = (void *) irq_handlers[vector].handler;
   if (handler) {
     handler(vector, error, frame, regs);
     return;
   }
 
+  kprintf("--> EXCEPTION %d\n", vector);
   while (true) {
     cpu_pause();
   }
@@ -118,7 +122,7 @@ int irq_alloc_software_irqnum() {
   if (num < 0) {
     return -1;
   }
-  return (uint8_t) num + irq_external_max;
+  return (uint8_t) num + irq_external_max + 1;
 }
 
 void irq_reserve_irqnum(uint8_t irq) {
@@ -156,6 +160,7 @@ int irq_register_exception_handler(uint8_t exception, exception_handler_t handle
 }
 
 int irq_register_irq_handler(uint8_t irq, irq_handler_t handler, void *data) {
+  kprintf("IRQ: registering handler for IRQ%d (%d)\n", irq, irq + IRQ_VECTOR_BASE);
   if (irq > IRQ_NUM_VECTORS - IRQ_VECTOR_BASE) {
     return -ERANGE;
   }
@@ -200,6 +205,35 @@ int irq_disable_interrupt(uint8_t irq) {
   if (irq <= irq_external_max) {
     ioapic_set_irq_mask(irq, 1);
   }
+  return 0;
+}
+
+int irq_enable_msi_interrupt(uint8_t irq, uint8_t index, pcie_device_t *device) {
+  if (irq > IRQ_NUM_VECTORS - IRQ_VECTOR_BASE) {
+    return -ERANGE;
+  }
+
+  int result = irq_enable_interrupt(irq);
+  if (result < 0) {
+    return result;
+  }
+
+  uint8_t vector = irq + IRQ_VECTOR_BASE;
+  pcie_enable_msi_vector(device, index, vector);
+  return 0;
+}
+
+int irq_disable_msi_interrupt(uint8_t irq, uint8_t index, pcie_device_t *device) {
+  if (irq > IRQ_NUM_VECTORS - IRQ_VECTOR_BASE) {
+    return -ERANGE;
+  }
+
+  int result = irq_disable_interrupt(irq);
+  if (result < 0) {
+    return result;
+  }
+
+  pcie_disable_msi_vector(device, index);
   return 0;
 }
 

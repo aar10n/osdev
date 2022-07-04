@@ -3,16 +3,17 @@
 //
 
 #include <bus/pcie.h>
-#include <mm.h>
-#include <printf.h>
-#include <panic.h>
-#include <system.h>
-#include <string.h>
+
 #include <bus/pci_tables.h>
 
-#define PCIE_BASE (system_info->pcie->virt_addr)
-#define pcie_addr(bus, device, function) \
-  ((void *)(PCIE_BASE | ((bus) << 20) | ((device) << 15) | ((function) << 12)))
+#include <mm.h>
+#include <init.h>
+#include <string.h>
+#include <printf.h>
+#include <panic.h>
+
+#define MAX_PCIE_SEG_GROUPS 1
+#define PCIE_MMIO_SIZE (256 * SIZE_1MB)
 
 #define is_mem_bar_valid(b) (((b) & 0xFFFFFFF0) == 0 ? (((b) >> 1) & 0b11) : true)
 #define is_io_bar_valid(b) (((b) & 0xFFFFFFFC) != 0)
@@ -22,9 +23,34 @@
 #define msi_msg_data(vec, e, d) \
   (((vec) & 0xFF) | ((e) == 1 ? 0 : (1 << 15)) | ((d) == 1 ? 0 : (1 << 14)))
 
+struct pcie_segment_group {
+  uint8_t num;
+  uint8_t used;
+  uint8_t bus_start;
+  uint8_t bus_end;
 
+  uintptr_t phys_addr;
+  uintptr_t address;
+};
+
+static size_t num_segment_groups = 0;
+static struct pcie_segment_group segment_groups[MAX_PCIE_SEG_GROUPS];
+static struct pcie_segment_group *root_group = NULL;
 static pcie_list_head_t *devices[16] = {};
 
+
+void remap_pcie_address_space(void *data) {
+  struct pcie_segment_group *seg = data;
+  seg->address = (uintptr_t) _vmap_mmio(seg->phys_addr, PCIE_MMIO_SIZE, PG_BIGPAGE | PG_WRITE | PG_NOCACHE);
+  _vmap_get_mapping(seg->address)->name = "pcie";
+}
+
+//
+
+static void *pcie_device_address(struct pcie_segment_group *group, uint8_t bus, uint8_t device, uint8_t function) {
+  return ((void *)(group->address | ((uint64_t)(bus - group->bus_start) << 20) |
+    ((uint64_t)(device) << 15) | ((uint64_t)(function) << 12)));
+}
 
 pcie_list_head_t *alloc_list_head(pcie_device_t *device) {
   pcie_list_head_t *list = kmalloc(sizeof(pcie_list_head_t));
@@ -85,6 +111,7 @@ pcie_bar_t *get_device_bars(uint32_t *bar_ptr, int bar_count) {
         *b32 = v32;
       }
 
+      bar->next = NULL;
       if (bars != NULL) {
         bars->next = bar;
       } else {
@@ -97,7 +124,6 @@ pcie_bar_t *get_device_bars(uint32_t *bar_ptr, int bar_count) {
 }
 
 pcie_cap_t *get_device_caps(uintptr_t config_base, uint16_t cap_offset) {
-
   pcie_cap_t *first = NULL;
   pcie_cap_t *caps = NULL;
 
@@ -153,13 +179,27 @@ void add_device(pcie_device_t *device) {
 
 //
 
-void pcie_init() {
-  unreachable;
-  pcie_desc_t *pcie = system_info->pcie;
-  pcie->virt_addr = (uintptr_t) _vmap_mmio(pcie->phys_addr, PCIE_MMIO_SIZE, PG_WRITE | PG_NOCACHE);
-  memset(devices, 0, sizeof(devices));
-}
+void register_pcie_segment_group(uint16_t number, uint8_t start_bus, uint8_t end_bus, uintptr_t address) {
+  if (number >= MAX_PCIE_SEG_GROUPS || num_segment_groups >= MAX_PCIE_SEG_GROUPS) {
+    kprintf("PCIE: ignoring pcie segment group %d, not supported\n", number);
+    return;
+  } else if (segment_groups[number].used) {
+    panic("pcie segment group %d already registered", number);
+  }
 
+  segment_groups[number].num = number;
+  segment_groups[number].used = 1;
+  segment_groups[number].bus_start = start_bus;
+  segment_groups[number].bus_end = end_bus;
+  segment_groups[number].phys_addr = address;
+  segment_groups[number].address = address;
+
+  if (root_group == NULL) {
+    root_group = &segment_groups[number];
+  }
+
+  register_init_address_space_callback(remap_pcie_address_space, &segment_groups[number]);
+}
 
 void pcie_discover() {
   kprintf("[pcie] discovering devices...\n");
@@ -167,7 +207,7 @@ void pcie_discover() {
   int bus = 0;
   for (int device = 0; device < 32; device++) {
     for (int function = 0; function < 8; function++) {
-      pcie_header_t *header = pcie_addr(bus, device, function);
+      pcie_header_t *header = pcie_device_address(root_group, bus, device, function);
       if (header->vendor_id == 0xFFFF || header->type != 0) {
         continue;
       }
@@ -318,7 +358,7 @@ void pcie_disable_msi_vector(pcie_device_t *device, uint8_t index) {
   }
 
   pcie_msix_entry_t *table = (void *)(bar->virt_addr + (msix_cap->tbl_ofst << 3));
-  table[index].masked = 0;
+  table[index].masked = 1;
 }
 
 //
@@ -327,11 +367,11 @@ void pcie_print_device(pcie_device_t *device) {
   kprintf("Bus %d, device % 2d, function: %d:\n",
           device->bus, device->device, device->function);
 
-  kprintf("  %s: PCI device %x:%x\n",
+  kprintf("  %s: PCI device %04x:%04x\n",
           pci_get_subclass_desc(device->class_code, device->subclass),
           device->vendor_id, device->device_id);
 
-  kprintf("    PCI subsystem %x:%x\n", device->subsystem_vendor, device->subsystem);
+  kprintf("    PCI subsystem %04x:%04x\n", device->subsystem_vendor, device->subsystem);
 
   if (device->int_line != 0xFF) {
     kprintf("    IRQ %d, pin %c\n", device->int_line, device->int_pin + '@');

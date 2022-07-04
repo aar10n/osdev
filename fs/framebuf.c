@@ -46,24 +46,24 @@ device_ops_t framebuf_device_ops = {
 void framebuf_init() {
   // framebuffer
   pixel_format_t fb_format;
-  if (boot_info->fb_pixel_format == PIXEL_RGB) {
+  if (boot_info_v2->fb_pixel_format == PIXEL_RGB) {
     fb_format = FB_FORMAT_RGB;
-  } else if (boot_info->fb_pixel_format == PIXEL_BGR) {
+  } else if (boot_info_v2->fb_pixel_format == PIXEL_BGR) {
     fb_format = FB_FORMAT_BGR;
   } else {
     panic("unsupported format");
   }
 
   framebuf_t *fb = kmalloc(sizeof(framebuf_t));
-  fb->paddr = boot_info->fb_base;
+  fb->paddr = boot_info_v2->fb_addr;
   fb->vaddr = NULL;
-  fb->width = boot_info->fb_width;
-  fb->height = boot_info->fb_height;
+  fb->width = boot_info_v2->fb_width;
+  fb->height = boot_info_v2->fb_height;
   fb->size = fb->width * fb->height;
   fb->format = fb_format;
   fb->ops = &framebuf_file_ops;
 
-  dev_t fb_dev = register_framebuf(0, fb, &framebuf_device_ops);
+  dev_t fb_dev = fs_register_framebuf(0, fb, &framebuf_device_ops);
   kassert(fb_dev != 0);
   if (fs_mknod("/dev/fb0", S_IFFBF, fb_dev) < 0) {
     panic("failed to create /dev/fb0");

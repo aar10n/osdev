@@ -172,9 +172,19 @@ swapgs:
 
 ; GDT/IDT
 
+global __load_gdt
+__load_gdt:
+  lgdt [rdi]
+  ret
+
 global load_gdt
 load_gdt:
   lgdt [rdi]
+  ret
+
+global __load_idt
+__load_idt:
+  lidt [rdi]
   ret
 
 global load_idt
@@ -182,10 +192,41 @@ load_idt:
   lidt [rdi]
   ret
 
+global __load_tr
+__load_tr:
+  ltr di
+  ret
+
 global load_tr
 load_tr:
   ltr di
   ret
+
+global __flush_gdt
+__flush_gdt:
+  push 0x08
+  lea rax, [rel .reload]
+  push rax
+  retfq
+.reload:
+  mov ax, 0x10
+  mov ss, ax
+  mov ax, 0x00
+  mov ds, ax
+  mov es, ax
+  ret
+
+  ; set up the stack frame so we can call
+  ; iretq to set our new cs register value
+  push qword 0x10 ; new ss
+  push rbp        ; rsp
+  pushfq          ; flags
+  push qword 0x08 ; new cs
+  push rax        ; rip
+  iretq
+__flush_gdt_end:
+  pop rbp
+
 
 global flush_gdt
 flush_gdt:
@@ -209,6 +250,19 @@ flush_gdt:
 .flush:
   pop rbp
 
+
+; General Registers
+
+global cpu_read_stack_pointer
+cpu_read_stack_pointer:
+  mov rax, rsp
+  ret
+
+global cpu_write_stack_pointer
+cpu_write_stack_pointer:
+  mov rsp, rdi
+  ret
+
 ; Control Registers
 
 global read_cr0
@@ -229,6 +283,11 @@ __read_cr0:
 global __write_cr0
 __write_cr0:
   mov cr0, rdi
+  ret
+
+global __read_cr2
+__read_cr2:
+  mov rax, cr2
   ret
 
 global __read_cr3

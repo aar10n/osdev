@@ -5,8 +5,11 @@
 #include <timer.h>
 
 #include <mm.h>
+#include <clock.h>
 #include <thread.h>
 #include <mutex.h>
+#include <irq.h>
+#include <scheduler.h>
 #include <spinlock.h>
 #include <printf.h>
 #include <panic.h>
@@ -14,7 +17,8 @@
 #include <atomic.h>
 #include <rb_tree.h>
 
-extern void hpet_handler();
+void scheduler_tick();
+
 static id_t __id;
 static rb_tree_t *tree;
 static rb_tree_t *lookup_tree;
@@ -26,6 +30,19 @@ timer_device_t *global_periodic_timer;
 timer_device_t *global_one_shot_timer;
 
 LIST_HEAD(timer_device_t) timer_devices;
+
+
+void timer_periodic_handler(timer_device_t *td) {
+  kprintf("---> tick <---\n");
+  clock_update_ticks();
+  scheduler_tick();
+}
+
+void timer_oneshot_handler(timer_device_t *td) {
+  kprintf("---> one-shot timer <---\n");
+}
+
+//
 
 void register_timer_device(timer_device_t *device) {
   kassert(device != NULL);
@@ -39,35 +56,113 @@ void register_timer_device(timer_device_t *device) {
   kprintf("timer: registering timer device '%s'\n", device->name);
 }
 
-//
-
-void timer_init() {
-  timer_device_t *device = NULL;
-  global_timer_device = LIST_FIRST(&timer_devices);
-  LIST_FOREACH(device, &timer_devices, list) {
-    if (global_periodic_timer != NULL && global_one_shot_timer != NULL) {
-      break;
+int init_periodic_timer() {
+  if (global_periodic_timer != NULL) {
+    // only re-initialize if timer is per-cpu
+    if (global_periodic_timer->flags & TIMER_CAP_PER_CPU) {
+      return global_periodic_timer->init(global_periodic_timer, TIMER_PERIODIC);
     }
-
-    if (global_periodic_timer == NULL && device->flags & TIMER_PERIODIC) {
-      global_periodic_timer = device;
-    } else if (global_one_shot_timer == NULL && device->flags & TIMER_ONE_SHOT) {
-      global_one_shot_timer = device;
-    }
+    return 0;
   }
 
-  // kprintf("timer: initializing timer '%s'\n", global_periodic_timer->name);
-  // int result;
-  // result = global_periodic_timer->init(global_periodic_timer, TIMER_PERIODIC);
-  // kassert(result == 0);
-  //
-  // global_periodic_timer->setval(global_periodic_timer, 1e9);
-  //
-  // kprintf("timer: enabling timer '%s'\n", global_periodic_timer->name);
-  // global_periodic_timer->enable(global_periodic_timer);
+  timer_device_t *device = NULL;
+  LIST_FOREACH(device, &timer_devices, list) {
+    if (device == global_one_shot_timer || !(device->flags & TIMER_PERIODIC)) {
+      continue;
+    }
+
+    global_periodic_timer = device;
+    break;
+  }
+
+  if (global_periodic_timer == NULL) {
+    return -ENODEV;
+  }
+
+  global_periodic_timer->irq_handler = timer_periodic_handler;
+  return global_periodic_timer->init(global_periodic_timer, TIMER_PERIODIC);
+}
+
+int init_oneshot_timer() {
+  if (global_one_shot_timer != NULL) {
+    // a periodic timer has already been selected
+    if (global_one_shot_timer->flags & TIMER_CAP_PER_CPU) {
+      // only re-initialize if timer is per-cpu
+      return global_one_shot_timer->init(global_one_shot_timer, TIMER_ONE_SHOT);
+    }
+    return 0;
+  }
+
+  timer_device_t *device = NULL;
+  LIST_FOREACH(device, &timer_devices, list) {
+    if (device == global_periodic_timer || !(device->flags & TIMER_ONE_SHOT)) {
+      continue;
+    }
+
+    global_one_shot_timer = device;
+    break;
+  }
+
+  if (global_one_shot_timer == NULL) {
+    return -ENODEV;
+  }
+
+  global_one_shot_timer->irq_handler = timer_oneshot_handler;
+  return global_one_shot_timer->init(global_one_shot_timer, TIMER_ONE_SHOT);
 }
 
 //
+
+int timer_enable(uint16_t type) {
+  timer_device_t *td = NULL;
+  if (type == TIMER_PERIODIC) {
+    td = global_periodic_timer;
+  } else if (type == TIMER_ONE_SHOT) {
+    td = global_one_shot_timer;
+  } else {
+    return -EINVAL;
+  }
+
+  if (td == NULL) {
+    return -ENODEV;
+  }
+
+  return td->enable(td);
+}
+
+int timer_disable(uint16_t type) {
+  timer_device_t *td = NULL;
+  if (type == TIMER_PERIODIC) {
+    td = global_periodic_timer;
+  } else if (type == TIMER_ONE_SHOT) {
+    td = global_one_shot_timer;
+  } else {
+    return -EINVAL;
+  }
+
+  if (td == NULL) {
+    return -ENODEV;
+  }
+
+  return td->disable(td);
+}
+
+int timer_setval(uint16_t type, uint64_t value) {
+  timer_device_t *td = NULL;
+  if (type == TIMER_PERIODIC) {
+    td = global_periodic_timer;
+  } else if (type == TIMER_ONE_SHOT) {
+    td = global_one_shot_timer;
+  } else {
+    return -EINVAL;
+  }
+
+  if (td == NULL) {
+    return -ENODEV;
+  }
+
+  return td->setval(td, value);
+}
 
 static inline id_t alloc_id() {
   return atomic_fetch_add(&__id, 1);

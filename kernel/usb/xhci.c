@@ -4,15 +4,18 @@
 
 #include <usb/xhci.h>
 #include <usb/xhci_hw.h>
+
 #include <usb/usb.h>
 #include <bus/pcie.h>
+
 #include <mm.h>
+#include <irq.h>
+#include <scheduler.h>
+#include <mutex.h>
 #include <printf.h>
 #include <panic.h>
 #include <string.h>
-#include <cpu/idt.h>
-#include <scheduler.h>
-#include <mutex.h>
+
 #include <atomic.h>
 
 #define xhci_log(str, args...) kprintf("[xhci] " str "\n", ##args)
@@ -104,6 +107,7 @@ static inline const char *get_speed_str(uint8_t speed) {
 //
 
 static void irq_callback(uint8_t vector, void *data) {
+  kprintf("XHCI: IRQ callback\n");
   xhci_dev_t *xhci = data;
   if (xhci_op->usbsts.evt_int) {
     cond_signal(&xhci->event);
@@ -395,13 +399,15 @@ int xhci_init_controller(xhci_dev_t *xhci) {
   return 0;
 }
 
-xhci_intr_t *xhci_setup_interrupter(xhci_dev_t *xhci, idt_function_t fn, void *data) {
+xhci_intr_t *xhci_setup_interrupter(xhci_dev_t *xhci, irq_handler_t fn, void *data) {
   uint8_t n = atomic_fetch_add(&intr_number, 1);
-  uint8_t vector = atomic_fetch_add(&intr_vector, 1);
-  idt_hook(vector, fn, data);
-  pcie_enable_msi_vector(xhci->pci_dev, n, vector);
 
-  size_t erst_size = align(sizeof(xhci_erst_entry_t) * 1, 64);
+  int irq = irq_alloc_software_irqnum();
+  kassert(irq >= 0);
+  irq_register_irq_handler(irq, fn, data);
+  irq_enable_msi_interrupt(irq, n, xhci->pci_dev);
+
+  size_t erst_size = sizeof(xhci_erst_entry_t) * 1;
   xhci_erst_entry_t *erst = kmalloca(erst_size, 64);
 
   xhci_ring_t *ring = xhci_alloc_ring();
@@ -409,7 +415,7 @@ xhci_intr_t *xhci_setup_interrupter(xhci_dev_t *xhci, idt_function_t fn, void *d
   erst[0].rs_size = PAGE_SIZE / sizeof(xhci_trb_t);
 
   xhci_intr_t *intr = kmalloc(sizeof(xhci_intr_t));
-  intr->vector = vector;
+  intr->vector = irq;
   intr->number = n;
   intr->ring = ring;
   intr->erst = (uintptr_t) erst;
@@ -423,7 +429,7 @@ xhci_intr_t *xhci_setup_interrupter(xhci_dev_t *xhci, idt_function_t fn, void *d
 }
 
 void xhci_ring_db(xhci_dev_t *xhci, uint8_t slot, uint16_t endpoint) {
-  // xhci_trace_debug("ringing doorbell %d:%d", slot, endpoint);
+  xhci_trace_debug("ringing doorbell %d:%d", slot, endpoint);
   xhci_db(slot)->target = endpoint;
 }
 
@@ -716,6 +722,7 @@ xhci_device_t *xhci_alloc_device(xhci_dev_t *xhci, xhci_port_t *port, uint8_t sl
   device->ictx = ictx;
   device->dctx = dctx;
   device->pages = ictx_page;
+  device->endpoints = NULL;
   device->thread = NULL;
   cond_init(&device->event, 0);
   cond_init(&device->event_ack, 0);
@@ -992,6 +999,7 @@ void *xhci_get_descriptor(xhci_device_t *device, uint8_t type, uint8_t index, si
   label(make_request);
   usb_setup_packet_t get_desc = GET_DESCRIPTOR(type, index, size);
   uint8_t *desc = kmalloc(size);
+  memset(desc, 0, size);
 
   xhci_queue_setup(device, &get_desc, SETUP_DATA_IN);
   xhci_queue_data(device, (uintptr_t) desc, size, DATA_IN);

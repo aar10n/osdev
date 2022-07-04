@@ -10,11 +10,9 @@
 #include <timer.h>
 #include <panic.h>
 #include <printf.h>
-#include <vectors.h>
 #include <spinlock.h>
 #include <string.h>
 
-#include <cpu/idt.h>
 
 #define sched_log(str, args...) kprintf("[scheduler] " str "\n", ##args)
 
@@ -37,7 +35,6 @@
 
 #define IS_TERMINATED(thread) ((thread)->status == THREAD_TERMINATED)
 
-extern void tick_handler();
 void thread_switch(thread_t *thread);
 
 static const char *status_str[] = {
@@ -305,12 +302,11 @@ void scheduler_init(process_t *root) {
   REGISTER_POLICY(SCHED_DRIVER, &policy_fprr);
   REGISTER_POLICY(SCHED_SYSTEM, &policy_fprr);
 
-  idt_gate_t gate = gate((uintptr_t) tick_handler, KERNEL_CS, 0, INTERRUPT_GATE, 0, 1);
-  idt_set_gate(VECTOR_SCHED_TIMER, gate);
+  init_periodic_timer();
+  // timer_setval(TIMER_PERIODIC, 1e9);
+  // timer_enable(TIMER_PERIODIC);
 
-  // apic_init_periodic(SCHED_PERIOD);
   sched_trace_debug("done!");
-
   root->main->status = THREAD_RUNNING;
   thread_switch(root->main);
 }

@@ -8,8 +8,6 @@
 #include <base.h>
 #include <bus/pci.h>
 
-#define PCIE_MMIO_SIZE 0x10000000 // 256 MiB
-
 #define ALLOC_MSI  0x1
 #define ALLOC_MSIX 0x2
 
@@ -187,16 +185,18 @@ typedef struct {
 // } pcie_cap_msi_t;
 
 typedef volatile struct {
-  // dowrd 0 & 1
+  // dword 0 & 1
   uint64_t msg_addr;
-  // dowrd 2
+  // dword 2
   uint32_t msg_data;   // destination vector
   // dword 3
   uint32_t masked : 1;
   uint32_t : 31;
 } pcie_msix_entry_t;
 
-void pcie_init();
+
+void register_pcie_segment_group(uint16_t number, uint8_t start_bus, uint8_t end_bus, uintptr_t address);
+
 void pcie_discover();
 pcie_device_t *pcie_locate_device(uint8_t class_code, uint8_t subclass, int prog_if);
 pcie_bar_t *pcie_get_bar(pcie_device_t *device, int bar_num);

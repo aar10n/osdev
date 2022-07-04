@@ -123,8 +123,8 @@ void setup_gdt() {
   gdt_desc.limit = sizeof(gdt) - 1;
   gdt_desc.base = (uint64_t) &gdt;
 
-  load_gdt(&gdt_desc);
-  load_tr(0x28);
-  flush_gdt();
+  cpu_load_gdt(&gdt_desc);
+  cpu_load_tr(0x28);
+  cpu_reload_segments();
 }
 

@@ -956,8 +956,7 @@ typedef struct {
   // dword 0 & 1
   uint64_t rs_addr;       // ring segment base address
   // dword 2
-  uint32_t rs_size : 16;  // ring segment size
-  uint32_t : 16;          // reserved
+  uint32_t rs_size;       // ring segment size
   // dword 3
   uint32_t : 32;          // reserved
 } xhci_erst_entry_t;

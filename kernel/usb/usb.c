@@ -4,14 +4,17 @@
 
 #include <usb/usb.h>
 #include <usb/xhci.h>
-#include <printf.h>
-#include <rb_tree.h>
-#include <atomic.h>
-#include <mm.h>
-#include <scheduler.h>
-
 #include <usb/hid.h>
 #include <usb/scsi.h>
+
+#include <mm.h>
+#include <process.h>
+#include <scheduler.h>
+#include <printf.h>
+
+#include <rb_tree.h>
+#include <atomic.h>
+
 
 #define usb_log(str, args...) kprintf("[usb] " str "\n", ##args)
 

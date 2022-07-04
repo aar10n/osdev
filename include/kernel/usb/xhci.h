@@ -6,11 +6,12 @@
 #define KERNEL_USB_XHCI_H
 
 #include <base.h>
-#include <usb/xhci_hw.h>
 #include <usb/usb.h>
+#include <usb/xhci_hw.h>
+
 #include <bus/pcie.h>
-#include <cpu/idt.h>
-#include <mm.h>
+
+#include <irq.h>
 #include <mutex.h>
 
 #define ep_index(num, dir) ((num) + max((num) - 1, 0) + dir)
@@ -135,7 +136,7 @@ void xhci_init();
 void xhci_setup_devices();
 
 int xhci_init_controller(xhci_dev_t *xhci);
-xhci_intr_t *xhci_setup_interrupter(xhci_dev_t *xhci, idt_function_t fn, void *data);
+xhci_intr_t *xhci_setup_interrupter(xhci_dev_t *xhci, irq_handler_t fn, void *data);
 void xhci_ring_db(xhci_dev_t *xhci, uint8_t slot, uint16_t endpoint);
 xhci_cap_t *xhci_get_cap(xhci_dev_t *xhci, xhci_cap_t *cap_ptr, uint8_t cap_id);
 xhci_protocol_t *xhci_get_protocols(xhci_dev_t *xhci);

@@ -47,6 +47,7 @@ section .data
 align 0x1000
 entry_initial_stack:
   resb PAGE_SIZE
+global entry_initial_stack_top
 entry_initial_stack_top:
 
 entry_initial_cpu_reserved:

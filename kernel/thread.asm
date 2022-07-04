@@ -5,12 +5,12 @@
 %define NULL 0x00
 
 ; percpu offsets
-%define PERCPU_ID        0x00
-%define PERCPU_THREAD    0x08
-%define PERCPU_PROCESS   0x10
-%define PERCPU_KERNEL_SP 0x18
-%define PERCPU_USER_SP   0x20
-%define PERCPU_SELF      0x28
+%define PERCPU_SELF      0x00
+%define PERCPU_ID        0x08
+%define PERCPU_THREAD    0x10
+%define PERCPU_PROCESS   0x18
+%define PERCPU_KERNEL_SP 0x20
+%define PERCPU_USER_SP   0x28
 %define PERCPU_RFLAGS    0x30
 
 %define CURRENT_THREAD  gs:PERCPU_THREAD

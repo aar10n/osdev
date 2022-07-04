@@ -9,6 +9,8 @@
 #include <mm/init.h>
 
 #include <cpu/cpu.h>
+
+#include <irq.h>
 #include <panic.h>
 #include <string.h>
 #include <printf.h>
@@ -20,7 +22,7 @@
 #define VMAP_USERSPACE  (1 << 1)
 
 void execute_init_address_space_callbacks();
-
+extern uintptr_t entry_initial_stack_top;
 address_space_t *kernel_space;
 
 
@@ -236,6 +238,18 @@ __used void swap_address_space(address_space_t *new_space) {
   PERCPU_SET_ADDRESS_SPACE(new_space);
 }
 
+void page_fault_handler(uint8_t vector, uint32_t error_code, cpu_irq_stack_t *frame, cpu_registers_t *regs) {
+  uint32_t id = PERCPU_ID;
+  uint64_t fault_addr = __read_cr2();
+  kprintf("================== !!! Exception !!! ==================\n");
+  kprintf("  Page Fault  - Data: %#b\n");
+  kprintf("  CPU#%d  -  RIP: %p  -  CR2: %018p", id, frame->rip, fault_addr);
+
+  while (true) {
+    cpu_pause();
+  }
+}
+
 //
 
 void init_address_space() {
@@ -275,11 +289,28 @@ void init_address_space() {
   kreserved_vm->name = "kernel reserved";
   kreserved_vm->type = VM_TYPE_PHYS;
   kreserved_vm->data.phys = kernel_reserved_ptr - kreserved_vm->size;
+  // kernel stack
+  page_t *stack_pages = _alloc_pages(SIZE_TO_PAGES(KERNEL_STACK_SIZE), PG_WRITE);
+  uintptr_t kstack_bottom = KERNEL_STACK_TOP_VA - KERNEL_STACK_SIZE;
+  _vmap_pages_addr(kstack_bottom, stack_pages);
+  vm_mapping_t *kstack_vm = _vmap_get_mapping(kstack_bottom);
+  kstack_vm->name = "kernel stack";
 
   execute_init_address_space_callbacks();
 
   kprintf("kernel space:\n");
   _address_space_print_mappings(kernel_space);
+
+  // switch to new kernel stack
+  kprintf("switching to new kernel stack\n");
+  uint64_t rsp = cpu_read_stack_pointer();
+  uint64_t stack_offset = ((uint64_t) &entry_initial_stack_top) - rsp;
+
+  uint64_t new_rsp = KERNEL_STACK_TOP_VA - stack_offset;
+  memcpy((void *) new_rsp, (void *) rsp, stack_offset);
+  cpu_write_stack_pointer(new_rsp);
+
+  irq_register_exception_handler(CPU_EXCEPTION_PF, page_fault_handler);
 }
 
 address_space_t *new_address_space() {
@@ -501,7 +532,7 @@ uintptr_t _vm_virt_to_phys(uintptr_t virt_addr) {
   }
 
   vm_mapping_t *mapping = node->data;
-  size_t offset = mapping->address - virt_addr;
+  size_t offset = virt_addr - mapping->address;
   if (mapping->type == VM_TYPE_PHYS) {
     return mapping->data.phys + offset;
   } else if (mapping->type == VM_TYPE_PAGE) {
@@ -594,7 +625,7 @@ void _address_space_print_mappings(address_space_t *space) {
   while ((node = intvl_iter_next(iter))) {
     interval_t i = node->interval;
     vm_mapping_t *mapping = node->data;
-    kprintf("  [%018p-%018p] % 8llu %s\n", i.start, i.end, mapping->size, mapping->name);
+    kprintf("  [%018p-%018p] % 10llu %s\n", i.start, i.end, mapping->size, mapping->name);
   }
   kfree(iter);
 }

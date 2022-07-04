@@ -107,17 +107,20 @@ noreturn void wakeup_process() {
 //
 
 _Noreturn void launch() {
-  sti();
-
-  kprintf("[pid %d] launch\n", PERCPU_ID);
+  kprintf("[pid %d] launch\n", getpid());
+  kprintf("haulting...\n");
 
   fs_init();
-
-  pcie_init();
   pcie_discover();
-  ahci_init();
 
   usb_init();
+
+  while (true) {
+    cpu_pause();
+  }
+
+  ahci_init();
+
   events_init();
 
   //
@@ -189,30 +192,31 @@ __used void kmain() {
   init_mem_zones();
   init_address_space();
 
-  page_t *pages = _alloc_pages(2, PG_WRITE);
-  kprintf("[kernel] allocated pages: %p\n", pages->address);
-  kprintf("[kernel] mapping pages\n");
-  void *ptr = _vmap_pages(pages);
-  kprintf("[kernel] mapped pages: %p\n", ptr);
-
-  _address_space_print_mappings(NULL);
+  // page_t *pages = _alloc_pages(2, PG_WRITE);
+  // kprintf("[kernel] allocated pages: %p\n", pages->address);
+  // kprintf("[kernel] mapping pages\n");
+  // void *ptr = _vmap_pages(pages);
+  // kprintf("[kernel] mapped pages: %p\n", ptr);
+  // _address_space_print_mappings(NULL);
+  // _print_pgtable_indexes(KERNEL_HEAP_VA);
+  // _print_pgtable_address(511, 0, 2, 0);
+  // _print_pgtable_address(511, 0, 511, 0);
+  // _print_pgtable_address(511, 1, 0, 0);
 
   clock_init();
-  timer_init();
-
-  global_timer_device->init(global_timer_device, TIMER_PERIODIC);
-  global_timer_device->setval(global_timer_device, 1e9);
-  global_timer_device->enable(global_timer_device);
+  // global_timer_device->setval(global_timer_device, 1e9);
+  // global_timer_device->enable(global_timer_device);
 
   cpu_enable_interrupts();
 
+  // fs_init();
   // syscalls_init();
   // smp_init();
 
   // root process
-  // process_t *root = process_create_root(launch);
-  // scheduler_init(root);
-
+  process_t *root = process_create_root(launch);
+  scheduler_init(root);
+  unreachable;
   kprintf("haulting...\n");
   while (true) {
     cpu_pause();

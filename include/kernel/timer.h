@@ -20,14 +20,17 @@ typedef struct timer_device {
   uint8_t irq;
   uint16_t flags;
 
+  // timer api
   int (*init)(struct timer_device *, uint16_t mode);
   int (*enable)(struct timer_device *);
   int (*disable)(struct timer_device *);
   int (*setval)(struct timer_device *, uint64_t ns);
 
+  // set by the timer subsystem
+  void (*irq_handler)(struct timer_device *);
+
   LIST_ENTRY(struct timer_device) list;
 } timer_device_t;
-
 
 typedef void (*timer_cb_t)(void *);
 typedef struct timer {
@@ -41,8 +44,12 @@ typedef struct timer {
 
 void register_timer_device(timer_device_t *device);
 
-void timer_init();
+int init_periodic_timer();
+int init_oneshot_timer();
 
+int timer_enable(uint16_t type);
+int timer_disable(uint16_t type);
+int timer_setval(uint16_t type, uint64_t value);
 
 uint64_t timer_now();
 

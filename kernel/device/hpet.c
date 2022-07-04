@@ -122,12 +122,17 @@ static inline uint64_t hpet_current_time(uint8_t id) {
 //
 
 void hpet_interrupt_handler(uint8_t vector, void *data) {
-  struct hpet_timer_device *tn = data;
+  timer_device_t *td = data;
+  struct hpet_timer_device *tn = td->data;
   kprintf("HPET Interrupt (timer %d)\n", tn->num);
 
   uint8_t id = tn->hpet->id;
   uint32_t int_status_reg = hpet_read32(id, HPET_STATUS);
   hpet_write32(id, HPET_STATUS, int_status_reg);
+
+  if (td->irq_handler) {
+    td->irq_handler(td);
+  }
 }
 
 void remap_hpet_registers(void *data) {
@@ -202,7 +207,7 @@ int hpet_timer_init(timer_device_t *td, uint16_t mode) {
 
   hpet_write32(id, timer_config_reg(tn->num), tn_config_reg);
 
-  irq_register_irq_handler(timer_irq, hpet_interrupt_handler, tn);
+  irq_register_irq_handler(timer_irq, hpet_interrupt_handler, td);
   return 0;
 }
 
@@ -259,6 +264,17 @@ int hpet_timer_setval(timer_device_t *td, uint64_t ns) {
   uint64_t ticks = ns / period_ns;
   hpet_write64(id, timer_value_reg(tn->num), ticks);
   return 0;
+}
+
+void hpet_timer_handle_irq(timer_device_t *td) {
+  struct hpet_timer_device *tn = td->data;
+  if (tn == NULL) {
+    return;
+  }
+
+  uint8_t id = tn->hpet->id;
+  uint32_t int_status_reg = hpet_read32(id, HPET_STATUS);
+  hpet_write32(id, HPET_STATUS, int_status_reg);
 }
 
 //

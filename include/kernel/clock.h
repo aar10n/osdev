@@ -22,13 +22,14 @@ typedef struct clock_source {
   LIST_ENTRY(struct clock_source) list;
 } clock_source_t;
 
-extern uint64_t clock_ticks;
-
 void register_clock_source(clock_source_t *source);
 
 void clock_init();
 uint64_t clock_now();
 uint64_t clock_now_ns();
 uint32_t clock_period_ns();
+uint64_t clock_delta_ns();
+
+void clock_update_ticks();
 
 #endif

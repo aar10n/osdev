@@ -25,16 +25,10 @@ void register_init_address_space_callback(init_callback_t callback, void *data) 
 
 void execute_init_address_space_callbacks() {
   callback_obj_t *obj;
-  callback_obj_t *last = NULL;
   LIST_FOREACH(obj, &init_address_space_cb_list, list) {
     obj->callback(obj->data);
-
-    if (last) {
-      LIST_REMOVE(&init_address_space_cb_list, obj, list);
-      kfree(last);
-    }
-    last = obj;
+    kfree(obj);
   }
-
-  kfree(last);
+  
+  LIST_INIT(&init_address_space_cb_list);
 }

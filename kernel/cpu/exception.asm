@@ -18,8 +18,8 @@ extern kprintf
 extern stdio_lock
 extern stdio_unlock
 
-global page_fault_handler
-page_fault_handler:
+global old_page_fault_handler
+old_page_fault_handler:
   cmp qword [rsp + 16], 0x08
   je .handle_fault
   swapgs

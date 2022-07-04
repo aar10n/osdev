@@ -10,6 +10,7 @@
 #include <usb/usb.h>
 #include <usb/xhci.h>
 #include <printf.h>
+#include <mm.h>
 #include <event.h>
 
 #define hid_log(str, args...) kprintf("[hid] " str "\n", ##args)
