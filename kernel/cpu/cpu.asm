@@ -2,24 +2,25 @@
 
 ; Interrupts
 
-global __disable_interrupts
-__disable_interrupts:
+global cpu_disable_interrupts
+cpu_disable_interrupts:
   cli
   ret
 
-global __enable_interrupts
-__enable_interrupts:
+global cpu_enable_interrupts
+cpu_enable_interrupts:
   sti
   ret
 
-global __save_clear_interrupts
-__save_clear_interrupts:
+global cpu_save_clear_interrupts
+cpu_save_clear_interrupts:
   pushfq
   pop rax
+  cli
   ret
 
-global __restore_interrupts
-__restore_interrupts:
+global cpu_restore_interrupts
+cpu_restore_interrupts:
   push rdi
   popfq
   ret
@@ -331,8 +332,8 @@ __xsetbv:
 
 ; Paging/TLB
 
-global __flush_tlb
-__flush_tlb:
+global cpu_flush_tlb
+cpu_flush_tlb:
   mov rax, cr3
   mov cr3, rax
   ret

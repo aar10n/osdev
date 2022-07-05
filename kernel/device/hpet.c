@@ -124,7 +124,6 @@ static inline uint64_t hpet_current_time(uint8_t id) {
 void hpet_interrupt_handler(uint8_t vector, void *data) {
   timer_device_t *td = data;
   struct hpet_timer_device *tn = td->data;
-  kprintf("HPET Interrupt (timer %d)\n", tn->num);
 
   uint8_t id = tn->hpet->id;
   uint32_t int_status_reg = hpet_read32(id, HPET_STATUS);
@@ -243,38 +242,21 @@ int hpet_timer_disable(timer_device_t *td) {
   return 0;
 }
 
-int hpet_timer_setval(timer_device_t *td, uint64_t ns) {
+int hpet_timer_setval(timer_device_t *td, uint64_t value) {
   struct hpet_timer_device *tn = td->data;
   if (tn == NULL) {
     return -ENODEV;
   }
 
   uint8_t id = tn->hpet->id;
-  uint64_t period_ns = tn->hpet->clock_period_ns;
   if (tn->mode == HPET_TN_TYPE_PERIODIC) {
     uint32_t tn_config_reg = hpet_read32(id, timer_config_reg(tn->num));
     tn_config_reg |= HPET_TN_VAL_SET_CNF_BIT;
     hpet_write32(id, timer_config_reg(tn->num), tn_config_reg);
   }
 
-  if (ns < period_ns) {
-    ns = period_ns;
-  }
-
-  uint64_t ticks = ns / period_ns;
-  hpet_write64(id, timer_value_reg(tn->num), ticks);
+  hpet_write64(id, timer_value_reg(tn->num), value);
   return 0;
-}
-
-void hpet_timer_handle_irq(timer_device_t *td) {
-  struct hpet_timer_device *tn = td->data;
-  if (tn == NULL) {
-    return;
-  }
-
-  uint8_t id = tn->hpet->id;
-  uint32_t int_status_reg = hpet_read32(id, HPET_STATUS);
-  hpet_write32(id, HPET_STATUS, int_status_reg);
 }
 
 //
@@ -364,6 +346,8 @@ void register_hpet(uint8_t id, uintptr_t address, uint16_t min_period) {
     hpet_timer_device->data = hpet_timer_struct;
     hpet_timer_device->irq = 0;
     hpet_timer_device->flags = 0;
+    hpet_timer_device->scale_ns = hpets[id].clock_period_ns;
+    hpet_timer_device->value_mask = UINT64_MAX;
 
     uint32_t tn0_config_reg = hpet_read32(id, timer_config_reg(0));
     hpet_timer_device->flags |= TIMER_ONE_SHOT;

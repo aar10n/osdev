@@ -237,7 +237,7 @@ void pcie_discover() {
       dev->next = NULL;
 
       add_device(dev);
-      pcie_print_device(dev);
+      // pcie_print_device(dev);
 
       if (!header->multifn) {
         break;

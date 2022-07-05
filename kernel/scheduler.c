@@ -302,9 +302,11 @@ void scheduler_init(process_t *root) {
   REGISTER_POLICY(SCHED_DRIVER, &policy_fprr);
   REGISTER_POLICY(SCHED_SYSTEM, &policy_fprr);
 
-  init_periodic_timer();
+  // init_periodic_timer();
   // timer_setval(TIMER_PERIODIC, 1e9);
   // timer_enable(TIMER_PERIODIC);
+  init_oneshot_timer();
+  timer_enable(TIMER_ONE_SHOT);
 
   sched_trace_debug("done!");
   root->main->status = THREAD_RUNNING;
@@ -411,7 +413,7 @@ int scheduler_yield() {
 
 int scheduler_sleep(uint64_t ns) {
   thread_t *thread = PERCPU_THREAD;
-  create_timer(timer_now() + ns, (void *) scheduler_wakeup, thread);
+  timer_create_alarm(timer_now() + ns, (void *) scheduler_wakeup, thread);
   scheduler_sched(SLEEPING);
   return 0;
 }

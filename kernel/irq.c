@@ -11,6 +11,7 @@
 
 #include <bus/pcie.h>
 
+#include <process.h>
 #include <spinlock.h>
 #include <bitmap.h>
 #include <printf.h>
@@ -20,9 +21,17 @@
 #define IRQ_NUM_ISA     16
 #define IRQ_VECTOR_BASE 32
 
+#define IRQ_TYPE_FUNC 0x1
+#define IRQ_TYPE_COND 0x2
+
 struct irq_handler {
   uint8_t ignored;
-  irq_handler_t handler;
+  uint8_t type;
+  union {
+    void *ptr;
+    irq_handler_t handler;
+    cond_t *condition;
+  };
   void *data;
 };
 
@@ -44,13 +53,22 @@ struct isa_irq_override irq_isa_overrides[IRQ_NUM_ISA];
 
 __used void irq_handler(uint8_t vector) {
   apic_send_eoi();
-  kprintf("--> IRQ%d\n", vector - IRQ_VECTOR_BASE);
-  irq_handler_t handler = irq_handlers[vector].handler;
-  if (handler) {
-    handler(vector - IRQ_VECTOR_BASE, irq_handlers[vector].data);
-  } else {
-    kprintf("--> IRQ%d\n", vector - IRQ_VECTOR_BASE);
+  if (irq_handlers[vector].ptr != NULL) {
+    if (irq_handlers[vector].ignored) {
+      return;
+    }
+
+    switch (irq_handlers[vector].type) {
+      case IRQ_TYPE_FUNC:
+        irq_handlers[vector].handler(vector - IRQ_VECTOR_BASE, irq_handlers[vector].data);
+        return;
+      case IRQ_TYPE_COND:
+        cond_signal(irq_handlers[vector].condition);
+        return;
+    }
   }
+
+  kprintf("--> IRQ%d\n", vector - IRQ_VECTOR_BASE);
 }
 
 __used void exception_handler(uint8_t vector, uint32_t error, cpu_irq_stack_t *frame, cpu_registers_t *regs) {
@@ -65,6 +83,22 @@ __used void exception_handler(uint8_t vector, uint32_t error, cpu_irq_stack_t *f
   while (true) {
     cpu_pause();
   }
+}
+
+uint8_t irq_internal_map_to_vector(uint8_t irq) {
+  uint8_t vector = irq + IRQ_VECTOR_BASE;
+  if (irq <= irq_external_max) {
+    // this is an external interrupt
+    if (irq < IRQ_NUM_ISA && irq_isa_overrides[irq].used) {
+      // isa interrupt with override
+      vector = irq_isa_overrides[irq].dest_irq + IRQ_VECTOR_BASE;
+      uint16_t flags = irq_isa_overrides[irq].flags;
+      ioapic_set_isa_irq_routing(irq, vector, flags);
+    } else {
+      ioapic_set_irq_vector(irq, irq + IRQ_VECTOR_BASE);
+    }
+  }
+  return vector;
 }
 
 //
@@ -154,42 +188,49 @@ int irq_register_exception_handler(uint8_t exception, exception_handler_t handle
   }
 
   irq_handlers[exception].ignored = 0;
+  irq_handlers[exception].type = IRQ_TYPE_FUNC;
   irq_handlers[exception].handler = (void *) handler; // forgive me
   irq_handlers[exception].data = NULL;
   return 0;
 }
 
 int irq_register_irq_handler(uint8_t irq, irq_handler_t handler, void *data) {
-  kprintf("IRQ: registering handler for IRQ%d (%d)\n", irq, irq + IRQ_VECTOR_BASE);
+  kprintf("IRQ: registering handler for IRQ%d\n", irq);
   if (irq > IRQ_NUM_VECTORS - IRQ_VECTOR_BASE) {
     return -ERANGE;
   }
 
-  uint8_t vector = irq + IRQ_VECTOR_BASE;
-  if (irq <= irq_external_max) {
-    // this is an external interrupt
-    if (irq < IRQ_NUM_ISA && irq_isa_overrides[irq].used) {
-      // isa interrupt with override
-      vector = irq_isa_overrides[irq].dest_irq + IRQ_VECTOR_BASE;
-      uint16_t flags = irq_isa_overrides[irq].flags;
-      ioapic_set_isa_irq_routing(irq, vector, flags);
-    } else {
-      ioapic_set_irq_vector(irq, irq + IRQ_VECTOR_BASE);
-    }
-  }
-
+  uint8_t vector = irq_internal_map_to_vector(irq);
   irq_handlers[vector].ignored = 1;
+  irq_handlers[vector].type = IRQ_TYPE_FUNC;
   irq_handlers[vector].handler = handler;
   irq_handlers[vector].data = data;
   return 0;
 }
+
+int irq_register_signaled_irq_handler(uint8_t irq, cond_t *condition) {
+  kprintf("IRQ: registering deferred handler for IRQ%d\n", irq);
+  if (irq > IRQ_NUM_VECTORS - IRQ_VECTOR_BASE) {
+    return -ERANGE;
+  }
+
+  uint8_t vector = irq_internal_map_to_vector(irq);
+  irq_handlers[vector].ignored = 1;
+  irq_handlers[vector].type = IRQ_TYPE_COND;
+  irq_handlers[vector].condition = condition;
+  irq_handlers[vector].data = NULL;
+  return 0;
+}
+
+//
 
 int irq_enable_interrupt(uint8_t irq) {
   if (irq > IRQ_NUM_VECTORS - IRQ_VECTOR_BASE) {
     return -ERANGE;
   }
 
-  irq_handlers[irq].ignored = 1;
+  uint8_t vector = irq + IRQ_VECTOR_BASE;
+  irq_handlers[vector].ignored = 0;
   if (irq <= irq_external_max) {
     ioapic_set_irq_mask(irq, 0);
   }
@@ -201,7 +242,8 @@ int irq_disable_interrupt(uint8_t irq) {
     return -ERANGE;
   }
 
-  irq_handlers[irq].ignored = 0;
+  uint8_t vector = irq + IRQ_VECTOR_BASE;
+  irq_handlers[vector].ignored = 1;
   if (irq <= irq_external_max) {
     ioapic_set_irq_mask(irq, 1);
   }

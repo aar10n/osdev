@@ -10,7 +10,7 @@
 
 LIST_HEAD(clock_source_t) clock_sources;
 clock_source_t *current_clock_source;
-uint64_t kernel_elapsed_time_us;
+clock_t kernel_time_ns;
 uint64_t clock_ticks;
 
 void register_clock_source(clock_source_t *source) {
@@ -39,34 +39,7 @@ void clock_init() {
   current_clock_source->last_tick = current_clock_source->read(current_clock_source);
 }
 
-uint64_t clock_now() {
-  if (current_clock_source == NULL) {
-    return 0;
-  }
-
-  uint64_t now_ticks = current_clock_source->read(current_clock_source);
-  current_clock_source->last_tick = now_ticks;
-  return now_ticks;
-}
-
-uint64_t clock_now_ns() {
-  if (current_clock_source == NULL) {
-    return 0;
-  }
-
-  uint64_t now_ticks = current_clock_source->read(current_clock_source);
-  current_clock_source->last_tick = now_ticks;
-  return now_ticks * current_clock_source->scale_ns;
-}
-
-uint32_t clock_period_ns() {
-  if (current_clock_source == NULL) {
-    return 0;
-  }
-  return current_clock_source->scale_ns;
-}
-
-uint64_t clock_delta_ns() {
+clock_t clock_now() {
   if (current_clock_source == NULL) {
     return 0;
   }
@@ -74,7 +47,18 @@ uint64_t clock_delta_ns() {
   uint64_t last = current_clock_source->last_tick;
   uint64_t current = current_clock_source->read(current_clock_source);
   current_clock_source->last_tick = current;
-  return (current - last) * current_clock_source->scale_ns;
+  atomic_fetch_add(&clock_ticks, current - last);
+  uint64_t current_ns = current * current_clock_source->scale_ns;
+  kernel_time_ns += current_ns;
+  return current_ns;
+}
+
+clock_t clock_kernel_time() {
+  return kernel_time_ns;
+}
+
+uint64_t clock_current_ticks() {
+  return clock_ticks;
 }
 
 void clock_update_ticks() {
@@ -85,6 +69,8 @@ void clock_update_ticks() {
   uint64_t last = current_clock_source->last_tick;
   uint64_t current = current_clock_source->read(current_clock_source);
   current_clock_source->last_tick = current;
-  uint64_t delta = (kernel_elapsed_time_us) * current_clock_source->scale_ns;
-  atomic_fetch_add(&clock_ticks, current - last);
+  uint64_t delta = current - last;
+  atomic_fetch_add(&clock_ticks, delta);
+  uint64_t current_ns = current * current_clock_source->scale_ns;
+  kernel_time_ns += current_ns;
 }

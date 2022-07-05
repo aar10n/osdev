@@ -193,6 +193,8 @@ void cpu_print_features();
 void cpu_flush_tlb();
 void cpu_disable_interrupts();
 void cpu_enable_interrupts();
+uint64_t cpu_save_clear_interrupts();
+void cpu_restore_interrupts(uint64_t flags);
 
 void cpu_disable_write_protection();
 void cpu_enable_write_protection();

@@ -73,6 +73,7 @@
 #define udiff(a, b) (max(a, b) - min(a, b))
 
 #define label(lbl) lbl: NULL
+#define LABEL(l) l: NULL
 
 #define barrier() __asm volatile("":::"memory");
 #define cpu_pause() __asm volatile("pause":::"memory");

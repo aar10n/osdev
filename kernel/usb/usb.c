@@ -117,7 +117,6 @@ noreturn void *usb_event_loop(void *arg) {
         dev->driver->handle_event(&event, dev->driver_data);
       }
     } else if (mode == USB_DEVICE_POLLING) {
-      // kprintf("POLLING\n");
       thread_sleep(value);
 
       while (xhci_has_event(device->intr)) {

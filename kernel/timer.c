@@ -17,15 +17,21 @@
 #include <atomic.h>
 #include <rb_tree.h>
 
+
+typedef struct timer_alarm {
+  clockid_t id;
+  clock_t expires;
+  timer_cb_t callback;
+  void *data;
+} timer_alarm_t;
+
 void scheduler_tick();
 
-static id_t __id;
-static rb_tree_t *tree;
-static rb_tree_t *lookup_tree;
-static cond_t event;
-// static rw_spinlock_t lock;
+static rb_tree_t *pending_alarm_tree;
+static spinlock_t pending_alarm_lock;
+static cond_t alarm_cond;
+static uint32_t next_alarm_id;
 
-timer_device_t *global_timer_device;
 timer_device_t *global_periodic_timer;
 timer_device_t *global_one_shot_timer;
 
@@ -39,7 +45,53 @@ void timer_periodic_handler(timer_device_t *td) {
 }
 
 void timer_oneshot_handler(timer_device_t *td) {
-  kprintf("---> one-shot timer <---\n");
+  cond_signal(&alarm_cond);
+}
+
+int set_alarm_timer_value(timer_device_t *timer, clock_t expiry) {
+  uint64_t timer_value = expiry / timer->scale_ns;
+  if (timer_value > timer->value_mask) {
+    return -EOVERFLOW;
+  }
+  return timer->setval(timer, timer_value);
+}
+
+noreturn void *alarm_event_loop(void *arg) {
+  kprintf("timer: starting alarm event loop\n");
+  timer_device_t *timer = arg;
+  while (true) {
+    cond_wait(&alarm_cond);
+    if (pending_alarm_tree->min == NULL) {
+      continue;
+    }
+
+  LABEL(dispatch);
+    spin_lock(&pending_alarm_lock);
+    if (pending_alarm_tree->nodes == 0) {
+      spin_unlock(&pending_alarm_lock);
+      continue;
+    }
+
+    timer_alarm_t *alarm = pending_alarm_tree->min->data;
+    kassert(alarm);
+    if (alarm->expires > timer_now()) {
+      set_alarm_timer_value(timer, alarm->expires);
+      spin_unlock(&pending_alarm_lock);
+      continue;
+    }
+
+    rb_tree_delete_node(pending_alarm_tree, pending_alarm_tree->min);
+    spin_unlock(&pending_alarm_lock);
+
+    PERCPU_THREAD->preempt_count++;
+    alarm->callback(alarm->data);
+    PERCPU_THREAD->preempt_count--;
+
+    kfree(alarm);
+    if (pending_alarm_tree->nodes > 0) {
+      goto dispatch;
+    }
+  }
 }
 
 //
@@ -113,6 +165,62 @@ int init_oneshot_timer() {
 
 //
 
+void alarms_init() {
+  kassert(global_one_shot_timer != NULL);
+  spin_init(&pending_alarm_lock);
+  pending_alarm_tree = create_rb_tree();
+
+  cond_init(&alarm_cond, 0);
+  thread_create(alarm_event_loop, NULL);
+}
+
+clockid_t timer_create_alarm(clock_t expires, timer_cb_t callback, void *data) {
+  if (expires < clock_now()) {
+    return -EINVAL;
+  }
+
+  uint32_t id = atomic_fetch_add(&next_alarm_id, 1);
+  timer_alarm_t *alarm = kmalloc(sizeof(timer_alarm_t));
+  alarm->id = id;
+  alarm->expires = expires;
+  alarm->callback = callback;
+  alarm->data = data;
+
+  spin_lock(&pending_alarm_lock);
+  rb_tree_insert(pending_alarm_tree, id, alarm);
+
+  // check if timer needs to be updated
+  if (alarm == pending_alarm_tree->min->data) {
+    // set timer to new most-recently expiring alarm expiry
+    int result = set_alarm_timer_value(global_one_shot_timer, alarm->expires);
+    if (result < 0) {
+      panic("failed to set alarm timer value");
+    }
+  }
+
+  spin_unlock(&pending_alarm_lock);
+  return alarm->id;
+}
+
+void *timer_delete_alarm(clockid_t id) {
+  spin_lock(&pending_alarm_lock);
+  timer_alarm_t *alarm = rb_tree_delete(pending_alarm_tree, id);
+  spin_unlock(&pending_alarm_lock);
+  if (alarm == NULL) {
+    return NULL;
+  }
+
+  void *data = alarm->data;
+  kfree(alarm);
+  return data;
+}
+
+clock_t timer_now() {
+  return clock_now();
+}
+
+//
+
 int timer_enable(uint16_t type) {
   timer_device_t *td = NULL;
   if (type == TIMER_PERIODIC) {
@@ -147,7 +255,7 @@ int timer_disable(uint16_t type) {
   return td->disable(td);
 }
 
-int timer_setval(uint16_t type, uint64_t value) {
+int timer_setval(uint16_t type, clock_t value) {
   timer_device_t *td = NULL;
   if (type == TIMER_PERIODIC) {
     td = global_periodic_timer;
@@ -161,126 +269,12 @@ int timer_setval(uint16_t type, uint64_t value) {
     return -ENODEV;
   }
 
-  return td->setval(td, value);
-}
-
-static inline id_t alloc_id() {
-  return atomic_fetch_add(&__id, 1);
-}
-
-//
-
-void handle_insert_node(rb_tree_t *_tree, rb_node_t *node) {
-  // spinrw_aquire_write(&lock);
-  timer_event_t *timer = node->data;
-  rb_tree_insert(lookup_tree, timer->id, node);
-  // spinrw_release_write(&lock);
-}
-
-static rb_tree_events_t events = {
-  .post_insert_node = handle_insert_node
-};
-
-//
-
-void timer_handler() {
-  cond_signal(&event);
-  // kprintf("interrupting thread %d process %d\n", gettid(), getpid());
-  // thread_yield();
-}
-
-noreturn void *timer_event_loop(void *arg) {
-  while (true) {
-    cond_wait(&event);
-
-    timer_event_t *timer = tree->min->data;
-    clock_t expiry = timer->expiry;
-    if (/*lock.locked */false || timer->cpu != PERCPU_ID) {
-      continue;
-    }
-
-  dispatch:;
-    PERCPU_THREAD->preempt_count++;
-    timer->callback(timer->data);
-    PERCPU_THREAD->preempt_count--;
-
-    // spinrw_aquire_write(&lock);
-    rb_tree_delete_node(tree, tree->min);
-    rb_tree_delete(lookup_tree, timer->id);
-    // spinrw_release_write(&lock);
-
-    kfree(timer);
-    timer = tree->min->data;
-    if (timer && timer->cpu == PERCPU_ID && timer->expiry == expiry) {
-      goto dispatch;
-    } else if (timer) {
-
-    }
-  }
-}
-
-//
-
-uint64_t timer_now() {
-  return 0;
-}
-
-void __timer_init() {
-  // ioapic_set_irq(0, 2, VECTOR_HPET_TIMER);
-  // idt_gate_t gate = gate((uintptr_t) hpet_handler, KERNEL_CS, 0, INTERRUPT_GATE, 0, 1);
-  // idt_set_gate(VECTOR_HPET_TIMER, gate);
-
-  tree = create_rb_tree();
-  tree->events = &events;
-
-  lookup_tree = create_rb_tree();
-
-  cond_init(&event, 0);
-  thread_create(timer_event_loop, NULL);
-  // spinrw_init(&lock);
-}
-
-id_t create_timer(clock_t ns, timer_cb_t callback, void *data) {
-  timer_event_t *timer = kmalloc(sizeof(timer_event_t));
-  timer->id = alloc_id();
-  timer->cpu = PERCPU_ID;
-  timer->expiry = ns;
-  timer->callback = callback;
-  timer->data = data;
-
-  if (tree->min == tree->nil || ns < tree->min->key) {
-
+  uint64_t count = value / td->scale_ns;
+  if (count > td->value_mask) {
+    return -EOVERFLOW;
   }
 
-  // spinrw_aquire_write(&lock);
-  rb_tree_insert(tree, ns, timer);
-  // spinrw_release_write(&lock);
-  return timer->id;
+  kprintf("timer: setval() value=%llu count=%llu\n", value, count);
+  return td->setval(td, count);
 }
 
-void *timer_cancel(id_t id) {
-  // spinrw_aquire_write(&lock);
-  rb_node_t *node = rb_tree_find(lookup_tree, id);
-  if (node == NULL) {
-    // spinrw_release_write(&lock);
-    return NULL;
-  }
-
-  timer_event_t *timer = rb_tree_delete_node(tree, node->data);
-  rb_tree_delete_node(lookup_tree, node);
-  // spinrw_release_write(&lock);
-  void *data = timer->data;
-  kfree(timer);
-  return data;
-}
-
-void timer_print_debug() {
-  // spinrw_aquire_read(&lock);
-  rb_iter_t *iter = rb_tree_iter(tree);
-  rb_node_t *node;
-  while ((node = rb_iter_next(iter))) {
-    kprintf("timer %d | %s\n", node->key, ((timer_event_t *) node->data)->data);
-  }
-  kfree(iter);
-  // spinrw_release_read(&lock);
-}

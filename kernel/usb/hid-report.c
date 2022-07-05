@@ -362,11 +362,11 @@ report_format_t *hid_parse_report_descriptor(uint8_t *desc, size_t length) {
     }
 
     // super hacky way to fix indentation of END_COLLECTION tags
-    if (type == TYPE_MAIN && tag == END_COLLECTION_TAG) {
-      print_tag(type, tag, data, state, max(indent - 2, 0));
-    } else {
-      print_tag(type, tag, data, state, indent);
-    }
+    // if (type == TYPE_MAIN && tag == END_COLLECTION_TAG) {
+    //   print_tag(type, tag, data, state, max(indent - 2, 0));
+    // } else {
+    //   print_tag(type, tag, data, state, indent);
+    // }
 
     switch (type) {
       case TYPE_MAIN:

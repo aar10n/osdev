@@ -6,7 +6,10 @@
 #include <usb/hid.h>
 #include <usb/hid-report.h>
 #include <usb/hid-usage.h>
+
+#include <mm.h>
 #include <event.h>
+#include <string.h>
 #include <printf.h>
 
 key_event_t *event_queue_first = NULL;
@@ -168,7 +171,7 @@ void hid_keyboard_handle_input(hid_device_t *device, const uint8_t *buffer) {
       }
     }
 
-   make_event: NULL;
+LABEL(make_event);
     if (ptr == NULL) {
       ptr = kmalloc(sizeof(key_event_t));
       if (event_queue_first == NULL) {
@@ -184,7 +187,7 @@ void hid_keyboard_handle_input(hid_device_t *device, const uint8_t *buffer) {
     ptr->release = release;
     ptr->next = NULL;
     ptr = ptr->next;
-    label(cont);
+LABEL(cont);
   }
 
   memcpy(kb->prev_buffer, buffer, device->size);

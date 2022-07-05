@@ -6,9 +6,6 @@
 
 extern irq_handler
 extern exception_handler
-extern timer_handler
-
-extern scheduler_tick
 
 %define NULL 0
 %define KERNEL_OFFSET 0xFFFFFF8000000000
@@ -172,27 +169,4 @@ __exception_handler:
   swapgs_if_needed 24
 
   add rsp, 16 ; skip vector + error code
-  iretq
-
-;
-
-global ignore_irq
-ignore_irq:
-  iretq
-
-global hpet_handler
-hpet_handler:
-  ; send apic eoi
-  mov dword [APIC_BASE + APIC_REG_EOI], 0
-  pushall
-  call timer_handler
-  popall
-  iretq
-
-global tick_handler
-tick_handler:
-  mov dword [APIC_BASE + APIC_REG_EOI], 0
-  pushall
-  call scheduler_tick
-  popall
   iretq

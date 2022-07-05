@@ -7,11 +7,13 @@
 #include <usb/hid-report.h>
 #include <usb/hid-usage.h>
 
+#include <mm.h>
 #include <string.h>
 #include <printf.h>
 
 uint16_t mouse_x = 0;
 uint16_t mouse_y = 0;
+uint8_t mouse_buttons = 0;
 
 hid_mouse_t *hid_mouse_init(report_format_t *format) {
   collection_node_t *collection = (void *) format->root->children;
@@ -62,6 +64,7 @@ void hid_mouse_handle_input(hid_device_t *device, const uint8_t *buffer) {
 
   mouse_x = min(mouse_x + pos_x, boot_info_v2->fb_width);
   mouse_y = min(mouse_y + pos_y, boot_info_v2->fb_height);
+  mouse_buttons = buttons;
   // kprintf("MOUSE\n");
   // kprintf("  buttons: %b\n", buttons);
   // kprintf("  x: %d\n", pos_x);

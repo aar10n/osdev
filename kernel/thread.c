@@ -246,7 +246,7 @@ int thread_receive(thread_t *thread, void **data) {
 
 void thread_sleep(uint64_t us) {
   thread_trace_debug("thread %d process %d sleeping for %lf seconds", gettid(), getpid(), (double)(us) / 1e6);
-  scheduler_sleep(us * 1000);
+  scheduler_sleep(us * (NS_PER_SEC / US_PER_SEC));
   thread_trace_debug("thread %d process %d wakeup", gettid(), getpid());
 }
 

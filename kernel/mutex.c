@@ -218,9 +218,14 @@ int cond_wait_timeout(cond_t *cond, uint64_t us) {
     return 0;
   }
 
-  id_t id = create_timer(timer_now() + (us * 1000), cond_timeout_cb, cond);
+  uint64_t timeout_ns = us * (NS_PER_SEC / US_PER_SEC);
+  clockid_t id = timer_create_alarm(timer_now() + timeout_ns, cond_timeout_cb, cond);
+  if (id < 0) {
+    return id;
+  }
+
   cond_wait(cond);
-  timer_cancel(id);
+  timer_delete_alarm(id);
   if (cond->flags & M_TIMEOUT){
     cond->flags ^= M_TIMEOUT;
     return 1;

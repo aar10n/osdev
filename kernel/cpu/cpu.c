@@ -12,17 +12,10 @@
 #include <panic.h>
 #include <printf.h>
 
-void __flush_tlb();
-void __disable_interrupts();
-void __enable_interrupts();
-uint64_t __read_rsp();
-void __write_rsp(uint64_t);
 void __load_gdt(uint64_t);
 void __load_idt(uint64_t);
 void __load_tr(uint16_t);
 void __flush_gdt();
-uint32_t __save_clear_interrupts();
-void __restore_interrupts(uint32_t rflags);
 
 // 0x1
 #define CPU_EDX_DE         (1 << 2)
@@ -453,17 +446,6 @@ void cpu_print_features() {
 
 //
 
-void cpu_flush_tlb() {
-  __flush_tlb();
-}
-
-void cpu_disable_interrupts() {
-  __disable_interrupts();
-}
-
-void cpu_enable_interrupts() {
-  __enable_interrupts();
-}
 
 void cpu_disable_write_protection() {
   uint64_t cr0 = __read_cr0();
@@ -474,14 +456,6 @@ void cpu_enable_write_protection() {
   uint64_t cr0 = __read_cr0();
   __write_cr0(cr0 | CPU_CR0_WP);
 }
-
-// uint64_t cpu_read_stack_pointer() {
-//   return __read_rsp();
-// }
-//
-// void cpu_write_stack_pointer(uint64_t sp) {
-//   __write_rsp(sp);
-// }
 
 //
 

@@ -108,23 +108,34 @@ noreturn void wakeup_process() {
 
 _Noreturn void launch() {
   kprintf("[pid %d] launch\n", getpid());
-  kprintf("haulting...\n");
+  cpu_enable_interrupts();
+  alarms_init();
 
   fs_init();
   pcie_discover();
 
-  usb_init();
-
-  while (true) {
-    cpu_pause();
-  }
-
-  ahci_init();
+  // uint64_t us = US_PER_SEC * 2;
+  // uint64_t us = 16000;
+  // kprintf("sleeping for %llu us\n", us);
+  // thread_sleep(us);
+  // kprintf("done!\n");
+  //
+  // kprintf("sleeping again\n", us);
+  // thread_sleep(us);
+  // kprintf("done!\n");
 
   events_init();
+  usb_init();
 
-  //
+  fs_lsdir("/dev");
 
+  kprintf("haulting...\n");
+  while (true) {
+    cpu_pause();
+    thread_yield();
+  }
+
+  // ahci_init();
   // if (fs_mount("/", "/dev/sdb", "ext2") < 0) {
   //   kprintf("%s\n", strerror(ERRNO));
   // }
@@ -176,9 +187,6 @@ _Noreturn void launch() {
 void _print_pgtable_indexes(uintptr_t addr);
 void _print_pgtable_address(uint16_t l4, uint16_t l3, uint16_t l2, uint16_t l1);
 
-extern clock_source_t *current_clock_source;
-extern timer_device_t *global_timer_device;
-
 __used void kmain() {
   console_early_init();
   cpu_init();
@@ -191,6 +199,7 @@ __used void kmain() {
   irq_init();
   init_mem_zones();
   init_address_space();
+  clock_init();
 
   // page_t *pages = _alloc_pages(2, PG_WRITE);
   // kprintf("[kernel] allocated pages: %p\n", pages->address);
@@ -203,13 +212,6 @@ __used void kmain() {
   // _print_pgtable_address(511, 0, 511, 0);
   // _print_pgtable_address(511, 1, 0, 0);
 
-  clock_init();
-  // global_timer_device->setval(global_timer_device, 1e9);
-  // global_timer_device->enable(global_timer_device);
-
-  cpu_enable_interrupts();
-
-  // fs_init();
   // syscalls_init();
   // smp_init();
 
@@ -217,10 +219,6 @@ __used void kmain() {
   process_t *root = process_create_root(launch);
   scheduler_init(root);
   unreachable;
-  kprintf("haulting...\n");
-  while (true) {
-    cpu_pause();
-  }
 }
 
 __used void ap_main() {

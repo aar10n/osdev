@@ -2,7 +2,7 @@
 // Created by Aaron Gill-Braun on 2020-09-20.
 //
 
-#include <cpu/idt.h>
+// #include <cpu/idt.h>
 #include <cpu/io.h>
 #include <device/pic.h>
 #include <vectors.h>
@@ -12,7 +12,7 @@
 #define PIC2_COMMAND 0xA0
 #define PIC2_DATA    0xA1
 
-extern void ignore_irq();
+// extern void ignore_irq();
 
 void pic_init() {
   // initialize both pics
@@ -36,11 +36,11 @@ void pic_init() {
   outb(PIC2_DATA, 0xFF);
 
   // set the relevant gates to use the pic handler
-  idt_gate_t gate = gate((uintptr_t) ignore_irq, KERNEL_CS, 0, INTERRUPT_GATE, 0, 1);
-  for (int i = VECTOR_PIC_IRQ0; i <= VECTOR_PIC_IRQ7; i++) {
-    idt_set_gate(i, gate);
-  }
-  for (int i = VECTOR_PIC_IRQ8; i <= VECTOR_PIC_IRQ15; i++) {
-    idt_set_gate(i, gate);
-  }
+  // idt_gate_t gate = gate((uintptr_t) ignore_irq, KERNEL_CS, 0, INTERRUPT_GATE, 0, 1);
+  // for (int i = VECTOR_PIC_IRQ0; i <= VECTOR_PIC_IRQ7; i++) {
+  //   idt_set_gate(i, gate);
+  // }
+  // for (int i = VECTOR_PIC_IRQ8; i <= VECTOR_PIC_IRQ15; i++) {
+  //   idt_set_gate(i, gate);
+  // }
 }

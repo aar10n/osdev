@@ -11,7 +11,6 @@
 
 #define ERRNO (PERCPU_THREAD->errno)
 
-#define KERNEL_STACK_SIZE 0x2000   // 8 KiB
 #define USER_VSTACK_SIZE  0x20000  // 128 KiB
 #define USER_PSTACK_SIZE  0x20000  // 128 KiB
 #define TLS_SIZE          0x2000   // 8 KiB
