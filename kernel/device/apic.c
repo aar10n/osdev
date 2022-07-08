@@ -107,7 +107,7 @@ void remap_apic_registers(void *data) {
 
 void register_apic(uint8_t id) {
   apic_reg_id_t current_id = { .raw = apic_read(APIC_ID) };
-  kprintf("APIC: registering APIC %d (current ID %d) [%d]\n", id, __read_msr(IA32_TSC_AUX_MSR), current_id.id);
+  kprintf("APIC: registering APIC %d (current ID %d) [%d]\n", id, cpu_read_msr(IA32_TSC_AUX_MSR), current_id.id);
 }
 
 //
@@ -120,9 +120,9 @@ void get_cpu_clock() {
 
   min = UINT64_MAX;
   for (int i = 0; i < 5; i++) {
-    t0 = __read_tsc();
+    t0 = cpu_read_tsc();
     pit_mdelay(ms);
-    t1 = __read_tsc();
+    t1 = cpu_read_tsc();
 
     uint64_t diff = t1 - t0;
     if (diff < min) {
@@ -201,8 +201,8 @@ void apic_init() {
   apic_base = virt_addr;
 
   // ensure the apic is enabled
-  uint64_t apic_msr = read_msr(IA32_APIC_BASE_MSR);
-  write_msr(IA32_APIC_BASE_MSR, apic_msr | (1 << 11));
+  uint64_t apic_msr = cpu_read_msr(IA32_APIC_BASE_MSR);
+  cpu_write_msr(IA32_APIC_BASE_MSR, apic_msr | (1 << 11));
 
   apic_reg_id_t id = { .raw = apic_read(APIC_ID) };
   kprintf("[apic] id: %d\n", id.id);

@@ -33,60 +33,8 @@ typedef struct packed idt_gate {
 } idt_gate_t;
 static_assert(sizeof(idt_gate_t) == 16);
 
-typedef struct packed {
-  union {
-    uint64_t rax;
-    struct {
-      uint32_t     : 32;
-      uint32_t eax : 32;
-    };
-  };
-  union {
-    uint64_t rcx;
-    struct {
-      uint32_t     : 32;
-      uint32_t ecx : 32;
-    };
-  };
-  union {
-    uint64_t rdx;
-    struct {
-      uint32_t     : 32;
-      uint32_t edx : 32;
-    };
-  };
-  union {
-    uint64_t rdi;
-    struct {
-      uint32_t     : 32;
-      uint32_t edi : 32;
-    };
-  };
-  union {
-    uint64_t rsi;
-    struct {
-      uint32_t     : 32;
-      uint32_t esi : 32;
-    };
-  };
-  uint64_t r8;
-  uint64_t r9;
-  uint64_t r10;
-  uint64_t r11;
-} regs_t;
-static_assert(sizeof(regs_t) == (sizeof(uint64_t) * 9));
-
 typedef void (*idt_function_t)(uint8_t, void *);
 
-typedef struct {
-  idt_function_t fn;
-  void *data;
-} idt_handler_t;
-
 void setup_idt();
-void idt_set_gate(uint8_t vector, idt_gate_t gate);
-
-void idt_hook(uint8_t vector, idt_function_t fn, void *data);
-void *idt_unhook(uint8_t vector);
 
 #endif // KERNEL_CPU_IDT_H

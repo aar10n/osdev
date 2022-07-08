@@ -9,7 +9,21 @@ struct timespec {
 #else
 #include <bits/ansi/time_t.h>
 #include <bits/ansi/timespec.h>
+#include <abi-bits/blkcnt_t.h>
+#include <abi-bits/blksize_t.h>
+#include <abi-bits/dev_t.h>
+#include <abi-bits/ino_t.h>
+#include <abi-bits/mode_t.h>
+#include <abi-bits/nlink_t.h>
+#include <abi-bits/gid_t.h>
+#include <abi-bits/uid_t.h>
+#include <bits/off_t.h>
 #endif
+
+#define PATH_MAX 256
+#define NAME_MAX 32
+
+#define S_IFMT   0xFFF0000
 
 #define S_IFFBF  0x1000000 // Framebuffer special.
 #define S_IFMNT  0x0800000 // Filesystem mount.

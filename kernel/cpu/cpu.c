@@ -12,11 +12,6 @@
 #include <panic.h>
 #include <printf.h>
 
-void __load_gdt(uint64_t);
-void __load_idt(uint64_t);
-void __load_tr(uint16_t);
-void __flush_gdt();
-
 // 0x1
 #define CPU_EDX_DE         (1 << 2)
 #define CPU_EDX_TSC        (1 << 4)
@@ -264,7 +259,7 @@ void cpu_init() {
   }
 
   // enable NX and Fast FXSR
-  uint64_t efer = __read_msr(IA32_EFER_MSR);
+  uint64_t efer = cpu_read_msr(IA32_EFER_MSR);
   if (features.nx) {
     kprintf("NX enabled\n");
     efer |= CPU_EFER_NX;
@@ -273,12 +268,11 @@ void cpu_init() {
     kprintf("FXSR enabled\n");
     efer |= CPU_EFER_FFXSR;
   }
-  __write_msr(IA32_EFER_MSR, efer);
-
+  cpu_write_msr(IA32_EFER_MSR, efer);
 
   // save cpu id to aux msr
   uint32_t id = cpu_get_id();
-  __write_msr(IA32_TSC_AUX_MSR, id);
+  cpu_write_msr(IA32_TSC_AUX_MSR, id);
 
   // callibrate processor frequency
   kprintf("calibrating processor frequency...\n");
@@ -287,9 +281,9 @@ void cpu_init() {
   uint64_t cycles = UINT64_MAX;
   uint64_t t0, t1, dt;
   for (int i = 0; i < 5; i++) {
-    t0 = __read_tsc();
+    t0 = cpu_read_tsc();
     pit_mdelay(ms);
-    t1 = __read_tsc();
+    t1 = cpu_read_tsc();
     dt = t1 - t0;
     cycles = min(cycles, dt);
   }
@@ -334,7 +328,7 @@ uint32_t cpu_get_id() {
 }
 
 int cpu_get_is_bsp() {
-  uint32_t apic_base = read_msr(IA32_APIC_BASE_MSR);
+  uint32_t apic_base = cpu_read_msr(IA32_APIC_BASE_MSR);
   return (apic_base >> 8) & 1;
 }
 
@@ -455,22 +449,4 @@ void cpu_disable_write_protection() {
 void cpu_enable_write_protection() {
   uint64_t cr0 = __read_cr0();
   __write_cr0(cr0 | CPU_CR0_WP);
-}
-
-//
-
-void cpu_load_gdt(void *gdt) {
-  __load_gdt((uint64_t) gdt);
-}
-
-void cpu_load_idt(void *idt) {
-  __load_idt((uint64_t) idt);
-}
-
-void cpu_load_tr(uint16_t tr) {
-  __load_tr(tr);
-}
-
-void cpu_reload_segments() {
-  __flush_gdt();
 }

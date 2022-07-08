@@ -25,62 +25,20 @@ cpu_restore_interrupts:
   popfq
   ret
 
-global cli
-cli:
-  cli
+; General Registers
+
+global cpu_read_stack_pointer
+cpu_read_stack_pointer:
+  mov rax, rsp
   ret
 
-global sti
-sti:
-  sti
+global cpu_write_stack_pointer
+cpu_write_stack_pointer:
+  mov rsp, rdi
   ret
 
-global cli_save
-cli_save:
-  pushfq
-  pop rax
-  cli
-  ret
-
-global sti_restore
-sti_restore:
-  push rdi
-  popfq
-  ret
-
-; Registers
-
-global __read_tsc
-__read_tsc:
-  mov eax, 0x1
-  cpuid
-  rdtsc
-  mov cl, 32
-  shl rdx, cl
-  or rax, rdx
-  ret
-
-global __read_tscp
-__read_tscp:
-  mfence
-  rdtscp
-  lfence
-  mov cl, 32
-  shl rdx, cl
-  or rax, rdx
-  ret
-
-global read_tsc
-read_tsc:
-  rdtsc
-  mov cl, 32
-  shl rdx, cl
-  or rax, rdx
-  ret
-
-
-global __read_msr
-__read_msr:
+global cpu_read_msr
+cpu_read_msr:
   mov ecx, edi
   rdmsr
 
@@ -88,8 +46,8 @@ __read_msr:
   or rax, rdx
   ret
 
-global __write_msr
-__write_msr:
+global cpu_write_msr
+cpu_write_msr:
   mov rax, rsi
   mov rdx, rsi
   shr rdx, 32
@@ -98,113 +56,77 @@ __write_msr:
   wrmsr
   ret
 
-global read_msr
-read_msr:
-  mov ecx, edi
-  rdmsr
-
+global cpu_read_tsc
+cpu_read_tsc:
+  mov eax, 0x1
+  cpuid
+  rdtsc
   mov cl, 32
   shl rdx, cl
   or rax, rdx
   ret
 
-global write_msr
-write_msr:
-  mov rax, rsi
-  mov rdx, rsi
-  mov cl, 32
-  shr rdx, cl
+;
 
-  mov ecx, edi
-  wrmsr
-  ret
-
-
-global read_fsbase
-read_fsbase:
-  mov rdi, FS_BASE_MSR
-  call read_msr
-  ret
-
-global write_fsbase
-write_fsbase:
+global cpu_read_fsbase
+cpu_read_fsbase:
   mov rsi, rdi
   mov rdi, FS_BASE_MSR
-  call write_msr
+  call cpu_read_msr
   ret
 
-global __write_fsbase
-__write_fsbase:
+global cpu_write_fsbase
+cpu_write_fsbase:
   mov rsi, rdi
   mov rdi, FS_BASE_MSR
-  call write_msr
+  call cpu_write_msr
   ret
 
-global read_gsbase
-read_gsbase:
+global cpu_read_gsbase
+cpu_read_gsbase:
   mov rdi, GS_BASE_MSR
-  call read_msr
+  call cpu_read_msr
   ret
 
-global write_gsbase
-write_gsbase:
+global cpu_write_gsbase
+cpu_write_gsbase:
   mov rsi, rdi
   mov rdi, GS_BASE_MSR
-  call write_msr
+  call cpu_write_msr
   ret
 
-global read_kernel_gsbase
-read_kernel_gsbase:
+global cpu_read_kernel_gsbase
+cpu_read_kernel_gsbase:
   mov rdi, KERNEL_GS_BASE_MSR
-  call read_msr
+  call cpu_read_msr
   ret
 
-global write_kernel_gsbase
-write_kernel_gsbase:
+global cpu_write_kernel_gsbase
+cpu_write_kernel_gsbase:
   mov rsi, rdi
   mov rdi, KERNEL_GS_BASE_MSR
-  call write_msr
-  ret
-
-global swapgs
-swapgs:
-  swapgs
+  call cpu_write_msr
   ret
 
 ; GDT/IDT
 
-global __load_gdt
-__load_gdt:
+global cpu_load_gdt
+cpu_load_gdt:
   lgdt [rdi]
   ret
 
-global load_gdt
-load_gdt:
-  lgdt [rdi]
-  ret
-
-global __load_idt
-__load_idt:
+global cpu_load_idt
+cpu_load_idt:
   lidt [rdi]
   ret
 
-global load_idt
-load_idt:
-  lidt [rdi]
-  ret
-
-global __load_tr
-__load_tr:
+global cpu_load_tr
+cpu_load_tr:
   ltr di
   ret
 
-global load_tr
-load_tr:
-  ltr di
-  ret
-
-global __flush_gdt
-__flush_gdt:
+global cpu_reload_segments
+cpu_reload_segments:
   push 0x08
   lea rax, [rel .reload]
   push rax
@@ -225,56 +147,8 @@ __flush_gdt:
   push qword 0x08 ; new cs
   push rax        ; rip
   iretq
-__flush_gdt_end:
-  pop rbp
-
-
-global flush_gdt
-flush_gdt:
-  push rbp
-  mov rbp, rsp
-
-  mov ax, 0x00
-  mov ds, ax
-  mov es, ax
-
-  lea rax, [rel .flush]
-
-  ; set up the stack frame so we can call
-  ; iretq to set our new cs register value
-  push qword 0x10 ; new ss
-  push rbp        ; rsp
-  pushfq          ; flags
-  push qword 0x08 ; new cs
-  push rax        ; rip
-  iretq
-.flush:
-  pop rbp
-
-
-; General Registers
-
-global cpu_read_stack_pointer
-cpu_read_stack_pointer:
-  mov rax, rsp
-  ret
-
-global cpu_write_stack_pointer
-cpu_write_stack_pointer:
-  mov rsp, rdi
-  ret
 
 ; Control Registers
-
-global read_cr0
-read_cr0:
-  mov rax, cr0
-  ret
-
-global write_cr0
-write_cr0:
-  mov cr0, rdi
-  ret
 
 global __read_cr0
 __read_cr0:
@@ -334,17 +208,6 @@ __xsetbv:
 
 global cpu_flush_tlb
 cpu_flush_tlb:
-  mov rax, cr3
-  mov cr3, rax
-  ret
-
-global tlb_invlpg
-tlb_invlpg:
-  invlpg [rdi]
-  ret
-
-global tlb_flush
-tlb_flush:
   mov rax, cr3
   mov cr3, rax
   ret

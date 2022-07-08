@@ -8,7 +8,7 @@
 #ifdef __KERNEL__
 #include <abi/types.h>
 #else
-#include <bits/feature.h>
+#include <sys/types.h>
 #include <abi-bits/pid_t.h>
 #include <abi-bits/uid_t.h>
 
@@ -102,6 +102,15 @@ extern "C" {
 #define SA_NODEFER (1 << 6)
 
 #define MINSIGSTKSZ 2048
+#define SIGSTKSZ 8192
+#define SS_ONSTACK 1
+#define SS_DISABLE 2
+
+typedef struct __stack {
+  void *ss_sp;
+  size_t ss_size;
+  int ss_flags;
+} stack_t;
 
 // constants for sigev_notify of struct sigevent
 #define SIGEV_NONE 1

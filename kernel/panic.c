@@ -10,7 +10,7 @@
 
 /** panic - hault the system */
 noreturn void panic(const char *fmt, ...) {
-  cli();
+  cpu_disable_interrupts();
 
   kprintf("PANIC: ");
   va_list valist;

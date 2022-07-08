@@ -53,7 +53,7 @@
 extern swap_address_space
 
 extern thread_entry
-extern __write_fsbase
+extern cpu_write_fsbase
 
 
 global thread_entry_stub
@@ -124,7 +124,7 @@ thread_switch:
   push rsi
   ; write tls base address
   mov rdi, rax
-  call __write_fsbase
+  call cpu_write_fsbase
   pop rsi
   pop rdi
 

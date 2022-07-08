@@ -14,7 +14,7 @@ static inline void __preempt_disable() {
   if (PERCPU_THREAD != NULL) {
     preempt_disable();
   } else {
-    PERCPU_SET_RFLAGS(cli_save());
+    PERCPU_SET_RFLAGS(cpu_save_clear_interrupts());
   }
 }
 
@@ -22,7 +22,7 @@ static inline void __preempt_enable() {
   if (PERCPU_THREAD != NULL) {
     preempt_enable();
   } else {
-    sti_restore(PERCPU_RFLAGS);
+    cpu_restore_interrupts(PERCPU_RFLAGS);
   }
 }
 

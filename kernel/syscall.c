@@ -294,7 +294,7 @@ static pid_t sys_fork() {
 
 static void sys_set_fs_base(uintptr_t addr) {
   PERCPU_THREAD->tls->addr = addr;
-  write_fsbase(addr);
+  cpu_write_fsbase(addr);
 }
 
 static void sys_panic(const char *message) {
@@ -412,9 +412,9 @@ static int num_syscalls = sizeof(syscalls) / sizeof(void *);
 
 
 void syscalls_init() {
-  write_msr(IA32_LSTAR_MSR, (uintptr_t) syscall_handler);
-  write_msr(IA32_SFMASK_MSR, 0);
-  write_msr(IA32_STAR_MSR, 0x10LL << 48 | KERNEL_CS << 32);
+  cpu_write_msr(IA32_LSTAR_MSR, (uintptr_t) syscall_handler);
+  cpu_write_msr(IA32_SFMASK_MSR, 0);
+  cpu_write_msr(IA32_STAR_MSR, 0x10LL << 48 | KERNEL_CS << 32);
 }
 
 __used int handle_syscall(

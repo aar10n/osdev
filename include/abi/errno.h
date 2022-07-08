@@ -91,4 +91,33 @@
 #define EFAILED 84         // General failure.
 #define ERRNO_MAX 84
 
+#define ENOKEY 1078
+#define ESHUTDOWN 1079
+#define EHOSTDOWN 1080
+#define EBADFD 1081
+#define ENOMEDIUM 1082
+#define ENONET 1084
+#define EPFNOSUPPORT 1085
+#define ESOCKTNOSUPPORT 1086
+#define ESTRPIPE 1087
+#define EREMOTEIO 1088
+#define ERFKILL 1089
+#define EBADR 1090
+#define EUNATCH 1091
+#define EMEDIUMTYPE 1092
+#define EREMOTE 1093
+#define EKEYREJECTED 1094
+#define EUCLEAN 1095
+#define EBADSLT 1096
+#define ENOANO 1097
+#define ENOCSI 1098
+#define ETOOMANYREFS 1100
+#define ENOPKG 1101
+#define EKEYREVOKED 1102
+#define EXFULL 1103
+#define ELNRNG 1104
+#define ENOTUNIQ 1105
+#define ERESTART 1106
+#define EUSERS 1107
+
 #endif

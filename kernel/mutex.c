@@ -45,7 +45,7 @@
 #define M_QUEUE_LOCKED (1 << B_QUEUE_LOCKED)
 
 static inline uint64_t inline_lock(volatile uint32_t *flags) {
-  uint64_t rflags = cli_save();
+  uint64_t rflags = cpu_save_clear_interrupts();
   if (atomic_bit_test_and_set(flags, B_QUEUE_LOCKED)) {
     while (atomic_bit_test_and_set(flags, B_QUEUE_LOCKED)) {
       cpu_pause(); // spin
@@ -56,7 +56,7 @@ static inline uint64_t inline_lock(volatile uint32_t *flags) {
 
 static inline void inline_unlock(volatile uint32_t *flags, uint64_t rflags) {
   atomic_bit_test_and_reset(flags, B_QUEUE_LOCKED);
-  sti_restore(rflags);
+  cpu_restore_interrupts(rflags);
 }
 
 void safe_enqeue(volatile uint32_t *flags, tqueue_t *queue, thread_t *thread) {

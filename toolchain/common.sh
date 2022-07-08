@@ -13,6 +13,12 @@
 BUILD_DIR=${BUILD_DIR:-${PROJECT_DIR}/build}
 SYS_ROOT=${SYS_ROOT:-${BUILD_DIR}/sysroot}
 NPROC=${NPROC:-$(nproc)}
+MAKE="${MAKE:-make}"
+MAKE_j="${MAKE:-make} -j${NPROC}"
+
+# colors
+CYAN="\033[36m"
+RESET="\033[0m"
 
 # toolchain::util::check_args
 # args:
@@ -53,6 +59,25 @@ toolchain::util::error() {
   echo "${context}: error: $1" >&2
 }
 
+# toolchain::util::symlink
+# args:
+#   <2>: src file
+#   <1>: dest file
+toolchain::util::symlink() {
+  toolchain::util::check_args 2 $@
+
+  local srcfile="$1"
+  local destfile="$2"
+  shift 2
+
+  local destdir=$(dirname ${destfile})
+  local destname=$(basename ${destfile})
+  mkdir -p ${destdir}
+  link=$(realpath --relative-to=${destdir} ${srcfile})
+  ln -sf ${link} ${destdir}/${destname}
+}
+
+
 # toolchain::util::configure
 # args:
 #   <1>: configure path
@@ -91,5 +116,39 @@ toolchain::util::make_install() {
   fi
 
   make ${1:-install}
+}
+
+
+# toolchain::util::configure_step
+# args:
+#   <1..N>: args
+toolchain::util::configure_step() {
+  if [ "${SKIP_CONFIGURE}" == "1" ]; then
+    echo "skipping configure"
+    return 0
+  fi
+  $@
+}
+
+# toolchain::util::build_step
+# args:
+#   <1..N>: args
+toolchain::util::build_step() {
+  if [ "${SKIP_BUILD}" == "1" ]; then
+    echo "skipping building"
+    return 0
+  fi
+  $@
+}
+
+# toolchain::util::install_step
+# args:
+#   <1..N>: args
+toolchain::util::install_step() {
+  if [ "${SKIP_INSTALL}" == "1" ]; then
+    echo "skipping install"
+    return 0
+  fi
+  $@
 }
 

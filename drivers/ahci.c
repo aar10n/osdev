@@ -3,15 +3,14 @@
 //
 
 #include <drivers/ahci.h>
-#include <device/ioapic.h>
-#include <cpu/idt.h>
+
 #include <bus/pcie.h>
+
 #include <mm.h>
+#include <fs.h>
 #include <panic.h>
 #include <printf.h>
 #include <string.h>
-#include <vectors.h>
-#include <fs.h>
 
 #include <asm/bits.h>
 
@@ -322,7 +321,6 @@ void ahci_init() {
   // idt_hook(VECTOR_AHCI_IRQ, interrupt_handler, NULL);
 
   ahci_discover(controller);
-
   kprintf("[ahci] done!\n");
 }
 

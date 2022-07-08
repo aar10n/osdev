@@ -114,20 +114,7 @@ _Noreturn void launch() {
   fs_init();
   pcie_discover();
 
-  // uint64_t us = US_PER_SEC * 2;
-  // uint64_t us = 16000;
-  // kprintf("sleeping for %llu us\n", us);
-  // thread_sleep(us);
-  // kprintf("done!\n");
-  //
-  // kprintf("sleeping again\n", us);
-  // thread_sleep(us);
-  // kprintf("done!\n");
-
-  events_init();
   usb_init();
-
-  fs_lsdir("/dev");
 
   kprintf("haulting...\n");
   while (true) {
@@ -140,21 +127,14 @@ _Noreturn void launch() {
   //   kprintf("%s\n", strerror(ERRNO));
   // }
 
-  // pid_t target = process_create(example_process);
-  // message_t msg = {
-  //   .origin = 1,
-  //   .type = 2,
-  // };
-  // ipc_send(target, &msg);
-
   // fs_open("/dev/stdin", O_RDONLY, 0);
   // fs_open("/dev/stdout", O_WRONLY, 0);
   // fs_open("/dev/stderr", O_WRONLY, 0);
   // process_execve("/bin/winserv", (void *) argv, NULL);
 
   // process_create(wakeup_process);
-  uint32_t width = boot_info->fb_width;
-  uint32_t height = boot_info->fb_height;
+  uint32_t width = boot_info_v2->fb_width;
+  uint32_t height = boot_info_v2->fb_height;
   size_t len = width * height;
   uint32_t *fb = (void *) FRAMEBUFFER_VA;
   while (true) {
@@ -199,20 +179,11 @@ __used void kmain() {
   irq_init();
   init_mem_zones();
   init_address_space();
+
   clock_init();
+  events_init();
 
-  // page_t *pages = _alloc_pages(2, PG_WRITE);
-  // kprintf("[kernel] allocated pages: %p\n", pages->address);
-  // kprintf("[kernel] mapping pages\n");
-  // void *ptr = _vmap_pages(pages);
-  // kprintf("[kernel] mapped pages: %p\n", ptr);
-  // _address_space_print_mappings(NULL);
-  // _print_pgtable_indexes(KERNEL_HEAP_VA);
-  // _print_pgtable_address(511, 0, 2, 0);
-  // _print_pgtable_address(511, 0, 511, 0);
-  // _print_pgtable_address(511, 1, 0, 0);
-
-  // syscalls_init();
+  syscalls_init();
   // smp_init();
 
   // root process

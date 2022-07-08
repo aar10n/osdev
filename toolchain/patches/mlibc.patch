@@ -1,6 +1,15 @@
+diff --git a/.gitignore b/.gitignore
+index fdd60a00..fa8735f7 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -3,3 +3,4 @@ subprojects
+ *.xbstrap
+ # editor configs:
+ .vscode
++.idea
 diff --git a/abis/osdev/auxv.h b/abis/osdev/auxv.h
 new file mode 100644
-index 0000000..fb79332
+index 00000000..fb793320
 --- /dev/null
 +++ b/abis/osdev/auxv.h
 @@ -0,0 +1,19 @@
@@ -24,10 +33,10 @@ index 0000000..fb79332
 +
 +#endif // _ABIBITS_AUXV_H
 diff --git a/meson.build b/meson.build
-index edcd230..eb24bb0 100644
+index 79cfa8cc..98e13793 100644
 --- a/meson.build
 +++ b/meson.build
-@@ -97,6 +97,11 @@ elif host_machine.system() == 'managarm'
+@@ -116,6 +116,11 @@ elif host_machine.system() == 'managarm'
  	internal_conf.set('MLIBC_MAP_DSO_SEGMENTS', true)
  	internal_conf.set('MLIBC_MAP_FILE_WINDOWS', true)
  	subdir('sysdeps/managarm')
@@ -40,8 +49,8 @@ index edcd230..eb24bb0 100644
  	disable_linux_option = true
  	rtdl_include_dirs += include_directories('sysdeps/qword/include')
 diff --git a/sysdeps/osdev/crt-x86_64/crt0.S b/sysdeps/osdev/crt-x86_64/crt0.S
-new file mode 100755
-index 0000000..190b5a0
+new file mode 100644
+index 00000000..190b5a0e
 --- /dev/null
 +++ b/sysdeps/osdev/crt-x86_64/crt0.S
 @@ -0,0 +1,8 @@
@@ -55,7 +64,7 @@ index 0000000..190b5a0
 +.size _start, . - _start
 diff --git a/sysdeps/osdev/generic/entry.cpp b/sysdeps/osdev/generic/entry.cpp
 new file mode 100644
-index 0000000..265ab56
+index 00000000..1905e3bf
 --- /dev/null
 +++ b/sysdeps/osdev/generic/entry.cpp
 @@ -0,0 +1,32 @@
@@ -87,16 +96,16 @@ index 0000000..265ab56
 +			__mlibc_stack_data.envp);
 +}
 +
-+extern "C" void __mlibc_entry(int (*main_fn)(int argc, char *argv[], char *env[])) {
++extern "C" void __attribute__((used)) __mlibc_entry(int (*main_fn)(int argc, char *argv[], char *env[])) {
 +	auto result = main_fn(__mlibc_stack_data.argc, __mlibc_stack_data.argv, environ);
 +	exit(result);
 +}
 diff --git a/sysdeps/osdev/generic/generic.cpp b/sysdeps/osdev/generic/generic.cpp
 new file mode 100644
-index 0000000..c49511c
+index 00000000..757c363c
 --- /dev/null
 +++ b/sysdeps/osdev/generic/generic.cpp
-@@ -0,0 +1,299 @@
+@@ -0,0 +1,300 @@
 +#include <bits/ensure.h>
 +#include <mlibc/debug.hpp>
 +#include <mlibc/all-sysdeps.hpp>
@@ -120,6 +129,7 @@ index 0000000..c49511c
 +    asm volatile ("syscall" :
 +    : "a"(12), "D"(1)
 +    : "rcx", "r11", "rdx");
++    while (true) {}
 +  }
 +
 +  int sys_tcb_set(void *pointer) {
@@ -175,7 +185,7 @@ index 0000000..c49511c
 +  }
 +#endif
 +
-+  int sys_open(const char *path, int flags, int *fd) {
++  int sys_open(const char *path, int flags, mode_t mode, int *fd) {
 +    int ret;
 +    int sys_errno;
 +
@@ -282,7 +292,7 @@ index 0000000..c49511c
 +    return sys_anon_free(pointer, size);
 +  }
 +
-+  int sys_futex_wait(int *pointer, int expected) {
++  int sys_futex_wait(int *pointer, int expected, const struct timespec *time) {
 +    uint64_t err;
 +    asm volatile ("syscall"
 +    : "=d"(err)
@@ -398,7 +408,7 @@ index 0000000..c49511c
 +} // namespace mlibc
 diff --git a/sysdeps/osdev/generic/thread.cpp b/sysdeps/osdev/generic/thread.cpp
 new file mode 100644
-index 0000000..50d3944
+index 00000000..11f48f50
 --- /dev/null
 +++ b/sysdeps/osdev/generic/thread.cpp
 @@ -0,0 +1,44 @@
@@ -413,12 +423,12 @@ index 0000000..50d3944
 +extern "C" void __mlibc_enter_thread(void *entry, void *user_arg, Tcb *tcb) {
 +	// Wait until our parent sets up the TID.
 +	while(!__atomic_load_n(&tcb->tid, __ATOMIC_RELAXED))
-+		mlibc::sys_futex_wait(&tcb->tid, 0);
++		mlibc::sys_futex_wait(&tcb->tid, 0, nullptr);
 +
 +	if(mlibc::sys_tcb_set(tcb))
 +		__ensure(!"sys_tcb_set() failed");
 +
-+	void *(*func)(void *) = reinterpret_cast<void *(*)(void *)>(entry);
++	auto func = reinterpret_cast<void *(*)(void *)>(entry);
 +	auto result = func(user_arg);
 +
 +	auto self = reinterpret_cast<Tcb *>(tcb);
@@ -433,7 +443,7 @@ index 0000000..50d3944
 +namespace mlibc {
 +
 +void* prepare_stack(void *entry, void *user_arg, void *tcb) {
-+	uintptr_t *sp = reinterpret_cast<uintptr_t *>(reinterpret_cast<uintptr_t>(
++	auto sp = reinterpret_cast<uintptr_t *>(reinterpret_cast<uintptr_t>(
 +			mmap(nullptr, 0x1000000, 
 +				PROT_READ | PROT_WRITE, 
 +				MAP_PRIVATE | MAP_ANONYMOUS, -1, 0)
@@ -448,7 +458,7 @@ index 0000000..50d3944
 +} //namespace mlibc
 diff --git a/sysdeps/osdev/generic/thread_entry.S b/sysdeps/osdev/generic/thread_entry.S
 new file mode 100644
-index 0000000..ac321e6
+index 00000000..ac321e6f
 --- /dev/null
 +++ b/sysdeps/osdev/generic/thread_entry.S
 @@ -0,0 +1,9 @@
@@ -463,23 +473,31 @@ index 0000000..ac321e6
 +
 diff --git a/sysdeps/osdev/include/abi-bits/abi.h b/sysdeps/osdev/include/abi-bits/abi.h
 new file mode 120000
-index 0000000..c945860
+index 00000000..d96293c6
 --- /dev/null
 +++ b/sysdeps/osdev/include/abi-bits/abi.h
 @@ -0,0 +1 @@
-+../../../../abis/mlibc/abi.h
++../../../../../../include/abi/abi.h
+\ No newline at end of file
+diff --git a/sysdeps/osdev/include/abi-bits/access.h b/sysdeps/osdev/include/abi-bits/access.h
+new file mode 120000
+index 00000000..171f75f8
+--- /dev/null
++++ b/sysdeps/osdev/include/abi-bits/access.h
+@@ -0,0 +1 @@
++../../../../abis/mlibc/access.h
 \ No newline at end of file
 diff --git a/sysdeps/osdev/include/abi-bits/auxv.h b/sysdeps/osdev/include/abi-bits/auxv.h
 new file mode 120000
-index 0000000..2e2c982
+index 00000000..15e9c3b8
 --- /dev/null
 +++ b/sysdeps/osdev/include/abi-bits/auxv.h
 @@ -0,0 +1 @@
-+../../../../abis/osdev/auxv.h
++../../../../../../include/abi/auxv.h
 \ No newline at end of file
 diff --git a/sysdeps/osdev/include/abi-bits/blkcnt_t.h b/sysdeps/osdev/include/abi-bits/blkcnt_t.h
 new file mode 120000
-index 0000000..e9d9f1b
+index 00000000..e9d9f1b4
 --- /dev/null
 +++ b/sysdeps/osdev/include/abi-bits/blkcnt_t.h
 @@ -0,0 +1 @@
@@ -487,7 +505,7 @@ index 0000000..e9d9f1b
 \ No newline at end of file
 diff --git a/sysdeps/osdev/include/abi-bits/blksize_t.h b/sysdeps/osdev/include/abi-bits/blksize_t.h
 new file mode 120000
-index 0000000..c6dfb6e
+index 00000000..c6dfb6e0
 --- /dev/null
 +++ b/sysdeps/osdev/include/abi-bits/blksize_t.h
 @@ -0,0 +1 @@
@@ -495,31 +513,39 @@ index 0000000..c6dfb6e
 \ No newline at end of file
 diff --git a/sysdeps/osdev/include/abi-bits/dev_t.h b/sysdeps/osdev/include/abi-bits/dev_t.h
 new file mode 120000
-index 0000000..0c1143b
+index 00000000..0c1143b9
 --- /dev/null
 +++ b/sysdeps/osdev/include/abi-bits/dev_t.h
 @@ -0,0 +1 @@
 +../../../../abis/mlibc/dev_t.h
 \ No newline at end of file
+diff --git a/sysdeps/osdev/include/abi-bits/epoll.h b/sysdeps/osdev/include/abi-bits/epoll.h
+new file mode 120000
+index 00000000..9efc3a05
+--- /dev/null
++++ b/sysdeps/osdev/include/abi-bits/epoll.h
+@@ -0,0 +1 @@
++../../../../abis/mlibc/epoll.h
+\ No newline at end of file
 diff --git a/sysdeps/osdev/include/abi-bits/errno.h b/sysdeps/osdev/include/abi-bits/errno.h
 new file mode 120000
-index 0000000..589859f
+index 00000000..35adc308
 --- /dev/null
 +++ b/sysdeps/osdev/include/abi-bits/errno.h
 @@ -0,0 +1 @@
-+../../../../abis/mlibc/errno.h
++../../../../../../include/abi/errno.h
 \ No newline at end of file
 diff --git a/sysdeps/osdev/include/abi-bits/fcntl.h b/sysdeps/osdev/include/abi-bits/fcntl.h
 new file mode 120000
-index 0000000..ea5323a
+index 00000000..ec13ec0a
 --- /dev/null
 +++ b/sysdeps/osdev/include/abi-bits/fcntl.h
 @@ -0,0 +1 @@
-+../../../../abis/mlibc/fcntl.h
++../../../../../../include/abi/fcntl.h
 \ No newline at end of file
 diff --git a/sysdeps/osdev/include/abi-bits/gid_t.h b/sysdeps/osdev/include/abi-bits/gid_t.h
 new file mode 120000
-index 0000000..6a77218
+index 00000000..6a772180
 --- /dev/null
 +++ b/sysdeps/osdev/include/abi-bits/gid_t.h
 @@ -0,0 +1 @@
@@ -527,7 +553,7 @@ index 0000000..6a77218
 \ No newline at end of file
 diff --git a/sysdeps/osdev/include/abi-bits/in.h b/sysdeps/osdev/include/abi-bits/in.h
 new file mode 120000
-index 0000000..b58c683
+index 00000000..b58c683f
 --- /dev/null
 +++ b/sysdeps/osdev/include/abi-bits/in.h
 @@ -0,0 +1 @@
@@ -535,15 +561,31 @@ index 0000000..b58c683
 \ No newline at end of file
 diff --git a/sysdeps/osdev/include/abi-bits/ino_t.h b/sysdeps/osdev/include/abi-bits/ino_t.h
 new file mode 120000
-index 0000000..10d644e
+index 00000000..10d644e7
 --- /dev/null
 +++ b/sysdeps/osdev/include/abi-bits/ino_t.h
 @@ -0,0 +1 @@
 +../../../../abis/mlibc/ino_t.h
 \ No newline at end of file
+diff --git a/sysdeps/osdev/include/abi-bits/inotify.h b/sysdeps/osdev/include/abi-bits/inotify.h
+new file mode 120000
+index 00000000..3f19ef6e
+--- /dev/null
++++ b/sysdeps/osdev/include/abi-bits/inotify.h
+@@ -0,0 +1 @@
++../../../../abis/mlibc/inotify.h
+\ No newline at end of file
+diff --git a/sysdeps/osdev/include/abi-bits/limits.h b/sysdeps/osdev/include/abi-bits/limits.h
+new file mode 120000
+index 00000000..1aa58942
+--- /dev/null
++++ b/sysdeps/osdev/include/abi-bits/limits.h
+@@ -0,0 +1 @@
++../../../../abis/mlibc/limits.h
+\ No newline at end of file
 diff --git a/sysdeps/osdev/include/abi-bits/mode_t.h b/sysdeps/osdev/include/abi-bits/mode_t.h
 new file mode 120000
-index 0000000..29d7733
+index 00000000..29d77331
 --- /dev/null
 +++ b/sysdeps/osdev/include/abi-bits/mode_t.h
 @@ -0,0 +1 @@
@@ -551,23 +593,47 @@ index 0000000..29d7733
 \ No newline at end of file
 diff --git a/sysdeps/osdev/include/abi-bits/nlink_t.h b/sysdeps/osdev/include/abi-bits/nlink_t.h
 new file mode 120000
-index 0000000..7618c27
+index 00000000..7618c27f
 --- /dev/null
 +++ b/sysdeps/osdev/include/abi-bits/nlink_t.h
 @@ -0,0 +1 @@
 +../../../../abis/mlibc/nlink_t.h
 \ No newline at end of file
+diff --git a/sysdeps/osdev/include/abi-bits/packet.h b/sysdeps/osdev/include/abi-bits/packet.h
+new file mode 120000
+index 00000000..47067e21
+--- /dev/null
++++ b/sysdeps/osdev/include/abi-bits/packet.h
+@@ -0,0 +1 @@
++../../../../abis/mlibc/packet.h
+\ No newline at end of file
 diff --git a/sysdeps/osdev/include/abi-bits/pid_t.h b/sysdeps/osdev/include/abi-bits/pid_t.h
 new file mode 120000
-index 0000000..3fd26a7
+index 00000000..3fd26a7f
 --- /dev/null
 +++ b/sysdeps/osdev/include/abi-bits/pid_t.h
 @@ -0,0 +1 @@
 +../../../../abis/mlibc/pid_t.h
 \ No newline at end of file
+diff --git a/sysdeps/osdev/include/abi-bits/poll.h b/sysdeps/osdev/include/abi-bits/poll.h
+new file mode 120000
+index 00000000..ab989c75
+--- /dev/null
++++ b/sysdeps/osdev/include/abi-bits/poll.h
+@@ -0,0 +1 @@
++../../../../abis/mlibc/poll.h
+\ No newline at end of file
+diff --git a/sysdeps/osdev/include/abi-bits/ptrace.h b/sysdeps/osdev/include/abi-bits/ptrace.h
+new file mode 120000
+index 00000000..f391fb72
+--- /dev/null
++++ b/sysdeps/osdev/include/abi-bits/ptrace.h
+@@ -0,0 +1 @@
++../../../../abis/mlibc/ptrace.h
+\ No newline at end of file
 diff --git a/sysdeps/osdev/include/abi-bits/resource.h b/sysdeps/osdev/include/abi-bits/resource.h
 new file mode 120000
-index 0000000..3e59c75
+index 00000000..3e59c750
 --- /dev/null
 +++ b/sysdeps/osdev/include/abi-bits/resource.h
 @@ -0,0 +1 @@
@@ -575,15 +641,15 @@ index 0000000..3e59c75
 \ No newline at end of file
 diff --git a/sysdeps/osdev/include/abi-bits/seek-whence.h b/sysdeps/osdev/include/abi-bits/seek-whence.h
 new file mode 120000
-index 0000000..3bd41ef
+index 00000000..924ab74e
 --- /dev/null
 +++ b/sysdeps/osdev/include/abi-bits/seek-whence.h
 @@ -0,0 +1 @@
-+../../../../abis/mlibc/seek-whence.h
++../../../../../../include/abi/seek-whence.h
 \ No newline at end of file
 diff --git a/sysdeps/osdev/include/abi-bits/signal.h b/sysdeps/osdev/include/abi-bits/signal.h
 new file mode 120000
-index 0000000..b20e511
+index 00000000..b20e5119
 --- /dev/null
 +++ b/sysdeps/osdev/include/abi-bits/signal.h
 @@ -0,0 +1 @@
@@ -591,7 +657,7 @@ index 0000000..b20e511
 \ No newline at end of file
 diff --git a/sysdeps/osdev/include/abi-bits/socket.h b/sysdeps/osdev/include/abi-bits/socket.h
 new file mode 120000
-index 0000000..0e1d6be
+index 00000000..0e1d6be9
 --- /dev/null
 +++ b/sysdeps/osdev/include/abi-bits/socket.h
 @@ -0,0 +1 @@
@@ -599,15 +665,15 @@ index 0000000..0e1d6be
 \ No newline at end of file
 diff --git a/sysdeps/osdev/include/abi-bits/stat.h b/sysdeps/osdev/include/abi-bits/stat.h
 new file mode 120000
-index 0000000..82642c3
+index 00000000..75129538
 --- /dev/null
 +++ b/sysdeps/osdev/include/abi-bits/stat.h
 @@ -0,0 +1 @@
-+../../../../abis/mlibc/stat.h
++../../../../../../include/abi/stat.h
 \ No newline at end of file
 diff --git a/sysdeps/osdev/include/abi-bits/termios.h b/sysdeps/osdev/include/abi-bits/termios.h
 new file mode 120000
-index 0000000..cfcfe76
+index 00000000..cfcfe763
 --- /dev/null
 +++ b/sysdeps/osdev/include/abi-bits/termios.h
 @@ -0,0 +1 @@
@@ -615,7 +681,7 @@ index 0000000..cfcfe76
 \ No newline at end of file
 diff --git a/sysdeps/osdev/include/abi-bits/time.h b/sysdeps/osdev/include/abi-bits/time.h
 new file mode 120000
-index 0000000..97f3d52
+index 00000000..97f3d52d
 --- /dev/null
 +++ b/sysdeps/osdev/include/abi-bits/time.h
 @@ -0,0 +1 @@
@@ -623,15 +689,23 @@ index 0000000..97f3d52
 \ No newline at end of file
 diff --git a/sysdeps/osdev/include/abi-bits/uid_t.h b/sysdeps/osdev/include/abi-bits/uid_t.h
 new file mode 120000
-index 0000000..1113eba
+index 00000000..1113eba6
 --- /dev/null
 +++ b/sysdeps/osdev/include/abi-bits/uid_t.h
 @@ -0,0 +1 @@
 +../../../../abis/mlibc/uid_t.h
 \ No newline at end of file
+diff --git a/sysdeps/osdev/include/abi-bits/utsname.h b/sysdeps/osdev/include/abi-bits/utsname.h
+new file mode 120000
+index 00000000..17b993fe
+--- /dev/null
++++ b/sysdeps/osdev/include/abi-bits/utsname.h
+@@ -0,0 +1 @@
++../../../../abis/mlibc/utsname.h
+\ No newline at end of file
 diff --git a/sysdeps/osdev/include/abi-bits/vm-flags.h b/sysdeps/osdev/include/abi-bits/vm-flags.h
 new file mode 120000
-index 0000000..f1a985e
+index 00000000..f1a985e6
 --- /dev/null
 +++ b/sysdeps/osdev/include/abi-bits/vm-flags.h
 @@ -0,0 +1 @@
@@ -639,7 +713,7 @@ index 0000000..f1a985e
 \ No newline at end of file
 diff --git a/sysdeps/osdev/include/abi-bits/wait.h b/sysdeps/osdev/include/abi-bits/wait.h
 new file mode 120000
-index 0000000..6d911c7
+index 00000000..6d911c7f
 --- /dev/null
 +++ b/sysdeps/osdev/include/abi-bits/wait.h
 @@ -0,0 +1 @@
@@ -647,7 +721,7 @@ index 0000000..6d911c7
 \ No newline at end of file
 diff --git a/sysdeps/osdev/include/mlibc/thread-entry.hpp b/sysdeps/osdev/include/mlibc/thread-entry.hpp
 new file mode 100644
-index 0000000..2dd88a6
+index 00000000..2dd88a64
 --- /dev/null
 +++ b/sysdeps/osdev/include/mlibc/thread-entry.hpp
 @@ -0,0 +1,10 @@
@@ -663,7 +737,7 @@ index 0000000..2dd88a6
 +}
 diff --git a/sysdeps/osdev/include/osdev/syscalls.h b/sysdeps/osdev/include/osdev/syscalls.h
 new file mode 120000
-index 0000000..6725856
+index 00000000..67258563
 --- /dev/null
 +++ b/sysdeps/osdev/include/osdev/syscalls.h
 @@ -0,0 +1 @@
@@ -671,10 +745,10 @@ index 0000000..6725856
 \ No newline at end of file
 diff --git a/sysdeps/osdev/meson.build b/sysdeps/osdev/meson.build
 new file mode 100644
-index 0000000..28b6b1d
+index 00000000..f8965178
 --- /dev/null
 +++ b/sysdeps/osdev/meson.build
-@@ -0,0 +1,55 @@
+@@ -0,0 +1,64 @@
 +
 +rtdl_sources += files(
 +	'generic/generic.cpp'
@@ -690,27 +764,36 @@ index 0000000..28b6b1d
 +if not no_headers
 +	install_headers(
 +		'include/abi-bits/abi.h',
++		'include/abi-bits/access.h',
 +		'include/abi-bits/auxv.h',
-+		'include/abi-bits/seek-whence.h',
-+		'include/abi-bits/vm-flags.h',
++		'include/abi-bits/blkcnt_t.h',
++    'include/abi-bits/blksize_t.h',
++    'include/abi-bits/dev_t.h',
++    'include/abi-bits/epoll.h',
 +		'include/abi-bits/errno.h',
 +		'include/abi-bits/fcntl.h',
-+		'include/abi-bits/in.h',
-+		'include/abi-bits/resource.h',
-+		'include/abi-bits/stat.h',
-+		'include/abi-bits/signal.h',
-+		'include/abi-bits/socket.h',
-+		'include/abi-bits/termios.h',
-+		'include/abi-bits/blkcnt_t.h',
-+		'include/abi-bits/blksize_t.h',
-+		'include/abi-bits/dev_t.h',
 +		'include/abi-bits/gid_t.h',
++		'include/abi-bits/in.h',
 +		'include/abi-bits/ino_t.h',
-+		'include/abi-bits/mode_t.h',
++		'include/abi-bits/inotify.h',
++    'include/abi-bits/limits.h',
++    'include/abi-bits/mode_t.h',
 +		'include/abi-bits/nlink_t.h',
-+		'include/abi-bits/pid_t.h',
-+		'include/abi-bits/uid_t.h',
-+		'include/abi-bits/wait.h',
++    'include/abi-bits/packet.h',
++    'include/abi-bits/pid_t.h',
++    'include/abi-bits/poll.h',
++    'include/abi-bits/ptrace.h',
++    'include/abi-bits/resource.h',
++    'include/abi-bits/seek-whence.h',
++    'include/abi-bits/signal.h',
++    'include/abi-bits/socket.h',
++    'include/abi-bits/stat.h',
++    'include/abi-bits/termios.h',
++    'include/abi-bits/time.h',
++    'include/abi-bits/uid_t.h',
++    'include/abi-bits/utsname.h',
++    'include/abi-bits/vm-flags.h',
++    'include/abi-bits/wait.h',
 +		subdir: 'abi-bits'
 +	)
 +	install_headers(
