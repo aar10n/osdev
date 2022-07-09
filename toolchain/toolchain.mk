@@ -4,7 +4,7 @@
 
 ARCH ?= x86_64
 
-CROSS_PREFIX ?= $(TOOLCHAIN_DIR)/bin/$(TARGET)-
+CROSS_PREFIX ?= $(TOOLCHAIN_DIR)/usr/bin/$(ARCH)-osdev-
 
 CC = $(CROSS_PREFIX)gcc
 CXX = $(CROSS_PREFIX)g++

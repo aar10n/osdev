@@ -24,11 +24,5 @@ install_executable(console, /)
 add_executable(hello, hello/main.c) dnl
 install_executable(hello, /usr)
 
-add_library(libgui, libgui/ui.c, libgui/ui.h, static|dynamic) dnl
-install_library(libgui, /usr)
-
-add_target(winserv, winserv/)
-install_target(winserv)
-
 generate_targets()
 generate_install_targets()

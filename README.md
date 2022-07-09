@@ -16,6 +16,7 @@ serve as a useful reference to some.
 │  └── ramfs        generic in-memory filesystem driver 
 ├── include       header files
 ├── kernel        core kernel code
+│  ├── acpi         acpi drivers
 │  ├── bus          pci & pcie drivers
 │  ├── cpu          cpu related code and assembly routines
 │  ├── device       apic, ioapic and other related drivers
@@ -25,6 +26,5 @@ serve as a useful reference to some.
 ├── lib           data structure, algorithm and other useful libraries
 ├── scripts       utility scripts and support files
 ├── third-party   third party dependencies
-├── toolchain     toolchain scripts and patches
-└── tools         misc tools that require compilation 
+└── toolchain     toolchain build files and patches 
 ``` 

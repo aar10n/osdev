@@ -5,7 +5,7 @@ OBJ_DIR = $(BUILD_DIR)/$(NAME)
 SYS_ROOT = $(BUILD_DIR)/sysroot
 
 EDK_DIR = $(BUILD_DIR)/edk2
-TOOLCHAIN_DIR = $(BUILD_DIR)/toolchain
+TOOLCHAIN_DIR = $(SYS_ROOT)
 
 include scripts/utils.mk
 include Makefile.local
