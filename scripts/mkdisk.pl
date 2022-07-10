@@ -115,7 +115,7 @@ sub parse_size {
         } elsif ($unit eq "k") {
             return "1k", "$num";
         } elsif ($unit eq "m") {
-            return "1M", "$num";
+            return "1m", "$num";
         } elsif ($unit eq "g") {
             return "1G", "$num";
         }

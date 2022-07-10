@@ -412,6 +412,7 @@ static int num_syscalls = sizeof(syscalls) / sizeof(void *);
 
 
 void syscalls_init() {
+
   cpu_write_msr(IA32_LSTAR_MSR, (uintptr_t) syscall_handler);
   cpu_write_msr(IA32_SFMASK_MSR, 0);
   cpu_write_msr(IA32_STAR_MSR, 0x10LL << 48 | KERNEL_CS << 32);

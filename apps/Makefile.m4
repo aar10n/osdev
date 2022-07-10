@@ -1,5 +1,5 @@
 include(`scripts/macros.m4') dnl
-define([target], [sys]) dnl
+define([target], [apps]) dnl
 
 #
 # sys makefile
@@ -12,7 +12,7 @@ override(LD, $(SYS_ROOT)/bin/x86_64-osdev-gcc)
 override(CFLAGS, -gdwarf -g3 -O0 -Wall)
 override(CXXFLAGS, -gdwarf -g3 -O0 -Wall)
 override(LDFLAGS, -g3)
-override(INCLUDE, -Iinclude/sys)
+override(INCLUDE, -Iinclude/apps)
 
 dnl link_library(console, libgui) dnl
 link_library(console, libfreetype, ext|static) dnl

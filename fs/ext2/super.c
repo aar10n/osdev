@@ -7,6 +7,7 @@
 #include <thread.h>
 #include <asm/bits.h>
 #include <panic.h>
+#include <string.h>
 
 #define ext2sb(super) ((ext2_data_t *)((super)->data))
 typedef LIST_HEAD(ext2_load_chunk_t) chunk_list_t;
@@ -58,7 +59,11 @@ static uint32_t ino_to_block_offset(ext2_data_t *data, ino_t ino) {
 
 //
 
-static int direct_load_chunks(const uint32_t *blocks, size_t len, chunk_list_t *chunks) {
+static int direct_load_chunks(const uint32_t *blocks, size_t len, ext2_load_chunk_t **out_first, ext2_load_chunk_t **out_last) {
+  LIST_HEAD(ext2_load_chunk_t) chunks = LIST_HEAD_INITR;
+  *out_first = NULL;
+  *out_last = NULL;
+
   // direct blocks
   uint32_t start = 0;
   uint32_t last = 0;
@@ -81,7 +86,8 @@ static int direct_load_chunks(const uint32_t *blocks, size_t len, chunk_list_t *
     memset(chunk, 0, sizeof(ext2_load_chunk_t));
     chunk->start = start;
     chunk->len = last - start + 1;
-    LIST_ADD(chunks, chunk, chunks);
+    LIST_ENTRY_INIT(&chunk->chunks);
+    LIST_ADD(&chunks, chunk, chunks);
     start = 0;
     last = 0;
   }
@@ -91,13 +97,17 @@ static int direct_load_chunks(const uint32_t *blocks, size_t len, chunk_list_t *
     memset(chunk, 0, sizeof(ext2_load_chunk_t));
     chunk->start = start;
     chunk->len = last - start + 1;
-    LIST_ADD(chunks, chunk, chunks);
+    LIST_ADD(&chunks, chunk, chunks);
   }
 
+  *out_first = LIST_FIRST(&chunks);
+  *out_last = LIST_LAST(&chunks);
   return 0;
 }
 
-static int indirect_load_chunks(super_block_t *sb, uint32_t block, chunk_list_t *chunks) {
+static int indirect_load_chunks(super_block_t *sb, uint32_t block, ext2_load_chunk_t **out_first, ext2_load_chunk_t **out_last) {
+  *out_first = NULL;
+  *out_last = NULL;
   if (block == 0) {
     return 0;
   }
@@ -108,15 +118,14 @@ static int indirect_load_chunks(super_block_t *sb, uint32_t block, chunk_list_t 
     return -1;
   }
 
-  chunk_list_t indirect_chunks;
-  LIST_INIT(&indirect_chunks);
-  int result = direct_load_chunks(blocks, sb->blksize / sizeof(uint32_t), &indirect_chunks);
-  LIST_CONCAT(chunks, LIST_FIRST(&indirect_chunks), LIST_LAST(&indirect_chunks), chunks);
+  int result = direct_load_chunks(blocks, sb->blksize / sizeof(uint32_t), out_first, out_last);
   blkdev_freebuf(blocks);
   return result;
 }
 
-static int double_indirect_load_chunks(super_block_t *sb, uint32_t block, chunk_list_t *chunks) {
+static int double_indirect_load_chunks(super_block_t *sb, uint32_t block, ext2_load_chunk_t **out_first, ext2_load_chunk_t **out_last) {
+  *out_first = NULL;
+  *out_last = NULL;
   if (block == 0) {
     return 0;
   }
@@ -127,34 +136,53 @@ static int double_indirect_load_chunks(super_block_t *sb, uint32_t block, chunk_
     return -1;
   }
 
-  chunk_list_t double_chunks;
-  LIST_INIT(&double_chunks);
+  LIST_HEAD(ext2_load_chunk_t) chunks = LIST_HEAD_INITR;
   for (int i = 0; i < sb->blksize / sizeof(uint32_t); i++) {
     if (blocks[i] == 0) {
       break;
     }
 
-    int result = indirect_load_chunks(sb, blocks[i], &double_chunks);
+    ext2_load_chunk_t *first = NULL;
+    ext2_load_chunk_t *last = NULL;
+    int result = indirect_load_chunks(sb, blocks[i], &first, &last);
     if (result < 0) {
       break;
     }
-    LIST_CONCAT(chunks, LIST_FIRST(&double_chunks), LIST_LAST(&double_chunks), chunks);
+    LIST_CONCAT(&chunks, first, last, chunks);
   }
 
   blkdev_freebuf(blocks);
+
+  *out_first = LIST_FIRST(&chunks);
+  *out_last = LIST_LAST(&chunks);
   return 0;
 }
 
 static ext2_load_chunk_t *inode_to_load_chunks(super_block_t *sb, ext2_inode_t *inode) {
-  chunk_list_t chunks;
-  LIST_INIT(&chunks);
+  LIST_HEAD(ext2_load_chunk_t) chunks = LIST_HEAD_INITR;
 
-  direct_load_chunks(inode->i_block, 12, &chunks);
-  indirect_load_chunks(sb, inode->i_block[12], &chunks);
-  double_indirect_load_chunks(sb, inode->i_block[13], &chunks);
+  ext2_load_chunk_t *first = NULL;
+  ext2_load_chunk_t *last = NULL;
+  // direct
+  if (direct_load_chunks(inode->i_block, 12, &first, &last) < 0) {
+    panic("ext2: failed to get direct load chunks");
+  }
+  LIST_CONCAT(&chunks, first, last, chunks);
+  // indirect
+  if (indirect_load_chunks(sb, inode->i_block[12], &first, &last) < 0) {
+    panic("ext2: failed to get indirect load chunks");
+  }
+  LIST_CONCAT(&chunks, first, last, chunks);
+  // double indirect
+  if (double_indirect_load_chunks(sb, inode->i_block[13], &first, &last) < 0) {
+    panic("ext2: failed to get double-indirect load chunks");
+  }
+  LIST_CONCAT(&chunks, first, last, chunks);
+  // triple indirect
   if (inode->i_block[14] != 0) {
     panic("triple indirect blocks not supported");
   }
+
   return LIST_FIRST(&chunks);
 }
 

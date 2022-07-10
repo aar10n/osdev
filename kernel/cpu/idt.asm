@@ -23,7 +23,7 @@ extern exception_handler
 %define IDT_GATES 256
 
 %define PUSHALL_COUNT     15
-%define STACK_OFFSET(x) (x * 8)
+%define STACK_OFFSET(x) ((x) * 8)
 
 ; Saved registers
 %macro pushall 0
@@ -156,8 +156,8 @@ __exception_handler:
   swapgs_if_needed 24
   pushall
 
-  mov rdi, [rsp + STACK_OFFSET(PUSHALL_COUNT)]     ; rdi <- vector
-  mov rsi, [rsp + STACK_OFFSET(PUSHALL_COUNT + 1)] ; rdi <- error code
+  mov rdi, [rsp + STACK_OFFSET(PUSHALL_COUNT)]           ; rdi <- vector
+  mov dword rsi, [rsp + STACK_OFFSET(PUSHALL_COUNT + 1)] ; rdi <- error code
   mov rdx, rsp
   add rdx, STACK_OFFSET(PUSHALL_COUNT + 2)         ; rdx <- interrupt stack frame pointer
   mov rcx, rsp                                     ; rcx <- registers pointer

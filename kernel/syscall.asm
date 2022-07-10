@@ -1,9 +1,16 @@
 %include "base.inc"
 extern handle_syscall
 
+%macro swapgs_if_needed 1
+  cmp word [rsp + %1], KERNEL_CS
+  je %%skip
+  swapgs
+  %%skip:
+%endmacro
+
 global syscall_handler:
 syscall_handler:
-  swapgs
+  swapgs_if_needed 0
   mov USER_SP, rsp
   mov rsp, KERNEL_SP
 

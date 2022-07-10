@@ -7,6 +7,8 @@
 #include <thread.h>
 #include <scheduler.h>
 #include <panic.h>
+#include <mm.h>
+#include <string.h>
 
 extern void thread_sighandle(uintptr_t fn, uintptr_t rsp);
 

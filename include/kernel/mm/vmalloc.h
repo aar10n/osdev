@@ -39,5 +39,6 @@ void vfree_pages(page_t *pages);
 
 void _address_space_print_mappings(address_space_t *space);
 void _address_space_to_graphiz(address_space_t *space);
+void vm_print_debug_address_space();
 
 #endif

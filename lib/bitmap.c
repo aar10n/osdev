@@ -197,7 +197,7 @@ index_t bitmap_get_set_free(bitmap_t *bmp) {
     }
 
     size_t offset = __bsf64(~qw);
-    bmp->map[i] |= 1 << offset;
+    bmp->map[i] |= 1ULL << offset;
     return (i * BIT_SIZE) + offset;
   }
   return -1;

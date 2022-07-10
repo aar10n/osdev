@@ -97,7 +97,7 @@
     if ((head)->first == NULL) {                          \
       (head)->first = (start);                            \
       (head)->last = (end);                               \
-    } else {                                              \
+    } else if ((start) && (end)) {                        \
       (head)->last->name.next = (start);                  \
       (start)->name.prev = (head)->last;                  \
       (head)->last = (end);                               \

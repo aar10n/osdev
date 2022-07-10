@@ -103,7 +103,7 @@ noreturn void wakeup_process() {
 }
 
 //
-// Kernel launch process
+// Launch process
 //
 
 _Noreturn void launch() {
@@ -115,6 +115,15 @@ _Noreturn void launch() {
   pcie_discover();
 
   usb_init();
+
+  if (fs_mount("/", "/dev/sdb", "ext2") < 0) {
+    panic("%s", strerror(ERRNO));
+  }
+
+  fs_open("/dev/stdin", O_RDONLY, 0);
+  fs_open("/dev/stdout", O_WRONLY, 0);
+  fs_open("/dev/stderr", O_WRONLY, 0);
+  process_execve("/usr/bin/hello", (void *) argv, NULL);
 
   kprintf("haulting...\n");
   while (true) {
@@ -163,9 +172,6 @@ _Noreturn void launch() {
 //
 // Kernel entry
 //
-
-void _print_pgtable_indexes(uintptr_t addr);
-void _print_pgtable_address(uint16_t l4, uint16_t l3, uint16_t l2, uint16_t l1);
 
 __used void kmain() {
   console_early_init();

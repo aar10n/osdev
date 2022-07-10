@@ -172,7 +172,10 @@ int process_execve(const char *path, char *const argv[], char *const envp[]) {
     kprintf("error: %s\n", strerror(ERRNO));
     return -1;
   }
-  kassert(prog.linker != NULL);
+
+  if (prog.linker == NULL) {
+    panic("exec: program is not linked with libc");
+  }
 
   thread_t *thread = PERCPU_THREAD;
   if (thread->user_stack == NULL) {
@@ -246,6 +249,8 @@ int process_execve(const char *path, char *const argv[], char *const envp[]) {
   *rsp = argc;
 
   thread->user_sp = (uintptr_t) rsp;
+  // vm_print_debug_address_space();
+
   sysret((uintptr_t) prog.linker->entry, (uintptr_t) rsp);
 }
 

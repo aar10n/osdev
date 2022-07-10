@@ -91,7 +91,8 @@
 #define CPU_XCR0_AVX       (1 << 2)
 #define CPU_XCR0_OPMASK    (1 << 5) // AVX-512
 
-#define CPU_EFER_NX        (1 << 11)
+#define CPU_EFER_SCE       (1 << 0)
+#define CPU_EFER_NXE       (1 << 11)
 #define CPU_EFER_FFXSR     (1 << 14)
 
 cpu_features_t features = {0};
@@ -260,9 +261,10 @@ void cpu_init() {
 
   // enable NX and Fast FXSR
   uint64_t efer = cpu_read_msr(IA32_EFER_MSR);
+  efer |= CPU_EFER_SCE;
   if (features.nx) {
     kprintf("NX enabled\n");
-    efer |= CPU_EFER_NX;
+    efer |= CPU_EFER_NXE;
   }
   if (features.fxsr && !features.hypervisor) {
     kprintf("FXSR enabled\n");

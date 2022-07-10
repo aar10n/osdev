@@ -4,7 +4,7 @@ import subprocess
 import re
 
 def relocatesections(filename, addr):
-    p = subprocess.Popen(["x86_64-elf-readelf", "-SW", filename], stdout = subprocess.PIPE)
+    p = subprocess.Popen(["build/sysroot/usr/bin/x86_64-osdev-readelf", "-SW", filename], stdout = subprocess.PIPE)
 
     sections = []
     textaddr = '0'
@@ -86,25 +86,17 @@ RemoveSymbolFileAll()
 end
 
 set disassembly-flavor intel
-#add-symbol-file build/kernel.elf
-#b entry
-b page_fault_handler
-#b syscall.asm:6
-#b syscall.asm:24
-b thread.asm:63
+add-symbol-file build/kernel.elf
 
-#b process.c:252
-#commands
-#  dir third-party/mlibc/sysdeps
-#  add-symbol-file-all build/ld.so 0x7fc0000000
-#  add-symbol-file-all build/libc.so 0x41000000
-#
-#  b entry.S:9
-#  commands
-#    #add-symbol-file build/apps/console
-#    add-symbol-file build/apps/winserv
-#    # add-symbol-file build/apps/hello
-#    break main
-#  end
-#end
+b process.c:254
+commands
+  add-symbol-file-all build/sysroot/usr/lib/ld.so 0x7fc0000000
+  add-symbol-file-all build/sysroot/usr/lib/libc.so 0x41000000
+
+  b entry.S:9
+  commands
+    add-symbol-file build/apps/hello
+    break main
+  end
+end
 

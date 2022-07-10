@@ -107,7 +107,6 @@ static inline const char *get_speed_str(uint8_t speed) {
 //
 
 static void irq_callback(uint8_t vector, void *data) {
-  kprintf("XHCI: IRQ callback\n");
   xhci_dev_t *xhci = data;
   if (xhci_op->usbsts.evt_int) {
     cond_signal(&xhci->event);
@@ -524,13 +523,13 @@ xhci_port_t *xhci_discover_ports(xhci_dev_t *xhci) {
   while (proto) {
     xhci_trace_debug("USB %x.%x supported", proto->rev_major, proto->rev_minor);
     for (int i = proto->port_offset; i < proto->port_offset + proto->port_count; i++) {
-      if (!(xhci_port(i)->portsc.ccs)) {
+      if (!(xhci_port(i - 1)->portsc.ccs)) {
         continue; // no device is connected
       }
 
-      xhci_trace_debug("found device on port %d", i + 1);
+      xhci_trace_debug("found device on port %d", i);
       xhci_port_t *p = kmalloc(sizeof(xhci_port_t));
-      p->number = i + 1;
+      p->number = i;
       p->protocol = proto;
       p->speed = xhci_port(i)->portsc.speed;
       p->device = NULL;

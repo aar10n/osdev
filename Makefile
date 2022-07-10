@@ -31,7 +31,7 @@ endif
 #  Targets  #
 # --------- #
 
-modules := BOOT KERNEL USER
+modules := BOOT KERNEL
 targets = apps boot drivers fs kernel lib
 include $(foreach target,$(targets),$(target)/Makefile)
 $(call init-modules,$(modules))
@@ -42,10 +42,9 @@ $(call init-modules,$(modules))
 all: $(BUILD_DIR)/osdev.img
 
 bootloader: $(BUILD_DIR)/boot$(WINARCH).efi
-
 kernel: $(BUILD_DIR)/kernel.elf
-
 ovmf: $(BUILD_DIR)/OVMF_$(WINARCH).fd
+ext2_img: $(BUILD_DIR)/ext2.img
 
 # run targets
 
@@ -166,7 +165,7 @@ $(BUILD_DIR)/OVMF_$(WINARCH).fd:
 	@EDK2_DIR=$(EDK_DIR) EDK2_BUILD_TYPE=$(EDK2_BUILD) bash toolchain/edk2.sh build $(WINARCH) ovmf
 
 $(BUILD_DIR)/ext2.img: $(SYS_ROOT) $(call pairs-src-paths, $(EXT2_DEPS))
-	scripts/mkdisk.pl -o $@ -s 256M $(SYS_ROOT):/ $(EXT2_DEPS)
+	scripts/mkdisk.pl -o $@ -s 256M $(EXT2_DEPS)
 
 # ------------------- #
 #  Compilation Rules  #

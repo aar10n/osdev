@@ -7,6 +7,7 @@
 
 #include <cpu/cpu.h>
 #include <mm.h>
+#include <init.h>
 
 #include <panic.h>
 #include <printf.h>
@@ -100,14 +101,17 @@ static inline void apic_write_icr(apic_reg_icr_t icr) {
 //
 
 void remap_apic_registers(void *data) {
-
+  apic_base = (uintptr_t) _vmap_mmio(APIC_BASE_PA, PAGE_SIZE, PG_WRITE | PG_NOCACHE);
+  _vmap_get_mapping(apic_base)->name = "apic";
 }
 
 //
 
 void register_apic(uint8_t id) {
-  apic_reg_id_t current_id = { .raw = apic_read(APIC_ID) };
-  kprintf("APIC: registering APIC %d (current ID %d) [%d]\n", id, cpu_read_msr(IA32_TSC_AUX_MSR), current_id.id);
+  apic_reg_id_t id_reg = { .raw = apic_read(APIC_ID) };
+  if (id == id_reg.id) {
+    register_init_address_space_callback(remap_apic_registers, NULL);
+  }
 }
 
 //

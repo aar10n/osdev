@@ -62,6 +62,7 @@
 #define offset_ptr(p, c) ((void *)(((uintptr_t)(p)) + (c)))
 #define offset_addr(p, c) (((uintptr_t)(p)) + (c))
 #define align(v, a) ((v) + (((a) - (v)) & ((a) - 1)))
+#define align_down(v, a) ((v) & ~((a) - 1))
 #define is_aligned(v, a) (((v) & ((a) - 1)) == 0)
 #define align_ptr(p, a) ((void *) (align((uintptr_t)(p), (a))))
 #define ptr_after(s) ((void *)(((uintptr_t)(s)) + (sizeof(*s))))

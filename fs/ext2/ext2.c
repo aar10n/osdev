@@ -8,6 +8,7 @@
 #include <inode.h>
 #include <thread.h>
 #include <panic.h>
+#include <string.h>
 
 inode_t *ext2_alloc_inode(super_block_t *sb);
 int ext2_destroy_inode(super_block_t *sb, inode_t *inode);

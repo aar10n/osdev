@@ -195,7 +195,7 @@ int irq_register_exception_handler(uint8_t exception, exception_handler_t handle
 }
 
 int irq_register_irq_handler(uint8_t irq, irq_handler_t handler, void *data) {
-  kprintf("IRQ: registering handler for IRQ%d\n", irq);
+  kprintf("irq: registering handler for IRQ%d\n", irq);
   if (irq > IRQ_NUM_VECTORS - IRQ_VECTOR_BASE) {
     return -ERANGE;
   }
@@ -209,7 +209,7 @@ int irq_register_irq_handler(uint8_t irq, irq_handler_t handler, void *data) {
 }
 
 int irq_register_signaled_irq_handler(uint8_t irq, cond_t *condition) {
-  kprintf("IRQ: registering deferred handler for IRQ%d\n", irq);
+  kprintf("irq: registering deferred handler for IRQ%d\n", irq);
   if (irq > IRQ_NUM_VECTORS - IRQ_VECTOR_BASE) {
     return -ERANGE;
   }

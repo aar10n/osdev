@@ -109,7 +109,7 @@ gdt_entry_t gdt[] = {
   null_segment(),    // 0x30 tss high
 };
 
-uint8_t ring0_stack[1024];
+uint8_t ring0_stack[4096];
 struct tss tss;
 gdt_desc_t gdt_desc;
 

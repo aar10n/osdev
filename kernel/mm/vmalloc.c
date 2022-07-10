@@ -35,8 +35,7 @@ __used int fault_handler(uintptr_t rip_addr, uintptr_t fault_addr, uint32_t err)
 
 static always_inline address_space_t *select_address_space(uintptr_t address) {
   if (address >= USER_SPACE_START && address <= USER_SPACE_END) {
-    /* user space */
-    return NULL;
+    return PERCPU_ADDRESS_SPACE;
   } else if (address >= KERNEL_SPACE_START && address <= KERNEL_SPACE_END) {
     return kernel_space;
   }
@@ -92,6 +91,9 @@ uintptr_t locate_free_address_region(address_space_t *space, uintptr_t base, siz
   }
 
   kfree(iter);
+  if (addr + size <= space->max_addr) {
+    return addr;
+  }
   return 0;
 }
 
@@ -231,7 +233,7 @@ vm_mapping_t *vmap_phys_internal(uintptr_t phys_addr, size_t size, uint32_t flag
 // called from thread.asm
 __used void swap_address_space(address_space_t *new_space) {
   address_space_t *current = PERCPU_ADDRESS_SPACE;
-  if (current->page_table == new_space->page_table) {
+  if (current != NULL && current->page_table == new_space->page_table) {
     return;
   }
   set_current_pgtable(new_space->page_table);
@@ -242,7 +244,7 @@ void page_fault_handler(uint8_t vector, uint32_t error_code, cpu_irq_stack_t *fr
   uint32_t id = PERCPU_ID;
   uint64_t fault_addr = __read_cr2();
   kprintf("================== !!! Exception !!! ==================\n");
-  kprintf("  Page Fault  - Data: %#b\n");
+  kprintf("  Page Fault  - Data: %#b\n", error_code);
   kprintf("  CPU#%d  -  RIP: %p  -  CR2: %018p", id, frame->rip, fault_addr);
 
   while (true) {
@@ -259,10 +261,24 @@ void init_address_space() {
   kernel_space->max_addr = KERNEL_SPACE_END;
   LIST_INIT(&kernel_space->table_pages);
   spin_init(&kernel_space->lock);
-  PERCPU_SET_ADDRESS_SPACE(kernel_space);
+
+  address_space_t *user_space = kmalloc(sizeof(address_space_t));
+  user_space->root = create_intvl_tree();
+  user_space->min_addr = USER_SPACE_START;
+  user_space->max_addr = USER_SPACE_END;
+  LIST_INIT(&user_space->table_pages);
+  spin_init(&user_space->lock);
+  PERCPU_SET_ADDRESS_SPACE(user_space);
 
   uintptr_t pgtable = get_current_pgtable();
   init_recursive_pgtable((void *) pgtable, pgtable);
+  kernel_space->page_table = pgtable;
+  user_space->page_table = pgtable;
+
+  vm_mapping_t *null_vm = _vmap_reserve(0, PAGE_SIZE);
+  null_vm->name = "null";
+  null_vm->type = VM_TYPE_RSVD;
+  null_vm->data.ptr = NULL;
 
   // kernel mapped low memory
   vm_mapping_t *kernel_lowmem_vm = _vmap_reserve(kernel_virtual_offset, kernel_address - kernel_virtual_offset);
@@ -289,6 +305,7 @@ void init_address_space() {
   kreserved_vm->name = "kernel reserved";
   kreserved_vm->type = VM_TYPE_PHYS;
   kreserved_vm->data.phys = kernel_reserved_ptr - kreserved_vm->size;
+
   // kernel stack
   page_t *stack_pages = _alloc_pages(SIZE_TO_PAGES(KERNEL_STACK_SIZE), PG_WRITE);
   uintptr_t kstack_bottom = KERNEL_STACK_TOP_VA - KERNEL_STACK_SIZE;
@@ -298,8 +315,11 @@ void init_address_space() {
 
   execute_init_address_space_callbacks();
 
-  kprintf("kernel space:\n");
-  _address_space_print_mappings(kernel_space);
+  // relocate boot info struct
+  void *new_boot_info = _vmap_mmio((uintptr_t) boot_info_v2, PAGE_SIZE, 0);
+  boot_info_v2 = new_boot_info;
+
+  vm_print_debug_address_space();
 
   // switch to new kernel stack
   kprintf("switching to new kernel stack\n");
@@ -311,6 +331,7 @@ void init_address_space() {
   cpu_write_stack_pointer(new_rsp);
 
   irq_register_exception_handler(CPU_EXCEPTION_PF, page_fault_handler);
+  pgtable_unmap_user_mappings();
 }
 
 address_space_t *new_address_space() {
@@ -321,12 +342,21 @@ address_space_t *new_address_space() {
   LIST_INIT(&space->table_pages);
   spin_init(&space->lock);
 
-  // create new page tables
-  page_t *meta_pages = NULL;
-  uintptr_t pgtable = deepcopy_fork_page_tables(&meta_pages);
-  space->page_table = pgtable;
-  SLIST_ADD_SLIST(&space->table_pages, meta_pages, SLIST_GET_LAST(meta_pages, next), next);
+  vm_mapping_t *mapping = allocate_vm_mapping(space, 0, PAGE_SIZE, VMAP_FIXED);
+  kassert(mapping != NULL);
+  mapping->type = VM_TYPE_RSVD;
+  mapping->attr = 0;
+  mapping->data.ptr = NULL;
+  mapping->name = "null";
 
+  // create new page tables
+  address_space_t *current = PERCPU_ADDRESS_SPACE;
+  if (current != NULL) {
+    page_t *meta_pages = NULL;
+    uintptr_t pgtable = deepcopy_fork_page_tables(&meta_pages);
+    space->page_table = pgtable;
+    SLIST_ADD_SLIST(&space->table_pages, meta_pages, SLIST_GET_LAST(meta_pages, next), next);
+  }
   return space;
 }
 
@@ -366,6 +396,7 @@ void *_vmap_pages(page_t *pages) {
 }
 
 void *_vmap_pages_addr(uintptr_t virt_addr, page_t *pages) {
+  kassert(virt_addr % PAGE_SIZE == 0);
   if (pages == NULL) {
     return NULL;
   }
@@ -465,17 +496,21 @@ void _vunmap_pages(page_t *pages) {
 
   vm_mapping_t *mapping = pages->mapping;
   address_space_t *space = select_address_space(mapping->address);
+  uintptr_t virt_ptr = mapping->address;
+
   interval_t intvl = intvl(mapping->address, mapping->address + mapping->size);
   intvl_tree_delete(space->root, intvl);
-  mapping->data.ptr = NULL;
-  kfree(mapping);
+  // mapping->data.ptr = NULL;
+  // kfree(mapping);
 
   page_t *curr = pages;
   while (curr) {
     kassert(curr->flags & PG_MAPPED);
-    recursive_unmap_entry(curr->address, curr->flags);
+    recursive_unmap_entry(virt_ptr, curr->flags);
     curr->flags ^= PG_MAPPED;
     curr->mapping = NULL;
+
+    virt_ptr += pg_flags_to_size(curr->flags);
     curr = curr->next;
   }
 }
@@ -538,9 +573,11 @@ uintptr_t _vm_virt_to_phys(uintptr_t virt_addr) {
   } else if (mapping->type == VM_TYPE_PAGE) {
     page_t *curr = mapping->data.page;
     while (curr) {
-      if (curr->address >= virt_addr && curr->address + pg_flags_to_size(curr->flags) <= virt_addr) {
+      size_t pgsize = pg_flags_to_size(curr->flags);
+      if (offset < pgsize) {
         return curr->address + offset;
       }
+      offset -= pgsize;
       curr = curr->next;
     }
     unreachable;
@@ -663,4 +700,10 @@ void _address_space_to_graphiz(address_space_t *space) {
   }
   kprintf("}\n");
   kfree(iter);
+}
+
+void vm_print_debug_address_space() {
+  kprintf("vm: address space mappings\n");
+  _address_space_print_mappings(PERCPU_ADDRESS_SPACE);
+  _address_space_print_mappings(kernel_space);
 }

@@ -12,6 +12,7 @@ void early_init_pgtable();
 void *early_map_entries(uintptr_t virt_addr, uintptr_t phys_addr, size_t count, uint32_t flags);
 
 void init_recursive_pgtable(uint64_t *table_virt, uintptr_t table_phys);
+void pgtable_unmap_user_mappings();
 uint64_t *recursive_map_entry(uintptr_t virt_addr, uintptr_t phys_addr, uint32_t flags, page_t **out_pages);
 void recursive_unmap_entry(uintptr_t virt_addr, uint32_t flags);
 

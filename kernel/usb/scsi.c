@@ -28,7 +28,7 @@ void setup_command_block(usb_ms_cbw_t *cbw, void *cb, size_t size, size_t trnsf_
 //
 
 void *scsi_device_init(usb_device_t *dev) {
-  kprintf("[scsi] init\n");
+  kprintf("scsi: init\n");
   scsi_device_t *device = kmalloc(sizeof(scsi_device_t));
 
   scsi_inquiry_cmd_t inquiry_cmd = {
@@ -199,10 +199,12 @@ ssize_t scsi_read(usb_device_t *dev, uint64_t lba, uint32_t count, void *buf) {
     return 0;
   }
 
+  kprintf("scsi: read (%u blocks)\n", count);
   size_t buf_offset = 0;
   size_t lba_offset = 0;
   while (count > 0) {
     size_t ccount = min(count, SCSI_MAX_XFER);
+    // kprintf("scsi: read -> %u\n", count);
     ssize_t result = scsi_read_internal(dev, lba + lba_offset, ccount, buf + buf_offset);
     if (result < 0) {
       return -1;
