@@ -3,9 +3,6 @@
 //
 
 #include <smpboot.h>
-#include <system.h>
-#include <cpu/gdt.h>
-#include <cpu/idt.h>
 #include <mm.h>
 #include <device/apic.h>
 #include <printf.h>
@@ -58,34 +55,34 @@ void smp_init() {
   kassert(sizeof(smp_data_t) < PAGE_SIZE);
   memcpy(code_ptr, smpboot_start, smpboot_size);
 
-  // uintptr_t pml4 = (uintptr_t) vm_create_ap_tables();
   unreachable;
-  uintptr_t pml4 = (uintptr_t) NULL;
-  uintptr_t stack_ptr = STACK_VA - STACK_SIZE - PAGE_SIZE;
-  for (int i = 0; i < system_info->core_count; i++) {
-    core_desc_t core = system_info->cores[i];
-    if (core.local_apic->flags.bsp) {
-      continue;
-    }
+  // uintptr_t pml4 = (uintptr_t) vm_create_ap_tables();
+  // uintptr_t pml4 = (uintptr_t) NULL;
+  // uintptr_t stack_ptr = STACK_VA - STACK_SIZE - PAGE_SIZE;
+  // for (int i = 0; i < system_info->core_count; i++) {
+  //   core_desc_t core = system_info->cores[i];
+  //   if (core.local_apic->flags.bsp) {
+  //     continue;
+  //   }
+  //
+  //   uint8_t id = core.local_apic->id;
+  //   kprintf("[smp] booting CPU#%d\n", id);
+  //
+  //   smp_data_t data = {
+  //     .status = 0,
+  //     .pml4_addr = (uint32_t) pml4,
+  //     .stack_addr = stack_ptr,
+  //   };
+  //
+  //   memcpy(data_ptr, &data, sizeof(smp_data_t));
+  //   int status = smp_boot_core(id, data_ptr);
+  //   if (status != AP_SUCCESS) {
+  //     kprintf("[smp] failed to boot CPU#%d\n", id);
+  //   } else {
+  //     kprintf("[smp] CPU#%d running!\n", id);
+  //     stack_ptr -= STACK_SIZE + PAGE_SIZE;
+  //   }
+  // }
 
-    uint8_t id = core.local_apic->id;
-    kprintf("[smp] booting CPU#%d\n", id);
-
-    smp_data_t data = {
-      .status = 0,
-      .pml4_addr = (uint32_t) pml4,
-      .stack_addr = stack_ptr,
-    };
-
-    memcpy(data_ptr, &data, sizeof(smp_data_t));
-    int status = smp_boot_core(id, data_ptr);
-    if (status != AP_SUCCESS) {
-      kprintf("[smp] failed to boot CPU#%d\n", id);
-    } else {
-      kprintf("[smp] CPU#%d running!\n", id);
-      stack_ptr -= STACK_SIZE + PAGE_SIZE;
-    }
-  }
-
-  kprintf("[smp] done!\n");
+  // kprintf("[smp] done!\n");
 }

@@ -61,7 +61,7 @@ endif
 
 ifdef QEMU_TRACE_FILE
 QEMU_DEBUG_OPTIONS += \
-	-trace file=$(QEMU_TRACE_FILE)
+	-trace events=$(QEMU_TRACE_FILE),file=$(BUILD_DIR)/events.out
 endif
 
 QEMU_OPTIONS ?= \
