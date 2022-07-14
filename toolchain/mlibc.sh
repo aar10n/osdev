@@ -126,29 +126,30 @@ toolchain::mlibc::setup() {
     popd
   fi
 
-  patch -p1 -d ${mlibc_dir} < ${PROJECT_DIR}/toolchain/patches/mlibc.patch
+  # no more patching we're using a fork instead
+  #  patch -p1 -d ${mlibc_dir} < ${PROJECT_DIR}/toolchain/patches/mlibc.patch
 
-  # fix symlinks
-  pushd ${mlibc_dir}/sysdeps/osdev/include
-    for dir in */; do
-      pushd ${dir}
-        for file in *.h; do
-          link=$(cat $file)
-          rm $file
-          ln -s $link $(basename $file)
-        done
-      popd
-    done
-  popd
-
-  # link default abi headers
-  pushd ${mlibc_dir}/sysdeps/osdev/include/abi-bits
-    for file in ../../../../abis/mlibc/*.h; do
-      if [ ! -f $(basename $file) ]; then
-        ln -s $file $(basename $file)
-      fi
-    done
-  popd
+#  # fix symlinks
+#  pushd ${mlibc_dir}/sysdeps/osdev/include
+#    for dir in */; do
+#      pushd ${dir}
+#        for file in *.h; do
+#          link=$(cat $file)
+#          rm $file
+#          ln -s $link $(basename $file)
+#        done
+#      popd
+#    done
+#  popd
+#
+#  # link default abi headers
+#  pushd ${mlibc_dir}/sysdeps/osdev/include/abi-bits
+#    for file in ../../../../abis/mlibc/*.h; do
+#      if [ ! -f $(basename $file) ]; then
+#        ln -s $file $(basename $file)
+#      fi
+#    done
+#  popd
 }
 
 # build mlibc standard library

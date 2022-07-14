@@ -89,7 +89,7 @@ uint16_t page_to_entry_flags(uint32_t flags) {
   entry_flags |= (flags & PG_WRITETHRU) ? PE_WRITE_THROUGH : 0;
   entry_flags |= ((flags & PG_BIGPAGE) || (flags & PG_HUGEPAGE)) ? PE_SIZE : 0;
   entry_flags |= (flags & PG_GLOBAL) ? PE_GLOBAL : 0;
-  // entry_flags |= (flags & PG_EXEC) ? 0 : PE_NO_EXECUTE;
+  entry_flags |= (flags & PG_EXEC) ? 0 : PE_NO_EXECUTE;
   return entry_flags;
 }
 

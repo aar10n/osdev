@@ -102,80 +102,60 @@ index 00000000..1905e3bf
 +}
 diff --git a/sysdeps/osdev/generic/generic.cpp b/sysdeps/osdev/generic/generic.cpp
 new file mode 100644
-index 00000000..757c363c
+index 00000000..9e95593f
 --- /dev/null
 +++ b/sysdeps/osdev/generic/generic.cpp
-@@ -0,0 +1,300 @@
+@@ -0,0 +1,236 @@
 +#include <bits/ensure.h>
 +#include <mlibc/debug.hpp>
 +#include <mlibc/all-sysdeps.hpp>
 +#include <mlibc/thread-entry.hpp>
-+#include <errno.h>
 +#include <dirent.h>
 +#include <fcntl.h>
-+#include <limits.h>
++#include <osdev/syscalls.h>
++#include <cstddef>
++
++#define IS_ERROR(x) ((int64_t)(x) < 0)
++#define TO_ERRNO(x) (-(int)((int64_t)(x)))
 +
 +namespace mlibc {
 +
 +  void sys_libc_log(const char *message) {
-+    unsigned long res;
-+    asm volatile ("syscall" : "=a"(res)
-+    : "a"(50), "D"(message)
-+    : "rcx", "r11", "rdx");
++    _syscall(SYS_LOG, message);
 +  }
 +
 +  void sys_libc_panic() {
-+    mlibc::infoLogger() << "\e[31mmlibc: panic!" << frg::endlog;
-+    asm volatile ("syscall" :
-+    : "a"(12), "D"(1)
-+    : "rcx", "r11", "rdx");
++    // mlibc::infoLogger() << "\e[31mmlibc: panic!" << frg::endlog;
++    _syscall(SYS_PANIC, "");
 +    while (true) {}
 +  }
 +
 +  int sys_tcb_set(void *pointer) {
-+    int res;
-+    asm volatile ("syscall" : "=a"(res)
-+    : "a"(300), "D"(pointer)
-+    : "rcx", "r11", "rdx");
++    int res = _syscall(SYS_SET_FS_BASE, pointer);
 +    return res;
 +  }
 +
 +  int sys_anon_allocate(size_t size, void **pointer) {
-+    void *ret;
-+    int sys_errno;
++    void *res = (void *) _syscall(SYS_MMAP, NULL, size, PROT_WRITE, MAP_ANON, -1, 0);
++    if (IS_ERROR(res)) {
++      return TO_ERRNO(res);
++    }
 +
-+    asm volatile ("syscall"
-+    : "=a"(ret), "=d"(sys_errno)
-+    : "a"(9), "D"(0), "S"(size)
-+    : "rcx", "r11");
-+
-+    if (!ret)
-+      return sys_errno;
-+
-+    *pointer = ret;
++    *pointer = res;
 +    return 0;
 +  }
 +
 +  int sys_anon_free(void *pointer, size_t size) {
-+    int unused_return;
-+    int sys_errno;
-+
-+    asm volatile ("syscall"
-+    : "=a"(unused_return), "=d"(sys_errno)
-+    : "a"(11), "D"(pointer), "S"(size)
-+    : "rcx", "r11");
-+
-+    if (unused_return)
-+      return sys_errno;
-+
++    int res = _syscall(SYS_MUNMAP, pointer, size);
++    if (IS_ERROR(res)) {
++      return TO_ERRNO(res);
++    }
 +    return 0;
 +  }
 +
 +#ifndef MLIBC_BUILDING_RTDL
 +  void sys_exit(int status) {
-+    asm volatile ("syscall" :
-+    : "a"(12), "D"(status)
-+    : "rcx", "r11", "rdx");
++    _syscall(SYS_EXIT, status);
 +  }
 +#endif
 +
@@ -186,105 +166,64 @@ index 00000000..757c363c
 +#endif
 +
 +  int sys_open(const char *path, int flags, mode_t mode, int *fd) {
-+    int ret;
-+    int sys_errno;
++    int res = _syscall(SYS_OPEN, path, flags, mode);
++    if (IS_ERROR(res)) {
++      return TO_ERRNO(res);
++    }
 +
-+    asm volatile ("syscall"
-+    : "=a"(ret), "=d"(sys_errno)
-+    : "a"(2), "D"(path), "S"(flags), "d"(0)
-+    : "rcx", "r11");
-+
-+    if (ret == -1)
-+      return sys_errno;
-+
-+    *fd = ret;
++    *fd = res;
 +    return 0;
 +  }
 +
 +  int sys_close(int fd) {
-+    int ret;
-+    int sys_errno;
-+
-+    asm volatile ("syscall"
-+    : "=a"(ret), "=d"(sys_errno)
-+    : "a"(3), "D"(fd)
-+    : "rcx", "r11");
-+
-+    if (ret == -1)
-+      return sys_errno;
-+
++    int res = _syscall(SYS_CLOSE, fd);
++    if (IS_ERROR(res)) {
++      return TO_ERRNO(res);
++    }
 +    return 0;
 +  }
 +
 +  int sys_read(int fd, void *buf, size_t count, ssize_t *bytes_read) {
-+    ssize_t ret;
-+    int sys_errno;
++    ssize_t res = _syscall(SYS_READ, fd, buf, count);
++    if (IS_ERROR(res)) {
++      return TO_ERRNO(res);
++    }
 +
-+    asm volatile ("syscall"
-+    : "=a"(ret), "=d"(sys_errno)
-+    : "a"(0), "D"(fd), "S"(buf), "d"(count)
-+    : "rcx", "r11");
-+
-+    if (ret == -1)
-+      return sys_errno;
-+
-+    *bytes_read = ret;
++    *bytes_read = res;
 +    return 0;
 +  }
 +
 +#ifndef MLIBC_BUILDING_RTDL
 +  int sys_write(int fd, const void *buf, size_t count, ssize_t *bytes_written) {
-+    ssize_t ret;
-+    int sys_errno;
++    ssize_t res = _syscall(SYS_WRITE, fd, buf, count);
++    if (IS_ERROR(res)) {
++      return TO_ERRNO(res);
++    }
 +
-+    asm volatile ("syscall"
-+    : "=a"(ret), "=d"(sys_errno)
-+    : "a"(1), "D"(fd), "S"(buf), "d"(count)
-+    : "rcx", "r11");
-+
-+    if (ret == -1)
-+      return sys_errno;
-+
-+    *bytes_written = ret;
++    *bytes_written = res;
 +    return 0;
 +  }
 +#endif
 +
 +
 +  int sys_seek(int fd, off_t offset, int whence, off_t *new_offset) {
-+    off_t ret;
-+    int sys_errno;
++    off_t res = _syscall(SYS_LSEEK, fd, offset, whence);
++    if (IS_ERROR(res)) {
++      return TO_ERRNO(res);
++    }
 +
-+    asm volatile ("syscall"
-+    : "=a"(ret), "=d"(sys_errno)
-+    : "a"(8), "D"(fd), "S"(offset), "d"(whence)
-+    : "rcx", "r11");
-+
-+    if (ret == -1)
-+      return sys_errno;
-+
-+    *new_offset = ret;
++    *new_offset = res;
 +    return 0;
 +  }
 +
 +  int sys_vm_map(void *hint, size_t size, int prot, int flags,
 +                 int fd, off_t offset, void **window) {
-+    __ensure(flags & MAP_ANONYMOUS);
-+    void *ret;
-+    int sys_errno;
++    void *res = (void *) _syscall(SYS_MMAP, hint, size, prot, flags, fd, offset);
++    if (IS_ERROR(res)) {
++      return TO_ERRNO(res);
++    }
 +
-+    // mlibc::infoLogger() << "calling sys_vm_map with size: " << size << frg::endlog;
-+
-+    asm volatile ("syscall"
-+    : "=a"(ret), "=d"(sys_errno)
-+    : "a"(9), "D"(hint), "S"(size)
-+    : "rcx", "r11");
-+
-+    if (!ret)
-+      return sys_errno;
-+
-+    *window = ret;
-+
++    *window = res;
 +    return 0;
 +  }
 +
@@ -339,10 +278,7 @@ index 00000000..757c363c
 +  }
 +
 +  void sys_thread_exit() {
-+    asm volatile ("syscall"
-+    :
-+    : "a"(68)
-+    : "rcx", "r11");
++    _syscall(SYS_EXIT, 0);
 +    __builtin_trap();
 +  }
 +

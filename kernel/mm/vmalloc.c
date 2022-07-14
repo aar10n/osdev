@@ -438,28 +438,32 @@ void *_vmap_mmio(uintptr_t phys_addr, size_t size, uint32_t flags) {
   return (void *) mapping->address;
 }
 
-void *_vmap_mmap(uintptr_t phys_addr, size_t size, uint32_t flags) {
-  flags |= PG_USER;
-  vm_mapping_t *mapping = vmap_phys_internal(phys_addr, size, flags, USER_SPACE_START, VMAP_USERSPACE);
+void *_vmap_mmap_anon(page_t *pages, uintptr_t hint) {
+  if (hint < SIZE_1MB * 128) {
+    hint = USER_SPACE_START + SIZE_1GB;
+  }
+
+  vm_mapping_t *mapping = vmap_pages_internal(pages, hint, VMAP_USERSPACE);
   if (mapping == NULL) {
     return NULL;
   }
 
   mapping->attr |= VM_TYPE_ANON;
   mapping->name = "mmap";
+  mapping->data.page = pages;
   return (void *) mapping->address;
 }
 
-void *_vmap_mmap_fixed(uintptr_t virt_addr, uintptr_t phys_addr, size_t size, uint32_t flags) {
-  flags |= PG_USER;
+void *_vmap_mmap_anon_fixed(uintptr_t virt_addr, page_t *pages) {
   kassert(virt_addr >= USER_SPACE_START && virt_addr < USER_SPACE_END);
-  vm_mapping_t *mapping = vmap_phys_internal(phys_addr, size, flags, virt_addr, VMAP_FIXED | VMAP_USERSPACE);
+  vm_mapping_t *mapping = vmap_pages_internal(pages, virt_addr, VMAP_FIXED | VMAP_USERSPACE);
   if (mapping == NULL) {
     return NULL;
   }
 
   mapping->attr |= VM_TYPE_ANON;
   mapping->name = "mmap";
+  mapping->data.page = pages;
   return (void *) mapping->address;
 }
 

@@ -308,6 +308,7 @@ dentry_t *f_readdir(file_t *file) {
   return next;
 }
 
+// TODO: change flags to uint32_t
 int f_mmap(file_t *file, uintptr_t vaddr, size_t len, uint16_t flags) {
   if (!file->ops->mmap) {
     ERRNO = ENOTSUP;

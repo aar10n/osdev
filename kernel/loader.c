@@ -5,16 +5,16 @@
 #include <loader.h>
 
 #include <cpu/cpu.h>
-#include <thread.h>
+
 #include <mm.h>
+#include <fs.h>
 #include <elf.h>
-#include <elf64.h>
+#include <thread.h>
+#include <panic.h>
 #include <printf.h>
 #include <string.h>
-#include <path.h>
-#include <panic.h>
 
-// TODO: Fix alignment
+#include <elf64.h>
 
 int elf_pt_load(Elf64_Phdr *pheader, void *buf, elf_program_t *prog) {
   uint32_t flags = PG_USER;
@@ -24,12 +24,13 @@ int elf_pt_load(Elf64_Phdr *pheader, void *buf, elf_program_t *prog) {
     flags |= PG_WRITE;
 
   size_t memsz = align_down(pheader->p_memsz, pheader->p_align) + pheader->p_align;
-  size_t filesz = align_down(pheader->p_filesz, pheader->p_align) + pheader->p_align;
 
   page_t *pages = _alloc_pages(SIZE_TO_PAGES(memsz), flags);
-  uintptr_t v_addr = align_down(pheader->p_vaddr + prog->base, pheader->p_align);
-  void *addr = _vmap_pages_addr(v_addr, pages);
-  if (addr == NULL) {
+  uintptr_t v_aligned = align_down(pheader->p_vaddr + prog->base, pheader->p_align);
+  void *addr = (void *)(pheader->p_vaddr + prog->base);
+
+  void *res = _vmap_pages_addr(v_aligned, pages);
+  if (res == NULL) {
     panic("exec: could not load executable");
   }
 
@@ -37,8 +38,8 @@ int elf_pt_load(Elf64_Phdr *pheader, void *buf, elf_program_t *prog) {
   // copy over and zero the allocated pages even if the
   // pages are not marked as writable
   cpu_disable_write_protection();
+  memset(res, 0, memsz);
   memcpy(addr, buf + pheader->p_offset, pheader->p_filesz);
-  memset(offset_ptr(addr, filesz), 0, memsz - filesz);
   cpu_enable_write_protection();
 
   if (prog->prog_pages) {
@@ -50,6 +51,25 @@ int elf_pt_load(Elf64_Phdr *pheader, void *buf, elf_program_t *prog) {
   } else {
     prog->prog_pages = pages;
   }
+  return 0;
+}
+
+int elf_pt_dynamic(Elf64_Phdr *pheader, void *buf, elf_program_t *prog) {
+  if (pheader->p_align >= PAGE_SIZE) {
+    return elf_pt_load(pheader, buf, prog);
+  }
+
+  uintptr_t page_boundary = align_down(pheader->p_vaddr + prog->base, PAGE_SIZE);
+  vm_mapping_t *mapping = _vmap_get_mapping(page_boundary);
+  if (mapping == NULL) {
+    return elf_pt_load(pheader, buf, prog);
+  }
+
+  void *addr = (void *)(pheader->p_vaddr + prog->base);
+  kassert(pheader->p_vaddr + pheader->p_memsz < page_boundary + mapping->size);
+  cpu_disable_write_protection();
+  memcpy(addr, buf + pheader->p_offset, pheader->p_filesz);
+  cpu_enable_write_protection();
   return 0;
 }
 
@@ -78,8 +98,10 @@ int load_elf(void *buf, elf_program_t *prog) {
   for (uint32_t i = 0; i < elf->e_phnum; i++) {
     if (phead[i].p_type == PT_LOAD && phead[i].p_memsz > 0) {
       elf_pt_load(&phead[i], buf, prog);
+    } else if (phead[i].p_type == PT_DYNAMIC) {
+      elf_pt_dynamic(&phead[i], buf, prog);
     } else if (phead[i].p_type == PT_INTERP) {
-      elf_pt_interp(&(phead[i]), buf, prog);
+      elf_pt_interp(&phead[i], buf, prog);
     } else if (phead[i].p_type == PT_PHDR) {
       prog->phdr = phead[i].p_vaddr + prog->base;
     }
@@ -115,6 +137,7 @@ int load_elf_file(const char *path, elf_program_t *prog) {
     fs_close(fd);
   }
 
+  kprintf("loaded %s at %018p [entry = %018p]\n", path, prog->base, prog->entry);
   if (prog->interp != NULL) {
     elf_program_t *linker = kmalloc(sizeof(elf_program_t));
     memset(linker, 0, sizeof(elf_program_t));

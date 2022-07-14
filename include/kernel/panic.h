@@ -12,7 +12,7 @@
 
 #define kassert(expression) \
   if (!(expression)) \
-    panic("assertion failed: " #expression ", file %s, line %d\n", __FILE__, __LINE__);
+    panic("assertion failed: %s, file %s, line %d\n", #expression, __FILE__, __LINE__);
 
 #define kassertf(expression, msg, args...) \
   if (!(expression)) \

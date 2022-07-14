@@ -87,12 +87,12 @@ static int sys_execve(const char *path, char *const argv[], char *const envp[]) 
 }
 
 static int sys_open(const char *path, int flags, mode_t mode) {
-  kprintf("sys_open(\"%s\", %d, %ud)\n", path, flags, mode);
+  // kprintf("sys_open(\"%s\", %d, %ud)\n", path, flags, mode);
   int result = fs_open(path, flags, mode);
   if (result < 0) {
     return -ERRNO;
   }
-  kprintf("-> %d\n", result);
+  // kprintf("-> %d\n", result);
   return result;
 }
 
@@ -261,14 +261,14 @@ static int sys_yield() {
 }
 
 static void *sys_mmap(void *addr, size_t len, int prot, int flags, int fd, off_t off) {
-  kprintf("sys_mmap(%p, %llu, %d, %d, %d, %lld)\n",
-          addr, len, prot, flags, fd, off);
+  // kprintf("sys_mmap(%p, %llu, %d, %d, %d, %lld)\n",
+  //         addr, len, prot, flags, fd, off);
 
   void *result = fs_mmap(addr, len, prot, flags, fd, off);
   if (result == MAP_FAILED) {
     return as_void(-ERRNO);
   }
-  kprintf("-> %p\n", result);
+  // kprintf("-> %p\n", result);
   return result;
 }
 
@@ -292,17 +292,19 @@ static pid_t sys_fork() {
 // SYS_PWRITE
 // SYS_IOCTL
 
-static void sys_set_fs_base(uintptr_t addr) {
+static int sys_set_fs_base(uintptr_t addr) {
   PERCPU_THREAD->tls->addr = addr;
   cpu_write_fsbase(addr);
+  return 0;
 }
 
 static void sys_panic(const char *message) {
   panic(message);
 }
 
-static void sys_log(const char *message) {
-  kprintf("%s\n", message);
+static int sys_log(const char *message) {
+  // kprintf("%s\n", message);
+  return 0;
 }
 
 static int sys_kill(pid_t pid, int sig) {
@@ -427,12 +429,12 @@ __used int handle_syscall(
   uint64_t arg4,
   uint64_t arg5
 ) {
-  kprintf(">>> syscall %d <<<\n", syscall);
+  // kprintf(">>> syscall %d <<<\n", syscall);
   if (syscall > num_syscalls - 1) {
     kprintf("[syscall] bad syscall %d\n", syscall);
     return -1;
   }
-  kprintf(">>> %s <<<\n", syscall_names[syscall]);
+  // kprintf(">>> %s <<<\n", syscall_names[syscall]);
 
   syscall_t func = syscalls[syscall];
   if (func == NULL) {

@@ -847,7 +847,7 @@ int print_format(const char *format, char *str, size_t size, va_list args, bool 
             len = str_len;
           }
 
-          for (int i = 0; i < len; i++) {
+          for (int i = 0; i < min(len, TEMP_BUFFER_SIZE - 1); i++) {
             if (value[i] == '\0') {
               break;
             }

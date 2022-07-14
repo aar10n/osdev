@@ -90,9 +90,9 @@ typedef struct address_space {
 #define VM_TYPE_RSVD   4 // reserved memory
 
 // vm attributes
-#define VM_ATTR_USER       (1 << 0) // region is in user space
-#define VM_ATTR_RESERVED   (1 << 1) // region is reserved
-#define VM_ATTR_MMIO       (1 << 2) // region is memory-mapped I/O
+#define VM_ATTR_USER        (1 << 0) // region is in user space
+#define VM_ATTR_RESERVED    (1 << 1) // region is reserved
+#define VM_ATTR_MMIO        (1 << 2) // region is memory-mapped I/O
 
 typedef struct vm_mapping {
   uint64_t address;    // virtual address

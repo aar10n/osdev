@@ -21,8 +21,8 @@ void *_vmap_phys_addr(uintptr_t virt_addr, uintptr_t phys_addr, size_t size, uin
 
 void *_vmap_mmio(uintptr_t phys_addr, size_t size, uint32_t flags);
 
-void *_vmap_mmap(uintptr_t phys_addr, size_t size, uint32_t flags);
-void *_vmap_mmap_fixed(uintptr_t virt_addr, uintptr_t phys_addr, size_t size, uint32_t flags);
+void *_vmap_mmap_anon(page_t *pages, uintptr_t hint);
+void *_vmap_mmap_anon_fixed(uintptr_t virt_addr, page_t *pages);
 vm_mapping_t *_vmap_reserve(uintptr_t virt_addr, size_t size);
 
 void _vunmap_pages(page_t *pages);

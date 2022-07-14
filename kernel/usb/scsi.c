@@ -199,7 +199,7 @@ ssize_t scsi_read(usb_device_t *dev, uint64_t lba, uint32_t count, void *buf) {
     return 0;
   }
 
-  kprintf("scsi: read (%u blocks)\n", count);
+  // kprintf("scsi: read (%u blocks)\n", count);
   size_t buf_offset = 0;
   size_t lba_offset = 0;
   while (count > 0) {

@@ -23,6 +23,13 @@ all-defined = $(if $(strip $(foreach var,$1,$(if $($(var)),,$(var)))),false,true
 #   $(call pairs-src-paths,foo:one bar:two baz:three) -> foo bar baz
 pairs-src-paths = $(foreach dep,$1,$(firstword $(subst :, ,$(dep))))
 
+# Returns a list of <src>:<dest> pairs from a list of <src> paths.
+# args:
+#   $1 - list of <src> paths
+#   $2 - prefix to add in front of each sources basename.
+# 	$3 - suffix to add after <dest> path
+make-path-pairs = $(foreach src,$1,$(src):$2$(notdir $(src))$(strip $3)$(space))
+
 # Converts a target name into a path relative to the project root.
 # args:
 #   $1: target name

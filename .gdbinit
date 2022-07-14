@@ -93,10 +93,10 @@ commands
   add-symbol-file-all build/sysroot/usr/lib/ld.so 0x7fc0000000
   add-symbol-file-all build/sysroot/usr/lib/libc.so 0x41000000
 
-  b entry.S:9
-  commands
-    add-symbol-file build/apps/hello
-    break main
-  end
+  #b entry.S:9
+  #commands
+  #  add-symbol-file build/apps/hello
+  #  break main
+  #end
 end
 
