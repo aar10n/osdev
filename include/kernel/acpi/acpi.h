@@ -7,6 +7,12 @@
 
 #include <base.h>
 
+extern uint16_t enabled_apic_count;
+extern uint16_t online_capable_apic_count;
+extern uint16_t total_apic_count;
+extern uint8_t apic_id_map[];
+
+
 #define ACPI_SIGNATURE_RSDP   SIGNATURE_64('R', 'S', 'D', ' ', 'P', 'T', 'R', ' ')
 #define ACPI_SIGNATURE_FADT   SIGNATURE_32('F', 'A', 'C', 'P')
 #define ACPI_SIGNATURE_MADT   SIGNATURE_32('A', 'P', 'I', 'C')

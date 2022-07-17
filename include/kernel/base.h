@@ -18,13 +18,6 @@
 // General Definitions
 //
 
-#define STACK_VA       0xFFFFFFA000000000
-
-#define SMPBOOT_START  0x0000
-#define SMPDATA_START  0x1000
-
-#define STACK_SIZE      0x4000 // 8 KiB
-
 #define KERNEL_CS 0x08ULL
 #define USER_DS   0x18ULL
 #define USER_CS   0x20ULL

@@ -53,7 +53,7 @@ mem_zone_t *locate_owning_mem_zone(uintptr_t addr) {
   mem_zone_type_t zone_type = get_mem_zone_type(addr);
   mem_zone_t *zone = LIST_FIRST(&mem_zones[zone_type]);
   while (zone != NULL) {
-    if (zone->base >= addr && addr < zone->base + zone->size) {
+    if (addr >= zone->base && addr < zone->base + zone->size) {
       return zone;
     }
     zone = LIST_NEXT(zone, list);
@@ -294,6 +294,16 @@ page_t *_alloc_pages_at(uintptr_t address, size_t count, uint32_t flags) {
     panic("requested pages cross zone boundary");
   }
 
+  if (zone == NULL && end_zone == NULL) {
+    if (!(flags & PG_FORCE)) {
+      panic("_alloc_pages_at: invalid address %p", address);
+    }
+
+    // construct a list of page structs
+    uint64_t frame = address;
+    return make_page_structs(zone, frame, count, stride, flags);
+  }
+
   // mark frames as used
   kassert(zone != NULL);
   spin_lock(&zone->lock);
@@ -310,7 +320,7 @@ page_t *_alloc_pages_at(uintptr_t address, size_t count, uint32_t flags) {
     }
   }
   spin_unlock(&zone->lock);
-  if (before_count == 0) {
+  if (before_count == 0 && !(flags & PG_FORCE)) {
     panic("requested pages are already allocated");
   }
 
@@ -325,7 +335,12 @@ page_t *_alloc_pages_at(uintptr_t address, size_t count, uint32_t flags) {
 void _free_pages(page_t *page) {
   while (page != NULL) {
     mem_zone_t *zone = page->zone;
-    kassert(zone);
+    if (zone == NULL) {
+      page_t *next = page->next;
+      kfree(page);
+      page = next;
+      continue;
+    }
 
     size_t num_4k_pages = 1;
     if (page->flags & PG_BIGPAGE) {

@@ -7,17 +7,19 @@
 
 #include <base.h>
 
-#define AP_SUCCESS 1
-
-typedef struct {
-  uint8_t status;        // 0x00 - ap boot status
-  uint8_t : 8;           // 0x01 - reserved
-  uint16_t : 16;         // 0x02 - reserved
-  uint32_t pml4_addr;    // 0x04 - physical pml4 address
-  uintptr_t stack_addr;  // 0x08 - virtual stack address
+typedef volatile struct packed smp_data {
+  uint16_t lock;              // 0x00 - ap spinlock
+  uint16_t gate;              // 0x02 - ap gate
+  uint16_t current_id;        // 0x04 - current cpu id
+  uint16_t count;             // 0x06 - ap count
+  uint64_t pml4_addr;         // 0x08 - pml4
+  uint64_t stack_addr;        // 0x10 - stack top pointer
+  uint64_t percpu_ptr;        // 0x18 - percpu data area
 } smp_data_t;
-
-static_assert(sizeof(smp_data_t) == (sizeof(uint64_t) * 2));
+static_assert(sizeof(smp_data_t) == (sizeof(uint64_t) * 4));
+static_assert(offsetof(smp_data_t, pml4_addr) == 0x8);
+static_assert(offsetof(smp_data_t, stack_addr) == 0x10);
+// char (*__kaboom)[sizeof(smp_data_t)] = 1;
 
 void smp_init();
 

@@ -19,6 +19,7 @@
 #include <panic.h>
 
 #define ISA_NUM_IRQS 16
+#define MAX_NUM_APICS 128
 
 void acpi_parse_fadt();
 void acpi_parse_madt();
@@ -31,6 +32,10 @@ void acpi_print_address(acpi_address_t *addr);
 size_t acpi_num_tables = 0;
 acpi_table_header_t **acpi_tables = NULL;
 acpi_fadt_t *acpi_global_fadt = NULL;
+uint16_t enabled_apic_count = 0;
+uint16_t online_capable_apic_count = 0;
+uint16_t total_apic_count = 0;
+uint8_t apic_id_map[MAX_NUM_APICS];
 
 //
 
@@ -104,8 +109,6 @@ void acpi_parse_madt() {
     panic("ACPI: error: MADT not found");
   }
 
-  uint32_t enabled_count = 0;
-  uint32_t online_capable_count = 0;
   acpi_madt_iso_t *isa_irq_overrides[ISA_NUM_IRQS] = {0};
   acpi_madt_header_t *header = (void *) madt_ptr;
   if (header->flags & ACPI_MADT_FLAG_PCAT_COMPAT) {
@@ -124,10 +127,14 @@ void acpi_parse_madt() {
     if (entry->type == ACPI_MADT_TYPE_LOCAL_APIC) {
       acpi_madt_local_apic_t *local_apic = (void *) entry;
       if ((local_apic->flags & ACPI_MADT_APIC_FLAG_ENABLED) != 0) {
-        enabled_count++;
+        enabled_apic_count++;
       } else if ((local_apic->flags & ACPI_MADT_APIC_FLAG_ONLINE_CAP) != 0) {
-        online_capable_count++;
+        online_capable_apic_count++;
       }
+
+      kassert(total_apic_count < MAX_NUM_APICS);
+      apic_id_map[total_apic_count++] = local_apic->apic_id;
+
       kprintf("ACPI: APIC[%d]\n", local_apic->apic_id);
       register_apic(local_apic->apic_id);
     } else if (entry->type == ACPI_MADT_TYPE_IO_APIC) {
@@ -179,7 +186,7 @@ void acpi_parse_madt() {
     }
   }
 
-  kprintf("ACPI: %d processors enabled, %d online capable\n", enabled_count, online_capable_count);
+  kprintf("ACPI: %d processors enabled, %d online capable\n", enabled_apic_count, online_capable_apic_count);
 }
 
 void acpi_parse_mcfg() {

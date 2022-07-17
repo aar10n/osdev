@@ -18,6 +18,17 @@
 #define ms_to_count(ms) (apic_clock / (US_PER_SEC / ((ms) * 1000)))
 #define us_to_count(us) (apic_clock / (US_PER_SEC / (us)))
 
+#define ICR_LOW_REG_MASK     0xFFF99000
+#define ICR_HIGH_REG_MASK    0x00FFFFFF
+
+#define ICR_VECTOR_SHIFT     0
+#define ICR_DELIV_MODE_SHIFT 8
+#define ICR_DEST_MODE_SHIFT  10
+#define ICR_LEVEL_SHIFT      14
+#define ICR_TRIG_MODE_SHIFT  15
+#define ICR_DEST_SHRT_SHIFT  18
+#define ICR_DEST_SHIFT       24
+
 typedef enum apic_reg {
   APIC_ID            = 0x020,
   APIC_VERSION       = 0x030,
@@ -48,12 +59,11 @@ struct apic_device {
   uint16_t : 16;
   uintptr_t phys_addr;
   uintptr_t address;
+  LIST_ENTRY(struct apic_device);
 };
 
-// PERCPU_VAR(struct apic_device, apic);
-
-// static size_t num_ioapics = 0;
-// static struct ioapic_device ioapics[MAX_IOAPICS];
+static size_t num_apics = 0;
+static LIST_HEAD(struct apic_device) apics;
 
 static uintptr_t apic_base = APIC_BASE_PA;
 static uint64_t cpu_clock;  // ticks per second
@@ -86,17 +96,6 @@ static inline void apic_write_timer(apic_reg_lvt_timer_t timer) {
   apic_write(APIC_LVT_TIMER, timer.raw);
 }
 
-static inline apic_reg_icr_t apic_read_icr() {
-  apic_reg_icr_t icr;
-  icr.raw_low = apic_read(APIC_ICR_LOW);
-  icr.raw_high = apic_read(APIC_ICR_HIGH);
-  return icr;
-}
-
-static inline void apic_write_icr(apic_reg_icr_t icr) {
-  apic_write(APIC_ICR_HIGH, icr.raw_high);
-  apic_write(APIC_ICR_LOW, icr.raw_low);
-}
 
 //
 
@@ -296,38 +295,96 @@ void apic_mdelay(uint64_t ms) {
   apic_udelay(ms * 1000);
 }
 
-void apic_send_ipi(uint8_t mode, uint8_t dest_mode, uint8_t dest, uint8_t vector) {
-  poll_icr_status();
-  apic_reg_icr_t icr;
-  icr.raw = 0;
-  icr = apic_reg_icr(
-    vector, mode, dest_mode, APIC_IDLE,
-    APIC_ASSERT, APIC_EDGE, APIC_DEST_TARGET,
-    dest
-  );
-  apic_write_icr(icr);
-}
-
-void apic_broadcast_ipi(uint8_t mode, uint8_t shorthand, uint8_t vector) {
-  poll_icr_status();
-  apic_reg_icr_t icr;
-  icr.raw = 0;
-  icr = apic_reg_icr(
-    vector, mode, APIC_DEST_PHYSICAL, APIC_IDLE,
-    APIC_ASSERT, APIC_EDGE, shorthand, 0
-  );
-  apic_write_icr(icr);
-}
-
-void apic_self_ipi(uint8_t mode, uint8_t vector) {
-  poll_icr_status();
-  apic_reg_icr_t icr = apic_reg_icr(
-    vector, mode, APIC_DEST_PHYSICAL, APIC_IDLE,
-    APIC_ASSERT, APIC_EDGE, APIC_DEST_SELF, 0
-  );
-  apic_write_icr(icr);
-}
-
 void apic_send_eoi() {
   apic_write(APIC_EOI, 0);
+}
+
+//
+
+void apic_broadcast_init_ipi(bool assert) {
+  apic_read(APIC_ERROR);
+  apic_write(APIC_ERROR, 0);
+
+  uint32_t icr_high = apic_read(APIC_ICR_HIGH) & ICR_HIGH_REG_MASK;
+  apic_write(APIC_ICR_HIGH, icr_high);
+
+  // configure init
+  uint32_t icr_low = apic_read(APIC_ICR_LOW) & ICR_LOW_REG_MASK;
+  icr_low |= APIC_INIT << ICR_DELIV_MODE_SHIFT;
+  icr_low |= (assert ? APIC_EDGE : APIC_LEVEL) << ICR_TRIG_MODE_SHIFT;
+  icr_low |= (APIC_ASSERT & assert) << ICR_LEVEL_SHIFT;
+  icr_low |= APIC_DEST_ALL_EXCL_SELF << ICR_DEST_SHRT_SHIFT;
+  apic_write(APIC_ICR_LOW, icr_low);
+}
+
+void apic_send_init_ipi(uint8_t dest_id, bool assert) {
+  apic_read(APIC_ERROR);
+  apic_write(APIC_ERROR, 0);
+
+  // set dest id
+  uint32_t icr_high = apic_read(APIC_ICR_HIGH) & ICR_HIGH_REG_MASK;
+  icr_high |= dest_id << ICR_DEST_SHIFT;
+  apic_write(APIC_ICR_HIGH, icr_high);
+
+  // configure init
+  uint32_t icr_low = apic_read(APIC_ICR_LOW) & ICR_LOW_REG_MASK;
+  icr_low |= APIC_INIT << ICR_DELIV_MODE_SHIFT;
+  icr_low |= APIC_LEVEL << ICR_TRIG_MODE_SHIFT;
+  icr_low |= (APIC_ASSERT & assert) << ICR_LEVEL_SHIFT;
+  // icr_low |= APIC_DEST_ALL_EXCL_SELF << ICR_DEST_SHRT_SHIFT;
+
+  // if (assert) {
+  // }
+  apic_write(APIC_ICR_LOW, icr_low);
+
+  // wait for completion
+  poll_icr_status();
+}
+
+void apic_send_startup_ipi(uint8_t dest_id, uint8_t vector) {
+  apic_read(APIC_ERROR);
+  apic_write(APIC_ERROR, 0);
+
+  // set dest id
+  uint32_t icr_high = apic_read(APIC_ICR_HIGH) & ICR_HIGH_REG_MASK;
+  icr_high |= dest_id << ICR_DEST_SHIFT;
+  apic_write(APIC_ICR_HIGH, icr_high);
+
+  // configure sipi
+  uint32_t icr_low = apic_read(APIC_ICR_LOW) & ICR_LOW_REG_MASK;
+  icr_low |= vector;
+  icr_low |= APIC_START_UP << ICR_DELIV_MODE_SHIFT;
+  icr_low |= APIC_ASSERT << ICR_LEVEL_SHIFT;
+  apic_write(APIC_ICR_LOW, icr_low);
+
+  // wait for completion
+  poll_icr_status();
+}
+
+void apic_send_ipi(uint8_t mode, uint8_t dest_mode, uint8_t dest, uint8_t vector, bool assert) {
+  poll_icr_status();
+  uint32_t icr_high = apic_read(APIC_ICR_HIGH) & ICR_HIGH_REG_MASK;
+  icr_high |= (dest & 0xFF) << ICR_DEST_SHIFT;
+  apic_write(APIC_ICR_HIGH, icr_high);
+
+  uint32_t icr_low = apic_read(APIC_ICR_LOW) & ICR_LOW_REG_MASK;
+  icr_low |= vector << ICR_VECTOR_SHIFT;
+  icr_low |= (mode & 0b111) << ICR_DELIV_MODE_SHIFT;
+  icr_low |= (dest_mode & 0b001) << ICR_DEST_MODE_SHIFT;
+  icr_low |= (assert & 0b001) << ICR_LEVEL_SHIFT;
+  icr_low |= APIC_EDGE << ICR_TRIG_MODE_SHIFT;
+  apic_write(APIC_ICR_LOW, icr_low);
+}
+
+int apic_write_icr(uint32_t low, uint8_t dest_id) {
+  uint32_t icr_high = apic_read(APIC_ICR_HIGH) & ICR_HIGH_REG_MASK;
+  icr_high |= dest_id << 24;
+  apic_write(APIC_ICR_HIGH, icr_high);
+
+  uint32_t icr_low = apic_read(APIC_ICR_LOW) & ICR_LOW_REG_MASK;
+  icr_low |= low;
+  apic_write(APIC_ICR_LOW, icr_low);
+
+  poll_icr_status();
+  return 0;
 }

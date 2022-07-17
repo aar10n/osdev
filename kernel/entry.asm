@@ -30,10 +30,8 @@ entry:
 
 global ap_entry
 ap_entry:
-;  jmp $
-  ; switch to the new stack
-  mov rsp, rsi ; stack pointer
   mov rbp, rsp
+  push rbp
 
   cld
   cli

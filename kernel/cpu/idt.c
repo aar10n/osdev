@@ -24,15 +24,17 @@ extern void page_fault_handler();
 // extern void sched_irq_hook(uint8_t vector);
 
 void setup_idt() {
-  memset((void *) idt, 0, sizeof(idt));
+  if (cpu_get_is_bsp()) {
+    memset((void *) idt, 0, sizeof(idt));
+    uintptr_t asm_handler = (uintptr_t) &idt_stubs;
+    for (int i = 0; i < IDT_GATES; i++) {;
+      idt[i] = gate(asm_handler, KERNEL_CS, 0, INTERRUPT_GATE, 0, 1);
+      asm_handler += IDT_STUB_SIZE;
+    }
 
-  uintptr_t asm_handler = (uintptr_t) &idt_stubs;
-  for (int i = 0; i < IDT_GATES; i++) {;
-    idt[i] = gate(asm_handler, KERNEL_CS, 0, INTERRUPT_GATE, 0, 1);
-    asm_handler += IDT_STUB_SIZE;
+    idt_desc.base = (uintptr_t) idt;
+    idt_desc.limit = sizeof(idt) - 1;
   }
 
-  idt_desc.base = (uintptr_t) idt;
-  idt_desc.limit = sizeof(idt) - 1;
   cpu_load_idt(&idt_desc);
 }

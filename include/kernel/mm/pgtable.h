@@ -20,7 +20,7 @@ uintptr_t get_current_pgtable();
 void set_current_pgtable(uintptr_t table_phys);
 size_t pg_flags_to_size(uint32_t flags);
 
-uintptr_t create_new_page_tables(page_t **out_pages);
+uintptr_t create_new_ap_page_tables(page_t **out_pages);
 uintptr_t deepcopy_fork_page_tables(page_t **out_pages);
 
 #endif

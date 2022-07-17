@@ -153,8 +153,8 @@ pid_t process_fork() {
 
   uintptr_t stack = PAGE_VIRT_ADDR(main->kernel_stack);
   uintptr_t frame = (uintptr_t) __builtin_frame_address(0);
-  uintptr_t offset = frame - STACK_VA;
-  uintptr_t rsp = stack + STACK_SIZE - offset;
+  uintptr_t offset = frame - KERNEL_STACK_TOP_VA;
+  uintptr_t rsp = stack + KERNEL_STACK_SIZE - offset;
   main->ctx->rsp = rsp;
   kprintf("[process] rsp: %p\n", rsp);
 

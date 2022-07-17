@@ -37,6 +37,27 @@ typedef enum {
   APIC_SELF_IPI_MSR      = 0x83F,
 } apicx2_reg_t;
 
+
+// delivery mode
+#define APIC_DM_FIXED       0x00000
+#define APIC_DM_LOWEST      0x00100
+#define APIC_DM_SMI         0x00200
+#define APIC_DM_NMI         0x00400
+#define APIC_DM_INIT        0x00500
+#define APIC_DM_STARTUP     0x00600
+#define APIC_DM_EXTINT      0x00700
+// level
+#define APIC_LVL_DEASSERT   0x00000
+#define APIC_LVL_ASSERT     0x04000
+// trigger mode
+#define APIC_TM_EDGE        0x00000
+#define APIC_TM_LEVEL       0x08000
+// dest shorthand
+#define APIC_DS_SELF        0x40000
+#define APIC_DS_ALLINC      0x80000
+#define APIC_DS_ALLBUT      0xC0000
+
+
 #define APIC_FIXED        0
 #define APIC_LOWEST_PRIOR 1
 #define APIC_SMI          2
@@ -305,8 +326,10 @@ void apic_udelay(uint64_t us);
 void apic_mdelay(uint64_t ms);
 void apic_send_eoi();
 
-void apic_send_ipi(uint8_t mode, uint8_t dest_mode, uint8_t dest, uint8_t vector);
-void apic_broadcast_ipi(uint8_t mode, uint8_t shorthand, uint8_t vector);
-void apic_self_ipi(uint8_t mode, uint8_t vector);
+void apic_broadcast_init_ipi(bool assert);
+void apic_send_init_ipi(uint8_t dest_id, bool assert);
+void apic_send_startup_ipi(uint8_t dest_id, uint8_t vector);
+
+int apic_write_icr(uint32_t low, uint8_t dest_id);
 
 #endif

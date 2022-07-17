@@ -20,6 +20,7 @@
 // internal vmap flags
 #define VMAP_FIXED      (1 << 0)
 #define VMAP_USERSPACE  (1 << 1)
+#define VMAP_DOWNWARD   (1 << 2)
 
 void execute_init_address_space_callbacks();
 extern uintptr_t entry_initial_stack_top;
@@ -50,7 +51,7 @@ static always_inline uintptr_t select_vmap_hint(uint32_t vm_flags) {
   }
 }
 
-uintptr_t locate_free_address_region(address_space_t *space, uintptr_t base, size_t size) {
+uintptr_t locate_free_address_region(address_space_t *space, uintptr_t base, size_t size, uint32_t vm_flags) {
   kassert(base >= space->min_addr && (base + size) <= space->max_addr);
 
   int alignment = PAGE_SIZE;
@@ -62,6 +63,12 @@ uintptr_t locate_free_address_region(address_space_t *space, uintptr_t base, siz
 
   uintptr_t addr = base;
   interval_t interval = intvl(base, base + size);
+  if (vm_flags & VMAP_DOWNWARD) {
+    kassert(base >= size);
+    addr = base - size;
+    interval = intvl(base - size, base);
+  }
+
   intvl_node_t *closest = intvl_tree_find_closest(space->root, interval);
   if (closest == NULL) {
     return addr;
@@ -70,6 +77,10 @@ uintptr_t locate_free_address_region(address_space_t *space, uintptr_t base, siz
   }
 
   rb_iter_type_t iter_type = FORWARD;
+  if (vm_flags & VMAP_DOWNWARD) {
+    iter_type = REVERSE;
+  }
+
   rb_node_t *node = NULL;
   rb_node_t *last = NULL;
   rb_iter_t *iter = rb_tree_make_iter(space->root->tree, closest->node, iter_type);
@@ -80,13 +91,31 @@ uintptr_t locate_free_address_region(address_space_t *space, uintptr_t base, siz
     // if two consequtive nodes are not contiguous in memory
     // check that there is enough space between the them to
     // fit the requested area.
-    bool contig = contiguous(i, j);
-    if (!contig && i.start > addr && i.start - addr >= size) {
-      kassert(addr + size <= space->max_addr);
-      kfree(iter);
-      return addr;
+
+    if (vm_flags & VMAP_DOWNWARD) {
+      bool contig = contiguous(j, i);
+      if (!contig && j.start >= addr && j.start - addr >= size) {
+        kassert(addr + size <= space->max_addr);
+        kfree(iter);
+        return addr;
+      }
+
+      if (i.start < size) {
+        // no space
+        kfree(iter);
+        return 0;
+      }
+      addr = align(i.start - size, alignment);
+    } else {
+      bool contig = contiguous(i, j);
+      if (!contig && i.start > addr && i.start - addr >= size) {
+        kassert(addr + size <= space->max_addr);
+        kfree(iter);
+        return addr;
+      }
+      addr = align(i.end, alignment);
     }
-    addr = align(i.end, alignment);
+
     last = node;
   }
 
@@ -122,7 +151,7 @@ vm_mapping_t *allocate_vm_mapping(address_space_t *space, uintptr_t addr, size_t
       return NULL;
     }
   } else {
-    virt_addr = locate_free_address_region(space, addr, size);
+    virt_addr = locate_free_address_region(space, addr, size, vm_flags);
     if (virt_addr == 0) {
       spin_unlock(&space->lock);
       kfree(mapping);
@@ -245,7 +274,7 @@ void page_fault_handler(uint8_t vector, uint32_t error_code, cpu_irq_stack_t *fr
   uint64_t fault_addr = __read_cr2();
   kprintf("================== !!! Exception !!! ==================\n");
   kprintf("  Page Fault  - Data: %#b\n", error_code);
-  kprintf("  CPU#%d  -  RIP: %p  -  CR2: %018p", id, frame->rip, fault_addr);
+  kprintf("  CPU#%d  -  RIP: %p  -  CR2: %018p\n", id, frame->rip, fault_addr);
 
   while (true) {
     cpu_pause();
@@ -306,12 +335,14 @@ void init_address_space() {
   kreserved_vm->type = VM_TYPE_PHYS;
   kreserved_vm->data.phys = kernel_reserved_ptr - kreserved_vm->size;
 
-  // kernel stack
+  // stack
   page_t *stack_pages = _alloc_pages(SIZE_TO_PAGES(KERNEL_STACK_SIZE), PG_WRITE);
   uintptr_t kstack_bottom = KERNEL_STACK_TOP_VA - KERNEL_STACK_SIZE;
   _vmap_pages_addr(kstack_bottom, stack_pages);
   vm_mapping_t *kstack_vm = _vmap_get_mapping(kstack_bottom);
-  kstack_vm->name = "kernel stack";
+  kstack_vm->name = "stack";
+  // stack guard
+  _vmap_reserve(kstack_bottom - PAGE_SIZE, PAGE_SIZE);
 
   execute_init_address_space_callbacks();
 
@@ -334,6 +365,12 @@ void init_address_space() {
   pgtable_unmap_user_mappings();
 }
 
+uintptr_t make_ap_page_tables() {
+  page_t *pml4_pages = NULL;
+  uintptr_t pml4 = create_new_ap_page_tables(&pml4_pages);
+  return pml4;
+}
+
 address_space_t *new_address_space() {
   address_space_t *space = kmalloc(sizeof(address_space_t));
   space->root = create_intvl_tree();
@@ -348,15 +385,6 @@ address_space_t *new_address_space() {
   mapping->attr = 0;
   mapping->data.ptr = NULL;
   mapping->name = "null";
-
-  // create new page tables
-  address_space_t *current = PERCPU_ADDRESS_SPACE;
-  if (current != NULL) {
-    page_t *meta_pages = NULL;
-    uintptr_t pgtable = deepcopy_fork_page_tables(&meta_pages);
-    space->page_table = pgtable;
-    SLIST_ADD_SLIST(&space->table_pages, meta_pages, SLIST_GET_LAST(meta_pages, next), next);
-  }
   return space;
 }
 
@@ -425,6 +453,24 @@ void *_vmap_phys_addr(uintptr_t virt_addr, uintptr_t phys_addr, size_t size, uin
   }
 
   return (void *) mapping->address;
+}
+
+void *_vmap_stack_pages(page_t *pages) {
+  if (pages == NULL) {
+    return NULL;
+  }
+
+  uint32_t vm_flags = (pages->flags & PG_USER ? VMAP_USERSPACE : 0) | VMAP_DOWNWARD;
+  uintptr_t hint = KERNEL_STACK_TOP_VA;
+  vm_mapping_t *mapping = vmap_pages_internal(pages, hint, vm_flags);
+  if (mapping == NULL) {
+    return NULL;
+  }
+
+  mapping->name = "stack";
+  void *stack_top = (void *)(mapping->address + mapping->size);
+  _vmap_reserve(mapping->address - PAGE_SIZE, PAGE_SIZE);
+  return stack_top;
 }
 
 void *_vmap_mmio(uintptr_t phys_addr, size_t size, uint32_t flags) {

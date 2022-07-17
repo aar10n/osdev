@@ -9,8 +9,6 @@
 %define KERNEL_OFFSET 0xFFFFFF8000000000
 %define KERNEL_STACK  0xFFFFFFA000000000
 %define KERNEL_CS 0x08
-%define SMPBOOT_START 0x0000
-%define SMPDATA_START 0x1000
 
 %define PAGE_SIZE 0x1000
 
@@ -70,11 +68,6 @@
 %define CTX_RFLAGS 0x48
 %define CTX_RSP    0x50
 %define CTX_SS     0x58
-
-; Smpboot Data
-%define SMP_STATUS 0x00
-%define SMP_PML4   0x04
-%define SMP_STACK  0x08
 
 ; Saved registers
 %macro pushall 0

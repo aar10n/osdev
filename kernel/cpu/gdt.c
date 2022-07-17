@@ -5,6 +5,7 @@
 #include <cpu/cpu.h>
 #include <cpu/gdt.h>
 #include <string.h>
+#include <mm.h>
 
 #define segment(base, limit, typ, s, dpl, p, is64, is32, g)  \
   ((gdt_entry_t) {                                            \
@@ -99,7 +100,7 @@ typedef struct packed {
   uint64_t base;
 } gdt_desc_t;
 
-gdt_entry_t gdt[] = {
+gdt_entry_t bsp_gdt[] = {
   null_segment(),    // 0x00 null
   code_segment64(0), // 0x08 kernel code
   data_segment64(0), // 0x10 kernel data
@@ -111,18 +112,30 @@ gdt_entry_t gdt[] = {
 
 uint8_t ring0_stack[4096];
 struct tss tss;
-gdt_desc_t gdt_desc;
 
 void setup_gdt() {
-  memset((void *) &tss, 0, sizeof(tss));
-  tss.rsp0 = (uintptr_t) ring0_stack;
+  gdt_desc_t gdt_desc;
+  if (cpu_get_is_bsp()) {
+    memset((void *) &tss, 0, sizeof(tss));
+    tss.rsp0 = (uintptr_t) ring0_stack;
 
-  gdt[5] = tss_segment_low((uintptr_t) &tss);
-  gdt[6] = tss_segment_high((uintptr_t) &tss);
+    bsp_gdt[5] = tss_segment_low((uintptr_t) &tss);
+    bsp_gdt[6] = tss_segment_high((uintptr_t) &tss);
 
-  gdt_desc.limit = sizeof(gdt) - 1;
-  gdt_desc.base = (uint64_t) &gdt;
+    gdt_desc.limit = sizeof(bsp_gdt) - 1;
+    gdt_desc.base = (uint64_t) &bsp_gdt;
+  } else {
+    gdt_entry_t *ap_gdt = kmalloc(sizeof(bsp_gdt));
+    memcpy(ap_gdt, bsp_gdt, sizeof(bsp_gdt));
 
+    ap_gdt[5] = tss_segment_low((uintptr_t) &tss);
+    ap_gdt[6] = tss_segment_high((uintptr_t) &tss);
+
+    gdt_desc.limit = sizeof(bsp_gdt) - 1;
+    gdt_desc.base = (uint64_t) ap_gdt;
+  }
+
+  PERCPU_SET_CPU_GDT(gdt_desc.base);
   cpu_load_gdt(&gdt_desc);
   cpu_load_tr(0x28);
   cpu_reload_segments();

@@ -307,7 +307,7 @@ void set_current_pgtable(uintptr_t table_phys) {
 size_t pg_flags_to_size(uint32_t flags) {
   if (flags & PG_HUGEPAGE) {
     // fallback to big pages if huge pages are not supported
-    return cpu_query_feature(CPU_BIT_PDPE1GB) ? SIZE_1GB : SIZE_2MB;
+    return cpuid_query_bit(CPUID_BIT_PDPE1GB) ? SIZE_1GB : SIZE_2MB;
   } else if (flags & PG_BIGPAGE) {
     return SIZE_2MB;
   }
@@ -316,30 +316,47 @@ size_t pg_flags_to_size(uint32_t flags) {
 
 //
 
-uintptr_t create_new_page_tables(page_t **out_pages) {
+uintptr_t create_new_ap_page_tables(page_t **out_pages) {
   LIST_HEAD(page_t) table_pages = LIST_HEAD_INITR;
-  page_t *new_pml4 = _alloc_pages(1, PG_WRITE);
+  page_t *new_pml4 = _alloc_pages_zone(ZONE_TYPE_NORMAL, 1, PG_WRITE);
   SLIST_ADD(&table_pages, new_pml4, next);
 
-  PML4_PTR[T_ENTRY] = new_pml4->address | PE_WRITE | PE_PRESENT;
+  uint64_t *pml4 = PML4_PTR;
+  pml4[T_ENTRY] = PAGE_PHYS_ADDR(new_pml4) | PE_WRITE | PE_PRESENT;
 
   uint64_t *table_virt = TEMP_PTR;
   memset(table_virt, 0, PAGE_SIZE);
 
   // shallow copy kernel entries
-  for (int i = PML4_INDEX(KERNEL_SPACE_START); i < PML4_INDEX(KERNEL_SPACE_END); i++) {
+  for (int i = PML4_INDEX(KERNEL_SPACE_START); i < PML4_INDEX(KERNEL_SPACE_END) + 1; i++) {
     if (i == R_ENTRY) {
-      table_virt[i] = (uint64_t) new_pml4->address | PE_WRITE | PE_PRESENT;
-    } else {
-      table_virt[i] = early_kernel_pgtable[i];
+      table_virt[i] = (uint64_t) PAGE_PHYS_ADDR(new_pml4) | PE_WRITE | PE_PRESENT;
+    } else if (i != T_ENTRY) {
+      table_virt[i] = pml4[i];
     }
   }
 
-  PML4_PTR[T_ENTRY] = 0;
+  // identity map bottom of memory
+  page_t *new_low_pdpt = _alloc_pages(1, PG_WRITE);
+  SLIST_ADD(&table_pages, new_low_pdpt, next);
+  table_virt[0] = PAGE_PHYS_ADDR(new_low_pdpt) | PE_WRITE | PE_PRESENT; // pml4 -> pdpe
+
+  uint64_t *low_pdpt = (void *) get_virt_addr(R_ENTRY, R_ENTRY, T_ENTRY, 0);
+  memset(low_pdpt, 0, PAGE_SIZE);
+
+  page_t *new_low_pde = _alloc_pages(1, PG_WRITE);
+  SLIST_ADD(&table_pages, new_low_pde, next);
+  low_pdpt[0] = PAGE_PHYS_ADDR(new_low_pde) | PE_WRITE | PE_PRESENT; // pdpe -> pde
+
+  uint64_t* low_pde = (void *) get_virt_addr(R_ENTRY, T_ENTRY, 0, 0);
+  memset(low_pde, 0, PAGE_SIZE);
+  low_pde[0] = 0 | PE_SIZE | PE_WRITE | PE_PRESENT; // pde -> 2mb identity mapping
+
+  pml4[T_ENTRY] = 0;
   if (out_pages != NULL) {
     *out_pages = LIST_FIRST(&table_pages);
   }
-  return new_pml4->address;
+  return PAGE_PHYS_ADDR(new_pml4);
 }
 
 uintptr_t deepcopy_fork_page_tables(page_t **out_pages) {

@@ -11,6 +11,7 @@
 #include <mm_types.h>
 
 void init_address_space();
+uintptr_t make_ap_page_tables();
 address_space_t *new_address_space();
 address_space_t *fork_address_space();
 
@@ -19,6 +20,7 @@ void *_vmap_pages_addr(uintptr_t virt_addr, page_t *pages);
 void *_vmap_phys(uintptr_t phys_addr, size_t size, uint32_t flags);
 void *_vmap_phys_addr(uintptr_t virt_addr, uintptr_t phys_addr, size_t size, uint32_t flags);
 
+void *_vmap_stack_pages(page_t *pages);
 void *_vmap_mmio(uintptr_t phys_addr, size_t size, uint32_t flags);
 
 void *_vmap_mmap_anon(page_t *pages, uintptr_t hint);

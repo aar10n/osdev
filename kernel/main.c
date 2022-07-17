@@ -55,7 +55,7 @@ __used void kmain() {
   events_init();
 
   syscalls_init();
-  // smp_init();
+  smp_init();
 
   // root process
   process_t *root = process_create_root(launch);
@@ -65,6 +65,7 @@ __used void kmain() {
 
 __used void ap_main() {
   kprintf("[CPU#%d] initializing\n", PERCPU_ID);
+  cpu_init();
   kprintf("[CPU#%d] done!\n", PERCPU_ID);
   while (true) {
     cpu_hlt();
