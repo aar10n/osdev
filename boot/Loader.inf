@@ -39,4 +39,5 @@
   CpuLib
   UefiCpuLib
   IoLib
+  SerialIoLib
 

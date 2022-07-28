@@ -70,6 +70,7 @@
   ResetSystemLib|MdeModulePkg/Library/BaseResetSystemLibNull/BaseResetSystemLibNull.inf
   CpuExceptionHandlerLib|MdeModulePkg/Library/CpuExceptionHandlerLibNull/CpuExceptionHandlerLibNull.inf
   PciHostBridgeLib|MdeModulePkg/Library/PciHostBridgeLibNull/PciHostBridgeLibNull.inf
+  SerialIoLib|PcAtChipsetPkg/Library/SerialIoLib/SerialIoLib.inf
 
 
   [LibraryClasses.common.UEFI_APPLICATION]

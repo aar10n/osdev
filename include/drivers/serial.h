@@ -5,6 +5,8 @@
 #ifndef DRIVERS_SERIAL_H
 #define DRIVERS_SERIAL_H
 
+#include <base.h>
+
 #define COM1 0x3F8
 #define COM2 0x2F8
 #define COM3 0x3E8

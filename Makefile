@@ -75,6 +75,16 @@ endif
 remote-tail-logs:
 	$(SSH) -t $(REMOTE_USER)@$(REMOTE_HOST) "tail -f kernel.log"
 
+copy-to-usb: $(BUILD_DIR)/boot$(WINARCH).efi $(BUILD_DIR)/kernel.elf config.ini
+ifneq ($(call all-defined,USB_DEVICE),true)
+	$(error USB_DEVICE must be defined)
+endif
+	rm -rf $(USB_DEVICE)/EFI
+	mkdir -p $(USB_DEVICE)/EFI/BOOT
+	cp $(BUILD_DIR)/boot$(WINARCH).efi $(USB_DEVICE)/EFI/BOOT/bootX64.EFI
+	cp $(BUILD_DIR)/kernel.elf $(USB_DEVICE)/EFI/BOOT/kernel.elf
+	cp config.ini $(USB_DEVICE)/EFI/BOOT/config.ini
+
 # misc
 
 .PHONY: clean
@@ -147,7 +157,7 @@ KERNEL_DEFINES = $(DEFINES) -D__KERNEL__
 $(BUILD_DIR)/kernel.elf: $(KERNEL_OBJECTS)
 	$(LD) $(KERNEL_LDFLAGS) $^ -o $@
 
-# bootable USB
+# bootable USB image
 $(BUILD_DIR)/osdev.img: $(BUILD_DIR)/boot$(WINARCH).efi $(BUILD_DIR)/kernel.elf config.ini
 	dd if=/dev/zero of=$@ bs=1k count=1440
 	mformat -i $@ -f 1440 -v osdev ::
