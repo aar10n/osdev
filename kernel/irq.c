@@ -41,6 +41,7 @@ struct isa_irq_override {
   uint16_t flags;
 };
 
+uint8_t ipi_vectornum;
 static int irq_external_max;
 static spinlock_t irqnum_hardware_lock;
 static bitmap_t *irqnum_hardware_map;
@@ -51,8 +52,15 @@ struct irq_handler irq_handlers[IRQ_NUM_VECTORS];
 struct isa_irq_override irq_isa_overrides[IRQ_NUM_ISA];
 
 
+extern void ipi_handler();
+
 __used void irq_handler(uint8_t vector) {
   apic_send_eoi();
+  if (vector == ipi_vectornum) {
+    ipi_handler();
+    return;
+  }
+
   if (irq_handlers[vector].ptr != NULL) {
     if (irq_handlers[vector].ignored) {
       return;
@@ -67,8 +75,7 @@ __used void irq_handler(uint8_t vector) {
         return;
     }
   }
-
-  kprintf("--> IRQ%d\n", vector - IRQ_VECTOR_BASE);
+  kprintf("CPU#%d --> IRQ%d\n", PERCPU_ID, vector - IRQ_VECTOR_BASE);
 }
 
 __used void exception_handler(uint8_t vector, uint32_t error, cpu_irq_stack_t *frame, cpu_registers_t *regs) {
@@ -78,7 +85,6 @@ __used void exception_handler(uint8_t vector, uint32_t error, cpu_irq_stack_t *f
     handler(vector, error, frame, regs);
     return;
   }
-
 
   kprintf("!!! EXCEPTION %d !!!\n", vector);
   if (vector != CPU_EXCEPTION_DF) {
@@ -141,6 +147,11 @@ void irq_init() {
       ioapic_set_irq_vector(irq, irq + IRQ_VECTOR_BASE);
     }
   }
+
+  // reserve highest priority for inter-processor messaging
+  uint8_t ipi_irqnum = irq_reserve_irqnum(IRQ_NUM_VECTORS - IRQ_VECTOR_BASE - 1);
+  ipi_vectornum = ipi_irqnum + IRQ_VECTOR_BASE;
+  irq_enable_interrupt(ipi_vectornum);
 }
 
 //
@@ -165,7 +176,7 @@ int irq_alloc_software_irqnum() {
   return (uint8_t) num + irq_external_max + 1;
 }
 
-void irq_reserve_irqnum(uint8_t irq) {
+int irq_reserve_irqnum(uint8_t irq) {
   if (irq > IRQ_NUM_VECTORS - IRQ_VECTOR_BASE) {
     panic("irq: invalid irq number");
   }
@@ -184,6 +195,8 @@ void irq_reserve_irqnum(uint8_t irq) {
   if (pre_claimed) {
     panic("irq: irq number %d already in-use", irq);
   }
+
+  return irq;
 }
 
 //

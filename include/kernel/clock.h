@@ -7,11 +7,13 @@
 
 #include <base.h>
 #include <queue.h>
+#include <spinlock.h>
 
 typedef struct clock_source {
   const char *name;
   void *data;
 
+  spinlock_t lock;
   uint32_t scale_ns;
   uint64_t last_tick;
 
@@ -29,5 +31,7 @@ clock_t clock_now();
 clock_t clock_kernel_time();
 uint64_t clock_current_ticks();
 void clock_update_ticks();
+
+clock_t clock_future_time(uint64_t ns);
 
 #endif

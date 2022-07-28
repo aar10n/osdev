@@ -140,7 +140,7 @@ noreturn void *usb_event_loop(void *arg) {
 //
 
 void usb_main() {
-  usb_log("initializing usb");
+  usb_log("[#%d] initializing usb", PERCPU_ID);
   tree = create_rb_tree();
   xhci_init();
   xhci_setup_devices();

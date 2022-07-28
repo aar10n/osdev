@@ -104,7 +104,7 @@ int signal_send(pid_t pid, int sig, sigval_t value) {
     return -1;
   }
 
-  process_t *process = scheduler_get_process(pid);
+  process_t *process = process_get(pid);
   if (process == NULL) {
     ERRNO = ESRCH;
     return -1;
@@ -162,7 +162,7 @@ int signal_getaction(pid_t pid, int sig, sigaction_t *oact) {
     return 0;
   }
 
-  process_t *process = scheduler_get_process(pid);
+  process_t *process = process_get(pid);
   if (process == NULL) {
     ERRNO = ESRCH;
     return -1;
@@ -208,7 +208,7 @@ int signal_setaction(pid_t pid, int sig, int type, const sigaction_t *act) {
     return 0;
   }
 
-  process_t *process = scheduler_get_process(pid);
+  process_t *process = process_get(pid);
   if (process == NULL) {
     ERRNO = ESRCH;
     return -1;

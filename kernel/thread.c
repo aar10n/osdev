@@ -6,7 +6,7 @@
 
 #include <mm.h>
 #include <mutex.h>
-#include <scheduler.h>
+#include <sched/sched.h>
 
 #include <printf.h>
 #include <string.h>
@@ -104,14 +104,21 @@ thread_t *thread_alloc(id_t tid, void *(start_routine)(void *), void *arg, bool 
   tls->size = 0;
   tls->pages = NULL;
 
+  sched_stats_t *stats = kmalloc(sizeof(sched_stats_t));
+  memset(stats, 0, sizeof(sched_stats_t));
+
   thread->tid = tid;
   thread->ctx = ctx;
   thread->mctx = mctx;
   thread->tls = tls;
+  thread->flags = F_THREAD_CREATED;
   thread->kernel_sp = kernel_sp;
   thread->user_sp = user_sp;
   thread->status = THREAD_READY;
-  thread->policy = SCHED_SYSTEM;
+  thread->cpu_id = PERCPU_ID;
+  thread->policy = POLICY_SYSTEM;
+  thread->stats = stats;
+  thread->affinity = -1;
 
   thread->kernel_stack = kernel_stack;
   thread->user_stack = user_stack;
@@ -189,9 +196,10 @@ thread_t *thread_create(void *(start_routine)(void *), void *arg) {
 
   thread_t *thread = thread_alloc(tid, start_routine, arg, false);
   thread->process = process;
+  thread->affinity = process->main->affinity;
 
   LIST_ADD(&process->threads, thread, group);
-  scheduler_add(thread);
+  sched_add(thread);
   return thread;
 }
 
@@ -200,7 +208,7 @@ void thread_exit(void *retval) {
   thread_trace_debug("thread %d process %d exiting", thread->tid, thread->process->pid);
   thread->data = retval;
   mutex_unlock(&thread->mutex);
-  scheduler_remove(thread);
+  sched_terminate(thread);
 }
 
 int thread_join(thread_t *thread, void **retval) {
@@ -219,6 +227,7 @@ int thread_join(thread_t *thread, void **retval) {
     *retval = thread->data;
   }
   // free thread
+  panic("not implemented");
   return 0;
 }
 
@@ -246,18 +255,55 @@ int thread_receive(thread_t *thread, void **data) {
 
 void thread_sleep(uint64_t us) {
   thread_trace_debug("thread %d process %d sleeping for %lf seconds", gettid(), getpid(), (double)(us) / 1e6);
-  scheduler_sleep(us * (NS_PER_SEC / US_PER_SEC));
+  sched_sleep(US_TO_NS(us));
   thread_trace_debug("thread %d process %d wakeup", gettid(), getpid());
 }
 
 void thread_yield() {
   thread_trace_debug("thread %d process %d yielded", gettid(), getpid());
-  scheduler_yield();
+  sched_yield();
 }
 
 void thread_block() {
   thread_trace_debug("thread %d process %d blocked", gettid(), getpid());
-  scheduler_block(PERCPU_THREAD);
+  sched_block(PERCPU_THREAD);
+}
+
+//
+
+int thread_setpolicy(thread_t *thread, uint8_t policy) {
+  sched_opts_t opts = {
+    .policy = policy,
+    .priority = thread->priority,
+    .affinity = thread->affinity,
+  };
+  return sched_setsched(opts);
+}
+
+int thread_setpriority(thread_t *thread, uint16_t priority) {
+  sched_opts_t opts = {
+    .policy = thread->policy,
+    .priority = priority,
+    .affinity = thread->affinity,
+  };
+  return sched_setsched(opts);
+}
+
+int thread_setsched(thread_t *thread, uint8_t policy, uint16_t priority) {
+  sched_opts_t opts = {
+    .policy = policy,
+    .priority = priority,
+    .affinity = thread->affinity,
+  };
+  return sched_setsched(opts);
+}
+
+void preempt_disable() {
+  PERCPU_THREAD->preempt_count++;
+}
+
+void preempt_enable() {
+  PERCPU_THREAD->preempt_count--;
 }
 
 //
@@ -271,20 +317,6 @@ int thread_alloc_stack(thread_t *thread, bool user) {
   thread->user_stack = stack;
   thread->user_sp = user_sp;
   return 0;
-}
-
-//
-
-int thread_setpolicy(thread_t *thread, uint8_t policy) {
-  return scheduler_update(thread, policy, thread->priority);
-}
-
-int thread_setpriority(thread_t *thread, uint16_t priority) {
-  return scheduler_update(thread, thread->policy, priority);
-}
-
-int thread_setsched(thread_t *thread, uint8_t policy, uint16_t priority) {
-  return scheduler_update(thread, policy, priority);
 }
 
 //

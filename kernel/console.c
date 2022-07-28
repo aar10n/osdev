@@ -4,9 +4,27 @@
 
 #include <console.h>
 #include <spinlock.h>
+#include <mutex.h>
 #include <drivers/serial.h>
 
 console_t *kconsole = NULL;
+
+
+// static inline void aquire_kheap() {
+//   if (PERCPU_THREAD == NULL) {
+//     spin_lock(&kheap_lock);
+//   } else {
+//     mutex_lock(&kheap_mutex);
+//   }
+// }
+//
+// static inline void release_kheap() {
+//   if (PERCPU_THREAD == NULL) {
+//     spin_unlock(&kheap_lock);
+//   } else {
+//     mutex_unlock(&kheap_mutex);
+//   }
+// }
 
 void kputs(const char *s) {
   if (kconsole) {

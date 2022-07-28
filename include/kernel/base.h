@@ -27,6 +27,9 @@
 #define NS_PER_SEC 1000000000
 #define FS_PER_SEC 1000000000000000
 
+#define MS_TO_NS(ms) ((ms) * (NS_PER_SEC / MS_PER_SEC))
+#define US_TO_NS(us) ((us) * (NS_PER_SEC / US_PER_SEC))
+
 #define PAGE_SIZE 0x1000
 
 #define SIZE_1KB  0x400
@@ -119,8 +122,8 @@
 #define __section(name) __attribute((section(name)))
 
 
-extern boot_info_t *boot_info;
 extern boot_info_v2_t *boot_info_v2;
+extern uint32_t system_num_cpus;
 
 // linker provided symbols
 extern uintptr_t __kernel_address;

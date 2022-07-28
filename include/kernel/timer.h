@@ -54,4 +54,6 @@ int timer_enable(uint16_t type);
 int timer_disable(uint16_t type);
 int timer_setval(uint16_t type, clock_t value);
 
+void timer_udelay(uint64_t us);
+
 #endif

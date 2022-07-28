@@ -16,7 +16,7 @@
 #include <syscall.h>
 #include <clock.h>
 #include <timer.h>
-#include <scheduler.h>
+#include <sched/sched.h>
 #include <bus/pcie.h>
 #include <usb/usb.h>
 #include <irq.h>
@@ -45,7 +45,6 @@ __used void kmain() {
   mm_early_init();
   irq_early_init();
   acpi_early_init();
-  cpu_map_topology();
 
   irq_init();
   init_mem_zones();
@@ -55,21 +54,26 @@ __used void kmain() {
   events_init();
 
   syscalls_init();
-  smp_init();
+  // smp_init();
 
-  // root process
+  cpu_enable_interrupts();
   process_t *root = process_create_root(launch);
-  scheduler_init(root);
+  sched_init(root);
   unreachable;
 }
 
 __used void ap_main() {
-  kprintf("[CPU#%d] initializing\n", PERCPU_ID);
   cpu_init();
+  kprintf("[CPU#%d] initializing\n", PERCPU_ID);
+
+  init_ap_address_space();
+  syscalls_init();
+
   kprintf("[CPU#%d] done!\n", PERCPU_ID);
-  while (true) {
-    cpu_hlt();
-  }
+
+  cpu_enable_interrupts();
+  sched_init(NULL);
+  unreachable;
 }
 
 //
@@ -78,7 +82,6 @@ __used void ap_main() {
 
 _Noreturn void launch() {
   kprintf("[pid %d] launch\n", getpid());
-  cpu_enable_interrupts();
   alarms_init();
 
   fs_init();

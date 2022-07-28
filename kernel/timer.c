@@ -25,11 +25,12 @@ typedef struct timer_alarm {
   void *data;
 } timer_alarm_t;
 
-void scheduler_tick();
+// void scheduler_tick();
 
 static rb_tree_t *pending_alarm_tree;
 static spinlock_t pending_alarm_lock;
 static cond_t alarm_cond;
+static spinlock_t alarm_cond_lock;
 static uint32_t next_alarm_id;
 
 timer_device_t *global_periodic_timer;
@@ -41,11 +42,14 @@ LIST_HEAD(timer_device_t) timer_devices;
 void timer_periodic_handler(timer_device_t *td) {
   kprintf("---> tick <---\n");
   clock_update_ticks();
-  scheduler_tick();
+  panic("sched_tick not implemented");
 }
 
 void timer_oneshot_handler(timer_device_t *td) {
-  cond_signal(&alarm_cond);
+  if (spin_trylock(&alarm_cond_lock)) {
+    cond_signal(&alarm_cond);
+    spin_unlock(&alarm_cond_lock);
+  }
 }
 
 int set_alarm_timer_value(timer_device_t *timer, clock_t expiry) {
@@ -137,7 +141,7 @@ int init_periodic_timer() {
 
 int init_oneshot_timer() {
   if (global_one_shot_timer != NULL) {
-    // a periodic timer has already been selected
+    // a one-shot timer has already been selected
     if (global_one_shot_timer->flags & TIMER_CAP_PER_CPU) {
       // only re-initialize if timer is per-cpu
       return global_one_shot_timer->init(global_one_shot_timer, TIMER_ONE_SHOT);
@@ -171,6 +175,7 @@ void alarms_init() {
   pending_alarm_tree = create_rb_tree();
 
   cond_init(&alarm_cond, 0);
+  spin_init(&alarm_cond_lock);
   thread_create(alarm_event_loop, NULL);
 }
 
@@ -278,3 +283,12 @@ int timer_setval(uint16_t type, clock_t value) {
   return td->setval(td, count);
 }
 
+//
+
+void timer_udelay(uint64_t us) {
+  clock_t deadline = clock_future_time(US_TO_NS(us));
+  while (clock_now() < deadline) {
+    cpu_pause();
+    cpu_pause();
+  }
+}

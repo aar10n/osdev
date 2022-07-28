@@ -6,9 +6,7 @@
 #include <atomic.h>
 #include <panic.h>
 #include <cpu/cpu.h>
-
-extern void preempt_disable();
-extern void preempt_enable();
+#include <thread.h>
 
 static inline void __preempt_disable() {
   if (PERCPU_THREAD != NULL) {
@@ -76,4 +74,27 @@ void spin_unlock(spinlock_t *lock) {
   } else {
     // spinlock was not locked
   }
+}
+
+int spin_trylock(spinlock_t *lock) {
+  if (lock == NULL) {
+    return 0;
+  }
+
+  uint64_t id = PERCPU_ID;
+  if (atomic_bit_test_and_set(&lock->locked, 0)) {
+    // the lock was set
+    if (lock->locked_by == id) {
+      // re-entrant
+      lock->lock_count++;
+      return 1;
+    }
+
+    // the lock is already claimed
+    return 0;
+  }
+
+  lock->locked_by = id;
+  lock->lock_count = 1;
+  return 1;
 }

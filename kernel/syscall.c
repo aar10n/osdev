@@ -3,14 +3,17 @@
 //
 
 #include <syscall.h>
+
 #include <cpu/cpu.h>
-#include <printf.h>
-#include <scheduler.h>
+#include <sched/sched.h>
+
+#include <fs.h>
 #include <process.h>
 #include <thread.h>
-#include <fs.h>
 #include <signal.h>
+
 #include <panic.h>
+#include <printf.h>
 
 extern void syscall_handler();
 typedef uint64_t (*syscall_t)(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
@@ -250,14 +253,13 @@ static int sys_fstat(int fd, struct stat *statbuf) {
 }
 
 static int sys_sleep(uint32_t seconds) {
-  scheduler_sleep(seconds * US_PER_SEC);
-  return 0;
+  return sched_sleep(seconds * NS_PER_SEC);
 }
 
 // SYS_NANOSLEEP
 
 static int sys_yield() {
-  return scheduler_yield();
+  return sched_yield();
 }
 
 static void *sys_mmap(void *addr, size_t len, int prot, int flags, int fd, off_t off) {

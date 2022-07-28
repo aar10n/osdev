@@ -5,13 +5,21 @@ extern ap_main
 
 global entry
 entry:
+  ; determine APIC id
+  mov eax, 0x1
+  cpuid
+  mov cl, 24
+  shr ebx, cl
+  and ebx, 0xFF
+
   ; switch to new stack
   mov rsp, entry_initial_stack_top
 
   ; setup the bsp percpu structure
   mov rax, entry_initial_cpu_reserved   ; PERCPU area
   mov [rax + PERCPU_SELF], rax          ; PERCPU->self = rax
-  mov qword [rax + PERCPU_ID], 0        ; PERCPU->id = 0
+  mov word [rax + PERCPU_ID], 0         ; PERCPU->id = 0
+  mov word [rax + PERCPU_APIC_ID], bx   ; PERCPU->apic_id = bx
   mov rdx, rax
   mov cl, 32
   shr rdx, cl

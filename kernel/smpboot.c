@@ -18,8 +18,10 @@
 extern void smpboot_start();
 extern void smpboot_end();
 
+uint32_t system_num_cpus = 1;
 
-int smp_boot_ap(smp_data_t *smpdata) {
+
+int smp_boot_ap(uint16_t id, smp_data_t *smpdata) {
   // wait until AP aquires lock
   while (!smpdata->lock) cpu_pause();
   cpu_pause();
@@ -37,7 +39,8 @@ int smp_boot_ap(smp_data_t *smpdata) {
 
   memset(ap_percpu_ptr, 0, PER_CPU_SIZE);
   ((per_cpu_t *)(ap_percpu_ptr))->self = (uintptr_t) ap_percpu_ptr;
-  ((per_cpu_t *)(ap_percpu_ptr))->id = apic_id;
+  ((per_cpu_t *)(ap_percpu_ptr))->id = id;
+  ((per_cpu_t *)(ap_percpu_ptr))->apic_id = apic_id;
 
   smpdata->pml4_addr = (uint32_t) ap_pml4;
   smpdata->percpu_ptr = (uintptr_t) ap_percpu_ptr;
@@ -94,7 +97,9 @@ void smp_init() {
   }
 
   for (int i = 0; i < smpdata->count; i++) {
-    smp_boot_ap(smpdata);
+    uint16_t id = i + 1;
+    smp_boot_ap(id, smpdata);
+    system_num_cpus++;
   }
 
   _free_pages(code_pages);

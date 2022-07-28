@@ -4,17 +4,16 @@
 
 #include <mutex.h>
 
+#include <cpu/cpu.h>
+#include <sched/sched.h>
+
+#include <mm.h>
 #include <process.h>
 #include <thread.h>
-#include <spinlock.h>
-#include <scheduler.h>
-#include <atomic.h>
 #include <timer.h>
-#include <mm.h>
-#include <printf.h>
-#include <panic.h>
 
-#include <cpu/cpu.h>
+#include <atomic.h>
+#include <panic.h>
 
 // #define MUTEX_DEBUG
 #ifdef MUTEX_DEBUG
@@ -110,7 +109,7 @@ int mutex_lock(mutex_t *mutex) {
 
     thread->flags |= F_THREAD_OWN_BLOCKQ;
     safe_enqeue(&mutex->flags, &mutex->queue, thread);
-    scheduler_block(thread);
+    sched_block(thread);
   }
 done:;
   mutex->aquired_by = thread;
@@ -146,7 +145,7 @@ int mutex_unlock(mutex_t *mutex) {
     mutex->aquired_by = thread->process->main;
   }
   if (next != NULL) {
-    scheduler_unblock(next);
+    sched_unblock(next);
   }
   thread->preempt_count--;
   mutex_trace_debug("mutex unlocked (%d:%d)", getpid(), gettid());
@@ -208,7 +207,7 @@ int cond_wait(cond_t *cond) {
 
   thread->flags |= F_THREAD_OWN_BLOCKQ;
   safe_enqeue(&cond->flags, &cond->queue, thread);
-  scheduler_block(thread);
+  sched_block(thread);
   return 0;
 }
 
@@ -234,7 +233,6 @@ int cond_wait_timeout(cond_t *cond, uint64_t us) {
 }
 
 int cond_signal(cond_t *cond) {
-  thread_t *thread = PERCPU_THREAD;
   if (LIST_LAST(&cond->queue) == NULL) {
     if (!(cond->flags & COND_NOEMPTY)) {
       cond->flags |= M_LOCKED;
@@ -243,7 +241,7 @@ int cond_signal(cond_t *cond) {
   }
 
   thread_t *signaled = safe_dequeue(&cond->flags, &cond->queue);
-  scheduler_unblock(signaled);
+  sched_unblock(signaled);
 
   cond_trace_debug("thread %d:%d unblocked by %d:%d",
           signaled->process->pid, signaled->tid,
@@ -261,7 +259,7 @@ int cond_broadcast(cond_t *cond) {
 
   thread_t *signaled;
   while ((signaled = safe_dequeue(&cond->flags, &cond->queue))) {
-    scheduler_unblock(signaled);
+    sched_unblock(signaled);
   }
   return 0;
 }

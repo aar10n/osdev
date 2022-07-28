@@ -4,9 +4,10 @@
 
 #include <process.h>
 
+#include <sched/sched.h>
+
 #include <mm.h>
 #include <mutex.h>
-#include <scheduler.h>
 #include <thread.h>
 #include <signal.h>
 #include <loader.h>
@@ -19,6 +20,7 @@
 #include <printf.h>
 #include <panic.h>
 #include <bitmap.h>
+#include <atomic.h>
 
 #include <cpu/cpu.h>
 
@@ -31,6 +33,9 @@
 
 static bitmap_t *pid_nums = NULL;
 static spinlock_t pid_nums_lock;
+static process_t **ptable = NULL;
+static size_t ptable_size = 0;
+static page_t *ptable_pages = NULL;
 
 static inline int ptr_list_len(const uintptr_t *list) {
   if (list == NULL) {
@@ -120,6 +125,15 @@ void process_free(process_t *process) {
 process_t *process_create_root(void (function)()) {
   pid_t pid = alloc_pid();
   process_t *process = process_alloc(pid, -1, root_process_wrapper, function);
+
+  // allocate process table
+  size_t num_pages = SIZE_TO_PAGES(sizeof(process_t *) * MAX_PROCS);
+  ptable_pages = valloc_zero_pages(num_pages, PG_WRITE);
+  kassert(ptable_pages != NULL);
+  ptable = (void *) PAGE_VIRT_ADDR(ptable_pages);
+
+  ptable[0] = process;
+  ptable_size = 1;
   return process;
 }
 
@@ -132,7 +146,10 @@ pid_t process_create_1(void (start_routine)(), void *arg) {
   pid_t pid = alloc_pid();
   proc_trace_debug("creating process %d | parent %d", pid, parent->pid);
   process_t *process = process_alloc(pid, parent->pid, (void *) start_routine, arg);
-  scheduler_add(process->main);
+  ptable[process->pid] = process;
+  atomic_fetch_add(&ptable_size, 1);
+
+  sched_add(process->main);
   return process->pid;
 }
 
@@ -161,7 +178,10 @@ pid_t process_fork() {
   process->main = main;
   LIST_ADD_FRONT(&process->threads, main, list);
 
-  scheduler_add(main);
+  ptable[process->pid] = process;
+  atomic_fetch_add(&ptable_size, 1);
+
+  sched_add(main);
   return process->pid;
 }
 
@@ -275,6 +295,14 @@ gid_t getgid() {
 }
 
 //
+
+process_t *process_get(pid_t pid) {
+  kassert(ptable != NULL);
+  if (pid >= MAX_PROCS || pid < 0) {
+    return NULL;
+  }
+  return ptable[pid];
+}
 
 thread_t *process_get_sigthread(process_t *process, int sig) {
   kassert(sig > 0 && sig < NSIG);

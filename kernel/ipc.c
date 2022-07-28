@@ -13,7 +13,7 @@
 // send - sends message to target process
 //        blocks process until message is received
 int ipc_send(pid_t pid, message_t *message) {
-  process_t *process = scheduler_get_process(pid);
+  process_t *process = process_get(pid);
   if (process == NULL) {
     ERRNO = ESRCH;
     return -1;

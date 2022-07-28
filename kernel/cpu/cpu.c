@@ -6,6 +6,7 @@
 #include <cpu/gdt.h>
 #include <cpu/idt.h>
 
+#include <device/apic.h>
 #include <device/pit.h>
 
 #include <mm.h>
@@ -34,8 +35,12 @@
 #define CPU_EFER_NXE       (1 << 11)
 #define CPU_EFER_FFXSR     (1 << 14)
 
-static uint8_t bsp_cpu_id;
-cpu_info_t bsp_cpu_info = {0};
+uint8_t cpu_bsp_id = 0;
+cpu_info_t cpu_bsp_info = {0};
+per_cpu_t *percpu_structs[MAX_CPUS] = {};
+uint8_t cpu_id_to_apic_id_table[MAX_CPUS] = {};
+
+
 
 static inline int do_cpuid(int leaf, uint32_t *a, uint32_t *b, uint32_t *c, uint32_t *d) {
   *a = 0;
@@ -61,7 +66,7 @@ static inline void assert_cpu_feature(const char *feature, int supported) {
 }
 
 static inline void bsp_log_message(const char *message) {
-  if (PERCPU_ID != bsp_cpu_id) {
+  if (PERCPU_ID != cpu_bsp_id) {
     return;
   }
   kprintf(message);
@@ -72,20 +77,23 @@ static inline void bsp_log_message(const char *message) {
 void cpu_init() {
   setup_gdt();
   setup_idt();
+  apic_init();
 
-  uint32_t cpu_id = cpu_get_id();
+  per_cpu_t *percpu_struct = (void *) cpu_read_gsbase();
+  percpu_structs[PERCPU_ID] = percpu_struct;
+  // num_percpu_structs++;
+
+  uint32_t apic_id = cpu_get_apic_id();
+  kassert(apic_id <= UINT8_MAX);
+
   cpuid_bits_t *cpuid_bits = NULL;
-  if (cpu_get_is_bsp()) {
-    bsp_cpu_id = cpu_id;
-    bsp_cpu_info.cpu_id = cpu_id;
-    cpuid_bits = &bsp_cpu_info.cpuid_bits;
-    *__percpu_field_ptr(id) = cpu_id;
-    PERCPU_SET_CPU_INFO(&bsp_cpu_info);
+  if (PERCPU_IS_BSP) {
+    cpuid_bits = &cpu_bsp_info.cpuid_bits;
+    __percpu_struct_ptr()->apic_id = (uint8_t) apic_id;
+    PERCPU_SET_CPU_INFO(&cpu_bsp_info);
   } else {
-    // ap
     cpu_info_t *cpu_info = kmalloc(sizeof(cpu_info_t));
     memset(cpu_info, 0, sizeof(cpu_info_t));
-    cpu_info->cpu_id = cpu_id;
     cpuid_bits = &cpu_info->cpuid_bits;
     PERCPU_SET_CPU_INFO(cpu_info);
   }
@@ -165,22 +173,10 @@ void cpu_init() {
   cpu_write_msr(IA32_EFER_MSR, efer);
 
   // save cpu id to aux msr
-  cpu_write_msr(IA32_TSC_AUX_MSR, cpu_id);
+  cpu_write_msr(IA32_TSC_AUX_MSR, apic_id);
 
-  // uint8_t num_phys_addr_bits = cpuid_bits->eax_8_8 & 0xFF;
-  // uint8_t num_virt_addr_bits = (cpuid_bits->eax_8_8 >> 8) & 0xFF;
-  // uint8_t max_addressable_cpu_ids = (cpuid_bits->ebx_0_1 >> 16) & 0xFF;
-  // uint8_t local_apic_id = (cpuid_bits->ebx_0_1 >> 24) & 0xFF;
-  // uint8_t num_phys_cores = cpuid_bits->ecx_8_8 & 0xFF;
-  // uint8_t log2_max_apic_id = (cpuid_bits->ecx_8_8 >> 12) & 0xF;
-  // kprintf("Physical address bits: %d\n", num_phys_addr_bits);
-  // kprintf("Virtual address bits: %d\n", num_virt_addr_bits);
-  // kprintf("Max Addressable Logical CPUs: %d\n", max_addressable_cpu_ids);
-  // kprintf("Physical cores: %d\n", num_phys_cores);
-  // kprintf("Local APIC ID: %d\n", local_apic_id);
-  // kprintf("Log2 max APIC ID: %d\n", log2_max_apic_id);
-
-  if (cpu_get_is_bsp()) {
+  cpu_id_to_apic_id_table[PERCPU_ID] = PERCPU_APIC_ID;
+  if (PERCPU_IS_BSP) {
     cpu_print_info();
 
     // callibrate processor frequency
@@ -221,7 +217,7 @@ void cpu_map_topology() {
   kprintf("  nodes per processor: %d\n", nodes_per_processor);
 }
 
-uint32_t cpu_get_id() {
+uint32_t cpu_get_apic_id() {
   uint32_t a, b, c, d;
   // try leaf 0x1F to get the x2APIC id
   if (__get_cpuid(0x1F, &a, &b, &c, &d)) {
@@ -239,6 +235,11 @@ uint32_t cpu_get_id() {
 int cpu_get_is_bsp() {
   uint32_t apic_base = cpu_read_msr(IA32_APIC_BASE_MSR);
   return (apic_base >> 8) & 1;
+}
+
+uint8_t cpu_id_to_apic_id(uint8_t cpu_id) {
+  kassert(cpu_id < system_num_cpus);
+  return cpu_id_to_apic_id_table[cpu_id];
 }
 
 int cpuid_query_bit(uint16_t feature) {

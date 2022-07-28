@@ -195,30 +195,14 @@ uint8_t apic_get_version() {
 
 
 void apic_init() {
-  kprintf("[apic] initializing\n");
-
-  // map apic registers into virtual address space
-  kprintf("[apic] mapping local apic\n");
-  uintptr_t phys_addr = APIC_BASE_PA;
-  uintptr_t virt_addr = (uintptr_t) _vmap_mmio(phys_addr, PAGE_SIZE, PG_WRITE | PG_NOCACHE);
-  apic_base = virt_addr;
-
   // ensure the apic is enabled
   uint64_t apic_msr = cpu_read_msr(IA32_APIC_BASE_MSR);
   cpu_write_msr(IA32_APIC_BASE_MSR, apic_msr | (1 << 11));
 
-  apic_reg_id_t id = { .raw = apic_read(APIC_ID) };
-  kprintf("[apic] id: %d\n", id.id);
-  apic_reg_version_t version = { .raw = apic_read(APIC_VERSION) };
-  kprintf("[apic] version: 0x%X\n", version.version);
-  kprintf("[apic] max lvt: %d\n", version.max_lvt_entry);
-
   apic_reg_tpr_t tpr = apic_reg_tpr(0, 0);
   apic_write(APIC_TPR, tpr.raw);
-
   apic_reg_ldr_t ldr = apic_reg_ldr(0xFF);
   apic_write(APIC_LDR, ldr.raw);
-
   apic_reg_dfr_t dfr = apic_reg_dfr(APIC_FLAT_MODEL);
   apic_write(APIC_DFR, dfr.raw);
 
@@ -239,11 +223,7 @@ void apic_init() {
   apic_reg_svr_t svr = apic_reg_svr(VECTOR_APIC_SPURIOUS, 1, 0);
   apic_write(APIC_SVR, svr.raw);
 
-  get_cpu_clock();
-  get_apic_clock();
-
   apic_send_eoi();
-  kprintf("[apic] done!\n");
 }
 
 void apic_init_periodic(uint64_t ms) {

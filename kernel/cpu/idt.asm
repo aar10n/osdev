@@ -119,7 +119,7 @@ extern exception_handler
 global idt_stubs
 idt_stubs:
   %assign i 0
-  %rep 255
+  %rep 256
     interrupt_stub i
   %assign i i +  1
   %endrep

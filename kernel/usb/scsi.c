@@ -28,7 +28,6 @@ void setup_command_block(usb_ms_cbw_t *cbw, void *cb, size_t size, size_t trnsf_
 //
 
 void *scsi_device_init(usb_device_t *dev) {
-  kprintf("scsi: init\n");
   scsi_device_t *device = kmalloc(sizeof(scsi_device_t));
 
   scsi_inquiry_cmd_t inquiry_cmd = {

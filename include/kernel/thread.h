@@ -18,13 +18,15 @@
 
 typedef struct process process_t;
 typedef struct page page_t;
+typedef struct sched_stats sched_stats_t;
 
 // thread flags
 #define F_THREAD_OWN_BLOCKQ 0x1 // thread uses external blocked queue
 #define F_THREAD_JOINING    0x2 // thread will join
 #define F_THREAD_DETATCHING 0x4 // thread will detatch
+#define F_THREAD_CREATED    0x8 // thread was just created
 
-typedef enum {
+typedef enum thread_status {
   THREAD_READY,
   THREAD_RUNNING,
   THREAD_BLOCKED,
@@ -33,7 +35,7 @@ typedef enum {
   THREAD_KILLED
 } thread_status_t;
 
-typedef struct {
+typedef struct tls_block {
   uintptr_t addr; // base address of tls
   size_t size;    // tls memory size
   page_t *pages;  // pages used for tls
@@ -77,6 +79,9 @@ typedef struct thread {
   uint8_t policy;              // thread scheduling policy
   uint16_t priority;           // thread priority
   thread_status_t status;      // thread status
+  sched_stats_t *stats;        // scheduling stats
+  int affinity;                // thread cpu affinity
+  clockid_t alarm_id;          // wakeup alarm id if sleeping
 
   mutex_t mutex;               // thread mutex
   cond_t data_ready;           // thread data ready condition
@@ -93,6 +98,7 @@ typedef struct thread {
   LIST_ENTRY(thread_t) group;  // thread group
   LIST_ENTRY(thread_t) list;   // thread list
 } thread_t;
+static_assert(offsetof(thread_t, process) == 0x18);
 
 thread_t *thread_alloc(id_t tid, void *(start_routine)(void *), void *arg, bool user);
 thread_t *thread_copy(thread_t *other);
@@ -107,11 +113,14 @@ void thread_sleep(uint64_t us);
 void thread_yield();
 void thread_block();
 
-int thread_alloc_stack(thread_t *thread, bool user);
-
 int thread_setpolicy(thread_t *thread, uint8_t policy);
 int thread_setpriority(thread_t *thread, uint16_t priority);
 int thread_setsched(thread_t *thread, uint8_t policy, uint16_t priority);
+
+void preempt_disable();
+void preempt_enable();
+
+int thread_alloc_stack(thread_t *thread, bool user);
 
 void print_debug_thread(thread_t *thread);
 

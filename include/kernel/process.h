@@ -57,6 +57,7 @@ id_t gettid();
 uid_t getuid();
 gid_t getgid();
 
+process_t *process_get(pid_t pid);
 thread_t *process_get_sigthread(process_t *process, int sig);
 
 void print_debug_process(process_t *process);

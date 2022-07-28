@@ -572,6 +572,7 @@ int xhci_enable_port(xhci_dev_t *xhci, xhci_port_t *port) {
 //
 
 void *xhci_run_command(xhci_dev_t *xhci, xhci_trb_t *trb) {
+  cond_clear_signal(&xhci->event_ack);
   xhci_ring_enqueue_trb(xhci->cmd_ring, trb);
   xhci_ring_db(xhci, 0, 0);
 

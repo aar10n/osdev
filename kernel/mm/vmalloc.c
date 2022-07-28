@@ -270,6 +270,7 @@ __used void swap_address_space(address_space_t *new_space) {
 }
 
 void page_fault_handler(uint8_t vector, uint32_t error_code, cpu_irq_stack_t *frame, cpu_registers_t *regs) {
+  per_cpu_t *percpu = __percpu_struct_ptr();
   uint32_t id = PERCPU_ID;
   uint64_t fault_addr = __read_cr2();
   kprintf("================== !!! Exception !!! ==================\n");
@@ -363,6 +364,22 @@ void init_address_space() {
 
   irq_register_exception_handler(CPU_EXCEPTION_PF, page_fault_handler);
   pgtable_unmap_user_mappings();
+}
+
+void init_ap_address_space() {
+  address_space_t *user_space = kmalloc(sizeof(address_space_t));
+  user_space->root = create_intvl_tree();
+  user_space->min_addr = USER_SPACE_START;
+  user_space->max_addr = USER_SPACE_END;
+  user_space->page_table = get_current_pgtable();
+  spin_init(&user_space->lock);
+  LIST_INIT(&user_space->table_pages);
+  PERCPU_SET_ADDRESS_SPACE(user_space);
+
+  vm_mapping_t *null_vm = _vmap_reserve(0, PAGE_SIZE);
+  null_vm->name = "null";
+  null_vm->type = VM_TYPE_RSVD;
+  null_vm->data.ptr = NULL;
 }
 
 uintptr_t make_ap_page_tables() {

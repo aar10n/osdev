@@ -4,6 +4,8 @@
 
 #include <clock.h>
 
+#include <cpu/cpu.h>
+
 #include <printf.h>
 #include <panic.h>
 #include <atomic.h>
@@ -15,6 +17,7 @@ uint64_t clock_ticks;
 
 void register_clock_source(clock_source_t *source) {
   kassert(source != NULL);
+  spin_init(&source->lock);
   LIST_ENTRY_INIT(&source->list);
   LIST_ADD(&clock_sources, source, list);
 
@@ -44,13 +47,21 @@ clock_t clock_now() {
     return 0;
   }
 
-  uint64_t last = current_clock_source->last_tick;
-  uint64_t current = current_clock_source->read(current_clock_source);
-  current_clock_source->last_tick = current;
-  atomic_fetch_add(&clock_ticks, current - last);
-  uint64_t current_ns = current * current_clock_source->scale_ns;
-  kernel_time_ns += current_ns;
-  return current_ns;
+  clock_source_t *source = current_clock_source;
+  if (spin_trylock(&source->lock)) {
+    // lock aquired - update the kernel time
+    uint64_t last = source->last_tick;
+    uint64_t current = source->read(source);
+    source->last_tick = current;
+    atomic_fetch_add(&clock_ticks, current - last);
+    uint64_t current_ns = current * source->scale_ns;
+    atomic_fetch_add(&kernel_time_ns, current_ns);
+
+    spin_unlock(&source->lock);
+    return kernel_time_ns;
+  }
+
+  return kernel_time_ns;
 }
 
 clock_t clock_kernel_time() {
@@ -66,11 +77,22 @@ void clock_update_ticks() {
     return;
   }
 
-  uint64_t last = current_clock_source->last_tick;
-  uint64_t current = current_clock_source->read(current_clock_source);
-  current_clock_source->last_tick = current;
+  clock_source_t *source = current_clock_source;
+  spin_lock(&source->lock);
+
+  uint64_t last = source->last_tick;
+  uint64_t current = source->read(source);
+  source->last_tick = current;
   uint64_t delta = current - last;
   atomic_fetch_add(&clock_ticks, delta);
-  uint64_t current_ns = current * current_clock_source->scale_ns;
-  kernel_time_ns += current_ns;
+  uint64_t current_ns = current * source->scale_ns;
+  atomic_fetch_add(&kernel_time_ns, current_ns);
+
+  spin_unlock(&source->lock);
+}
+
+//
+
+clock_t clock_future_time(uint64_t ns) {
+  return clock_now() + ns;
 }

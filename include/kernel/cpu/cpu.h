@@ -7,6 +7,10 @@
 
 #include <base.h>
 
+#define MAX_CPUS 64
+
+#define PERCPU_IS_BSP (__percpu_get_id() == cpu_bsp_id)
+
 #define IA32_TSC_MSR            0x10
 #define IA32_APIC_BASE_MSR      0x1B
 #define IA32_EFER_MSR           0xC0000080
@@ -113,7 +117,6 @@ typedef union cpuid_bits {
 #define CPUID_BIT_INVARIANT_TSC _CPUID_BIT(edx_8_7, 8)
 
 typedef struct cpu_info {
-  uint8_t cpu_id;
   cpuid_bits_t cpuid_bits;
 } cpu_info_t;
 
@@ -132,12 +135,14 @@ typedef struct cpu_irq_stack {
   uint64_t ss;
 } cpu_irq_stack_t;
 
+extern uint8_t cpu_bsp_id;
 
 void cpu_init();
 void cpu_map_topology();
 
-uint32_t cpu_get_id();
+uint32_t cpu_get_apic_id();
 int cpu_get_is_bsp();
+uint8_t cpu_id_to_apic_id(uint8_t cpu_id);
 
 int cpuid_query_bit(uint16_t feature);
 

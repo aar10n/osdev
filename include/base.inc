@@ -26,6 +26,7 @@
 ; percpu offsets
 %define PERCPU_SELF      0x00
 %define PERCPU_ID        0x08
+%define PERCPU_APIC_ID   0x0A
 %define PERCPU_THREAD    0x10
 %define PERCPU_PROCESS   0x18
 %define PERCPU_KERNEL_SP 0x20

@@ -7,7 +7,7 @@
 
 #include <base.h>
 #include <queue.h>
-#include <cpu/idt.h>
+#include <spinlock.h>
 
 // Scheduling Classes
 // ------------------
@@ -15,12 +15,14 @@
 // System
 // Interactive
 
-#define SCHED_PERIOD   500
-#define SCHED_POLICIES 2
-#define SCHED_QUEUES   4
+#define SCHED_PERIOD        500
+#define SCHED_POLICIES      2
+#define SCHED_QUEUES        4
+#define SCHED_MIGRATE_THRES 5
 
 typedef struct thread thread_t;
 typedef struct process process_t;
+typedef struct scheduler scheduler_t;
 
 typedef enum sched_reason {
   BLOCKED,
@@ -37,13 +39,13 @@ typedef enum sched_reason {
 
 typedef struct sched_policy {
   void *(*init)();
-  int (*add_thread)(void *self, thread_t *thread, sched_reason_t reason);
-  int (*remove_thread)(void *self, thread_t *thread);
+  int (*add_thread)(void *self, scheduler_t *sched, thread_t *thread, sched_reason_t reason);
+  int (*remove_thread)(void *self, scheduler_t *sched, thread_t *thread);
 
-  uint64_t (*get_thread_count)(void *self);
-  thread_t *(*get_next_thread)(void *self);
+  uint64_t (*get_thread_count)(void *self, scheduler_t *sched);
+  thread_t *(*get_next_thread)(void *self, scheduler_t *sched);
 
-  void (*update_self)(void *self);
+  void (*update_self)(void *self, scheduler_t *sched);
 
   // properties
   struct {
@@ -73,10 +75,12 @@ typedef struct sched_policy_mlfq {
 //
 
 typedef struct scheduler {
-  uint64_t cpu_id;
-  uint64_t count;
+  uint64_t cpu_id;      // id of the cpu the scheduler runs on
+  uint64_t ready_count;       // number of ready threads
+  uint64_t total_count; // number of ready and blocked threads
   thread_t *idle;
 
+  spinlock_t lock;
   LIST_HEAD(thread_t) blocked;
 
   sched_policy_t *policies[SCHED_POLICIES];
@@ -98,7 +102,5 @@ int scheduler_sleep(uint64_t ns);
 sched_policy_t *scheduler_get_policy(uint8_t policy);
 process_t *scheduler_get_process(pid_t pid);
 
-void preempt_disable();
-void preempt_enable();
 
 #endif

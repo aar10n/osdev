@@ -88,7 +88,7 @@ typedef union double_raw {
 
 // Buffers
 #define BUFFER_SIZE 512
-#define TEMP_BUFFER_SIZE 32
+#define TEMP_BUFFER_SIZE 64
 #define NTOA_BUFFER_SIZE 32
 #define FTOA_BUFFER_SIZE 32
 

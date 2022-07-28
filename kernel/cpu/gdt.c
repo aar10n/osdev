@@ -115,7 +115,7 @@ struct tss tss;
 
 void setup_gdt() {
   gdt_desc_t gdt_desc;
-  if (cpu_get_is_bsp()) {
+  if (PERCPU_IS_BSP) {
     memset((void *) &tss, 0, sizeof(tss));
     tss.rsp0 = (uintptr_t) ring0_stack;
 

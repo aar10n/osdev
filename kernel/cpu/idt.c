@@ -24,7 +24,7 @@ extern void page_fault_handler();
 // extern void sched_irq_hook(uint8_t vector);
 
 void setup_idt() {
-  if (cpu_get_is_bsp()) {
+  if (PERCPU_IS_BSP) {
     memset((void *) idt, 0, sizeof(idt));
     uintptr_t asm_handler = (uintptr_t) &idt_stubs;
     for (int i = 0; i < IDT_GATES; i++) {;

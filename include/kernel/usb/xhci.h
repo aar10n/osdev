@@ -26,7 +26,7 @@
 typedef struct xhci_dev xhci_dev_t;
 typedef struct xhci_port xhci_port_t;
 
-typedef struct {
+typedef struct xhci_ring {
   xhci_trb_t *ptr;    // ring base
   page_t *page;       // ring pages
   uint16_t index;     // ring enqueue/dequeue index

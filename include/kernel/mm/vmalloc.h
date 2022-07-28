@@ -11,6 +11,7 @@
 #include <mm_types.h>
 
 void init_address_space();
+void init_ap_address_space();
 uintptr_t make_ap_page_tables();
 address_space_t *new_address_space();
 address_space_t *fork_address_space();

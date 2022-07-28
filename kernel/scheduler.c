@@ -4,6 +4,9 @@
 
 #include <scheduler.h>
 
+#include <cpu/cpu.h>
+#include <device/apic.h>
+
 #include <mm.h>
 #include <process.h>
 #include <thread.h>
@@ -12,6 +15,7 @@
 #include <printf.h>
 #include <spinlock.h>
 #include <string.h>
+#include <atomic.h>
 
 
 #define sched_log(str, args...) kprintf("[scheduler] " str "\n", ##args)
@@ -23,8 +27,15 @@
 #define sched_trace_debug(str, args...)
 #endif
 
+#define foreach_scheduler(var) \
+  scheduler_t * var = NULL; int i = 0; \
+  for (i = 0, var = schedulers[i]; i < num_schedulers; i++, var = schedulers[i])
+
 #define DISPATCH(policy, func, args...) \
-  (((PERCPU_SCHEDULER->policies[policy])->func)(PERCPU_SCHEDULER->policy_data[policy], ##args))
+  (((PERCPU_SCHEDULER->policies[policy])->func)(PERCPU_SCHEDULER->policy_data[policy], PERCPU_SCHEDULER, ##args))
+#define DISPATCH_SCHED(sched, policy, func, args...) \
+  ((((sched)->policies[policy])->func)((sched)->policy_data[policy], sched, ##args))
+
 #define REGISTER_POLICY(policy, impl) ({           \
   PERCPU_SCHEDULER->policies[policy] = impl;              \
   PERCPU_SCHEDULER->policy_data[policy] = (impl)->init(); \
@@ -35,7 +46,7 @@
 
 #define IS_TERMINATED(thread) ((thread)->status == THREAD_TERMINATED)
 
-void thread_switch(thread_t *thread);
+noreturn void thread_switch(thread_t *thread);
 
 static const char *status_str[] = {
   [THREAD_READY] = "THREAD_READY",
@@ -46,13 +57,11 @@ static const char *status_str[] = {
   [THREAD_KILLED] = "THREAD_KILLED"
 };
 
+scheduler_t *schedulers[MAX_CPUS] = {};
+size_t num_schedulers = 0;
 static process_t *ptable[MAX_PROCS] = {};
 static size_t ptable_size = 0;
-static spinlock_t ptable_lock =  {
-  .locked = 0,
-  .locked_by = 0,
-  .lock_count = 0,
-};
+static spinlock_t ptable_lock =  {0};
 
 static inline bool is_valid_thread(thread_t *thread) {
   return thread->ctx != NULL &&
@@ -73,32 +82,32 @@ void *fprr_init() {
   return fprr;
 }
 
-int fprr_add_thread(void *self, thread_t *thread, sched_reason_t reason) {
+int fprr_add_thread(void *self, scheduler_t *sched, thread_t *thread, sched_reason_t reason) {
   sched_policy_fprr_t *fprr = self;
   uint8_t priority = max(thread->priority, FPRR_NUM_PRIORITIES - 1);
   thread->priority = priority;
 
   LIST_ADD(&fprr->queues[priority], thread, list);
   fprr->count++;
-  PERCPU_SCHEDULER->count++;
+  sched->ready_count++;
   return 0;
 }
 
-int fprr_remove_thread(void *self, thread_t *thread) {
+int fprr_remove_thread(void *self, scheduler_t *sched, thread_t *thread) {
   sched_policy_fprr_t *fprr = self;
   uint8_t priority = thread->priority;
 
   LIST_REMOVE(&fprr->queues[priority], thread, list);
   fprr->count--;
-  PERCPU_SCHEDULER->count--;
+  sched->ready_count--;
   return 0;
 }
 
-uint64_t fprr_get_thread_count(void *self) {
+uint64_t fprr_get_thread_count(void *self, scheduler_t *sched) {
   return ((sched_policy_fprr_t *) self)->count;
 }
 
-thread_t *fprr_get_next_thread(void *self) {
+thread_t *fprr_get_next_thread(void *self, scheduler_t *sched) {
   sched_policy_fprr_t *fprr = self;
   if (fprr->count == 0) {
     return NULL;
@@ -110,13 +119,13 @@ thread_t *fprr_get_next_thread(void *self) {
       continue;
     }
 
-    fprr_remove_thread(self, thread);
+    fprr_remove_thread(self, sched, thread);
     return thread;
   }
   return NULL;
 }
 
-void fprr_update_self(void *self) {
+void fprr_update_self(void *self, scheduler_t *sched) {
   sched_policy_fprr_t *fprr = self;
 }
 
@@ -141,16 +150,6 @@ sched_policy_t policy_fprr = {
 // Scheduling
 //
 
-noreturn void *idle_task(void *arg) {
-  scheduler_t *sched = PERCPU_SCHEDULER;
-  while (true) {
-    if (sched->count > 0) {
-      scheduler_yield();
-    }
-    cpu_pause();
-  }
-}
-
 static inline thread_status_t get_new_status(sched_reason_t reason) {
   switch (reason) {
     case BLOCKED: return THREAD_BLOCKED;
@@ -162,10 +161,53 @@ static inline thread_status_t get_new_status(sched_reason_t reason) {
   }
 }
 
+int find_cpu_for_thread(thread_t *thread) {
+  bool first_sched = (thread->flags & F_THREAD_CREATED) != 0;
+  scheduler_t *best_sched = schedulers[thread->cpu_id];
+  if (thread->affinity >= 0 && thread->affinity != thread->cpu_id) {
+    best_sched = schedulers[thread->affinity];
+    thread->cpu_id = thread->affinity;
+  }
+
+  if (!first_sched) {
+    spin_lock(&best_sched->lock);
+    int result = DISPATCH_SCHED(best_sched, thread->policy, add_thread, thread, RESERVED);
+    spin_unlock(&best_sched->lock);
+    if (result < 0) {
+      return result;
+    }
+    return best_sched->cpu_id;
+  }
+
+  foreach_scheduler(sched) {
+    if (sched == best_sched)
+      continue;
+
+    if (sched->total_count == 0) {
+      best_sched = sched;
+      break;
+    } else if (sched->total_count < best_sched->total_count) {
+      best_sched = sched;
+    }
+  }
+
+  spin_lock(&best_sched->lock);
+  best_sched->total_count++;
+  int result = DISPATCH_SCHED(best_sched, thread->policy, add_thread, thread, RESERVED);
+  spin_unlock(&best_sched->lock);
+  if (result < 0) {
+    return result;
+  }
+  return best_sched->cpu_id;
+}
+
 thread_t *get_next_thread() {
   sched_trace_debug("getting next thread");
   scheduler_t *sched = PERCPU_SCHEDULER;
-  if (sched->count == 0) {
+
+  spin_lock(&sched->lock);
+  if (sched->ready_count == 0) {
+    spin_unlock(&sched->lock);
     return NULL;
   }
 
@@ -177,6 +219,7 @@ find_thread:;
   }
 
   if (thread == NULL) {
+    spin_unlock(&sched->lock);
     return NULL;
   }
 
@@ -184,7 +227,8 @@ find_thread:;
   if (thread->status == THREAD_TERMINATED) {
     sched_trace_debug("cleaning up thread");
     // do cleanup logic
-    if (sched->count == 0) {
+    if (sched->ready_count == 0) {
+      spin_unlock(&sched->lock);
       return NULL;
     }
     goto find_thread;
@@ -192,13 +236,23 @@ find_thread:;
     panic("[scheduler] next thread not ready");
   }
 
+  spin_unlock(&sched->lock);
   return thread;
+}
+
+noreturn void *idle_task(void *arg) {
+  scheduler_t *sched = PERCPU_SCHEDULER;
+  while (true) {
+    if (sched->ready_count > 0) {
+      scheduler_yield();
+    }
+    cpu_pause();
+  }
 }
 
 //
 
 void scheduler_sched(sched_reason_t reason) {
-  // cli();
   scheduler_t *sched = PERCPU_SCHEDULER;
   thread_t *curr = PERCPU_THREAD;
 
@@ -219,29 +273,41 @@ void scheduler_sched(sched_reason_t reason) {
     sched_trace_debug("cur status: %s (%d:%d)", status_str[curr->status], curr->process->pid, curr->tid);
     if (IS_BLOCKED(curr)) {
       if (!(curr->flags & F_THREAD_OWN_BLOCKQ)) {
+        spin_lock(&sched->lock);
         LIST_ADD(&sched->blocked, curr, list);
+        spin_unlock(&sched->lock);
       }
     } else if (!IS_TERMINATED(curr)) {
-      if (sched->count == 0) {
+      if (sched->ready_count == 0) {
         curr->status = THREAD_RUNNING;
         return;
       }
 
-      int result = DISPATCH(curr->policy, add_thread, curr, reason);
-      if (result != 0) {
-        panic("[scheduler] add_thread failed: %d", result);
+      int result = find_cpu_for_thread(curr);
+      if (result < 0) {
+        panic("[scheduler] failed to add thread [%d]", result);
+      } else if (result != curr->cpu_id) {
+        kprintf("sched: migrating %d.%d  CPU#%d -> CPU#%d\n",
+                curr->process->pid, curr->tid, curr->cpu_id, result);
+
+        atomic_fetch_sub(&schedulers[curr->cpu_id]->total_count, 1);
+        atomic_fetch_add(&schedulers[result]->total_count, 1);
+        curr->cpu_id = result;
       }
     }
   }
 
-  if (sched->count == 0) {
+  if (sched->ready_count == 0) {
     // switch to idle thread
     sched->timer_event = false;
     sched_trace_debug("idling...");
     // curr->status = THREAD_READY;
     if (curr != sched->idle) {
+      sched->idle->status = THREAD_RUNNING;
       thread_switch(sched->idle);
     }
+
+    sched->idle->status = THREAD_RUNNING;
     return;
   }
 
@@ -254,6 +320,7 @@ void scheduler_sched(sched_reason_t reason) {
   sched->timer_event = false;
   next->status = THREAD_RUNNING;
   next->cpu_id = sched->cpu_id;
+  next->flags &= ~F_THREAD_CREATED;
   thread_switch(next);
 }
 
@@ -262,7 +329,7 @@ __used void scheduler_tick() {
   sched->timer_event = true;
   kprintf("!!!tick!!!\n");
   sched_trace_debug("tick");
-  if (PERCPU_THREAD == sched->idle && sched->count == 0) {
+  if (PERCPU_THREAD == sched->idle && sched->ready_count == 0) {
     // no other threads are available to run so return from the
     // interrupt handler and continue idling
     return;
@@ -273,9 +340,16 @@ __used void scheduler_tick() {
 
 void scheduler_wakeup(thread_t *thread) {
   sched_trace_debug("wakeup (%d:%d)", thread->process->pid, thread->tid);
-  scheduler_t *sched = PERCPU_SCHEDULER;
+  // scheduler_t *sched = PERCPU_SCHEDULER;
+  // kassert(thread->cpu_id == sched->cpu_id);
+  scheduler_t *sched = schedulers[thread->cpu_id];
+
+  spin_lock(&sched->lock);
   LIST_REMOVE(&sched->blocked, thread, list);
-  DISPATCH(thread->policy, add_thread, thread, RESERVED);
+  DISPATCH_SCHED(sched, thread->policy, add_thread, thread, RESERVED);
+  // DISPATCH(thread->policy, add_thread, thread, RESERVED);
+  spin_unlock(&sched->lock);
+
   thread->status = THREAD_READY;
   scheduler_sched(PREEMPTED);
 }
@@ -284,6 +358,13 @@ void scheduler_wakeup(thread_t *thread) {
 
 void scheduler_init(process_t *root) {
   sched_trace_debug("initializing");
+  if (root == NULL) {
+    root = ptable[0];
+    while (root == NULL) {
+      apic_udelay(10);
+      root = ptable[0];
+    }
+  }
 
   thread_t *idle = thread_alloc(LIST_LAST(&root->threads)->tid + 1, idle_task, NULL, false);
   idle->process = root;
@@ -293,24 +374,33 @@ void scheduler_init(process_t *root) {
   LIST_ADD(&root->threads, idle, group);
   scheduler_t *sched = kmalloc(sizeof(scheduler_t));
   sched->cpu_id = PERCPU_ID;
-  sched->count = 0;
+  sched->ready_count = 0;
+  sched->total_count = PERCPU_ID == 0 ? 1 : 0;
   sched->idle = idle;
+  spin_init(&sched->lock);
   LIST_INIT(&sched->blocked);
   sched->timer_event = false;
+  schedulers[PERCPU_ID] = sched;
+  atomic_fetch_add(&num_schedulers, 1);
 
   PERCPU_SET_SCHEDULER(sched);
   REGISTER_POLICY(SCHED_DRIVER, &policy_fprr);
   REGISTER_POLICY(SCHED_SYSTEM, &policy_fprr);
 
-  // init_periodic_timer();
-  // timer_setval(TIMER_PERIODIC, 1e9);
-  // timer_enable(TIMER_PERIODIC);
   init_oneshot_timer();
   timer_enable(TIMER_ONE_SHOT);
 
   sched_trace_debug("done!");
-  root->main->status = THREAD_RUNNING;
-  thread_switch(root->main);
+  ptable[0] = root;
+  per_cpu_t *percpu = __percpu_struct_ptr();
+  if (PERCPU_IS_BSP) {
+    root->main->status = THREAD_RUNNING;
+    thread_switch(root->main);
+  } else {
+    // APs idle
+    sched->idle->status = THREAD_RUNNING;
+    thread_switch(sched->idle);
+  }
 }
 
 int scheduler_add(thread_t *thread) {
@@ -319,10 +409,17 @@ int scheduler_add(thread_t *thread) {
     return -EINVAL;
   }
 
-  int result = DISPATCH(thread->policy, add_thread, thread, RESERVED);
-  if (result != 0) {
+
+  int result = find_cpu_for_thread(thread);
+  if (result < 0) {
     return result;
   }
+
+  scheduler_t *sched = schedulers[result];
+  thread->cpu_id = result;
+  kprintf("sched: scheduling thread %d.%d onto CPU#%d\n",
+          thread->process->pid, thread->tid, result);
+  kprintf("scheduler %d: total_count=%d\n", sched->cpu_id, sched->total_count);
 
   spin_lock(&ptable_lock);
   if (ptable_size == MAX_PROCS) {
@@ -338,14 +435,19 @@ int scheduler_add(thread_t *thread) {
 int scheduler_remove(thread_t *thread) {
   scheduler_t *sched = PERCPU_SCHEDULER;
 
+  spin_lock(&sched->lock);
   if (thread == PERCPU_THREAD) {
+    spin_unlock(&sched->lock);
     scheduler_sched(TERMINATED);
     unreachable;
   } else if (IS_BLOCKED(thread)) {
     LIST_REMOVE(&sched->blocked, thread, list);
   } else {
-    DISPATCH(thread->policy, remove_thread, thread);
+    DISPATCH_SCHED(sched, thread->policy, remove_thread, thread);
   }
+  atomic_fetch_sub(&sched->total_count, 1);
+  spin_unlock(&sched->lock);
+
   thread->status = THREAD_TERMINATED;
   return 0;
 }
@@ -357,15 +459,18 @@ int scheduler_update(thread_t *thread, uint8_t policy, uint16_t priority) {
     return -ENOTSUP;
   }
 
+  spin_lock(&sched->lock);
   if (thread == PERCPU_THREAD || IS_BLOCKED(thread)) {
     thread->policy = policy;
     thread->priority = priority;
   } else {
-    DISPATCH(thread->policy, remove_thread, thread);
+    DISPATCH_SCHED(sched, thread->policy, remove_thread, thread);
     thread->policy = policy;
     thread->priority = priority;
-    DISPATCH(thread->policy, add_thread, thread, RESERVED);
+    DISPATCH_SCHED(sched, thread->policy, add_thread, thread, RESERVED);
   }
+
+  spin_unlock(&sched->lock);
   return 0;
 }
 
@@ -374,11 +479,13 @@ int scheduler_block(thread_t *thread) {
   if (thread->status == THREAD_RUNNING) {
     scheduler_sched(BLOCKED);
   } else if (thread->status == THREAD_READY) {
+    spin_lock(&sched->lock);
     thread->status = THREAD_BLOCKED;
-    DISPATCH(thread->policy, remove_thread, thread);
+    DISPATCH_SCHED(sched, thread->policy, remove_thread, thread);
     if (!(thread->flags & F_THREAD_OWN_BLOCKQ)) {
       LIST_ADD(&sched->blocked, thread, list);
     }
+    spin_unlock(&sched->lock);
   } else {
     return -EINVAL;
   }
@@ -391,15 +498,19 @@ int scheduler_unblock(thread_t *thread) {
     return -EINVAL;
   }
 
-  scheduler_t *sched = PERCPU_SCHEDULER;
+  scheduler_t *sched = schedulers[thread->cpu_id];
+  spin_lock(&sched->lock);
   if (!(thread->flags & F_THREAD_OWN_BLOCKQ)) {
     LIST_REMOVE(&sched->blocked, thread, list);
   } else {
     thread->flags ^= F_THREAD_OWN_BLOCKQ;
   }
-  DISPATCH(thread->policy, add_thread, thread, RESERVED);
+  DISPATCH_SCHED(sched, thread->policy, add_thread, thread, RESERVED);
+  spin_unlock(&sched->lock);
+
   thread->status = THREAD_READY;
-  if (thread->policy == PERCPU_THREAD->policy && thread->priority > PERCPU_THREAD->priority) {
+  if (thread->cpu_id == PERCPU_ID && thread->policy == PERCPU_THREAD->policy &&
+      thread->priority > PERCPU_THREAD->priority) {
     scheduler_sched(PREEMPTED);
   }
   return 0;
@@ -436,10 +547,4 @@ process_t *scheduler_get_process(pid_t pid) {
 
 //
 
-void preempt_disable() {
-  PERCPU_THREAD->preempt_count++;
-}
 
-void preempt_enable() {
-  PERCPU_THREAD->preempt_count--;
-}
