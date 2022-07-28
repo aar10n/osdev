@@ -6,7 +6,7 @@
 
 #include <device/apic.h>
 
-#include <sched/sched.h>
+#include <sched.h>
 #include <spinlock.h>
 #include <panic.h>
 #include <printf.h>

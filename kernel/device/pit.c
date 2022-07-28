@@ -3,7 +3,6 @@
 //
 
 #include <panic.h>
-#include <vectors.h>
 #include <cpu/io.h>
 #include <cpu/idt.h>
 #include <device/pit.h>

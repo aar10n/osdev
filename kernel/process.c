@@ -4,9 +4,9 @@
 
 #include <process.h>
 
-#include <sched/sched.h>
 
 #include <mm.h>
+#include <sched.h>
 #include <mutex.h>
 #include <thread.h>
 #include <signal.h>

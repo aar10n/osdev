@@ -20,7 +20,7 @@ kernel += cpu/cpu.asm cpu/idt.asm cpu/io.asm cpu/exception.asm \
 
 # kernel/device
 kernel += device/apic.c device/hpet.c \
-	device/ioapic.c device/pic.c device/pit.c
+	device/ioapic.c device/pit.c
 
 # kernel/gui
 kernel += gui/screen.c

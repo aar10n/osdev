@@ -8,8 +8,8 @@
 #include <usb/scsi.h>
 
 #include <mm.h>
+#include <sched.h>
 #include <process.h>
-#include <scheduler.h>
 #include <printf.h>
 
 #include <rb_tree.h>
@@ -199,7 +199,7 @@ void usb_register_device(xhci_device_t *device) {
     return;
   }
   dev->driver_data = ptr;
-  thread_setsched(dev->thread, SCHED_DRIVER, PRIORITY_HIGH);
+  thread_setsched(dev->thread, POLICY_DRIVER, 254);
   thread_yield();
 }
 

@@ -9,7 +9,6 @@
 #include <thread.h>
 #include <mutex.h>
 #include <irq.h>
-#include <scheduler.h>
 #include <spinlock.h>
 #include <printf.h>
 #include <panic.h>

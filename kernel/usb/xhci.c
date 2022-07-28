@@ -10,7 +10,7 @@
 
 #include <mm.h>
 #include <irq.h>
-#include <scheduler.h>
+#include <sched.h>
 #include <mutex.h>
 #include <printf.h>
 #include <panic.h>
@@ -229,7 +229,7 @@ void xhci_init() {
 
   // spawn threads
   xhci->event_thread = thread_create(xhci_event_loop, xhci);
-  thread_setsched(xhci->event_thread, SCHED_DRIVER, PRIORITY_HIGH);
+  thread_setsched(xhci->event_thread, POLICY_DRIVER, 255);
   thread_yield();
 
   // initialize the controller
@@ -336,7 +336,7 @@ void xhci_setup_devices() {
     xhci_trace_debug("config selected!");
 
     device->thread = thread_create(xhci_device_event_loop, device);
-    thread_setsched(device->thread, SCHED_DRIVER, PRIORITY_HIGH);
+    thread_setsched(device->thread, POLICY_DRIVER, 255);
     thread_yield();
 
     xhci_trace_debug("device enabled!");

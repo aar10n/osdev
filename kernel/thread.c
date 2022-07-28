@@ -6,7 +6,7 @@
 
 #include <mm.h>
 #include <mutex.h>
-#include <sched/sched.h>
+#include <sched.h>
 
 #include <printf.h>
 #include <string.h>

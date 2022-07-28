@@ -5,9 +5,9 @@
 #include <mutex.h>
 
 #include <cpu/cpu.h>
-#include <sched/sched.h>
 
 #include <mm.h>
+#include <sched.h>
 #include <process.h>
 #include <thread.h>
 #include <timer.h>

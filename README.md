@@ -22,6 +22,7 @@ serve as a useful reference to some.
 │  ├── device       apic, ioapic and other related drivers
 │  ├── gui          graphics code
 │  ├── mm           memory management (physical and virtual)
+│  ├── sched        scheduler and scheduling algorithms
 │  └── usb          usb and usb device drivers
 ├── lib           data structure, algorithm and other useful libraries
 ├── scripts       utility scripts and support files

@@ -6,7 +6,6 @@
 #include <process.h>
 #include <thread.h>
 #include <mutex.h>
-#include <scheduler.h>
 #include <string.h>
 #include <mm.h>
 

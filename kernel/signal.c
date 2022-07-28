@@ -5,7 +5,6 @@
 #include <signal.h>
 #include <process.h>
 #include <thread.h>
-#include <scheduler.h>
 #include <panic.h>
 #include <mm.h>
 #include <string.h>

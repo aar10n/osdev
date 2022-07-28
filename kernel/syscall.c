@@ -5,9 +5,9 @@
 #include <syscall.h>
 
 #include <cpu/cpu.h>
-#include <sched/sched.h>
 
 #include <fs.h>
+#include <sched.h>
 #include <process.h>
 #include <thread.h>
 #include <signal.h>

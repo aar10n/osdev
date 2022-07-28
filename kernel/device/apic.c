@@ -11,7 +11,6 @@
 
 #include <panic.h>
 #include <printf.h>
-#include <vectors.h>
 
 #define APIC_BASE_PA 0xFEE00000
 
@@ -207,7 +206,7 @@ void apic_init() {
   apic_write(APIC_DFR, dfr.raw);
 
   apic_reg_lvt_timer_t timer = apic_reg_lvt_timer(
-    VECTOR_SCHED_TIMER, APIC_IDLE, APIC_MASK, APIC_ONE_SHOT
+    0, APIC_IDLE, APIC_MASK, APIC_ONE_SHOT
   );
   apic_write(APIC_LVT_TIMER, timer.raw);
 
@@ -215,12 +214,12 @@ void apic_init() {
     0, APIC_FIXED, APIC_IDLE, 0, APIC_MASK, 0, APIC_LEVEL
   );
 
-  lint.vector = VECTOR_APIC_LINT0;
+  lint.vector = 0;
   apic_write(APIC_LVT_LINT0, lint.raw);
-  lint.vector = VECTOR_APIC_LINT1;
+  lint.vector = 0;
   apic_write(APIC_LVT_LINT1, lint.raw);
 
-  apic_reg_svr_t svr = apic_reg_svr(VECTOR_APIC_SPURIOUS, 1, 0);
+  apic_reg_svr_t svr = apic_reg_svr(0, 1, 0);
   apic_write(APIC_SVR, svr.raw);
 
   apic_send_eoi();
@@ -233,7 +232,7 @@ void apic_init_periodic(uint64_t ms) {
   apic_reg_lvt_timer_t timer = apic_read_timer();
   timer.timer_mode = APIC_PERIODIC;
   timer.mask = APIC_UNMASK;
-  timer.vector = VECTOR_SCHED_TIMER;
+  timer.vector = 0;
   apic_write_timer(timer);
 
   apic_write(APIC_INITIAL_COUNT, ms_to_count(ms));

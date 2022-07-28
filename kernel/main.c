@@ -16,7 +16,7 @@
 #include <syscall.h>
 #include <clock.h>
 #include <timer.h>
-#include <sched/sched.h>
+#include <sched.h>
 #include <bus/pcie.h>
 #include <usb/usb.h>
 #include <irq.h>
