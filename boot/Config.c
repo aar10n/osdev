@@ -310,7 +310,8 @@ EFI_STATUS EFIAPI InitializeConfig() {
   EFI_STATUS Status;
 
   EFI_FILE *File = NULL;
-  Status = OpenFile(ConfigFilePath, &File);
+  PRINT_INFO("Looking for config file");
+  Status = LocateFileByName(NULL, L"config.ini", TRUE, &File);
   if (EFI_ERROR(Status)) {
     if (Status == EFI_NOT_FOUND) {
       PRINT_WARN("No config file found at %s", ConfigFilePath);

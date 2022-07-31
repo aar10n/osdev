@@ -1,0 +1,4 @@
+#!ipxe
+imgfetch http://X.X.X.X/config.ini
+imgfetch http://X.X.X.X/kernel.elf
+chain http://X.X.X.X/bootX64.efi

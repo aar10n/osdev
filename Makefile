@@ -75,13 +75,22 @@ endif
 remote-tail-logs:
 	$(SSH) -t $(REMOTE_USER)@$(REMOTE_HOST) "tail -f kernel.log"
 
+
+copy-to-pxe-server: $(BUILD_DIR)/boot$(WINARCH).efi $(BUILD_DIR)/kernel.elf configpxe.ini
+ifneq ($(call all-defined,PXE_USER PXE_HOST PXE_ROOT),true)
+	$(error PXE_USER, PXE_HOST and PXE_ROOT must all be defined)
+endif
+	$(RSYNC) -av $(BUILD_DIR)/{boot$(WINARCH).efi,kernel.elf} $(PXE_USER)@$(PXE_HOST):$(PXE_ROOT)/
+	$(RSYNC) -av configpxe.ini $(PXE_USER)@$(PXE_HOST):$(PXE_ROOT)/config.ini
+
+
 copy-to-usb: $(BUILD_DIR)/boot$(WINARCH).efi $(BUILD_DIR)/kernel.elf config.ini
 ifneq ($(call all-defined,USB_DEVICE),true)
 	$(error USB_DEVICE must be defined)
 endif
 	rm -rf $(USB_DEVICE)/EFI
 	mkdir -p $(USB_DEVICE)/EFI/BOOT
-	cp $(BUILD_DIR)/boot$(WINARCH).efi $(USB_DEVICE)/EFI/BOOT/bootX64.EFI
+	cp $(BUILD_DIR)/boot$(WINARCH).efi $(USB_DEVICE)/EFI/BOOT/boot$(WINARCH).EFI
 	cp $(BUILD_DIR)/kernel.elf $(USB_DEVICE)/EFI/BOOT/kernel.elf
 	cp config.ini $(USB_DEVICE)/EFI/BOOT/config.ini
 
@@ -96,7 +105,7 @@ clean:
 clean-bootloader:
 	rm -f $(BUILD_DIR)/boot$(WINARCH).efi
 	rm -f $(BUILD_DIR)/loader{.dll,.lib}
-	rm -rf $(OBJ_DIR)/{$(call join-comma,$(BOOT_TARGETS))}
+	rm -rf $(OBJ_DIR)/boot
 
 clean-bootloader-all: clean-bootloader
 	rm -f $(BUILD_DIR)/static_library_files.lst

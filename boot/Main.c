@@ -16,7 +16,9 @@
 
 #define CHECK_ERROR(status) \
   if (EFI_ERROR(status)) { \
-    PRINT_STATUS(Status); \
+    PRINT_STATUS(Status);   \
+    Print(L"Press any key to exit\n"); \
+    WaitForKeypress(); \
     return status; \
   }
 
@@ -150,24 +152,7 @@ EFI_STATUS EFIAPI AllocateBootInfoStruct(OUT boot_info_v2_t **BootInfo) {
 EFI_STATUS EFIMAIN UefiMain(IN EFI_HANDLE ImageHandle, IN EFI_SYSTEM_TABLE *SystemTable) {
   EFI_STATUS Status;
   gST->ConOut->ClearScreen(gST->ConOut);
-
-  // Print(L"Debugging:\n");
-  // SerialPortInitialize();
-  // while (TRUE) {
-  //   gBS->WaitForEvent(1, &(gST->ConIn->WaitForKey), NULL);
-  //   EFI_INPUT_KEY Key;
-  //   gST->ConIn->ReadKeyStroke(gST->ConIn, &Key);
-  //
-  //   Print(L"!");
-  //
-  //   UINT8 Ch = (UINT8) Key.ScanCode;
-  //   // if (Key.ScanCode == L'\n') {
-  //   //   Print(L"\n");
-  //   // } else {
-  //   //   Print(L"%c", Key.ScanCode);
-  //   // }
-  //   SerialPortWrite(&Ch, 1);
-  // }
+  SerialPortInitialize();
 
   // Initialize protocols
   Status = InitializeFileProtocols();

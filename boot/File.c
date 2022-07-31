@@ -8,6 +8,7 @@
 #include <Protocol/LoadedImage.h>
 #include <Protocol/SimpleFileSystem.h>
 #include <Library/BaseMemoryLib.h>
+#include <Library/DevicePathLib.h>
 
 EFI_LOADED_IMAGE_PROTOCOL *LoadedImage;
 EFI_HANDLE BootDeviceHandle;
@@ -32,6 +33,35 @@ EFI_STATUS EFIAPI ConvertToWinPath(IN CONST CHAR16 *Path, IN OUT CHAR16 **WinPat
     Ptr++;
   }
   return EFI_SUCCESS;
+}
+
+EFI_STATUS EFIAPI ListFilesInDirectory(EFI_FILE *Dir) {
+  EFI_STATUS Status;
+  EFI_FILE_INFO *FileInfo;
+  UINTN FileInfoSize = 1024;
+
+  FileInfo = AllocatePool(FileInfoSize);
+  if (FileInfo == NULL) {
+    return EFI_OUT_OF_RESOURCES;
+  }
+
+  Dir->SetPosition(Dir, 0);
+  PRINT_INFO("Listing directory:");
+  while (TRUE) {
+    FileInfoSize = 1024;
+    Status = Dir->Read(Dir, &FileInfoSize, (void *) FileInfo);
+    if (FileInfoSize == 0) {
+      break;
+    } else if (EFI_ERROR(Status)) {
+      FreePool(FileInfo);
+      return Status;
+    }
+
+    Print(L"  %s\n", FileInfo->FileName);
+  }
+
+  FreePool(FileInfo);
+  return 0;
 }
 
 //
@@ -59,6 +89,18 @@ EFI_STATUS EFIAPI InitializeFileProtocols() {
     return Status;
   }
 
+  EFI_DEVICE_PATH *DevicePath = DevicePathFromHandle(BootDeviceHandle);
+  if (DevicePath == NULL || DevicePath->Type == 0) {
+    PRINT_ERROR("Failed to get EFI_SIMPLE_FILE_SYSTEM_PROTOCOL for boot device");
+    return EFI_PROTOCOL_ERROR;
+  }
+  ConvertDevicePathToText(DevicePath, TRUE, TRUE);
+
+  CHAR16 *PathStr = ConvertDevicePathToText(DevicePath, TRUE, TRUE);
+  PRINT_INFO("Boot device: %s", PathStr);
+  FreePool(PathStr);
+
+  ListFilesInDirectory(BootVolumeRoot);
   return EFI_SUCCESS;
 }
 
@@ -138,4 +180,83 @@ RETRY: NULL;
   *BufferSize = FileSize;
   FreePool(FileInfo);
   return EFI_SUCCESS;
+}
+
+//
+
+EFI_STATUS EFIAPI LocateFileByName(
+  IN EFI_FILE *Parent,
+  IN CONST CHAR16 *Name,
+  IN BOOLEAN Recurse,
+  OUT EFI_FILE **File
+) {
+  ASSERT(BootVolumeRoot != NULL);
+  EFI_STATUS Status;
+  EFI_FILE_INFO *FileInfo;
+  UINTN FileInfoSize = 1024;
+  UINTN NameLen = StrLen(Name);
+
+  if (Parent == NULL) {
+    Parent = BootVolumeRoot;
+  }
+
+  FileInfo = AllocatePool(FileInfoSize);
+  if (FileInfo == NULL) {
+    return EFI_OUT_OF_RESOURCES;
+  }
+
+  EFI_FILE_HANDLE Dir = Parent;
+  Dir->SetPosition(Dir, 0);
+  while (TRUE) {
+    FileInfoSize = 1024;
+    Status = Dir->Read(Dir, &FileInfoSize, (void *) FileInfo);
+    if (FileInfoSize == 0) {
+      // we've reached the end with no matches
+      FreePool(FileInfo);
+      return EFI_NOT_FOUND;
+    } else if (EFI_ERROR(Status)) {
+      FreePool(FileInfo);
+      return Status;
+    }
+
+    if (StrnCmp(FileInfo->FileName, L".", 1) == 0 || StrnCmp(FileInfo->FileName, L"..", 2) == 0) {
+      // skip the hardlinks to self and parent
+      continue;
+    }
+
+    if (StrnCmp(FileInfo->FileName, Name, NameLen) == 0) {
+      // we found the file
+      EFI_FILE_HANDLE Result;
+      Status = Dir->Open(Dir, &Result, FileInfo->FileName, EFI_FILE_MODE_READ, 0);
+      if (EFI_ERROR(Status)) {
+        FreePool(FileInfo);
+        return Status;
+      }
+
+      *File = Result;
+      return EFI_SUCCESS;
+    } else if (FileInfo->Attribute & EFI_FILE_DIRECTORY && Recurse) {
+      Print(L"opening directory\n");
+      // look for the file one directory down
+      EFI_FILE_HANDLE NextDir;
+      Status = Dir->Open(Dir, &NextDir, FileInfo->FileName, EFI_FILE_MODE_READ, 0);
+      if (EFI_ERROR(Status)) {
+        FreePool(FileInfo);
+        return Status;
+      }
+
+      Print(L"<recursing>\n");
+      Status = LocateFileByName(NextDir, Name, TRUE, File);
+      NextDir->Close(NextDir);
+      if (Status == EFI_SUCCESS) {
+        FreePool(FileInfo);
+        return EFI_SUCCESS;
+      } else if (Status != EFI_NOT_FOUND) {
+        FreePool(FileInfo);
+        return Status;
+      }
+
+      // keep looking
+    }
+  }
 }
