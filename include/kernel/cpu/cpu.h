@@ -96,6 +96,7 @@ typedef union cpuid_bits {
 #define CPUID_BIT_AVX2          _CPUID_BIT(ebx_0_7, 5)
 #define CPUID_BIT_SMEP          _CPUID_BIT(ebx_0_7, 7)
 #define CPUID_BIT_BMI2          _CPUID_BIT(ebx_0_7, 8)
+#define CPUID_BIT_AVX512_F      _CPUID_BIT(ebx_0_7, 16)
 
 #define CPUID_BIT_UMIP          _CPUID_BIT(ecx_0_7, 2)
 #define CPUID_BIT_WAITPKG       _CPUID_BIT(ecx_0_7, 5)
@@ -109,10 +110,14 @@ typedef union cpuid_bits {
 #define CPUID_BIT_PDPE1GB       _CPUID_BIT(edx_8_1, 26)
 #define CPUID_BIT_RDTSCP        _CPUID_BIT(edx_8_1, 27)
 
+#define CPUID_BIT_SVM           _CPUID_BIT(ecx_8_1, 2)
 #define CPUID_BIT_EXTAPIC       _CPUID_BIT(ecx_8_1, 3)
 #define CPUID_BIT_SSE4A         _CPUID_BIT(ecx_8_1, 6)
+#define CPUID_BIT_MISALIGNSSE   _CPUID_BIT(ecx_8_1, 7)
 #define CPUID_BIT_WDT           _CPUID_BIT(ecx_8_1, 13)
+#define CPUID_BIT_NODEID_MSR    _CPUID_BIT(ecx_8_1, 19)
 #define CPUID_BIT_TOPOEXT       _CPUID_BIT(ecx_8_1, 22)
+#define CPUID_BIT_PERFTSC       _CPUID_BIT(ecx_8_1, 27)
 
 #define CPUID_BIT_INVARIANT_TSC _CPUID_BIT(edx_8_7, 8)
 
@@ -147,7 +152,7 @@ uint8_t cpu_id_to_apic_id(uint8_t cpu_id);
 int cpuid_query_bit(uint16_t feature);
 
 void cpu_print_info();
-void cpu_print_features();
+void cpu_print_cpuid();
 
 void cpu_disable_interrupts();
 void cpu_enable_interrupts();

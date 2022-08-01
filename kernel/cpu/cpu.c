@@ -15,6 +15,8 @@
 #include <panic.h>
 #include <printf.h>
 
+#define PERCPU_CPUID (PERCPU_CPU_INFO->cpuid_bits)
+
 #define CPU_CR0_EM         (1 << 2)
 #define CPU_CR0_WP         (1 << 16)
 #define CPU_CR0_NW         (1 << 29)
@@ -107,6 +109,11 @@ void cpu_init() {
   do_cpuid(0x80000007, &cpuid_bits->eax_8_7, &cpuid_bits->ebx_8_7, &cpuid_bits->ecx_8_7, &cpuid_bits->edx_8_7);
   do_cpuid(0x80000008, &cpuid_bits->eax_8_8, &cpuid_bits->ebx_8_8, &cpuid_bits->ecx_8_8, &cpuid_bits->edx_8_8);
 
+  // if (PERCPU_IS_BSP) {
+  //   cpu_print_info();
+  //   cpu_print_cpuid();
+  // }
+
   assert_cpu_feature("APIC", cpuid_query_bit(CPUID_BIT_APIC));
   assert_cpu_feature("TSC", cpuid_query_bit(CPUID_BIT_TSC));
 
@@ -178,6 +185,7 @@ void cpu_init() {
   cpu_id_to_apic_id_table[PERCPU_ID] = PERCPU_APIC_ID;
   if (PERCPU_IS_BSP) {
     cpu_print_info();
+    cpu_print_cpuid();
 
     // callibrate processor frequency
     kprintf("calibrating processor frequency...\n");
@@ -186,7 +194,7 @@ void cpu_init() {
     uint64_t t0, t1, dt;
     for (int i = 0; i < 5; i++) {
       t0 = cpu_read_tsc();
-      pit_mdelay(ms);
+      apic_mdelay(ms);
       t1 = cpu_read_tsc();
       dt = t1 - t0;
       cycles = min(cycles, dt);
@@ -248,7 +256,7 @@ int cpuid_query_bit(uint16_t feature) {
   if (bit > 31 || dword > (sizeof(cpuid_bits_t) / sizeof(uint32_t))) {
     return -1;
   }
-  return PERCPU_CPU_INFO->cpuid_bits.raw[dword] & (1 << bit);
+  return (PERCPU_CPU_INFO->cpuid_bits.raw[dword] & (1 << bit)) != 0;
 }
 
 void cpu_print_info() {
@@ -291,6 +299,51 @@ void cpu_print_info() {
   kprintf("  Family:     %-2d (%02xh)\n", family, family);
   kprintf("  Model:      %-2d (%02xh)\n", model, model);
   kprintf("  Stepping:   %-2d (%02xh)\n", stepping, stepping);
+
+  uint8_t num_phys_bits = PERCPU_CPUID.eax_8_8 & 0xFF;
+  uint8_t num_linear_bits = (PERCPU_CPUID.eax_8_8 >> 8) & 0xFF;
+  uint8_t num_phys_cores = (PERCPU_CPUID.ecx_8_8 & 0xFF) + 1;
+  uint8_t max_apic_id = 1 << ((PERCPU_CPUID.ecx_8_8 >> 12) & 0xF);
+
+  kprintf("\n");
+  kprintf("  Number of physical address bits: %d\n", num_phys_bits);
+  kprintf("  Number of linear address bits: %d\n", num_linear_bits);
+  kprintf("  Number of physical cores: %d\n", num_phys_cores);
+  kprintf("  Max APIC ID: %d\n", max_apic_id);
+}
+
+void cpu_print_cpuid() {
+  kprintf("CPUID:\n");
+  kprintf("  apic: %d\n", cpuid_query_bit(CPUID_BIT_APIC));
+  kprintf("  extapic: %d\n", cpuid_query_bit(CPUID_BIT_EXTAPIC));
+  kprintf("  x2apic: %d\n", cpuid_query_bit(CPUID_BIT_X2APIC));
+  kprintf("  tsc: %d\n", cpuid_query_bit(CPUID_BIT_TSC));
+  kprintf("  tsc-deadline: %d\n", cpuid_query_bit(CPUID_BIT_TSC_DEADLINE));
+  kprintf("  tsc-adjust: %d\n", cpuid_query_bit(CPUID_BIT_TSC_ADJUST));
+  kprintf("  tsc-invariant: %d\n", cpuid_query_bit(CPUID_BIT_INVARIANT_TSC));
+  kprintf("  perf-tsc: %d\n", cpuid_query_bit(CPUID_BIT_PERFTSC));
+  kprintf("  arat: %d\n", cpuid_query_bit(CPUID_BIT_ARAT));
+  kprintf("  wdt: %d\n", cpuid_query_bit(CPUID_BIT_WDT));
+  kprintf("  topoext: %d\n", cpuid_query_bit(CPUID_BIT_TOPOEXT));
+  kprintf("  htt: %d\n", cpuid_query_bit(CPUID_BIT_HTT));
+  kprintf("\n");
+  kprintf("  mmx: %d\n", cpuid_query_bit(CPUID_BIT_MMX));
+  kprintf("  sse: %d\n", cpuid_query_bit(CPUID_BIT_SSE));
+  kprintf("  sse2: %d\n", cpuid_query_bit(CPUID_BIT_SSE2));
+  kprintf("  sse3: %d\n", cpuid_query_bit(CPUID_BIT_SSE3));
+  kprintf("  sse4.1: %d\n", cpuid_query_bit(CPUID_BIT_SSE4_1));
+  kprintf("  sse4.2: %d\n", cpuid_query_bit(CPUID_BIT_SSE4_2));
+  kprintf("  avx: %d\n", cpuid_query_bit(CPUID_BIT_AVX));
+  kprintf("  avx2: %d\n", cpuid_query_bit(CPUID_BIT_AVX2));
+  kprintf("  avx512_f: %d\n", cpuid_query_bit(CPUID_BIT_AVX512_F));
+  kprintf("\n");
+  kprintf("  fxsr: %d\n", cpuid_query_bit(CPUID_BIT_FXSR));
+  kprintf("  xsave: %d\n", cpuid_query_bit(CPUID_BIT_XSAVE));
+  kprintf("  osxsave: %d\n", cpuid_query_bit(CPUID_BIT_OSXSAVE));
+  kprintf("  pdpe1gb: %d\n", cpuid_query_bit(CPUID_BIT_PDPE1GB));
+  kprintf("  nodeid_msr: %d\n", cpuid_query_bit(CPUID_BIT_PDPE1GB));
+  kprintf("  mp: %d\n", cpuid_query_bit(CPUID_BIT_MP));
+  kprintf("  nx: %d\n", cpuid_query_bit(CPUID_BIT_NX));
 }
 
 //

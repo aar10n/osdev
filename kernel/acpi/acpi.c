@@ -134,13 +134,10 @@ void acpi_parse_madt() {
 
       kassert(total_apic_count < MAX_NUM_APICS);
       apic_id_map[total_apic_count++] = local_apic->apic_id;
-
-      kprintf("ACPI: APIC[%d]\n", local_apic->apic_id);
       register_apic(local_apic->apic_id);
     } else if (entry->type == ACPI_MADT_TYPE_IO_APIC) {
       acpi_madt_io_apic_t *io_apic = (void *) entry;
       if (io_apic->global_interrupt_base < 256) {
-        kprintf("ACPI: IOAPIC[%d] address=%p GSI=%d\n", io_apic->io_apic_id, io_apic->address, io_apic->global_interrupt_base);
         register_ioapic(io_apic->io_apic_id, io_apic->address, io_apic->global_interrupt_base);
       } else {
         kprintf("ACPI: IOAPIC[%d] GSI Base out of range\n", io_apic->io_apic_id);

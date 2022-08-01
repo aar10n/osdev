@@ -87,18 +87,42 @@ _Noreturn void launch() {
   fs_init();
   pcie_discover();
 
-  usb_init();
+  // usb_init();
 
-  if (fs_mount("/", "/dev/sdb", "ext2") < 0) {
-    panic("%s", strerror(ERRNO));
-  }
+  // if (fs_mount("/", "/dev/sdb", "ext2") < 0) {
+  //   panic("%s", strerror(ERRNO));
+  // }
 
-  fs_open("/dev/stdin", O_RDONLY, 0);
-  fs_open("/dev/stdout", O_WRONLY, 0);
-  fs_open("/dev/stderr", O_WRONLY, 0);
-  process_execve("/usr/bin/hello", (void *) argv, NULL);
+  // fs_open("/dev/stdin", O_RDONLY, 0);
+  // fs_open("/dev/stdout", O_WRONLY, 0);
+  // fs_open("/dev/stderr", O_WRONLY, 0);
+  // process_execve("/usr/bin/hello", (void *) argv, NULL);
+
+  // clock_t time0 = cpu_read_tsc();
+  // clock_t time1 = cpu_read_tsc();
+  // clock_t time2 = cpu_read_tsc();
+  // cpu_pause();
+  // cpu_pause();
+  // cpu_pause();
+  // cpu_pause();
+  // clock_t time3 = cpu_read_tsc();
+  // clock_t time4 = cpu_read_tsc();
+  // kprintf("time0: %llu\n", time0);
+  // kprintf("time1: %llu\n", time1);
+  // kprintf("time2: %llu\n", time2);
+  // kprintf("time3: %llu\n", time3);
+  // kprintf("time4: %llu\n", time4);
+
+  // timer_udelay(1e6);
+  // kprintf("time now: %llu\n", clock_now());
+
+  // kprintf("sleeping...\n");
+  // thread_sleep(100000);
+  // kprintf("done\n");
+  // proc_print_thread_stats(process_get(0));
 
   kprintf("haulting...\n");
-  thread_block();
+  while (true) cpu_pause();
+  // thread_block();
   unreachable;
 }

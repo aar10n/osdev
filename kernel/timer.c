@@ -176,10 +176,13 @@ void alarms_init() {
   cond_init(&alarm_cond, 0);
   spin_init(&alarm_cond_lock);
   thread_create(alarm_event_loop, NULL);
+  thread_yield();
 }
 
 clockid_t timer_create_alarm(clock_t expires, timer_cb_t callback, void *data) {
-  if (expires < clock_now()) {
+  clock_t now = clock_now();
+  if (expires < now) {
+    kprintf("timer: invalid alarm %zu < %zu\n", expires, now);
     return -EINVAL;
   }
 

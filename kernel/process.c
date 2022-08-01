@@ -297,7 +297,10 @@ gid_t getgid() {
 //
 
 process_t *process_get(pid_t pid) {
-  kassert(ptable != NULL);
+  if (ptable == NULL) {
+    return NULL;
+  }
+
   if (pid >= MAX_PROCS || pid < 0) {
     return NULL;
   }
@@ -337,5 +340,18 @@ void print_debug_process(process_t *process) {
   while (thread) {
     print_debug_thread(thread);
     thread = LIST_NEXT(thread, list);
+  }
+}
+
+void proc_print_thread_stats(process_t *proc) {
+  kassert(proc != NULL);
+
+  kprintf("proc: process %d(%d) | CPU#%d\n", proc->pid, proc->ppid, PERCPU_ID);
+  thread_t *thread;
+  LIST_FOREACH(thread, &proc->threads, group) {
+    sched_stats_t *stats = thread->stats;
+    kprintf("\t--> thread %d\n", thread->tid);
+    kprintf("\t\ttotal_time=%llu, sched_count=%zu, preempt_count=%zu, sleep_count=%zu, yield_count=%zu\n",
+            stats->total_time, stats->sched_count, stats->preempt_count, stats->sleep_count, stats->yield_count);
   }
 }

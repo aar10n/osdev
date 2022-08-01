@@ -61,19 +61,9 @@ void serial_init(int port) {
   outb(port + SERIAL_INTR_EN, 0); // disable interrupts
   outb(port + SERIAL_FIFO_CTRL, FIFO_ENABLE | TRIGGER_14);
   outb(port + SERIAL_LINE_CTRL, DLAB);
-  outw(port + SERIAL_DATA, 3); // 38400 baud
+  outw(port + SERIAL_DATA, 1); // 115200 baud
   outb(port + SERIAL_LINE_CTRL, LENGTH_8_BITS | NO_PARITY);
   outb(port + SERIAL_MODEM_CTRL, OUT1);
-  // outb(port + 1, 0x00); // Disable all interrupts
-  // outb(port + 3, 0x80); // Enable DLAB (set baud rate divisor)
-  // outb(port + 0, 0x03); // Set divisor to 3 (lo byte) 38400 baud
-  // outb(port + 1, 0x00); //                  (hi byte)
-  // outb(port + 3, 0x03); // 8 bits, no parity, one stop bit
-  //
-  // // 0xC7
-  // // 0b 1 1 000 1 1 1
-  // outb(port + 2, 0xC7); // Enable FIFO, clear them, with 14-byte threshold
-  // outb(port + 4, 0x00); // IRQs enabled, RTS/DSR set
 }
 
 void serial_write_char(int port, char a) {

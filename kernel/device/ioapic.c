@@ -80,29 +80,27 @@ struct ioapic_device {
   uint32_t gsi_base;
   uintptr_t phys_addr;
   uintptr_t address;
+  LIST_ENTRY(struct ioapic_device) list;
 };
 
 static size_t num_ioapics = 0;
-static struct ioapic_device ioapics[MAX_IOAPICS];
+static LIST_HEAD(struct ioapic_device) ioapics;
 
-static uint32_t ioapic_read(uint8_t id, ioapic_reg_t reg) {
-  uintptr_t address = ioapics[id].address;
+static uint32_t ioapic_read(uintptr_t address, ioapic_reg_t reg) {
   volatile uint32_t *regsel = (uint32_t *) (address + IOREGSEL);
   volatile uint32_t *regwin = (uint32_t *) (address + IOREGWIN);
   *regsel = reg;
   return *regwin;
 }
 
-static void ioapic_write(uint8_t id, ioapic_reg_t reg, uint32_t value) {
-  uintptr_t address = ioapics[id].address;
+static void ioapic_write(uintptr_t address, ioapic_reg_t reg, uint32_t value) {
   volatile uint32_t *regsel = (uint32_t *) (address + IOREGSEL);
   volatile uint32_t *regwin = (uint32_t *) (address + IOREGWIN);
   *regsel = reg;
   *regwin = value;
 }
 
-static uint64_t ioapic_read64(uint8_t id, uint8_t index) {
-  uintptr_t address = ioapics[id].address;
+static uint64_t ioapic_read64(uintptr_t address, uint8_t index) {
   volatile uint32_t *regsel = (uint32_t *) (address + IOREGSEL);
   volatile uint32_t *regwin = (uint32_t *) (address + IOREGWIN);
 
@@ -113,8 +111,7 @@ static uint64_t ioapic_read64(uint8_t id, uint8_t index) {
   return value;
 }
 
-static void ioapic_write64(uint8_t id, uint8_t index, uint64_t value) {
-  uintptr_t address = ioapics[id].address;
+static void ioapic_write64(uintptr_t address, uint8_t index, uint64_t value) {
   volatile uint32_t *regsel = (uint32_t *) (address + IOREGSEL);
   volatile uint32_t *regwin = (uint32_t *) (address + IOREGWIN);
 
@@ -124,13 +121,26 @@ static void ioapic_write64(uint8_t id, uint8_t index, uint64_t value) {
   *regwin = (uint32_t)((value >> 32) & UINT32_MAX);
 }
 
-static int get_ioapic_for_interrupt(uint8_t irq) {
-  for (size_t i = 0; i < num_ioapics; i++) {
-    if (irq >= ioapics[i].gsi_base && irq < ioapics[i].gsi_base + ioapics[i].max_rentry) {
-      return ioapics[i].id;
+static struct ioapic_device *get_ioapic_by_id(uint8_t id) {
+  struct ioapic_device *ioapic;
+  LIST_FOREACH(ioapic, &ioapics, list) {
+    if (ioapic->id == id) {
+      return ioapic;
     }
   }
-  return -1;
+
+  return NULL;
+}
+
+static struct ioapic_device *get_ioapic_for_interrupt(uint8_t irq) {
+  struct ioapic_device *ioapic;
+  LIST_FOREACH(ioapic, &ioapics, list) {
+    if (irq >= ioapic->gsi_base && irq < ioapic->gsi_base + ioapic->max_rentry) {
+      return ioapic;
+    }
+  }
+
+  return NULL;
 }
 
 //
@@ -145,13 +155,10 @@ void remap_ioapic_registers(void *data) {
 
 int ioapic_get_max_remappable_irq() {
   int max_irq = 0;
-  for (int i = 0; i < MAX_IOAPICS; i++) {
-    if (!ioapics[i].used) {
-      continue;
-    }
 
-    int irq_base = ioapics[i].gsi_base;
-    int irq_max = irq_base + ioapics[i].max_rentry;
+  struct ioapic_device *ioapic;
+  LIST_FOREACH(ioapic, &ioapics, list) {
+    int irq_max = ioapic->gsi_base + ioapic->max_rentry;
     if (irq_max > max_irq) {
       max_irq = irq_max;
     }
@@ -165,13 +172,13 @@ int ioapic_set_isa_irq_routing(uint8_t isa_irq, uint8_t vector, uint16_t flags) 
     panic("ioapic_set_isa_irq_routing: isa_irq %d out of range", isa_irq);
   }
 
-  int ioapic_id = get_ioapic_for_interrupt(isa_irq);
-  if (ioapic_id < 0) {
+  struct ioapic_device *ioapic = get_ioapic_for_interrupt(isa_irq);
+  if (ioapic == NULL) {
     kprintf("no ioapic for interrupt %d", isa_irq);
     return -ENODEV;
   }
 
-  ioapic_rentry_t rentry = { .raw = ioapic_read64(ioapic_id, get_rentry_index(isa_irq)) };
+  ioapic_rentry_t rentry = { .raw = ioapic_read64(ioapic->address, get_rentry_index(isa_irq)) };
   rentry.mask = 1;
   rentry.vector = vector;
 
@@ -193,48 +200,48 @@ int ioapic_set_isa_irq_routing(uint8_t isa_irq, uint8_t vector, uint16_t flags) 
     panic("ioapic_set_isa_irq_routing: invalid trigger mode %d", trigger_mode);
   }
 
-  ioapic_write64(ioapic_id, get_rentry_index(isa_irq), rentry.raw);
+  ioapic_write64(ioapic->address, get_rentry_index(isa_irq), rentry.raw);
   return 0;
 }
 
 int ioapic_set_irq_vector(uint8_t irq, uint8_t vector) {
-  int id = get_ioapic_for_interrupt(irq);
-  if (id < 0) {
+  struct ioapic_device *ioapic = get_ioapic_for_interrupt(irq);
+  if (ioapic == NULL) {
     kprintf("no ioapic for interrupt %d", irq);
     return -ENODEV;
   }
 
-  ioapic_rentry_t rentry = { .raw = ioapic_read64(id, get_rentry_index(irq)) };
+  ioapic_rentry_t rentry = { .raw = ioapic_read64(ioapic->address, get_rentry_index(irq)) };
   rentry.vector = vector;
-  ioapic_write64(id, get_rentry_index(irq), rentry.raw);
+  ioapic_write64(ioapic->address, get_rentry_index(irq), rentry.raw);
   return 0;
 }
 
 int ioapic_set_irq_dest(uint8_t irq, uint8_t mode, uint8_t dest) {
   kassert(mode == IOAPIC_DEST_PHYSICAL || mode == IOAPIC_DEST_LOGICAL);
-  int id = get_ioapic_for_interrupt(irq);
-  if (id < 0) {
+  struct ioapic_device *ioapic = get_ioapic_for_interrupt(irq);
+  if (ioapic == NULL) {
     kprintf("no ioapic for interrupt %d", irq);
     return -ENODEV;
   }
 
-  ioapic_rentry_t rentry = { .raw = ioapic_read64(id, get_rentry_index(irq)) };
+  ioapic_rentry_t rentry = { .raw = ioapic_read64(ioapic->address, get_rentry_index(irq)) };
   rentry.dest_mode = mode;
   rentry.dest = dest;
-  ioapic_write64(id, get_rentry_index(irq), rentry.raw);
+  ioapic_write64(ioapic->address, get_rentry_index(irq), rentry.raw);
   return 0;
 }
 
 int ioapic_set_irq_mask(uint8_t irq, bool mask) {
-  int id = get_ioapic_for_interrupt(irq);
-  if (id < 0) {
+  struct ioapic_device *ioapic = get_ioapic_for_interrupt(irq);
+  if (ioapic == NULL) {
     kprintf("no ioapic for interrupt %d", irq);
     return -ENODEV;
   }
 
-  ioapic_rentry_t rentry = { .raw = ioapic_read64(id, get_rentry_index(irq)) };
+  ioapic_rentry_t rentry = { .raw = ioapic_read64(ioapic->address, get_rentry_index(irq)) };
   rentry.mask = mask & 1;
-  ioapic_write64(id, get_rentry_index(irq), rentry.raw);
+  ioapic_write64(ioapic->address, get_rentry_index(irq), rentry.raw);
   return 0;
 }
 
@@ -244,29 +251,32 @@ void register_ioapic(uint8_t id, uintptr_t address, uint32_t gsi_base) {
   if (id >= MAX_IOAPICS || num_ioapics >= MAX_IOAPICS) {
     kprintf("IOAPIC: ignoring ioapic %d, not supported\n", id);
     return;
-  } else if (ioapics[id].used) {
+  } else if (get_ioapic_by_id(id) != NULL) {
     panic("ioapic %d already registered", id);
   }
 
-  ioapics[id].id = id;
-  ioapics[id].used = 1;
-  ioapics[id].gsi_base = gsi_base;
-  ioapics[id].phys_addr = address;
-  ioapics[id].address = address;
+  kprintf("registering IOAPIC[%d] address=%p GSI=%d\n", id, address, gsi_base);
+  struct ioapic_device *ioapic = kmalloc(sizeof(struct ioapic_device));
+  ioapic->id = id;
+  ioapic->used = 1;
+  ioapic->gsi_base = gsi_base;
+  ioapic->phys_addr = address;
+  ioapic->address = address;
 
   uint32_t version = ioapic_read(address, IOAPIC_VERSION);
-  ioapics[id].max_rentry = (version >> 16) & 0xFF;
-  ioapics[id].version = version & 0xFF;
+  ioapic->max_rentry = (version >> 16) & 0xFF;
+  ioapic->version = version & 0xFF;
 
   // mask all interrupts
-  for (uint8_t i = 0; i < ioapics[id].max_rentry; i++) {
-    ioapic_rentry_t rentry = { .raw = ioapic_read64(id, get_rentry_index(i)) };
+  for (uint8_t i = 0; i < ioapic->max_rentry; i++) {
+    ioapic_rentry_t rentry = { .raw = ioapic_read64(address, get_rentry_index(i)) };
     rentry.mask = 1;
-    ioapic_write64(id, get_rentry_index(i), rentry.raw);
+    ioapic_write64(address, get_rentry_index(i), rentry.raw);
   }
 
   num_ioapics += 1;
-  register_init_address_space_callback(remap_ioapic_registers, &ioapics[id]);
+  LIST_ADD(&ioapics, ioapic, list);
+  register_init_address_space_callback(remap_ioapic_registers, ioapic);
 }
 
 void disable_legacy_pic() {

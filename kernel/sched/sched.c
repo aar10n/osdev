@@ -22,6 +22,8 @@ sched_policy_impl_t *policy_impl[NUM_POLICIES];
 sched_t *_schedulers[MAX_CPUS] = {};
 size_t _num_schedulers = 0;
 
+#define SCHED_UNIPROC
+
 #define sched_assert(expr) kassert(expr)
 // #define sched_assert(expr)
 
@@ -214,6 +216,10 @@ thread_t *sched_get_next_thread(sched_t *sched) {
 }
 
 sched_t *sched_find_cpu_for_thread(thread_t *thread) {
+#ifdef SCHED_UNIPROC
+  return PERCPU_SCHED;
+#endif
+
   if (thread->affinity >= 0) {
     return SCHEDULER(thread->affinity);
   } else if (thread->stats->sched_count >= SCHED_COUNT_CACHE_AFFINITY_THRES) {
@@ -465,7 +471,9 @@ int sched_setsched(sched_opts_t opts) {
 int sched_sleep(uint64_t ns) {
   thread_t *thread = PERCPU_THREAD;
   sched_assert(thread->status == THREAD_RUNNING);
-  thread->alarm_id = timer_create_alarm(timer_now() + ns, (void *) sched_wakeup, thread);
+  kprintf("sleeping for %zu\n", ns);
+  clock_t now = clock_now();
+  thread->alarm_id = timer_create_alarm(now + ns, (void *) sched_wakeup, thread);
   return sched_reschedule(SCHED_SLEEPING);
 }
 

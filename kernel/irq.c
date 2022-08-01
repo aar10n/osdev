@@ -90,6 +90,7 @@ __used void exception_handler(uint8_t vector, uint32_t error, cpu_irq_stack_t *f
   if (vector != CPU_EXCEPTION_DF) {
     kprintf("  CPU#%d - %#b\n", PERCPU_ID, error);
     kprintf("  RIP = %018p  RSP = %018p\n", frame->rip, frame->rip);
+    kprintf("  CR2 = %018p\n", __read_cr2());
   }
 
   while (true) {

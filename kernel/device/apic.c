@@ -58,7 +58,7 @@ struct apic_device {
   uint16_t : 16;
   uintptr_t phys_addr;
   uintptr_t address;
-  LIST_ENTRY(struct apic_device);
+  LIST_ENTRY(struct apic_device) list;
 };
 
 static size_t num_apics = 0;
@@ -95,21 +95,50 @@ static inline void apic_write_timer(apic_reg_lvt_timer_t timer) {
   apic_write(APIC_LVT_TIMER, timer.raw);
 }
 
-
 //
 
 void remap_apic_registers(void *data) {
   apic_base = (uintptr_t) _vmap_mmio(APIC_BASE_PA, PAGE_SIZE, PG_WRITE | PG_NOCACHE);
   _vmap_get_mapping(apic_base)->name = "apic";
+
+  struct apic_device *apic;
+  LIST_FOREACH(apic, &apics, list) {
+    apic->address = apic_base;
+  }
+}
+
+//
+
+struct apic_device *get_apic_by_id(uint8_t id) {
+  struct apic_device *apic;
+  LIST_FOREACH(apic, &apics, list) {
+    if (apic->id == id) {
+      return apic;
+    }
+  }
+  return NULL;
 }
 
 //
 
 void register_apic(uint8_t id) {
+  if (get_apic_by_id(id) != NULL) {
+    return;
+  }
+
+  kprintf("registering APIC[%d]\n", id);
   apic_reg_id_t id_reg = { .raw = apic_read(APIC_ID) };
   if (id == id_reg.id) {
     register_init_address_space_callback(remap_apic_registers, NULL);
   }
+
+  struct apic_device *apic = kmalloc(sizeof(struct apic_device));
+  apic->id = id;
+  apic->phys_addr = APIC_BASE_PA;
+  apic->address = APIC_BASE_PA;
+
+  num_apics++;
+  LIST_ADD(&apics, apic, list);
 }
 
 //
