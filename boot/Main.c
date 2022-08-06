@@ -183,9 +183,7 @@ EFI_STATUS EFIMAIN UefiMain(IN EFI_HANDLE ImageHandle, IN EFI_SYSTEM_TABLE *Syst
     CHECK_ERROR(Status);
   }
 
-  ScreenWidth = GraphicsMode->HorizontalResolution;
-  ScreenHeight = GraphicsMode->VerticalResolution;
-  Status = GetFramebufferInfo(&FramebufferBase, &FramebufferSize);
+  Status = GetFramebufferInfo(&FramebufferBase, &FramebufferSize, &ScreenWidth, &ScreenHeight);
   CHECK_ERROR(Status);
 
   // Load kernel

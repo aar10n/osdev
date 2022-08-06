@@ -7,6 +7,9 @@
 
 #include <base.h>
 
+void screen_early_init();
+void screen_init();
+
 void screen_print_char(char ch);
 void screen_print_str(const char *string);
 

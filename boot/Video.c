@@ -137,13 +137,15 @@ EFI_STATUS EFIAPI SelectVideoMode(UINT32 TargetX, UINT32 TargetY, OUT GRAPHICS_M
   return EFI_SUCCESS;
 }
 
-EFI_STATUS EFIAPI GetFramebufferInfo(OUT UINT64 *Base, OUT UINTN *Size) {
+EFI_STATUS EFIAPI GetFramebufferInfo(OUT UINT64 *Base, OUT UINTN *Size, OUT UINT32 *Width, OUT UINT32 *Height) {
   if (GraphicsDevice == NULL) {
     return EFI_UNSUPPORTED;
   }
 
   *Base = (UINT64)GraphicsDevice->Mode->FrameBufferBase;
   *Size = GraphicsDevice->Mode->FrameBufferSize;
+  *Width = GraphicsDevice->Mode->Info->HorizontalResolution;
+  *Height = GraphicsDevice->Mode->Info->VerticalResolution;
   return EFI_SUCCESS;
 }
 

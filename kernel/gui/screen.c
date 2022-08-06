@@ -4,16 +4,45 @@
 
 #include <gui/screen.h>
 #include <gui/font8x8_basic.h>
+
+#include <mm.h>
+#include <init.h>
 #include <string.h>
-#include <mm_types.h>
+#include <printf.h>
 
 #define WIDTH boot_info_v2->fb_width
 #define HEIGHT boot_info_v2->fb_height
-#define index(i, j) ((y * 8) + (i)) * WIDTH + ((x * 8) + (j))
 
 static int x = 0;
 static int y = 0;
-static uint32_t *fb = (void *) FRAMEBUFFER_VA;
+__used uint32_t *framebuf_base;
+
+
+void remap_framebuffer_mmio(void *data) {
+  framebuf_base = _vmap_phys_addr(FRAMEBUFFER_VA, boot_info_v2->fb_addr, boot_info_v2->fb_size, PG_WRITE);
+  vm_mapping_t *kframebuf_vm = _vmap_get_mapping(FRAMEBUFFER_VA);
+  kframebuf_vm->name = "framebuffer";
+  kframebuf_vm->type = VM_TYPE_PHYS;
+  kframebuf_vm->attr = VM_ATTR_MMIO;
+}
+
+//
+
+void screen_early_init() {
+  kprintf("framebuffer:\n");
+  kprintf("  width: %zu\n", boot_info_v2->fb_width);
+  kprintf("  height: %zu\n", boot_info_v2->fb_height);
+  kprintf("  size: %zu\n", boot_info_v2->fb_size);
+  framebuf_base = (void *) boot_info_v2->fb_addr;
+}
+
+void screen_init() {
+  kprintf("framebuffer:\n");
+  kprintf("  width: %zu\n", boot_info_v2->fb_width);
+  kprintf("  height: %zu\n", boot_info_v2->fb_height);
+  kprintf("  size: %zu\n", boot_info_v2->fb_size);
+  register_init_address_space_callback(remap_framebuffer_mmio, NULL);
+}
 
 void screen_print_char(char ch) {
   switch (ch) {
@@ -34,7 +63,8 @@ void screen_print_char(char ch) {
       x = max(x - 1, 0);
       for (int i = 0; i < 8; i++) {
         for (int j = 0; j < 8; j++) {
-          fb[index(i, j)] = 0;
+          size_t index = ((y * 8) + (i)) * WIDTH + ((x * 8) + (j));
+          framebuf_base[index] = 0;
         }
       }
       return;
@@ -46,7 +76,8 @@ void screen_print_char(char ch) {
   for (int i = 0; i < 8; i++) {
     for (int j = 0; j < 8; j++) {
       if (letter[i] & (1 << j)) {
-        fb[index(i, j)] = 0xFFFFFFFF;
+        size_t index = ((y * 8) + (i)) * WIDTH + ((x * 8) + (j));
+        framebuf_base[index] = 0x00;
       }
     }
   }

@@ -28,6 +28,9 @@
 #include <device/pit.h>
 #include <device/hpet.h>
 
+#include <gui/screen.h>
+#include <string.h>
+
 boot_info_v2_t __boot_data *boot_info_v2;
 
 const char *argv[] = {
@@ -48,6 +51,7 @@ __used void kmain() {
   mm_early_init();
   irq_early_init();
   acpi_early_init();
+  screen_init();
 
   irq_init();
   init_mem_zones();
@@ -58,21 +62,6 @@ __used void kmain() {
 
   syscalls_init();
   // smp_init();
-
-  // init_periodic_timer();
-  // timer_setval(TIMER_PERIODIC, MS_TO_NS(3000));
-  // timer_enable(TIMER_PERIODIC);
-  // cpu_enable_interrupts();
-
-// #define CONV_MS(ms) (MS_TO_NS(ms) / 279)
-//   clock_t target = acpi_read_pm_timer() + CONV_MS(1000);
-//   while (acpi_read_pm_timer() < target) {
-//     cpu_pause();
-//   }
-//
-//   hpet_print_debug_registers();
-//   kprintf("haulting...\n");
-//   while (true) cpu_pause();
 
   cpu_enable_interrupts();
   process_t *root = process_create_root(launch);
@@ -105,6 +94,9 @@ _Noreturn void launch() {
   fs_init();
   pcie_discover();
 
+  memset((void *) FRAMEBUFFER_VA, 0xFF, boot_info_v2->fb_size);
+  screen_print_str("Hello, world\n");
+
   // usb_init();
 
   // if (fs_mount("/", "/dev/sdb", "ext2") < 0) {
@@ -116,36 +108,12 @@ _Noreturn void launch() {
   // fs_open("/dev/stderr", O_WRONLY, 0);
   // process_execve("/usr/bin/hello", (void *) argv, NULL);
 
-  // clock_t time0 = cpu_read_tsc();
-  // clock_t time1 = cpu_read_tsc();
-  // clock_t time2 = cpu_read_tsc();
-  // cpu_pause();
-  // cpu_pause();
-  // cpu_pause();
-  // cpu_pause();
-  // clock_t time3 = cpu_read_tsc();
-  // clock_t time4 = cpu_read_tsc();
-  // kprintf("time0: %llu\n", time0);
-  // kprintf("time1: %llu\n", time1);
-  // kprintf("time2: %llu\n", time2);
-  // kprintf("time3: %llu\n", time3);
-  // kprintf("time4: %llu\n", time4);
-
   const uint32_t ms = 1000;
   kprintf("sleeping for %u ms\n", ms);
   thread_sleep(MS_TO_US(ms));
   kprintf("done!\n");
 
-  // timer_udelay(1e6);
-  // kprintf("time now: %llu\n", clock_now());
-
-  // kprintf("sleeping...\n");
-  // thread_sleep(100000);
-  // kprintf("done\n");
-  // proc_print_thread_stats(process_get(0));
-
   kprintf("haulting...\n");
-  while (true) cpu_pause();
-  // thread_block();
+  thread_block();
   unreachable;
 }
