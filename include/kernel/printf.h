@@ -17,4 +17,6 @@ int kvsprintf(char *str, const char *format, va_list args);
 int ksnprintf(char *str, size_t n, const char *format, ...);
 int kvsnprintf(char *str, size_t n, const char *format, va_list args);
 
+char *kasprintf(const char *format, ...);
+
 #endif

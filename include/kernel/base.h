@@ -27,9 +27,10 @@
 #define NS_PER_SEC 1000000000
 #define FS_PER_SEC 1000000000000000
 
-#define MS_TO_NS(ms) ((ms) * (NS_PER_SEC / MS_PER_SEC))
-#define US_TO_NS(us) ((us) * (NS_PER_SEC / US_PER_SEC))
-#define MS_TO_US(ms) ((ms) * (US_PER_SEC / MS_PER_SEC))
+#define MS_TO_NS(ms) ((clock_t)(ms) * (NS_PER_SEC / MS_PER_SEC))
+#define US_TO_NS(us) ((clock_t)(us) * (NS_PER_SEC / US_PER_SEC))
+#define FS_TO_NS(fs) ((clock_t)(fs) / (FS_PER_SEC / NS_PER_SEC))
+#define MS_TO_US(ms) ((clock_t)(ms) * (US_PER_SEC / MS_PER_SEC))
 
 #define PAGE_SIZE 0x1000
 

@@ -1,5 +1,0 @@
-#CompileFlags:
-#  Add: []
-#Diagnostics:
-#  ClangTidy:
-#    Remove: bugprone-* modernize-use-nodiscard

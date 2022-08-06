@@ -471,9 +471,11 @@ int sched_setsched(sched_opts_t opts) {
 int sched_sleep(uint64_t ns) {
   thread_t *thread = PERCPU_THREAD;
   sched_assert(thread->status == THREAD_RUNNING);
-  kprintf("sleeping for %zu\n", ns);
   clock_t now = clock_now();
   thread->alarm_id = timer_create_alarm(now + ns, (void *) sched_wakeup, thread);
+  if (thread->alarm_id < 0) {
+    return -1;
+  }
   return sched_reschedule(SCHED_SLEEPING);
 }
 

@@ -5,6 +5,8 @@
 #include <printf.h>
 #include <format.h>
 #include <console.h>
+#include <panic.h>
+#include <mm.h>
 
 #define BUFFER_SIZE 512
 
@@ -119,6 +121,29 @@ void kvfprintf(const char *format, va_list valist) {
   kputs(str);
 }
 
+
+/*
+ * kasprintf - write formatted data to an allocated string
+ * =======================================================
+ *
+ * kasprintf(const char *format, ...);
+ *
+ * This does not support strings longer than 32 characters.
+ * It is the callers responsibility to free the allocated
+ * buffer.
+ */
+char *kasprintf(const char *format, ...) {
+  char *str = kmalloc(32);
+  kassert(str != NULL);
+
+  va_list valist;
+  va_start(valist, format);
+  int n = print_format(format, str, 31, valist, true);
+  va_end(valist);
+
+  str[n] = '\0';
+  return str;
+}
 
 __used void stdio_lock() {}
 

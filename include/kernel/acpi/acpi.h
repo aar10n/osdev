@@ -247,4 +247,6 @@ typedef struct packed acpi_dmar_dhdt_dev_scope {
 void acpi_early_init();
 acpi_table_header_t *acpi_locate_table(uint32_t signature);
 
+clock_t acpi_read_pm_timer();
+
 #endif

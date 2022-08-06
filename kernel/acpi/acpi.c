@@ -3,6 +3,7 @@
 //
 
 #include <acpi/acpi.h>
+#include <acpi/pm_timer.h>
 
 #include <cpu/io.h>
 
@@ -40,7 +41,14 @@ uint8_t apic_id_map[MAX_NUM_APICS];
 //
 
 void remap_acpi_tables(void *data) {
+  uintptr_t phys_base = (uintptr_t) acpi_global_fadt;
+  kassert(phys_base % PAGE_SIZE == 0);
 
+  uintptr_t virt_base = (uintptr_t) _vmap_mmio(phys_base, PAGE_SIZE, 0);
+  _vmap_get_mapping(virt_base)->name = "acpi (fadt)";
+
+  size_t fadt_offset = ((uintptr_t) acpi_global_fadt) - phys_base;
+  acpi_global_fadt = (void *)(virt_base + fadt_offset);
 }
 
 //
@@ -101,6 +109,7 @@ void acpi_parse_fadt() {
 
   acpi_fadt_t *fadt = (void *) fadt_ptr;
   acpi_global_fadt = fadt;
+  register_acpi_pm_timer();
 }
 
 void acpi_parse_madt() {
@@ -293,6 +302,22 @@ void acpi_parse_dmar() {
     }
 
     entry = offset_ptr(entry, entry->length);
+  }
+}
+
+//
+
+clock_t acpi_read_pm_timer() {
+  uint8_t addr_type = acpi_global_fadt->x_pm_tmr_blk.address_space_id;
+  if (addr_type == 0x00) {
+    // memory
+    volatile uint32_t *pm_tmr = (void *) acpi_global_fadt->x_pm_tmr_blk.address;
+    return *pm_tmr;
+  } else if (addr_type == 0x01) {
+    // io
+    return indw((uint16_t) acpi_global_fadt->x_pm_tmr_blk.address);
+  } else {
+    panic("acpi: unsupported access type: %d\n", addr_type);
   }
 }
 

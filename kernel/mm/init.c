@@ -52,7 +52,7 @@ void mm_early_init() {
       case MEMORY_RESERVED: type = "reserved"; break;
       case MEMORY_ACPI: type = "ACPI data"; break;
       case MEMORY_ACPI_NVS: type = "ACPI NVS"; break;
-      case MEMORY_MAPPED_IO: type = "mapped io"; break;
+      case MEMORY_MAPPED_IO: type = "memory mapped io"; break;
       case MEMORY_EFI_RUNTIME_CODE: type = "EFI runtime code"; break;
       case MEMORY_EFI_RUNTIME_DATA: type = "EFI runtime data"; break;
       default: panic("bad memory map");

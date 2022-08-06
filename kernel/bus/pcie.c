@@ -3,12 +3,10 @@
 //
 
 #include <bus/pcie.h>
-
 #include <bus/pci_tables.h>
 
 #include <mm.h>
 #include <init.h>
-#include <string.h>
 #include <printf.h>
 #include <panic.h>
 
@@ -25,17 +23,17 @@
 
 struct pcie_segment_group {
   uint8_t num;
-  uint8_t used;
   uint8_t bus_start;
   uint8_t bus_end;
 
   uintptr_t phys_addr;
   uintptr_t address;
+
+  LIST_ENTRY(struct pcie_segment_group) list;
 };
 
 static size_t num_segment_groups = 0;
-static struct pcie_segment_group segment_groups[MAX_PCIE_SEG_GROUPS];
-static struct pcie_segment_group *root_group = NULL;
+static LIST_HEAD(struct pcie_segment_group) segment_groups;
 static pcie_list_head_t *devices[16] = {};
 
 
@@ -47,7 +45,18 @@ void remap_pcie_address_space(void *data) {
 
 //
 
+static struct pcie_segment_group *get_segment_group_for_bus_number(uint8_t bus) {
+  struct pcie_segment_group *group;
+  LIST_FOREACH(group, &segment_groups, list) {
+    if (bus >= group->bus_start && bus <= group->bus_end) {
+      return group;
+    }
+  }
+  return NULL;
+}
+
 static void *pcie_device_address(struct pcie_segment_group *group, uint8_t bus, uint8_t device, uint8_t function) {
+  kassert(bus >= group->bus_start && bus <= group->bus_end);
   return ((void *)(group->address | ((uint64_t)(bus - group->bus_start) << 20) |
     ((uint64_t)(device) << 15) | ((uint64_t)(function) << 12)));
 }
@@ -183,31 +192,30 @@ void register_pcie_segment_group(uint16_t number, uint8_t start_bus, uint8_t end
   if (number >= MAX_PCIE_SEG_GROUPS || num_segment_groups >= MAX_PCIE_SEG_GROUPS) {
     kprintf("PCIE: ignoring pcie segment group %d, not supported\n", number);
     return;
-  } else if (segment_groups[number].used) {
+  } else if (get_segment_group_for_bus_number(start_bus) != NULL) {
     panic("pcie segment group %d already registered", number);
   }
 
-  segment_groups[number].num = number;
-  segment_groups[number].used = 1;
-  segment_groups[number].bus_start = start_bus;
-  segment_groups[number].bus_end = end_bus;
-  segment_groups[number].phys_addr = address;
-  segment_groups[number].address = address;
+  struct pcie_segment_group *group = kmalloc(sizeof(struct pcie_segment_group));
+  group->num = number;
+  group->bus_start = start_bus;
+  group->bus_end = end_bus;
+  group->phys_addr = address;
+  group->address = address;
 
-  if (root_group == NULL) {
-    root_group = &segment_groups[number];
-  }
+  LIST_ADD(&segment_groups, group, list);
+  num_segment_groups++;
 
-  register_init_address_space_callback(remap_pcie_address_space, &segment_groups[number]);
+  register_init_address_space_callback(remap_pcie_address_space, group);
 }
 
-void pcie_discover() {
-  kprintf("[pcie] discovering devices...\n");
+//
 
-  int bus = 0;
+void pcie_probe_bus(struct pcie_segment_group *group, uint8_t bus) {
+  kassert(bus >= group->bus_start && bus <= group->bus_end);
   for (int device = 0; device < 32; device++) {
     for (int function = 0; function < 8; function++) {
-      pcie_header_t *header = pcie_device_address(root_group, bus, device, function);
+      pcie_header_t *header = pcie_device_address(group, bus, device, function);
       if (header->vendor_id == 0xFFFF || header->type != 0) {
         continue;
       }
@@ -242,6 +250,17 @@ void pcie_discover() {
       if (!header->multifn) {
         break;
       }
+    }
+  }
+}
+
+void pcie_discover() {
+  kprintf("pcie: discovering devices...\n");
+
+  struct pcie_segment_group *group;
+  LIST_FOREACH(group, &segment_groups, list) {
+    for (int bus = group->bus_start; bus < group->bus_end; bus++) {
+      pcie_probe_bus(group, bus);
     }
   }
 }
@@ -374,7 +393,7 @@ void pcie_print_device(pcie_device_t *device) {
   kprintf("    PCI subsystem %04x:%04x\n", device->subsystem_vendor, device->subsystem);
 
   if (device->int_line != 0xFF) {
-    kprintf("    IRQ %d, pin %c\n", device->int_line, device->int_pin + '@');
+    kprintf("    IRQ %d, pin %c\n", device->int_line, device->int_pin + 'A');
   }
 
   pcie_bar_t *bar = device->bars;

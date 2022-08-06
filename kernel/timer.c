@@ -40,8 +40,8 @@ LIST_HEAD(timer_device_t) timer_devices;
 
 void timer_periodic_handler(timer_device_t *td) {
   kprintf("---> tick <---\n");
-  clock_update_ticks();
-  panic("sched_tick not implemented");
+  // clock_update_ticks();
+  // panic("sched_tick not implemented");
 }
 
 void timer_oneshot_handler(timer_device_t *td) {
@@ -101,7 +101,8 @@ noreturn void *alarm_event_loop(void *arg) {
 
 void register_timer_device(timer_device_t *device) {
   kassert(device != NULL);
-  if ((device->flags & TIMER_ONE_SHOT) == 0 && (device->flags & TIMER_PERIODIC) == 0) {
+  spin_init(&device->lock);
+  if ((device->modes & TIMER_ONE_SHOT) == 0 && (device->modes & TIMER_PERIODIC) == 0) {
     panic("timer device '%s' must support either one-shot or periodic mode", device->name);
   }
 
@@ -122,7 +123,7 @@ int init_periodic_timer() {
 
   timer_device_t *device = NULL;
   LIST_FOREACH(device, &timer_devices, list) {
-    if (device == global_one_shot_timer || !(device->flags & TIMER_PERIODIC)) {
+    if (device == global_one_shot_timer || !(device->modes & TIMER_PERIODIC)) {
       continue;
     }
 
@@ -150,7 +151,7 @@ int init_oneshot_timer() {
 
   timer_device_t *device = NULL;
   LIST_FOREACH(device, &timer_devices, list) {
-    if (device == global_periodic_timer || !(device->flags & TIMER_ONE_SHOT)) {
+    if (device == global_periodic_timer || !(device->modes & TIMER_ONE_SHOT)) {
       continue;
     }
 

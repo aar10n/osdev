@@ -19,6 +19,7 @@ void irq_init();
 
 int irq_alloc_hardware_irqnum();
 int irq_alloc_software_irqnum();
+int irq_try_reserve_irqnum(uint8_t irq);
 int irq_reserve_irqnum(uint8_t irq);
 
 int irq_register_exception_handler(uint8_t vector, exception_handler_t handler);

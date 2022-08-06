@@ -16,6 +16,7 @@ void kfree(void *ptr);
 
 LIST_HEAD(mem_zone_t) mem_zones[MAX_ZONE_TYPE];
 size_t zone_page_count[MAX_ZONE_TYPE];
+size_t reserved_pages = 128;
 
 size_t zone_limits[MAX_ZONE_TYPE] = {
   ZONE_LOW_MAX,
@@ -86,11 +87,38 @@ page_t *make_page_structs(mem_zone_t *zone, uint64_t frame, size_t count, size_t
   return first;
 }
 
+bitmap_t *alloc_pages_bitmap(size_t num_pages) {
+  bitmap_t *frames = NULL;
+  size_t nbytes = align(num_pages, 8) / 8;
+  if (nbytes >= PAGES_TO_SIZE(2)) {
+    // too large for kmalloc
+    size_t num_bmp_pages = SIZE_TO_PAGES(nbytes);
+    if (num_bmp_pages > reserved_pages) {
+      panic("no more reserved pages (%d)", num_bmp_pages);
+    }
+
+    uintptr_t buffer_phys = mm_early_alloc_pages(num_bmp_pages);
+    void *buffer = mm_early_map_pages_reserved(buffer_phys, num_bmp_pages, PG_WRITE);
+    memset(buffer, 0, nbytes);
+
+    frames = kmalloc(sizeof(bitmap_t));
+    frames->map = buffer;
+    frames->free = num_pages;
+    frames->used = 0;
+    frames->size = nbytes;
+
+    reserved_pages -= num_bmp_pages;
+  } else {
+    frames = create_bitmap(num_pages);
+  }
+
+  return frames;
+}
+
 //
 
 void init_mem_zones() {
   // reserve pages in zone entry
-  size_t reserved_pages = 32;
   mm_early_reserve_pages(reserved_pages);
 
   memory_map_t *memory_map = &boot_info_v2->mem_map;
@@ -105,7 +133,7 @@ void init_mem_zones() {
     size_t size = entry->size;
 
     mem_zone_type_t type = get_mem_zone_type(base);
-    mem_zone_type_t end_type = get_mem_zone_type(base + size);
+    mem_zone_type_t end_type = get_mem_zone_type(base + size - 1);
     if (type != end_type) {
       // an entry should never cross more than two zones
       kassert(end_type - type == 1);
@@ -119,7 +147,7 @@ void init_mem_zones() {
       spin_init(&zone->lock);
 
       size_t page_count = SIZE_TO_PAGES(zone->size);
-      zone->frames = create_bitmap(page_count);
+      zone->frames = alloc_pages_bitmap(page_count);
       LIST_ADD(&mem_zones[end_type], zone, list);
       zone_page_count[end_type] += page_count;
 
@@ -135,28 +163,7 @@ void init_mem_zones() {
     spin_init(&zone->lock);
 
     size_t page_count = SIZE_TO_PAGES(size);
-    size_t nbytes = align(page_count, 8) / 8;
-    if (nbytes >= PAGES_TO_SIZE(2)) {
-      // too large for kmalloc
-      size_t num_bmp_pages = SIZE_TO_PAGES(nbytes);
-      if (num_bmp_pages > reserved_pages) {
-        panic("no more reserved pages (%d)", num_bmp_pages);
-      }
-
-      uintptr_t buffer_phys = mm_early_alloc_pages(num_bmp_pages);
-      void *buffer = mm_early_map_pages_reserved(buffer_phys, num_entries, PG_WRITE);
-      memset(buffer, 0, nbytes);
-
-      zone->frames = kmalloc(sizeof(bitmap_t));
-      zone->frames->map = buffer;
-      zone->frames->free = page_count;
-      zone->frames->used = 0;
-      zone->frames->size = nbytes;
-
-      reserved_pages -= num_bmp_pages;
-    } else {
-      zone->frames = create_bitmap(page_count);
-    }
+    zone->frames = alloc_pages_bitmap(page_count);
     LIST_ADD(&mem_zones[type], zone, list);
     zone_page_count[type] += page_count;
   }

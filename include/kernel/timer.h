@@ -9,12 +9,13 @@
 #include <queue.h>
 #include <spinlock.h>
 
-// Indicates the timer can produce one-shot interrupts.
-#define TIMER_ONE_SHOT    0x1
-// Indicates the timer can produce periodic interrupts.
-#define TIMER_PERIODIC    0x2
 // Indicates the timer is not shared between logical CPUs.
-#define TIMER_CAP_PER_CPU 0x4
+#define TIMER_CAP_PER_CPU 0x1
+
+typedef enum timer_mode {
+  TIMER_ONE_SHOT = 0x1,
+  TIMER_PERIODIC = 0x2,
+} timer_mode_t;
 
 typedef struct timer_device {
   const char *name;
@@ -22,11 +23,13 @@ typedef struct timer_device {
 
   uint8_t irq;
   uint16_t flags;
+  timer_mode_t modes;
   uint32_t scale_ns;
   uint64_t value_mask;
+  spinlock_t lock;
 
   // timer api
-  int (*init)(struct timer_device *, uint16_t mode);
+  int (*init)(struct timer_device *, timer_mode_t mode);
   int (*enable)(struct timer_device *);
   int (*disable)(struct timer_device *);
   int (*setval)(struct timer_device *, uint64_t ns);

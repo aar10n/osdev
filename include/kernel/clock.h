@@ -13,9 +13,10 @@ typedef struct clock_source {
   const char *name;
   void *data;
 
-  spinlock_t lock;
   uint32_t scale_ns;
   uint64_t last_tick;
+  uint64_t value_mask;
+  spinlock_t lock;
 
   int (*enable)(struct clock_source *);
   int (*disable)(struct clock_source *);

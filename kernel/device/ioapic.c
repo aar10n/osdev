@@ -74,12 +74,12 @@ typedef union packed ioapic_rentry {
 
 struct ioapic_device {
   uint8_t id;
-  uint8_t used;
   uint8_t max_rentry;
   uint8_t version;
   uint32_t gsi_base;
   uintptr_t phys_addr;
   uintptr_t address;
+
   LIST_ENTRY(struct ioapic_device) list;
 };
 
@@ -212,6 +212,7 @@ int ioapic_set_irq_vector(uint8_t irq, uint8_t vector) {
   }
 
   ioapic_rentry_t rentry = { .raw = ioapic_read64(ioapic->address, get_rentry_index(irq)) };
+  rentry.trigger_mode = IOAPIC_EDGE;
   rentry.vector = vector;
   ioapic_write64(ioapic->address, get_rentry_index(irq), rentry.raw);
   return 0;
@@ -258,7 +259,6 @@ void register_ioapic(uint8_t id, uintptr_t address, uint32_t gsi_base) {
   kprintf("registering IOAPIC[%d] address=%p GSI=%d\n", id, address, gsi_base);
   struct ioapic_device *ioapic = kmalloc(sizeof(struct ioapic_device));
   ioapic->id = id;
-  ioapic->used = 1;
   ioapic->gsi_base = gsi_base;
   ioapic->phys_addr = address;
   ioapic->address = address;

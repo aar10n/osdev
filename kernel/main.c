@@ -25,6 +25,9 @@
 #include <ipc.h>
 #include <smpboot.h>
 
+#include <device/pit.h>
+#include <device/hpet.h>
+
 boot_info_v2_t __boot_data *boot_info_v2;
 
 const char *argv[] = {
@@ -55,6 +58,21 @@ __used void kmain() {
 
   syscalls_init();
   // smp_init();
+
+  // init_periodic_timer();
+  // timer_setval(TIMER_PERIODIC, MS_TO_NS(3000));
+  // timer_enable(TIMER_PERIODIC);
+  // cpu_enable_interrupts();
+
+// #define CONV_MS(ms) (MS_TO_NS(ms) / 279)
+//   clock_t target = acpi_read_pm_timer() + CONV_MS(1000);
+//   while (acpi_read_pm_timer() < target) {
+//     cpu_pause();
+//   }
+//
+//   hpet_print_debug_registers();
+//   kprintf("haulting...\n");
+//   while (true) cpu_pause();
 
   cpu_enable_interrupts();
   process_t *root = process_create_root(launch);
@@ -112,6 +130,11 @@ _Noreturn void launch() {
   // kprintf("time2: %llu\n", time2);
   // kprintf("time3: %llu\n", time3);
   // kprintf("time4: %llu\n", time4);
+
+  const uint32_t ms = 1000;
+  kprintf("sleeping for %u ms\n", ms);
+  thread_sleep(MS_TO_US(ms));
+  kprintf("done!\n");
 
   // timer_udelay(1e6);
   // kprintf("time now: %llu\n", clock_now());

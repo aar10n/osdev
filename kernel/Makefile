@@ -9,7 +9,7 @@ kernel += entry.asm memory.asm smpboot.asm syscall.asm thread.asm \
 	ipi.c
 
 # kernel/acpi
-kernel += acpi/acpi.c
+kernel += acpi/acpi.c acpi/pm_timer.c
 
 # kernel/bus
 kernel += bus/pci.c bus/pci_tables.c bus/pcie.c
