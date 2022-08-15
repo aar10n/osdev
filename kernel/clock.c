@@ -90,9 +90,3 @@ void clock_update_ticks() {
 
   spin_unlock(&source->lock);
 }
-
-//
-
-clock_t clock_future_time(uint64_t ns) {
-  return clock_now() + ns;
-}

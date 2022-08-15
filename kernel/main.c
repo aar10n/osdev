@@ -27,6 +27,7 @@
 
 #include <device/pit.h>
 #include <device/hpet.h>
+#include <acpi/pm_timer.h>
 
 #include <gui/screen.h>
 #include <string.h>
@@ -94,10 +95,10 @@ _Noreturn void launch() {
   fs_init();
   pcie_discover();
 
-  memset((void *) FRAMEBUFFER_VA, 0xFF, boot_info_v2->fb_size);
-  screen_print_str("Hello, world\n");
+  // memset((void *) FRAMEBUFFER_VA, 0xFF, boot_info_v2->fb_size);
+  // screen_print_str("Hello, world\n");
 
-  // usb_init();
+  usb_init();
 
   // if (fs_mount("/", "/dev/sdb", "ext2") < 0) {
   //   panic("%s", strerror(ERRNO));
@@ -108,10 +109,10 @@ _Noreturn void launch() {
   // fs_open("/dev/stderr", O_WRONLY, 0);
   // process_execve("/usr/bin/hello", (void *) argv, NULL);
 
-  const uint32_t ms = 1000;
-  kprintf("sleeping for %u ms\n", ms);
-  thread_sleep(MS_TO_US(ms));
-  kprintf("done!\n");
+  // const uint32_t ms = 1000;
+  // kprintf("sleeping for %u ms\n", ms);
+  // thread_sleep(MS_TO_US(ms));
+  // kprintf("done!\n");
 
   kprintf("haulting...\n");
   thread_block();

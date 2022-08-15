@@ -55,7 +55,7 @@ struct isa_irq_override irq_isa_overrides[IRQ_NUM_ISA];
 extern void ipi_handler();
 
 __used void irq_handler(uint8_t vector) {
-  kprintf("CPU#%d --> IRQ%d\n", PERCPU_ID, vector - IRQ_VECTOR_BASE);
+  // kprintf("CPU#%d --> IRQ%d\n", PERCPU_ID, vector - IRQ_VECTOR_BASE);
   apic_send_eoi();
   if (vector == ipi_vectornum) {
     ipi_handler();

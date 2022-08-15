@@ -27,8 +27,13 @@
 
 #define read32(b, r) (*(volatile uint32_t *)((b) + (r)))
 #define write32(b, r, v) ((*(volatile uint32_t *)((b) + (r)) = v))
-#define read64(b, r) (read32(b, r) | (uint64_t) read32(b, r + 4) << 32)
-#define write64(b, r, v) { write32(b, r, V64_LOW(v)); write32(b, r + 4, V64_HIGH(v)); }
+// #define read64(b, r) (read32(b, r) | (uint64_t) read32(b, r + 4) << 32)
+// #define write64(b, r, v) { write32(b, r, V64_LOW(v)); write32(b, r + 4, V64_HIGH(v)); }
+#define read64(b, r) (*(volatile uint64_t *)((b) + (r)))
+#define write64(b, r, v) (*(volatile uint64_t *)((b) + (r)) = v)
+#define read64_split(b, r) ((uint64_t) read32(b, r) | ((uint64_t) read32(b, (r) + 8) << 32))
+#define write64_split(b, r, v) ({ write32(b, (r) + 8, V64_HIGH(v)); write32(b, r, V64_LOW(v)); })
+
 #define addr_read64(b, r) ((read32(b, r) & 0xFFFFFFE0) | (uint64_t) read32(b, r + 4) << 32)
 #define addr_write64(b, r, v) { write32(b, r, A64_LOW(v)); write32(b, r + 4, A64_HIGH(v)); }
 
@@ -38,10 +43,18 @@
 #define or_write32(b, r, v) write32(b, r, read32(b, r) | (v))
 
 #define as_trb(trb) ((xhci_trb_t *)(&(trb)))
+#define cast_trb(trb) (*((xhci_trb_t *)(trb)))
+#define downcast_trb(trb, type) (*((type *)(trb)))
+#define upcast_trb_ptr(trb) ((xhci_trb_t *)((void *)(trb)))
+
+#define cast_trb_ptr(trb) ((xhci_trb_t *)(trb))
 #define clear_trb(trb) memset(trb, 0, sizeof(xhci_trb_t))
 
-#define A64_LOW(addr) ((addr) & 0xFFFFFFE0)
+#define A64_LOW(addr) ((addr) & 0xFFFFFFC0)
 #define A64_HIGH(addr) (((addr) >> 32) & 0xFFFFFFFF)
+#define A64_MASK 0xFFFFFFFFFFFFFFC0
+#define V64_LOW(v) ((v) & UINT32_MAX)
+#define V64_HIGH(v) (((v) >> 32) & UINT32_MAX)
 
 //
 // -------- Registers --------
@@ -131,7 +144,6 @@ typedef volatile struct {
 
 #define XHCI_CAP_LENGTH     0x00
 #define   CAP_LENGTH(v)       ((v) & 0xFF)
-#define XHCI_CAP_VERSION    0x00
 #define   CAP_VERSION(v)      (((v) >> 16) & 0xFFFF)
 #define XHCI_CAP_HCSPARAMS1 0x04
 #define   CAP_MAX_SLOTS(v)    (((v) >> 0) & 0xFF)
@@ -140,9 +152,17 @@ typedef volatile struct {
 #define XHCI_CAP_HCSPARAMS2 0x08
 #define XHCI_CAP_HCSPARAMS3 0x0C
 #define XHCI_CAP_HCCPARAMS1 0x10
-#define   HCCPARAMS1_XECP(v)  (((v) >> 16) & 0xFFF)
+#define   HCCPARAMS1_AC64(v)  ((v) & 0x1)
+#define   HCCPARAMS1_BNC(v)   (((v) >> 1) & 0x1)
+#define   HCCPARAMS1_CSZ(v)   (((v) >> 2) & 0x1)
+#define   HCCPARAMS1_PPC(v)   (((v) >> 3) & 0x1)
+#define   HCCPARAMS1_PIND(v)  (((v) >> 4) & 0x1)
+#define   HCCPARAMS1_LHRC(v)  (((v) >> 5) & 0x1)
+#define   HCCPARAMS1_XECP(v)  ((((v) >> 16) & 0xFFF) << 2)
 #define XHCI_CAP_DBOFF      0x14
+#define   DBOFF_OFFSET(v)     ((v) & 0xFFFFFFFC)
 #define XHCI_CAP_RTSOFF     0x18
+#define   RTSOFF_OFFSET(v)    ((v) & 0xFFFFFFE0)
 
 // -------- Operational Registers --------
 typedef volatile struct {
@@ -251,9 +271,11 @@ static_assert(offsetof(xhci_op_regs_t, config) == 0x38);
 #define   CRCR_CRR            (1 << 3) // command ring running
 #define   CRCR_PTR_LOW(v)     ((v) & 0xFFFFFFE)
 #define   CRCR_PTR_HIGH(v)    (((v) >> 32) & UINT32_MAX)
+#define   CRCR_PTR(v)         ((uint64_t)(v) & A64_MASK)
 #define XHCI_OP_DCBAAP      0x30
-#define   DCBAAP_LOW(v)       A64_LOW(v)  // device context base array
-#define   DCBAAP_HIGH(v)      A64_HIGH(v) // device context base array
+#define   DCBAAP_LOW(v)       ((v) & 0xFFFFFFC0)         // device context base array (lo)
+#define   DCBAAP_HIGH(v)      (((v) >> 32) & UINT32_MAX) // device context base array (hi)
+#define   DCBAAP_PTR(v)       ((uint64_t)(v) & A64_MASK) // device context base array
 #define XHCI_OP_CONFIG      0x38
 #define   CONFIG_MAX_SLOTS_EN(v) (((v) & 0xFF) << 0)
 #define XHCI_OP_PORT(n)     (0x400 + ((n) * 0x10))
@@ -371,10 +393,14 @@ typedef volatile struct {
 #define XHCI_INTR_ERSTBA(n) (0x30 + (32 * (n)))
 #define   ERSTBA_LOW(v)       A64_LOW(v)  // event ring segment table base address
 #define   ERSTBA_HIGH(v)      A64_HIGH(v) // event ring segment table base address
+#define   ERSTBA_PTR(v)       (((uint64_t)(v)) & A64_MASK)
 #define XHCI_INTR_ERDP(n)   (0x38 + (32 * (n)))
-#define   ERDP_BUSY           (1 << 3)       // event handler busy
+#define   ERDP_EH_BUSY        (1 << 3)       // event handler busy
 #define   ERDP_LOW(v)         A64_LOW(v)  // event ring dequeue pointer
 #define   ERDP_HIGH(v)        A64_HIGH(v) // event ring dequeue pointer
+#define   ERDP_PTR(v)         (((uint64_t)(v)) & 0xFFFFFFFFFFFFFFF0)
+
+#define ERDP_MASK 0xF
 
 // -------- Runtime Registers --------
 typedef volatile struct {
@@ -411,6 +437,9 @@ typedef volatile union {
 
 #define XHCI_PSI_OFFSET 0x10
 
+#define XCAP_ID(v) ((v) & 0xFF)
+#define XCAP_NEXT(v) ((((v) >> 8) & 0xFF) << 2)
+
 typedef volatile struct {
   uint32_t id : 8;   // capability id
   uint32_t next : 8; // next cap pointer
@@ -427,7 +456,7 @@ typedef volatile struct {
 #define XHCI_SUPER_SPEED_G1X2 6 // super speed gen1 x2 (5 gb/s) [usb 3.2]
 #define XHCI_SUPER_SPEED_G2X2 7 // super speed gen2 x2 (10 gb/s) [usb 3.2]
 
-typedef volatile struct {
+typedef struct xhci_port_speed {
   uint32_t psiv : 4;  // protocol speed id
   uint32_t psie : 2;  // protocol speed id exponent
   uint32_t plt : 2;   // psi type
@@ -437,12 +466,12 @@ typedef volatile struct {
   uint32_t psim : 16; // protocol speed id mantissa
 } xhci_port_speed_t;
 
-typedef volatile struct {
+typedef struct xhci_cap_protocol {
   // dword0
-  uint32_t id : 8;            // capability id
-  uint32_t next : 8;          // next cap pointer
-  uint32_t rev_minor : 8;     // minor revision (bcd)
-  uint32_t rev_major : 8;     // major revision (bcd)
+  uint8_t id;                 // capability id
+  uint8_t next;               // next cap pointer
+  uint8_t rev_minor;          // minor revision (bcd)
+  uint8_t rev_major;          // major revision (bcd)
   // dword1
   uint32_t name_str;          // mnemonic name string
   // dword2
@@ -871,7 +900,7 @@ static_assert(sizeof(xhci_link_trb_t) == 16);
 #define XHCI_INTR_IN_EP   7
 
 // Slot Context
-typedef struct {
+typedef struct xhci_slot_ctx {
   // dword 0
   uint32_t route_string : 20;   // route string
   uint32_t speed : 4;           // speed (deprecated)
@@ -899,7 +928,7 @@ typedef struct {
 static_assert(sizeof(xhci_slot_ctx_t) == 32);
 
 // Endpoint Context
-typedef struct {
+typedef struct xhci_endpoint_ctx {
   // dword 0
   uint32_t ep_state : 3;     // endpoint state
   uint32_t : 5;              // reserved
@@ -927,7 +956,7 @@ typedef struct {
 static_assert(sizeof(xhci_endpoint_ctx_t) == 32);
 
 // Input Control Context
-typedef struct {
+typedef struct xhci_input_ctrl_ctx {
   uint32_t drop_flags;      // drop context flags
   uint32_t add_flags;       // add context flags
   uint32_t reserved[5];     // reserved
@@ -939,14 +968,16 @@ typedef struct {
 static_assert(sizeof(xhci_input_ctrl_ctx_t) == 32);
 
 // Input Context
-typedef struct {
+typedef struct xhci_input_ctx {
   xhci_input_ctrl_ctx_t ctrl;
   xhci_slot_ctx_t slot;
   xhci_endpoint_ctx_t endpoint[31];
 } xhci_input_ctx_t;
+static_assert(sizeof(xhci_input_ctx_t) == (33 * 32));
 
 // Device Context
-typedef struct {
+// TODO: HANDLE 64-byte contexts!
+typedef struct xhci_device_ctx {
   xhci_slot_ctx_t slot;
   xhci_endpoint_ctx_t endpoint[31];
 } xhci_device_ctx_t;

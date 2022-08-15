@@ -5,6 +5,8 @@
 #include <bus/pcie.h>
 #include <bus/pci_tables.h>
 
+#include <usb/xhci.h>
+
 #include <mm.h>
 #include <init.h>
 #include <printf.h>
@@ -20,6 +22,8 @@
 #define msi_msg_addr(cpu) (0xFEE00000 | (cpu << 12))
 #define msi_msg_data(vec, e, d) \
   (((vec) & 0xFF) | ((e) == 1 ? 0 : (1 << 15)) | ((d) == 1 ? 0 : (1 << 14)))
+
+#define MASK_PTR(ptr) ((ptr) & 0xFFFFFFFFFFFFFFFC)
 
 struct pcie_segment_group {
   uint8_t num;
@@ -132,17 +136,16 @@ pcie_bar_t *get_device_bars(uint32_t *bar_ptr, int bar_count) {
   return first;
 }
 
-pcie_cap_t *get_device_caps(uintptr_t config_base, uint16_t cap_offset) {
+pcie_cap_t *get_device_caps(uintptr_t config_base, uintptr_t cap_off) {
   pcie_cap_t *first = NULL;
   pcie_cap_t *caps = NULL;
 
-  uint16_t *ptr = (void *)(config_base + cap_offset);
-  uint16_t *ptr_max = align_ptr(ptr, 4096);
-  while (ptr < ptr_max) {
+  uint16_t *ptr = (void *)(config_base + cap_off);
+  while (true) {
     uint8_t id = *ptr & 0xFF;
-    uint8_t next = *ptr >> 8;
+    uint8_t next = MASK_PTR(*ptr >> 8);
 
-    if (next == 0 || id > 0x15) {
+    if (id > 0x15) {
       break;
     } else if (id == 0) {
       continue;
@@ -150,7 +153,7 @@ pcie_cap_t *get_device_caps(uintptr_t config_base, uint16_t cap_offset) {
 
     pcie_cap_t *cap = kmalloc(sizeof(pcie_cap_t));
     cap->id = id;
-    cap->offset = (uintptr_t) ptr - config_base;
+    cap->offset = (uintptr_t) ptr;
     cap->next = NULL;
 
     if (caps != NULL) {
@@ -159,7 +162,11 @@ pcie_cap_t *get_device_caps(uintptr_t config_base, uint16_t cap_offset) {
       first = cap;
     }
     caps = cap;
-    ptr = offset_ptr(ptr, next);
+
+    if (next == 0) {
+      break;
+    }
+    ptr = offset_ptr(config_base, next);
   }
   return first;
 }
@@ -220,6 +227,16 @@ void pcie_probe_bus(struct pcie_segment_group *group, uint8_t bus) {
         continue;
       }
 
+      if (header->class_code == PCI_BRIDGE_DEVICE) {
+        continue;
+      }
+      if (!(
+        header->class_code == PCI_SERIAL_BUS_CONTROLLER && header->subclass == PCI_USB_CONTROLLER
+        && header->prog_if == USB_PROG_IF_XHCI
+      )) {
+        continue;
+      }
+
       pcie_header_normal_t *config = (void *) header;
       pcie_device_t *dev = kmalloc(sizeof(pcie_device_t));
 
@@ -240,12 +257,14 @@ void pcie_probe_bus(struct pcie_segment_group *group, uint8_t bus) {
       dev->subsystem_vendor = config->subsys_vendor_id;
 
       dev->bars = get_device_bars(config->bars, 6);
-      dev->caps = get_device_caps((uintptr_t) header, config->cap_ptr);
+      dev->caps = get_device_caps((uintptr_t) header, MASK_PTR(config->cap_ptr));
       dev->base_addr = (uintptr_t) header;
       dev->next = NULL;
 
       add_device(dev);
       // pcie_print_device(dev);
+
+      _xhci_init(dev);
 
       if (!header->multifn) {
         break;
@@ -310,7 +329,7 @@ void *pcie_get_cap(pcie_device_t *device, int cap_id) {
   if (pci_cap == NULL) {
     return NULL;
   }
-  return (void *)(device->base_addr + pci_cap->offset);
+  return (void *)(pci_cap->offset);
 }
 
 //
@@ -343,6 +362,10 @@ void pcie_enable_msi_vector(pcie_device_t *device, uint8_t index, uint8_t vector
   if (msix_cap == NULL) {
     panic("[pcie] could not locate msix structure");
   }
+
+  kprintf("pcie: msi index = %d\n", index);
+  kprintf("pcie: message control = %#b\n", ((pci_cap_msix_t *)((void *)msix_cap))->msg_ctrl);
+  kprintf("pcie: table size = %d\n", msix_cap->tbl_sz);
 
   uint16_t tbl_size = msix_cap->tbl_sz + 1;
   kassert(index < tbl_size);

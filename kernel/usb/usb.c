@@ -11,6 +11,7 @@
 #include <sched.h>
 #include <process.h>
 #include <printf.h>
+#include <panic.h>
 
 #include <rb_tree.h>
 #include <atomic.h>
@@ -142,6 +143,22 @@ noreturn void *usb_event_loop(void *arg) {
 void usb_main() {
   usb_log("[#%d] initializing usb", PERCPU_ID);
   tree = create_rb_tree();
+
+  kprintf("usb: haulting\n");
+  WHILE_TRUE;
+
+  pcie_device_t *xhci_device = pcie_locate_device(
+    PCI_SERIAL_BUS_CONTROLLER,
+    PCI_USB_CONTROLLER,
+    USB_PROG_IF_XHCI
+  );
+  if (xhci_device == NULL) {
+    panic("no xhci controller");
+  }
+
+  // xhci_init(xhci_device);
+  // WHILE_TRUE;
+
   xhci_init();
   xhci_setup_devices();
   usb_log("done!");

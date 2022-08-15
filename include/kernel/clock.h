@@ -33,6 +33,12 @@ clock_t clock_kernel_time();
 uint64_t clock_current_ticks();
 void clock_update_ticks();
 
-clock_t clock_future_time(uint64_t ns);
+static inline clock_t clock_future_time(uint64_t ns) {
+  return clock_now() + ns;
+}
+
+static inline bool is_future_time(clock_t future) {
+  return clock_now() >= future;
+}
 
 #endif

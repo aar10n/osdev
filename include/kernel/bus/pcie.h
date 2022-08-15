@@ -25,7 +25,7 @@ typedef struct pcie_bar {
 
 typedef struct pcie_cap {
   uint8_t id;            // capability id
-  uint8_t offset;        // offset to cap
+  uintptr_t offset;      // offset to cap
   struct pcie_cap *next; // next cap ptr
 } pcie_cap_t;
 
@@ -176,6 +176,19 @@ typedef struct {
   uint32_t pb_bir : 3;
   uint32_t pb_ofst : 29;
 } pcie_cap_msix_t;
+
+typedef struct pci_cap_msix {
+  // dword 0
+  uint32_t id : 8;
+  uint32_t next_ofst : 8;
+  uint32_t msg_ctrl : 16;
+  // dword 1
+  uint32_t bir : 3;
+  uint32_t table_offset : 29;
+  // dword 2
+  uint32_t pb_bir : 3;
+  uint32_t pb_offset : 29;
+} pci_cap_msix_t;
 
 // typedef struct {
 //   // dword 0

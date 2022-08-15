@@ -17,6 +17,7 @@ extern acpi_fadt_t *acpi_global_fadt;
 
 // 3.579545 MHz
 const uint64_t pm_timer_frequency = 3579545UL;
+clock_source_t *pm_timer_clock_source = NULL;
 
 int acpi_pm_timer_enable(struct clock_source *cs) {
   return 0;
@@ -39,7 +40,7 @@ uint64_t acpi_pm_timer_io_read(struct clock_source *cs) {
 
 void remap_pm_timer_registers(void *data) {
   clock_source_t *cs = data;
-  cs->data = _vmap_mmio((uintptr_t) cs->data, PAGE_SIZE, PG_NOCACHE);
+  cs->data = _vmap_mmio(align_down((uintptr_t) cs->data, PAGE_SIZE), PAGE_SIZE, PG_NOCACHE);
   _vmap_get_mapping((uintptr_t) cs->data)->name = "pm_timer";
 }
 
@@ -82,5 +83,18 @@ void register_acpi_pm_timer() {
   }
 
   cs->last_tick = cs->read(cs);
+  pm_timer_clock_source = cs;
   register_clock_source(cs);
+}
+
+//
+
+int pm_timer_mdelay(clock_t ms) {
+  uint64_t delay_ns = MS_TO_NS(ms);
+  uint64_t period_ns = 1 / ((double) pm_timer_frequency / NS_PER_SEC);
+  uint64_t count = pm_timer_clock_source->read(pm_timer_clock_source) + (delay_ns / period_ns);
+  while (pm_timer_clock_source->read(pm_timer_clock_source) < count) {
+    cpu_pause();
+  }
+  return 0;
 }

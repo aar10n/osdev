@@ -77,6 +77,7 @@
 #define barrier() __asm volatile("":::"memory");
 #define cpu_pause() __asm volatile("pause":::"memory");
 #define cpu_hlt() __asm volatile("hlt")
+#define WHILE_TRUE ({ while (true) cpu_pause(); })
 
 #define bswap16(v) __builtin_bswap16(v)
 #define bswap32(v) __builtin_bswap32(v)

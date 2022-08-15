@@ -8,5 +8,6 @@
 #include <base.h>
 
 void register_acpi_pm_timer();
+int pm_timer_mdelay(clock_t ms);
 
 #endif
