@@ -262,7 +262,7 @@ void pcie_probe_bus(struct pcie_segment_group *group, uint8_t bus) {
       dev->next = NULL;
 
       add_device(dev);
-      // pcie_print_device(dev);
+      pcie_print_device(dev);
 
       _xhci_init(dev);
 
@@ -363,9 +363,9 @@ void pcie_enable_msi_vector(pcie_device_t *device, uint8_t index, uint8_t vector
     panic("[pcie] could not locate msix structure");
   }
 
-  kprintf("pcie: msi index = %d\n", index);
-  kprintf("pcie: message control = %#b\n", ((pci_cap_msix_t *)((void *)msix_cap))->msg_ctrl);
-  kprintf("pcie: table size = %d\n", msix_cap->tbl_sz);
+  // kprintf("pcie: msi index = %d\n", index);
+  // kprintf("pcie: message control = %#b\n", ((pci_cap_msix_t *)((void *)msix_cap))->msg_ctrl);
+  // kprintf("pcie: table size = %d\n", msix_cap->tbl_sz);
 
   uint16_t tbl_size = msix_cap->tbl_sz + 1;
   kassert(index < tbl_size);

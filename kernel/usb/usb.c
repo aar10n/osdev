@@ -145,7 +145,8 @@ void usb_main() {
   tree = create_rb_tree();
 
   kprintf("usb: haulting\n");
-  WHILE_TRUE;
+  thread_block();
+  unreachable;
 
   pcie_device_t *xhci_device = pcie_locate_device(
     PCI_SERIAL_BUS_CONTROLLER,

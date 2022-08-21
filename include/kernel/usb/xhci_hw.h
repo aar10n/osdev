@@ -150,6 +150,8 @@ typedef volatile struct {
 #define   CAP_MAX_INTRS(v)    (((v) >> 8) & 0x7FF)
 #define   CAP_MAX_PORTS(v)    (((v) >> 24) & 0xFF)
 #define XHCI_CAP_HCSPARAMS2 0x08
+#define   HCSPARAMS2_ERST_MAX(v) (((v) >> 4) & 0xF)
+#define   HCSPARAMS2_MAX_SCRATCHPAD(v) (((((v) >> 21) & 0x1F) << 5) | (((v) >> 27) & 0x1F))
 #define XHCI_CAP_HCSPARAMS3 0x0C
 #define XHCI_CAP_HCCPARAMS1 0x10
 #define   HCCPARAMS1_AC64(v)  ((v) & 0x1)
@@ -330,7 +332,7 @@ typedef volatile struct {
 #define   PORTSC_SPEED(v)     (((v) >> 10) & 0xF) // speed
 #define   PORTSC_CSC          (1 << 17) // connect status change
 #define   PORTSC_PEC          (1 << 18) // port enable/disabled change
-#define   PORTSC_PRC          (1 << 20) // port reset change
+#define   PORTSC_PRC          (1 << 21) // port reset change
 #define   PORTSC_CAS          (1 << 24) // cold attach status
 #define   PORTSC_WCE          (1 << 25) // wake on connect enable
 #define   PORTSC_WDE          (1 << 26) // wake on disconnect enable
@@ -339,6 +341,12 @@ typedef volatile struct {
 #define XHCI_PORT_PMSC(n)   (XHCI_OP_PORT(n) + 0x04)
 #define XHCI_PORT_LI(n)     (XHCI_OP_PORT(n) + 0x08)
 #define XHCI_PORT_HLPMC(n)  (XHCI_OP_PORT(n) + 0x0C)
+
+//    0X00XXXXXXXXXXXXXXXXXXXXXXX0X00X
+//   0b10110000000000000000000000010110
+// ~ 0b01001111111111111111111111101001
+//   0b00000000001000000000000000000000
+#define PORTSC_MASK 0x4FFFFFE9 // 0b01001111111111111111111111101001
 
 // -------- Interrupter Registers --------
 typedef volatile struct {
@@ -465,6 +473,12 @@ typedef struct xhci_port_speed {
   uint32_t lp : 2;    // link protocol
   uint32_t psim : 16; // protocol speed id mantissa
 } xhci_port_speed_t;
+
+#define XHCI_REV_MAJOR_2 0x02
+#define XHCI_REV_MAJOR_3 0x03
+#define XHCI_REV_MINOR_0 0x00
+#define XHCI_REV_MINOR_1 0x10
+#define XHCI_REV_MINOR_2 0x10
 
 typedef struct xhci_cap_protocol {
   // dword0
@@ -596,12 +610,12 @@ static_assert(sizeof(xhci_normal_trb_t) == 16);
 // Setup Stage TRB
 typedef struct {
   // dword 0
-  uint32_t rqst_type : 8;   // request type
-  uint32_t rqst : 8;        // request
-  uint32_t value : 16;      // value
+  uint32_t rqst_type : 8;   // bmRequestType
+  uint32_t rqst : 8;        // bRequest
+  uint32_t value : 16;      // wValue
   // dword 1
-  uint32_t index : 16;      // index
-  uint32_t length : 16;     // length
+  uint32_t index : 16;      // wIndex
+  uint32_t length : 16;     // wLength
   // dword 2
   uint32_t trs_length : 17; // trb transfer length
   uint32_t : 5;             // reserved
@@ -722,7 +736,7 @@ typedef struct {
   // dword 0 & 1
   uint64_t trb_ptr;         // trb pointer
   // dword 2
-  uint32_t trs_length: 24;  // trb transfer length
+  uint32_t trs_length: 24;  // trb transfer length remaining
   uint32_t compl_code : 8;  // completion code
   // dword 3
   uint32_t cycle : 1;       // cycle bit

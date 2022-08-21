@@ -116,9 +116,11 @@ static_assert(sizeof(usb_setup_packet_t) == 8);
 
 #define DEVICE_DESCRIPTOR 0x1
 #define CONFIG_DESCRIPTOR 0x2
+#define STRING_DESCRIPTOR 0x3
 #define IF_DESCRIPTOR     0x4
 #define EP_DESCRIPTOR     0x5
-#define STRING_DESCRIPTOR 0x3
+
+#define cast_usb_desc(ptr) (((usb_descriptor_t *)((void *)(ptr))))
 
 // Generic Descriptor
 typedef struct packed {
@@ -143,6 +145,7 @@ typedef struct packed {
   uint8_t serial_idx;    // index of serial number
   uint8_t num_configs;   // number of configurations
 } usb_device_descriptor_t;
+static_assert(sizeof(usb_device_descriptor_t) == 18);
 
 // Configuration Descriptor
 typedef struct packed {
@@ -155,6 +158,7 @@ typedef struct packed {
   uint8_t attributes; // attributes bitmap
   uint8_t max_power;  // maximum power consumption
 } usb_config_descriptor_t;
+static_assert(sizeof(usb_config_descriptor_t) == 9);
 
 // Interface Association Descriptor
 typedef struct packed {
@@ -180,6 +184,10 @@ typedef struct packed {
   uint8_t if_protocol; // protocol code
   uint8_t this_idx;    // own string descriptor index
 } usb_if_descriptor_t;
+static_assert(sizeof(usb_if_descriptor_t) == 9);
+
+#define USB_EP_OUT 0
+#define USB_EP_IN  1
 
 // Endpoint Descriptor
 typedef struct packed {
@@ -190,6 +198,7 @@ typedef struct packed {
   uint16_t max_pckt_sz; // maximum packet size
   uint8_t interval;     // interval for servicing
 } usb_ep_descriptor_t;
+static_assert(sizeof(usb_ep_descriptor_t) == 7);
 
 // SuperSpeed Endpoint Companion Descriptor
 typedef struct packed {
