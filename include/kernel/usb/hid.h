@@ -118,7 +118,7 @@ typedef struct hid_device {
 } hid_device_t;
 
 
-void *hid_device_init(usb_device_t *dev);
+void *hid_device_init(usb_dev_t *dev);
 void hid_handle_event(usb_event_t *event, void *data);
 
 void hid_get_idle(xhci_device_t *device);

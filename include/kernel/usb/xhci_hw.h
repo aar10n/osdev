@@ -336,6 +336,7 @@ typedef volatile struct {
 #define   PORTSC_CAS          (1 << 24) // cold attach status
 #define   PORTSC_WCE          (1 << 25) // wake on connect enable
 #define   PORTSC_WDE          (1 << 26) // wake on disconnect enable
+#define   PORTSC_WOE          (1 << 27) // wake on over-current enable
 #define   PORTSC_DR           (1 << 30) // device removable
 #define   PORTSC_WARM_RESET   (1 << 27) // warm port reset
 #define XHCI_PORT_PMSC(n)   (XHCI_OP_PORT(n) + 0x04)

@@ -27,7 +27,7 @@ void setup_command_block(usb_ms_cbw_t *cbw, void *cb, size_t size, size_t trnsf_
 
 //
 
-void *scsi_device_init(usb_device_t *dev) {
+void *scsi_device_init(usb_dev_t *dev) {
   scsi_device_t *device = kmalloc(sizeof(scsi_device_t));
 
   scsi_inquiry_cmd_t inquiry_cmd = {
@@ -78,7 +78,7 @@ void scsi_handle_event(usb_event_t *event, void *data) {
 
 // internal read/write
 
-ssize_t scsi_read_internal(usb_device_t *dev, uint64_t lba, uint32_t count, void *buf) {
+ssize_t scsi_read_internal(usb_dev_t *dev, uint64_t lba, uint32_t count, void *buf) {
   kassert(count)
   kassert(count > 0 && count <= SCSI_MAX_XFER);
 
@@ -135,7 +135,7 @@ ssize_t scsi_read_internal(usb_device_t *dev, uint64_t lba, uint32_t count, void
   return -EFAILED;
 }
 
-ssize_t scsi_write_internal(usb_device_t *dev, uint64_t lba, uint32_t count, void *buf) {
+ssize_t scsi_write_internal(usb_dev_t *dev, uint64_t lba, uint32_t count, void *buf) {
   kassert(count)
   kassert(count > 0 && count <= SCSI_MAX_XFER);
 
@@ -193,7 +193,7 @@ ssize_t scsi_write_internal(usb_device_t *dev, uint64_t lba, uint32_t count, voi
 
 // disk api
 
-ssize_t scsi_read(usb_device_t *dev, uint64_t lba, uint32_t count, void *buf) {
+ssize_t scsi_read(usb_dev_t *dev, uint64_t lba, uint32_t count, void *buf) {
   if (count == 0 || buf == NULL) {
     return 0;
   }
@@ -217,7 +217,7 @@ ssize_t scsi_read(usb_device_t *dev, uint64_t lba, uint32_t count, void *buf) {
 }
 
 
-ssize_t scsi_write(usb_device_t *dev, uint64_t lba, uint32_t count, void *buf) {
+ssize_t scsi_write(usb_dev_t *dev, uint64_t lba, uint32_t count, void *buf) {
   if (count == 0 || buf == NULL) {
     return 0;
   }

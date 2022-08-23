@@ -230,12 +230,6 @@ void pcie_probe_bus(struct pcie_segment_group *group, uint8_t bus) {
       if (header->class_code == PCI_BRIDGE_DEVICE) {
         continue;
       }
-      if (!(
-        header->class_code == PCI_SERIAL_BUS_CONTROLLER && header->subclass == PCI_USB_CONTROLLER
-        && header->prog_if == USB_PROG_IF_XHCI
-      )) {
-        continue;
-      }
 
       pcie_header_normal_t *config = (void *) header;
       pcie_device_t *dev = kmalloc(sizeof(pcie_device_t));
@@ -262,9 +256,15 @@ void pcie_probe_bus(struct pcie_segment_group *group, uint8_t bus) {
       dev->next = NULL;
 
       add_device(dev);
-      pcie_print_device(dev);
+      if (!(
+        header->class_code == PCI_SERIAL_BUS_CONTROLLER && header->subclass == PCI_USB_CONTROLLER
+        && header->prog_if == USB_PROG_IF_XHCI
+      )) {
+        continue;
+      }
 
-      _xhci_init(dev);
+      // pcie_print_device(dev);
+      register_xhci_controller(dev);
 
       if (!header->multifn) {
         break;

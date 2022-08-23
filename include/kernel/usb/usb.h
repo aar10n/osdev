@@ -8,18 +8,15 @@
 #include <base.h>
 #include <thread.h>
 
-typedef struct xhci_device xhci_device_t;
-typedef struct xhci_dev xhci_dev_t;
+typedef struct pcie_device pcie_device_t;
 
 // USB Device Mode
 #define USB_DEVICE_REGULAR    0x0
 #define USB_DEVICE_POLLING    0x1
 
 // USB Transfer Flags
-#define USB_XFER_IOC 0x1 // interrupt on completion
-#define USB_XFER_ISP 0x2 // interrupt on short packet
-#define USB_XFER_NS  0x4 // no snoop
-
+#define USB_XFER_SETUP  0x1 // transfer is a setup transfer
+#define USB_XFER_PART   0x2 // transfer is not the last in a series
 
 // Request Type
 #define USB_GET_STATUS        0x0
@@ -224,64 +221,148 @@ typedef struct packed {
 } usb_string_descriptor_t;
 
 //
-//
+// MARK: Common API
 //
 
-typedef struct usb_dev usb_device_t;
+typedef struct usb_device usb_device_t;
+typedef struct usb_host usb_host_t;
+typedef struct usb_hub usb_hub_t;
+typedef struct usb_transfer usb_transfer_t;
 
-typedef enum {
+typedef enum usb_dir {
   USB_OUT,
   USB_IN,
 } usb_dir_t;
 
-typedef enum {
-  TRANSFER_IN,
-  TRANSFER_OUT,
-} usb_event_type_t;
-
-typedef enum {
+typedef enum usb_status {
   USB_SUCCESS,
   USB_ERROR,
 } usb_status_t;
 
-typedef struct usb_event {
-  usb_device_t *device;  // device
-  usb_event_type_t type; // event type
-  usb_status_t status;   // event status
-  time_t timestamp;      // timestamp
-} usb_event_t;
+typedef enum usb_event_type {
+  TRANSFER_IN,
+  TRANSFER_OUT,
+} usb_event_type_t;
 
-typedef struct {
-  const char *name;
+typedef enum usb_revision {
+  USB_REV_2_0,
+  USB_REV_3_0,
+  USB_REV_3_1,
+  USB_REV_3_2,
+} usb_revision_t;
+
+typedef enum usb_speed {
+  USB_FULL_SPEED,
+  USB_LOW_SPEED,
+  USB_HIGH_SPEED,
+  USB_SUPER_SPEED_G1X1,
+  USB_SUPER_SPEED_G2X1,
+  USB_SUPER_SPEED_G1X2,
+  USB_SUPER_SPEED_G2X2,
+} usb_speed_t;
+
+typedef struct usb_host_impl {
+  /* controller */
+  int (*init)(usb_host_t *host);
+  int (*start)(usb_host_t *host);
+  int (*stop)(usb_host_t *host);
+  int (*discover)(usb_host_t *host);
+} usb_host_impl_t;
+
+typedef struct usb_device_impl {
+  /* device */
+  int (*init)(usb_device_t *device);
+  int (*deinit)(usb_device_t *device);
+  int (*queue_transfer)(usb_device_t *device, usb_transfer_t *transfer);
+  int (*await_transfer)(usb_device_t *device, usb_transfer_t *transfer);
+} usb_device_impl_t;
+
+typedef struct usb_hub {
+  uint8_t port;
+  uint8_t tier;
+
+  usb_device_t *self;
+  usb_host_t *host;
+  void *data;
+
+  size_t num_devices;
+  LIST_HEAD(usb_device_t) devices;
+} usb_hub_t;
+
+#define USB_DEVICE_RO   0x1 // device is removable
+#define USB_DEVICE_HUB  0x2 // device is a usb hub
+
+typedef struct usb_device {
+  uint8_t port;
   uint8_t dev_class;
   uint8_t dev_subclass;
-  void *(*init)(usb_device_t *dev);
-  void (*handle_event)(usb_event_t *event, void *data);
-} usb_driver_t;
+  uint8_t dev_protocol;
+  uint32_t flags;
 
-typedef struct usb_dev {
-  id_t id;
-  uint8_t mode;
-  uint32_t value;
+  usb_revision_t revision;
+  usb_speed_t speed;
 
-  xhci_dev_t *hc;
-  xhci_device_t *device;
+  usb_device_descriptor_t *desc;
+  usb_config_descriptor_t **configs;
 
-  usb_driver_t *driver;
-  void *driver_data;
-  thread_t *thread;
+  char *device;
+  char *manufacturer;
+  char *serial;
+
+  usb_config_descriptor_t *config;  // selected config
+  usb_if_descriptor_t *interface;   // selected interface
+
+  usb_host_t *host;
+  usb_hub_t *parent;
+  void *data;
+
+  LIST_ENTRY(struct usb_device) list;
 } usb_device_t;
 
+typedef struct usb_host {
+  char *name;
+  void *data;
+  pcie_device_t *pci_device;
+  usb_host_impl_t *host_impl;
+  usb_device_impl_t *device_impl;
 
-void usb_init();
-void usb_register_device(xhci_device_t *device);
-usb_device_t *usb_get_device(id_t id);
+  usb_hub_t *root;
+  LIST_ENTRY(struct usb_host) list;
+} usb_host_t;
 
-int usb_start_transfer(usb_device_t *dev, usb_dir_t dir);
-int usb_add_transfer(usb_device_t *device, usb_dir_t dir, void *buffer, size_t size);
-int usb_add_transfer_custom(usb_device_t *dev, usb_dir_t dir, void *buffer, size_t size, uint8_t flags);
-int usb_await_transfer(usb_device_t *device, usb_dir_t dir);
+typedef struct usb_transfer {
+  uint32_t flags;
+  union {
+    usb_dir_t dir;
+    usb_setup_packet_t setup;
+  };
 
-usb_ep_descriptor_t *usb_get_ep_descriptor(usb_if_descriptor_t *interface, uint8_t index);
+  uintptr_t buffer;
+  size_t length;
+} usb_transfer_t;
+
+
+// MARK: Host Driver API
+int usb_register_host(usb_host_t *host);
+int usb_handle_device_connect(usb_host_t *host, void *data);
+int usb_handle_device_disconnect(usb_host_t *host, usb_device_t *device);
+
+// MARK: Common API
+usb_transfer_t *usb_alloc_transfer(usb_dir_t direction, uintptr_t buffer, size_t length);
+usb_transfer_t *usb_alloc_setup_transfer(usb_setup_packet_t setup, uintptr_t buffer, size_t length);
+int usb_free_transfer(usb_transfer_t *transfer);
+
+int usb_device_add_transfer(usb_device_t *device, usb_transfer_t *transfer);
+int usb_device_await_transfer(usb_device_t *device, usb_transfer_t *transfer);
+
+int usb_device_select_config(usb_device_t *device, uint8_t number);
+int usb_device_select_interface(usb_device_t *device, uint8_t number);
+
+void usb_print_device_descriptor(usb_device_descriptor_t *desc);
+void usb_print_config_descriptor(usb_config_descriptor_t *desc);
+
+// MARK: Internal API
+
+
 
 #endif

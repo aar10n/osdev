@@ -213,10 +213,10 @@ typedef struct {
 } scsi_device_t;
 
 // driver related
-void *scsi_device_init(usb_device_t *dev);
+void *scsi_device_init(usb_dev_t *dev);
 void scsi_handle_event(usb_event_t *event, void *data);
 
-ssize_t scsi_read(usb_device_t *dev, uint64_t lba, uint32_t count, void *buf);
-ssize_t scsi_write(usb_device_t *dev, uint64_t lba, uint32_t count, void *buf);
+ssize_t scsi_read(usb_dev_t *dev, uint64_t lba, uint32_t count, void *buf);
+ssize_t scsi_write(usb_dev_t *dev, uint64_t lba, uint32_t count, void *buf);
 
 #endif

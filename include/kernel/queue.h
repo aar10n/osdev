@@ -212,6 +212,20 @@
 #define RLIST_FOREACH(var, el, name) \
   for ((var) = (el); (var); (var) = ((var)->name.next))
 
+#define SLIST_FOREACH(var, el, name) \
+  for ((var) = (el); (var); (var) = ((var)->name))
+
+
+#define LIST_FIND(var, head, name, cond) \
+  ({                                     \
+    typeof(LIST_FIRST(head)) var;        \
+    LIST_FOREACH(var, head, name) {      \
+      if (cond)                          \
+        break;                           \
+    }                                    \
+    var;\
+  })
+
 #define RLIST_FIND(var, el, name, cond)  \
   ({                                     \
     typeof(el) var;                      \
@@ -222,14 +236,14 @@
     var;\
   })
 
-#define LIST_FIND(var, head, name, cond) \
-  ({                                     \
-    typeof(LIST_FIRST(head)) var;        \
-    LIST_FOREACH(var, head, name) {      \
-      if (cond)                          \
-        break;                           \
-    }                                    \
-    var;\
+#define SLIST_FIND(var, el, name, cond) \
+  ({                                    \
+    typeof(el) var;                     \
+    SLIST_FOREACH(var, el, name) {      \
+      if (cond)                         \
+        break;                          \
+    }                                   \
+    var;                                \
   })
 
 #define RLIST_GET_LAST(el, name)              \

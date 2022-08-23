@@ -32,6 +32,7 @@ kernel += mm/init.c mm/heap.c mm/pgtable.c mm/pmalloc.c mm/vmalloc.c
 kernel += sched/sched.c sched/fprr.c
 
 # kernel/usb
-kernel += usb/hid.c usb/hid-report.c usb/hid-usage.c \
-	usb/keyboard.c usb/mouse.c usb/scsi.c usb/usb.c \
-	usb/xhci.c
+#kernel += usb/hid.c usb/hid-report.c usb/hid-usage.c \
+#	usb/keyboard.c usb/mouse.c usb/scsi.c usb/usb.c \
+#	usb/xhci.c
+kernel += usb/usb.c usb/xhci.c

@@ -131,7 +131,7 @@ void hid_set_idle(xhci_device_t *device, uint8_t duration) {
 
 //
 
-void *hid_device_init(usb_device_t *dev) {
+void *hid_device_init(usb_dev_t *dev) {
   hid_descriptor_t *desc = get_hid_descriptor(dev->device);
   void *report_desc = hid_get_report_descriptor(dev->device);
   if (report_desc == NULL) {
@@ -198,7 +198,7 @@ void *hid_device_init(usb_device_t *dev) {
 }
 
 void hid_handle_event(usb_event_t *event, void *data) {
-  usb_device_t *usb_dev = event->device;
+  usb_dev_t *usb_dev = event->device;
   hid_device_t *device = data;
   hid_trace_debug("event");
 
