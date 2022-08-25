@@ -43,16 +43,16 @@ chan_t *chan_alloc(uint16_t size, uint32_t flags) {
   memset(chan, 0, sizeof(chan_t));
   chan->id = atomic_fetch_add(&chan_id, 1);
   chan->flags = flags;
-  mutex_init(&chan->lock, 0);
+  mutex_init(&chan->lock, MUTEX_REENTRANT);
 
   chan->max_idx = size - 1;
   chan->read_idx = 0;
   chan->write_idx = 0;
   chan->buffer = kmalloc(size * sizeof(uint64_t));
 
-  mutex_init(&chan->reader, 0);
+  mutex_init(&chan->reader, MUTEX_REENTRANT);
   cond_init(&chan->data_read, COND_NOEMPTY);
-  mutex_init(&chan->writer, 0);
+  mutex_init(&chan->writer, MUTEX_REENTRANT);
   cond_init(&chan->data_written, COND_NOEMPTY);
   return chan;
 }
@@ -87,6 +87,7 @@ int chan_set_free_cb(chan_t *chan, chan_free_cb_t fn) {
 
 int chan_send(chan_t *chan, uint64_t data) {
   if (chan->flags & CHAN_CLOSED) {
+    kprintf("error: calling `chan_send()` on closed channel[%u]\n", chan->id);
     return -1;
   }
 
@@ -131,6 +132,24 @@ int chan_send(chan_t *chan, uint64_t data) {
   return 0;
 }
 
+int chan_sendb(chan_t *chan, uint64_t data) {
+  if (chan->flags & CHAN_CLOSED) {
+    kprintf("error: calling `chan_sendb()` on closed channel[%u]\n", chan->id);
+    return -1;
+  }
+
+  // blocking send
+  mutex_lock(&chan->writer);
+
+  if (chan_send(chan, data) < 0) {
+    mutex_unlock(&chan->writer);
+    return -1;
+  }
+
+  cond_wait(&chan->data_read);
+  mutex_unlock(&chan->writer);
+  return 0;
+}
 
 int chan_recv(chan_t *chan, uint64_t *result) {
   if (chan->flags & CHAN_CLOSED) {
@@ -174,11 +193,31 @@ int chan_recv(chan_t *chan, uint64_t *result) {
 }
 
 int chan_recvn(chan_t *chan, size_t n, uint64_t *results) {
+  if (n == 0 || chan->flags & CHAN_CLOSED) {
+    return -1;
+  }
+
+  mutex_lock(&chan->reader);
+
+  for (size_t i = 0; i < n; i++) {
+    uint64_t result;
+    if (chan_recv(chan, &result) < 0) {
+      mutex_unlock(&chan->reader);
+      return -1;
+    }
+
+    if (results != NULL) {
+      results[i] = result;
+    }
+  }
+
+  mutex_unlock(&chan->reader);
   return 0;
 }
 
 int chan_close(chan_t *chan) {
   if (chan->flags & CHAN_CLOSED) {
+    kprintf("error: calling `chan_close()` on closed channel[%u]\n", chan->id);
     return -1;
   }
 
