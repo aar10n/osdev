@@ -14,6 +14,7 @@
 
 #include <irq.h>
 #include <mutex.h>
+#include <chan.h>
 
 #define ep_index(num, dir) ((num) + max((num) - 1, 0) + dir)
 #define ep_number(idx) (((idx) - ((idx) % 2 == 0) + 1) / 2)
@@ -83,8 +84,7 @@ typedef struct xhci_endpoint {
   xhci_endpoint_ctx_t *ctx; // endpoint context
 
   _xhci_ring_t *xfer_ring;  // transfer ring
-  xhci_trb_t xfer_evt_trb;  // transfer event trb
-  cond_t xfer_evt_cond;     // transfer event condition
+  chan_t *xfer_ch;          // transfer channel
 } xhci_endpoint_t;
 
 typedef struct _xhci_device {
@@ -129,12 +129,9 @@ typedef struct xhci_controller {
   _xhci_ring_t *cmd_ring;   // host command ring
   _xhci_ring_t *evt_ring;   // host event ring
 
-  xhci_trb_t cmd_compl_trb; // cmd compl event trb handoff
-  cond_t cmd_compl_cond;    // cmd completion condition
-  xhci_trb_t xfer_trb;      // transfer event trb handoff
-  cond_t xfer_cond;         // transfer event condition
-  xhci_trb_t port_sts_trb;  // port status change trb handoff
-  cond_t port_sts_cond;     // port status condition
+  chan_t *cmd_compl_ch;
+  chan_t *xfer_evt_ch;
+  chan_t *port_sts_ch;
 
   mutex_t lock;
   thread_t *thread;
@@ -156,6 +153,7 @@ int xhci_device_init(usb_device_t *device);
 int xhci_device_deinit(usb_device_t *device);
 int xhci_queue_transfer(usb_device_t *device, usb_transfer_t *transfer);
 int xhci_await_transfer(usb_device_t *device, usb_transfer_t *transfer);
+int xhci_read_device_descriptor(usb_device_t *device, usb_device_descriptor_t **out);
 
 // MARK: Private API
 

@@ -275,6 +275,7 @@ typedef struct usb_device_impl {
   int (*deinit)(usb_device_t *device);
   int (*queue_transfer)(usb_device_t *device, usb_transfer_t *transfer);
   int (*await_transfer)(usb_device_t *device, usb_transfer_t *transfer);
+  int (*read_device_descriptor)(usb_device_t *device, usb_device_descriptor_t **out);
 } usb_device_impl_t;
 
 typedef struct usb_hub {
@@ -305,7 +306,7 @@ typedef struct usb_device {
   usb_device_descriptor_t *desc;
   usb_config_descriptor_t **configs;
 
-  char *device;
+  char *product;
   char *manufacturer;
   char *serial;
 
@@ -341,6 +342,7 @@ typedef struct usb_transfer {
   size_t length;
 } usb_transfer_t;
 
+void usb_init();
 
 // MARK: Host Driver API
 int usb_register_host(usb_host_t *host);
@@ -358,11 +360,12 @@ int usb_device_await_transfer(usb_device_t *device, usb_transfer_t *transfer);
 int usb_device_select_config(usb_device_t *device, uint8_t number);
 int usb_device_select_interface(usb_device_t *device, uint8_t number);
 
+// MARK: Internal API
+int usb_device_init(usb_device_t *device);
+usb_config_descriptor_t *usb_device_read_config_descriptor(usb_device_t *device, uint8_t n);
+char *usb_device_read_string(usb_device_t *device, uint8_t n);
+
 void usb_print_device_descriptor(usb_device_descriptor_t *desc);
 void usb_print_config_descriptor(usb_config_descriptor_t *desc);
-
-// MARK: Internal API
-
-
 
 #endif

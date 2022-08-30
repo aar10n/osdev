@@ -23,7 +23,12 @@
 // The `free` callback function is intended to be used when transfering objects
 // over a channel which need to be freed if the data needs to be dropped and is
 // not received.
-typedef int (*chan_free_cb_t)(void *data);
+typedef void (*chan_free_cb_t)(void *data);
+
+
+#define chan_u64(p) ((uint64_t)(p))
+#define chan_voidp(p) ((uint64_t *)((void *)(p)))
+
 
 // flags
 #define CHAN_CLOSED 0x01  // channel has been closed by writer
@@ -57,5 +62,7 @@ int chan_sendb(chan_t *chan, uint64_t data);
 int chan_recv(chan_t *chan, uint64_t *result);
 int chan_recvn(chan_t *chan, size_t n, uint64_t *results);
 int chan_close(chan_t *chan);
+
+void chan_free_cb_kfree(void *data);
 
 #endif

@@ -47,27 +47,8 @@ usb_device_impl_t xhci_device_impl = {
   .deinit = xhci_device_deinit,
   .queue_transfer = xhci_queue_transfer,
   .await_transfer = xhci_await_transfer,
+  .read_device_descriptor = xhci_read_device_descriptor,
 };
-
-
-void _xhci_debug_host_registers(xhci_controller_t *hc);
-void _xhci_debug_port_registers(xhci_controller_t *hc, _xhci_port_t *port);
-void _xhci_debug_device_context(_xhci_device_t *device);
-
-static inline int get_ep_type(uint8_t ep_type, uint8_t ep_dir) {
-  switch (ep_type) {
-    case 0:
-      return XHCI_CTRL_BI_EP;
-    case 1:
-      return ep_dir == 0 ? XHCI_ISOCH_OUT_EP : XHCI_ISOCH_IN_EP;
-    case 2:
-      return ep_dir == 0 ? XHCI_BULK_OUT_EP : XHCI_BULK_IN_EP;
-    case 3:
-      return ep_dir == 0 ? XHCI_INTR_OUT_EP : XHCI_INTR_IN_EP;
-    default:
-      return 0;
-  }
-}
 
 static inline int get_ep_ctx_index(uint8_t ep_number, uint8_t ep_type) {
   switch (ep_type) {
@@ -251,18 +232,12 @@ void xhci_device_irq_handler(uint8_t vector, void *data) {
 int _xhci_handle_controller_event(xhci_controller_t *hc, xhci_trb_t trb) {
   if (trb.trb_type == TRB_TRANSFER_EVT) {
     // kprintf("xhci: transfer complete\n");
-    cond_clear_signal(&hc->xfer_cond);
-    hc->xfer_trb = trb;
-    cond_signal(&hc->xfer_cond);
+    chan_send(hc->xfer_evt_ch, trb.qword1);
   } else if (trb.trb_type == TRB_CMD_CMPL_EVT) {
     // kprintf("xhci: >> command completed <<\n");
-    cond_clear_signal(&hc->cmd_compl_cond);
-    hc->cmd_compl_trb = trb;
-    cond_signal(&hc->cmd_compl_cond);
+    chan_send(hc->cmd_compl_ch, trb.qword1);
   } else if (trb.trb_type == TRB_PORT_STS_EVT) {
-    cond_clear_signal(&hc->port_sts_cond);
-    hc->port_sts_trb = trb;
-    cond_signal(&hc->port_sts_cond);
+    chan_send(hc->port_sts_ch, trb.qword1);
 
     xhci_port_status_evt_trb_t port_trb = downcast_trb(&trb, xhci_port_status_evt_trb_t);
     _xhci_port_t *port = RLIST_FIND(p, hc->ports, list, (p->number == port_trb.port_id));
@@ -333,12 +308,13 @@ noreturn void *_xhci_device_event_loop(void *arg) {
     xhci_trb_t trb;
     while (_xhci_ring_dequeue_trb(device->evt_ring, &trb)) {
       xhci_transfer_evt_trb_t xfer_trb = downcast_trb(&trb, xhci_transfer_evt_trb_t);
-      kprintf("dequeued -> trb %d | ep = %d [cc = %d, remaining = %u]\n",
-              trb.trb_type, xfer_trb.endp_id, xfer_trb.compl_code, xfer_trb.trs_length);
+      // kprintf("dequeued -> trb %d | ep = %d [cc = %d, remaining = %u]\n",
+      //         trb.trb_type, xfer_trb.endp_id, xfer_trb.compl_code, xfer_trb.trs_length);
       kassert(trb.trb_type == TRB_TRANSFER_EVT);
-      // device->xfer_evt_trb = trb;
+
+      uint8_t ep_index = xfer_trb.endp_id - 1;
+      chan_send(device->endpoints[ep_index]->xfer_ch, trb.qword1);
     }
-    // cond_signal(&device->xfer_evt_cond);
 
     uint64_t new_erdp = _xhci_ring_device_ptr(device->evt_ring);
     uint64_t erdp = read64(hc->rt_base, XHCI_INTR_ERDP(n));
@@ -493,6 +469,8 @@ int xhci_device_init(usb_device_t *device) {
 
   _xhci_device_t *dev = _xhci_alloc_device(hc, port, slot_id);
   kassert(dev != NULL);
+
+  // setup the device
   if (_xhci_setup_device(dev) < 0) {
     kprintf("xhci: failed to setup device on port %d\n", port->number);
     _xhci_free_device(dev);
@@ -581,6 +559,69 @@ int xhci_await_transfer(usb_device_t *device, usb_transfer_t *transfer) {
     kprintf("xhci: failed to wait for transfer\n");
     return -1;
   }
+  return 0;
+}
+
+int xhci_read_device_descriptor(usb_device_t *device, usb_device_descriptor_t **out) {
+  xhci_controller_t *hc = device_to_hc(device);
+  _xhci_device_t *dev = device_to_hd(device);
+  if (dev->port->speed == XHCI_FULL_SPEED) {
+    // for FS devices, we should initially read the first 8 bytes
+    // to determine ep0 max packet size. then update ep0 config and
+    // evaluate context before reading rest of device descriptor.
+    //
+    // for all other devices the max packet size for the default control
+    // endpoint will always be fixed for a given speed.
+    usb_setup_packet_t get_desc0 = GET_DESCRIPTOR(DEVICE_DESCRIPTOR, 0, 8);
+    usb_device_descriptor_t *temp = kmalloc(8);
+    memset(temp, 0, 8);
+
+    _xhci_queue_setup(dev, get_desc0, SETUP_DATA_IN);
+    _xhci_queue_data(dev, kheap_ptr_to_phys(temp), 8, DATA_IN);
+    _xhci_queue_status(dev, DATA_OUT, false);
+    xhci_transfer_evt_trb_t result;
+    if (_xhci_await_transfer(dev, dev->endpoints[0], cast_trb_ptr(&result)) < 0) {
+      kprintf("xhci: failed to get device descriptor\n");
+      kfree(temp);
+      return -1;
+    }
+
+    kprintf("xhci: device descriptor (0)\n");
+    kprintf("      length = %d | usb version = %x\n", temp->length, temp->usb_ver);
+    kprintf("      max packet sz (ep0) = %d\n", temp->max_packt_sz0);
+
+    // update default control ep max packet size
+    dev->ictx->ctrl->add_flags |= 1; // set A1 bit to 1
+    dev->ictx->endpoint[0]->max_packt_sz = temp->max_packt_sz0;
+
+    // evaluate context
+    if (_xhci_run_evaluate_ctx_cmd(hc, dev) < 0) {
+      kprintf("xhci: failed to evaluate context\n");
+      kfree(temp);
+      return -1;
+    }
+    kprintf("xhci: context evaluated\n");
+    kfree(temp);
+  }
+
+  // read full descriptor
+  size_t size = sizeof(usb_device_descriptor_t);
+  usb_setup_packet_t get_desc = GET_DESCRIPTOR(DEVICE_DESCRIPTOR, 0, size);
+  usb_device_descriptor_t *desc = kmalloc(size);
+  memset(desc, 0, size);
+
+  _xhci_queue_setup(dev, get_desc, SETUP_DATA_IN);
+  _xhci_queue_data(dev, kheap_ptr_to_phys(desc), size, DATA_IN);
+  _xhci_queue_status(dev, DATA_OUT, false);
+  xhci_transfer_evt_trb_t result;
+  if (_xhci_await_transfer(dev, dev->endpoints[0], cast_trb_ptr(&result)) < 0) {
+    kprintf("xhci: failed to get device descriptor\n");
+    kfree(desc);
+    return -1;
+  }
+
+  kassert(out != NULL);
+  *out = desc;
   return 0;
 }
 
@@ -795,6 +836,11 @@ int _xhci_setup_device(_xhci_device_t *device) {
   xhci_controller_t *hc = device->host;
   _xhci_port_t *port = device->port;
 
+  if (_xhci_enable_interrupter(hc, device->interrupter) < 0) {
+    kprintf("xhci: failed to enable interrupter for device on port %d\n", port->number);
+    return -1;
+  }
+
   // setup control endpoint
   xhci_endpoint_t *ep0 = device->endpoints[0];
   ep0->ctx->max_packt_sz = get_default_ep0_packet_size(device->port);
@@ -809,6 +855,8 @@ int _xhci_setup_device(_xhci_device_t *device) {
 
   kprintf("xhci: device initialized on port %d\n", device->port->number);
   return 0;
+
+  // get device descriptor
 
   // // evaluate context
   // size_t max_packet_size;
@@ -884,14 +932,15 @@ int _xhci_run_command_trb(xhci_controller_t *hc, xhci_trb_t trb, xhci_trb_t *res
 
   // ring the host doorbell
   write32(hc->db_base, XHCI_DB(0), DB_TARGET(0));
-
-  if (cond_wait(&hc->cmd_compl_cond) < 0) {
-    kprintf("xhci: failed to wait for event\n");
+  uint64_t data;
+  if (chan_recv(hc->cmd_compl_ch, &data) < 0) {
+    kprintf("xhci: failed to await command trb on channel\n");
     return -1;
   }
 
   // kprintf("xhci: event received\n");
-  xhci_cmd_compl_evt_trb_t evt_trb = downcast_trb(&hc->cmd_compl_trb, xhci_cmd_compl_evt_trb_t);
+  xhci_trb_t raw_trb = { .qword0 = 0, .qword1 = data };
+  xhci_transfer_evt_trb_t evt_trb = downcast_trb(&raw_trb, xhci_transfer_evt_trb_t);
   if (result != NULL) {
     *result = cast_trb(&evt_trb);
   }
@@ -1027,16 +1076,17 @@ int _xhci_queue_transfer(_xhci_device_t *device, xhci_endpoint_t *ep, uintptr_t 
 
 int _xhci_await_transfer(_xhci_device_t *device, xhci_endpoint_t *ep, xhci_trb_t *result) {
   xhci_controller_t *hc = device->host;
-  cond_clear_signal(&ep->xfer_evt_cond);
 
   // ring the slot doorbell
-  write32(hc->db_base, XHCI_DB(device->slot_id), DB_TARGET(ep->index));
-  if (cond_wait(&ep->xfer_evt_cond) < 0) {
-    kprintf("xhci: failed to wait for event on ep %d\n", ep->number);
+  write32(hc->db_base, XHCI_DB(device->slot_id), DB_TARGET(ep->index + 1));
+  uint64_t data;
+  if (chan_recv(ep->xfer_ch, &data) < 0) {
+    kprintf("xhci: failed to await transfer on channel\n");
     return -1;
   }
 
-  xhci_transfer_evt_trb_t evt_trb = downcast_trb(&ep->xfer_evt_trb, xhci_transfer_evt_trb_t);
+  xhci_trb_t trb = { .qword0 = 0, .qword1 = data };
+  xhci_transfer_evt_trb_t evt_trb = downcast_trb(&trb, xhci_transfer_evt_trb_t);
   kassert(evt_trb.trb_type == TRB_TRANSFER_EVT);
   if (result != NULL) {
     *result = cast_trb(&evt_trb);
@@ -1074,9 +1124,9 @@ xhci_controller_t *_xhci_alloc_controller(pcie_device_t *device, pcie_bar_t *bar
   hc->cmd_ring = _xhci_alloc_ring(CMD_RING_SIZE);
   hc->evt_ring = hc->interrupter->ring;
 
-  cond_init(&hc->cmd_compl_cond, 0);
-  cond_init(&hc->xfer_cond, 0);
-  cond_init(&hc->port_sts_cond, 0);
+  hc->cmd_compl_ch = chan_alloc(EVT_RING_SIZE, 0);
+  hc->xfer_evt_ch = chan_alloc(EVT_RING_SIZE, 0);
+  hc->port_sts_ch = chan_alloc(EVT_RING_SIZE, 0);
 
   // allocate device context base array
   size_t dcbaap_size = sizeof(uintptr_t) * CAP_MAX_SLOTS(read32(hc->cap_base, XHCI_CAP_HCSPARAMS1));
@@ -1234,8 +1284,7 @@ xhci_endpoint_t *_xhci_alloc_endpoint(_xhci_device_t *device, uint8_t number, ui
   ep->type = type;
   ep->ctx = device->ictx->endpoint[ep->index];
   ep->xfer_ring = _xhci_alloc_ring(XFER_RING_SIZE);
-  cond_init(&ep->xfer_evt_cond, 0);
-  clear_trb(&ep->xfer_evt_trb);
+  ep->xfer_ch = chan_alloc(EVT_RING_SIZE, 0);
 
   ep->ctx->tr_dequeue_ptr = _xhci_ring_device_ptr(ep->xfer_ring) | ep->xfer_ring->cycle;
   return ep;
@@ -1266,7 +1315,7 @@ xhci_ictx_t *_xhci_alloc_input_ctx(_xhci_device_t *device) {
   }
 
   xhci_input_ctrl_ctx_t *ctrl_ctx = ictx->ctrl;
-  ctrl_ctx->add_flags |= 0x1;
+  ctrl_ctx->add_flags |= 0x3;
 
   xhci_slot_ctx_t *slot_ctx = ictx->slot;
   slot_ctx->root_hub_port = device->port->number;

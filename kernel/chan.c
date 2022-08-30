@@ -23,7 +23,8 @@ static inline int cleanup_data(chan_t *chan, uint64_t data) {
   // free or drop the old entry
   if (data != 0 && chan->free_cb != NULL) {
     kassert(chan->free_cb != NULL);
-    return chan->free_cb((void *)(data));
+    chan->free_cb((void *)(data));
+    return 0;
   }
   return 0;
 }
@@ -240,3 +241,10 @@ int chan_close(chan_t *chan) {
   mutex_unlock(&chan->writer);
   return 0;
 }
+
+// common channel free callbacks
+
+void chan_free_cb_kfree(void *data) {
+  kfree(data);
+}
+

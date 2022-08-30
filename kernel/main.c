@@ -93,12 +93,11 @@ _Noreturn void launch() {
   alarms_init();
 
   fs_init();
+  usb_init();
   pcie_discover();
 
   // memset((void *) FRAMEBUFFER_VA, 0xFF, boot_info_v2->fb_size);
   // screen_print_str("Hello, world\n");
-
-  usb_init();
 
   // if (fs_mount("/", "/dev/sdb", "ext2") < 0) {
   //   panic("%s", strerror(ERRNO));

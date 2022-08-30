@@ -562,17 +562,24 @@ static_assert(sizeof(xhci_cap_legacy_t) == 8);
 #define TRB_DEV_NOTIF_EVT  38
 #define TRB_MFINDEX_EVT    39
 
-typedef struct xhci_trb {
-  // dword 0-2
-  uint32_t : 32;         // reserved
-  uint32_t : 32;         // reserved
-  uint32_t : 32;         // reserved
-  // dword 3
-  uint32_t cycle : 1;    // cycle bit
-  uint32_t : 9;          // reserved
-  uint32_t trb_type : 6; // trb type
-  uint32_t : 16;         // reserved
+typedef union xhci_trb {
+  struct {
+    // dword 0-2
+    uint32_t : 32;         // reserved
+    uint32_t : 32;         // reserved
+    uint32_t : 32;         // reserved
+    // dword 3
+    uint32_t cycle : 1;    // cycle bit
+    uint32_t : 9;          // reserved
+    uint32_t trb_type : 6; // trb type
+    uint32_t : 16;         // reserved
+  };
+  struct {
+    uint64_t qword0;
+    uint64_t qword1;
+  };
 } xhci_trb_t;
+static_assert(sizeof(xhci_trb_t) == 16);
 
 // -------- Transfer TRBs --------
 
