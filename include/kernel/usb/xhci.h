@@ -151,9 +151,15 @@ int xhci_host_discover(usb_host_t *host);
 
 int xhci_device_init(usb_device_t *device);
 int xhci_device_deinit(usb_device_t *device);
-int xhci_queue_transfer(usb_device_t *device, usb_transfer_t *transfer);
-int xhci_await_transfer(usb_device_t *device, usb_transfer_t *transfer);
+int xhci_add_transfer(usb_device_t *device, usb_endpoint_t *endpoint, usb_transfer_t *transfer);
+int xhci_start_transfer(usb_device_t *device, usb_endpoint_t *endpoint);
+int xhci_await_event(usb_device_t *device, usb_endpoint_t *endpoint, usb_event_t *event);
+// int xhci_queue_transfer(usb_device_t *device, usb_transfer_t *transfer);
+// int xhci_await_transfer(usb_device_t *device, usb_transfer_t *transfer, usb_event_t *event);
 int xhci_read_device_descriptor(usb_device_t *device, usb_device_descriptor_t **out);
+
+int xhci_init_endpoint(usb_endpoint_t *endpoint);
+int xhci_deinit_endpoint(usb_endpoint_t *endpoint);
 
 // MARK: Private API
 
@@ -182,6 +188,7 @@ int _xhci_queue_setup(_xhci_device_t *device, usb_setup_packet_t setup, uint8_t 
 int _xhci_queue_data(_xhci_device_t *device, uintptr_t buffer, uint16_t length, usb_dir_t direction);
 int _xhci_queue_status(_xhci_device_t *device, usb_dir_t direction, bool ioc);
 int _xhci_queue_transfer(_xhci_device_t *device, xhci_endpoint_t *ep, uintptr_t buffer, uint16_t length, bool ioc);
+int _xhci_start_transfer(_xhci_device_t *device, xhci_endpoint_t *ep);
 int _xhci_await_transfer(_xhci_device_t *device, xhci_endpoint_t *ep, xhci_trb_t *result);
 
 xhci_controller_t *_xhci_alloc_controller(pcie_device_t *device, pcie_bar_t *bar);

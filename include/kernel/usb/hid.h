@@ -118,10 +118,14 @@ typedef struct hid_device {
 } hid_device_t;
 
 
-void *hid_device_init(usb_dev_t *dev);
-void hid_handle_event(usb_event_t *event, void *data);
+int hid_device_init(usb_device_t *device);
+int hid_device_deinit(usb_device_t *device);
+int hid_device_handle_event(usb_event_t *event);
 
-void hid_get_idle(xhci_device_t *device);
-void hid_set_idle(xhci_device_t *device, uint8_t duration);
+// void *hid_device_init(usb_dev_t *dev);
+// void hid_handle_event(usb_event_t *event, void *data);
+//
+// void hid_get_idle(xhci_device_t *device);
+// void hid_set_idle(xhci_device_t *device, uint8_t duration);
 
 #endif

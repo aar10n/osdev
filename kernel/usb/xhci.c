@@ -18,11 +18,10 @@
 #include <panic.h>
 #include <string.h>
 
-#include <atomic.h>
 #include <bitmap.h>
 
 #define host_to_hc(host) ((xhci_controller_t *)((host)->data))
-#define device_to_hd(device) ((_xhci_device_t *)((device)->data))
+#define device_to_hd(device) ((_xhci_device_t *)((device)->host_data))
 #define device_to_hc(device) ((xhci_controller_t *)((device)->host->data))
 
 #define CMD_RING_SIZE   256
@@ -45,24 +44,57 @@ usb_host_impl_t xhci_host_impl = {
 usb_device_impl_t xhci_device_impl = {
   .init = xhci_device_init,
   .deinit = xhci_device_deinit,
-  .queue_transfer = xhci_queue_transfer,
-  .await_transfer = xhci_await_transfer,
+  .add_transfer = xhci_add_transfer,
+  .start_transfer = xhci_start_transfer,
+  .await_event = xhci_await_event,
   .read_device_descriptor = xhci_read_device_descriptor,
+
+  .init_endpoint = xhci_init_endpoint,
+  .deinit_endpoint = xhci_deinit_endpoint,
+};
+
+static const char *xhci_ep_type_names[] = {
+  [XHCI_ISOCH_OUT_EP] = "XHCI_ISOCH_OUT_EP",
+  [XHCI_BULK_OUT_EP] = "XHCI_BULK_OUT_EP",
+  [XHCI_INTR_OUT_EP] = "XHCI_INTR_OUT_EP",
+  [XHCI_CTRL_BI_EP] = "XHCI_CTRL_BI_EP",
+  [XHCI_ISOCH_IN_EP] = "XHCI_ISOCH_IN_EP",
+  [XHCI_BULK_IN_EP] = "XHCI_BULK_IN_EP",
+  [XHCI_INTR_IN_EP] = "XHCI_INTR_IN_EP",
 };
 
 static inline int get_ep_ctx_index(uint8_t ep_number, uint8_t ep_type) {
+  // 0 - default control 0
+  // 1 - ep context 1 OUT
+  // 2 - ep context 1 IN
+  // 3 - ep context 2 OUT
+  // 4 - ep context 2 IN
+  // 5 - ep context 3 OUT
+  // 6 - ep context 3 IN
+
   switch (ep_type) {
+    case XHCI_CTRL_BI_EP:
+      return 0;
     case XHCI_ISOCH_OUT_EP:
     case XHCI_BULK_OUT_EP:
     case XHCI_INTR_OUT_EP:
-      return ep_number * 2;
+      return (ep_number * 2) - 1;
     case XHCI_ISOCH_IN_EP:
     case XHCI_BULK_IN_EP:
     case XHCI_INTR_IN_EP:
-      return (ep_number * 2) + 1;
+      return ep_number * 2;
     default:
-      kassert(ep_number == 0);
-      return 0;
+      unreachable;
+  }
+}
+
+static inline uint8_t get_xhci_ep_type(usb_ep_type_t ep_type, usb_dir_t ep_dir) {
+  switch (ep_type) {
+    case USB_CONTROL_EP: return XHCI_CTRL_BI_EP;
+    case USB_ISOCHRONOUS_EP: return ep_dir == USB_IN ? XHCI_ISOCH_IN_EP : XHCI_ISOCH_OUT_EP;
+    case USB_BULK_EP: return ep_dir == USB_IN ? XHCI_BULK_IN_EP : XHCI_BULK_OUT_EP;
+    case USB_INTERRUPT_EP: return ep_dir == USB_IN ? XHCI_INTR_IN_EP : XHCI_INTR_OUT_EP;
+    default: unreachable;
   }
 }
 
@@ -251,7 +283,7 @@ int _xhci_handle_controller_event(xhci_controller_t *hc, xhci_trb_t trb) {
     uint32_t portsc = read32(hc->op_base, XHCI_PORT_SC(port_trb.port_id - 1));
     port->speed = PORTSC_SPEED(portsc);
     // write32(hc->op_base, XHCI_PORT_SC(port_trb.port_id - 1), portsc);
-    kprintf("xhci: >> event on port %d [ccs = %d]\n", port_trb.port_id, (portsc & PORTSC_CCS) != 0);
+    // kprintf("xhci: >> event on port %d [ccs = %d]\n", port_trb.port_id, (portsc & PORTSC_CCS) != 0);
 
     _xhci_device_t *device = RLIST_FIND(d, hc->devices, list, d->port->number == port_trb.port_id);
     if (device != NULL && (portsc & PORTSC_CCS) != 0) {
@@ -274,7 +306,22 @@ noreturn void *_xhci_controller_event_loop(void *arg) {
     uint64_t old_erdp = _xhci_ring_device_ptr(hc->evt_ring);
     xhci_trb_t trb;
     while (_xhci_ring_dequeue_trb(hc->evt_ring, &trb)) {
-      if (_xhci_handle_controller_event(hc, trb) < 0) {
+      if (trb.trb_type == TRB_PORT_STS_EVT) {
+        xhci_port_status_evt_trb_t port_trb = downcast_trb(&trb, xhci_port_status_evt_trb_t);
+
+        // uint32_t portsc = read32(hc->op_base, XHCI_PORT_SC(port_trb.port_id - 1));
+        // int ccs = (portsc & PORTSC_CCS) != 0;
+        // int ped = (portsc & PORTSC_EN) != 0;
+        // int csc = (portsc & PORTSC_CSC) != 0;
+        // int pec = (portsc & PORTSC_PEC) != 0;
+        // int prc = (portsc & PORTSC_PRC) != 0;
+        // kprintf("xhci: >> event on port %d <<\n", port_trb.port_id);
+        // kprintf("      ccs = %d | ped = %d\n", ccs, ped);
+        // kprintf("      csc = %d | pec = %d | prc = %d\n", csc, pec, prc);
+
+        // write32(hc->op_base, XHCI_PORT_SC(port_trb.port_id - 1), portsc);
+        // kprintf("xhci: >> event on port %d [ccs = %d]\n", port_trb.port_id, (portsc & PORTSC_CCS) != 0);
+      } else if (_xhci_handle_controller_event(hc, trb) < 0) {
         kprintf("xhci: failed to handle event\n");
         _xhci_halt_controller(hc);
         thread_block();
@@ -452,7 +499,7 @@ int xhci_host_discover(usb_host_t *host) {
 
 int xhci_device_init(usb_device_t *device) {
   xhci_controller_t *hc = device_to_hc(device);
-  _xhci_port_t *port = device->data;
+  _xhci_port_t *port = device->host_data;
 
   // enable port
   if (_xhci_enable_port(hc, port) < 0) {
@@ -478,7 +525,7 @@ int xhci_device_init(usb_device_t *device) {
   }
 
   port->device = dev;
-  device->data = dev;
+  device->host_data = dev;
   return 0;
 }
 
@@ -490,74 +537,81 @@ int xhci_device_deinit(usb_device_t *device) {
   return 0;
 }
 
-int xhci_queue_transfer(usb_device_t *device, usb_transfer_t *transfer) {
+int xhci_add_transfer(usb_device_t *device, usb_endpoint_t *endpoint, usb_transfer_t *transfer) {
   _xhci_device_t *dev = device_to_hd(device);
-  if (transfer->flags & USB_XFER_SETUP) {
-    // setup transfer
-    uint8_t type;
-    usb_dir_t dir;
-    bool status_ioc;
-    if (transfer->buffer == 0) {
-      type = SETUP_DATA_NONE;
-      status_ioc = true;
-    } else if (transfer->setup.request_type.direction == USB_SETUP_DEV_TO_HOST) {
-      type = SETUP_DATA_IN;
-      dir = USB_IN;
-      status_ioc = false;
-    } else {
-      type = SETUP_DATA_OUT;
-      dir = USB_OUT;
-      status_ioc = false;
-    }
+  xhci_endpoint_t *ep = endpoint->host_data;
+  kassert(ep->type == get_xhci_ep_type(endpoint->type, endpoint->dir));
 
-    // setup stage
-    _xhci_queue_setup(dev, transfer->setup, type);
-    if (transfer->buffer != 0) {
-      // data stage (optional)
+  if (transfer->type == USB_SETUP_XFER) {
+    usb_setup_packet_t packet = transfer->setup;
+
+    // setup control transfer
+    if (transfer->buffer == 0) {
+      // no data stage
+      _xhci_queue_setup(dev, packet, SETUP_DATA_NONE);
+      _xhci_queue_status(dev, USB_OUT, true);
+    } else {
+      // has data stage
+      bool is_pkt_in = packet.request_type.direction == USB_SETUP_DEV_TO_HOST;
+      usb_dir_t dir = is_pkt_in ? USB_IN : USB_OUT;
+      uint8_t type = is_pkt_in ?  SETUP_DATA_IN : SETUP_DATA_OUT;
+
+      _xhci_queue_setup(dev, packet, type);
       _xhci_queue_data(dev, transfer->buffer, transfer->length, dir);
+      _xhci_queue_status(dev, USB_OUT, false);
     }
-    // status stage
-    _xhci_queue_status(dev, USB_OUT, status_ioc);
   } else {
-    // normal transfer
-    kassert(transfer->dir == USB_IN || transfer->dir == USB_OUT);
-    xhci_endpoint_t *ep = _xhci_get_device_endpoint(dev, transfer->dir);
-    if (ep == NULL) {
-      kprintf("xhci: invalid transfer\n");
-      return -1;
-    }
+    // data transfer
 
     // a usb transfer with the USB_XFER_PART flag set are intended to
     // be followed by more transfers so only interrupt on the last one.
     bool ioc = (transfer->flags & USB_XFER_PART) == 0;
-    if (_xhci_queue_transfer(dev, ep, transfer->buffer, transfer->length, ioc) < 0) {
-      kprintf("xhci: failed to queue transfer\n");
-      return -1;
-    }
+
+    // TODO: length usize -> u16 overflow check/auto split into multiple xfers
+    _xhci_queue_transfer(dev, ep, transfer->buffer, transfer->length, ioc);
   }
+
   return 0;
 }
 
-int xhci_await_transfer(usb_device_t *device, usb_transfer_t *transfer) {
+int xhci_start_transfer(usb_device_t *device, usb_endpoint_t *endpoint) {
   _xhci_device_t *dev = device_to_hd(device);
-  xhci_endpoint_t *ep = NULL;
-  if (transfer->flags & USB_XFER_SETUP) {
-    // setup transfer is over the default control endpoint
-    ep = dev->endpoints[0];
-    kassert(ep != NULL);
-  } else {
-    // find the correct endpoint for the transfer
-    ep = _xhci_get_device_endpoint(dev, transfer->dir);
-    if (ep == NULL) {
-      kprintf("xhci: invalid transfer direction\n");
-      return -1;
-    }
+  xhci_endpoint_t *ep = endpoint->host_data;
+  kassert(ep->type == get_xhci_ep_type(endpoint->type, endpoint->dir));
+
+  if (_xhci_start_transfer(dev, ep) < 0) {
+    kprintf("xhci: failed to start transfer\n");
+    return -1;
   }
+
+  return 0;
+}
+
+int xhci_await_event(usb_device_t *device, usb_endpoint_t *endpoint, usb_event_t *event) {
+  _xhci_device_t *dev = device_to_hd(device);
+  xhci_endpoint_t *ep = endpoint->host_data;
+  kassert(ep->type == get_xhci_ep_type(endpoint->type, endpoint->dir));
 
   xhci_transfer_evt_trb_t result;
   if (_xhci_await_transfer(dev, ep, cast_trb_ptr(&result)) < 0) {
     kprintf("xhci: failed to wait for transfer\n");
     return -1;
+  }
+
+  event->device = device;
+  if (endpoint->number == 0) {
+    // default control endpoint
+    event->type = USB_CTRL_EV;
+  } else {
+    // data endpoint
+    event->type = endpoint->dir == USB_IN ? USB_IN_EV : USB_OUT_EV;
+  }
+
+  if (result.compl_code == CC_SUCCESS || result.compl_code == CC_SHORT_PACKET) {
+    event->status = USB_SUCCESS;
+  } else {
+    event->status = USB_ERROR;
+    kprintf("xhci_await_event() | USB ERROR %d\n", result.compl_code);
   }
   return 0;
 }
@@ -579,6 +633,11 @@ int xhci_read_device_descriptor(usb_device_t *device, usb_device_descriptor_t **
     _xhci_queue_setup(dev, get_desc0, SETUP_DATA_IN);
     _xhci_queue_data(dev, kheap_ptr_to_phys(temp), 8, DATA_IN);
     _xhci_queue_status(dev, DATA_OUT, false);
+    if (_xhci_start_transfer(dev, dev->endpoints[0]) < 0) {
+      kprintf("xhci: failed to initiate transfer for device descriptor\n");
+      return -1;
+    }
+
     xhci_transfer_evt_trb_t result;
     if (_xhci_await_transfer(dev, dev->endpoints[0], cast_trb_ptr(&result)) < 0) {
       kprintf("xhci: failed to get device descriptor\n");
@@ -613,6 +672,12 @@ int xhci_read_device_descriptor(usb_device_t *device, usb_device_descriptor_t **
   _xhci_queue_setup(dev, get_desc, SETUP_DATA_IN);
   _xhci_queue_data(dev, kheap_ptr_to_phys(desc), size, DATA_IN);
   _xhci_queue_status(dev, DATA_OUT, false);
+
+  if (_xhci_start_transfer(dev, dev->endpoints[0]) < 0) {
+    kprintf("xhci: failed to initiate transfer for device descriptor\n");
+    return -1;
+  }
+
   xhci_transfer_evt_trb_t result;
   if (_xhci_await_transfer(dev, dev->endpoints[0], cast_trb_ptr(&result)) < 0) {
     kprintf("xhci: failed to get device descriptor\n");
@@ -622,6 +687,69 @@ int xhci_read_device_descriptor(usb_device_t *device, usb_device_descriptor_t **
 
   kassert(out != NULL);
   *out = desc;
+  return 0;
+}
+
+//
+
+int xhci_init_endpoint(usb_endpoint_t *endpoint) {
+  xhci_controller_t *hc = device_to_hc(endpoint->device);
+  _xhci_device_t *dev = device_to_hd(endpoint->device);
+  xhci_ictx_t *ictx = dev->ictx;
+  if (endpoint->number == 0) {
+    // special default control endpoint
+    endpoint->host_data = dev->endpoints[0];
+    return 0;
+  }
+
+  uint8_t ep_num = endpoint->number;
+  uint8_t ep_type = get_xhci_ep_type(endpoint->type, endpoint->dir);
+  // kprintf("xhci: initializing endpoint | index = %d, number = %d, type = %d (%s)\n",
+  //         get_ep_ctx_index(ep_num, ep_type), ep_num, ep_type, xhci_ep_type_names[ep_type]);
+
+  xhci_endpoint_t *ep = _xhci_alloc_endpoint(dev, ep_num, ep_type);
+  xhci_endpoint_ctx_t *ctx = ep->ctx;
+  ctx->ep_type = ep_type;
+  ctx->max_packt_sz = endpoint->max_pckt_sz;
+  ctx->interval = endpoint->interval;
+  ctx->max_burst_sz = 0;
+  ctx->avg_trb_length = 8;
+  ctx->max_streams = 0;
+  ctx->mult = 0;
+  ctx->cerr = 0;
+
+  ictx->slot->ctx_entries++;
+  ictx->ctrl->drop_flags = 0;
+  ictx->ctrl->add_flags = 1 | (1 << (ep->index + 1));
+  if (_xhci_run_configure_ep_cmd(hc, dev) < 0) {
+    kprintf("xhci: failed to add endpoint\n");
+    _xhci_free_endpoint(ep);
+    return -1;
+  }
+
+  dev->endpoints[ep->index] = ep;
+  endpoint->host_data = ep;
+  return 0;
+}
+
+int xhci_deinit_endpoint(usb_endpoint_t *endpoint) {
+  xhci_controller_t *hc = device_to_hc(endpoint->device);
+  _xhci_device_t *dev = device_to_hd(endpoint->device);
+  xhci_endpoint_t *ep = endpoint->host_data;
+  xhci_ictx_t *ictx = dev->ictx;
+
+  ictx->slot->ctx_entries--;
+  ictx->ctrl->drop_flags = (1 << (ep->index + 1));
+  ictx->ctrl->add_flags = 1;
+  if (_xhci_run_configure_ep_cmd(hc, dev) < 0) {
+    kprintf("xhci: failed to drop endpoint\n");
+    // TODO: what to do here?
+    ictx->slot->ctx_entries = dev->dctx->slot->ctx_entries;
+    return -1;
+  }
+
+  _xhci_free_endpoint(ep);
+  endpoint->host_data = NULL;
   return 0;
 }
 
@@ -910,7 +1038,7 @@ xhci_endpoint_t *_xhci_get_device_endpoint(_xhci_device_t *device, usb_dir_t dir
       case XHCI_ISOCH_IN_EP:
       case XHCI_BULK_IN_EP:
       case XHCI_INTR_IN_EP:
-        if (direction == USB_OUT) {
+        if (direction == USB_IN) {
           return ep;
         }
         continue;
@@ -984,9 +1112,9 @@ int _xhci_run_address_device_cmd(xhci_controller_t *hc, _xhci_device_t *device) 
 }
 
 int _xhci_run_configure_ep_cmd(xhci_controller_t *hc, _xhci_device_t *device) {
-  kprintf("xhci: configuring endpoint\n");
-
+  // kprintf("xhci: configuring endpoint\n");
   xhci_config_ep_cmd_trb_t cmd;
+  clear_trb(&cmd);
   cmd.trb_type = TRB_CONFIG_EP_CMD;
   cmd.slot_id = device->slot_id;
   cmd.input_ctx = PAGE_PHYS_ADDR(device->ictx->pages);
@@ -1074,11 +1202,16 @@ int _xhci_queue_transfer(_xhci_device_t *device, xhci_endpoint_t *ep, uintptr_t 
   return 0;
 }
 
-int _xhci_await_transfer(_xhci_device_t *device, xhci_endpoint_t *ep, xhci_trb_t *result) {
+int _xhci_start_transfer(_xhci_device_t *device, xhci_endpoint_t *ep) {
   xhci_controller_t *hc = device->host;
 
   // ring the slot doorbell
-  write32(hc->db_base, XHCI_DB(device->slot_id), DB_TARGET(ep->index + 1));
+  uint8_t target = ep->index + 1;
+  write32(hc->db_base, XHCI_DB(device->slot_id), DB_TARGET(target));
+  return 0;
+}
+
+int _xhci_await_transfer(_xhci_device_t *device, xhci_endpoint_t *ep, xhci_trb_t *result) {
   uint64_t data;
   if (chan_recv(ep->xfer_ch, &data) < 0) {
     kprintf("xhci: failed to await transfer on channel\n");

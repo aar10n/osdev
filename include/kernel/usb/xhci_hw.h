@@ -738,6 +738,7 @@ static_assert(sizeof(xhci_noop_trb_t) == 16);
 #define CC_RESOURCE_ERROR  7
 #define CC_BANDWIDTH_ERROR 8
 #define CC_NO_SLOTS_ERROR  9
+#define CC_SHORT_PACKET    13
 
 // Transfer Event TRB
 typedef struct {

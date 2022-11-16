@@ -45,7 +45,7 @@ typedef struct pcie_device pcie_device_t;
 #define USB_SETUP_DEV_TO_HOST 1
 
 // USB Setup Packet
-typedef struct {
+typedef struct packed usb_setup_packet {
   struct {
     uint8_t recipient : 5;
     uint8_t type : 2;
@@ -120,13 +120,13 @@ static_assert(sizeof(usb_setup_packet_t) == 8);
 #define cast_usb_desc(ptr) (((usb_descriptor_t *)((void *)(ptr))))
 
 // Generic Descriptor
-typedef struct packed {
+typedef struct packed usb_descriptor {
   uint8_t length;
   uint8_t type;
 } usb_descriptor_t;
 
 // Device Descriptor
-typedef struct packed {
+typedef struct packed usb_device_descriptor {
   uint8_t length;        // descriptor length
   uint8_t type;          // descriptor type (0x1)
   uint16_t usb_ver;      // usb version (bcd)
@@ -145,7 +145,7 @@ typedef struct packed {
 static_assert(sizeof(usb_device_descriptor_t) == 18);
 
 // Configuration Descriptor
-typedef struct packed {
+typedef struct packed usb_config_descriptor {
   uint8_t length;     // descriptor length
   uint8_t type;       // descriptor type (0x2)
   uint16_t total_len; // total length of combined descriptors
@@ -158,7 +158,7 @@ typedef struct packed {
 static_assert(sizeof(usb_config_descriptor_t) == 9);
 
 // Interface Association Descriptor
-typedef struct packed {
+typedef struct packed usb_if_assoc_descriptor {
   uint8_t length;      // descriptor length
   uint8_t type;        // descriptor type (0x4)
   uint8_t first_if;    // number of first interface
@@ -170,7 +170,7 @@ typedef struct packed {
 } usb_if_assoc_descriptor_t;
 
 // Interface Descriptor
-typedef struct packed {
+typedef struct packed usb_if_descriptor {
   uint8_t length;      // descriptor length
   uint8_t type;        // descriptor type (0x4)
   uint8_t if_number;   // number of this interface
@@ -187,7 +187,7 @@ static_assert(sizeof(usb_if_descriptor_t) == 9);
 #define USB_EP_IN  1
 
 // Endpoint Descriptor
-typedef struct packed {
+typedef struct packed usb_ep_descriptor {
   uint8_t length;       // descriptor length
   uint8_t type;         // descriptor type (0x5)
   uint8_t ep_addr;      // address of endpoint on device
@@ -198,7 +198,7 @@ typedef struct packed {
 static_assert(sizeof(usb_ep_descriptor_t) == 7);
 
 // SuperSpeed Endpoint Companion Descriptor
-typedef struct packed {
+typedef struct packed usb_ss_ep_descriptor {
   uint8_t length;
   uint8_t type;
   uint8_t max_burst_sz;
@@ -207,14 +207,14 @@ typedef struct packed {
 } usb_ss_ep_descriptor_t;
 
 // String Descriptor
-typedef struct packed {
+typedef struct packed usb_string {
   // string descriptors use UNICODE UTF16LE encoding
   uint8_t length;    // size of string descriptor
   uint8_t type;      // descriptor type (0x2)
   char16_t string[]; // utf-16 string (size = length - 2)
 } usb_string_t;
 
-typedef struct packed {
+typedef struct packed usb_string_descriptor {
   uint8_t length;         // descriptor length
   uint8_t type;           // descriptor type (0x2)
   usb_string_t strings[]; // individual string descriptors
@@ -225,9 +225,11 @@ typedef struct packed {
 //
 
 typedef struct usb_device usb_device_t;
+typedef struct usb_endpoint usb_endpoint_t;
 typedef struct usb_host usb_host_t;
 typedef struct usb_hub usb_hub_t;
 typedef struct usb_transfer usb_transfer_t;
+typedef struct usb_event usb_event_t;
 
 typedef enum usb_dir {
   USB_OUT,
@@ -239,10 +241,24 @@ typedef enum usb_status {
   USB_ERROR,
 } usb_status_t;
 
+typedef enum usb_xfer_type {
+  USB_SETUP_XFER,
+  USB_DATA_IN_XFER,
+  USB_DATA_OUT_XFER
+} usb_xfer_type_t;
+
 typedef enum usb_event_type {
-  TRANSFER_IN,
-  TRANSFER_OUT,
+  USB_CTRL_EV,
+  USB_IN_EV,
+  USB_OUT_EV,
 } usb_event_type_t;
+
+typedef enum usb_ep_type {
+  USB_CONTROL_EP,
+  USB_ISOCHRONOUS_EP,
+  USB_BULK_EP,
+  USB_INTERRUPT_EP,
+} usb_ep_type_t;
 
 typedef enum usb_revision {
   USB_REV_2_0,
@@ -273,10 +289,24 @@ typedef struct usb_device_impl {
   /* device */
   int (*init)(usb_device_t *device);
   int (*deinit)(usb_device_t *device);
-  int (*queue_transfer)(usb_device_t *device, usb_transfer_t *transfer);
-  int (*await_transfer)(usb_device_t *device, usb_transfer_t *transfer);
+  int (*add_transfer)(usb_device_t *device, usb_endpoint_t *endpoint, usb_transfer_t *transfer);
+  int (*start_transfer)(usb_device_t *device, usb_endpoint_t *endpoint);
+  int (*await_event)(usb_device_t *device, usb_endpoint_t *endpoint, usb_event_t *event);
   int (*read_device_descriptor)(usb_device_t *device, usb_device_descriptor_t **out);
+  /* endpoints */
+  int (*init_endpoint)(usb_endpoint_t *endpoint);
+  int (*deinit_endpoint)(usb_endpoint_t *endpoint);
 } usb_device_impl_t;
+
+typedef struct usb_driver {
+  const char *name;
+  uint8_t dev_class;
+  uint8_t dev_subclass;
+
+  int (*init)(usb_device_t *device);
+  int (*deinit)(usb_device_t *device);
+  int (*handle_event)(usb_event_t *event);
+} usb_driver_t;
 
 typedef struct usb_hub {
   uint8_t port;
@@ -310,15 +340,34 @@ typedef struct usb_device {
   char *manufacturer;
   char *serial;
 
-  usb_config_descriptor_t *config;  // selected config
-  usb_if_descriptor_t *interface;   // selected interface
+  usb_config_descriptor_t *config;     // selected config
+  usb_if_descriptor_t **interfaces;    // interfaces for selected config
+  usb_if_descriptor_t *interface;      // selected interface
+  LIST_HEAD(usb_endpoint_t) endpoints; // endpoints for selected interface
 
   usb_host_t *host;
   usb_hub_t *parent;
-  void *data;
+  void *host_data;
+
+  usb_driver_t *driver;
+  void *driver_data;
 
   LIST_ENTRY(struct usb_device) list;
 } usb_device_t;
+
+typedef struct usb_endpoint {
+  usb_ep_type_t type;
+  usb_dir_t dir;
+  uint8_t number;
+  uint8_t attributes;
+  uint16_t max_pckt_sz;
+  uint8_t interval;
+
+  usb_device_t *device;
+  void *host_data;
+
+  LIST_ENTRY(struct usb_endpoint) list;
+} usb_endpoint_t;
 
 typedef struct usb_host {
   char *name;
@@ -332,15 +381,24 @@ typedef struct usb_host {
 } usb_host_t;
 
 typedef struct usb_transfer {
+  usb_xfer_type_t type;
   uint32_t flags;
-  union {
-    usb_dir_t dir;
-    usb_setup_packet_t setup;
-  };
 
   uintptr_t buffer;
   size_t length;
+
+  union {
+    usb_setup_packet_t setup;
+    usb_transfer_t *next;
+    uint64_t raw;
+  };
 } usb_transfer_t;
+
+typedef struct usb_event {
+  usb_event_type_t type;
+  usb_status_t status;
+  usb_device_t *device;
+} usb_event_t;
 
 void usb_init();
 
@@ -350,22 +408,22 @@ int usb_handle_device_connect(usb_host_t *host, void *data);
 int usb_handle_device_disconnect(usb_host_t *host, usb_device_t *device);
 
 // MARK: Common API
-usb_transfer_t *usb_alloc_transfer(usb_dir_t direction, uintptr_t buffer, size_t length);
-usb_transfer_t *usb_alloc_setup_transfer(usb_setup_packet_t setup, uintptr_t buffer, size_t length);
-int usb_free_transfer(usb_transfer_t *transfer);
+int usb_add_setup_transfer(usb_device_t *device, usb_setup_packet_t setup, uintptr_t buffer, size_t length);
+int usb_await_setup_transfer(usb_device_t *device);
 
-int usb_device_add_transfer(usb_device_t *device, usb_transfer_t *transfer);
-int usb_device_await_transfer(usb_device_t *device, usb_transfer_t *transfer);
-
-int usb_device_select_config(usb_device_t *device, uint8_t number);
-int usb_device_select_interface(usb_device_t *device, uint8_t number);
-
-// MARK: Internal API
-int usb_device_init(usb_device_t *device);
-usb_config_descriptor_t *usb_device_read_config_descriptor(usb_device_t *device, uint8_t n);
-char *usb_device_read_string(usb_device_t *device, uint8_t n);
+int usb_add_transfer(usb_device_t *device, usb_dir_t direction, uintptr_t buffer, size_t length);
+int usb_start_transfer(usb_device_t *device, usb_dir_t direction);
+int usb_await_transfer(usb_device_t *device, usb_dir_t direction);
+int usb_start_await_transfer(usb_device_t *device, usb_dir_t direction);
 
 void usb_print_device_descriptor(usb_device_descriptor_t *desc);
 void usb_print_config_descriptor(usb_config_descriptor_t *desc);
+
+// MARK: Internal API
+int usb_device_init(usb_device_t *device);
+int usb_device_configure(usb_device_t *device, usb_config_descriptor_t *config, usb_if_descriptor_t *interface);
+int usb_device_free_endpoints(usb_device_t *device);
+usb_config_descriptor_t *usb_device_read_config_descriptor(usb_device_t *device, uint8_t n);
+char *usb_device_read_string(usb_device_t *device, uint8_t n);
 
 #endif

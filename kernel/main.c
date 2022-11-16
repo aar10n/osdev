@@ -96,6 +96,8 @@ _Noreturn void launch() {
   usb_init();
   pcie_discover();
 
+  kprintf("=======> hello <=======\n");
+
   // memset((void *) FRAMEBUFFER_VA, 0xFF, boot_info_v2->fb_size);
   // screen_print_str("Hello, world\n");
 

@@ -4,8 +4,8 @@
 
 #include <usb/usb.h>
 #include <usb/xhci.h>
-// #include <usb/hid.h>
-// #include <usb/scsi.h>
+#include <usb/hid.h>
+#include <usb/scsi.h>
 
 #include <mm.h>
 #include <sched.h>
@@ -30,7 +30,6 @@
 #define desc_type(d) (((usb_descriptor_t *)((void *)(d)))->type)
 #define desc_length(d) (((usb_descriptor_t *)((void *)(d)))->length)
 
-
 static rb_tree_t *tree = NULL;
 static id_t device_id = 0;
 static cond_t init;
@@ -39,30 +38,56 @@ static chan_t *pending_usb_devices;
 
 // Drivers
 
-// usb_driver_t hid_driver = {
-//   .name = "HID Device Driver",
-//   .dev_class = USB_CLASS_HID,
-//   .dev_subclass = 0,
-//   .init = hid_device_init,
-//   .handle_event = hid_handle_event,
-// };
-//
-// usb_driver_t scsi_driver = {
-//   .name = "Mass Storage Driver",
-//   .dev_class = USB_CLASS_STORAGE,
-//   .dev_subclass = USB_SUBCLASS_SCSI,
-//   .init = scsi_device_init,
-//   .handle_event = scsi_handle_event,
-// };
-//
-// //
-//
-// static usb_driver_t *drivers[] = {
-//   &hid_driver,
-//   &scsi_driver
-// };
-// static size_t num_drivers = sizeof(drivers) / sizeof(usb_driver_t *);
+usb_driver_t hid_driver = {
+  .name = "HID Device Driver",
+  .dev_class = USB_CLASS_HID,
+  .dev_subclass = 0,
 
+
+  .init = hid_device_init,
+  .deinit = hid_device_deinit,
+  .handle_event = hid_device_handle_event,
+};
+
+
+usb_driver_t scsi_driver = {
+  .name = "Mass Storage Driver",
+  .dev_class = USB_CLASS_STORAGE,
+  .dev_subclass = USB_SUBCLASS_SCSI,
+  .init = scsi_device_init,
+  .handle_event = scsi_device_handle_event,
+};
+
+
+static usb_driver_t *drivers[] = {
+  &hid_driver,
+  &scsi_driver
+};
+static size_t num_drivers = sizeof(drivers) / sizeof(usb_driver_t *);
+
+static inline usb_endpoint_t *find_endpoint_for_xfer(usb_device_t *device, usb_xfer_type_t type) {
+  if (type == USB_SETUP_XFER) {
+    // default control endpoint
+    usb_endpoint_t *ep = LIST_FIND(e, &device->endpoints, list, e->number == 0);
+    kassert(ep != NULL);
+    return ep;
+  }
+
+  usb_dir_t dir = type == USB_DATA_IN_XFER ? USB_IN : USB_OUT;
+  return LIST_FIND(e, &device->endpoints, list, e->number != 0 && e->dir == dir);
+}
+
+static inline usb_ep_type_t usb_get_endpoint_type(usb_ep_descriptor_t *ep_desc) {
+  uint8_t ep_type = ep_desc->attributes & 0x3;
+  switch (ep_type) {
+    case 0b00: return USB_CONTROL_EP;
+    case 0b01: return USB_ISOCHRONOUS_EP;
+    case 0b10: return USB_BULK_EP;
+    case 0b11: return USB_INTERRUPT_EP;
+    default: break;
+  }
+  unreachable;
+}
 
 static inline void *usb_seek_descriptor(uint8_t type, void *buffer, void *buffer_end) {
   void *ptr = buffer;
@@ -76,6 +101,24 @@ static inline void *usb_seek_descriptor(uint8_t type, void *buffer, void *buffer
     ptr = offset_ptr(ptr, cast_usb_desc(ptr)->length);
   }
   return NULL;
+}
+
+static inline usb_driver_t *locate_device_driver(uint8_t dev_class, uint8_t dev_subclass) {
+  for (int i = 0; i < num_drivers; i++) {
+    usb_driver_t *driver = drivers[i];
+    if (driver->dev_class == dev_class && driver->dev_subclass == dev_subclass) {
+      return driver;
+    } else if (driver->dev_class == dev_class && driver->dev_subclass == 0) {
+      return driver;
+    }
+  }
+  return NULL;
+}
+
+//
+
+noreturn void *usb_device_event_loop(void *arg) {
+  usb_device_t *device = arg;
 }
 
 // noreturn void *usb_event_loop(void *arg) {
@@ -141,12 +184,10 @@ noreturn void *usb_device_connect_event_loop(void *arg) {
   }
 
   kprintf("usb: uh oh - the device channel was closed\n");
-  thread_block();
-  unreachable;
+  panic("usb: device channel was closed\n");
 }
 
 //
-
 
 void usb_main() {
   kprintf("usb: initializing usb\n");
@@ -209,7 +250,7 @@ int usb_handle_device_connect(usb_host_t *host, void *data) {
   usb_device_t *device = kmalloc(sizeof(usb_device_t));
   memset(device, 0, sizeof(usb_device_t));
   device->host = host;
-  device->data = data;
+  device->host_data = data;
   LIST_ENTRY_INIT(&device->list);
 
   return chan_send(pending_usb_devices, chan_u64(device));
@@ -220,173 +261,143 @@ int usb_handle_device_disconnect(usb_host_t *host, usb_device_t *device) {
   return 0;
 }
 
+//
 // MARK: Common API
+//
 
-usb_transfer_t *usb_alloc_transfer(usb_dir_t direction, uintptr_t buffer, size_t length) {
-  usb_transfer_t *xfer = kmalloc(sizeof(usb_transfer_t));
-  xfer->flags = 0;
-  xfer->dir = direction;
-  xfer->buffer = buffer;
-  xfer->length = length;
-  return xfer;
-}
+int usb_add_setup_transfer(usb_device_t *device, usb_setup_packet_t setup, uintptr_t buffer, size_t length) {
+  usb_transfer_t xfer = {
+    .type = USB_SETUP_XFER,
+    .flags = USB_XFER_SETUP,
+    .buffer = buffer,
+    .length = length,
+    .setup = setup,
+  };
 
-usb_transfer_t *usb_alloc_setup_transfer(usb_setup_packet_t setup, uintptr_t buffer, size_t length) {
-  usb_transfer_t *xfer = kmalloc(sizeof(usb_transfer_t));
-  xfer->flags = USB_XFER_SETUP;
-  xfer->setup = setup;
-  xfer->buffer = buffer;
-  xfer->length = length;
-  return xfer;
-}
-
-int usb_free_transfer(usb_transfer_t *transfer) {
-  kfree(transfer);
+  usb_host_t *host = device->host;
+  usb_endpoint_t *endpoint = find_endpoint_for_xfer(device, USB_SETUP_XFER);
+  kassert(endpoint != NULL);
+  if (host->device_impl->add_transfer(device, endpoint, &xfer) < 0) {
+    kprintf("usb_add_setup_transfer(): failed to add transfer\n");
+    return -1;
+  }
   return 0;
 }
 
-int usb_device_add_transfer(usb_device_t *device, usb_transfer_t *transfer) {
-  // TODO: validation
+int usb_await_setup_transfer(usb_device_t *device) {
   usb_host_t *host = device->host;
-  return host->device_impl->queue_transfer(device, transfer);
-}
+  usb_endpoint_t *endpoint = find_endpoint_for_xfer(device, USB_SETUP_XFER);
+  kassert(endpoint != NULL);
 
-int usb_device_await_transfer(usb_device_t *device, usb_transfer_t *transfer) {
-  // TODO: validation
-  usb_host_t *host = device->host;
-  return host->device_impl->await_transfer(device, transfer);
-}
-
-//
-
-int usb_device_select_config(usb_device_t *device, uint8_t number) {
-  panic("usb: not implemented");
-  return 0;
-}
-
-int usb_device_select_interface(usb_device_t *device, uint8_t number) {
-  panic("usb: not implemented");
-  return 0;
-}
-
-//
-// MARK: Internal API
-//
-
-int usb_device_init(usb_device_t *device) {
-  usb_host_t *host = device->host;
-  if (host->device_impl->init(device) < 0) {
-    kprintf("usb: failed to initialize device\n");
+  if (host->device_impl->start_transfer(device, endpoint) < 0) {
+    kprintf("usb_await_setup_transfer(): failed to start transfer\n");
     return -1;
   }
 
-  // read device descriptor
-  usb_device_descriptor_t *desc = NULL;
-  if (host->device_impl->read_device_descriptor(device, &desc) < 0) {
-    kprintf("usb: failed to read device descriptor\n");
+  usb_event_t event;
+  if (host->device_impl->await_event(device, endpoint, &event) < 0) {
+    kprintf("usb_await_setup_transfer(): failed to await event\n");
     return -1;
   }
-  device->desc = desc;
 
-  kprintf("USB Device Descriptor\n");
-  usb_print_device_descriptor(desc);
-
-  // product name
-  device->product = usb_device_read_string(device, desc->product_idx);
-  // manufacturer name
-  device->manufacturer = usb_device_read_string(device, desc->manuf_idx);
-  // serial string
-  device->serial = usb_device_read_string(device, desc->serial_idx);
-
-  kprintf("Product: %s\n", device->product);
-  kprintf("Manufacturer: %s\n", device->manufacturer);
-  kprintf("Serial: %s\n", device->serial);
-
-  // read config descriptors
-  device->configs = kmalloc(desc->num_configs * sizeof(void *));
-  for (int i = 0; i < desc->num_configs; i++) {
-    usb_config_descriptor_t *config = usb_device_read_config_descriptor(device, 0);
-    kassert(config != NULL);
-
-    kprintf("USB Config Descriptor\n");
-    usb_print_config_descriptor(config);
-    device->configs[i] = config;
+  if (event.status == USB_ERROR) {
+    kprintf("usb_await_setup_transfer(): transfer completed with error\n");
+    return -1;
   }
-
-
-
   return 0;
 }
 
-usb_config_descriptor_t *usb_device_read_config_descriptor(usb_device_t *device, uint8_t n) {
-  size_t size = sizeof(usb_config_descriptor_t);
-LABEL(get_descriptor);
-  usb_setup_packet_t get_desc = GET_DESCRIPTOR(CONFIG_DESCRIPTOR, n, size);
-  usb_config_descriptor_t *desc = kmalloc(size);
-  memset(desc, 0, size);
+//
 
-  usb_transfer_t *xfer = usb_alloc_setup_transfer(get_desc, kheap_ptr_to_phys(desc), size);
-  usb_device_add_transfer(device, xfer);
-  if (usb_device_await_transfer(device, xfer) < 0) {
-    kprintf("usb: failed to read config descriptor %d\n", n);
-    usb_free_transfer(xfer);
-    kfree(device);
-    return NULL;
-  }
-  usb_free_transfer(xfer);
+int usb_add_transfer(usb_device_t *device, usb_dir_t direction, uintptr_t buffer, size_t length) {
+  usb_transfer_t xfer = {
+    .type = direction == USB_IN ? USB_DATA_IN_XFER : USB_DATA_OUT_XFER,
+    .flags = 0,
+    .buffer = buffer,
+    .length = length,
+    .raw = 0,
+  };
 
-  if (size < desc->total_len) {
-    size = desc->total_len;
-    kfree(desc);
-    goto get_descriptor;
+  usb_host_t *host = device->host;
+  usb_endpoint_t *endpoint = find_endpoint_for_xfer(device, xfer.type);
+  if (endpoint == NULL) {
+    kprintf("usb_add_transfer()usb_add_transfer(): no endpoint found for transfer\n");
+    return -1;
   }
 
-  return desc;
+  if (host->device_impl->add_transfer(device, endpoint, &xfer) < 0) {
+    kprintf("usb_add_transfer(): failed to add transfer\n");
+    return -1;
+  }
+  return 0;
 }
 
-char *usb_device_read_string(usb_device_t *device, uint8_t n) {
-  if (n == 0) {
-    return NULL;
+int usb_start_transfer(usb_device_t *device, usb_dir_t direction) {
+  usb_host_t *host = device->host;
+  usb_xfer_type_t type = direction == USB_IN ? USB_DATA_IN_XFER : USB_DATA_OUT_XFER;
+  usb_endpoint_t *endpoint = find_endpoint_for_xfer(device, type);
+  if (endpoint == NULL) {
+    kprintf("usb_start_transfer(): invalid direction\n");
+    return -1;
   }
 
-  // allocate enough to handle most cases
-  size_t size = 64;
-LABEL(get_descriptor);
-  usb_setup_packet_t get_desc = GET_DESCRIPTOR(STRING_DESCRIPTOR, n, size);
-  usb_string_t *desc = kmalloc(size);
-  memset(desc, 0, size);
-
-  usb_transfer_t *xfer = usb_alloc_setup_transfer(get_desc, kheap_ptr_to_phys(desc), size);
-  usb_device_add_transfer(device, xfer);
-  if (usb_device_await_transfer(device, xfer) < 0) {
-    kprintf("usb: failed to read string descriptor %d\n", n);
-    usb_free_transfer(xfer);
-    kfree(desc);
-    return NULL;
+  if (host->device_impl->start_transfer(device, endpoint) < 0) {
+    kprintf("usb_start_transfer(): failed to start transfer\n");
+    return -1;
   }
-  usb_free_transfer(xfer);
-
-  if (size < desc->length) {
-    size = desc->length;
-    kfree(desc);
-    goto get_descriptor;
-  }
-
-  // usb string descriptors use utf-16 encoding.
-  size_t len = ((desc->length - 2) / 2);
-  char *ascii = kmalloc(len + 1); // 1 extra null char
-  ascii[len] = 0;
-
-  int result = utf16_iconvn_ascii(ascii, desc->string, len);
-  if (result != len) {
-    kprintf("xhci: string descriptor conversion failed\n");
-  }
-
-  kfree(desc);
-  return ascii;
+  return 0;
 }
 
-// int usb_device_select_config
+int usb_await_transfer(usb_device_t *device, usb_dir_t direction) {
+  usb_host_t *host = device->host;
+  usb_xfer_type_t type = direction == USB_IN ? USB_DATA_IN_XFER : USB_DATA_OUT_XFER;
+  usb_endpoint_t *endpoint = find_endpoint_for_xfer(device, type);
+  if (endpoint == NULL) {
+    kprintf("usb_await_transfer(): invalid direction\n");
+    return -1;
+  }
+
+  usb_event_t event;
+  if (host->device_impl->await_event(device, endpoint, &event) < 0) {
+    kprintf("usb_await_setup_transfer(): await_event failed\n");
+    return -1;
+  }
+
+  if (event.status == USB_ERROR) {
+    kprintf("usb_await_setup_transfer(): transfer completed with error\n");
+    return -1;
+  }
+  return 0;
+}
+
+int usb_start_await_transfer(usb_device_t *device, usb_dir_t direction) {
+  usb_host_t *host = device->host;
+  usb_xfer_type_t type = direction == USB_IN ? USB_DATA_IN_XFER : USB_DATA_OUT_XFER;
+  usb_endpoint_t *endpoint = find_endpoint_for_xfer(device, type);
+  if (endpoint == NULL) {
+    kprintf("usb_start_await_transfer(): invalid direction\n");
+    return -1;
+  }
+
+  // start the transfer
+  if (host->device_impl->start_transfer(device, endpoint) < 0) {
+    kprintf("usb_start_transfer(): failed to start transfer\n");
+    return -1;
+  }
+
+  // wait for it
+  usb_event_t event;
+  if (host->device_impl->await_event(device, endpoint, &event) < 0) {
+    kprintf("usb_await_setup_transfer(): await_event failed\n");
+    return -1;
+  }
+
+  if (event.status == USB_ERROR) {
+    kprintf("usb_await_setup_transfer(): transfer completed with error\n");
+    return -1;
+  }
+  return 0;
+}
 
 //
 
@@ -438,4 +449,272 @@ void usb_print_config_descriptor(usb_config_descriptor_t *desc) {
       kprintf("      max_packet_size = %d | interval = %d\n", ep_desc->max_pckt_sz, ep_desc->interval);
     }
   }
+}
+
+//
+// MARK: Internal API
+//
+
+int usb_device_init(usb_device_t *device) {
+  usb_host_t *host = device->host;
+  if (host->device_impl->init(device) < 0) {
+    kprintf("usb: failed to initialize device\n");
+    return -1;
+  }
+
+  // read device descriptor
+  usb_device_descriptor_t *desc = NULL;
+  if (host->device_impl->read_device_descriptor(device, &desc) < 0) {
+    kprintf("usb: failed to read device descriptor\n");
+    return -1;
+  }
+  device->desc = desc;
+
+  // initialize special "dummy" struct for the default control endpoint
+  usb_endpoint_t *ep_zero = kmalloc(sizeof(usb_endpoint_t));
+  memset(ep_zero, 0, sizeof(usb_endpoint_t));
+
+  ep_zero->type = USB_CONTROL_EP;
+  ep_zero->dir = USB_IN; // incorrect but ignored
+  ep_zero->number = 0;
+  ep_zero->attributes = 0;
+  ep_zero->max_pckt_sz = desc->max_packt_sz0;
+  ep_zero->interval = 0;
+  ep_zero->device = device;
+  kassert(host->device_impl->init_endpoint(ep_zero) >= 0);
+  LIST_ADD(&device->endpoints, ep_zero, list);
+
+  // read device and product info
+  kprintf("USB Device Descriptor\n");
+  usb_print_device_descriptor(desc);
+
+  // product name
+  device->product = usb_device_read_string(device, desc->product_idx);
+  // manufacturer name
+  device->manufacturer = usb_device_read_string(device, desc->manuf_idx);
+  // serial string
+  device->serial = usb_device_read_string(device, desc->serial_idx);
+
+  kprintf("Product: %s\n", device->product);
+  kprintf("Manufacturer: %s\n", device->manufacturer);
+  kprintf("Serial: %s\n", device->serial);
+
+  // read config descriptors
+  device->configs = kmalloc(desc->num_configs * sizeof(void *));
+  for (int i = 0; i < desc->num_configs; i++) {
+    usb_config_descriptor_t *config = usb_device_read_config_descriptor(device, 0);
+    kassert(config != NULL);
+
+    kprintf("USB Config Descriptor\n");
+    usb_print_config_descriptor(config);
+    device->configs[i] = config;
+  }
+
+  // TODO: support more than one config?
+  kassert(desc->num_configs >= 1);
+  usb_config_descriptor_t *config = device->configs[0];
+
+  // collect interface descriptors
+  device->config = config;
+  device->interfaces = kmalloc(config->num_ifs * sizeof(void *));
+  memset(device->interfaces, 0, config->num_ifs * sizeof(void *));
+
+  void *ptr = (void *) config;
+  void *ptr_end = offset_ptr(config, config->total_len);
+  for (int i = 0; i < device->config->num_ifs; i++) {
+    usb_if_descriptor_t *if_desc = usb_seek_descriptor(IF_DESCRIPTOR, ptr, ptr_end);
+    if (if_desc == NULL) {
+      kprintf("usb: uh oh - couldn't find all interfaces\n");
+      break;
+    }
+
+    ptr = offset_ptr(if_desc, if_desc->length);
+    device->interfaces[i] = if_desc;
+  }
+
+  // find driver for device
+  kprintf("usb: locating device driver\n");
+  usb_driver_t *driver = NULL;
+  uint8_t if_index = 0;
+  for (int i = 0; i < config->num_ifs; i++) {
+    usb_if_descriptor_t *if_desc = device->interfaces[i];
+    if ((driver = locate_device_driver(if_desc->if_class, if_desc->if_subclass)) != NULL) {
+      if_index = i;
+      break;
+    }
+  }
+  if (driver == NULL) {
+    kprintf("usb: unable to find compatible driver for device\n");
+    return -1;
+  }
+
+  // initialize endpoints and select the configuration
+  usb_if_descriptor_t *interface = device->interfaces[if_index];
+  kassert(interface != NULL);
+  if (usb_device_configure(device, config, interface) < 0) {
+    kprintf("usb: failed configure device with config %d, interface %d\n", config->config_val, interface->if_number);
+    return -1;
+  }
+
+  // initialize device driver
+  kprintf("usb: using driver \"%s\"\n", driver->name);
+  device->driver = driver;
+  if (driver->init(device) < 0) {
+    kprintf("usb: failed to initialize driver \"%s\" for device\n", driver->name);
+    device->driver = NULL;
+    return -1;
+  }
+
+  return 0;
+}
+
+int usb_device_configure(usb_device_t *device, usb_config_descriptor_t *config, usb_if_descriptor_t *interface) {
+  // TODO: cleanup previous configuration
+  // if (device->interfaces != NULL) {
+  //   // cleanup endpoints from previous interface
+  //   if (usb_device_free_endpoints(device) < 0) {
+  //     panic("usb: failed to free device endpoints");
+  //   }
+  //
+  //   kfree(device->interfaces);
+  //   device->interfaces = NULL;
+  //   device->interface = NULL;
+  // }
+
+  usb_host_t *host = device->host;
+
+  void *ptr = offset_ptr(interface, interface->length);
+  void *ptr_end = offset_ptr(config, config->total_len);
+  for (int j = 0; j < interface->num_eps; j++) {
+    usb_ep_descriptor_t *ep_desc = usb_seek_descriptor(EP_DESCRIPTOR, ptr, ptr_end);
+    if (ep_desc == NULL) {
+      kprintf("usb: uh oh - couldn't find all endpoints\n");
+      break;
+    }
+    ptr = offset_ptr(ep_desc, ep_desc->length);
+
+    usb_endpoint_t *endpoint = kmalloc(sizeof(usb_endpoint_t));
+    memset(endpoint, 0, sizeof(usb_endpoint_t));
+
+    endpoint->type = usb_get_endpoint_type(ep_desc);
+    endpoint->dir = (ep_desc->ep_addr >> 7) ? USB_IN : USB_OUT;
+    endpoint->number = ep_desc->ep_addr & 0xF;
+    endpoint->attributes = ep_desc->attributes;
+    endpoint->max_pckt_sz = ep_desc->max_pckt_sz;
+    endpoint->interval = ep_desc->interval;
+    endpoint->device = device;
+
+    if (host->device_impl->init_endpoint(endpoint) < 0) {
+      kprintf("usb: failed to initialize endpoint %d\n", endpoint->number);
+      return -1;
+    }
+
+    LIST_ADD(&device->endpoints, endpoint, list);
+  }
+
+  device->dev_class = interface->if_class;
+  device->dev_subclass = interface->if_subclass;
+  device->dev_protocol = interface->if_protocol;
+
+  device->config = config;
+  device->interface = interface;
+
+  usb_setup_packet_t set_config = SET_CONFIGURATION(config->config_val);
+  if (usb_add_setup_transfer(device, set_config, 0, 0) < 0) {
+    kprintf("usb: failed to add setup transfer while selecting config\n");
+    return -1;
+  }
+  if (usb_await_setup_transfer(device) < 0) {
+    kprintf("usb: failed to select configuration %d\n", config->config_val);
+    return -1;
+  }
+  return 0;
+}
+
+int usb_device_free_endpoints(usb_device_t *device) {
+  usb_host_t *host = device->host;
+  usb_endpoint_t *endpoint = LIST_FIRST(&device->endpoints);
+  while (endpoint != NULL) {
+    usb_endpoint_t *next = LIST_NEXT(endpoint, list);
+
+    if (host->device_impl->deinit_endpoint(endpoint) < 0) {
+      kprintf("usb: failed to de-initialize endpoint\n");
+      return -1;
+    }
+
+    kfree(endpoint);
+    endpoint = next;
+  }
+
+  LIST_INIT(&device->endpoints);
+  return 0;
+}
+
+usb_config_descriptor_t *usb_device_read_config_descriptor(usb_device_t *device, uint8_t n) {
+  size_t size = sizeof(usb_config_descriptor_t);
+
+LABEL(get_descriptor);
+  usb_setup_packet_t get_desc = GET_DESCRIPTOR(CONFIG_DESCRIPTOR, n, size);
+  usb_config_descriptor_t *desc = kmalloc(size);
+  memset(desc, 0, size);
+
+  if (usb_add_setup_transfer(device, get_desc, kheap_ptr_to_phys(desc), size) < 0) {
+    kprintf("usb_device_read_config_descriptor(): failed to add transfer\n");
+    return NULL;
+  }
+
+  if (usb_await_setup_transfer(device) < 0) {
+    kprintf("usb_device_read_config_descriptor(): failed to await transfer\n");
+    return NULL;
+  }
+
+  if (size < desc->total_len) {
+    size = desc->total_len;
+    kfree(desc);
+    goto get_descriptor;
+  }
+
+  return desc;
+}
+
+char *usb_device_read_string(usb_device_t *device, uint8_t n) {
+  if (n == 0) {
+    return NULL;
+  }
+
+  // allocate enough to handle most cases
+  size_t size = 64;
+LABEL(get_descriptor);
+  usb_setup_packet_t get_desc = GET_DESCRIPTOR(STRING_DESCRIPTOR, n, size);
+  usb_string_t *desc = kmalloc(size);
+  memset(desc, 0, size);
+
+  if (usb_add_setup_transfer(device, get_desc, kheap_ptr_to_phys(desc), size) < 0) {
+    kprintf("usb_device_read_string(): failed to add transfer\n");
+    return NULL;
+  }
+
+  if (usb_await_setup_transfer(device) < 0) {
+    kprintf("usb_device_read_string(): failed to await transfer\n");
+    return NULL;
+  }
+
+  if (size < desc->length) {
+    size = desc->length;
+    kfree(desc);
+    goto get_descriptor;
+  }
+
+  // usb string descriptors use utf-16 encoding.
+  size_t len = ((desc->length - 2) / 2);
+  char *ascii = kmalloc(len + 1); // 1 extra null char
+  ascii[len] = 0;
+
+  int result = utf16_iconvn_ascii(ascii, desc->string, len);
+  if (result != len) {
+    kprintf("xhci: string descriptor conversion failed\n");
+  }
+
+  kfree(desc);
+  return ascii;
 }
