@@ -7,6 +7,7 @@ source "${PROJECT_DIR}/toolchain/common.sh"
 #----------------------------------
 
 readonly BINUTILS_VERSION=2.38
+readonly LIBTOOL_VERSION=2.4.6
 
 # args:
 #   <1>: target triplet
@@ -31,8 +32,8 @@ toolchain::binutils::install_fixup() {
   popd
 }
 
-# build and install binutils
-# ==========================
+# build binutils
+# ==============
 # args:
 #   <1>: target arch (i.e. 'x86_64')
 #   <2>: build kind [kernel|system]
@@ -114,6 +115,68 @@ toolchain::binutils::build() {
   popd
 }
 
+# build libtool
+# =============
+# args:
+#   <1>: target arch (i.e. 'x86_64')
+# env:
+#   LIBTOOL_BUILD_DIR   - build directory (default = <BUILD_DIR>/libtool)
+#   LIBTOOL_SYSROOT     - libtool sysroot (default = <SYS_ROOT>)
+#   LIBTOOL_INSTALL_DIR - install directory (default = <SYS_ROOT>)
+#
+# example:
+#   toolchain::libtool::build x86_64
+toolchain::libtool::build() {
+  toolchain::util::check_args 1 $@
+
+  local arch="$1"
+  local target_triple=""
+  shift 1
+  case "$arch" in
+    x86_64* | X64)
+      arch="x86_64"
+      target_triple="x86_64-elf"
+      ;;
+    *)
+      toolchain::util::error "unsupported arch: $arch"
+      exit 1
+      ;;
+  esac
+
+  local version="${LIBTOOL_VERSION}"
+  local build_dir=${LIBTOOL_BUILD_DIR:-${BUILD_DIR}/libtool}
+  local sysroot=${LIBTOOL_SYSROOT:-${SYS_ROOT}}
+  local install_dir=${LIBTOOL_INSTALL_DIR:-${sysroot}/usr}
+  local tool_prefix="${sysroot}/usr/bin/${arch}-osdev-"
+
+  local options=(
+    --host="${arch}"
+    --prefix=${install_dir}
+    --with-sysroot=${sysroot}
+    --program-prefix="${arch}-osdev-"
+  )
+
+  mkdir -p ${build_dir}
+  mkdir -p ${install_dir}
+  pushd ${build_dir}
+    if [ ! -d src ]; then
+      mkdir -p src
+      wget -nc https://ftpmirror.gnu.org/libtool/libtool-${version}.tar.gz
+      tar -xf libtool-${version}.tar.gz -C src --strip-components=1
+    fi
+
+    mkdir -p build
+    pushd build
+      export CC=${tool_prefix}gcc
+      export RANLIB=${tool_prefix}ranlib
+      toolchain::util::configure_step ../src/configure "${options[@]}"
+      make
+      make install
+    popd
+  popd
+}
+
+
 #
 # main
 #
@@ -129,6 +192,9 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
   case "${command}" in
     build)
       toolchain::binutils::build $@
+      ;;
+    build-libtool)
+      toolchain::libtool::build $@
       ;;
     *)
       toolchain::util::error "unsupported command '${command}'"
