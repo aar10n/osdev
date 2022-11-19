@@ -17,7 +17,7 @@
 // time.
 //
 // By default, sending data to a channel does not block unless the
-// channel's buffer is full. Conversely reading does block as long
+// channel's buffer is full. Inversely, reading does block as long
 // as the buffer is empty. This behaviour can be changed via flags.
 
 // The `free` callback function is intended to be used when transfering objects
@@ -62,6 +62,7 @@ int chan_sendb(chan_t *chan, uint64_t data);
 int chan_recv(chan_t *chan, uint64_t *result);
 int chan_recv_noblock(chan_t *chan, uint64_t *result);
 int chan_recvn(chan_t *chan, size_t n, uint64_t *results);
+int chan_wait(chan_t *chan);
 int chan_close(chan_t *chan);
 
 void chan_free_cb_kfree(void *data);

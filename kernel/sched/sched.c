@@ -247,6 +247,9 @@ bool sched_should_preempt(sched_t *sched, thread_t *thread) {
   // determines whether the active thread running on `sched` should be preempted by `thread`
   spin_lock(&sched->lock);
   thread_t *active = sched->active;
+  if (thread == active) {
+    kprintf("sched error: uh oh!\n");
+  }
   sched_assert(thread != active);
 
   if (active->preempt_count > 0) {

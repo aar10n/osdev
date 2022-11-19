@@ -647,6 +647,7 @@ uintptr_t _vm_virt_to_phys(uintptr_t virt_addr) {
       offset -= pgsize;
       curr = curr->next;
     }
+    // TODO: fix bug - hit while calling _vm_virt_to_phys with stack variable pointer
     unreachable;
   }
 

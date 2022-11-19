@@ -742,7 +742,7 @@ int xhci_init_endpoint(usb_endpoint_t *endpoint) {
   ctx->ep_type = ep_type;
   ctx->max_packt_sz = endpoint->max_pckt_sz;
   ctx->interval = endpoint->interval;
-  ctx->max_burst_sz = 0;
+  ctx->max_burst_sz = 1;
   ctx->avg_trb_length = 8;
   ctx->max_streams = 0;
   ctx->mult = 0;
@@ -843,8 +843,6 @@ int _xhci_run_controller(xhci_controller_t *hc) {
   usbcmd |= USBCMD_RUN | USBCMD_INT_EN | USBCMD_HS_ERR_EN;
   write32(hc->op_base, XHCI_OP_USBCMD, usbcmd);
 
-  QDEBUG(2);
-
   uint64_t timeout = UINT16_MAX;
   while ((read32(hc->op_base, XHCI_OP_USBSTS) & USBSTS_HC_HALTED) != 0) {
     timeout--;
@@ -857,8 +855,6 @@ int _xhci_run_controller(xhci_controller_t *hc) {
     thread_yield();
   }
 
-  QDEBUG(3);
-
   // test out the command ring
   kprintf("xhci: testing no-op command\n");
   if (_xhci_run_noop_cmd(hc) < 0) {
@@ -866,8 +862,6 @@ int _xhci_run_controller(xhci_controller_t *hc) {
   } else {
     kprintf("xhci: no-op command succeeded\n");
   }
-
-  QDEBUG(4);
 
   return 0;
 }

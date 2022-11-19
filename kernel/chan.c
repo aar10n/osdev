@@ -154,6 +154,7 @@ int chan_sendb(chan_t *chan, uint64_t data) {
 
 int chan_recv(chan_t *chan, uint64_t *result) {
   if (chan->flags & CHAN_CLOSED) {
+    kprintf("error: calling `chan_recv()` on closed channel[%u]\n", chan->id);
     return -1;
   }
 
@@ -166,6 +167,7 @@ int chan_recv(chan_t *chan, uint64_t *result) {
     // wait for new data to be written
     cond_wait(&chan->data_written);
     if (chan->flags & CHAN_CLOSED) {
+      kprintf("error: closed while waiting in `chan_recv()` on channel[%u]\n", chan->id);
       mutex_unlock(&chan->reader);
       return -1;
     }
@@ -195,6 +197,7 @@ int chan_recv(chan_t *chan, uint64_t *result) {
 
 int chan_recv_noblock(chan_t *chan, uint64_t *result) {
   if (chan->flags & CHAN_CLOSED) {
+    kprintf("error: calling `chan_recv_noblock()` on closed channel[%u]\n", chan->id);
     return -1;
   }
 
@@ -230,6 +233,7 @@ int chan_recv_noblock(chan_t *chan, uint64_t *result) {
 
 int chan_recvn(chan_t *chan, size_t n, uint64_t *results) {
   if (n == 0 || chan->flags & CHAN_CLOSED) {
+    kprintf("error: calling `chan_recvn()` on closed channel[%u]\n", chan->id);
     return -1;
   }
 
@@ -247,6 +251,33 @@ int chan_recvn(chan_t *chan, size_t n, uint64_t *results) {
     }
   }
 
+  mutex_unlock(&chan->reader);
+  return 0;
+}
+
+int chan_wait(chan_t *chan) {
+  if (chan->flags & CHAN_CLOSED) {
+    kprintf("error: calling `chan_wait()` on closed channel[%u]\n", chan->id);
+    return -1;
+  }
+
+  mutex_lock(&chan->reader);
+  mutex_lock(&chan->lock);
+  cond_clear_signal(&chan->data_read);
+
+  if (chan->read_idx == chan->write_idx) {
+    // wait until there is data to read
+    mutex_unlock(&chan->lock);
+    cond_wait(&chan->data_written);
+    if (chan->flags & CHAN_CLOSED) {
+      kprintf("error: closed while waiting in `chan_wait()` on channel[%u]\n", chan->id);
+      mutex_unlock(&chan->reader);
+      return -1;
+    }
+    return 0;
+  }
+
+  mutex_unlock(&chan->lock);
   mutex_unlock(&chan->reader);
   return 0;
 }

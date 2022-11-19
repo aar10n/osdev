@@ -221,8 +221,9 @@ int usb_run_ctrl_transfer(usb_device_t *device, usb_setup_packet_t setup, uintpt
   };
 
   usb_host_t *host = device->host;
-  usb_endpoint_t *endpoint = find_endpoint_for_xfer(device, USB_SETUP_XFER);
+  usb_endpoint_t *endpoint = LIST_FIRST(&device->endpoints);
   kassert(endpoint != NULL);
+  kassert(endpoint->number == 0);
   if (host->device_impl->add_transfer(device, endpoint, &xfer) < 0) {
     kprintf("usb_execute_ctrl_transfer(): failed to add transfer\n");
     return -1;
@@ -235,8 +236,13 @@ int usb_run_ctrl_transfer(usb_device_t *device, usb_setup_packet_t setup, uintpt
   }
 
   usb_event_t event;
-  if (chan_recv(endpoint->event_ch, chan_voidp(&event)) < 0) {
-    kprintf("usb_execute_ctrl_transfer(): failed to wait for event\n");
+  // if (chan_recv(endpoint->event_ch, chan_voidp(&event)) < 0) {
+  //   kprintf("usb_execute_ctrl_transfer(): failed to wait for event\n");
+  //   return -1;
+  // }
+
+  if (host->device_impl->await_event(device, endpoint, &event) < 0) {
+    kprintf("usb_await_transfer(): await_event failed\n");
     return -1;
   }
 
@@ -298,15 +304,15 @@ int usb_await_transfer(usb_device_t *device, usb_dir_t direction) {
   }
 
   usb_event_t event;
-  if (chan_recv(endpoint->event_ch, chan_voidp(&event)) < 0) {
-    kprintf("usb_await_transfer(): failed to await transfer\n");
-    return -1;
-  }
-
-  // if (host->device_impl->await_event(device, endpoint, &event) < 0) {
-  //   kprintf("usb_await_transfer(): await_event failed\n");
+  // if (chan_recv(endpoint->event_ch, chan_voidp(&event)) < 0) {
+  //   kprintf("usb_await_transfer(): failed to await transfer\n");
   //   return -1;
   // }
+
+  if (host->device_impl->await_event(device, endpoint, &event) < 0) {
+    kprintf("usb_await_transfer(): await_event failed\n");
+    return -1;
+  }
 
   if (event.status == USB_ERROR) {
     kprintf("usb_await_transfer(): transfer completed with error\n");

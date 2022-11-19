@@ -93,6 +93,16 @@ key_code_t hid_keyboard_layout[] = {
   [HID_KEYBOARD_UP] = VK_KEYCODE_UP
 };
 
+static inline key_event_t *make_key_event(key_code_t code, uint8_t modifiers, bool released) {
+  key_event_t *event = kmalloc(sizeof(key_event_t));
+  memset(event, 0, sizeof(key_event_t));
+  event->modifiers = modifiers;
+  event->key_code = code;
+  event->release = released;
+  event->next = NULL;
+  return event;
+}
+
 key_code_t hid_keyboard_get_key(uint8_t key) {
   return hid_keyboard_layout[key];
 }
@@ -136,45 +146,48 @@ hid_keyboard_t *hid_keyboard_init(report_format_t *format) {
   return keyboard;
 }
 
-void hid_keyboard_handle_input(hid_device_t *device, const uint8_t *buffer) {
+void hid_keyboard_handle_input(hid_device_t *device, uint8_t *buffer) {
   hid_keyboard_t *kb = device->data;
   uint32_t modifiers = buffer[kb->modifier_offset];
 
+  uint8_t *curr = buffer;
+  uint8_t *prev = kb->prev_buffer;
+  uint8_t off = kb->buffer_offset;
+  // kprintf("hid: prev = %02x %02x %02x %02x\n", prev[off + 0], prev[off + 1], prev[off + 2], prev[off + 3]);
+  // kprintf("hid: curr = %02x %02x %02x %02x\n", curr[off + 0], curr[off + 1], curr[off + 2], curr[off + 3]);
+
   uint8_t char_idx = kb->buffer_offset;
   uint8_t char_max = char_idx + kb->buffer_size;
-  for (int i = char_idx; i < char_max; i++) {
-    bool release = false;
-    key_code_t code = 0;
 
-    if (buffer[i] == 0) {
-      // if a key is active in the previous buffer but not the
-      // current it indicates that the key was released
+  for (int i = char_idx; i < char_max; i++) {
+    // check for pressed keys
+    if (curr[i] != 0) {
+      // a key is pressed
       for (int j = char_idx; j < char_max; j++) {
-        if (kb->prev_buffer[j] != 0) {
-          release = true;
-          code = hid_keyboard_layout[kb->prev_buffer[j]];
-        }
-      }
-      break;
-    } else {
-      // if a key is active in current buffer but not in the
-      // previous it indicates that the key was pressed
-      for (int j = char_idx; j < char_max; j++) {
-        if (buffer[i] == kb->prev_buffer[j]) {
+        if (curr[i] == prev[j]) {
+          // key was held down, dont emit an event
           goto outer;
         }
       }
+      // create key press event
+      key_code_t code = hid_keyboard_layout[curr[i]];
+      key_event_t *event = make_key_event(code, modifiers, false);
+      dispatch_key_event(event);
+      continue; // check next byte
+    } else {
+      // check for released keys
+      for (int j = char_idx; j < char_max; j++) {
+        if (prev[j] != 0) {
+          // create key release event
+          key_code_t code = hid_keyboard_layout[prev[i]];
+          key_event_t *event = make_key_event(code, modifiers, true);
+          dispatch_key_event(event);
+        }
+      }
+      break; // no more bytes changed
     }
 
-    key_event_t *event = kmalloc(sizeof(key_event_t));
-    memset(event, 0, sizeof(key_event_t));
-    event->modifiers = modifiers;
-    event->key_code = code;
-    event->release = release;
-    event->next = NULL;
-    dispatch_key_event(event);
-
-    LABEL(outer);
+  LABEL(outer);
   }
 
   memcpy(kb->prev_buffer, buffer, device->size);

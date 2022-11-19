@@ -82,23 +82,24 @@ noreturn void *hid_device_event_loop(void *arg) {
   kprintf("hid: sleeping for 1 second\n");
   thread_sleep(MS_TO_US(1000));
 
+  for (int i = 0; i < 8; i++) {
+    usb_add_transfer(device, USB_IN, hid_buffer_alloc(hid_device->buffer), hid_device->size);
+  }
+
   kprintf("hid: starting device event loop\n");
   while (true) {
-    // handle all events that occurred since we last checked
-    // kprintf("hid: waiting for event\n");
+    thread_sleep(MS_TO_US(16));
+    chan_wait(endpoint->event_ch);
 
+    hid_trace_debug("event");
+
+    // handle all events that occurred since we last checked
     usb_event_t event;
     while (chan_recv_noblock(endpoint->event_ch, chan_voidp(&event)) >= 0) {
-      hid_trace_debug("event");
-      kprintf("hid: event!\n");
-
       uint8_t *buffer = hid_buffer_read(hid_device->buffer);
-      hid_device->handle_input(hid_device, buffer);
       usb_add_transfer(device, USB_IN, hid_buffer_alloc(hid_device->buffer), hid_device->size);
+      hid_device->handle_input(hid_device, buffer);
     }
-
-    // kprintf("hid: sleeping\n");
-    thread_sleep(MS_TO_US(1000));
   }
 
   unreachable;
@@ -123,25 +124,28 @@ void *hid_get_report_descriptor(usb_device_t *device, hid_descriptor_t *hid) {
 
 int hid_get_idle(usb_device_t *device) {
   usb_setup_packet_t get_idle = GET_IDLE(0, 0);
-  uint16_t idle_rate = 0;
+  uint16_t *idle_rate = kmalloc(sizeof(uint16_t));
 
   hid_trace_debug("getting idle rate");
   kprintf("hid: getting idle rate\n");
-  if (usb_run_ctrl_transfer(device, get_idle, virt_to_phys_addr(&idle_rate), sizeof(uint16_t)) < 0) {
+  if (usb_run_ctrl_transfer(device, get_idle, kheap_ptr_to_phys(idle_rate), sizeof(uint16_t)) < 0) {
     kprintf("hid: failed to get idle rate\n");
     return -1;
   }
 
+  uint16_t idle = *idle_rate;
   hid_trace_debug("idle loaded");
-  hid_trace_debug("idle: %d", idle_rate);
-  return 0;
+  hid_trace_debug("idle: %d", idle);
+
+  kfree(idle_rate);
+  return idle;
 }
 
 int hid_set_idle(usb_device_t *device, uint8_t duration) {
   usb_setup_packet_t set_idle = SET_IDLE(duration, 0, 0);
 
   hid_trace_debug("setting idle rate");
-  kprintf("hid: setting idle rate\n");
+  kprintf("hid: setting idle rate to %d\n", duration);
   if (usb_run_ctrl_transfer(device, set_idle, 0, 0) < 0) {
     kprintf("hid: failed to set idle rate\n");
     return -1;
@@ -192,13 +196,11 @@ int hid_device_init(usb_device_t *device) {
       hid_trace_debug("mouse");
       fn_ptr = hid_mouse_handle_input;
       data_ptr = hid_mouse_init(format);
-      hid_set_idle(device, 0);
       if (data_ptr == NULL) {
         hid_log("failed to initialize mouse driver");
         return -1;
       }
     } else if (usage == KEYBOARD_USAGE) {
-      hid_set_idle(device, 4);
       hid_trace_debug("keyboard");
       fn_ptr = hid_keyboard_handle_input;
       data_ptr = hid_keyboard_init(format);
@@ -215,6 +217,12 @@ int hid_device_init(usb_device_t *device) {
     return -1;
   }
 
+  // set_idle sets the reporting rate of the interrupt endpoint
+  // we set the device idle to 0 so that the endpoint only reports
+  // when the device state changes
+  hid_set_idle(device, 0);
+  kprintf("hid: device idle = %d\n", hid_get_idle(device));
+
   hid_device_t *hid = kmalloc(sizeof(hid_device_t));
   hid->desc = desc;
   hid->format = format;
@@ -225,13 +233,8 @@ int hid_device_init(usb_device_t *device) {
   hid->handle_input = fn_ptr;
 
   device->driver_data = hid;
-
-  for (int i = 0; i < 8; i++) {
-    uintptr_t buffer = hid_buffer_alloc(hid->buffer);
-    usb_add_transfer(device, USB_IN, buffer, format->size);
-  }
-
   hid->thread = thread_create(hid_device_event_loop, device);
+
   kprintf("hid: done\n");
   return 0;
 }
@@ -240,70 +243,3 @@ int hid_device_deinit(usb_device_t *device) {
   // TODO: this
   return -1;
 }
-
-// void *hid_device_init(usb_dev_t *dev) {
-//   hid_descriptor_t *desc = get_hid_descriptor(dev->device);
-//   void *report_desc = hid_get_report_descriptor(dev->device);
-//   if (report_desc == NULL) {
-//     return NULL;
-//   }
-//
-//   report_format_t *format = hid_parse_report_descriptor(report_desc, desc->report_length);
-//   if (format == NULL) {
-//     kfree(report_desc);
-//     return NULL;
-//   }
-//
-//   kprintf(">>> setting device mode\n");
-//   dev->mode = USB_DEVICE_POLLING;
-//   dev->value = 16000;
-//   // dev->value = 500000;
-//
-//   void *fn_ptr = NULL;
-//   void *data_ptr = NULL;
-//   collection_node_t *top_level = (void *) format->root->children;
-//   uint32_t usage_page = top_level->usage_page;
-//   uint32_t usage = top_level->usage;
-//   if (usage_page == GENERIC_DESKTOP_PAGE) {
-//     if (usage == MOUSE_USAGE) {
-//       hid_trace_debug("mouse");
-//       fn_ptr = hid_mouse_handle_input;
-//       data_ptr = hid_mouse_init(format);
-//       hid_set_idle(dev->device, 0);
-//       if (data_ptr == NULL) {
-//         hid_log("failed to initialize mouse driver");
-//         return NULL;
-//       }
-//     } else if (usage == KEYBOARD_USAGE) {
-//       hid_trace_debug("keyboard");
-//       fn_ptr = hid_keyboard_handle_input;
-//       data_ptr = hid_keyboard_init(format);
-//       if (data_ptr == NULL) {
-//         hid_log("failed to initialize keyboard driver");
-//         return NULL;
-//       }
-//     } else {
-//       hid_log("hid device not supported: %s", hid_get_usage_name(usage_page, usage));
-//       return NULL;
-//     }
-//
-//   } else {
-//     hid_log("hid device not supported: %s", hid_get_usage_name(usage_page, usage));
-//     return NULL;
-//   }
-//
-//   hid_device_t *hid = kmalloc(sizeof(hid_device_t));
-//   hid->desc = desc;
-//   hid->format = format;
-//   hid->buffer = hid_buffer_create(format->size);
-//   hid->size = format->size;
-//
-//   hid->data = data_ptr;
-//   hid->handle_input = fn_ptr;
-//
-//   for (int i = 0; i < 8; i++) {
-//     usb_add_transfer(dev, USB_IN, (void *) hid_buffer_alloc(hid->buffer), format->size);
-//   }
-//   return hid;
-// }
-//
