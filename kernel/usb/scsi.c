@@ -86,10 +86,6 @@ int scsi_device_deinit(usb_device_t *device) {
   return 0;
 }
 
-int scsi_device_handle_event(usb_event_t *event) {
-  return 0;
-}
-
 // internal read/write
 
 ssize_t scsi_read_internal(usb_device_t *device, uint64_t lba, uint32_t count, void *buf) {

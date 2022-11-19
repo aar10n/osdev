@@ -44,4 +44,6 @@ void _address_space_print_mappings(address_space_t *space);
 void _address_space_to_graphiz(address_space_t *space);
 void vm_print_debug_address_space();
 
+#define virt_to_phys_addr(addr) (_vm_virt_to_phys((uintptr_t)(addr)))
+
 #endif

@@ -87,7 +87,7 @@
 
 #define REPORT_DESCRIPTOR 0x22
 
-typedef struct packed {
+typedef struct packed hid_descriptor {
   uint8_t length;
   uint8_t type;
   uint16_t hid_ver;
@@ -99,7 +99,7 @@ typedef struct packed {
 
 //
 
-typedef struct {
+typedef struct hid_buffer {
   uintptr_t alloc_ptr;
   uintptr_t read_ptr;
   uint16_t alloc_size;
@@ -112,6 +112,8 @@ typedef struct hid_device {
   report_format_t *format;
   hid_buffer_t *buffer;
   size_t size;
+
+  thread_t *thread;
 
   void *data;
   void (*handle_input)(struct hid_device *device, uint8_t *buffer);

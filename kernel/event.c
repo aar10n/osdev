@@ -151,7 +151,8 @@ void dispatch_key_event(key_event_t *event) {
   if (c != '\0') {
     kprintf("> %c\n", c);
   }
-  PERCPU_THREAD->preempt_count++;
+
+  preempt_disable();
   for (int i = 0; i < MAX_HANDLERS; i++) {
     thread_t *t = handlers[i];
     if (t == NULL) {
@@ -160,7 +161,7 @@ void dispatch_key_event(key_event_t *event) {
     t->data = event;
     cond_signal(&t->data_ready);
   }
-  PERCPU_THREAD->preempt_count--;
+  preempt_enable();
 }
 
 bool is_printable_key(key_code_t key) {

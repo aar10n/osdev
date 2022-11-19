@@ -7,6 +7,7 @@
 
 #include <base.h>
 #include <thread.h>
+#include <chan.h>
 
 typedef struct pcie_device pcie_device_t;
 
@@ -242,6 +243,7 @@ typedef enum usb_status {
 } usb_status_t;
 
 typedef enum usb_xfer_type {
+  // TODO: change to USB_CONTROL_XFER
   USB_SETUP_XFER,
   USB_DATA_IN_XFER,
   USB_DATA_OUT_XFER
@@ -259,6 +261,11 @@ typedef enum usb_ep_type {
   USB_BULK_EP,
   USB_INTERRUPT_EP,
 } usb_ep_type_t;
+
+typedef enum usb_device_mode {
+  USB_REGULAR_MODE,
+  USB_POLLING_MODE,
+} usb_device_mode_t;
 
 typedef enum usb_revision {
   USB_REV_2_0,
@@ -305,7 +312,6 @@ typedef struct usb_driver {
 
   int (*init)(usb_device_t *device);
   int (*deinit)(usb_device_t *device);
-  int (*handle_event)(usb_event_t *event);
 } usb_driver_t;
 
 typedef struct usb_hub {
@@ -332,6 +338,7 @@ typedef struct usb_device {
 
   usb_revision_t revision;
   usb_speed_t speed;
+  usb_device_mode_t mode;
 
   usb_device_descriptor_t *desc;
   usb_config_descriptor_t **configs;
@@ -365,6 +372,7 @@ typedef struct usb_endpoint {
 
   usb_device_t *device;
   void *host_data;
+  chan_t *event_ch;
 
   LIST_ENTRY(struct usb_endpoint) list;
 } usb_endpoint_t;
@@ -397,8 +405,8 @@ typedef struct usb_transfer {
 typedef struct usb_event {
   usb_event_type_t type;
   usb_status_t status;
-  usb_device_t *device;
 } usb_event_t;
+static_assert(sizeof(usb_event_t) <= 8);
 
 void usb_init();
 
@@ -408,9 +416,7 @@ int usb_handle_device_connect(usb_host_t *host, void *data);
 int usb_handle_device_disconnect(usb_host_t *host, usb_device_t *device);
 
 // MARK: Common API
-int usb_add_setup_transfer(usb_device_t *device, usb_setup_packet_t setup, uintptr_t buffer, size_t length);
-int usb_await_setup_transfer(usb_device_t *device);
-
+int usb_run_ctrl_transfer(usb_device_t *device, usb_setup_packet_t setup, uintptr_t buffer, size_t length);
 int usb_add_transfer(usb_device_t *device, usb_dir_t direction, uintptr_t buffer, size_t length);
 int usb_start_transfer(usb_device_t *device, usb_dir_t direction);
 int usb_await_transfer(usb_device_t *device, usb_dir_t direction);

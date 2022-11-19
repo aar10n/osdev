@@ -17,7 +17,6 @@
 #include <rb_tree.h>
 #include <atomic.h>
 
-
 #define usb_log(str, args...) kprintf("[usb] " str "\n", ##args)
 
 // #define USB_DEBUG
@@ -29,6 +28,8 @@
 
 #define desc_type(d) (((usb_descriptor_t *)((void *)(d)))->type)
 #define desc_length(d) (((usb_descriptor_t *)((void *)(d)))->length)
+
+#define EVT_RING_SIZE 256
 
 static rb_tree_t *tree = NULL;
 static id_t device_id = 0;
@@ -46,7 +47,6 @@ usb_driver_t hid_driver = {
 
   .init = hid_device_init,
   .deinit = hid_device_deinit,
-  .handle_event = hid_device_handle_event,
 };
 
 
@@ -55,7 +55,7 @@ usb_driver_t scsi_driver = {
   .dev_class = USB_CLASS_STORAGE,
   .dev_subclass = USB_SUBCLASS_SCSI,
   .init = scsi_device_init,
-  .handle_event = scsi_device_handle_event,
+  .deinit = scsi_device_deinit,
 };
 
 
@@ -114,60 +114,6 @@ static inline usb_driver_t *locate_device_driver(uint8_t dev_class, uint8_t dev_
   }
   return NULL;
 }
-
-//
-
-noreturn void *usb_device_event_loop(void *arg) {
-  usb_device_t *device = arg;
-}
-
-// noreturn void *usb_event_loop(void *arg) {
-//   usb_dev_t *dev = arg;
-//   xhci_device_t *device = dev->device;
-//
-//   thread_yield();
-//
-//   uint8_t mode = dev->mode;
-//   uint32_t value = dev->value;
-//   usb_trace_debug("starting device event loop");
-//   while (true) {
-//     // usb_trace_debug("waiting for event");
-//     if (mode == USB_DEVICE_REGULAR) {
-//       cond_wait(&device->event_ack);
-//       usb_trace_debug("event");
-//
-//       xhci_transfer_evt_trb_t *trb = device->thread->data;
-//       usb_event_t event;
-//       xhci_ep_t *ep = form_usb_event(dev, trb, &event);
-//       if (ep == NULL) {
-//         continue;
-//       }
-//
-//       ep->last_event = event;
-//       cond_signal(&ep->event);
-//       if (dev->driver && dev->driver->handle_event) {
-//         dev->driver->handle_event(&event, dev->driver_data);
-//       }
-//     } else if (mode == USB_DEVICE_POLLING) {
-//       thread_sleep(value);
-//
-//       while (xhci_has_event(device->intr)) {
-//         xhci_transfer_evt_trb_t *trb;
-//         xhci_ring_read_trb(device->intr->ring, (xhci_trb_t **) &trb);
-//
-//         usb_event_t event;
-//         xhci_ep_t *ep = form_usb_event(dev, trb, &event);
-//         if (ep == NULL) {
-//           continue;
-//         }
-//
-//         ep->last_event = event;
-//         dev->driver->handle_event(&event, dev->driver_data);
-//         cond_signal(&ep->event);
-//       }
-//     }
-//   }
-// }
 
 //
 
@@ -265,7 +211,7 @@ int usb_handle_device_disconnect(usb_host_t *host, usb_device_t *device) {
 // MARK: Common API
 //
 
-int usb_add_setup_transfer(usb_device_t *device, usb_setup_packet_t setup, uintptr_t buffer, size_t length) {
+int usb_run_ctrl_transfer(usb_device_t *device, usb_setup_packet_t setup, uintptr_t buffer, size_t length) {
   usb_transfer_t xfer = {
     .type = USB_SETUP_XFER,
     .flags = USB_XFER_SETUP,
@@ -278,25 +224,19 @@ int usb_add_setup_transfer(usb_device_t *device, usb_setup_packet_t setup, uintp
   usb_endpoint_t *endpoint = find_endpoint_for_xfer(device, USB_SETUP_XFER);
   kassert(endpoint != NULL);
   if (host->device_impl->add_transfer(device, endpoint, &xfer) < 0) {
-    kprintf("usb_add_setup_transfer(): failed to add transfer\n");
+    kprintf("usb_execute_ctrl_transfer(): failed to add transfer\n");
     return -1;
   }
-  return 0;
-}
 
-int usb_await_setup_transfer(usb_device_t *device) {
-  usb_host_t *host = device->host;
-  usb_endpoint_t *endpoint = find_endpoint_for_xfer(device, USB_SETUP_XFER);
-  kassert(endpoint != NULL);
-
+  // kick off transfer
   if (host->device_impl->start_transfer(device, endpoint) < 0) {
-    kprintf("usb_await_setup_transfer(): failed to start transfer\n");
+    kprintf("usb_execute_ctrl_transfer(): failed to start transfer\n");
     return -1;
   }
 
   usb_event_t event;
-  if (host->device_impl->await_event(device, endpoint, &event) < 0) {
-    kprintf("usb_await_setup_transfer(): failed to await event\n");
+  if (chan_recv(endpoint->event_ch, chan_voidp(&event)) < 0) {
+    kprintf("usb_execute_ctrl_transfer(): failed to wait for event\n");
     return -1;
   }
 
@@ -358,13 +298,18 @@ int usb_await_transfer(usb_device_t *device, usb_dir_t direction) {
   }
 
   usb_event_t event;
-  if (host->device_impl->await_event(device, endpoint, &event) < 0) {
-    kprintf("usb_await_setup_transfer(): await_event failed\n");
+  if (chan_recv(endpoint->event_ch, chan_voidp(&event)) < 0) {
+    kprintf("usb_await_transfer(): failed to await transfer\n");
     return -1;
   }
 
+  // if (host->device_impl->await_event(device, endpoint, &event) < 0) {
+  //   kprintf("usb_await_transfer(): await_event failed\n");
+  //   return -1;
+  // }
+
   if (event.status == USB_ERROR) {
-    kprintf("usb_await_setup_transfer(): transfer completed with error\n");
+    kprintf("usb_await_transfer(): transfer completed with error\n");
     return -1;
   }
   return 0;
@@ -381,19 +326,25 @@ int usb_start_await_transfer(usb_device_t *device, usb_dir_t direction) {
 
   // start the transfer
   if (host->device_impl->start_transfer(device, endpoint) < 0) {
-    kprintf("usb_start_transfer(): failed to start transfer\n");
+    kprintf("usb_start_await_transfer(): failed to start transfer\n");
     return -1;
   }
 
   // wait for it
   usb_event_t event;
-  if (host->device_impl->await_event(device, endpoint, &event) < 0) {
-    kprintf("usb_await_setup_transfer(): await_event failed\n");
+  if (chan_recv(endpoint->event_ch, chan_voidp(&event)) < 0) {
+    kprintf("usb_start_await_transfer(): failed to await transfer\n");
     return -1;
   }
 
+  // usb_event_t event;
+  // if (host->device_impl->await_event(device, endpoint, &event) < 0) {
+  //   kprintf("usb_start_await_transfer(): await_event failed\n");
+  //   return -1;
+  // }
+
   if (event.status == USB_ERROR) {
-    kprintf("usb_await_setup_transfer(): transfer completed with error\n");
+    kprintf("usb_start_await_transfer(): transfer completed with error\n");
     return -1;
   }
   return 0;
@@ -481,6 +432,8 @@ int usb_device_init(usb_device_t *device) {
   ep_zero->max_pckt_sz = desc->max_packt_sz0;
   ep_zero->interval = 0;
   ep_zero->device = device;
+  ep_zero->event_ch = chan_alloc(32, 0);
+
   kassert(host->device_impl->init_endpoint(ep_zero) >= 0);
   LIST_ADD(&device->endpoints, ep_zero, list);
 
@@ -603,6 +556,7 @@ int usb_device_configure(usb_device_t *device, usb_config_descriptor_t *config, 
     endpoint->max_pckt_sz = ep_desc->max_pckt_sz;
     endpoint->interval = ep_desc->interval;
     endpoint->device = device;
+    endpoint->event_ch = chan_alloc(EVT_RING_SIZE, 0);
 
     if (host->device_impl->init_endpoint(endpoint) < 0) {
       kprintf("usb: failed to initialize endpoint %d\n", endpoint->number);
@@ -620,14 +574,20 @@ int usb_device_configure(usb_device_t *device, usb_config_descriptor_t *config, 
   device->interface = interface;
 
   usb_setup_packet_t set_config = SET_CONFIGURATION(config->config_val);
-  if (usb_add_setup_transfer(device, set_config, 0, 0) < 0) {
-    kprintf("usb: failed to add setup transfer while selecting config\n");
-    return -1;
-  }
-  if (usb_await_setup_transfer(device) < 0) {
+  if (usb_run_ctrl_transfer(device, set_config, 0, 0) < 0) {
     kprintf("usb: failed to select configuration %d\n", config->config_val);
     return -1;
   }
+
+  // if (usb_add_setup_transfer(device, set_config, 0, 0) < 0) {
+  //   kprintf("usb: failed to add setup transfer while selecting config\n");
+  //   return -1;
+  // }
+  // if (usb_await_setup_transfer(device) < 0) {
+  //   kprintf("usb: failed to select configuration %d\n", config->config_val);
+  //   return -1;
+  // }
+
   return 0;
 }
 
@@ -658,15 +618,19 @@ LABEL(get_descriptor);
   usb_config_descriptor_t *desc = kmalloc(size);
   memset(desc, 0, size);
 
-  if (usb_add_setup_transfer(device, get_desc, kheap_ptr_to_phys(desc), size) < 0) {
-    kprintf("usb_device_read_config_descriptor(): failed to add transfer\n");
+  if (usb_run_ctrl_transfer(device, get_desc, kheap_ptr_to_phys(desc), size) < 0) {
+    kprintf("usb_device_read_config_descriptor(): failed to execute transfer\n");
     return NULL;
   }
 
-  if (usb_await_setup_transfer(device) < 0) {
-    kprintf("usb_device_read_config_descriptor(): failed to await transfer\n");
-    return NULL;
-  }
+  // if (usb_add_setup_transfer(device, get_desc, kheap_ptr_to_phys(desc), size) < 0) {
+  //   kprintf("usb_device_read_config_descriptor(): failed to add transfer\n");
+  //   return NULL;
+  // }
+  // if (usb_await_setup_transfer(device) < 0) {
+  //   kprintf("usb_device_read_config_descriptor(): failed to await transfer\n");
+  //   return NULL;
+  // }
 
   if (size < desc->total_len) {
     size = desc->total_len;
@@ -689,15 +653,19 @@ LABEL(get_descriptor);
   usb_string_t *desc = kmalloc(size);
   memset(desc, 0, size);
 
-  if (usb_add_setup_transfer(device, get_desc, kheap_ptr_to_phys(desc), size) < 0) {
-    kprintf("usb_device_read_string(): failed to add transfer\n");
+  if (usb_run_ctrl_transfer(device, get_desc, kheap_ptr_to_phys(desc), size) < 0) {
+    kprintf("usb_device_read_string(): failed to execute transfer\n");
     return NULL;
   }
 
-  if (usb_await_setup_transfer(device) < 0) {
-    kprintf("usb_device_read_string(): failed to await transfer\n");
-    return NULL;
-  }
+  // if (usb_add_setup_transfer(device, get_desc, kheap_ptr_to_phys(desc), size) < 0) {
+  //   kprintf("usb_device_read_string(): failed to add transfer\n");
+  //   return NULL;
+  // }
+  // if (usb_await_setup_transfer(device) < 0) {
+  //   kprintf("usb_device_read_string(): failed to await transfer\n");
+  //   return NULL;
+  // }
 
   if (size < desc->length) {
     size = desc->length;

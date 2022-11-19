@@ -36,5 +36,6 @@ kernel += sched/sched.c sched/fprr.c
 #	usb/keyboard.c usb/mouse.c usb/scsi.c usb/usb.c \
 #	usb/xhci.c
 kernel += usb/usb.c usb/xhci.c \
-	usb/scsi.c \
-	usb/hid.c usb/hid-report.c usb/hid-usage.c
+	usb/scsi.c usb/hid.c \
+	usb/keyboard.c usb/mouse.c \
+	usb/hid-report.c usb/hid-usage.c

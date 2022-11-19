@@ -214,7 +214,6 @@ typedef struct scsi_device {
 // MARK: USB Driver API
 int scsi_device_init(usb_device_t *device);
 int scsi_device_deinit(usb_device_t *device);
-int scsi_device_handle_event(usb_event_t *event);
 
 ssize_t scsi_read(usb_device_t *device, uint64_t lba, uint32_t count, void *buf);
 ssize_t scsi_write(usb_device_t *device, uint64_t lba, uint32_t count, void *buf);

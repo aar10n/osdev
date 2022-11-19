@@ -360,7 +360,29 @@ noreturn void *_xhci_device_event_loop(void *arg) {
       kassert(trb.trb_type == TRB_TRANSFER_EVT);
 
       uint8_t ep_index = xfer_trb.endp_id - 1;
+      xhci_endpoint_t *ep = device->endpoints[ep_index];
       chan_send(device->endpoints[ep_index]->xfer_ch, trb.qword1);
+
+      if (ep->usb_endpoint != NULL && ep->usb_endpoint->event_ch != NULL) {
+        // form usb event
+        usb_endpoint_t *usb_ep = ep->usb_endpoint;
+
+        usb_event_t usb_event;
+        if (ep->number == 0) {
+          usb_event.type = USB_CTRL_EV; // control event
+        } else {
+          usb_event.type = usb_ep->dir == USB_IN ? USB_IN_EV : USB_OUT_EV; // data transfer event
+        }
+
+        if (xfer_trb.compl_code == CC_SUCCESS || xfer_trb.compl_code == CC_SHORT_PACKET) {
+          usb_event.status = USB_SUCCESS;
+        } else {
+          usb_event.status = USB_ERROR;
+        }
+
+        uint64_t event_raw = *((uint64_t *) &usb_event);
+        chan_send(usb_ep->event_ch, event_raw);
+      }
     }
 
     uint64_t new_erdp = _xhci_ring_device_ptr(device->evt_ring);
@@ -516,6 +538,13 @@ int xhci_device_init(usb_device_t *device) {
 
   _xhci_device_t *dev = _xhci_alloc_device(hc, port, slot_id);
   kassert(dev != NULL);
+  dev->usb_device = device;
+  dev->thread = thread_create(_xhci_device_event_loop, dev);
+  thread_yield();
+
+  dev->endpoints[0] = _xhci_alloc_endpoint(dev, 0, XHCI_CTRL_BI_EP);
+  dev->endpoints[0]->ctx->max_packt_sz = get_default_ep0_packet_size(dev->port);
+  dev->ictx->slot->intrptr_target = dev->interrupter->index;
 
   // setup the device
   if (_xhci_setup_device(dev) < 0) {
@@ -530,6 +559,7 @@ int xhci_device_init(usb_device_t *device) {
 }
 
 int xhci_device_deinit(usb_device_t *device) {
+  // TODO: tear down things properly
   xhci_controller_t *hc = device_to_hc(device);
   _xhci_device_t *dev = device_to_hd(device);
   _xhci_free_device(dev);
@@ -598,7 +628,6 @@ int xhci_await_event(usb_device_t *device, usb_endpoint_t *endpoint, usb_event_t
     return -1;
   }
 
-  event->device = device;
   if (endpoint->number == 0) {
     // default control endpoint
     event->type = USB_CTRL_EV;
@@ -699,6 +728,7 @@ int xhci_init_endpoint(usb_endpoint_t *endpoint) {
   if (endpoint->number == 0) {
     // special default control endpoint
     endpoint->host_data = dev->endpoints[0];
+    dev->endpoints[0]->usb_endpoint = endpoint;
     return 0;
   }
 
@@ -729,6 +759,7 @@ int xhci_init_endpoint(usb_endpoint_t *endpoint) {
 
   dev->endpoints[ep->index] = ep;
   endpoint->host_data = ep;
+  ep->usb_endpoint = endpoint;
   return 0;
 }
 
@@ -1381,12 +1412,7 @@ _xhci_device_t *_xhci_alloc_device(xhci_controller_t *hc, _xhci_port_t *port, ui
 
   mutex_init(&device->lock, 0);
   cond_init(&device->event, 0);
-  device->thread = thread_create(_xhci_device_event_loop, device);
-  thread_yield();
-
-  device->endpoints[0] = _xhci_alloc_endpoint(device, 0, XHCI_CTRL_BI_EP);
-  device->endpoints[0]->ctx->max_packt_sz = get_default_ep0_packet_size(device->port);
-  device->ictx->slot->intrptr_target = device->interrupter->index;
+  device->thread = NULL;
   return device;
 }
 

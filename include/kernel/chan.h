@@ -60,6 +60,7 @@ int chan_set_free_cb(chan_t *chan, chan_free_cb_t fn);
 int chan_send(chan_t *chan, uint64_t data);
 int chan_sendb(chan_t *chan, uint64_t data);
 int chan_recv(chan_t *chan, uint64_t *result);
+int chan_recv_noblock(chan_t *chan, uint64_t *result);
 int chan_recvn(chan_t *chan, size_t n, uint64_t *results);
 int chan_close(chan_t *chan);
 

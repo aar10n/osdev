@@ -75,6 +75,7 @@ typedef struct xhci_interrupter {
 } xhci_interrupter_t;
 
 typedef struct xhci_endpoint {
+  usb_endpoint_t *usb_endpoint;
   xhci_controller_t *host;
   _xhci_device_t *device;
 
@@ -88,6 +89,7 @@ typedef struct xhci_endpoint {
 } xhci_endpoint_t;
 
 typedef struct _xhci_device {
+  usb_device_t *usb_device;
   xhci_controller_t *host;
   _xhci_port_t *port;
 

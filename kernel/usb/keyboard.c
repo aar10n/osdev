@@ -12,9 +12,6 @@
 #include <string.h>
 #include <printf.h>
 
-key_event_t *event_queue_first = NULL;
-key_event_t *event_queue_last = NULL;
-
 key_code_t hid_keyboard_layout[] = {
   [HID_KEYBOARD_A] = VK_KEYCODE_A,
   [HID_KEYBOARD_B] = VK_KEYCODE_B,
@@ -143,53 +140,42 @@ void hid_keyboard_handle_input(hid_device_t *device, const uint8_t *buffer) {
   hid_keyboard_t *kb = device->data;
   uint32_t modifiers = buffer[kb->modifier_offset];
 
-  key_event_t *ptr = event_queue_first;
-
   uint8_t char_idx = kb->buffer_offset;
   uint8_t char_max = char_idx + kb->buffer_size;
   for (int i = char_idx; i < char_max; i++) {
     bool release = false;
     key_code_t code = 0;
+
     if (buffer[i] == 0) {
+      // if a key is active in the previous buffer but not the
+      // current it indicates that the key was released
       for (int j = char_idx; j < char_max; j++) {
         if (kb->prev_buffer[j] != 0) {
           release = true;
           code = hid_keyboard_layout[kb->prev_buffer[j]];
-          goto make_event;
         }
       }
       break;
     } else {
-      code = hid_keyboard_layout[buffer[i]];
-    }
-
-    for (int j = char_idx; j < char_max; j++) {
-      if (kb->prev_buffer[j] == 0) {
-        break;
-      } else if (buffer[i] == kb->prev_buffer[j]) {
-        goto cont;
+      // if a key is active in current buffer but not in the
+      // previous it indicates that the key was pressed
+      for (int j = char_idx; j < char_max; j++) {
+        if (buffer[i] == kb->prev_buffer[j]) {
+          goto outer;
+        }
       }
     }
 
-LABEL(make_event);
-    if (ptr == NULL) {
-      ptr = kmalloc(sizeof(key_event_t));
-      if (event_queue_first == NULL) {
-        event_queue_first = ptr;
-        event_queue_last = ptr;
-      } else {
-        event_queue_last->next = ptr;
-        event_queue_last = ptr;
-      }
-    }
-    ptr->modifiers = modifiers;
-    ptr->key_code = code;
-    ptr->release = release;
-    ptr->next = NULL;
-    ptr = ptr->next;
-LABEL(cont);
+    key_event_t *event = kmalloc(sizeof(key_event_t));
+    memset(event, 0, sizeof(key_event_t));
+    event->modifiers = modifiers;
+    event->key_code = code;
+    event->release = release;
+    event->next = NULL;
+    dispatch_key_event(event);
+
+    LABEL(outer);
   }
 
   memcpy(kb->prev_buffer, buffer, device->size);
-  dispatch_key_event(event_queue_first);
 }

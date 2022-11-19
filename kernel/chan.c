@@ -193,6 +193,41 @@ int chan_recv(chan_t *chan, uint64_t *result) {
   return 0;
 }
 
+int chan_recv_noblock(chan_t *chan, uint64_t *result) {
+  if (chan->flags & CHAN_CLOSED) {
+    return -1;
+  }
+
+  mutex_lock(&chan->reader);
+  mutex_lock(&chan->lock);
+  cond_clear_signal(&chan->data_read);
+
+  if (chan->read_idx == chan->write_idx) {
+    mutex_unlock(&chan->lock);
+    mutex_unlock(&chan->reader);
+    return -2; // no data to read (without blocking)
+  }
+  kassert(chan->read_idx != chan->write_idx);
+
+  // take data off the buffer
+  uint64_t data = chan->buffer[chan->read_idx];
+  chan->buffer[chan->read_idx] = 0;
+  chan->read_idx = get_next_index(chan, chan->read_idx);
+
+  cond_signal(&chan->data_read);
+  mutex_unlock(&chan->lock);
+
+  if (result != NULL) {
+    *result = data;
+  } else {
+    // drop the ignored data
+    cleanup_data(chan, data);
+  }
+
+  mutex_unlock(&chan->reader);
+  return 0;
+}
+
 int chan_recvn(chan_t *chan, size_t n, uint64_t *results) {
   if (n == 0 || chan->flags & CHAN_CLOSED) {
     return -1;
