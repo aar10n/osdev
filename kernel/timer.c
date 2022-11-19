@@ -46,6 +46,7 @@ void timer_periodic_handler(timer_device_t *td) {
 
 void timer_oneshot_handler(timer_device_t *td) {
   if (spin_trylock(&alarm_cond_lock)) {
+    // clock_update_ticks();
     cond_signal(&alarm_cond);
     spin_unlock(&alarm_cond_lock);
   }
@@ -59,9 +60,11 @@ int set_alarm_timer_value(timer_device_t *timer, clock_t expiry) {
   return timer->setval(timer, timer_value);
 }
 
-noreturn void *alarm_event_loop(void *arg) {
+noreturn void *alarm_event_loop(unused void *arg) {
+  kassert(global_one_shot_timer != NULL);
+  timer_device_t *timer = global_one_shot_timer;
+
   kprintf("timer: starting alarm event loop\n");
-  timer_device_t *timer = arg;
   while (true) {
     cond_wait(&alarm_cond);
     if (pending_alarm_tree->min == NULL) {
@@ -78,7 +81,11 @@ noreturn void *alarm_event_loop(void *arg) {
     timer_alarm_t *alarm = pending_alarm_tree->min->data;
     kassert(alarm);
     if (alarm->expires > timer_now()) {
-      set_alarm_timer_value(timer, alarm->expires);
+      kassert(timer != NULL);
+      if (set_alarm_timer_value(timer, alarm->expires) < 0) {
+        panic("failed to set alarm timer value");
+      }
+
       spin_unlock(&pending_alarm_lock);
       continue;
     }
@@ -86,9 +93,9 @@ noreturn void *alarm_event_loop(void *arg) {
     rb_tree_delete_node(pending_alarm_tree, pending_alarm_tree->min);
     spin_unlock(&pending_alarm_lock);
 
-    PERCPU_THREAD->preempt_count++;
+    preempt_enable();
     alarm->callback(alarm->data);
-    PERCPU_THREAD->preempt_count--;
+    preempt_disable();
 
     kfree(alarm);
     if (pending_alarm_tree->nodes > 0) {
@@ -181,9 +188,12 @@ void alarms_init() {
 }
 
 clockid_t timer_create_alarm(clock_t expires, timer_cb_t callback, void *data) {
+  kassert(global_one_shot_timer != NULL);
+  timer_device_t *timer = global_one_shot_timer;
+
   clock_t now = clock_now();
   if (expires < now) {
-    kprintf("timer: invalid alarm %zu < %zu\n", expires, now);
+    kprintf("timer: invalid alarm %llu < %llu\n", expires, now);
     return -EINVAL;
   }
 
@@ -199,9 +209,8 @@ clockid_t timer_create_alarm(clock_t expires, timer_cb_t callback, void *data) {
 
   // check if timer needs to be updated
   if (alarm == pending_alarm_tree->min->data) {
-    // set timer to new most-recently expiring alarm expiry
-    int result = set_alarm_timer_value(global_one_shot_timer, alarm->expires);
-    if (result < 0) {
+    // set timer to next most-recently expiring alarm deadline
+    if (set_alarm_timer_value(timer, alarm->expires) < 0) {
       panic("failed to set alarm timer value");
     }
   }

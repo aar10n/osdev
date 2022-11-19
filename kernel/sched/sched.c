@@ -474,6 +474,7 @@ int sched_sleep(uint64_t ns) {
   clock_t now = clock_now();
   thread->alarm_id = timer_create_alarm(now + ns, (void *) sched_wakeup, thread);
   if (thread->alarm_id < 0) {
+    panic("failed to create alarm\n");
     return -1;
   }
   return sched_reschedule(SCHED_SLEEPING);

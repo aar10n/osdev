@@ -54,8 +54,7 @@ clock_t clock_now() {
     uint64_t current = source->read(source);
     source->last_tick = current;
     atomic_fetch_add(&clock_ticks, current - last);
-    uint64_t current_ns = current * source->scale_ns;
-    atomic_fetch_add(&kernel_time_ns, current_ns);
+    atomic_fetch_add(&kernel_time_ns, (current - last) * source->scale_ns);
 
     spin_unlock(&source->lock);
     return kernel_time_ns;
@@ -85,8 +84,7 @@ void clock_update_ticks() {
   source->last_tick = current;
   uint64_t delta = current - last;
   atomic_fetch_add(&clock_ticks, delta);
-  uint64_t current_ns = current * source->scale_ns;
-  atomic_fetch_add(&kernel_time_ns, current_ns);
+  atomic_fetch_add(&kernel_time_ns, delta * source->scale_ns);
 
   spin_unlock(&source->lock);
 }

@@ -109,6 +109,7 @@
 
 #define __weak __attribute((weak))
 #define __unused __attribute((unused))
+#define unused __attribute((unused))
 #define __used __attribute((used))
 #define __likely(expr) __builtin_expect((expr), 1)
 #define __unlikely(expr) __builtin_expect((expr), 0)

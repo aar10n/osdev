@@ -24,6 +24,7 @@
 #include <signal.h>
 #include <ipc.h>
 #include <smpboot.h>
+#include <fs/utils.h>
 
 #include <device/pit.h>
 #include <device/hpet.h>
@@ -96,7 +97,24 @@ _Noreturn void launch() {
   usb_init();
   pcie_discover();
 
+  //
+
+  kprintf(">>>>>> sleeping <<<<<<\n");
+  thread_sleep(MS_TO_US(1000));
+  kprintf(">>>>>> done <<<<<<\n");
+
+  thread_sleep(MS_TO_US(1));
+
   kprintf("=======> hello <=======\n");
+
+  kprintf("sleep\n");
+  thread_sleep(MS_TO_US(500));
+  kprintf("done\n");
+  kprintf("sleep\n");
+  thread_sleep(MS_TO_US(1));
+  kprintf("done\n");
+
+  kprintf("ok\n");
 
   // memset((void *) FRAMEBUFFER_VA, 0xFF, boot_info_v2->fb_size);
   // screen_print_str("Hello, world\n");
