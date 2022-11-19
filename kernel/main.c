@@ -35,6 +35,9 @@
 
 boot_info_v2_t __boot_data *boot_info_v2;
 
+LOAD_SECTION(__debug_info_section, ".debug_info");
+LOAD_SECTION(__debug_abbrev_section, ".debug_abbrev");
+
 const char *argv[] = {
   "/usr/bin/hello",
   NULL
@@ -48,6 +51,12 @@ _Noreturn void launch();
 
 __used void kmain() {
   console_early_init();
+
+  kprintf("__debug_info_section\n");
+  kprintf("  name = %s\n", __debug_info_section.name);
+  kprintf("  data = %p\n", __debug_info_section.data);
+  kprintf("  size = %zu\n", __debug_info_section.size);
+  
   cpu_init();
 
   mm_early_init();
@@ -113,6 +122,10 @@ _Noreturn void launch() {
   // kprintf("sleeping for %u ms\n", ms);
   // thread_sleep(MS_TO_US(ms));
   // kprintf("done!\n");
+
+  kprintf("causing panic\n");
+  char *x = NULL;
+  char c = *x;
 
   kprintf("haulting...\n");
   thread_block();

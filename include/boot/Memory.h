@@ -37,17 +37,17 @@ typedef struct _PAGE_DESCRIPTOR {
 #define MEMORY_MAP_NEXT(desc, map) (NEXT_MEMORY_DESCRIPTOR(desc, (map)->DescSize))
 #define MEMORY_MAP_ENTRY(map, index) ((EFI_MEMORY_DESCRIPTOR *)((UINTN)(map)->Map + ((index) * (map)->DescSize)))
 
-PAGE_DESCRIPTOR *NewDescriptor(
+PAGE_DESCRIPTOR EFIAPI *NewDescriptor(
   IN OUT PAGE_DESCRIPTOR *Prev,
   IN EFI_PHYSICAL_ADDRESS PhysAddr,
   IN EFI_VIRTUAL_ADDRESS VirtAddr,
   IN UINT64 NumPages,
   IN UINT64 Flags
 );
-PAGE_DESCRIPTOR *AppendDescriptors(
-  IN OUT PAGE_DESCRIPTOR *List,
-  IN PAGE_DESCRIPTOR *Descriptors
-);
+
+PAGE_DESCRIPTOR EFIAPI *GetLastDescriptor(IN PAGE_DESCRIPTOR *List);
+PAGE_DESCRIPTOR EFIAPI *AppendDescriptors(IN OUT PAGE_DESCRIPTOR *List, IN PAGE_DESCRIPTOR *Descriptors);
+EFI_PHYSICAL_ADDRESS EFIAPI ConvertVirtToPhysFromDescriptors(IN PAGE_DESCRIPTOR *List, IN EFI_VIRTUAL_ADDRESS VirtAddr);
 
 EFI_STATUS EFIAPI GetMemoryMap(IN OUT EFI_MEMORY_MAP *MemoryMap);
 EFI_STATUS EFIAPI ExitBootServices(IN EFI_MEMORY_MAP *MemoryMap);

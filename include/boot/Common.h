@@ -28,11 +28,11 @@
 #define PRINT(string, ...) \
   ({                            \
     CHAR16 *String = CatSPrint(NULL, string, ##__VA_ARGS__); \
-    UINTN StringLen = StrLen(String);                                                        \
+    UINTN StringLen = StrLen(String); \
     Print(L"%s", String); \
     CHAR8 *AsciiString = AllocatePool(StringLen + 1); \
     UnicodeStrToAsciiStrS(String, AsciiString, StringLen + 1); \
-    SerialPortWrite((UINT8 *) AsciiString, StringLen); \
+    /*SerialPortWrite((UINT8 *) AsciiString, StringLen);*/ \
     FreePool(String);           \
     FreePool(AsciiString);      \
   })

@@ -23,5 +23,6 @@
 #define __MLIBC_O_TRUNC     0x010000
 #define __MLIBC_O_PATH      0x040000
 #define __MLIBC_O_TMPFILE   0x080000
+#define __MLIBC_O_LARGEFILE 0x100000
 
 #endif

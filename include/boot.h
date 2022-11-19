@@ -16,6 +16,10 @@
 // The bootloader will dynamically link the boot_info pointer
 // to variables annotated with the __boot_info attribute.
 #define __boot_data __attribute__((section(".boot_data")))
+#define __load_sections __attribute__((section(".load_sections")))
+
+
+#define LOAD_SECTION(varname, secname) loaded_section_t __load_sections varname = { .name = secname }
 
 
 #define KERNEL_MAX_SIZE  SIZE_2MB
@@ -42,13 +46,21 @@
 #define BOOT_MAGIC2 'O'
 #define BOOT_MAGIC3 'T'
 
+// Section Loading
+
+typedef struct loaded_section {
+  const char *name;
+  void *data;
+  size_t size;
+} loaded_section_t;
+
 // Framebuffer
 
 #define PIXEL_RGB 0
 #define PIXEL_BGR 1
 #define PIXEL_BITMASK 2
 
-typedef struct {
+typedef struct pixel_bitmask {
   uint32_t red_mask;
   uint32_t green_mask;
   uint32_t blue_mask;
@@ -95,30 +107,5 @@ typedef struct boot_info_v2 {
   uint32_t smbios_ptr;            // SMBIOS Entry Point table address
   uint32_t : 32;                  // reserved
 } boot_info_v2_t;
-
-typedef struct {
-  uint8_t magic[4];                // 'BOOT' magic
-  uintptr_t kernel_phys;           // the kernel physical address
-  uint8_t bsp_id;                  // boot processor id
-  uint8_t num_cores;               // the number of physical cores
-  uint16_t num_threads;            // the number of threads
-  // memory info
-  memory_map_t *mem_map;           // the memory map array
-  uintptr_t pml4;                  // pointer to the pml4 page table
-  uintptr_t reserved_base;         // pointer to start of reserved kernel area
-  size_t reserved_size;            // the size of reserved kernel area
-  // framebuffer info
-  uintptr_t fb_base;               // framebuffer base pointer
-  size_t fb_size;                  // framebuffer size
-  uint32_t fb_width;               // framebuffer width
-  uint32_t fb_height;              // framebuffer height
-  uint32_t fb_pixels_per_scanline; // frambuffer pixels per scanline
-  uint32_t fb_pixel_format;        // format of the pixels
-  pixel_bitmask_t fb_pixel_info;   // pixel information bitmask
-  // system info
-  uintptr_t runtime_services;       // a pointer to the EFI runtime services
-  uintptr_t acpi_table;             // a pointer to the ACPI RDSP (if present)
-  uintptr_t smbios_table;           // a pointer to the Smbios entry table (if present)
-} boot_info_t;
 
 #endif

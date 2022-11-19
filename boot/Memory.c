@@ -31,7 +31,7 @@
 
 extern UINT64 KernelPhysAddr;
 
-PAGE_DESCRIPTOR *NewDescriptor(
+PAGE_DESCRIPTOR EFIAPI *NewDescriptor(
   IN OUT PAGE_DESCRIPTOR *Prev,
   IN EFI_PHYSICAL_ADDRESS PhysAddr,
   IN EFI_VIRTUAL_ADDRESS VirtAddr,
@@ -57,10 +57,19 @@ PAGE_DESCRIPTOR *NewDescriptor(
   return Descriptor;
 }
 
-PAGE_DESCRIPTOR *AppendDescriptors(
-  IN OUT PAGE_DESCRIPTOR *List,
-  IN PAGE_DESCRIPTOR *Descriptors
-) {
+PAGE_DESCRIPTOR EFIAPI *GetLastDescriptor(IN PAGE_DESCRIPTOR *List) {
+  if (List == NULL) {
+    return NULL;
+  }
+
+  PAGE_DESCRIPTOR *Last = List;
+  while (Last->Next != NULL) {
+    Last = Last->Next;
+  }
+  return Last;
+}
+
+PAGE_DESCRIPTOR EFIAPI *AppendDescriptors(IN OUT PAGE_DESCRIPTOR *List, IN PAGE_DESCRIPTOR *Descriptors) {
   PAGE_DESCRIPTOR *Last;
   if (List == NULL) {
     return Descriptors;
@@ -73,6 +82,26 @@ PAGE_DESCRIPTOR *AppendDescriptors(
 
   Last->Next = Descriptors;
   return List;
+}
+
+EFI_PHYSICAL_ADDRESS EFIAPI ConvertVirtToPhysFromDescriptors(IN PAGE_DESCRIPTOR *List, IN EFI_VIRTUAL_ADDRESS VirtAddr) {
+  if (List == NULL) {
+    PRINT_WARN("ConvertVirtToPhysFromDescriptors called with <null> list");
+    return 0;
+  }
+
+  PAGE_DESCRIPTOR *Desc = List;
+  while (Desc != NULL) {
+    if (VirtAddr >= Desc->VirtAddr && VirtAddr < Desc->VirtAddr + EFI_PAGES_TO_SIZE(Desc->NumPages)) {
+      // the address falls within this descriptor
+      UINT64 Offset = VirtAddr - Desc->VirtAddr;
+      return Desc->PhysAddr + Offset;
+    }
+    Desc = Desc->Next;
+  }
+
+  PRINT_WARN("ConvertVirtToPhysFromDescriptors failed to convert 0x%p\n", VirtAddr);
+  return 0;
 }
 
 //

@@ -13,6 +13,9 @@
 #define NEXT_SHDR(ehdr, shdr) ((Elf64_Shdr *)((UINTN)(shdr) + (ehdr)->e_shentsize))
 #define NEXT_SYM(shdr, sym) ((Elf64_Sym *)((UINTN)(sym) + (shdr)->sh_entsize))
 
+// ------------------------------------------------
+//   ELF Helper Functions
+// ------------------------------------------------
 
 BOOLEAN ElfVerifyHeader(IN Elf64_Ehdr *ElfHdr) {
   UINT8 IdentMagic[4] = {ELFMAG0, ELFMAG1, ELFMAG2, ELFMAG3};
@@ -122,7 +125,85 @@ Elf64_Sym EFIAPI *ElfLocateSymbolByName(IN Elf64_Ehdr *ElfHdr, IN CONST CHAR8 *S
   return NULL;
 }
 
-//
+Elf64_Sym EFIAPI *LocateObjectSymbolInSection(IN Elf64_Ehdr *ElfHdr, IN CONST CHAR8 *SectionName, IN CONST CHAR8 *SymbolName) {
+  Elf64_Shdr *SymTabHdr = ElfLocateSectionHeaderByType(ElfHdr, SHT_SYMTAB);
+  Elf64_Shdr *SectionHdr = ElfLocateSectionHeaderByName(ElfHdr, SectionName);
+  if (SymTabHdr == NULL || SectionHdr == NULL || SectionHdr->sh_type != SHT_PROGBITS) {
+    PRINT_WARN("LocateObjectSymbolInSection bad section");
+    return NULL;
+  }
+
+  Elf64_Shdr *FirstShdr = EHDR_OFFSET(ElfHdr, ElfHdr->e_shoff);
+  UINTN SectionIndex = SectionHdr - FirstShdr;
+  Elf64_Sym *Sym = EHDR_OFFSET(ElfHdr, SymTabHdr->sh_offset + SymTabHdr->sh_entsize);
+  UINTN NumSymbols = SymTabHdr->sh_size / SymTabHdr->sh_entsize;
+  for (UINTN Index = 0; Index < NumSymbols; Index++) {
+    if (Sym->st_shndx != SectionIndex) {
+      Sym = NEXT_SYM(SymTabHdr, Sym);
+      continue;
+    }
+
+    if (ELF64_ST_TYPE(Sym->st_info) == STT_OBJECT) {
+      CHAR8 *SymName = ElfGetStringForSymbol(ElfHdr, SymTabHdr, Sym);
+      if (SymName == NULL) {
+        continue;
+      }
+
+      PRINT_INFO("===> found: %a, type = %d, bind = %d, size = %llu, value = 0x%p",
+                 SymName, ELF64_ST_TYPE(Sym->st_info), ELF64_ST_BIND(Sym->st_info), Sym->st_size, Sym->st_value);
+      if (AsciiStrCmp(SymbolName, SymName) == 0) {
+        return Sym;
+      }
+    }
+
+    Sym = NEXT_SYM(SymTabHdr, Sym);
+  }
+
+  return NULL;
+}
+
+Elf64_Sym EFIAPI *LocateKernelBootInfoSymbol(IN Elf64_Ehdr *ElfHdr) {
+  Elf64_Shdr *SymTabHdr = ElfLocateSectionHeaderByType(ElfHdr, SHT_SYMTAB);
+  Elf64_Shdr *BootDataHdr = ElfLocateSectionHeaderByName(ElfHdr, ".boot_data");
+  if (SymTabHdr == NULL || BootDataHdr == NULL || BootDataHdr->sh_type != SHT_PROGBITS) {
+    // no boot data section
+    PRINT_WARN("No .boot_data section found");
+    return NULL;
+  }
+
+  PRINT_INFO("Found .boot_data section");
+  PRINT_INFO("Looking for boot info symbol");
+
+  Elf64_Shdr *FirstShdr = EHDR_OFFSET(ElfHdr, ElfHdr->e_shoff);
+  UINTN BootDataIndex = BootDataHdr - FirstShdr;
+  Elf64_Sym *Sym = EHDR_OFFSET(ElfHdr, SymTabHdr->sh_offset + SymTabHdr->sh_entsize);
+  UINTN NumSymbols = SymTabHdr->sh_size / SymTabHdr->sh_entsize;
+  for (UINTN Index = 0; Index < NumSymbols; Index++) {
+    if (Sym->st_shndx != BootDataIndex) {
+      Sym = NEXT_SYM(SymTabHdr, Sym);
+      continue;
+    }
+
+    if (Sym->st_info & STT_OBJECT) {
+      CHAR8 *SymName = ElfGetStringForSymbol(ElfHdr, SymTabHdr, Sym);
+      if (SymName != NULL) {
+        PRINT_INFO("Found boot info symbol '%a'", SymName);
+      } else {
+        PRINT_INFO("Found boot info symbol in section: .boot_data");
+      }
+      return Sym;
+    }
+
+    PRINT_WARN("Found invalid non-object symbol in section: .boot_data");
+    Sym = NEXT_SYM(SymTabHdr, Sym);
+  }
+
+  return NULL;
+}
+
+// ------------------------------------------------
+//   ELF Loading Functions
+// ------------------------------------------------
 
 EFI_STATUS EFIAPI ReadElf(IN VOID *Buffer, OUT UINT64 *EntryPoint, OUT UINTN *MemSize) {
   Elf64_Ehdr *ElfHdr = Buffer;
@@ -205,46 +286,130 @@ EFI_STATUS EFIAPI LoadElf(IN VOID *Buffer, IN UINT64 PhysAddr, OUT PAGE_DESCRIPT
   return EFI_SUCCESS;
 }
 
-//
+EFI_STATUS EFIAPI LoadElfSection(
+  IN Elf64_Ehdr *ElfHdr,
+  IN Elf64_Shdr *Shdr,
+  IN UINT64 PhysAddr,
+  IN UINT64 VirtAddr,
+  OUT PAGE_DESCRIPTOR **Page
+) {
+  UINTN NumPages = EFI_SIZE_TO_PAGES(Shdr->sh_size);
+  UINTN FileSize = Shdr->sh_size;
+  UINTN MemSize = EFI_PAGES_TO_SIZE(NumPages);
 
-Elf64_Sym EFIAPI *LocateKernelBootInfoSymbol(IN Elf64_Ehdr *ElfHdr) {
+  CopyMem((VOID *) PhysAddr, EHDR_OFFSET(ElfHdr, Shdr->sh_offset), FileSize);
+  ZeroMem((VOID *) (PhysAddr + FileSize), MemSize - FileSize);
+
+  PAGE_DESCRIPTOR *Desc = NewDescriptor(
+    NULL,
+    PhysAddr,
+    VirtAddr,
+    EFI_SIZE_TO_PAGES(Shdr->sh_size),
+    0
+  );
+  *Page = Desc;
+  return EFI_SUCCESS;
+}
+
+// ------------------------------------------------
+//   Kernel Loading Functions
+// ------------------------------------------------
+
+EFI_STATUS EFIAPI LoadKernelRequestedSections(
+  IN Elf64_Ehdr *ElfHdr,
+  IN OUT PAGE_DESCRIPTOR *Pages
+) {
+  EFI_STATUS Status;
+
   Elf64_Shdr *SymTabHdr = ElfLocateSectionHeaderByType(ElfHdr, SHT_SYMTAB);
-  Elf64_Shdr *BootDataHdr = ElfLocateSectionHeaderByName(ElfHdr, ".boot_data");
-  if (SymTabHdr == NULL || BootDataHdr == NULL || BootDataHdr->sh_type != SHT_PROGBITS) {
-    // no boot data section
-    PRINT_WARN("No .boot_data section found");
-    return NULL;
+  Elf64_Shdr *LoadSectionsHdr = ElfLocateSectionHeaderByName(ElfHdr, ".load_sections");
+  if (SymTabHdr == NULL || LoadSectionsHdr == NULL || LoadSectionsHdr->sh_type != SHT_PROGBITS) {
+    PRINT_WARN("No .load_sections section found");
+    return EFI_SUCCESS;
   }
 
-  PRINT_INFO("Found .boot_data section");
-  PRINT_INFO("Looking for boot info symbol");
+  // load the requested sections immediate after the kernel code + data
+  PAGE_DESCRIPTOR *LastPage = GetLastDescriptor(Pages);
+  ASSERT(LastPage != NULL);
+  EFI_PHYSICAL_ADDRESS PhysAddr = LastPage->PhysAddr + EFI_PAGES_TO_SIZE(LastPage->NumPages);
+  EFI_VIRTUAL_ADDRESS VirtAddr = LastPage->VirtAddr + EFI_PAGES_TO_SIZE(LastPage->NumPages);
 
+  PRINT_INFO("Found .load_sections section");
+  PRINT_INFO("Looking for sections to load");
+
+  // Iterate through all symbols in the '.load_sections' section. Each symbol should be
+  // a variable defined by the LOAD_SECTION macro with the type 'loaded_section_t'. The
+  // `name` field in the struct pointed to by each symbol will indicate the name of the
+  // section being requested.
+  //
+  // Once the corresponding section has been mapped, we populate struct pointed to by each
+  // symbol with the virtual address and size of the loaded section.
+  PAGE_DESCRIPTOR *Desc = LastPage;
   Elf64_Shdr *FirstShdr = EHDR_OFFSET(ElfHdr, ElfHdr->e_shoff);
-  UINTN BootDataIndex = BootDataHdr - FirstShdr;
+  UINTN LoadSectionsIndex = LoadSectionsHdr - FirstShdr;
   Elf64_Sym *Sym = EHDR_OFFSET(ElfHdr, SymTabHdr->sh_offset + SymTabHdr->sh_entsize);
   UINTN NumSymbols = SymTabHdr->sh_size / SymTabHdr->sh_entsize;
   for (UINTN Index = 0; Index < NumSymbols; Index++) {
-    if (Sym->st_shndx != BootDataIndex) {
-      Sym = NEXT_SYM(SymTabHdr, Sym);
-      continue;
+    if (Sym->st_shndx != LoadSectionsIndex) {
+      goto NEXT;
+    } else if (ELF64_ST_TYPE(Sym->st_info) != STT_OBJECT) {
+      PRINT_WARN("Invalid symbol in .load_sections (non-object)");
+      goto NEXT;
+    } else if (Sym->st_size != sizeof(loaded_section_t)) {
+      PRINT_WARN("Invalid symbol in .load_sections (size = %llu)", Sym->st_size);
+      goto NEXT;
     }
 
-    if (Sym->st_info & STT_OBJECT) {
-      CHAR8 *SymName = ElfGetStringForSymbol(ElfHdr, SymTabHdr, Sym);
-      if (SymName != NULL) {
-        PRINT_INFO("Found boot info symbol '%a'", SymName);
-      } else {
-        PRINT_INFO("Found boot info symbol in section: .boot_data");
-      }
-      return Sym;
+    CHAR8 *SymName = ElfGetStringForSymbol(ElfHdr, SymTabHdr, Sym);
+    if (SymName == NULL) {
+      // is this possible at this point?
+      goto NEXT;
     }
 
-    PRINT_WARN("Found invalid non-object symbol in section: .boot_data");
+    // Since the kernel mappings have not been applied yet, we must convert the symbol's
+    // virtual address into a physical address so we can read/write from the struct.
+    UINT64 SymPhysAddr = ConvertVirtToPhysFromDescriptors(Pages, Sym->st_value);
+    loaded_section_t *section = (VOID *) SymPhysAddr;
+    // do the same for the section name string
+    UINT64 SectionNamePhysAddr = ConvertVirtToPhysFromDescriptors(Pages, (UINT64) section->name);
+    CHAR8 *SectionName = (VOID *) SectionNamePhysAddr;
+
+    // now we can find and load the requested section
+    PRINT_INFO("Loading requested section '%a' for symbol '%a'", SectionName, SymName);
+    Elf64_Shdr *SectionHdr = ElfLocateSectionHeaderByName(ElfHdr, SectionName);
+    if (SectionHdr == NULL) {
+      PRINT_WARN("Failed to load section '%a', does not exist", SectionName);
+      goto NEXT;
+    }
+
+    PAGE_DESCRIPTOR *Page = NULL;
+    Status = LoadElfSection(ElfHdr, SectionHdr, PhysAddr, VirtAddr, &Page);
+    if (EFI_ERROR(Status)) {
+      PRINT_ERROR("Failed to load section '%a'", SectionName);
+      section->data = NULL;
+      section->size = 0;
+      goto NEXT;
+    }
+
+    PRINT_INFO("Loaded section '%a' at 0x%p [%llu]", SectionName, VirtAddr, SectionHdr->sh_size);
+
+    // fill in the loaded_section struct
+    section->data = (VOID *) VirtAddr;
+    section->size = SectionHdr->sh_size;
+
+    PhysAddr += EFI_PAGES_TO_SIZE(Page->NumPages);
+    VirtAddr += EFI_PAGES_TO_SIZE(Page->NumPages);
+    Desc->Next = Page;
+    Desc = Page;
+
+  NEXT:
     Sym = NEXT_SYM(SymTabHdr, Sym);
   }
 
-  return NULL;
+  return EFI_SUCCESS;
 }
+
+//
 
 EFI_STATUS EFIAPI LoadKernel(
   IN CONST CHAR16 *Path,
@@ -301,8 +466,15 @@ EFI_STATUS EFIAPI LoadKernel(
     FreePool(KernelImageBuffer);
     return Status;
   }
-
   PRINT_INFO("Kernel entry point: 0x%p", KernelEntry);
+
+  // load sections requested by the kernel
+  Status = LoadKernelRequestedSections(KernelImageBuffer, KernelPages);
+  if (EFI_ERROR(Status)) {
+    PRINT_ERROR("Failed to load kernel requested sections");
+    FreePool(KernelImageBuffer);
+    return Status;
+  }
 
   // locate boot_info symbol (if any)
   Elf64_Sym *BootInfoSym = LocateKernelBootInfoSymbol(KernelImageBuffer);
@@ -318,7 +490,7 @@ EFI_STATUS EFIAPI LoadKernel(
 }
 
 //
-// Debugging
+// MARK: Debugging
 //
 
 EFI_STATUS EFIAPI PrintElfInfo(IN VOID *Buffer) {
