@@ -370,3 +370,13 @@ void _free_pages(page_t *page) {
     page = next;
   }
 }
+
+//
+
+bool mm_is_kernel_code_ptr(uintptr_t ptr) {
+  return ptr >= kernel_code_start && ptr < kernel_code_end;
+}
+
+bool mm_is_kernel_data_ptr(uintptr_t ptr) {
+  return ptr >= kernel_code_end && ptr < kernel_data_end;
+}

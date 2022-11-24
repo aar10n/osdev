@@ -286,40 +286,17 @@ EFI_STATUS EFIAPI LoadElf(IN VOID *Buffer, IN UINT64 PhysAddr, OUT PAGE_DESCRIPT
   return EFI_SUCCESS;
 }
 
-EFI_STATUS EFIAPI LoadElfSection(
-  IN Elf64_Ehdr *ElfHdr,
-  IN Elf64_Shdr *Shdr,
-  IN UINT64 PhysAddr,
-  IN UINT64 VirtAddr,
-  OUT PAGE_DESCRIPTOR **Page
-) {
-  UINTN NumPages = EFI_SIZE_TO_PAGES(Shdr->sh_size);
-  UINTN FileSize = Shdr->sh_size;
-  UINTN MemSize = EFI_PAGES_TO_SIZE(NumPages);
-
-  CopyMem((VOID *) PhysAddr, EHDR_OFFSET(ElfHdr, Shdr->sh_offset), FileSize);
-  ZeroMem((VOID *) (PhysAddr + FileSize), MemSize - FileSize);
-
-  PAGE_DESCRIPTOR *Desc = NewDescriptor(
-    NULL,
-    PhysAddr,
-    VirtAddr,
-    EFI_SIZE_TO_PAGES(Shdr->sh_size),
-    0
-  );
-  *Page = Desc;
-  return EFI_SUCCESS;
-}
-
 // ------------------------------------------------
 //   Kernel Loading Functions
 // ------------------------------------------------
 
-EFI_STATUS EFIAPI LoadKernelRequestedSections(
-  IN Elf64_Ehdr *ElfHdr,
-  IN OUT PAGE_DESCRIPTOR *Pages
-) {
+EFI_STATUS EFIAPI LoadKernelRequestedSections(IN Elf64_Ehdr *ElfHdr, IN PAGE_DESCRIPTOR *Pages) {
   EFI_STATUS Status;
+
+  // load the requested sections immediate after the kernel code + data in physical memory
+  PAGE_DESCRIPTOR *LastPage = GetLastDescriptor(Pages);
+  ASSERT(LastPage != NULL);
+  EFI_PHYSICAL_ADDRESS PhysAddr = LastPage->PhysAddr + EFI_PAGES_TO_SIZE(LastPage->NumPages);
 
   Elf64_Shdr *SymTabHdr = ElfLocateSectionHeaderByType(ElfHdr, SHT_SYMTAB);
   Elf64_Shdr *LoadSectionsHdr = ElfLocateSectionHeaderByName(ElfHdr, ".load_sections");
@@ -328,14 +305,7 @@ EFI_STATUS EFIAPI LoadKernelRequestedSections(
     return EFI_SUCCESS;
   }
 
-  // load the requested sections immediate after the kernel code + data
-  PAGE_DESCRIPTOR *LastPage = GetLastDescriptor(Pages);
-  ASSERT(LastPage != NULL);
-  EFI_PHYSICAL_ADDRESS PhysAddr = LastPage->PhysAddr + EFI_PAGES_TO_SIZE(LastPage->NumPages);
-  EFI_VIRTUAL_ADDRESS VirtAddr = LastPage->VirtAddr + EFI_PAGES_TO_SIZE(LastPage->NumPages);
-
   PRINT_INFO("Found .load_sections section");
-  PRINT_INFO("Looking for sections to load");
 
   // Iterate through all symbols in the '.load_sections' section. Each symbol should be
   // a variable defined by the LOAD_SECTION macro with the type 'loaded_section_t'. The
@@ -344,7 +314,6 @@ EFI_STATUS EFIAPI LoadKernelRequestedSections(
   //
   // Once the corresponding section has been mapped, we populate struct pointed to by each
   // symbol with the virtual address and size of the loaded section.
-  PAGE_DESCRIPTOR *Desc = LastPage;
   Elf64_Shdr *FirstShdr = EHDR_OFFSET(ElfHdr, ElfHdr->e_shoff);
   UINTN LoadSectionsIndex = LoadSectionsHdr - FirstShdr;
   Elf64_Sym *Sym = EHDR_OFFSET(ElfHdr, SymTabHdr->sh_offset + SymTabHdr->sh_entsize);
@@ -375,32 +344,25 @@ EFI_STATUS EFIAPI LoadKernelRequestedSections(
     CHAR8 *SectionName = (VOID *) SectionNamePhysAddr;
 
     // now we can find and load the requested section
-    PRINT_INFO("Loading requested section '%a' for symbol '%a'", SectionName, SymName);
+    PRINT_INFO("Loading section '%a' for symbol %a", SectionName, SymName);
     Elf64_Shdr *SectionHdr = ElfLocateSectionHeaderByName(ElfHdr, SectionName);
     if (SectionHdr == NULL) {
       PRINT_WARN("Failed to load section '%a', does not exist", SectionName);
       goto NEXT;
     }
 
-    PAGE_DESCRIPTOR *Page = NULL;
-    Status = LoadElfSection(ElfHdr, SectionHdr, PhysAddr, VirtAddr, &Page);
-    if (EFI_ERROR(Status)) {
-      PRINT_ERROR("Failed to load section '%a'", SectionName);
-      section->data = NULL;
-      section->size = 0;
-      goto NEXT;
-    }
+    // load the elf section
+    UINTN NumPages = EFI_SIZE_TO_PAGES(SectionHdr->sh_size);
+    UINTN FileSize = SectionHdr->sh_size;
+    UINTN MemSize = EFI_PAGES_TO_SIZE(NumPages);
 
-    PRINT_INFO("Loaded section '%a' at 0x%p [%llu]", SectionName, VirtAddr, SectionHdr->sh_size);
+    CopyMem((VOID *) PhysAddr, EHDR_OFFSET(ElfHdr, SectionHdr->sh_offset), FileSize);
+    ZeroMem((VOID *) (PhysAddr + FileSize), MemSize - FileSize);
 
     // fill in the loaded_section struct
-    section->data = (VOID *) VirtAddr;
+    section->data = PhysAddr;
     section->size = SectionHdr->sh_size;
-
-    PhysAddr += EFI_PAGES_TO_SIZE(Page->NumPages);
-    VirtAddr += EFI_PAGES_TO_SIZE(Page->NumPages);
-    Desc->Next = Page;
-    Desc = Page;
+    PhysAddr += EFI_PAGES_TO_SIZE(NumPages);
 
   NEXT:
     Sym = NEXT_SYM(SymTabHdr, Sym);

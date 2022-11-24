@@ -16,12 +16,15 @@ int strcmp(const char *s1, const char *s2);
 int strncmp(const char *s1, const char *s2, size_t n);
 int strlen(const char *s);
 void *strcpy(char *dest, const char *src);
+char *strdup(const char *s);
 void reverse(char *s);
 
 int utf16_strlen(const char16_t *s);
 
 int utf16_iconv_ascii(char *dest, const char16_t *src);
 int utf16_iconvn_ascii(char *dest, const char16_t *src, size_t n);
+
+long strtol(const char *nptr, char **endptr, int base);
 
 void *__memset_slow(void *dest, int val, size_t len);
 void *__memset8(void *dest, uint8_t val, size_t len);

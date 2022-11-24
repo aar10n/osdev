@@ -156,7 +156,7 @@ $(BUILD_DIR)/boot$(WINARCH).efi: $(BUILD_DIR)/loader.dll
 KERNEL_CFLAGS = $(CFLAGS) -mcmodel=large -mno-red-zone -fno-stack-protector \
 				-fno-omit-frame-pointer -fstrict-volatile-bitfields -fno-builtin-memset \
 				$(KERNEL_DEFINES)
-KERNEL_LDFLAGS = $(LDFLAGS) -Tlinker.ld -nostdlib -z max-page-size=0x1000
+KERNEL_LDFLAGS = $(LDFLAGS) -Tlinker.ld -nostdlib -z max-page-size=0x1000 -L$(BUILD_DIR) -L$(SYS_ROOT)/usr/lib
 
 KERNEL_INCLUDE = $(INCLUDE) -Iinclude/kernel -Iinclude/fs -Ilib
 
@@ -164,12 +164,12 @@ KERNEL_DEFINES = $(DEFINES) -D__KERNEL__
 
 
 $(BUILD_DIR)/kernel.elf: $(KERNEL_OBJECTS)
-	$(LD) $(KERNEL_LDFLAGS) $^ -o $@
+	$(LD) $(KERNEL_LDFLAGS) $^ -l:libdwarf_kernel.a --no-relax -o $@
 
 # bootable USB image
 $(BUILD_DIR)/osdev.img: $(BUILD_DIR)/boot$(WINARCH).efi $(BUILD_DIR)/kernel.elf config.ini
-	dd if=/dev/zero of=$@ bs=1k count=1440
-	mformat -i $@ -f 1440 -v osdev ::
+	dd if=/dev/zero of=$@ bs=1k count=2880
+	mformat -i $@ -f 2880 -v osdev ::
 	mmd -i $@ ::/EFI
 	mmd -i $@ ::/EFI/BOOT
 	mcopy -i $@ $< ::/EFI/BOOT

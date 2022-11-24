@@ -3,8 +3,8 @@ $(call register,kernel,KERNEL)
 
 # kernel/
 kernel += entry.asm memory.asm smpboot.asm syscall.asm thread.asm \
-	chan.c clock.c console.c errno.c event.c ipc.c init.c irq.c loader.c \
-	main.c mutex.c panic.c printf.c process.c semaphore.c signal.c \
+	chan.c clock.c console.c errno.c event.c ipc.c init.c irq.c \
+	loader.c main.c mutex.c panic.c printf.c process.c semaphore.c signal.c \
 	smpboot.c spinlock.c string.c syscall.c thread.c timer.c queue.c \
 	ipi.c
 
@@ -17,6 +17,9 @@ kernel += bus/pci.c bus/pci_tables.c bus/pcie.c
 # kernel/cpu
 kernel += cpu/cpu.asm cpu/idt.asm cpu/io.asm cpu/exception.asm \
 	cpu/cpu.c cpu/gdt.c cpu/idt.c cpu/per_cpu.c
+
+# kernel/debug
+kernel += debug/debug.c debug/dwarf.c
 
 # kernel/device
 kernel += device/apic.c device/hpet.c \

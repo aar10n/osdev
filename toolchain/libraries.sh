@@ -101,6 +101,7 @@ toolchain::libdwarf::build() {
   esac
 
   local version="${LIBDWARF_VERSION}"
+  local src_dir=${PROJECT_DIR}/third-party/libdwarf
   local build_dir=${LIBDWARF_BUILD_DIR:-${BUILD_DIR}/system/libdwarf}
   local install_dir=${LIBDWARF_INSTALL_DIR:-${SYS_ROOT}/usr}
   local sysroot="${LIBDWARF_SYSROOT:-${SYS_ROOT}}"
@@ -108,23 +109,47 @@ toolchain::libdwarf::build() {
 
   mkdir -p ${build_dir}
   pushd ${build_dir}
-    if [ ! -d src ]; then
-      mkdir -p src
-      wget -nc https://github.com/davea42/libdwarf-code/releases/download/v${version}/libdwarf-${version}.tar.xz
-      tar -xf libdwarf-${version}.tar.xz -C src --strip-components=1
-    fi
+
+#    if [ ! -d src ]; then
+#      mkdir -p src
+#      wget -nc https://github.com/davea42/libdwarf-code/releases/download/v${version}/libdwarf-${version}.tar.xz
+#      tar -xf libdwarf-${version}.tar.xz -C src --strip-components=1
+#      patch -d src < ${PROJECT_DIR}/toolchain/patches/libdwarf.patch
+#    fi
 
     mkdir -p build
     pushd build
       export CHOST="${arch}"
       export CC="${tool_prefix}gcc"
+      export CFLAGS="-g -fPIC -frecord-gcc-switches"
       export AR="${tool_prefix}gcc-ar"
       export RANLIB="${tool_prefix}gcc-ranlib"
 
-      # --disable-libz
-      ../src/configure --host=${arch}-elf --prefix=${install_dir} --with-sysroot=${sysroot} --disable-libelf
+      ${src_dir}/configure \
+        --host=${arch}-elf \
+        --prefix=${install_dir} \
+        --with-sysroot=${sysroot} \
+        --with-pic \
+        --disable-libelf \
+        --disable-libz
+
       ${MAKE_j}
       make install
+
+      ${tool_prefix}objcopy \
+        --redefine-sym malloc=kmalloc \
+        --redefine-sym calloc=kcalloc \
+        --redefine-sym free=kfree \
+        --redefine-sym printf=kprintf \
+        \
+        --redefine-sym realloc=__debug_realloc_stub \
+        --redefine-sym fclose=__debug_fclose_stub \
+        --redefine-sym qsort=__debug_qsort_stub \
+        --redefine-sym getcwd=__debug_getcwd_stub \
+        --redefine-sym do_decompress_zlib=__debug_do_decompress_zlib_stub \
+        --redefine-sym uncompress=__debug_uncompress_stub \
+        \
+        ${install_dir}/lib/libdwarf.a ${BUILD_DIR}/libdwarf_kernel.a
     popd
   popd
 }

@@ -132,6 +132,9 @@ process_t *process_create_root(void (function)()) {
   kassert(ptable_pages != NULL);
   ptable = (void *) PAGE_VIRT_ADDR(ptable_pages);
 
+  char *x = NULL;
+  char c = *x;
+
   ptable[0] = process;
   ptable_size = 1;
   return process;

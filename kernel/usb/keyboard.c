@@ -152,7 +152,7 @@ void hid_keyboard_handle_input(hid_device_t *device, uint8_t *buffer) {
 
   uint8_t *curr = buffer;
   uint8_t *prev = kb->prev_buffer;
-  uint8_t off = kb->buffer_offset;
+  // uint8_t off = kb->buffer_offset;
   // kprintf("hid: prev = %02x %02x %02x %02x\n", prev[off + 0], prev[off + 1], prev[off + 2], prev[off + 3]);
   // kprintf("hid: curr = %02x %02x %02x %02x\n", curr[off + 0], curr[off + 1], curr[off + 2], curr[off + 3]);
 

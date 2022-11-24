@@ -8,6 +8,8 @@
 #include <panic.h>
 #include <mm.h>
 
+#include <string.h>
+
 #define BUFFER_SIZE 512
 
 
@@ -128,20 +130,20 @@ void kvfprintf(const char *format, va_list valist) {
  *
  * kasprintf(const char *format, ...);
  *
- * This does not support strings longer than 32 characters.
+ * This does not support strings longer than 512 characters.
  * It is the callers responsibility to free the allocated
  * buffer.
  */
 char *kasprintf(const char *format, ...) {
-  char *str = kmalloc(32);
-  kassert(str != NULL);
+  char buffer[BUFFER_SIZE];
 
   va_list valist;
   va_start(valist, format);
-  int n = print_format(format, str, 31, valist, true);
+  int n = print_format(format, buffer, BUFFER_SIZE, valist, true);
   va_end(valist);
 
-  str[n] = '\0';
+  char *str = kmalloc(n + 1);
+  strcpy(str, buffer);
   return str;
 }
 

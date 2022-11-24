@@ -8,8 +8,9 @@
 #include <base.h>
 #include <queue.h>
 
+// TODO: switch to better allocator for large sizes
 #define CHUNK_MIN_SIZE   8
-#define CHUNK_MAX_SIZE   16384
+#define CHUNK_MAX_SIZE   262144
 #define CHUNK_SIZE_ALIGN 8
 #define CHUNK_MIN_ALIGN  4
 
@@ -18,11 +19,9 @@
 
 typedef struct mm_chunk {
   uint16_t magic;                   // magic number
-  uint16_t size : 15;               // size of chunk
-  uint16_t free : 1;                // chunk free/used
-  uint16_t prev_size : 15;          // previous chunk size
-  uint16_t prev_free : 1;           // previous chunk free/used
   uint16_t prev_offset;             // offset to previous chunk
+  uint32_t size : 31;               // size of chunk
+  uint32_t free : 1;                // chunk free/used
   LIST_ENTRY(struct mm_chunk) list; // links to free chunks (if free)
 } mm_chunk_t;
 static_assert(sizeof(mm_chunk_t) == 24);

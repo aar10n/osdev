@@ -15,4 +15,7 @@ page_t *_alloc_pages(size_t count, uint32_t flags);
 page_t *_alloc_pages_at(uintptr_t address, size_t count, uint32_t flags);
 void _free_pages(page_t *page);
 
+bool mm_is_kernel_code_ptr(uintptr_t ptr);
+bool mm_is_kernel_data_ptr(uintptr_t ptr);
+
 #endif

@@ -215,6 +215,16 @@
 #define SLIST_FOREACH(var, el, name) \
   for ((var) = (el); (var); (var) = ((var)->name))
 
+// ---------------
+// alternate versions where you dont need to predeclare var
+
+#define LIST_FOR_IN(var, head, name) \
+  for (typeof(((head)->first)) (var) = ((head)->first); (var); (var) = ((var)->name.next))
+
+#define RLIST_FOR_IN(var, el, name) \
+  for (typeof((el)) (var) = (el); (var); (var) = ((var)->name.next))
+
+
 
 #define LIST_FIND(var, head, name, cond) \
   ({                                     \

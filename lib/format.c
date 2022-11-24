@@ -88,7 +88,7 @@ typedef union double_raw {
 
 // Buffers
 #define BUFFER_SIZE 512
-#define TEMP_BUFFER_SIZE 64
+#define TEMP_BUFFER_SIZE 128
 #define NTOA_BUFFER_SIZE 32
 #define FTOA_BUFFER_SIZE 32
 
@@ -834,6 +834,7 @@ int print_format(const char *format, char *str, size_t size, va_list args, bool 
           break;
         }
         case 's': {
+          // TODO: support longer strings!!!
           char *value = va_arg(valist, char *);
           if (value == NULL) {
             value = "(null)";

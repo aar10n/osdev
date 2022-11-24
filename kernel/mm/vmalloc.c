@@ -9,6 +9,7 @@
 #include <mm/init.h>
 
 #include <cpu/cpu.h>
+#include <debug/debug.h>
 
 #include <irq.h>
 #include <panic.h>
@@ -276,6 +277,11 @@ void page_fault_handler(uint8_t vector, uint32_t error_code, cpu_irq_stack_t *fr
   kprintf("================== !!! Exception !!! ==================\n");
   kprintf("  Page Fault  - Data: %#b\n", error_code);
   kprintf("  CPU#%d  -  RIP: %p  -  CR2: %018p\n", id, frame->rip, fault_addr);
+
+  uintptr_t addr = frame->rip - 8;
+  char *line_str = debug_addr2line(addr);
+  kprintf("%s\n", line_str);
+  kfree(line_str);
 
   while (true) {
     cpu_pause();

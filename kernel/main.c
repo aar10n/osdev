@@ -13,6 +13,7 @@
 #include <mm/init.h>
 #include <acpi/acpi.h>
 #include <console.h>
+#include <debug/debug.h>
 #include <syscall.h>
 #include <clock.h>
 #include <timer.h>
@@ -35,9 +36,6 @@
 
 boot_info_v2_t __boot_data *boot_info_v2;
 
-LOAD_SECTION(__debug_info_section, ".debug_info");
-LOAD_SECTION(__debug_abbrev_section, ".debug_abbrev");
-
 const char *argv[] = {
   "/usr/bin/hello",
   NULL
@@ -51,22 +49,18 @@ _Noreturn void launch();
 
 __used void kmain() {
   console_early_init();
-
-  kprintf("__debug_info_section\n");
-  kprintf("  name = %s\n", __debug_info_section.name);
-  kprintf("  data = %p\n", __debug_info_section.data);
-  kprintf("  size = %zu\n", __debug_info_section.size);
-  
   cpu_init();
 
   mm_early_init();
   irq_early_init();
   acpi_early_init();
+  debug_early_init();
   screen_init();
 
   irq_init();
   init_mem_zones();
   init_address_space();
+  debug_init();
 
   clock_init();
   events_init();
@@ -123,9 +117,20 @@ _Noreturn void launch() {
   // thread_sleep(MS_TO_US(ms));
   // kprintf("done!\n");
 
-  kprintf("causing panic\n");
-  char *x = NULL;
-  char c = *x;
+  // kprintf("causing panic\n");
+  // char *x = NULL;
+  // char c = *x;
+
+  // ------------------------------------------------
+  //   DWARF Debugging Symbols
+  // ------------------------------------------------
+
+  // dwarf_object_init_b()
+  // ...call libdwarf functions...
+  // dwarf_finish()
+  // dwarf_object_init_b()
+
+  // ------------------------------------------------
 
   kprintf("haulting...\n");
   thread_block();

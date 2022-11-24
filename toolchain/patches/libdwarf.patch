@@ -1,0 +1,60 @@
+diff --git a/src/lib/libdwarf/dwarf_error.c b/src/lib/libdwarf/dwarf_error.c
+index 5be75070..c31df779 100644
+--- a/src/lib/libdwarf/dwarf_error.c
++++ b/src/lib/libdwarf/dwarf_error.c
+@@ -189,12 +189,12 @@ _dwarf_error_string(Dwarf_Debug dbg, Dwarf_Error * error,
+         dbg->de_errhand(errptr, dbg->de_errarg);
+         return;
+     }
+-    fflush(stderr);
+-    fprintf(stderr,
+-        "\nlibdwarf is unable to record error %s "
+-        "No error argument or handler available\n",
+-        dwarf_errmsg_by_number(errval));
+-    fflush(stderr);
++    // fflush(stderr);
++    // fprintf(stderr,
++    //     "\nlibdwarf is unable to record error %s "
++    //     "No error argument or handler available\n",
++    //     dwarf_errmsg_by_number(errval));
++    // fflush(stderr);
+     return;
+ }
+ 
+diff --git a/src/lib/libdwarf/dwarf_tied.c b/src/lib/libdwarf/dwarf_tied.c
+index 909cf4a5..4027328f 100644
+--- a/src/lib/libdwarf/dwarf_tied.c
++++ b/src/lib/libdwarf/dwarf_tied.c
+@@ -49,19 +49,19 @@
+ #include "dwarf_tsearch.h"
+ #include "dwarf_tied_decls.h"
+ 
+-void
+-_dwarf_dumpsig(const char *msg, Dwarf_Sig8 *sig,int lineno)
+-{
+-    const char *sigv = 0;
+-    unsigned u = 0;
+-
+-    printf("%s 0x",msg);
+-    sigv = &sig->signature[0];
+-    for (u = 0; u < 8; u++) {
+-        printf("%02x",0xff&sigv[u]);
+-    }
+-    printf(" line %d\n",lineno);
+-}
++// void
++// _dwarf_dumpsig(const char *msg, Dwarf_Sig8 *sig,int lineno)
++// {
++//     const char *sigv = 0;
++//     unsigned u = 0;
++//
++//     printf("%s 0x",msg);
++//     sigv = &sig->signature[0];
++//     for (u = 0; u < 8; u++) {
++//         printf("%02x",0xff&sigv[u]);
++//     }
++//     printf(" line %d\n",lineno);
++// }
+ 
+ void *
+ _dwarf_tied_make_entry(Dwarf_Sig8 *key, Dwarf_CU_Context val)

@@ -193,12 +193,12 @@ void *__kmalloc(size_t size, size_t alignment) {
   chunk->list.next = NULL;
   chunk->list.prev = NULL;
   if (kheap.last_chunk != NULL) {
-    chunk->prev_size = kheap.last_chunk->size;
-    chunk->prev_free = kheap.last_chunk->free;
+    // chunk->prev_size = kheap.last_chunk->size;
+    // chunk->prev_free = kheap.last_chunk->free;
     chunk->prev_offset = aligned_chunk - (uintptr_t) kheap.last_chunk;
   } else {
-    chunk->prev_size = 0;
-    chunk->prev_free = false;
+    // chunk->prev_size = 0;
+    // chunk->prev_free = false;
     chunk->prev_offset = 0;
   }
 
@@ -242,7 +242,7 @@ void kfree(void *ptr) {
   chunk->free = true;
   mm_chunk_t *next_chunk = get_next_chunk(chunk);
   if (next_chunk != NULL) {
-    next_chunk->prev_free = true;
+    // next_chunk->prev_free = true;
   }
 
   LIST_ADD_FRONT(&kheap.chunks, chunk, list);
@@ -259,7 +259,7 @@ void *kcalloc(size_t nmemb, size_t size) {
 
   size_t total = nmemb * size;
   if (total > CHUNK_MAX_SIZE) {
-    panic("[kcalloc] error - request too large (%zu)\n", size);
+    panic("[kcalloc] error - request too large (%zu, %zu)\n", nmemb, size);
   }
 
   void *ptr = kmalloc(total);
