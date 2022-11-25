@@ -20,20 +20,19 @@
 
 #define CHECK_ERROR(expr, label_err) ({ if ((result = (expr)) != DW_DLV_OK) goto label_err; })
 
-#define FREE_FUNC_LIST(head) \
+#define FREE_FUNC_LIST(first) \
   ({                         \
-    dwarf_function_t *func = LIST_FIRST(head);  \
+    dwarf_function_t *func = first;  \
     while (func != NULL) {   \
       dwarf_function_t *next = func->next; \
       kfree(func);           \
       func = next;           \
     }                        \
-    (head)->first = NULL;      \
-    (head)->last = NULL;       \
+    (first) = NULL;          \
     NULL;                    \
   })
 
-
+LOAD_SECTION(__eh_frame_section, ".eh_frame");
 LOAD_SECTION(__debug_info_section, ".debug_info");
 LOAD_SECTION(__debug_abbrev_section, ".debug_abbrev");
 LOAD_SECTION(__debug_aranges_section, ".debug_aranges");
@@ -43,6 +42,7 @@ LOAD_SECTION(__debug_line_str_section, ".debug_line_str");
 
 static loaded_section_t *debug_sections[] = {
   NULL, // libdwarf requires that the first section be empty
+  &__eh_frame_section,
   &__debug_info_section,
   &__debug_abbrev_section,
   &__debug_aranges_section,
@@ -55,6 +55,12 @@ static size_t num_sections = sizeof(debug_sections) / sizeof(loaded_section_t *)
 // debugging info
 static bool has_debugging_info;
 static Dwarf_Debug dwarf_debug;
+
+static Dwarf_Cie *dwarf_cie_list;
+static Dwarf_Signed dwarf_cie_count;
+static Dwarf_Fde *dwarf_fde_list;
+static Dwarf_Signed dwarf_fde_count;
+
 static Dwarf_Arange *dwarf_aranges;
 static Dwarf_Signed dwarf_aranges_count;
 
@@ -77,7 +83,7 @@ static int get_section_info(unused void *obj, Dwarf_Half section_index,
     size = 0;
   } else {
     name = section->name;
-    data = section->data;
+    data = section->virt_addr;
     size = section->size;
   }
 
@@ -127,7 +133,7 @@ static int load_section(unused void *obj, Dwarf_Half section_index, Dwarf_Small 
   }
 
   loaded_section_t *section = debug_sections[section_index];
-  *return_data = (void *) section->data;
+  *return_data = (void *) section->virt_addr;
   return DW_DLV_OK;
 }
 
@@ -170,6 +176,23 @@ static int dwarf_attrval_string(Dwarf_Die die, Dwarf_Half attrnum, char **return
   if (result == DW_DLV_OK) {
     // NOTE: the string returned by this must not be dealloc'd!
     result = dwarf_formstring(attr, return_val, error);
+    dwarf_dealloc_attribute(attr);
+  }
+  return result;
+}
+
+static int dwarf_attrval_exprloc(
+  Dwarf_Die die,
+  Dwarf_Half attrnum,
+  Dwarf_Unsigned *return_exprlen,
+  Dwarf_Ptr *return_block_ptr,
+  Dwarf_Error *error
+) {
+  Dwarf_Attribute attr;
+
+  int result = dwarf_attr(die, attrnum, &attr, error);
+  if (result == DW_DLV_OK) {
+    result = dwarf_formexprloc(attr, return_exprlen, return_block_ptr, error);
     dwarf_dealloc_attribute(attr);
   }
   return result;
@@ -303,15 +326,18 @@ static int dwarf_find_die_in_children(
 void remap_dwarf_sections(void *data) {
   loaded_section_t *section = data;
   size_t size = PAGES_TO_SIZE(SIZE_TO_PAGES(section->size)); // align to page
+  if (section->virt_addr != 0) {
+    return;
+  }
 
-  section->data = (uintptr_t) _vmap_phys(section->data, size, 0);
-  _vmap_get_mapping(section->data)->name = section->name;
+  section->virt_addr = (uintptr_t) _vmap_phys(section->phys_addr, size, 0);
+  _vmap_get_mapping(section->virt_addr)->name = section->name;
 }
 
 void dwarf_early_init() {
   for (int i = 1; i < num_sections; i++) {
     loaded_section_t *section = debug_sections[i];
-    if (section->data == 0) {
+    if (section->phys_addr == 0) {
       // TODO: support partial functionality while missing some optional sections
       // no debug info
       has_debugging_info = false;
@@ -366,8 +392,27 @@ int dwarf_collect_debug_info() {
     DEALLOC_ERR(error);
     return -1;
   }
-  // -------------------
+  // ----- stack frame info -----
+  result = dwarf_get_fde_list_eh(dwarf_debug, &dwarf_cie_list, &dwarf_cie_count, &dwarf_fde_list, &dwarf_fde_count, &error);
+  if (result != DW_DLV_OK) {
+    kprintf("dwarf: failed to get fde list\n");
+    kprintf("       %s\n", dwarf_errmsg(error));
+    DEALLOC_ERR(error);
+    return -1;
+  }
 
+  //
+  // setup special frame registers
+  // https://www.prevanders.net/libdwarfdoc/index.html#frameregs
+
+  dwarf_set_frame_undefined_value(dwarf_debug, DW_FRAME_UNDEFINED_VAL);
+  dwarf_set_frame_same_value(dwarf_debug, DW_FRAME_SAME_VAL);
+
+  dwarf_set_frame_cfa_value(dwarf_debug, DW_FRAME_CFA_COL);
+  dwarf_set_frame_rule_initial_value(dwarf_debug, DW_FRAME_UNDEFINED_VAL);
+  dwarf_set_frame_rule_table_size(dwarf_debug, DW_FRAME_LAST_REG_NUM);
+
+  // -------------------
   return 0;
 }
 
@@ -419,7 +464,7 @@ int dwarf_debug_load_files(dwarf_file_t **out_file) {
 
     file->lines = NULL;
     file->line_count = 0;
-    LIST_INIT(&file->functions);
+    file->functions = NULL;
 
     LIST_ADD(&files, file, list);
 
@@ -565,7 +610,7 @@ LABEL(FAIL);
   return result;
 }
 
-int dwarf_file_load_functions(dwarf_file_t *file) {
+int dwarf_file_load_funcs(dwarf_file_t *file) {
   int result;
   Dwarf_Error error = 0;
   Dwarf_Bool is_info = true;
@@ -575,11 +620,12 @@ int dwarf_file_load_functions(dwarf_file_t *file) {
   Dwarf_Addr addr_hi = 0;
   Dwarf_Off off = 0;
   char *name = NULL;
+  LIST_HEAD(dwarf_function_t) functions = {0};
 
   // load the cu die from the file offset
   result = dwarf_offdie_b(dwarf_debug, file->die_off, is_info, &die, &error);
   if (result != DW_DLV_OK) {
-    kprintf("dwarf: dwarf_file_load_functions() called with invalid file\n");
+    kprintf("dwarf: dwarf_file_load_funcs() called with invalid file\n");
     return -1;
   }
 
@@ -590,7 +636,7 @@ int dwarf_file_load_functions(dwarf_file_t *file) {
       break;
 
     // load function name
-    if ((result = dwarf_die_CU_offset(child, &off, &error)) != DW_DLV_OK) goto NEXT;
+    if ((result = dwarf_dieoffset(child, &off, &error)) != DW_DLV_OK) goto NEXT;
     if ((result = dwarf_attrval_string(child, DW_AT_name, &name, &error)) != DW_DLV_OK) goto NEXT;
     if ((result = dwarf_die_pc_range(child, &addr_lo, &addr_hi, &error)) != DW_DLV_OK) {
       if (result == DW_DLV_NO_ENTRY) {
@@ -600,7 +646,7 @@ int dwarf_file_load_functions(dwarf_file_t *file) {
       goto NEXT;
     }
 
-    kprintf("dwarf: function = %s [%016p - %016p]\n", name, addr_lo, addr_hi);
+    // kprintf("dwarf: function = %s [%016p - %016p]\n", name, addr_lo, addr_hi);
 
     dwarf_function_t *func = kmalloc(sizeof(dwarf_function_t));
     func->name = name;
@@ -610,8 +656,9 @@ int dwarf_file_load_functions(dwarf_file_t *file) {
     func->line_start = NULL;
     func->line_end = NULL;
     func->next = NULL;
-
-    SLIST_ADD(&file->functions, func, next);
+    // add in reverse order so we end up with a list
+    // in increasing order of addr_lo
+    SLIST_ADD_FRONT(&functions, func, next);
 
   LABEL(NEXT);
     if (result != DW_DLV_OK)
@@ -622,7 +669,7 @@ int dwarf_file_load_functions(dwarf_file_t *file) {
   DEALLOC_DIE(child);
   if (result != DW_DLV_OK) {
     if (result == DW_DLV_ERROR) {
-      FREE_FUNC_LIST(&file->functions);
+      FREE_FUNC_LIST(LIST_FIRST(&functions));
       kprintf("dwarf: failed to load files\n");
       kprintf("        %s\n", dwarf_errmsg(error));
       DEALLOC_ERR(error);
@@ -633,21 +680,26 @@ int dwarf_file_load_functions(dwarf_file_t *file) {
 
   // link functions to lines if lines are loaded
   if (file->lines) {
-    dwarf_function_t *func = LIST_FIRST(&file->functions);
+    dwarf_function_t *func = LIST_FIRST(&functions);
     for (size_t i = 0; i < file->line_count; i++) {
+      LABEL(try_again);
       dwarf_line_t *line = &file->lines[i];
 
       if (func) {
         if (line->addr == func->addr_lo) {
           func->line_start = line;
-        } else if (line->addr == func->addr_hi) {
-          func->line_end = line;
+        } else if (line->addr >= func->addr_hi) {
+          kassert(i > 0);
+          func->line_end = &file->lines[i - 1];
+          func->file = file;
           func = func->next;
+          goto try_again;
         }
       }
     }
   }
 
+  file->functions = LIST_FIRST(&functions);
   return 0;
 }
 
@@ -659,8 +711,147 @@ void dwarf_free_file(dwarf_file_t *file) {
   kfree(file->lines);
   file->lines = NULL;
   // free functions (if loaded)
-  FREE_FUNC_LIST(&file->functions);
+  FREE_FUNC_LIST(file->functions);
   kfree(file);
+}
+
+//
+
+// keeping this here because I want to implement dwarf based backtraces
+int dwarf_function_get_frame(dwarf_function_t *func) {
+  int result;
+  Dwarf_Error error = 0;
+  Dwarf_Bool is_info = true;
+  Dwarf_Die die = NULL;
+
+  // load the die from the function offset
+  result = dwarf_offdie_b(dwarf_debug, func->die_off, is_info, &die, &error);
+  if (result != DW_DLV_OK) {
+    kprintf("dwarf: dwarf_file_load_funcs() called with invalid file\n");
+    return -1;
+  }
+
+  Dwarf_Fde fde;
+  Dwarf_Addr addr_lo;
+  Dwarf_Addr addr_hi;
+  result = dwarf_get_fde_at_pc(dwarf_fde_list, func->addr_lo, &fde, &addr_lo, &addr_hi, &error);
+  if (result != DW_DLV_OK) {
+    kprintf("dwarf: failed to get fde for function %s\n", func->name);
+    goto FAIL;
+  }
+
+  Dwarf_Unsigned expr_len = 0;
+  Dwarf_Ptr expr_ptr = NULL;
+  result = dwarf_attrval_exprloc(die, DW_AT_frame_base, &expr_len, &expr_ptr, &error);
+  if (result != DW_DLV_OK) {
+    kprintf("dwarf: failed to get frame base\n");
+    goto FAIL;
+  }
+
+  // ====================
+  // CFA REGISTERS
+  // ====================
+  Dwarf_Small value_type = 0;
+  Dwarf_Unsigned off_relevant = 0;
+  Dwarf_Unsigned reg = 0;
+  Dwarf_Unsigned offset = 0;
+  Dwarf_Block block_content = {0};
+  Dwarf_Addr row_pc_out = 0;
+  Dwarf_Bool has_more_rows = 0;
+  Dwarf_Addr subsq_pc = 0;
+  result = dwarf_get_fde_info_for_cfa_reg3_b(fde, func->addr_lo, &value_type, &off_relevant,
+                                             &reg, &offset, &block_content, &row_pc_out,
+                                             &has_more_rows, &subsq_pc, &error);
+  if (result != DW_DLV_OK) {
+    kprintf("dwarf: failed to get cfa register info for fde\n");
+    goto FAIL;
+  }
+
+  const char *value_name = NULL;
+  dwarf_get_FORM_name(value_type, &value_name);
+
+  kprintf("       CFA register\n");
+  kprintf("         value type = %d\n", value_name);
+  kprintf("         off relevant = %u\n", off_relevant);
+  kprintf("         reg = %u\n", reg);
+  kprintf("         offset = %u\n", offset);
+  kprintf("         block content = %p\n", block_content.bl_data);
+  kprintf("         block length = %u\n", block_content.bl_len);
+  kprintf("         row pc out = %p\n", row_pc_out);
+  kprintf("         has more rows = %d\n", has_more_rows);
+  kprintf("         subsq pc = %p\n", subsq_pc);
+  kprintf("\n");
+
+  // ======= fde =======
+  Dwarf_Addr fde_addr_lo;
+  Dwarf_Unsigned fde_func_len;
+  Dwarf_Small *fde_bytes;
+  Dwarf_Unsigned fde_byte_len;
+  Dwarf_Off cie_off;
+  Dwarf_Signed cie_index;
+  Dwarf_Off fde_off;
+  result = dwarf_get_fde_range(fde, &fde_addr_lo, &fde_func_len, &fde_bytes,
+                               &fde_byte_len, &cie_off, &cie_index, &fde_off, &error);
+  if (result != DW_DLV_OK) {
+    kprintf("dwarf: failed to get fde range for address %p\n", func->addr_lo);
+    goto FAIL;
+  }
+
+  kprintf("       fde_addr_lo = %p\n", fde_addr_lo);
+  kprintf("       fde_func_len = %u\n", fde_func_len);
+  kprintf("       fde_bytes = %p\n", fde_bytes);
+  kprintf("       fde_byte_len = %u\n", fde_byte_len);
+  kprintf("       cie_off = %u\n", cie_off);
+  kprintf("       cie_index = %d\n", cie_index);
+  kprintf("       fde_off = %u\n", fde_off);
+
+  // ======= cie =======
+  Dwarf_Cie cie;
+  result = dwarf_get_cie_of_fde(fde, &cie, &error);
+  if (result != DW_DLV_OK) {
+    kprintf("dwarf: failed to get cie for address %p\n", func->addr_lo);
+    goto FAIL;
+  }
+
+  Dwarf_Unsigned bytes_in_cie = 0;
+  Dwarf_Small cie_version = 0;
+  char *augmenter;
+  Dwarf_Unsigned code_alignment_factor = 0;
+  Dwarf_Signed data_alignment_factor = 0;
+  Dwarf_Half return_address_register_rule;
+  Dwarf_Small *initial_instructions = 0;
+  Dwarf_Unsigned initial_instructions_length = 0;
+  Dwarf_Half offset_size = 0;
+
+  result = dwarf_get_cie_info_b(cie, &bytes_in_cie, &cie_version, &augmenter, &code_alignment_factor, &data_alignment_factor,
+                                &return_address_register_rule, &initial_instructions, &initial_instructions_length, &offset_size,
+                                &error);
+  if (result != DW_DLV_OK) {
+    kprintf("dwarf: failed to get cie info\n");
+    goto FAIL;
+  }
+
+  kprintf("\n");
+  kprintf("       cie version = %d\n", cie_version);
+  kprintf("       cie augmenter = %s\n", augmenter);
+  kprintf("       cie code alignment factor = %u\n", code_alignment_factor);
+  kprintf("       cie data alignment factor = %d\n", data_alignment_factor);
+  kprintf("       cie return address register rule = %d\n", return_address_register_rule);
+  kprintf("       cie initial instructions = %p\n", initial_instructions);
+  kprintf("       cie initial instructions length = %d\n", initial_instructions_length);
+  kprintf("       cie offset size = %d\n", offset_size);
+  kprintf("\n");
+
+  Dwarf_Half address_size = 8;
+  Dwarf_Small dwarf_version = func->file->version;
+
+
+  return 0;
+
+LABEL(FAIL);
+  kprintf("       %s\n", dwarf_errmsg(error));
+  DEALLOC_ERR(error);
+  return 1;
 }
 
 //
@@ -676,6 +867,7 @@ void dwarf_free_file(dwarf_file_t *file) {
 //     free   -> kfree
 //     strdup -> strdup (unchanged)
 //     strtol -> strtol (unchanged)
+//     qsort  -> qsort  (unchanged)
 //
 // the others are not used in any of the functions we're calling so we remap
 // them to a stub to avoid implementing them, as well as to satisfy the linker.
@@ -685,7 +877,6 @@ void dwarf_free_file(dwarf_file_t *file) {
 
 LIBDWARF_STUB(realloc);
 LIBDWARF_STUB(fclose);
-LIBDWARF_STUB(qsort);
 LIBDWARF_STUB(getcwd);
 LIBDWARF_STUB(do_decompress_zlib);
 LIBDWARF_STUB(uncompress);

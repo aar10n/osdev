@@ -278,11 +278,14 @@ void page_fault_handler(uint8_t vector, uint32_t error_code, cpu_irq_stack_t *fr
   kprintf("  Page Fault  - Data: %#b\n", error_code);
   kprintf("  CPU#%d  -  RIP: %p  -  CR2: %018p\n", id, frame->rip, fault_addr);
 
-  uintptr_t addr = frame->rip - 8;
-  char *line_str = debug_addr2line(addr);
-  kprintf("%s\n", line_str);
+  uintptr_t rip = frame->rip - 8;
+  uintptr_t rbp = regs->rbp;
+
+  char *line_str = debug_addr2line(rip);
+  kprintf("  %s\n", line_str);
   kfree(line_str);
 
+  debug_unwind(rip, rbp);
   while (true) {
     cpu_pause();
   }

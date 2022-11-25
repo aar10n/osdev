@@ -224,6 +224,9 @@
 #define RLIST_FOR_IN(var, el, name) \
   for (typeof((el)) (var) = (el); (var); (var) = ((var)->name.next))
 
+#define SLIST_FOR_IN(var, el, name) \
+  for (typeof((el)) (var) = (el); (var); (var) = ((var)->name))
+
 
 
 #define LIST_FIND(var, head, name, cond) \

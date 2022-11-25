@@ -117,21 +117,6 @@ _Noreturn void launch() {
   // thread_sleep(MS_TO_US(ms));
   // kprintf("done!\n");
 
-  // kprintf("causing panic\n");
-  // char *x = NULL;
-  // char c = *x;
-
-  // ------------------------------------------------
-  //   DWARF Debugging Symbols
-  // ------------------------------------------------
-
-  // dwarf_object_init_b()
-  // ...call libdwarf functions...
-  // dwarf_finish()
-  // dwarf_object_init_b()
-
-  // ------------------------------------------------
-
   kprintf("haulting...\n");
   thread_block();
   unreachable;

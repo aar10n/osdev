@@ -16,8 +16,8 @@ void qsort(void *base, size_t nitems, size_t size, int (*comp)(const void *, con
   size_t j;
   void *pivot = A(nitems / 2);
   for (i = 0, j = nitems - 1; ; i++, j--) {
-    while (comp(A(i), pivot) > 0) i++;
-    while (comp(A(j), pivot) < 0) j--;
+    while (comp(pivot, A(i)) > 0) i++;
+    while (comp(pivot, A(j)) < 0) j--;
     if (i >= j) break;
 
     uint8_t temp[size];

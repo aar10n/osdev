@@ -13,11 +13,64 @@
 
 #include <interval_tree.h>
 
-// typedef struct
+typedef struct stackframe {
+  struct stackframe *rbp;
+  uint64_t rip;
+} stackframe_t;
 
-// caches dwarf_file_t structures and allows for quickly
-// querying by address.
 static intvl_tree_t *debug_files;
+static intvl_tree_t *debug_functions;
+
+static dwarf_file_t *locate_or_load_dwarf_file(uintptr_t addr) {
+  intvl_node_t *node = intvl_tree_find(debug_files, intvl(addr, addr));
+  if (node == NULL) {
+    return NULL;
+  }
+
+  dwarf_file_t *file = node->data;
+  if (file->lines == NULL) {
+    if (dwarf_file_load_lines(file) < 0) {
+      kprintf("debug: failed to load lines for %s\n", file->name);
+      return NULL;
+    }
+
+    if (dwarf_file_load_funcs(file) < 0) {
+      kprintf("debug: failed to load functions for %s\n", file->name);
+      return NULL;
+    }
+
+    SLIST_FOR_IN(func, file->functions, next) {
+      intvl_tree_insert(debug_functions, intvl(func->addr_lo, func->addr_hi), func);
+    }
+  }
+
+  return file;
+}
+
+static dwarf_function_t *locate_or_load_dwarf_function(uintptr_t addr) {
+  intvl_node_t *node = intvl_tree_find(debug_functions, intvl(addr, addr));
+  if (node == NULL) {
+    dwarf_file_t *file = locate_or_load_dwarf_file(addr);
+    if (file == NULL) {
+      return NULL;
+    }
+
+    node = intvl_tree_find(debug_functions, intvl(addr, addr));
+    return node->data;
+  }
+  return node->data;
+}
+
+static dwarf_line_t *get_line_by_addr(dwarf_file_t *file, uintptr_t addr) {
+  dwarf_line_t *prev = &file->lines[0];
+  for (uint32_t i = 0; i < file->line_count; i++) {
+    if ((file->lines[i].addr == addr) ||
+        (prev && (addr > prev->addr) && (addr < file->lines[i].addr))) {
+      return &file->lines[i];
+    }
+  }
+  return NULL;
+}
 
 //
 
@@ -42,6 +95,7 @@ void debug_init() {
   }
 
   debug_files = create_intvl_tree();
+  debug_functions = create_intvl_tree();
   RLIST_FOR_IN(file, files, list) {
     intvl_tree_insert(debug_files, intvl(file->addr_lo, file->addr_hi), file);
   }
@@ -57,38 +111,45 @@ char *debug_addr2line(uintptr_t addr) {
   if (addr == 0) {
     return kasprintf("<null>");
   } else if (!mm_is_kernel_code_ptr(addr)) {
+    return kasprintf("<invalid>");
+  }
+
+  dwarf_file_t *file = locate_or_load_dwarf_file(addr);
+  if (file == NULL) {
     goto INVALID;
   }
 
-  intvl_node_t *node = intvl_tree_find(debug_files, intvl(addr, addr));
-  if (node == NULL) {
-    goto INVALID;
-  }
-
-  dwarf_file_t *file = node->data;
-  if (file->lines == NULL) {
-    if (dwarf_file_load_lines(file) < 0) {
-      return kasprintf("<debug error>");
-    }
-  }
-
-  dwarf_line_t *line = NULL;
-  {
-    dwarf_line_t *prev = &file->lines[0];
-    for (uint32_t i = 0; i < file->line_count; i++) {
-      if ((file->lines[i].addr == addr) ||
-          (prev && (addr > prev->addr) && (addr < file->lines[i].addr))) {
-        line = &file->lines[i];
-        break;
-      }
-    }
-  }
-
+  dwarf_line_t *line = get_line_by_addr(file, addr);
   if (line == NULL) {
     return kasprintf("%s", file->name);
   }
   return kasprintf("%s:%d", file->name, line->line_no);
 
 LABEL(INVALID);
-  return kasprintf("<invalid>");
+  return kasprintf("??");
+}
+
+int debug_unwind(uintptr_t rip, uintptr_t rbp) {
+  kprintf("backtrace\n");
+
+  stackframe_t *frame = (void *) rbp;
+  while (frame) {
+    dwarf_function_t *func = locate_or_load_dwarf_function(rip);
+    if (func == NULL) {
+      kprintf("    ?? %018p\n", rip);
+      return 0;
+    }
+
+    dwarf_line_t *line = get_line_by_addr(func->file, rip);
+    if (line == NULL) {
+      kprintf("    %s %018p\n", func->name, rip);
+    } else {
+      kprintf("    %s %018p [%s:%d]\n", func->name, rip, func->file->name, line->line_no);
+    }
+
+    rip = frame->rip;
+    frame = frame->rbp;
+  }
+
+  return 0;
 }

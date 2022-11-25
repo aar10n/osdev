@@ -121,7 +121,7 @@ toolchain::libdwarf::build() {
     pushd build
       export CHOST="${arch}"
       export CC="${tool_prefix}gcc"
-      export CFLAGS="-g -fPIC -frecord-gcc-switches"
+      export CFLAGS="-fPIC -frecord-gcc-switches"
       export AR="${tool_prefix}gcc-ar"
       export RANLIB="${tool_prefix}gcc-ranlib"
 
@@ -144,7 +144,6 @@ toolchain::libdwarf::build() {
         \
         --redefine-sym realloc=__debug_realloc_stub \
         --redefine-sym fclose=__debug_fclose_stub \
-        --redefine-sym qsort=__debug_qsort_stub \
         --redefine-sym getcwd=__debug_getcwd_stub \
         --redefine-sym do_decompress_zlib=__debug_do_decompress_zlib_stub \
         --redefine-sym uncompress=__debug_uncompress_stub \

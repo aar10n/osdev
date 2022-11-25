@@ -153,7 +153,7 @@ __exception_handler:
   ;        stack frame
   ;        error code
   ; rsp -> vector
-  swapgs_if_needed 24
+  swapgs_if_needed STACK_OFFSET(3)
   pushall
 
   mov rdi, [rsp + STACK_OFFSET(PUSHALL_COUNT)]           ; rdi <- vector
@@ -166,7 +166,7 @@ __exception_handler:
   call exception_handler
 
   popall
-  swapgs_if_needed 24
+  swapgs_if_needed STACK_OFFSET(3)
 
-  add rsp, 16 ; skip vector + error code
+  add rsp, STACK_OFFSET(2) ; skip vector + error code
   iretq

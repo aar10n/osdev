@@ -50,7 +50,8 @@
 
 typedef struct loaded_section {
   const char *name;
-  uintptr_t data;
+  uintptr_t phys_addr;
+  uintptr_t virt_addr;
   size_t size;
 } loaded_section_t;
 
