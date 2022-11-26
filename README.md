@@ -19,6 +19,7 @@ serve as a useful reference to some.
 │  ├── acpi         acpi drivers
 │  ├── bus          pci & pcie drivers
 │  ├── cpu          cpu related code and assembly routines
+│  ├── debug        debugging facilities (DWARF, stacktrace, etc)
 │  ├── device       apic, ioapic and other related drivers
 │  ├── gui          graphics code
 │  ├── mm           memory management (physical and virtual)
