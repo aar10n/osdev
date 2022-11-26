@@ -8,6 +8,11 @@
 #include <string.h>
 #include <printf.h>
 
+// TODO: rewrite this
+//   - better api
+//   - better caching
+//   - handle cache invalidation
+
 page_t *alloc_buffer(uint32_t count) {
   page_t *buffer = valloc_pages(SIZE_TO_PAGES(count * SEC_SIZE), PG_WRITE);
   return buffer;

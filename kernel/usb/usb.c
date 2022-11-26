@@ -58,7 +58,6 @@ usb_driver_t scsi_driver = {
   .deinit = scsi_device_deinit,
 };
 
-
 static usb_driver_t *drivers[] = {
   &hid_driver,
   &scsi_driver
@@ -117,6 +116,25 @@ static inline usb_driver_t *locate_device_driver(uint8_t dev_class, uint8_t dev_
 
 //
 
+const char *usb_get_event_type_string(usb_event_type_t type) {
+  switch (type) {
+    case USB_CTRL_EV: return "USB_CTRL_EV";
+    case USB_IN_EV: return "USB_IN_EV";
+    case USB_OUT_EV: return "USB_OUT_EV";
+    default: return "UNKNOWN";
+  }
+}
+
+const char *usb_get_status_string(usb_status_t status) {
+  switch (status) {
+    case USB_SUCCESS: return "USB_SUCCESS";
+    case USB_ERROR: return "USB_ERROR";
+    default: return "UNKNOWN";
+  }
+}
+
+//
+
 noreturn void *usb_device_connect_event_loop(void *arg) {
   usb_device_t *device;
   while (chan_recv(pending_usb_devices, chan_voidp(&device)) >= 0) {
@@ -149,12 +167,6 @@ void usb_init() {
 
   // process_create(usb_main);
 }
-
-//
-//
-// MARK: New API
-//
-//
 
 // MARK: Host Driver API
 
@@ -444,8 +456,8 @@ int usb_device_init(usb_device_t *device) {
   LIST_ADD(&device->endpoints, ep_zero, list);
 
   // read device and product info
-  kprintf("USB Device Descriptor\n");
-  usb_print_device_descriptor(desc);
+  // kprintf("USB Device Descriptor\n");
+  // usb_print_device_descriptor(desc);
 
   // product name
   device->product = usb_device_read_string(device, desc->product_idx);
@@ -454,9 +466,10 @@ int usb_device_init(usb_device_t *device) {
   // serial string
   device->serial = usb_device_read_string(device, desc->serial_idx);
 
-  kprintf("Product: %s\n", device->product);
-  kprintf("Manufacturer: %s\n", device->manufacturer);
-  kprintf("Serial: %s\n", device->serial);
+  kprintf("USB Device\n");
+  kprintf("    Product: %s\n", device->product);
+  kprintf("    Manufacturer: %s\n", device->manufacturer);
+  kprintf("    Serial: %s\n", device->serial);
 
   // read config descriptors
   device->configs = kmalloc(desc->num_configs * sizeof(void *));
@@ -464,8 +477,8 @@ int usb_device_init(usb_device_t *device) {
     usb_config_descriptor_t *config = usb_device_read_config_descriptor(device, 0);
     kassert(config != NULL);
 
-    kprintf("USB Config Descriptor\n");
-    usb_print_config_descriptor(config);
+    // kprintf("USB Config Descriptor\n");
+    // usb_print_config_descriptor(config);
     device->configs[i] = config;
   }
 

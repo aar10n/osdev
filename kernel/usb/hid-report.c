@@ -9,7 +9,7 @@
 #include <printf.h>
 #include <string.h>
 
-#define HID_DEBUG
+// #define HID_DEBUG
 
 #ifdef HID_DEBUG
 #define hid_trace_debug(str, args...) kprintf("[hid] " str "\n", ##args)
@@ -362,13 +362,13 @@ report_format_t *hid_parse_report_descriptor(uint8_t *desc, size_t length) {
       type = TYPE_GLOBAL;
     }
 
-    // Print the descriptor tree
-    if (type == TYPE_MAIN && tag == END_COLLECTION_TAG) {
-      // super hacky way to fix indentation of END_COLLECTION tags
-      print_tag(type, tag, data, state, max(indent - 2, 0));
-    } else {
-      print_tag(type, tag, data, state, indent);
-    }
+    // // Print the descriptor tree
+    // if (type == TYPE_MAIN && tag == END_COLLECTION_TAG) {
+    //   // super hacky way to fix indentation of END_COLLECTION tags
+    //   print_tag(type, tag, data, state, max(indent - 2, 0));
+    // } else {
+    //   print_tag(type, tag, data, state, indent);
+    // }
 
     switch (type) {
       case TYPE_MAIN:

@@ -20,6 +20,7 @@ typedef struct stackframe {
 
 static intvl_tree_t *debug_files;
 static intvl_tree_t *debug_functions;
+static bool has_debug_info = false;
 
 static dwarf_file_t *locate_or_load_dwarf_file(uintptr_t addr) {
   intvl_node_t *node = intvl_tree_find(debug_files, intvl(addr, addr));
@@ -112,6 +113,8 @@ char *debug_addr2line(uintptr_t addr) {
     return kasprintf("<null>");
   } else if (!mm_is_kernel_code_ptr(addr)) {
     return kasprintf("<invalid>");
+  } else if (!has_debug_info) {
+    goto INVALID;
   }
 
   dwarf_file_t *file = locate_or_load_dwarf_file(addr);
@@ -130,6 +133,10 @@ LABEL(INVALID);
 }
 
 int debug_unwind(uintptr_t rip, uintptr_t rbp) {
+  if (!has_debug_info) {
+    return -1;
+  }
+
   kprintf("backtrace\n");
 
   stackframe_t *frame = (void *) rbp;

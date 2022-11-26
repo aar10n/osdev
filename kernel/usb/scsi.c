@@ -48,10 +48,22 @@ int scsi_device_init(usb_device_t *device) {
   scsi_dev->info = info;
 
   usb_add_transfer(device, USB_OUT, kheap_ptr_to_phys(cbw), sizeof(usb_ms_cbw_t));
-  usb_add_transfer(device, USB_IN, kheap_ptr_to_phys(info), sizeof(scsi_device_info_t));
-  usb_add_transfer(device, USB_IN, kheap_ptr_to_phys(csw), sizeof(usb_ms_csw_t));
+  if (usb_start_await_transfer(device, USB_OUT) < 0) {
+    kprintf("scsi: failed to send command\n");
+    kfree(cbw);
+    kfree(csw);
+    return -1;
+  }
 
-  usb_start_transfer(device, USB_OUT);
+  usb_add_transfer(device, USB_IN, virt_to_phys_addr(info), sizeof(scsi_device_info_t));
+  if (usb_start_await_transfer(device, USB_IN) < 0) {
+    kprintf("scsi: failed to read device info\n");
+    kfree(cbw);
+    kfree(csw);
+    return -1;
+  }
+
+  usb_add_transfer(device, USB_IN, kheap_ptr_to_phys(csw), sizeof(usb_ms_csw_t));
   if (usb_start_await_transfer(device, USB_IN) < 0) {
     kprintf("scsi: failed to read command status\n");
     kfree(cbw);
@@ -91,6 +103,7 @@ int scsi_device_deinit(usb_device_t *device) {
 ssize_t scsi_read_internal(usb_device_t *device, uint64_t lba, uint32_t count, void *buf) {
   kassert(count)
   kassert(count > 0 && count <= SCSI_MAX_XFER);
+  // kprintf("scsi: read [lba = %llu, count = %u]\n", lba, count);
 
   uint64_t size = count * 512;
   scsi_read16_cmd_t read_cmd = {
@@ -113,29 +126,29 @@ ssize_t scsi_read_internal(usb_device_t *device, uint64_t lba, uint32_t count, v
   setup_command_block(cbw, &read_cmd, sizeof(scsi_read16_cmd_t), size, USB_IN);
 
   usb_add_transfer(device, USB_OUT, kheap_ptr_to_phys(cbw), sizeof(usb_ms_cbw_t));
-  if (usb_await_transfer(device, USB_OUT) < 0) {
+  if (usb_start_await_transfer(device, USB_OUT) < 0) {
     goto FAIL;
   }
 
-  usb_add_transfer(device, USB_IN, _vm_virt_to_phys((uintptr_t) buf), size);
-  if (usb_await_transfer(device, USB_IN) < 0) {
+  usb_add_transfer(device, USB_IN, virt_to_phys_addr(buf), size);
+  if (usb_start_await_transfer(device, USB_IN) < 0) {
     goto FAIL;
   }
 
   usb_add_transfer(device, USB_IN, kheap_ptr_to_phys(csw), sizeof(usb_ms_csw_t));
-  if (usb_await_transfer(device, USB_IN) < 0) {
+  if (usb_start_await_transfer(device, USB_IN) < 0) {
     goto FAIL;
   }
 
   kfree(cbw);
   kfree(csw);
-  // kprintf("[scsi] read successful\n");
+  // kprintf("scsi: read successful\n");
   return size;
 
-  label(FAIL);
+LABEL(FAIL);
   kfree(cbw);
   kfree(csw);
-  // kprintf("[scsi] read failed\n");
+  kprintf("scsi: read failed\n");
   return -EFAILED;
 }
 
@@ -163,17 +176,17 @@ ssize_t scsi_write_internal(usb_device_t *device, uint64_t lba, uint32_t count, 
   setup_command_block(cbw, &write_cmd, sizeof(scsi_read16_cmd_t), size, USB_OUT);
 
   usb_add_transfer(device, USB_OUT, kheap_ptr_to_phys(cbw), sizeof(usb_ms_cbw_t));
-  if (usb_await_transfer(device, USB_OUT) < 0) {
+  if (usb_start_await_transfer(device, USB_OUT) < 0) {
     goto FAIL;
   }
 
   usb_add_transfer(device, USB_OUT, _vm_virt_to_phys((uintptr_t) buf), size);
-  if (usb_await_transfer(device, USB_OUT) < 0) {
+  if (usb_start_await_transfer(device, USB_OUT) < 0) {
     goto FAIL;
   }
 
   usb_add_transfer(device, USB_IN, kheap_ptr_to_phys(csw), sizeof(usb_ms_csw_t));
-  if (usb_await_transfer(device, USB_IN) < 0) {
+  if (usb_start_await_transfer(device, USB_IN) < 0) {
     goto FAIL;
   }
 

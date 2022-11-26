@@ -408,6 +408,10 @@ typedef struct usb_event {
 } usb_event_t;
 static_assert(sizeof(usb_event_t) <= 8);
 
+
+const char *usb_get_event_type_string(usb_event_type_t type);
+const char *usb_get_status_string(usb_status_t status);
+
 void usb_init();
 
 // MARK: Host Driver API

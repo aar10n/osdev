@@ -7,7 +7,7 @@
 #include <printf.h>
 #include <queue.h>
 #include <atomic.h>
-
+#include <string.h>
 
 static uint8_t __minor_ids[3] = { 1, 1, 1 };
 LIST_HEAD(device_t) devices[3][32] = {};

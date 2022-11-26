@@ -232,31 +232,6 @@ void xhci_device_irq_handler(uint8_t vector, void *data) {
   iman |= IMAN_IP;
   write32(hc->rt_base, XHCI_INTR_IMAN(n), iman);
   cond_signal(&device->evt_ring->cond);
-
-  //
-
-  // // handler transfer event
-  // uint64_t old_erdp = _xhci_ring_device_ptr(device->evt_ring);
-  // xhci_trb_t trb;
-  // while (_xhci_ring_dequeue_trb(device->evt_ring, &trb)) {
-  //   xhci_transfer_evt_trb_t xfer_trb = downcast_trb(&trb, xhci_transfer_evt_trb_t);
-  //   // kprintf("dequeued -> trb %d | ptr = %p [cc = %d, remaining = %u]\n",
-  //   //         trb.trb_type, xfer_trb.trb_ptr, xfer_trb.compl_code, xfer_trb.trs_length);
-  //
-  //   kassert(trb.trb_type == TRB_TRANSFER_EVT);
-  //   // device->xfer_evt_trb = trb;
-  // }
-  // // cond_signal(&device->xfer_evt_cond);
-  //
-  // uint64_t new_erdp = _xhci_ring_device_ptr(device->evt_ring);
-  // uint64_t erdp = read64(hc->rt_base, XHCI_INTR_ERDP(n));
-  // erdp &= ERDP_MASK;
-  // if (old_erdp != new_erdp) {
-  //   erdp |= ERDP_PTR(new_erdp) ;
-  // }
-  // // clear event handler busy flag
-  // erdp |= ERDP_EH_BUSY;
-  // write64(hc->rt_base, XHCI_INTR_ERDP(n), erdp);
 }
 
 //
@@ -381,6 +356,7 @@ noreturn void *_xhci_device_event_loop(void *arg) {
         }
 
         uint64_t event_raw = *((uint64_t *) &usb_event);
+        // kprintf("xhci event: %s | %s\n", usb_get_event_type_string(usb_event.type), usb_get_status_string(usb_event.status));
         chan_send(usb_ep->event_ch, event_raw);
       }
     }
@@ -598,6 +574,7 @@ int xhci_add_transfer(usb_device_t *device, usb_endpoint_t *endpoint, usb_transf
     bool ioc = (transfer->flags & USB_XFER_PART) == 0;
 
     // TODO: length usize -> u16 overflow check/auto split into multiple xfers
+    kassert(transfer->length <= UINT16_MAX);
     _xhci_queue_transfer(dev, ep, transfer->buffer, transfer->length, ioc);
   }
 

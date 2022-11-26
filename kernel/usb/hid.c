@@ -78,9 +78,7 @@ noreturn void *hid_device_event_loop(void *arg) {
 
   usb_endpoint_t *endpoint = LIST_FIND(e, &device->endpoints, list, e->number != 0 && e->dir == USB_IN);
   kassert(endpoint != NULL);
-
-  kprintf("hid: sleeping for 1 second\n");
-  thread_sleep(MS_TO_US(1000));
+  // thread_sleep(MS_TO_US(1000));
 
   for (int i = 0; i < 8; i++) {
     usb_add_transfer(device, USB_IN, hid_buffer_alloc(hid_device->buffer), hid_device->size);
@@ -112,7 +110,7 @@ void *hid_get_report_descriptor(usb_device_t *device, hid_descriptor_t *hid) {
   uint8_t *buffer = kmalloc(hid->report_length);
   memset(buffer, 0, hid->report_length);
 
-  kprintf("hid: getting report descriptor\n");
+  // kprintf("hid: getting report descriptor\n");
   if (usb_run_ctrl_transfer(device, get_report, kheap_ptr_to_phys(buffer), hid->report_length) < 0) {
     kprintf("hid: failed to get report descriptor\n");
     return NULL;
@@ -127,7 +125,7 @@ int hid_get_idle(usb_device_t *device) {
   uint16_t *idle_rate = kmalloc(sizeof(uint16_t));
 
   hid_trace_debug("getting idle rate");
-  kprintf("hid: getting idle rate\n");
+  // kprintf("hid: getting idle rate\n");
   if (usb_run_ctrl_transfer(device, get_idle, kheap_ptr_to_phys(idle_rate), sizeof(uint16_t)) < 0) {
     kprintf("hid: failed to get idle rate\n");
     return -1;
@@ -145,14 +143,14 @@ int hid_set_idle(usb_device_t *device, uint8_t duration) {
   usb_setup_packet_t set_idle = SET_IDLE(duration, 0, 0);
 
   hid_trace_debug("setting idle rate");
-  kprintf("hid: setting idle rate to %d\n", duration);
+  // kprintf("hid: setting idle rate to %d\n", duration);
   if (usb_run_ctrl_transfer(device, set_idle, 0, 0) < 0) {
     kprintf("hid: failed to set idle rate\n");
     return -1;
   }
 
   hid_trace_debug("idle rate set");
-  kprintf("hid: set idle rate\n");
+  // kprintf("hid: set idle rate\n");
   return 0;
 }
 
@@ -165,13 +163,13 @@ int hid_device_init(usb_device_t *device) {
   kassert(interface != NULL);
 
   hid_descriptor_t *desc = offset_ptr(interface, interface->length);
-  kprintf("hid descriptor:\n");
-  kprintf("  length = %d", desc->length);
-  kprintf("  type = %d\n", desc->type);
-  kprintf("  hid_ver = %X\n", desc->hid_ver);
-  kprintf("  num_descriptors = %d\n", desc->num_descriptors);
-  kprintf("  class_type = %d\n", desc->class_type);
-  kprintf("  report_length = %d\n", desc->report_length);
+  // kprintf("hid descriptor:\n");
+  // kprintf("  length = %d", desc->length);
+  // kprintf("  type = %d\n", desc->type);
+  // kprintf("  hid_ver = %X\n", desc->hid_ver);
+  // kprintf("  num_descriptors = %d\n", desc->num_descriptors);
+  // kprintf("  class_type = %d\n", desc->class_type);
+  // kprintf("  report_length = %d\n", desc->report_length);
 
   void *report_desc = hid_get_report_descriptor(device, desc);
   if (report_desc == NULL) {
@@ -221,7 +219,6 @@ int hid_device_init(usb_device_t *device) {
   // we set the device idle to 0 so that the endpoint only reports
   // when the device state changes
   hid_set_idle(device, 0);
-  kprintf("hid: device idle = %d\n", hid_get_idle(device));
 
   hid_device_t *hid = kmalloc(sizeof(hid_device_t));
   hid->desc = desc;

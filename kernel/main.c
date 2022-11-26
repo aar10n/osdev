@@ -43,6 +43,20 @@ const char *argv[] = {
 
 _Noreturn void launch();
 
+static void dump_bytes(uint8_t *buffer, size_t length) {
+  kprintf("DUMPING BYTES [buffer = %018p, length = %zu]\n", buffer, length);
+  size_t index = 0;
+  while (length > 0) {
+    kprintf("      ");
+    for (size_t i = 0; i < 32; i++) {
+      kprintf("%02x ", buffer[index]);
+      index++;
+      length--;
+    }
+    kprintf("\n");
+  }
+}
+
 //
 // Kernel entry
 //
@@ -100,10 +114,21 @@ _Noreturn void launch() {
   usb_init();
   pcie_discover();
 
-  // memset((void *) FRAMEBUFFER_VA, 0xFF, boot_info_v2->fb_size);
-  // screen_print_str("Hello, world\n");
+  //
 
-  // if (fs_mount("/", "/dev/sdb", "ext2") < 0) {
+  thread_sleep(MS_TO_US(500));
+  fs_lsdir("/dev");
+
+  if (fs_mount("/", "/dev/sdb", "ext2") < 0) {
+    panic("failed to mount");
+  }
+
+  fs_lsdir("/");
+
+  // // memset((void *) FRAMEBUFFER_VA, 0xFF, boot_info_v2->fb_size);
+  // // screen_print_str("Hello, world\n");
+  //
+  // if (fs_mount("/test", "/dev/sdb", "ext2") < 0) {
   //   panic("%s", strerror(ERRNO));
   // }
 
