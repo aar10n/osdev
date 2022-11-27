@@ -23,10 +23,10 @@ static uint8_t ipi_ack;
 __used void ipi_handler() {
   uint8_t type = ipi_type;
   uint64_t data = ipi_data;
-  kassert(type < NUM_IPIS);
+  kassert(type <= NUM_IPIS);
   atomic_fetch_add(&ipi_ack, 1);
 
-  kprintf("CPU#%d IPI!\n", PERCPU_ID);
+  // kprintf("CPU#%d IPI!\n", PERCPU_ID);
   switch (type) {
     case IPI_PANIC:
       while (true) cpu_pause();
@@ -44,7 +44,7 @@ __used void ipi_handler() {
 //
 
 int ipi_deliver_cpu_id(uint8_t type, uint8_t cpu_id, uint64_t data) {
-  kassert(type < NUM_IPIS);
+  kassert(type <= NUM_IPIS);
   if (cpu_id > system_num_cpus) {
     return -1;
   }
@@ -65,7 +65,7 @@ int ipi_deliver_cpu_id(uint8_t type, uint8_t cpu_id, uint64_t data) {
 }
 
 int ipi_deliver_mode(uint8_t type, ipi_mode_t mode, uint64_t data) {
-  kassert(type < NUM_IPIS);
+  kassert(type <= NUM_IPIS);
 
   uint32_t apic_flags;
   uint32_t num_acks;

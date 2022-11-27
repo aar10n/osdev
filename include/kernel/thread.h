@@ -93,6 +93,7 @@ typedef struct thread {
   char *name;                  // thread name or description (owning)
   int errno;                   // thread local errno
   int preempt_count;           // preempt disable counter
+  int irq_level;               // irq handler nesting count
   void *data;                  // thread data pointer
 
   page_t *kernel_stack;        // kernel stack pages
@@ -108,6 +109,7 @@ thread_t *thread_copy(thread_t *other);
 void thread_free(thread_t *thread);
 
 thread_t *thread_create(void *(start_routine)(void *), void *arg);
+thread_t *thread_create_n(char *name, void *(start_routine)(void *), void *arg);
 void thread_exit(void *retval);
 int thread_join(thread_t *thread, void **retval);
 int thread_send(void *data);

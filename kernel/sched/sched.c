@@ -22,18 +22,20 @@ sched_policy_impl_t *policy_impl[NUM_POLICIES];
 sched_t *_schedulers[MAX_CPUS] = {};
 size_t _num_schedulers = 0;
 
-#define SCHED_UNIPROC
+// #define SCHED_UNIPROC
 
 #define sched_assert(expr) kassert(expr)
 // #define sched_assert(expr)
+#define thread_assert(thread, expr) \
+  kassertf(expr, #expr ", thread %d.%d [%s]", (thread)->tid, (thread)->process->pid, (thread)->name)
+
 
 #define foreach_sched(var) \
   sched_t * var = NULL; int i = 0; \
   for (i = 0, var = _schedulers[i]; i < _num_schedulers; i++, var = _schedulers[i])
 
 #define foreach_policy(var) \
-  uint16_t var = 0; \
-  for (var = 0; var < NUM_POLICIES; var ++)
+  for (uint16_t var = 0; var < NUM_POLICIES; var ++)
 
 #define POLICY_FUNC(policy, func) (policy_impl[(policy)]->func)
 #define POLICY_DATA(sched, policy) ((sched)->policies[(policy)])
@@ -184,12 +186,12 @@ double sched_compute_thread_cpu_affinity_score(sched_t *sched, thread_t *thread)
 
   double load_scale = 0.2f;
   if (thread->cpu_id == sched->cpu_id && thread->stats->sched_count > 0) {
-    // slightly prefer to schedule onto the same scheduler as before
-    load_scale = 0.15f;
+    // prefer to schedule onto the same scheduler as before
+    load_scale = 0.1f;
   }
 
   double sched_load = ((sched->ready_count * 0.8) + (sched->blocked_count * 0.2));
-  return 1 / ((load_scale * sched_load) + 1);
+  return 1 / (load_scale * sched_load);
 }
 
 thread_t *sched_get_next_thread(sched_t *sched) {
@@ -247,10 +249,7 @@ bool sched_should_preempt(sched_t *sched, thread_t *thread) {
   // determines whether the active thread running on `sched` should be preempted by `thread`
   spin_lock(&sched->lock);
   thread_t *active = sched->active;
-  if (thread == active) {
-    kprintf("sched error: uh oh!\n");
-  }
-  sched_assert(thread != active);
+  thread_assert(thread, thread != active);
 
   if (active->preempt_count > 0) {
     spin_unlock(&sched->lock);
@@ -345,8 +344,8 @@ int sched_add(thread_t *thread) {
   sched_assert(thread->policy < NUM_POLICIES);
   sched_t *sched = sched_find_cpu_for_thread(thread);
 
-  kprintf("sched: scheduling thread %d.%d onto CPU#%d\n",
-          thread->process->pid, thread->tid, sched->cpu_id);
+  kprintf("sched: scheduling thread %d.%d onto CPU#%d [%s]\n",
+          thread->process->pid, thread->tid, sched->cpu_id, thread->name);
 
   thread->cpu_id = sched->cpu_id;
   thread->status = THREAD_READY;
@@ -416,7 +415,9 @@ int sched_block(thread_t *thread) {
 
 int sched_unblock(thread_t *thread) {
   sched_t *sched = SCHEDULER(thread->cpu_id);
-  sched_assert(thread->status == THREAD_BLOCKED);
+  if (!IS_BLOCKED(thread)) {
+    panic("thread %d.%d not blocked [%s]", thread->tid, thread->process->pid, thread->name);
+  }
 
   sched_remove_blocked_thread(sched, thread);
   thread->status = THREAD_READY;
@@ -445,6 +446,7 @@ int sched_wakeup(thread_t *thread) {
       // reschedule current cpu
       return sched_reschedule(SCHED_PREEMPTED);
     }
+    // rescheduler another cpu
     return ipi_deliver_cpu_id(IPI_SCHEDULE, thread->cpu_id, SCHED_PREEMPTED);
   }
   return 0;

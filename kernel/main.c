@@ -80,7 +80,7 @@ __used void kmain() {
   events_init();
 
   syscalls_init();
-  // smp_init();
+  smp_init();
 
   cpu_enable_interrupts();
   process_t *root = process_create_root(launch);
@@ -132,15 +132,15 @@ _Noreturn void launch() {
   //   panic("%s", strerror(ERRNO));
   // }
 
-  fs_open("/dev/stdin", O_RDONLY, 0);
-  fs_open("/dev/stdout", O_WRONLY, 0);
-  fs_open("/dev/stderr", O_WRONLY, 0);
+  // fs_open("/dev/stdin", O_RDONLY, 0);
+  // fs_open("/dev/stdout", O_WRONLY, 0);
+  // fs_open("/dev/stderr", O_WRONLY, 0);
 
-  kprintf("echoing stdin\n");
-  char ch;
-  while (fs_read(0, &ch, 1) > 0) {
-    kprintf("%c", ch);
-  }
+  // kprintf("echoing stdin\n");
+  // char ch;
+  // while (fs_read(0, &ch, 1) > 0) {
+  //   kprintf("%c", ch);
+  // }
 
   // process_execve("/usr/bin/hello", (void *) argv, NULL);
 

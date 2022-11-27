@@ -116,7 +116,7 @@ void *hid_get_report_descriptor(usb_device_t *device, hid_descriptor_t *hid) {
     return NULL;
   }
 
-  kprintf("hid: report descriptor loaded\n");
+  // kprintf("hid: report descriptor loaded\n");
   return buffer;
 }
 

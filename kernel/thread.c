@@ -122,6 +122,7 @@ thread_t *thread_alloc(id_t tid, void *(start_routine)(void *), void *arg, bool 
   thread->stats = stats;
   thread->affinity = -1;
   thread->name = NULL;
+  thread->irq_level = 0;
 
   thread->kernel_stack = kernel_stack;
   thread->user_stack = user_stack;

@@ -23,7 +23,7 @@ static intvl_tree_t *debug_functions;
 static bool has_debug_info = false;
 
 static dwarf_file_t *locate_or_load_dwarf_file(uintptr_t addr) {
-  intvl_node_t *node = intvl_tree_find(debug_files, intvl(addr, addr));
+  intvl_node_t *node = intvl_tree_find(debug_files, intvl(addr, addr + 1));
   if (node == NULL) {
     return NULL;
   }
@@ -41,6 +41,7 @@ static dwarf_file_t *locate_or_load_dwarf_file(uintptr_t addr) {
     }
 
     SLIST_FOR_IN(func, file->functions, next) {
+      // kprintf("debug: function %s [%p]\n", func->name, func->addr_lo);
       intvl_tree_insert(debug_functions, intvl(func->addr_lo, func->addr_hi), func);
     }
   }
@@ -49,15 +50,18 @@ static dwarf_file_t *locate_or_load_dwarf_file(uintptr_t addr) {
 }
 
 static dwarf_function_t *locate_or_load_dwarf_function(uintptr_t addr) {
-  intvl_node_t *node = intvl_tree_find(debug_functions, intvl(addr, addr));
+  intvl_node_t *node = intvl_tree_find(debug_functions, intvl(addr, addr + 1));
   if (node == NULL) {
     dwarf_file_t *file = locate_or_load_dwarf_file(addr);
     if (file == NULL) {
       return NULL;
     }
 
-    node = intvl_tree_find(debug_functions, intvl(addr, addr));
-    return node->data;
+    node = intvl_tree_find(debug_functions, intvl(addr, addr + 1));
+    if (node) {
+      return node->data;
+    }
+    return NULL;
   }
   return node->data;
 }
@@ -95,6 +99,7 @@ void debug_init() {
     return;
   }
 
+  has_debug_info = true;
   debug_files = create_intvl_tree();
   debug_functions = create_intvl_tree();
   RLIST_FOR_IN(file, files, list) {
@@ -115,6 +120,7 @@ const char *debug_function_name(uintptr_t addr) {
 
   dwarf_function_t *func = locate_or_load_dwarf_function(addr);
   if (func == NULL) {
+    kprintf("debug: failed to find function name for address %p\n", addr);
     return NULL;
   }
 

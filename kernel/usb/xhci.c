@@ -651,9 +651,9 @@ int xhci_read_device_descriptor(usb_device_t *device, usb_device_descriptor_t **
       return -1;
     }
 
-    kprintf("xhci: device descriptor (0)\n");
-    kprintf("      length = %d | usb version = %x\n", temp->length, temp->usb_ver);
-    kprintf("      max packet sz (ep0) = %d\n", temp->max_packt_sz0);
+    // kprintf("xhci: device descriptor (0)\n");
+    // kprintf("      length = %d | usb version = %x\n", temp->length, temp->usb_ver);
+    // kprintf("      max packet sz (ep0) = %d\n", temp->max_packt_sz0);
 
     // update default control ep max packet size
     dev->ictx->ctrl->add_flags |= 1; // set A1 bit to 1
@@ -665,7 +665,7 @@ int xhci_read_device_descriptor(usb_device_t *device, usb_device_descriptor_t **
       kfree(temp);
       return -1;
     }
-    kprintf("xhci: context evaluated\n");
+    // kprintf("xhci: context evaluated\n");
     kfree(temp);
   }
 
@@ -813,8 +813,6 @@ int _xhci_run_controller(xhci_controller_t *hc) {
     return -1;
   }
 
-  QDEBUG(1);
-
   // run the controller
   uint32_t usbcmd = read32(hc->op_base, XHCI_OP_USBCMD);
   usbcmd |= USBCMD_RUN | USBCMD_INT_EN | USBCMD_HS_ERR_EN;
@@ -833,11 +831,10 @@ int _xhci_run_controller(xhci_controller_t *hc) {
   }
 
   // test out the command ring
-  kprintf("xhci: testing no-op command\n");
+  // kprintf("xhci: testing no-op command\n");
   if (_xhci_run_noop_cmd(hc) < 0) {
     kprintf("xhci: failed to execute no-op command\n");
-  } else {
-    kprintf("xhci: no-op command succeeded\n");
+    return -1;
   }
 
   return 0;
@@ -983,30 +980,8 @@ int _xhci_setup_device(_xhci_device_t *device) {
     return -1;
   }
 
-  kprintf("xhci: device initialized on port %d\n", device->port->number);
+  // kprintf("xhci: device initialized on port %d\n", device->port->number);
   return 0;
-
-  // get device descriptor
-
-  // // evaluate context
-  // size_t max_packet_size;
-  // if (device_is_usb3(device)) {
-  //   // USB3
-  //   max_packet_size = 2 << desc->max_packt_sz0;
-  // } else {
-  //   // USB2
-  //   max_packet_size = desc->max_packt_sz0;
-  // }
-  // device->ictx->endpoint[0]->max_packt_sz = max_packet_size;
-  // device->ictx->ctrl->add_flags |= 0x3; // set A0 and A1 bits
-  //
-  //
-  // if (_xhci_run_evaluate_ctx_cmd(hc, device) < 0) {
-  //   kprintf("xhci: failed to evaluate context\n");
-  //   return -1;
-  // }
-  // kprintf("xhci: context evaluated\n");
-  // return 0;
 }
 
 int _xhci_add_device_endpoint(xhci_endpoint_t *ep) {
@@ -1103,7 +1078,7 @@ int _xhci_run_enable_slot_cmd(xhci_controller_t *hc, _xhci_port_t *port) {
 }
 
 int _xhci_run_address_device_cmd(xhci_controller_t *hc, _xhci_device_t *device) {
-  kprintf("xhci: addressing device\n");
+  // kprintf("xhci: addressing device\n");
 
   xhci_addr_dev_cmd_trb_t cmd;
   clear_trb(&cmd);

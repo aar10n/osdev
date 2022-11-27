@@ -12,6 +12,7 @@
 #include <bus/pcie.h>
 
 #include <process.h>
+#include <thread.h>
 #include <spinlock.h>
 #include <bitmap.h>
 #include <printf.h>
@@ -54,29 +55,50 @@ struct isa_irq_override irq_isa_overrides[IRQ_NUM_ISA];
 
 extern void ipi_handler();
 
+static inline void inc_irq_level() {
+  PERCPU_THREAD->irq_level++;
+}
+
+static inline void dec_irq_level() {
+  if (PERCPU_THREAD->irq_level > 0) {
+    PERCPU_THREAD->irq_level--;
+  }
+}
+
 __used void irq_handler(uint8_t vector) {
   // kprintf("CPU#%d --> IRQ%d\n", PERCPU_ID, vector - IRQ_VECTOR_BASE);
+  uint64_t rflags = cpu_save_clear_interrupts();
   apic_send_eoi();
+  inc_irq_level();
   if (vector == ipi_vectornum) {
     ipi_handler();
-    return;
+    goto done;
   }
 
   if (irq_handlers[vector].ptr != NULL) {
     if (irq_handlers[vector].ignored) {
-      return;
+      goto done;
     }
 
     switch (irq_handlers[vector].type) {
       case IRQ_TYPE_FUNC:
         irq_handlers[vector].handler(vector - IRQ_VECTOR_BASE, irq_handlers[vector].data);
-        return;
+        goto done;
       case IRQ_TYPE_COND:
         cond_signal(irq_handlers[vector].condition);
-        return;
+        goto done;
+      default:
+        unreachable;
     }
+
+  LABEL(done);
+    dec_irq_level();
+    cpu_restore_interrupts(rflags);
+    return;
   }
+
   kprintf("CPU#%d --> IRQ%d\n", PERCPU_ID, vector - IRQ_VECTOR_BASE);
+  dec_irq_level();
 }
 
 __used void exception_handler(uint8_t vector, uint32_t error, cpu_irq_stack_t *frame, cpu_registers_t *regs) {

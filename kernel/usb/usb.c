@@ -248,11 +248,6 @@ int usb_run_ctrl_transfer(usb_device_t *device, usb_setup_packet_t setup, uintpt
   }
 
   usb_event_t event;
-  // if (chan_recv(endpoint->event_ch, chan_voidp(&event)) < 0) {
-  //   kprintf("usb_execute_ctrl_transfer(): failed to wait for event\n");
-  //   return -1;
-  // }
-
   if (host->device_impl->await_event(device, endpoint, &event) < 0) {
     kprintf("usb_await_transfer(): await_event failed\n");
     return -1;
@@ -354,12 +349,6 @@ int usb_start_await_transfer(usb_device_t *device, usb_dir_t direction) {
     kprintf("usb_start_await_transfer(): failed to await transfer\n");
     return -1;
   }
-
-  // usb_event_t event;
-  // if (host->device_impl->await_event(device, endpoint, &event) < 0) {
-  //   kprintf("usb_start_await_transfer(): await_event failed\n");
-  //   return -1;
-  // }
 
   if (event.status == USB_ERROR) {
     kprintf("usb_start_await_transfer(): transfer completed with error\n");
@@ -598,15 +587,6 @@ int usb_device_configure(usb_device_t *device, usb_config_descriptor_t *config, 
     return -1;
   }
 
-  // if (usb_add_setup_transfer(device, set_config, 0, 0) < 0) {
-  //   kprintf("usb: failed to add setup transfer while selecting config\n");
-  //   return -1;
-  // }
-  // if (usb_await_setup_transfer(device) < 0) {
-  //   kprintf("usb: failed to select configuration %d\n", config->config_val);
-  //   return -1;
-  // }
-
   return 0;
 }
 
@@ -642,15 +622,6 @@ LABEL(get_descriptor);
     return NULL;
   }
 
-  // if (usb_add_setup_transfer(device, get_desc, kheap_ptr_to_phys(desc), size) < 0) {
-  //   kprintf("usb_device_read_config_descriptor(): failed to add transfer\n");
-  //   return NULL;
-  // }
-  // if (usb_await_setup_transfer(device) < 0) {
-  //   kprintf("usb_device_read_config_descriptor(): failed to await transfer\n");
-  //   return NULL;
-  // }
-
   if (size < desc->total_len) {
     size = desc->total_len;
     kfree(desc);
@@ -676,15 +647,6 @@ LABEL(get_descriptor);
     kprintf("usb_device_read_string(): failed to execute transfer\n");
     return NULL;
   }
-
-  // if (usb_add_setup_transfer(device, get_desc, kheap_ptr_to_phys(desc), size) < 0) {
-  //   kprintf("usb_device_read_string(): failed to add transfer\n");
-  //   return NULL;
-  // }
-  // if (usb_await_setup_transfer(device) < 0) {
-  //   kprintf("usb_device_read_string(): failed to await transfer\n");
-  //   return NULL;
-  // }
 
   if (size < desc->length) {
     size = desc->length;
