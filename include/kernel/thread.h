@@ -74,6 +74,8 @@ typedef struct thread {
   tls_block_t *tls;            // thread local storage
   uintptr_t kernel_sp;         // kernel stack pointer
   uintptr_t user_sp;           // user stack pointer
+  // DO NOT CHANGE ABOVE HERE
+  // assembly code in thread.asm accesses these fields using known offsets
 
   uint8_t cpu_id;              // current/last cpu used
   uint8_t policy;              // thread scheduling policy
@@ -88,6 +90,7 @@ typedef struct thread {
   sigset_t signal;             // signal mask
   uint32_t flags;              // thread flags
 
+  char *name;                  // thread name or description (owning)
   int errno;                   // thread local errno
   int preempt_count;           // preempt disable counter
   void *data;                  // thread data pointer
@@ -95,8 +98,8 @@ typedef struct thread {
   page_t *kernel_stack;        // kernel stack pages
   page_t *user_stack;          // user stack pages
 
-  LIST_ENTRY(thread_t) group;  // thread group
-  LIST_ENTRY(thread_t) list;   // thread list
+  LIST_ENTRY(thread_t) group;  // thread group (threads from same process)
+  LIST_ENTRY(thread_t) list;   // generic thread list (used by scheduler, mutex, cond, etc)
 } thread_t;
 static_assert(offsetof(thread_t, process) == 0x18);
 

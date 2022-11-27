@@ -108,6 +108,19 @@ void debug_init() {
 
 //
 
+const char *debug_function_name(uintptr_t addr) {
+  if (!has_debug_info) {
+    return NULL;
+  }
+
+  dwarf_function_t *func = locate_or_load_dwarf_function(addr);
+  if (func == NULL) {
+    return NULL;
+  }
+
+  return func->name;
+}
+
 char *debug_addr2line(uintptr_t addr) {
   if (addr == 0) {
     return kasprintf("<null>");

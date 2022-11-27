@@ -10,6 +10,8 @@
 void debug_early_init();
 void debug_init();
 
+const char *debug_function_name(uintptr_t addr);
+
 char *debug_addr2line(uintptr_t addr);
 int debug_unwind(uintptr_t rip, uintptr_t rbp);
 

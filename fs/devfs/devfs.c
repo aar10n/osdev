@@ -8,6 +8,7 @@
 #include <thread.h>
 #include <event.h>
 #include <panic.h>
+#include <string.h>
 
 // /dev/null
 ssize_t devfs_null_read(file_t *file, char *buf, size_t count, off_t *offset) {
@@ -40,10 +41,10 @@ file_ops_t zero_file_ops = {
   .write = devfs_zero_write,
 };
 
-// stdin
+// stdin - fake stdin for now, used to redirect keyboard input for now
 ssize_t devfs_stdin_read(file_t *file, char *buf, size_t count, off_t *offset) {
   off_t off = 0;
-  label(wait_for_event);
+LABEL(wait_for_event);
   key_event_t *event = wait_for_key_event();
   while (event != NULL && off < count) {
     char ch = key_event_to_character(event);
@@ -105,7 +106,7 @@ file_ops_t stderr_file_ops = {
 // /dev/events
 ssize_t devfs_events_read(file_t *file, char *buf, size_t count, off_t *offset) {
   off_t off = 0;
-  label(wait_for_event);
+LABEL(wait_for_event);
   key_event_t *event = wait_for_key_event();
   while (event != NULL && off < count) {
     if (count - off < sizeof(key_event_t)) {

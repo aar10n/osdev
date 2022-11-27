@@ -147,10 +147,10 @@ key_event_t *wait_for_key_event() {
 }
 
 void dispatch_key_event(key_event_t *event) {
-  char c = key_event_to_character(event);
-  if (c != '\0') {
-    kprintf("> %c\n", c);
-  }
+  // char c = key_event_to_character(event);
+  // if (c != '\0') {
+  //   kprintf("> %c\n", c);
+  // }
 
   preempt_disable();
   for (int i = 0; i < MAX_HANDLERS; i++) {

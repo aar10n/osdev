@@ -14,6 +14,8 @@
 #include <process.h>
 #include <signal.h>
 
+#include <debug/debug.h>
+
 // #define THREAD_DEBUG
 #ifdef THREAD_DEBUG
 #define thread_trace_debug(str, args...) kprintf("[thread] " str "\n", ##args)
@@ -119,6 +121,7 @@ thread_t *thread_alloc(id_t tid, void *(start_routine)(void *), void *arg, bool 
   thread->policy = POLICY_SYSTEM;
   thread->stats = stats;
   thread->affinity = -1;
+  thread->name = NULL;
 
   thread->kernel_stack = kernel_stack;
   thread->user_stack = user_stack;
@@ -129,8 +132,10 @@ thread_t *thread_alloc(id_t tid, void *(start_routine)(void *), void *arg, bool 
 }
 
 thread_t *thread_copy(thread_t *other) {
+  char *name = other->name ? kasprintf("%s (copy)", other->name) : NULL;
   bool user = other->user_stack != NULL;
   thread_t *thread = thread_alloc(0, NULL, NULL, user);
+  thread->name = name;
 
   // copy the stacks
   memcpy((void *) PAGE_VIRT_ADDR(thread->kernel_stack), (void *) PAGE_VIRT_ADDR(other->kernel_stack), KERNEL_STACK_SIZE);
@@ -181,6 +186,8 @@ void thread_free(thread_t *thread) {
     }
     kfree(tls);
   }
+
+  kfree(thread->name);
   kfree(thread->ctx);
   kfree(thread);
 }
@@ -197,6 +204,29 @@ thread_t *thread_create(void *(start_routine)(void *), void *arg) {
   thread_t *thread = thread_alloc(tid, start_routine, arg, false);
   thread->process = process;
   thread->affinity = process->main->affinity;
+
+  // in lieu of an explicit thread name we can try and get the name of
+  // the start routine and use that instead
+  const char *func_name = debug_function_name((uintptr_t) start_routine);
+  if (func_name != NULL) {
+    // duplicate it because debug_function_name returns a non-owning string
+    thread->name = strdup(func_name);
+  }
+
+  LIST_ADD(&process->threads, thread, group);
+  sched_add(thread);
+  return thread;
+}
+
+thread_t *thread_create_n(char *name, void *(start_routine)(void *), void *arg) {
+  process_t *process = PERCPU_PROCESS;
+  id_t tid = LIST_LAST(&process->threads)->tid + 1;
+  thread_trace_debug("creating thread %d | process %d", tid, process->pid);
+
+  thread_t *thread = thread_alloc(tid, start_routine, arg, false);
+  thread->process = process;
+  thread->affinity = process->main->affinity;
+  thread->name = name;
 
   LIST_ADD(&process->threads, thread, group);
   sched_add(thread);

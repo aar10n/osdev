@@ -132,9 +132,16 @@ _Noreturn void launch() {
   //   panic("%s", strerror(ERRNO));
   // }
 
-  // fs_open("/dev/stdin", O_RDONLY, 0);
-  // fs_open("/dev/stdout", O_WRONLY, 0);
-  // fs_open("/dev/stderr", O_WRONLY, 0);
+  fs_open("/dev/stdin", O_RDONLY, 0);
+  fs_open("/dev/stdout", O_WRONLY, 0);
+  fs_open("/dev/stderr", O_WRONLY, 0);
+
+  kprintf("echoing stdin\n");
+  char ch;
+  while (fs_read(0, &ch, 1) > 0) {
+    kprintf("%c", ch);
+  }
+
   // process_execve("/usr/bin/hello", (void *) argv, NULL);
 
   // const uint32_t ms = 1000;
