@@ -12,10 +12,31 @@
 #include <panic.h>
 #include <mutex.h>
 
+
+#define END_ADDR(heap) ((heap)->virt_addr + (heap)->size)
+
 mm_heap_t kheap;
 spinlock_t kheap_lock;
 mutex_t kheap_mutex;
 
+static const char *hist_labels[9] = {
+  "0-8", "9-16", "17-32", "33-64", "65-128", "129-512", "513-1024", "larger"
+};
+
+
+static inline int get_hist_bucket(size_t size) {
+  switch (size) {
+    case 1 ... 8: return 0;
+    case 9 ... 16: return 1;
+    case 17 ... 24: return 2;
+    case 25 ... 32: return 3;
+    case 33 ... 64: return 4;
+    case 65 ... 128: return 5;
+    case 129 ... 512: return 6;
+    case 513 ... 1024: return 7;
+    default: return 8;
+  }
+}
 
 static inline mm_chunk_t *get_prev_chunk(mm_chunk_t *chunk) {
   if (chunk->prev_offset == 0) {
@@ -29,18 +50,18 @@ static inline mm_chunk_t *get_prev_chunk(mm_chunk_t *chunk) {
   return prev;
 }
 
-static inline mm_chunk_t *get_next_chunk(mm_chunk_t *chunk) {
-  if (chunk == kheap.last_chunk) {
+static inline mm_chunk_t *get_next_chunk(mm_heap_t *heap, mm_chunk_t *chunk) {
+  if (chunk == heap->last_chunk) {
     return NULL;
   }
 
   uintptr_t next_addr = offset_addr(chunk, sizeof(mm_chunk_t) + chunk->size);
-  if (next_addr < kheap.end_addr && ((uint16_t *) next_addr)[0] == HOLE_MAGIC) {
+  if (next_addr < END_ADDR(heap) && ((uint16_t *) next_addr)[0] == HOLE_MAGIC) {
     uint16_t hole_size = ((uint16_t *) next_addr)[1];
     next_addr += hole_size;
   }
 
-  if (next_addr >= kheap.end_addr) {
+  if (next_addr >= END_ADDR(heap)) {
     return NULL;
   }
 
@@ -51,19 +72,20 @@ static inline mm_chunk_t *get_next_chunk(mm_chunk_t *chunk) {
   return next;
 }
 
-static inline void aquire_kheap() {
-  if (PERCPU_THREAD == NULL) {
-    spin_lock(&kheap_lock);
+static inline void aquire_heap(mm_heap_t *heap) {
+  // PERCPU_THREAD will only be null on initial bootup
+  if (__builtin_expect(PERCPU_THREAD != NULL, true)) {
+    mutex_lock(&heap->lock);
   } else {
-    mutex_lock(&kheap_mutex);
+    spin_lock(&kheap_lock);
   }
 }
 
-static inline void release_kheap() {
-  if (PERCPU_THREAD == NULL) {
-    spin_unlock(&kheap_lock);
+static inline void release_heap(mm_heap_t *heap) {
+  if (__builtin_expect(PERCPU_THREAD != NULL, true)) {
+    mutex_unlock(&heap->lock);
   } else {
-    mutex_unlock(&kheap_mutex);
+    spin_unlock(&kheap_lock);
   }
 }
 
@@ -86,21 +108,22 @@ void mm_init_kheap() {
   }
 
   kheap.phys_addr = phys_addr;
-  kheap.start_addr = KERNEL_HEAP_VA;
-  kheap.end_addr = KERNEL_HEAP_VA + KERNEL_HEAP_SIZE;
+  kheap.virt_addr = KERNEL_HEAP_VA;
   kheap.size = KERNEL_HEAP_SIZE;
   kheap.used = 0;
   kheap.last_chunk = NULL;
   LIST_INIT(&kheap.chunks);
   spin_init(&kheap_lock);
   mutex_init(&kheap_mutex, MUTEX_REENTRANT | MUTEX_SHARED);
+  mutex_init(&kheap.lock, MUTEX_REENTRANT | MUTEX_SHARED);
 
   kprintf("initialized kernel heap\n");
 }
 
 // ----- kmalloc -----
 
-void *__kmalloc(size_t size, size_t alignment) {
+void *__kmalloc(mm_heap_t *heap, size_t size, size_t alignment) {
+  kassert(heap != NULL);
   if (alignment == 0 || (alignment & (alignment - 1)) != 0) {
     panic("[kmalloc] invalid alignment given: %zu\n", alignment);
   }
@@ -111,16 +134,18 @@ void *__kmalloc(size_t size, size_t alignment) {
     panic("[kmalloc] error - request too large (%zu)\n", size);
   }
 
-  aquire_kheap();
+  aquire_heap(heap);
+  heap->stats.alloc_count++;
+  heap->stats.alloc_sizes[get_hist_bucket(size)]++;
   size = align(max(size, CHUNK_MIN_SIZE), CHUNK_SIZE_ALIGN);
 
   // search for the best fitting chunk. If one is not found,
   // we will create a new chunk in the unmanaged heap memory.
-  if (LIST_FIRST(&kheap.chunks)) {
+  if (LIST_FIRST(&heap->chunks)) {
     // kprintf("[kmalloc] searching used chunks\n");
     mm_chunk_t *chunk = NULL;
     mm_chunk_t *curr = NULL;
-    LIST_FOREACH(curr, &kheap.chunks, list) {
+    LIST_FOREACH(curr, &heap->chunks, list) {
       // check if chunk is properly aligned
       if (offset_addr(curr, sizeof(mm_chunk_t)) % alignment != 0) {
         continue;
@@ -140,11 +165,11 @@ void *__kmalloc(size_t size, size_t alignment) {
     if (chunk != NULL) {
       // kprintf("[kmalloc] used chunk found (size %d)\n", chunk->size);
       // if a chunk was found remove it from the list
-      LIST_REMOVE(&kheap.chunks, chunk, list);
+      LIST_REMOVE(&heap->chunks, chunk, list);
       chunk->free = false;
 
-      kheap.used += size + sizeof(mm_chunk_t);
-      release_kheap();
+      heap->used += size + sizeof(mm_chunk_t);
+      release_heap(heap);
       return offset_ptr(chunk, sizeof(mm_chunk_t));
     }
   }
@@ -155,10 +180,10 @@ void *__kmalloc(size_t size, size_t alignment) {
 
   // create new chunk
   uintptr_t chunk_addr;
-  if (kheap.last_chunk == NULL) {
-    chunk_addr = kheap.start_addr;
+  if (heap->last_chunk == NULL) {
+    chunk_addr = heap->virt_addr;
   } else {
-    chunk_addr = offset_addr(kheap.last_chunk, sizeof(mm_chunk_t) + kheap.last_chunk->size);
+    chunk_addr = offset_addr(heap->last_chunk, sizeof(mm_chunk_t) + heap->last_chunk->size);
   }
 
   // fix alignment
@@ -171,18 +196,29 @@ void *__kmalloc(size_t size, size_t alignment) {
       // we can't create a new chunk here, so we need to create a hole
       ((uint16_t *) chunk_addr)[0] = HOLE_MAGIC;
       ((uint16_t *) chunk_addr)[1] = hole_size;
-      kheap.used += hole_size;
+      heap->used += hole_size;
     } else {
       // create a new free chunk
       mm_chunk_t *free_chunk = (void *) chunk_addr;
       free_chunk->magic = CHUNK_MAGIC;
       free_chunk->size = hole_size - sizeof(mm_chunk_t);
       free_chunk->free = true;
-      LIST_ADD_FRONT(&kheap.chunks, free_chunk, list);
+      LIST_ADD_FRONT(&heap->chunks, free_chunk, list);
     }
   }
 
-  if (aligned_mem + size > kheap.end_addr) {
+  if (aligned_mem + size > END_ADDR(heap)) {
+    kprintf("heap: heap out of memory\n");
+    kprintf("      sized = %zu\n", heap->size);
+    kprintf("      used = %zu\n", heap->used);
+    kprintf("      alloc_count = %zu\n", heap->stats.alloc_count);
+    kprintf("      alloc_count = %zu\n", heap->stats.alloc_count);
+
+    kprintf("      request_sizes:\n");
+    for (int i = 0; i < 9; i++) {
+      kprintf("        %s - %zu\n", hist_labels[i], heap->stats.alloc_sizes[i]);
+    }
+
     panic("[kmalloc] error - out of memory");
   }
 
@@ -192,37 +228,40 @@ void *__kmalloc(size_t size, size_t alignment) {
   chunk->free = false;
   chunk->list.next = NULL;
   chunk->list.prev = NULL;
-  if (kheap.last_chunk != NULL) {
-    // chunk->prev_size = kheap.last_chunk->size;
-    // chunk->prev_free = kheap.last_chunk->free;
-    chunk->prev_offset = aligned_chunk - (uintptr_t) kheap.last_chunk;
+  if (heap->last_chunk != NULL) {
+    // chunk->prev_size = heap->last_chunk->size;
+    // chunk->prev_free = heap->last_chunk->free;
+    chunk->prev_offset = aligned_chunk - (uintptr_t) heap->last_chunk;
   } else {
     // chunk->prev_size = 0;
     // chunk->prev_free = false;
     chunk->prev_offset = 0;
   }
 
-  kheap.last_chunk = chunk;
-  kheap.used += size + sizeof(mm_chunk_t);
+  heap->last_chunk = chunk;
+  heap->used += size + sizeof(mm_chunk_t);
 
-  release_kheap();
+  release_heap(heap);
   return offset_ptr(chunk, sizeof(mm_chunk_t));
 }
 
 void *kmalloc(size_t size) {
-  return __kmalloc(size, CHUNK_MIN_ALIGN);
+  return __kmalloc(&kheap, size, CHUNK_MIN_ALIGN);
 }
 
 void *kmalloca(size_t size, size_t alignment) {
-  return __kmalloc(size, alignment);
+  return __kmalloc(&kheap, size, alignment);
 }
 
 // ----- kfree -----
 
-void kfree(void *ptr) {
+void __kfree(mm_heap_t *heap, void *ptr) {
+  kassert(heap != NULL);
   if (ptr == NULL) {
     return;
   }
+
+  heap->stats.free_count++;
 
   mm_chunk_t *chunk = offset_ptr(ptr, -sizeof(mm_chunk_t));
   if (chunk->magic != CHUNK_MAGIC) {
@@ -233,21 +272,25 @@ void kfree(void *ptr) {
     return;
   }
 
-  aquire_kheap();
+  aquire_heap(heap);
   if (!(LIST_NEXT(chunk, list) == NULL && LIST_PREV(chunk, list) == NULL)) {
     panic("[kfree] error - chunk linked to other chunks");
   }
 
   // kprintf("[kfree] freeing pointer %p\n", ptr);
   chunk->free = true;
-  mm_chunk_t *next_chunk = get_next_chunk(chunk);
+  mm_chunk_t *next_chunk = get_next_chunk(heap, chunk);
   if (next_chunk != NULL) {
     // next_chunk->prev_free = true;
   }
 
-  LIST_ADD_FRONT(&kheap.chunks, chunk, list);
-  kheap.used -= chunk->size + sizeof(mm_chunk_t);
-  release_kheap();
+  LIST_ADD_FRONT(&heap->chunks, chunk, list);
+  heap->used -= chunk->size + sizeof(mm_chunk_t);
+  release_heap(heap);
+}
+
+void kfree(void *ptr) {
+  __kfree(&kheap, ptr);
 }
 
 // ----- kcalloc -----
@@ -273,7 +316,7 @@ void *kcalloc(size_t nmemb, size_t size) {
 
 int kheap_is_valid_ptr(void *ptr) {
   uintptr_t chunk_addr = offset_addr(ptr, -sizeof(mm_chunk_t));
-  if (chunk_addr < kheap.start_addr || chunk_addr > kheap.end_addr) {
+  if (chunk_addr < kheap.virt_addr || chunk_addr > END_ADDR(&kheap)) {
     return false;
   }
 
@@ -290,6 +333,6 @@ uintptr_t kheap_ptr_to_phys(void *ptr) {
   }
 
   kassert(kheap_is_valid_ptr(ptr));
-  size_t offset = ((uintptr_t) ptr) - kheap.start_addr;
+  size_t offset = ((uintptr_t) ptr) - kheap.virt_addr;
   return kheap.phys_addr + offset;
 }
