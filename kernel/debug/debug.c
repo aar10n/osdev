@@ -13,11 +13,6 @@
 
 #include <interval_tree.h>
 
-typedef struct stackframe {
-  struct stackframe *rbp;
-  uint64_t rip;
-} stackframe_t;
-
 static intvl_tree_t *debug_files;
 static intvl_tree_t *debug_functions;
 static bool has_debug_info = false;

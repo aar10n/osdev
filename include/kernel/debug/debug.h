@@ -7,6 +7,12 @@
 
 #include <kernel/base.h>
 
+typedef struct stackframe {
+  struct stackframe *rbp;
+  uint64_t rip;
+} stackframe_t;
+
+
 void debug_early_init();
 void debug_init();
 
