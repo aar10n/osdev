@@ -5,8 +5,10 @@
 #include <spinlock.h>
 #include <atomic.h>
 #include <panic.h>
-#include <cpu/cpu.h>
 #include <thread.h>
+#include <clock.h>
+
+#include <cpu/cpu.h>
 
 static inline void __preempt_disable() {
   if (PERCPU_THREAD != NULL) {
@@ -46,9 +48,13 @@ void spin_lock(spinlock_t *lock) {
       return;
     }
 
+    uint64_t deadline = clock_future_time(MS_TO_NS(10));
     __preempt_enable();
     while (atomic_bit_test_and_set(&lock->locked, 0)) {
       cpu_pause(); // spin
+      if (clock_now() >= deadline) {
+        panic("stuck waiting for spinlock");
+      }
     }
     __preempt_disable();
   }
@@ -61,7 +67,7 @@ void spin_unlock(spinlock_t *lock) {
     return;
   }
 
-  uint64_t id = PERCPU_ID;
+  id_t id = PERCPU_ID;
   if (atomic_bit_test_and_set(&lock->locked, 0)) {
     // the lock was set
     kassert(lock->locked_by == id);

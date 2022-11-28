@@ -22,7 +22,7 @@ sched_policy_impl_t *policy_impl[NUM_POLICIES];
 sched_t *_schedulers[MAX_CPUS] = {};
 size_t _num_schedulers = 0;
 
-// #define SCHED_UNIPROC
+#define SCHED_UNIPROC
 
 #define sched_assert(expr) kassert(expr)
 // #define sched_assert(expr)
@@ -286,6 +286,7 @@ noreturn void *sched_idle_thread(void *arg) {
 
 //
 
+// TODO: fix race conditions with AP initialization
 noreturn void sched_init(process_t *root) {
   while (root == NULL) {
     // AP processors need to wait for BSP to finish
@@ -294,6 +295,7 @@ noreturn void sched_init(process_t *root) {
     root = process_get(0);
   }
 
+  // TODO: hold process lock for this
   thread_t *idle = thread_alloc(LIST_LAST(&root->threads)->tid + 1, sched_idle_thread, NULL, false);
   idle->process = root;
   idle->priority = 255;

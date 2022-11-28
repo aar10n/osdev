@@ -80,7 +80,7 @@ __used void kmain() {
   events_init();
 
   syscalls_init();
-  smp_init();
+  // smp_init();
 
   cpu_enable_interrupts();
   process_t *root = process_create_root(launch);
