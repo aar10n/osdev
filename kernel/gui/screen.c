@@ -34,14 +34,12 @@ void screen_early_init() {
   kprintf("  height: %zu\n", boot_info_v2->fb_height);
   kprintf("  size: %zu\n", boot_info_v2->fb_size);
   framebuf_base = (void *) boot_info_v2->fb_addr;
+  register_init_address_space_callback(remap_framebuffer_mmio, NULL);
 }
 
 void screen_init() {
-  kprintf("framebuffer:\n");
-  kprintf("  width: %zu\n", boot_info_v2->fb_width);
-  kprintf("  height: %zu\n", boot_info_v2->fb_height);
-  kprintf("  size: %zu\n", boot_info_v2->fb_size);
-  register_init_address_space_callback(remap_framebuffer_mmio, NULL);
+  // clear screen
+  __memset8((void *) FRAMEBUFFER_VA, 0x00, boot_info_v2->fb_size);
 }
 
 void screen_print_char(char ch) {
@@ -77,7 +75,7 @@ void screen_print_char(char ch) {
     for (int j = 0; j < 8; j++) {
       if (letter[i] & (1 << j)) {
         size_t index = ((y * 8) + (i)) * WIDTH + ((x * 8) + (j));
-        framebuf_base[index] = 0x00;
+        framebuf_base[index] = UINT32_MAX;
       }
     }
   }

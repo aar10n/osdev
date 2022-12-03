@@ -34,6 +34,8 @@
 #include <gui/screen.h>
 #include <string.h>
 
+#include <cpu/io.h>
+
 boot_info_v2_t __boot_data *boot_info_v2;
 
 const char *argv[] = {
@@ -57,6 +59,52 @@ static void dump_bytes(uint8_t *buffer, size_t length) {
   }
 }
 
+// static chan_t *test_chan;
+//
+// static noreturn void *cpu0_work_loop(void *arg) {
+//   thread_setaffinity(PERCPU_THREAD, 0);
+//   thread_yield();
+//   kprintf("[CPU#%d] starting cpu0_work_loop\n", PERCPU_ID);
+//
+//   while (true) {
+//     thread_sleep(MS_TO_US(500));
+//     uint16_t count = test_chan->write_idx - test_chan->read_idx;
+//     kprintf("[CPU#%d] sending event [%d in channel]\n", PERCPU_ID, count + 1);
+//     chan_send(test_chan, chan_u64(1));
+//   }
+// }
+//
+// static noreturn void *cpu1_work_loop(void *arg) {
+//   thread_setaffinity(PERCPU_THREAD, 1);
+//   thread_yield();
+//   kprintf("[CPU#%d] starting cpu1_work_loop\n", PERCPU_ID);
+//
+//   while (true) {
+//     thread_sleep(MS_TO_US(1010));
+//
+//     uint16_t count = test_chan->write_idx - test_chan->read_idx;
+//     kprintf("[CPU#%d] received %d events since last update\n", PERCPU_ID, count);
+//
+//     int res;
+//     while (chan_recv_noblock(test_chan, chan_voidp(&res)) >= 0) {}
+//   }
+// }
+
+static noreturn void *cpu_background_thread(void *arg) {
+  int cpu = (int)((uintptr_t)(arg));
+  thread_setaffinity(PERCPU_THREAD, cpu);
+  thread_yield();
+
+  while (true) {
+    clock_t deadline = clock_now() + MS_TO_NS(100);
+    while (clock_now() < deadline) {
+      cpu_pause();
+    }
+
+    kprintf("CPU#%d ping\n", PERCPU_ID);
+  }
+}
+
 //
 // Kernel entry
 //
@@ -68,19 +116,20 @@ __used void kmain() {
   mm_early_init();
   irq_early_init();
   acpi_early_init();
+  screen_early_init();
   debug_early_init();
-  screen_init();
 
   irq_init();
   init_mem_zones();
   init_address_space();
+  screen_init();
   debug_init();
 
   clock_init();
   events_init();
 
   syscalls_init();
-  // smp_init();
+  smp_init();
 
   cpu_enable_interrupts();
   process_t *root = process_create_root(launch);
@@ -106,9 +155,23 @@ __used void ap_main() {
 // Launch process
 //
 
+extern size_t _num_schedulers;
+
 _Noreturn void launch() {
   kprintf("[pid %d] launch\n", getpid());
+  while (_num_schedulers != system_num_cpus) {
+    cpu_pause();
+  }
+
   alarms_init();
+
+  // thread_sleep(MS_TO_US(200));
+  // test_chan = chan_alloc(32, 0);
+  // thread_create(cpu0_work_loop, NULL);
+
+  // thread_sleep(MS_TO_US(10));
+  // thread_create(cpu_background_thread, (void *)(0));
+  // thread_create(cpu_background_thread, (void *)(1));
 
   fs_init();
   usb_init();
@@ -116,14 +179,14 @@ _Noreturn void launch() {
 
   //
 
-  thread_sleep(MS_TO_US(500));
-  fs_lsdir("/dev");
-
-  if (fs_mount("/", "/dev/sdb", "ext2") < 0) {
-    panic("failed to mount");
-  }
-
-  fs_lsdir("/");
+  thread_sleep(MS_TO_US(250));
+  // fs_lsdir("/dev");
+  //
+  // if (fs_mount("/", "/dev/sdb", "ext2") < 0) {
+  //   panic("failed to mount");
+  // }
+  //
+  // fs_lsdir("/");
 
   // // memset((void *) FRAMEBUFFER_VA, 0xFF, boot_info_v2->fb_size);
   // // screen_print_str("Hello, world\n");

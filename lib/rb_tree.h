@@ -80,6 +80,7 @@ void rb_tree_insert_node(rb_tree_t *tree, rb_node_t *node);
 void *rb_tree_delete(rb_tree_t *tree, uint64_t key);
 void *rb_tree_delete_node(rb_tree_t *tree, rb_node_t *node);
 
+void rb_tree_init_iter(rb_tree_t *tree, rb_node_t *next, rb_iter_type_t type, rb_iter_t *iter);
 rb_iter_t *rb_tree_make_iter(rb_tree_t *tree, rb_node_t *next, rb_iter_type_t type);
 rb_iter_t *rb_tree_iter(rb_tree_t *tree);
 rb_iter_t *rb_tree_iter_reverse(rb_tree_t *tree);

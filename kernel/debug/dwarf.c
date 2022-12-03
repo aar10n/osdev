@@ -115,7 +115,7 @@ static Dwarf_Small get_pointer_size(unused void *obj) {
 static Dwarf_Unsigned get_file_size(unused void *obj) {
   // this is used to prealloc memory for internal libdwarf data structures.
   // it divides the value by 30
-  size_t size = 10000;
+  size_t size = 50000;
   return size;
 }
 

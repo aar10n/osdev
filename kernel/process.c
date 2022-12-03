@@ -80,10 +80,12 @@ process_t *process_alloc(pid_t pid, pid_t ppid, void *(start_routine)(void *), v
   process->ppid = ppid;
   process->address_space = PERCPU_ADDRESS_SPACE;
 
+  process->num_threads = 1;
   process->uid = -1;
   process->gid = -1;
   process->pwd = &fs_root;
   process->files = create_file_table();
+  spin_init(&process->lock);
 
   mutex_init(&process->sig_mutex, MUTEX_REENTRANT | MUTEX_SHARED);
   process->sig_handlers = kmalloc(NSIG * sizeof(uintptr_t));

@@ -15,6 +15,8 @@ clock_source_t *current_clock_source;
 clock_t kernel_time_ns;
 uint64_t clock_ticks;
 
+static spinlock_t update_lock;
+
 void register_clock_source(clock_source_t *source) {
   kassert(source != NULL);
   spin_init(&source->lock);
@@ -40,30 +42,42 @@ void clock_init() {
   kprintf("using %s as clock source\n", current_clock_source->name);
   current_clock_source->enable(current_clock_source);
   current_clock_source->last_tick = current_clock_source->read(current_clock_source);
+  spin_init(&update_lock);
 }
 
 clock_t clock_now() {
-  if (current_clock_source == NULL) {
+  clock_source_t *source = current_clock_source;
+  if (source == NULL) {
     return 0;
   }
 
-  clock_source_t *source = current_clock_source;
-  if (spin_trylock(&source->lock)) {
-    // lock aquired - update the kernel time
+  if (spin_trylock(&update_lock)) {
+    // we have the lock, now lets update the time
     uint64_t last = source->last_tick;
     uint64_t current = source->read(source);
     source->last_tick = current;
-    atomic_fetch_add(&clock_ticks, current - last);
-    atomic_fetch_add(&kernel_time_ns, (current - last) * source->scale_ns);
+    clock_ticks += current - last;
+    kernel_time_ns += (current - last) * source->scale_ns;
 
-    spin_unlock(&source->lock);
-    return kernel_time_ns;
+    kassert(update_lock.locked == 1 && update_lock.locked_by == PERCPU_ID);
+    spin_unlock(&update_lock);
+  } else {
+    // wait for the updated time
+    register uint64_t timeout asm ("r15") = 10000000 + (PERCPU_ID * 100000);
+    while (update_lock.locked) {
+      cpu_pause();
+      timeout--;
+      if (timeout == 0) {
+        panic("stuck waiting for clock update_lock [locked = %d, held by %u, lock_count = %d]",
+              update_lock.locked, update_lock.locked_by, update_lock.lock_count);
+      }
+    }
   }
 
   return kernel_time_ns;
 }
 
-clock_t clock_kernel_time() {
+clock_t clock_kernel_time_ns() {
   return kernel_time_ns;
 }
 

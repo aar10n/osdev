@@ -27,6 +27,7 @@ typedef struct timer_alarm {
 // void scheduler_tick();
 
 static rb_tree_t *pending_alarm_tree;
+static rb_tree_t *alarm_expiry_tree;
 static spinlock_t pending_alarm_lock;
 static cond_t alarm_cond;
 static spinlock_t alarm_cond_lock;
@@ -63,35 +64,33 @@ int set_alarm_timer_value(timer_device_t *timer, clock_t expiry) {
 noreturn void *alarm_event_loop(unused void *arg) {
   kassert(global_one_shot_timer != NULL);
   timer_device_t *timer = global_one_shot_timer;
+  thread_setaffinity(PERCPU_THREAD, cpu_bsp_id); // pin to CPU#0
 
   kprintf("timer: starting alarm event loop\n");
   while (true) {
     cond_wait(&alarm_cond);
-    if (pending_alarm_tree->min == NULL) {
+    if (alarm_expiry_tree->min == NULL) {
       continue;
     }
 
   LABEL(dispatch);
-    spin_lock(&pending_alarm_lock);
-    if (pending_alarm_tree->nodes == 0) {
-      spin_unlock(&pending_alarm_lock);
+    if (alarm_expiry_tree->nodes == 0) {
       continue;
     }
 
-    timer_alarm_t *alarm = pending_alarm_tree->min->data;
+    clock_t now = timer_now();
+    timer_alarm_t *alarm = alarm_expiry_tree->min->data;
     kassert(alarm);
-    if (alarm->expires > timer_now()) {
+    if (alarm->expires > now) {
       kassert(timer != NULL);
       if (set_alarm_timer_value(timer, alarm->expires) < 0) {
         panic("failed to set alarm timer value");
       }
-
-      spin_unlock(&pending_alarm_lock);
       continue;
     }
 
-    rb_tree_delete_node(pending_alarm_tree, pending_alarm_tree->min);
-    spin_unlock(&pending_alarm_lock);
+    rb_tree_delete_node(alarm_expiry_tree, alarm_expiry_tree->min);
+    rb_tree_delete(pending_alarm_tree, alarm->expires);
 
     preempt_enable();
     alarm->callback(alarm->data);
@@ -180,20 +179,23 @@ void alarms_init() {
   kassert(global_one_shot_timer != NULL);
   spin_init(&pending_alarm_lock);
   pending_alarm_tree = create_rb_tree();
+  alarm_expiry_tree = create_rb_tree();
 
   cond_init(&alarm_cond, 0);
   spin_init(&alarm_cond_lock);
   thread_create(alarm_event_loop, NULL);
-  thread_yield();
+}
+
+void alarm_reschedule() {
+  // cond_signal(&alarm_cond);
 }
 
 clockid_t timer_create_alarm(clock_t expires, timer_cb_t callback, void *data) {
   kassert(global_one_shot_timer != NULL);
   timer_device_t *timer = global_one_shot_timer;
 
-  clock_t now = clock_now();
-  if (expires < now) {
-    kprintf("timer: invalid alarm %llu < %llu\n", expires, now);
+  if (expires < clock_now()) {
+    kprintf("timer: invalid alarm %llu < %llu\n", expires, clock_now());
     return -EINVAL;
   }
 
@@ -206,22 +208,32 @@ clockid_t timer_create_alarm(clock_t expires, timer_cb_t callback, void *data) {
 
   spin_lock(&pending_alarm_lock);
   rb_tree_insert(pending_alarm_tree, id, alarm);
+  rb_tree_insert(alarm_expiry_tree, expires, alarm);
 
   // check if timer needs to be updated
-  if (alarm == pending_alarm_tree->min->data) {
+  if (alarm == alarm_expiry_tree->min->data) {
     // set timer to next most-recently expiring alarm deadline
     if (set_alarm_timer_value(timer, alarm->expires) < 0) {
       panic("failed to set alarm timer value");
     }
   }
-
   spin_unlock(&pending_alarm_lock);
+
+  clock_t margin = clock_now() + global_one_shot_timer->scale_ns;
+  if (expires < margin) {
+    // if we pass the expiry at this point its possible that we were
+    // too late in programming the underlying timer and missed the
+    // deadline. we signal manually here to ensure we dont get stuck
+    cond_signal(&alarm_cond);
+  }
   return alarm->id;
 }
 
 void *timer_delete_alarm(clockid_t id) {
   spin_lock(&pending_alarm_lock);
   timer_alarm_t *alarm = rb_tree_delete(pending_alarm_tree, id);
+  rb_tree_delete(alarm_expiry_tree, alarm->expires);
+
   spin_unlock(&pending_alarm_lock);
   if (alarm == NULL) {
     return NULL;
@@ -303,4 +315,34 @@ void timer_udelay(uint64_t us) {
     cpu_pause();
     cpu_pause();
   }
+}
+
+//
+
+void timer_dump_pending_alarms() {
+  kprintf("==== timer dump ====\n");
+  kprintf("  now = %llu\n", clock_now());
+  if (alarm_expiry_tree == NULL) {
+    return;
+  }
+
+  rb_node_t *min = alarm_expiry_tree->min;
+  rb_node_t *max = alarm_expiry_tree->max;
+  if (min) {
+    kprintf("  min key = %llu\n", min->key);
+  }
+  if (max) {
+    kprintf("  max key = %llu\n", max->key);
+  }
+
+  rb_iter_t iter = {};
+  rb_tree_init_iter(alarm_expiry_tree, min, FORWARD, &iter);
+
+  kprintf("   ");
+  rb_node_t *node;
+  while ((node = rb_iter_next(&iter))) {
+    timer_alarm_t *alarm = node->data;
+    kprintf(" -> %llu [%llu]", alarm->id, alarm->expires);
+  }
+  kprintf("\n");
 }

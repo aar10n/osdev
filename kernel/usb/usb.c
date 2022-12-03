@@ -164,7 +164,6 @@ void usb_main() {
 void usb_init() {
   pending_usb_devices = chan_alloc(64, 0);
   thread_create(usb_device_connect_event_loop, NULL);
-
   // process_create(usb_main);
 }
 
@@ -419,6 +418,8 @@ int usb_device_init(usb_device_t *device) {
     kprintf("usb: failed to initialize device\n");
     return -1;
   }
+
+  kprintf("usb: ------\n");
 
   // read device descriptor
   usb_device_descriptor_t *desc = NULL;

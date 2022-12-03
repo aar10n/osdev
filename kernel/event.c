@@ -9,6 +9,8 @@
 #include <bitmap.h>
 #include <printf.h>
 
+#include <gui/screen.h>
+
 #define MAX_HANDLERS 32
 
 static bitmap_t *handler_indexes;
@@ -150,6 +152,7 @@ void dispatch_key_event(key_event_t *event) {
   char c = key_event_to_character(event);
   if (c != '\0') {
     kprintf("> %c\n", c);
+    screen_print_char(c);
   }
 
   preempt_disable();

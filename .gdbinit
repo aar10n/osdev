@@ -1,4 +1,9 @@
 # https://stackoverflow.com/questions/33049201/gdb-add-symbol-file-all-sections-and-load-address
+#
+#   add-symbol-file-all <file> <address>
+#
+# Loads the symbols from the given file at the specified base address.
+# Useful for debugging dynamically linked libraries.
 python
 import subprocess
 import re

@@ -27,6 +27,9 @@ typedef struct __attribute__((aligned(128))) per_cpu {
   uint64_t user_sp;
   uint64_t rflags;
 
+  uint32_t irq_level;
+  uint32_t : 32;
+
   struct address_space *address_space;
   struct sched *sched;
   struct cpu_info *cpu_info;
@@ -52,6 +55,7 @@ _Static_assert(offsetof(per_cpu_t, process) == 0x18, "");
 #define __percpu_get_kernel_sp() ((uintptr_t) __percpu_get_u64(offsetof(per_cpu_t, kernel_sp)))
 #define __percpu_get_user_sp() ((uintptr_t) __percpu_get_u64(offsetof(per_cpu_t, user_sp)))
 #define __percpu_get_rflags() __percpu_get_u64(offsetof(per_cpu_t, rflags))
+#define __percpu_get_irq_level() __percpu_get_u32(offsetof(per_cpu_t, irq_level))
 #define __percpu_get_address_space() ((struct address_space *) __percpu_get_u64(offsetof(per_cpu_t, address_space)))
 #define __percpu_get_sched() ((struct sched *) __percpu_get_u64(offsetof(per_cpu_t, sched)))
 #define __percpu_get_cpu_info() ((struct cpu_info *) __percpu_get_u64(offsetof(per_cpu_t, cpu_info)))
@@ -63,6 +67,21 @@ _Static_assert(offsetof(per_cpu_t, process) == 0x18, "");
 #define __percpu_set_cpu_info(value) __percpu_set_u64(offsetof(per_cpu_t, cpu_info), (uintptr_t) value)
 #define __percpu_set_cpu_gdt(value) __percpu_set_u64(offsetof(per_cpu_t, cpu_gdt), (void *) value)
 #define __percpu_set_cpu_idt(value) __percpu_set_u64(offsetof(per_cpu_t, cpu_idt), (void *) value)
+
+#define __percpu_inc_irq_level() \
+  ({                             \
+    uint32_t l = __percpu_get_irq_level(); \
+    uint32_t res = l + 1;        \
+    if (res < l) l = UINT32_MAX; \
+    __percpu_set_u32(offsetof(per_cpu_t, irq_level), l); \
+  })
+#define __percpu_dec_irq_level() \
+  ({                             \
+    uint32_t l = __percpu_get_irq_level(); \
+    uint32_t res = l - 1;        \
+    if (res > l) l = 0; \
+    __percpu_set_u32(offsetof(per_cpu_t, irq_level), l); \
+  })
 
 #define __percpu_struct_ptr() ((per_cpu_t *) __percpu_get_self())
 #define __percpu_field_ptr(field) (&__percpu_struct_ptr()->field)

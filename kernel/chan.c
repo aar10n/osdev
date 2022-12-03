@@ -121,6 +121,7 @@ int chan_send(chan_t *chan, uint64_t data) {
     chan->write_idx = get_next_index(chan, chan->write_idx);
 
     // free or drop the old entry
+    kprintf("chan: dropping data on channel[%u]\n", chan->id);
     cleanup_data(chan, old_data);
   } else {
     // advance the write pointer forward

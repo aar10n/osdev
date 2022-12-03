@@ -472,6 +472,13 @@ void *rb_tree_delete_node(rb_tree_t *tree, rb_node_t *node) {
 
 // Iterators
 
+void rb_tree_init_iter(rb_tree_t *tree, rb_node_t *next, rb_iter_type_t type, rb_iter_t *iter) {
+  iter->type = type;
+  iter->tree = tree;
+  iter->next = next;
+  iter->has_next = tree->nodes > 0;
+}
+
 rb_iter_t *rb_tree_make_iter(rb_tree_t *tree, rb_node_t *next, rb_iter_type_t type) {
   rb_iter_t *iter = _malloc(sizeof(rb_iter_t));
   iter->type = type;
@@ -483,12 +490,16 @@ rb_iter_t *rb_tree_make_iter(rb_tree_t *tree, rb_node_t *next, rb_iter_type_t ty
 
 rb_iter_t *rb_tree_iter(rb_tree_t *tree) {
   // start at first (leftmost) node
-  return rb_tree_make_iter(tree, tree->min, FORWARD);
+  rb_iter_t *iter = _malloc(sizeof(rb_iter_t));
+  rb_tree_init_iter(tree, tree->min, FORWARD, iter);
+  return iter;
 }
 
 rb_iter_t *rb_tree_iter_reverse(rb_tree_t *tree) {
   // start at last (rightmost) node
-  return rb_tree_make_iter(tree, tree->max, REVERSE);
+  rb_iter_t *iter = _malloc(sizeof(rb_iter_t));
+  rb_tree_init_iter(tree, tree->max, REVERSE, iter);
+  return iter;
 }
 
 rb_node_t *rb_iter_next(rb_iter_t *iter) {

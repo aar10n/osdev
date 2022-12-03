@@ -6,6 +6,7 @@
 #include <sched/fprr.h>
 
 #include <cpu/cpu.h>
+#include <cpu/io.h>
 
 #include <mm.h>
 #include <thread.h>
@@ -24,10 +25,51 @@ size_t _num_schedulers = 0;
 
 #define SCHED_UNIPROC
 
+#define QDEBUG_VALUE(v) \
+  ({ outdw(0x800, v); })
+
+#define QDEBUG_PRINT(str)
+// #define QDEBUG_PRINT(str) \
+//   ({                      \
+//     const char *_ptr = str; \
+//     while (*_ptr) {       \
+//       outb(0x810 + PERCPU_ID, *_ptr); \
+//       _ptr++; \
+//     }                     \
+//     outb(0x810 + PERCPU_ID, '\0'); \
+//   })
+
+#define QDEBUG_LOCK(d1, d2, c0, c1, c2, c3) \
+  ({                                      \
+    outdw(0x808, SIGNATURE_32(c0, c1, c2, c3)); \
+    outdw(0x804, SIGNATURE_32(PERCPU_ID, 1, ((d1) & 0xFF), ((d2) & 0xFF))); \
+  })
+#define QDEBUG_UNLOCK(d1, d2, c0, c1, c2, c3) \
+  ({                                        \
+    outdw(0x808, SIGNATURE_32(c0, c1, c2, c3)); \
+    outdw(0x804, SIGNATURE_32(PERCPU_ID, 0, ((d1) & 0xFF), ((d2) & 0xFF))); \
+  })
+
+#define LOCK(obj) (spin_lock(&(obj)->lock))
+#define UNLOCK(obj) (spin_unlock(&(obj)->lock))
+
+#define LOCK_SCHED(sched) LOCK(sched)
+// #define LOCK_SCHED(sched) ({ QDEBUG_LOCK((sched)->cpu_id, (sched)->lock.lock_count, 's', 'c', 'e', 'd'); LOCK(sched); })
+#define UNLOCK_SCHED(sched) UNLOCK(sched)
+// #define UNLOCK_SCHED(sched) ({ QDEBUG_UNLOCK((sched)->cpu_id, (sched)->lock.lock_count, 's', 'c', 'e', 'd'); UNLOCK(sched); })
+#define LOCK_THREAD(thread) LOCK(thread)
+// #define LOCK_THREAD(thread) ({ QDEBUG_LOCK((thread)->tid, (thread)->lock.lock_count, 't', 'h', 'r', 'd'); LOCK(thread); })
+#define UNLOCK_THREAD(thread) UNLOCK(thread)
+// #define UNLOCK_THREAD(thread) ({ QDEBUG_UNLOCK((thread)->tid, (thread)->lock.lock_count, 't', 'h', 'r', 'd'); UNLOCK(thread); })
+#define LOCK_POLICY(sched, thread) LOCK(POLICY_T(sched, thread))
+// #define LOCK_POLICY(sched, thread) ({ QDEBUG_LOCK((sched)->cpu_id, 0, 'p', 'o', 'l', 'i'); LOCK(POLICY_T(sched, thread)); })
+#define UNLOCK_POLICY(sched, thread) UNLOCK(POLICY_T(sched, thread))
+// #define UNLOCK_POLICY(sched, thread) ({ QDEBUG_UNLOCK((sched)->cpu_id, 0, 'p', 'o', 'l', 'i'); UNLOCK(POLICY_T(sched, thread)); })
+
 #define sched_assert(expr) kassert(expr)
 // #define sched_assert(expr)
 #define thread_assert(thread, expr) \
-  kassertf(expr, #expr ", thread %d.%d [%s]", (thread)->tid, (thread)->process->pid, (thread)->name)
+  kassertf(expr, #expr ", thread %d.%d [%s] [CPU#%d]", (thread)->process->pid, (thread)->tid, (thread)->name, PERCPU_ID)
 
 
 #define foreach_sched(var) \
@@ -37,8 +79,13 @@ size_t _num_schedulers = 0;
 #define foreach_policy(var) \
   for (uint16_t var = 0; var < NUM_POLICIES; var ++)
 
-#define POLICY_FUNC(policy, func) (policy_impl[(policy)]->func)
-#define POLICY_DATA(sched, policy) ((sched)->policies[(policy)])
+#define POLICY_T(sched, thread) \
+  ({                            \
+    kassert((thread)->policy < NUM_POLICIES); \
+    (&(sched)->policies[(thread)->policy]);   \
+  })
+#define POLICY_FUNC(policy, func) ({ kassert((policy) < NUM_POLICIES); (policy_impl[(policy)]->func); })
+#define POLICY_DATA(sched, policy) ({ kassert((policy) < NUM_POLICIES); ((sched)->policies[(policy)].data); })
 #define SCHEDULER(cpu_id) \
   ({                      \
     sched_assert((cpu_id) < _num_schedulers); \
@@ -64,6 +111,15 @@ static inline thread_status_t get_thread_status(sched_cause_t reason) {
   }
 }
 
+static inline void register_policy(uint8_t policy, sched_policy_impl_t *impl) {
+  kassert(policy < NUM_POLICIES);
+  policy_impl[policy] = impl;
+
+  sched_t *sched = PERCPU_SCHED;
+  sched->policies[policy].data = impl->init(sched);
+  spin_init(&sched->policies[policy].lock);
+}
+
 static inline void sched_increment_count(size_t *count) {
   sched_assert(count != NULL);
   atomic_fetch_add(count, 1);
@@ -75,71 +131,36 @@ static inline void sched_decrement_count(size_t *count) {
   atomic_fetch_sub(count, 1);
 }
 
-static inline void register_policy(uint8_t policy, sched_policy_impl_t *impl) {
-  kassert(policy < NUM_POLICIES);
-  policy_impl[policy] = impl;
+// ----------------------------------------------------------
+// These functions dont need to hold locks
 
-  sched_t *sched = PERCPU_SCHED;
-  sched->policies[policy] = impl->init(sched);
-}
-
-//
-
-void sched_add_ready_thread(sched_t *sched, thread_t *thread) {
-  spin_lock(&sched->lock);
+static inline void sched_add_ready_thread(sched_t *sched, thread_t *thread) {
   int result = SCHED_DISPATCH(sched, thread->policy, add_thread, thread);
-  sched_assert(result >= 0);
-
-  sched_increment_count(&sched->ready_count);
-  spin_unlock(&sched->lock);
+  sched_assert(result == 0);
+  sched->ready_count++;
 }
 
 void sched_remove_ready_thread(sched_t *sched, thread_t *thread) {
-  spin_lock(&sched->lock);
   int result = SCHED_DISPATCH(sched, thread->policy, remove_thread, thread);
-  sched_assert(result >= 0);
-
-  sched_decrement_count(&sched->ready_count);
-  spin_unlock(&sched->lock);
+  sched_assert(result == 0);
+  sched_assert(sched->ready_count > 0);
+  sched->ready_count--;
 }
 
 void sched_add_blocked_thread(sched_t *sched, thread_t *thread) {
-  spin_lock(&sched->lock);
   if (!(thread->flags & F_THREAD_OWN_BLOCKQ)) {
     LIST_ADD(&sched->blocked, thread, list);
   }
-
-  sched_increment_count(&sched->blocked_count);
-  spin_unlock(&sched->lock);
+  sched->blocked_count++;
 }
 
 void sched_remove_blocked_thread(sched_t *sched, thread_t *thread) {
-  spin_lock(&sched->lock);
   if (!(thread->flags & F_THREAD_OWN_BLOCKQ)) {
     LIST_REMOVE(&sched->blocked, thread, list);
   }
-
-  sched_decrement_count(&sched->blocked_count);
-  spin_unlock(&sched->lock);
+  kassert(sched->blocked_count > 0);
+  sched->blocked_count--;
 }
-
-void sched_migrate_thread(sched_t *old_sched, sched_t *new_sched, thread_t *thread) {
-  sched_assert(old_sched != new_sched);
-  sched_assert(thread->cpu_id == old_sched->cpu_id);
-  sched_assert(thread->status == THREAD_READY);
-
-  SCHED_DISPATCH(old_sched, thread->policy, on_thread_migrate_cpu, thread, new_sched->cpu_id);
-
-  kprintf("sched: migrating thread %d.%d from CPU#%d to CPU#%d\n",
-          thread->process->pid, thread->tid, old_sched->cpu_id, new_sched->cpu_id);
-
-  thread->cpu_id = new_sched->cpu_id;
-  sched_decrement_count(&old_sched->total_count);
-  sched_add_ready_thread(new_sched, thread);
-  sched_increment_count(&new_sched->total_count);
-}
-
-//
 
 void sched_update_thread_time_end(sched_t *sched, thread_t *thread) {
   // called just after a thread finished a time slice
@@ -177,8 +198,6 @@ void sched_update_thread_stats(sched_t *sched, thread_t *thread, sched_cause_t r
   SCHED_DISPATCH(sched, thread->policy, on_update_thread_stats, thread, reason);
 }
 
-//
-
 double sched_compute_thread_cpu_affinity_score(sched_t *sched, thread_t *thread) {
   if (POLICY_FUNC(thread->policy, compute_thread_cpu_affinity_score) != NULL) {
     return POLICY_FUNC(thread->policy, compute_thread_cpu_affinity_score)(thread);
@@ -195,9 +214,7 @@ double sched_compute_thread_cpu_affinity_score(sched_t *sched, thread_t *thread)
 }
 
 thread_t *sched_get_next_thread(sched_t *sched) {
-  spin_lock(&sched->lock);
   if (sched->ready_count == 0) {
-    spin_unlock(&sched->lock);
     return sched->idle;
   }
 
@@ -209,8 +226,7 @@ thread_t *sched_get_next_thread(sched_t *sched) {
     }
   }
 
-  sched_decrement_count(&sched->ready_count);
-  spin_unlock(&sched->lock);
+  sched->ready_count--;
 
   sched_assert(thread != NULL);
   sched_assert(thread->status == THREAD_READY);
@@ -228,31 +244,34 @@ sched_t *sched_find_cpu_for_thread(thread_t *thread) {
     return SCHEDULER(thread->cpu_id);
   }
 
-  sched_t *best_sched = SCHEDULER(thread->cpu_id);
-  double best_score = sched_compute_thread_cpu_affinity_score(best_sched, thread);
+  sched_t *best_sched = _schedulers[0];
   foreach_sched(sched) {
-    if (sched == best_sched) {
-      continue;
-    }
-
-    double score = sched_compute_thread_cpu_affinity_score(sched, thread);
-    if (score > best_score) {
+    if (sched->total_count <= best_sched->total_count) {
       best_sched = sched;
-      best_score = score;
     }
   }
+
+  // double best_score = sched_compute_thread_cpu_affinity_score(best_sched, thread);
+  // foreach_sched(sched) {
+  //   if (sched == best_sched) {
+  //     continue;
+  //   }
+  //
+  //   double score = sched_compute_thread_cpu_affinity_score(sched, thread);
+  //   if (score > best_score) {
+  //     best_sched = sched;
+  //     best_score = score;
+  //   }
+  // }
 
   return best_sched;
 }
 
 bool sched_should_preempt(sched_t *sched, thread_t *thread) {
   // determines whether the active thread running on `sched` should be preempted by `thread`
-  spin_lock(&sched->lock);
   thread_t *active = sched->active;
   thread_assert(thread, thread != active);
-
   if (active->preempt_count > 0) {
-    spin_unlock(&sched->lock);
     return false;
   }
 
@@ -267,17 +286,62 @@ bool sched_should_preempt(sched_t *sched, thread_t *thread) {
     }
   }
 
-  spin_unlock(&sched->lock);
   return preempt;
+}
+
+// ----------------------------------------------------------
+// Locks must be used
+
+void sched_migrate_thread(sched_t *old_sched, sched_t *new_sched, thread_t *thread) {
+  sched_assert(old_sched != new_sched);
+
+  sched_assert(thread->cpu_id == old_sched->cpu_id);
+  sched_assert(thread->status == THREAD_READY);
+
+  kprintf("sched: migrating thread %d.%d from CPU#%d to CPU#%d\n",
+          thread->process->pid, thread->tid, old_sched->cpu_id, new_sched->cpu_id);
+
+  LOCK_THREAD(thread);
+  LOCK_SCHED(old_sched);
+  LOCK_POLICY(old_sched, thread);
+  thread->cpu_id = new_sched->cpu_id;
+  SCHED_DISPATCH(old_sched, thread->policy, on_thread_migrate_cpu, thread, new_sched->cpu_id);
+  UNLOCK_POLICY(old_sched, thread);
+  UNLOCK_SCHED(old_sched);
+
+  LOCK_SCHED(new_sched);
+  sched_add_ready_thread(new_sched, thread);
+  new_sched->total_count++;
+  UNLOCK_SCHED(new_sched);
+
+  UNLOCK_THREAD(thread);
 }
 
 //
 
 noreturn void *sched_idle_thread(void *arg) {
   sched_t *sched = PERCPU_SCHED;
+
+  uint64_t retries = 0;
+  clock_t expire = clock_future_time(MS_TO_NS(1000));
   while (true) {
+    clock_t now = clock_now();
+    if (now >= expire) {
+      if (retries > UINT64_MAX) {
+        panic("stuck in idle");
+        unreachable;
+      }
+
+      alarm_reschedule();
+      expire = now + MS_TO_NS(1000);
+      retries++;
+    }
+
     if (sched->ready_count > 0) {
+      retries = 0;
+      kprintf("sched: exiting idle [CPU#%d]\n", PERCPU_ID);
       sched_yield();
+      expire = now + MS_TO_NS(1000);
     }
     cpu_pause();
   }
@@ -286,21 +350,24 @@ noreturn void *sched_idle_thread(void *arg) {
 
 //
 
-// TODO: fix race conditions with AP initialization
 noreturn void sched_init(process_t *root) {
-  while (root == NULL) {
+  static bool done = false;
+  if (!PERCPU_IS_BSP) {
     // AP processors need to wait for BSP to finish
-    sched_assert(!PERCPU_IS_BSP);
-    timer_udelay(10);
+    kprintf("sched: CPU#%d waiting\n", PERCPU_ID);
+    while (!done) cpu_pause();
     root = process_get(0);
+    kassert(root != NULL);
   }
 
-  // TODO: hold process lock for this
-  thread_t *idle = thread_alloc(LIST_LAST(&root->threads)->tid + 1, sched_idle_thread, NULL, false);
+  id_t tid = atomic_fetch_add(&root->num_threads, 1);
+  thread_t *idle = thread_alloc(tid, sched_idle_thread, NULL, false);
   idle->process = root;
   idle->priority = 255;
   idle->policy = 255;
+  LOCK(root);
   LIST_ADD(&root->threads, idle, group);
+  UNLOCK(root);
 
   sched_t *sched = kmalloc(sizeof(sched_t));
   sched->cpu_id = PERCPU_ID;
@@ -317,7 +384,8 @@ noreturn void sched_init(process_t *root) {
   LIST_INIT(&sched->blocked);
 
   foreach_policy(policy) {
-    sched->policies[policy] = NULL;
+    sched->policies[policy].data = NULL;
+    spin_init(&sched->policies[policy].lock);
   }
 
   PERCPU_SET_SCHED(sched);
@@ -333,10 +401,12 @@ noreturn void sched_init(process_t *root) {
   if (PERCPU_IS_BSP) {
     thread_t *thread = root->main;
     SCHED_DISPATCH(sched, thread->policy, policy_init_thread, thread);
+    sched->total_count++;
     sched_add_ready_thread(sched, thread);
-    sched_increment_count(&sched->total_count);
+    done = true;
   }
 
+  kprintf("sched: CPU#%d initialized\n", PERCPU_ID);
   sched_reschedule(SCHED_UPDATED);
   unreachable;
 }
@@ -349,11 +419,19 @@ int sched_add(thread_t *thread) {
   kprintf("sched: scheduling thread %d.%d onto CPU#%d [%s]\n",
           thread->process->pid, thread->tid, sched->cpu_id, thread->name);
 
+  LOCK_SCHED(sched);
+  LOCK_THREAD(thread);
+  LOCK_POLICY(sched, thread);
+
   thread->cpu_id = sched->cpu_id;
   thread->status = THREAD_READY;
   SCHED_DISPATCH(sched, thread->policy, policy_init_thread, thread);
+  sched->total_count++;
   sched_add_ready_thread(sched, thread);
-  sched_increment_count(&sched->total_count);
+
+  UNLOCK_POLICY(sched, thread);
+  UNLOCK_THREAD(thread);
+  UNLOCK_SCHED(sched);
 
   if (sched_should_preempt(sched, thread)) {
     if (thread->cpu_id == PERCPU_ID) {
@@ -371,11 +449,15 @@ int sched_terminate(thread_t *thread) {
 
   if (thread->status == THREAD_RUNNING) {
     if (thread->cpu_id == PERCPU_ID) {
-      // reschedule current cpu
+      // reschedule current cpu and let the scheduler clean up on next pass
       return sched_reschedule(SCHED_TERMINATED);
     }
     return ipi_deliver_cpu_id(IPI_SCHEDULE, thread->cpu_id, SCHED_TERMINATED);
   }
+
+  LOCK_SCHED(sched);
+  LOCK_THREAD(thread);
+  LOCK_POLICY(sched, thread);
 
   if (thread->status == THREAD_READY) {
     sched_remove_ready_thread(sched, thread);
@@ -393,6 +475,10 @@ int sched_terminate(thread_t *thread) {
   thread->status = THREAD_TERMINATED;
   sched_decrement_count(&sched->total_count);
   SCHED_DISPATCH(sched, thread->policy, policy_deinit_thread, thread);
+
+  UNLOCK_POLICY(sched, thread);
+  UNLOCK_THREAD(thread);
+  UNLOCK_SCHED(sched);
   return 0;
 }
 
@@ -408,10 +494,18 @@ int sched_block(thread_t *thread) {
     return ipi_deliver_cpu_id(IPI_SCHEDULE, thread->cpu_id, SCHED_BLOCKED);
   }
 
+  LOCK_SCHED(sched);
+  LOCK_THREAD(thread);
+  LOCK_POLICY(sched, thread);
+
   sched_assert(thread->status == THREAD_READY);
   sched_remove_ready_thread(sched, thread);
   thread->status = THREAD_BLOCKED;
   sched_add_blocked_thread(sched, thread);
+
+  UNLOCK_POLICY(sched, thread);
+  UNLOCK_THREAD(thread);
+  UNLOCK_SCHED(sched);
   return 0;
 }
 
@@ -421,15 +515,24 @@ int sched_unblock(thread_t *thread) {
     panic("thread %d.%d not blocked [%s]", thread->tid, thread->process->pid, thread->name);
   }
 
+  LOCK_SCHED(sched);
+  LOCK_THREAD(thread);
+  LOCK_POLICY(sched, thread);
+
   sched_remove_blocked_thread(sched, thread);
   thread->status = THREAD_READY;
   sched_add_ready_thread(sched, thread);
+
+  UNLOCK_POLICY(sched, thread);
+  UNLOCK_THREAD(thread);
+  UNLOCK_SCHED(sched);
 
   if (sched_should_preempt(sched, thread)) {
     if (thread->cpu_id == PERCPU_ID) {
       // reschedule current cpu
       return sched_reschedule(SCHED_PREEMPTED);
     }
+
     return ipi_deliver_cpu_id(IPI_SCHEDULE, thread->cpu_id, SCHED_PREEMPTED);
   }
   return 0;
@@ -439,9 +542,17 @@ int sched_wakeup(thread_t *thread) {
   sched_t *sched = SCHEDULER(thread->cpu_id);
   sched_assert(thread->status == THREAD_SLEEPING);
 
+  LOCK_SCHED(sched);
+  LOCK_THREAD(thread);
+  LOCK_POLICY(sched, thread);
+
   sched_remove_blocked_thread(sched, thread);
   thread->status = THREAD_READY;
   sched_add_ready_thread(sched, thread);
+
+  UNLOCK_POLICY(sched, thread);
+  UNLOCK_THREAD(thread);
+  UNLOCK_SCHED(sched);
 
   if (sched_should_preempt(sched, thread)) {
     if (thread->cpu_id == PERCPU_ID) {
@@ -458,6 +569,10 @@ int sched_setsched(sched_opts_t opts) {
   thread_t *thread = PERCPU_THREAD;
   sched_t *sched = SCHEDULER(thread->cpu_id);
 
+  LOCK_SCHED(sched);
+  LOCK_THREAD(thread);
+  LOCK_POLICY(sched, thread);
+
   if (opts.policy != thread->policy) {
     SCHED_DISPATCH(sched, thread->policy, policy_deinit_thread, thread);
     thread->policy = opts.policy;
@@ -467,11 +582,20 @@ int sched_setsched(sched_opts_t opts) {
     thread->priority = opts.priority;
   }
   if (opts.affinity != thread->affinity) {
+    kassert(opts.affinity < system_num_cpus);
+    kprintf("sched: changing affinity of thread %d.%d to %d\n", thread->process->pid, thread->tid, opts.affinity);
     thread->affinity = opts.affinity;
     if (opts.affinity >= 0 && opts.affinity != PERCPU_ID) {
+      UNLOCK_POLICY(sched, thread);
+      UNLOCK_THREAD(thread);
+      UNLOCK_SCHED(sched);
       return sched_reschedule(SCHED_UPDATED);
     }
   }
+
+  UNLOCK_POLICY(sched, thread);
+  UNLOCK_THREAD(thread);
+  UNLOCK_SCHED(sched);
   return 0;
 }
 
@@ -482,7 +606,6 @@ int sched_sleep(uint64_t ns) {
   thread->alarm_id = timer_create_alarm(now + ns, (void *) sched_wakeup, thread);
   if (thread->alarm_id < 0) {
     panic("failed to create alarm\n");
-    return -1;
   }
   return sched_reschedule(SCHED_SLEEPING);
 }
@@ -500,17 +623,22 @@ int sched_reschedule(sched_cause_t reason) {
   sched_t *sched = PERCPU_SCHED;
   thread_t *curr = PERCPU_THREAD;
   if (curr == NULL) {
-    goto next_thread;
+    // first time skip unlocks
+    LOCK_SCHED(sched);
+    goto next_thread_first;
   }
+
+  // --------------
 
   sched_assert(curr->cpu_id == sched->cpu_id);
   if (reason == SCHED_PREEMPTED && curr->preempt_count > 0) {
     curr->preempt_count--;
-    return 0;
+    goto end;
   } else if (reason == SCHED_PREEMPTED && sched->ready_count == 0) {
-    return 0;
+    goto end;
   }
 
+  LOCK_THREAD(curr);
   sched_update_thread_time_end(sched, curr);
   curr->status = get_thread_status(reason);
   sched_update_thread_stats(sched, curr, reason);
@@ -521,9 +649,14 @@ int sched_reschedule(sched_cause_t reason) {
       sched_assert(curr->affinity < _num_schedulers);
       sched_t *new_sched = SCHEDULER(curr->affinity);
       sched_migrate_thread(sched, new_sched, curr);
+      LOCK_SCHED(sched);
       goto next_thread;
     }
   }
+
+  LOCK_SCHED(sched);
+  if (curr != sched->idle)
+    LOCK_POLICY(sched, curr);
 
   if (curr == sched->idle) {
     curr->status = THREAD_READY;
@@ -531,20 +664,39 @@ int sched_reschedule(sched_cause_t reason) {
   } else if (IS_BLOCKED(curr)) {
     sched_add_blocked_thread(sched, curr);
   } else if (curr->status == THREAD_TERMINATED) {
-    sched_decrement_count(&sched->total_count);
+    sched->total_count--;
     SCHED_DISPATCH(sched, curr->policy, policy_deinit_thread, curr);
   } else {
     sched_assert(curr->status == THREAD_READY);
     sched_add_ready_thread(sched, curr);
   }
 
+  if (curr != sched->idle)
+    UNLOCK_POLICY(sched, curr);
+
 LABEL(next_thread);
+  UNLOCK_THREAD(curr);
+
+LABEL(next_thread_first);
   thread_t *next = sched_get_next_thread(sched);
+
+  LOCK_THREAD(next);
+  if (next != sched->idle)
+    LOCK_POLICY(sched, next);
+
   next->status = THREAD_RUNNING;
-  sched_update_thread_time_start(sched, next);
   sched->active = next;
+  sched_update_thread_time_start(sched, next);
+
+  if (next != sched->idle)
+    UNLOCK_POLICY(sched, next);
+  UNLOCK_THREAD(next);
+  UNLOCK_SCHED(sched);
+
   if (next != curr) {
     thread_switch(next);
   }
+
+LABEL(end);
   return 0;
 }

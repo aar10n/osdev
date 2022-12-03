@@ -74,7 +74,7 @@ typedef struct thread {
   tls_block_t *tls;            // thread local storage
   uintptr_t kernel_sp;         // kernel stack pointer
   uintptr_t user_sp;           // user stack pointer
-  // DO NOT CHANGE ABOVE HERE
+  // !!! DO NOT CHANGE ABOVE HERE !!!
   // assembly code in thread.asm accesses these fields using known offsets
 
   uint8_t cpu_id;              // current/last cpu used
@@ -85,6 +85,7 @@ typedef struct thread {
   int affinity;                // thread cpu affinity
   clockid_t alarm_id;          // wakeup alarm id if sleeping
 
+  spinlock_t lock;             // thread spinlock
   mutex_t mutex;               // thread mutex
   cond_t data_ready;           // thread data ready condition
   sigset_t signal;             // signal mask
@@ -93,7 +94,6 @@ typedef struct thread {
   char *name;                  // thread name or description (owning)
   int errno;                   // thread local errno
   int preempt_count;           // preempt disable counter
-  int irq_level;               // irq handler nesting count
   void *data;                  // thread data pointer
 
   page_t *kernel_stack;        // kernel stack pages
@@ -102,7 +102,9 @@ typedef struct thread {
   LIST_ENTRY(thread_t) group;  // thread group (threads from same process)
   LIST_ENTRY(thread_t) list;   // generic thread list (used by scheduler, mutex, cond, etc)
 } thread_t;
+static_assert(offsetof(thread_t, tid) == 0x00);
 static_assert(offsetof(thread_t, process) == 0x18);
+static_assert(offsetof(thread_t, user_sp) == 0x30);
 
 thread_t *thread_alloc(id_t tid, void *(start_routine)(void *), void *arg, bool user);
 thread_t *thread_copy(thread_t *other);
@@ -120,6 +122,7 @@ void thread_block();
 
 int thread_setpolicy(thread_t *thread, uint8_t policy);
 int thread_setpriority(thread_t *thread, uint16_t priority);
+int thread_setaffinity(thread_t *thread, uint8_t affinity);
 int thread_setsched(thread_t *thread, uint8_t policy, uint16_t priority);
 
 void preempt_disable();

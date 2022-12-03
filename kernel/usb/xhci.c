@@ -356,7 +356,10 @@ noreturn void *_xhci_device_event_loop(void *arg) {
         }
 
         uint64_t event_raw = *((uint64_t *) &usb_event);
-        // kprintf("xhci event: %s | %s\n", usb_get_event_type_string(usb_event.type), usb_get_status_string(usb_event.status));
+        kprintf("xhci event: %s | %s [CPU#%d]\n",
+                usb_get_event_type_string(usb_event.type),
+                usb_get_status_string(usb_event.status),
+                PERCPU_ID);
         chan_send(usb_ep->event_ch, event_raw);
       }
     }

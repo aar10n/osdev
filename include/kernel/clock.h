@@ -29,7 +29,7 @@ void register_clock_source(clock_source_t *source);
 
 void clock_init();
 clock_t clock_now();
-clock_t clock_kernel_time();
+clock_t clock_kernel_time_ns();
 uint64_t clock_current_ticks();
 void clock_update_ticks();
 

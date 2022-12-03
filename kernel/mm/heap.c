@@ -28,13 +28,12 @@ static inline int get_hist_bucket(size_t size) {
   switch (size) {
     case 1 ... 8: return 0;
     case 9 ... 16: return 1;
-    case 17 ... 24: return 2;
-    case 25 ... 32: return 3;
-    case 33 ... 64: return 4;
-    case 65 ... 128: return 5;
-    case 129 ... 512: return 6;
-    case 513 ... 1024: return 7;
-    default: return 8;
+    case 17 ... 32: return 2;
+    case 33 ... 64: return 3;
+    case 65 ... 128: return 4;
+    case 129 ... 512: return 5;
+    case 513 ... 1024: return 6;
+    default: return 7;
   }
 }
 
@@ -74,19 +73,21 @@ static inline mm_chunk_t *get_next_chunk(mm_heap_t *heap, mm_chunk_t *chunk) {
 
 static inline void aquire_heap(mm_heap_t *heap) {
   // PERCPU_THREAD will only be null on initial bootup
-  if (__builtin_expect(PERCPU_THREAD != NULL, true)) {
-    mutex_lock(&heap->lock);
-  } else {
-    spin_lock(&kheap_lock);
-  }
+  spin_lock(&kheap_lock);
+  // if (__builtin_expect(PERCPU_THREAD != NULL, true)) {
+  //   mutex_lock(&heap->lock);
+  // } else {
+  //   spin_lock(&kheap_lock);
+  // }
 }
 
 static inline void release_heap(mm_heap_t *heap) {
-  if (__builtin_expect(PERCPU_THREAD != NULL, true)) {
-    mutex_unlock(&heap->lock);
-  } else {
-    spin_unlock(&kheap_lock);
-  }
+  spin_unlock(&kheap_lock);
+  // if (__builtin_expect(PERCPU_THREAD != NULL, true)) {
+  //   mutex_unlock(&heap->lock);
+  // } else {
+  //   spin_unlock(&kheap_lock);
+  // }
 }
 
 // ----- heap creation -----
@@ -209,13 +210,13 @@ void *__kmalloc(mm_heap_t *heap, size_t size, size_t alignment) {
 
   if (aligned_mem + size > END_ADDR(heap)) {
     kprintf("heap: heap out of memory\n");
-    kprintf("      sized = %zu\n", heap->size);
+    kprintf("      size = %zu\n", heap->size);
     kprintf("      used = %zu\n", heap->used);
-    kprintf("      alloc_count = %zu\n", heap->stats.alloc_count);
-    kprintf("      alloc_count = %zu\n", heap->stats.alloc_count);
+    kprintf("      alloc count = %zu\n", heap->stats.alloc_count);
+    kprintf("      free count = %zu\n", heap->stats.free_count);
 
     kprintf("      request_sizes:\n");
-    for (int i = 0; i < 9; i++) {
+    for (int i = 0; i < 8; i++) {
       kprintf("        %s - %zu\n", hist_labels[i], heap->stats.alloc_sizes[i]);
     }
 

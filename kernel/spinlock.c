@@ -10,22 +10,6 @@
 
 #include <cpu/cpu.h>
 
-static inline void __preempt_disable() {
-  if (PERCPU_THREAD != NULL) {
-    preempt_disable();
-  } else {
-    PERCPU_SET_RFLAGS(cpu_save_clear_interrupts());
-  }
-}
-
-static inline void __preempt_enable() {
-  if (PERCPU_THREAD != NULL) {
-    preempt_enable();
-  } else {
-    cpu_restore_interrupts(PERCPU_RFLAGS);
-  }
-}
-
 //
 
 void spin_init(spinlock_t *lock) {
@@ -39,47 +23,35 @@ void spin_lock(spinlock_t *lock) {
     return;
   }
 
-  uint8_t id = PERCPU_ID;
-  __preempt_disable();
-  if (atomic_bit_test_and_set(&lock->locked, 0)) {
+  uint64_t id = PERCPU_ID;
+  uint64_t rflags = cpu_save_clear_interrupts(); // disable interrupts
+  if (atomic_lock_test_and_set(&lock->locked)) {
+    // lock is currently held
     if (lock->locked_by == id) {
-      // re-entrant
+      // held by us so it's re-entrant
       lock->lock_count++;
       return;
     }
 
-    uint64_t deadline = clock_future_time(MS_TO_NS(10));
-    __preempt_enable();
-    while (atomic_bit_test_and_set(&lock->locked, 0)) {
+    // wait for spinlock
+    register uint64_t timeout asm ("r15") = 10000000 + (PERCPU_ID * 1000000);
+
+    cpu_enable_interrupts(); // enable interrupts
+    while (atomic_lock_test_and_set(&lock->locked)) {
       cpu_pause(); // spin
-      if (clock_now() >= deadline) {
-        panic("stuck waiting for spinlock");
+      timeout--;
+      if (timeout == 0) {
+        panic("stuck waiting for spinlock %p [locked = %d, held by %u, lock_count = %d]",
+              lock, lock->locked, lock->locked_by, lock->lock_count);
       }
     }
-    __preempt_disable();
+    cpu_disable_interrupts(); // re-disable interrupts
   }
+
+  // interrupts are disabled while the lock is held
   lock->locked_by = id;
   lock->lock_count = 1;
-}
-
-void spin_unlock(spinlock_t *lock) {
-  if (lock == NULL) {
-    return;
-  }
-
-  id_t id = PERCPU_ID;
-  if (atomic_bit_test_and_set(&lock->locked, 0)) {
-    // the lock was set
-    kassert(lock->locked_by == id);
-    lock->lock_count--;
-    if (lock->lock_count == 0) {
-      // only clear when last re-entrant lock is released
-      atomic_bit_test_and_reset(&lock->locked, 0);
-      __preempt_enable();
-    }
-  } else {
-    // spinlock was not locked
-  }
+  PERCPU_SET_RFLAGS(rflags);
 }
 
 int spin_trylock(spinlock_t *lock) {
@@ -88,19 +60,48 @@ int spin_trylock(spinlock_t *lock) {
   }
 
   uint64_t id = PERCPU_ID;
-  if (atomic_bit_test_and_set(&lock->locked, 0)) {
-    // the lock was set
+  uint64_t rflags = cpu_save_clear_interrupts(); // disable interrupts
+  if (atomic_lock_test_and_set(&lock->locked)) {
+    // lock is currently held
     if (lock->locked_by == id) {
-      // re-entrant
+      // held by us so it's re-entrant
       lock->lock_count++;
       return 1;
     }
 
     // the lock is already claimed
+    cpu_restore_interrupts(rflags); // restore interrupts
     return 0;
   }
 
+  // interrupts are disabled while the lock is held
+  PERCPU_SET_RFLAGS(rflags);
   lock->locked_by = id;
   lock->lock_count = 1;
   return 1;
+}
+
+void spin_unlock(spinlock_t *lock) {
+  if (lock == NULL) {
+    return;
+  }
+
+  uint64_t id = PERCPU_ID;
+  if (atomic_lock_test_and_set(&lock->locked)) {
+    kassert(lock->locked_by == id);
+    if (lock->lock_count == 1) {
+      // only clear when last re-entrant lock is released
+      atomic_lock_test_and_reset(&lock->locked);
+      lock->lock_count = 0;
+      cpu_restore_interrupts(PERCPU_RFLAGS); // restore interrupts
+      return;
+    }
+
+    // re-entrant unlock
+    lock->lock_count--;
+    return;
+  }
+
+  // lock was not held by anyone
+  panic("spin_unlock() on lock that is not held [%p]", lock);
 }

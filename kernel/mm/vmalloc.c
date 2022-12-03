@@ -625,7 +625,7 @@ void _vunmap_addr(uintptr_t virt_addr, size_t size) {
 
 vm_mapping_t *_vmap_get_mapping(uintptr_t virt_addr) {
   address_space_t *space = select_address_space(virt_addr);
-  interval_t intvl = intvl(virt_addr, virt_addr + PAGE_SIZE);
+  interval_t intvl = intvl(virt_addr, virt_addr + 1);
   intvl_node_t *node = intvl_tree_find(space->root, intvl);
   if (node == NULL) {
     return NULL;
@@ -635,8 +635,12 @@ vm_mapping_t *_vmap_get_mapping(uintptr_t virt_addr) {
 }
 
 uintptr_t _vm_virt_to_phys(uintptr_t virt_addr) {
+  if (virt_addr == 0) {
+    return 0;
+  }
+
   address_space_t *space = select_address_space(virt_addr);
-  interval_t intvl = intvl(virt_addr, virt_addr + PAGE_SIZE);
+  interval_t intvl = intvl(virt_addr, virt_addr + 1);
   intvl_node_t *node = intvl_tree_find(space->root, intvl);
   if (node == NULL) {
     return 0;
@@ -660,13 +664,13 @@ uintptr_t _vm_virt_to_phys(uintptr_t virt_addr) {
     unreachable;
   }
 
-  kprintf("vm_virt_to_phys: invalid mapping type");
+  // kprintf("vm_virt_to_phys: invalid mapping type [%018p]", virt_addr);
   return 0;
 }
 
 page_t *_vm_virt_to_page(uintptr_t virt_addr) {
   address_space_t *space = select_address_space(virt_addr);
-  interval_t intvl = intvl(virt_addr, virt_addr + PAGE_SIZE);
+  interval_t intvl = intvl(virt_addr, virt_addr + 1);
   intvl_node_t *node = intvl_tree_find(space->root, intvl);
   if (node == NULL) {
     return NULL;

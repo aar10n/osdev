@@ -87,6 +87,7 @@ noreturn void *hid_device_event_loop(void *arg) {
   kprintf("hid: starting device event loop\n");
   while (true) {
     thread_sleep(MS_TO_US(16));
+    // kprintf("hid: checking\n");
     // chan_wait(endpoint->event_ch);
 
     hid_trace_debug("event");

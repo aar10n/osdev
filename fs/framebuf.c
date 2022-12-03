@@ -7,6 +7,7 @@
 #include <mm.h>
 #include <panic.h>
 #include <thread.h>
+#include <string.h>
 
 off_t framebuf_lseek(file_t *file, off_t offset, int origin) {
   ERRNO = ENOTSUP;

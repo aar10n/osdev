@@ -11,7 +11,7 @@
 
 // TODO: switch to better allocator for large sizes
 #define CHUNK_MIN_SIZE   8
-#define CHUNK_MAX_SIZE   262144
+#define CHUNK_MAX_SIZE   524288
 #define CHUNK_SIZE_ALIGN 8
 #define CHUNK_MIN_ALIGN  4
 

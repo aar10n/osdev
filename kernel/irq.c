@@ -53,25 +53,16 @@ struct irq_handler irq_handlers[IRQ_NUM_VECTORS];
 struct isa_irq_override irq_isa_overrides[IRQ_NUM_ISA];
 
 
-extern void ipi_handler();
+extern void ipi_handler(cpu_irq_stack_t *frame, cpu_registers_t *regs);
 
-static inline void inc_irq_level() {
-  PERCPU_THREAD->irq_level++;
-}
 
-static inline void dec_irq_level() {
-  if (PERCPU_THREAD->irq_level > 0) {
-    PERCPU_THREAD->irq_level--;
-  }
-}
-
-__used void irq_handler(uint8_t vector) {
+__used void irq_handler(uint8_t vector, cpu_irq_stack_t *frame, cpu_registers_t *regs) {
   // kprintf("CPU#%d --> IRQ%d\n", PERCPU_ID, vector - IRQ_VECTOR_BASE);
   uint64_t rflags = cpu_save_clear_interrupts();
+  __percpu_inc_irq_level();
   apic_send_eoi();
-  inc_irq_level();
   if (vector == ipi_vectornum) {
-    ipi_handler();
+    ipi_handler(frame, regs);
     goto done;
   }
 
@@ -83,22 +74,22 @@ __used void irq_handler(uint8_t vector) {
     switch (irq_handlers[vector].type) {
       case IRQ_TYPE_FUNC:
         irq_handlers[vector].handler(vector - IRQ_VECTOR_BASE, irq_handlers[vector].data);
-        goto done;
+        break;
       case IRQ_TYPE_COND:
         cond_signal(irq_handlers[vector].condition);
-        goto done;
+        break;
       default:
         unreachable;
     }
 
-  LABEL(done);
-    dec_irq_level();
-    cpu_restore_interrupts(rflags);
-    return;
+    goto done;
   }
 
   kprintf("CPU#%d --> IRQ%d\n", PERCPU_ID, vector - IRQ_VECTOR_BASE);
-  dec_irq_level();
+
+LABEL(done);
+  __percpu_dec_irq_level();
+  cpu_restore_interrupts(rflags);
 }
 
 __used void exception_handler(uint8_t vector, uint32_t error, cpu_irq_stack_t *frame, cpu_registers_t *regs) {

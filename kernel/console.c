@@ -6,7 +6,6 @@
 #include <spinlock.h>
 
 #include <drivers/serial.h>
-#include <gui/screen.h>
 
 console_t *kconsole = NULL;
 
@@ -58,5 +57,4 @@ void console_early_init() {
   early_console.ptr = &early_console_lock;
   serial_init(COM1);
   kconsole = &early_console;
-  screen_early_init();
 }

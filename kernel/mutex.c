@@ -14,22 +14,23 @@
 
 #include <atomic.h>
 #include <panic.h>
+#include <printf.h>
 
 // #define MUTEX_DEBUG
 #ifdef MUTEX_DEBUG
-#define mutex_trace_debug(str, args...) kprintf("[mutex] " str "\n", ##args)
+#define mutex_trace_debug(str, args...) kprintf("mutex: " str "\n", ##args)
 #else
 #define mutex_trace_debug(str, args...)
 #endif
 // #define COND_DEBUG
 #ifdef COND_DEBUG
-#define cond_trace_debug(str, args...) kprintf("[cond] " str "\n", ##args)
+#define cond_trace_debug(str, args...) kprintf("cond: " str "\n", ##args)
 #else
 #define cond_trace_debug(str, args...)
 #endif
 // #define SHARED_MUTEX_DEBUG
 #ifdef SHARED_MUTEX_DEBUG
-#define shd_mutex_trace_debug(str, args...) kprintf("[shared mutex] " str "\n", ##args)
+#define shd_mutex_trace_debug(str, args...) kprintf("shrd_mutex: " str "\n", ##args)
 #else
 #define shd_mutex_trace_debug(str, args...)
 #endif
@@ -202,8 +203,8 @@ int cond_wait(cond_t *cond) {
     return 0;
   }
 
-  cond_trace_debug("thread %d:%d blocked by condition",
-                   thread->process->pid, thread->tid);
+  cond_trace_debug("thread %d:%d [%s] blocked by condition",
+                   thread->process->pid, thread->tid, thread->name);
 
   thread->flags |= F_THREAD_OWN_BLOCKQ;
   safe_enqeue(&cond->flags, &cond->queue, thread);
@@ -243,9 +244,9 @@ int cond_signal(cond_t *cond) {
   thread_t *signaled = safe_dequeue(&cond->flags, &cond->queue);
   sched_unblock(signaled);
 
-  cond_trace_debug("thread %d:%d unblocked by %d:%d",
-          signaled->process->pid, signaled->tid,
-          thread->process->pid, thread->tid);
+  cond_trace_debug("thread %d:%d [%s] unblocked by %d:%d (%s)",
+          signaled->process->pid, signaled->tid, signaled->name,
+          PERCPU_THREAD->process->pid, PERCPU_THREAD->tid, PERCPU_THREAD->name);
 
   return 0;
 }

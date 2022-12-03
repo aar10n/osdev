@@ -12,6 +12,9 @@
 #define MAX_PROCS       1024
 #define DEFAULT_RFLAGS  0x246
 
+#define PROCESS_LOCK(proc) (spin_lock(&(proc)->lock))
+#define PROCESS_UNLOCK(proc) (spin_unlock(&(proc)->lock))
+
 typedef struct thread thread_t;
 typedef struct file_table file_table_t;
 typedef struct address_space address_space_t;
@@ -24,11 +27,15 @@ typedef struct process {
   pid_t pid;                      // process id
   pid_t ppid;                     // parent pid
   address_space_t *address_space; // address space
+  // !!! DO NOT CHANGE ABOVE HERE !!!
+  // assembly code in thread.asm accesses these fields using known offsets
 
   uid_t uid;                      // user id
   gid_t gid;                      // group id
   dentry_t **pwd;                 // process working directory
   file_table_t *files;            // open file table
+  size_t num_threads;             // number of threads
+  spinlock_t lock;                // process lock
 
   mutex_t sig_mutex;              // signal mutex
   sig_handler_t **sig_handlers;   // signal handlers

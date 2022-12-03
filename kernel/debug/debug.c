@@ -102,6 +102,16 @@ void debug_init() {
   }
 
   kprintf("debug: files loaded\n");
+
+  // preload things
+  static const char *prefix = "/Users/aaron/Projects/osdev/kernel";
+  RLIST_FOR_IN(file, files, list) {
+    if (strncmp(prefix, file->name, strlen(prefix)) == 0) {
+      kprintf("debug: preloading %s\n", file->name);
+      locate_or_load_dwarf_file(file->addr_lo);
+    }
+  }
+
   // kprintf("debug: loaded functions\n");
   kprintf("debug: initialized\n");
 }
@@ -154,18 +164,22 @@ int debug_unwind(uintptr_t rip, uintptr_t rbp) {
   kprintf("backtrace\n");
 
   stackframe_t *frame = (void *) rbp;
-  while (frame) {
+  while (mm_is_kernel_code_ptr((uintptr_t) frame->rip)) {
     dwarf_function_t *func = locate_or_load_dwarf_function(rip);
     if (func == NULL) {
       kprintf("    ?? %018p\n", rip);
-      return 0;
+    } else {
+      dwarf_line_t *line = get_line_by_addr(func->file, rip);
+      if (line == NULL) {
+        kprintf("    %s %018p\n", func->name, rip);
+      } else {
+        kprintf("    %s %018p [%s:%d]\n", func->name, rip, func->file->name, line->line_no);
+      }
     }
 
-    dwarf_line_t *line = get_line_by_addr(func->file, rip);
-    if (line == NULL) {
-      kprintf("    %s %018p\n", func->name, rip);
-    } else {
-      kprintf("    %s %018p [%s:%d]\n", func->name, rip, func->file->name, line->line_no);
+    if (_vm_virt_to_phys((uintptr_t) frame->rbp) == 0) {
+      kprintf("    ?? %018p\n", frame->rip);
+      break;
     }
 
     rip = frame->rip;

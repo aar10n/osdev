@@ -13,6 +13,7 @@
 #include <panic.h>
 #include <process.h>
 #include <signal.h>
+#include <atomic.h>
 
 #include <debug/debug.h>
 
@@ -122,11 +123,11 @@ thread_t *thread_alloc(id_t tid, void *(start_routine)(void *), void *arg, bool 
   thread->stats = stats;
   thread->affinity = -1;
   thread->name = NULL;
-  thread->irq_level = 0;
 
   thread->kernel_stack = kernel_stack;
   thread->user_stack = user_stack;
 
+  spin_init(&thread->lock);
   mutex_init(&thread->mutex, MUTEX_LOCKED);
   cond_init(&thread->data_ready, 0);
   return thread;
@@ -199,7 +200,7 @@ void thread_free(thread_t *thread) {
 
 thread_t *thread_create(void *(start_routine)(void *), void *arg) {
   process_t *process = PERCPU_PROCESS;
-  id_t tid = LIST_LAST(&process->threads)->tid + 1;
+  id_t tid = atomic_fetch_add(&process->num_threads, 1);
   thread_trace_debug("creating thread %d | process %d", tid, process->pid);
 
   thread_t *thread = thread_alloc(tid, start_routine, arg, false);
@@ -214,14 +215,16 @@ thread_t *thread_create(void *(start_routine)(void *), void *arg) {
     thread->name = strdup(func_name);
   }
 
+  PROCESS_LOCK(process);
   LIST_ADD(&process->threads, thread, group);
+  PROCESS_UNLOCK(process);
   sched_add(thread);
   return thread;
 }
 
 thread_t *thread_create_n(char *name, void *(start_routine)(void *), void *arg) {
   process_t *process = PERCPU_PROCESS;
-  id_t tid = LIST_LAST(&process->threads)->tid + 1;
+  id_t tid = atomic_fetch_add(&process->num_threads, 1);
   thread_trace_debug("creating thread %d | process %d", tid, process->pid);
 
   thread_t *thread = thread_alloc(tid, start_routine, arg, false);
@@ -229,7 +232,9 @@ thread_t *thread_create_n(char *name, void *(start_routine)(void *), void *arg) 
   thread->affinity = process->main->affinity;
   thread->name = name;
 
+  PROCESS_LOCK(process);
   LIST_ADD(&process->threads, thread, group);
+  PROCESS_UNLOCK(process);
   sched_add(thread);
   return thread;
 }
@@ -316,6 +321,15 @@ int thread_setpriority(thread_t *thread, uint16_t priority) {
     .policy = thread->policy,
     .priority = priority,
     .affinity = thread->affinity,
+  };
+  return sched_setsched(opts);
+}
+
+int thread_setaffinity(thread_t *thread, uint8_t affinity) {
+  sched_opts_t opts = {
+    .policy = thread->policy,
+    .priority = thread->priority,
+    .affinity = affinity,
   };
   return sched_setsched(opts);
 }

@@ -131,18 +131,21 @@ idt_stubs:
 __interrupt_handler:
   ;        stack frame
   ; rsp -> vector
-  swapgs_if_needed 16
+  swapgs_if_needed STACK_OFFSET(2)
   pushall
 
   mov rdi, [rsp + STACK_OFFSET(PUSHALL_COUNT)] ; rdi <- vector
+  mov rsi, rsp
+  add rsi, STACK_OFFSET(PUSHALL_COUNT + 1)     ; rsi <- interrupt stack frame pointer
+  mov rdx, rsp                                 ; rdx <- registers pointer
 
   cld
   call irq_handler
 
   popall
-  swapgs_if_needed 16
+  swapgs_if_needed STACK_OFFSET(2)
 
-  add rsp, 8 ; skip vector
+  add rsp, STACK_OFFSET(1) ; skip vector
   iretq
 
 ; ---------------------- ;

@@ -149,6 +149,8 @@ toolchain::libdwarf::build() {
         --redefine-sym uncompress=__debug_uncompress_stub \
         \
         ${install_dir}/lib/libdwarf.a ${BUILD_DIR}/libdwarf_kernel.a
+
+      ${tool_prefix}strip -g ${BUILD_DIR}/libdwarf_kernel.a
     popd
   popd
 }

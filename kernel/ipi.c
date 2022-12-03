@@ -7,6 +7,9 @@
 #include <device/apic.h>
 
 #include <sched.h>
+#include <irq.h>
+#include <mm.h>
+
 #include <spinlock.h>
 #include <panic.h>
 #include <printf.h>
@@ -19,8 +22,9 @@ static uint64_t ipi_data;
 static spinlock_t ipi_lock;
 static uint8_t ipi_ack;
 
+typedef void (*panic_fn_t)(cpu_irq_stack_t *frame, cpu_registers_t *regs);
 
-__used void ipi_handler() {
+__used void ipi_handler(cpu_irq_stack_t *frame, cpu_registers_t *regs) {
   uint8_t type = ipi_type;
   uint64_t data = ipi_data;
   kassert(type <= NUM_IPIS);
@@ -29,7 +33,15 @@ __used void ipi_handler() {
   // kprintf("CPU#%d IPI!\n", PERCPU_ID);
   switch (type) {
     case IPI_PANIC:
-      while (true) cpu_pause();
+      if (data != 0) {
+        if (!mm_is_kernel_code_ptr(data)) {
+          kprintf("CPU#%d IPI panic - bad handler!\n", PERCPU_ID);
+          while (true) cpu_pause();
+        }
+
+        ((panic_fn_t)((void *) data))(frame, regs);
+        while (true) cpu_pause();
+      }
       unreachable;
     case IPI_INVLPG:
       kassert(false && "not implemented");

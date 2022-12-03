@@ -49,6 +49,7 @@ int init_periodic_timer();
 int init_oneshot_timer();
 
 void alarms_init();
+void alarm_reschedule();
 clockid_t timer_create_alarm(clock_t expires, timer_cb_t callback, void *data);
 void *timer_delete_alarm(clockid_t id);
 clock_t timer_now();
@@ -58,5 +59,7 @@ int timer_disable(uint16_t type);
 int timer_setval(uint16_t type, clock_t value);
 
 void timer_udelay(uint64_t us);
+
+void timer_dump_pending_alarms();
 
 #endif

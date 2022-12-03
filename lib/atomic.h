@@ -25,6 +25,10 @@
 #define atomic_bit_test_and_reset(ptr, b) \
   __atomic_bit_test_and_reset((void *)(ptr), b)
 
+#define atomic_lock_test_and_set(ptr) \
+  __sync_lock_test_and_set(ptr, 1)
+#define atomic_lock_test_and_reset(ptr) \
+  __sync_lock_release(ptr)
 
 #define atomic_cmpxchg(ptr, val) __atomic_cmpxchg64((uint64_t *)(ptr), (uintptr_t) val)
 

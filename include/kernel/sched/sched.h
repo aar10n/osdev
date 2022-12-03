@@ -80,7 +80,10 @@ typedef struct sched {
   thread_t *idle;       // idle thread
 
   LIST_HEAD(thread_t) blocked;
-  void *policies[NUM_POLICIES];
+  struct {
+    void *data;
+    spinlock_t lock;
+  } policies[NUM_POLICIES];
 } sched_t;
 
 noreturn void sched_init(process_t *root);
