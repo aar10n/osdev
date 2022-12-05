@@ -140,6 +140,9 @@ typedef struct cpu_irq_stack {
   uint64_t ss;
 } cpu_irq_stack_t;
 
+#define temp_irq_save(flags) ({ ASSERT_IS_TYPE(uint64_t, flags); flags = cpu_save_clear_interrupts(); 0; })
+#define temp_irq_restore(flags) ({ ASSERT_IS_TYPE(uint64_t, flags); cpu_restore_interrupts(flags); })
+
 extern uint8_t cpu_bsp_id;
 
 void cpu_init();

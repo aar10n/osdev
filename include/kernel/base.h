@@ -95,6 +95,8 @@
 #define SIGNATURE_32(A, B, C, D) (SIGNATURE_16(A, B) | (SIGNATURE_16(C, D) << 16))
 #define SIGNATURE_64(A, B, C, D, E, F, G, H) (SIGNATURE_32(A, B, C, D) | ((uint64_t) SIGNATURE_32(E, F, G, H) << 32))
 
+#define ASSERT_IS_TYPE(type, value) static_assert(_Generic(value, type: 1, default: 0) == 1)
+
 //
 // Compiler Attributes
 //

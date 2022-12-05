@@ -23,6 +23,7 @@
 #include <atomic.h>
 
 #include <cpu/cpu.h>
+#include <debug/debug.h>
 
 // #define PROCESS_DEBUG
 #ifdef PROCESS_DEBUG
@@ -101,6 +102,12 @@ process_t *process_alloc(pid_t pid, pid_t ppid, void *(start_routine)(void *), v
 
   thread_t *main = thread_alloc(0, start_routine, arg, false);
   main->process = process;
+  const char *func_name = debug_function_name((uintptr_t) start_routine);
+  if (func_name != NULL) {
+    // duplicate it because debug_function_name returns a non-owning string
+    main->name = strdup(func_name);
+  }
+
   process->main = main;
 
   LIST_INIT(&process->threads);

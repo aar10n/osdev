@@ -14,6 +14,9 @@ typedef struct pcie_device pcie_device_t;
 typedef void (*irq_handler_t)(uint8_t, void *);
 typedef void (*exception_handler_t)(uint8_t, uint32_t, cpu_irq_stack_t *, cpu_registers_t *);
 
+extern uint8_t ipi_vectornum;
+
+
 void irq_early_init();
 void irq_init();
 

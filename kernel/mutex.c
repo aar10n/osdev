@@ -24,7 +24,7 @@
 #endif
 // #define COND_DEBUG
 #ifdef COND_DEBUG
-#define cond_trace_debug(str, args...) kprintf("cond: " str "\n", ##args)
+#define cond_trace_debug(str, args...) kprintf("[CPU#%d] cond: " str "\n", PERCPU_ID, ##args)
 #else
 #define cond_trace_debug(str, args...)
 #endif
@@ -203,8 +203,8 @@ int cond_wait(cond_t *cond) {
     return 0;
   }
 
-  cond_trace_debug("thread %d:%d [%s] blocked by condition",
-                   thread->process->pid, thread->tid, thread->name);
+  cond_trace_debug("thread %d:%d [%s] blocked by condition %p",
+                   thread->process->pid, thread->tid, thread->name, cond);
 
   thread->flags |= F_THREAD_OWN_BLOCKQ;
   safe_enqeue(&cond->flags, &cond->queue, thread);
@@ -241,13 +241,13 @@ int cond_signal(cond_t *cond) {
     return 0;
   }
 
+  thread_t *thread = PERCPU_THREAD;
   thread_t *signaled = safe_dequeue(&cond->flags, &cond->queue);
+  cond_trace_debug("thread %d:%d [%s] unblocked by %d:%d [%s] %p",
+                   signaled->process->pid, signaled->tid, signaled->name,
+                   thread->process->pid, thread->tid, thread->name, cond);
+
   sched_unblock(signaled);
-
-  cond_trace_debug("thread %d:%d [%s] unblocked by %d:%d (%s)",
-          signaled->process->pid, signaled->tid, signaled->name,
-          PERCPU_THREAD->process->pid, PERCPU_THREAD->tid, PERCPU_THREAD->name);
-
   return 0;
 }
 

@@ -57,7 +57,7 @@ extern void ipi_handler(cpu_irq_stack_t *frame, cpu_registers_t *regs);
 
 
 __used void irq_handler(uint8_t vector, cpu_irq_stack_t *frame, cpu_registers_t *regs) {
-  // kprintf("CPU#%d --> IRQ%d\n", PERCPU_ID, vector - IRQ_VECTOR_BASE);
+  // kprintf("CPU#%d --> IRQ%d [vector = %d]\n", PERCPU_ID, vector - IRQ_VECTOR_BASE, vector);
   uint64_t rflags = cpu_save_clear_interrupts();
   __percpu_inc_irq_level();
   apic_send_eoi();
@@ -106,6 +106,8 @@ __used void exception_handler(uint8_t vector, uint32_t error, cpu_irq_stack_t *f
     kprintf("  RIP = %018p  RSP = %018p\n", frame->rip, frame->rsp);
     kprintf("  CR2 = %018p\n", __read_cr2());
   }
+
+
 
   while (true) {
     cpu_pause();
@@ -164,8 +166,8 @@ void irq_init() {
   }
 
   // reserve highest priority for inter-processor messaging
-  uint8_t ipi_irqnum = irq_reserve_irqnum(IRQ_NUM_VECTORS - IRQ_VECTOR_BASE - 1);
-  ipi_vectornum = ipi_irqnum + IRQ_VECTOR_BASE;
+  ipi_vectornum = IRQ_NUM_VECTORS - 2;
+  irq_reserve_irqnum(ipi_vectornum - IRQ_VECTOR_BASE);
   irq_enable_interrupt(ipi_vectornum);
 }
 

@@ -307,38 +307,38 @@ void thread_block() {
 
 //
 
-int thread_setpolicy(thread_t *thread, uint8_t policy) {
+int thread_setpolicy(uint8_t policy) {
   sched_opts_t opts = {
     .policy = policy,
-    .priority = thread->priority,
-    .affinity = thread->affinity,
+    .priority = PERCPU_THREAD->priority,
+    .affinity = PERCPU_THREAD->affinity,
   };
   return sched_setsched(opts);
 }
 
-int thread_setpriority(thread_t *thread, uint16_t priority) {
+int thread_setpriority(uint16_t priority) {
   sched_opts_t opts = {
-    .policy = thread->policy,
+    .policy = PERCPU_THREAD->policy,
     .priority = priority,
-    .affinity = thread->affinity,
+    .affinity = PERCPU_THREAD->affinity,
   };
   return sched_setsched(opts);
 }
 
-int thread_setaffinity(thread_t *thread, uint8_t affinity) {
+int thread_setaffinity(uint8_t affinity) {
   sched_opts_t opts = {
-    .policy = thread->policy,
-    .priority = thread->priority,
+    .policy = PERCPU_THREAD->policy,
+    .priority = PERCPU_THREAD->priority,
     .affinity = affinity,
   };
   return sched_setsched(opts);
 }
 
-int thread_setsched(thread_t *thread, uint8_t policy, uint16_t priority) {
+int thread_setsched(uint8_t policy, uint16_t priority) {
   sched_opts_t opts = {
     .policy = policy,
     .priority = priority,
-    .affinity = thread->affinity,
+    .affinity = PERCPU_THREAD->affinity,
   };
   return sched_setsched(opts);
 }

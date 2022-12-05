@@ -120,10 +120,10 @@ void thread_sleep(uint64_t us);
 void thread_yield();
 void thread_block();
 
-int thread_setpolicy(thread_t *thread, uint8_t policy);
-int thread_setpriority(thread_t *thread, uint16_t priority);
-int thread_setaffinity(thread_t *thread, uint8_t affinity);
-int thread_setsched(thread_t *thread, uint8_t policy, uint16_t priority);
+int thread_setpolicy(uint8_t policy);
+int thread_setpriority(uint16_t priority);
+int thread_setaffinity(uint8_t affinity);
+int thread_setsched(uint8_t policy, uint16_t priority);
 
 void preempt_disable();
 void preempt_enable();

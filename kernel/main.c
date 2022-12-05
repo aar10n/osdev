@@ -21,20 +21,26 @@
 #include <bus/pcie.h>
 #include <usb/usb.h>
 #include <irq.h>
+#include <ipi.h>
 #include <event.h>
 #include <signal.h>
 #include <ipc.h>
 #include <smpboot.h>
 #include <fs/utils.h>
 
-#include <device/pit.h>
+#include <device/apic.h>
 #include <device/hpet.h>
+#include <device/pit.h>
 #include <acpi/pm_timer.h>
 
 #include <gui/screen.h>
 #include <string.h>
 
 #include <cpu/io.h>
+
+// This relates to custom qemu patch that ive written to make debugging easier.
+#define QEMU_DEBUG_INIT() ({ outb(0x801, 1); })
+#define QDEBUG_VALUE(v) ({ outdw(0x800, v); })
 
 boot_info_v2_t __boot_data *boot_info_v2;
 
@@ -59,50 +65,21 @@ static void dump_bytes(uint8_t *buffer, size_t length) {
   }
 }
 
-// static chan_t *test_chan;
-//
-// static noreturn void *cpu0_work_loop(void *arg) {
-//   thread_setaffinity(PERCPU_THREAD, 0);
-//   thread_yield();
-//   kprintf("[CPU#%d] starting cpu0_work_loop\n", PERCPU_ID);
-//
-//   while (true) {
-//     thread_sleep(MS_TO_US(500));
-//     uint16_t count = test_chan->write_idx - test_chan->read_idx;
-//     kprintf("[CPU#%d] sending event [%d in channel]\n", PERCPU_ID, count + 1);
-//     chan_send(test_chan, chan_u64(1));
-//   }
-// }
-//
-// static noreturn void *cpu1_work_loop(void *arg) {
-//   thread_setaffinity(PERCPU_THREAD, 1);
-//   thread_yield();
-//   kprintf("[CPU#%d] starting cpu1_work_loop\n", PERCPU_ID);
-//
-//   while (true) {
-//     thread_sleep(MS_TO_US(1010));
-//
-//     uint16_t count = test_chan->write_idx - test_chan->read_idx;
-//     kprintf("[CPU#%d] received %d events since last update\n", PERCPU_ID, count);
-//
-//     int res;
-//     while (chan_recv_noblock(test_chan, chan_voidp(&res)) >= 0) {}
-//   }
-// }
-
-static noreturn void *cpu_background_thread(void *arg) {
-  int cpu = (int)((uintptr_t)(arg));
-  thread_setaffinity(PERCPU_THREAD, cpu);
+static noreturn void *cpu_test_thread(void *arg) {
+  thread_setaffinity(1);
   thread_yield();
 
-  while (true) {
-    clock_t deadline = clock_now() + MS_TO_NS(100);
-    while (clock_now() < deadline) {
-      cpu_pause();
-    }
-
-    kprintf("CPU#%d ping\n", PERCPU_ID);
+  uint32_t timeout = 100000;
+  while (timeout > 0) {
+    cpu_pause();
+    timeout--;
   }
+
+  kprintf("[CPU#%d] knock knock\n", PERCPU_ID);
+  ipi_deliver_cpu_id(IPI_NOOP, 0, 0);
+
+  thread_block();
+  unreachable;
 }
 
 //
@@ -110,6 +87,7 @@ static noreturn void *cpu_background_thread(void *arg) {
 //
 
 __used void kmain() {
+  QEMU_DEBUG_INIT();
   console_early_init();
   cpu_init();
 
@@ -158,26 +136,12 @@ __used void ap_main() {
 extern size_t _num_schedulers;
 
 _Noreturn void launch() {
-  kprintf("[pid %d] launch\n", getpid());
-  while (_num_schedulers != system_num_cpus) {
-    cpu_pause();
-  }
-
+  kprintf("==> launch\n");
   alarms_init();
-
-  // thread_sleep(MS_TO_US(200));
-  // test_chan = chan_alloc(32, 0);
-  // thread_create(cpu0_work_loop, NULL);
-
-  // thread_sleep(MS_TO_US(10));
-  // thread_create(cpu_background_thread, (void *)(0));
-  // thread_create(cpu_background_thread, (void *)(1));
 
   fs_init();
   usb_init();
   pcie_discover();
-
-  //
 
   thread_sleep(MS_TO_US(250));
   // fs_lsdir("/dev");

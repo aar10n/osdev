@@ -5,17 +5,36 @@
 #include <clock.h>
 
 #include <cpu/cpu.h>
+#include <cpu/io.h>
 
 #include <printf.h>
 #include <panic.h>
 #include <atomic.h>
+
+#define QDEBUG_VALUE(v) ({ outdw(0x800, v); })
+
+#define QDEBUG_LOCK(d1, d2, c0, c1, c2, c3) \
+  ({                                      \
+    outdw(0x808, SIGNATURE_32(c0, c1, c2, c3)); \
+    outdw(0x804, SIGNATURE_32(PERCPU_ID, 1, ((d1) & 0xFF), ((d2) & 0xFF))); \
+  })
+#define QDEBUG_UNLOCK(d1, d2, c0, c1, c2, c3) \
+  ({                                        \
+    outdw(0x808, SIGNATURE_32(c0, c1, c2, c3)); \
+    outdw(0x804, SIGNATURE_32(PERCPU_ID, 0, ((d1) & 0xFF), ((d2) & 0xFF))); \
+  })
+
+#define DEBUG_LOCK() QDEBUG_LOCK(PERCPU_ID, 0, 'c', 'l', 'c', 'k')
+#define DEBUG_UNLOCK() QDEBUG_UNLOCK(PERCPU_ID, 0, 'c', 'l', 'c', 'k')
+
 
 LIST_HEAD(clock_source_t) clock_sources;
 clock_source_t *current_clock_source;
 clock_t kernel_time_ns;
 uint64_t clock_ticks;
 
-static spinlock_t update_lock;
+static uint8_t _smp_lock = 0;
+static volatile uint8_t *smp_lock = &_smp_lock;
 
 void register_clock_source(clock_source_t *source) {
   kassert(source != NULL);
@@ -42,7 +61,6 @@ void clock_init() {
   kprintf("using %s as clock source\n", current_clock_source->name);
   current_clock_source->enable(current_clock_source);
   current_clock_source->last_tick = current_clock_source->read(current_clock_source);
-  spin_init(&update_lock);
 }
 
 clock_t clock_now() {
@@ -51,7 +69,9 @@ clock_t clock_now() {
     return 0;
   }
 
-  if (spin_trylock(&update_lock)) {
+  uint64_t flags;
+  temp_irq_save(flags);
+  if (atomic_lock_test_and_set(smp_lock) == 0) {
     // we have the lock, now lets update the time
     uint64_t last = source->last_tick;
     uint64_t current = source->read(source);
@@ -59,21 +79,20 @@ clock_t clock_now() {
     clock_ticks += current - last;
     kernel_time_ns += (current - last) * source->scale_ns;
 
-    kassert(update_lock.locked == 1 && update_lock.locked_by == PERCPU_ID);
-    spin_unlock(&update_lock);
+    atomic_lock_test_and_reset(smp_lock);
   } else {
-    // wait for the updated time
+    // wait for the time to be updated
     register uint64_t timeout asm ("r15") = 10000000 + (PERCPU_ID * 100000);
-    while (update_lock.locked) {
+    while (*smp_lock) {
       cpu_pause();
       timeout--;
       if (timeout == 0) {
-        panic("stuck waiting for clock update_lock [locked = %d, held by %u, lock_count = %d]",
-              update_lock.locked, update_lock.locked_by, update_lock.lock_count);
+        panic("stuck waiting for clock smp_lock");
       }
     }
   }
 
+  temp_irq_restore(flags);
   return kernel_time_ns;
 }
 

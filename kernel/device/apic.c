@@ -385,14 +385,13 @@ void apic_send_ipi(uint8_t mode, uint8_t dest_mode, uint8_t dest, uint8_t vector
 }
 
 int apic_write_icr(uint32_t low, uint8_t dest_id) {
+  uint64_t rflags = cpu_save_clear_interrupts();
   uint32_t icr_high = apic_read(APIC_ICR_HIGH) & ICR_HIGH_REG_MASK;
   icr_high |= dest_id << 24;
   apic_write(APIC_ICR_HIGH, icr_high);
 
-  uint32_t icr_low = apic_read(APIC_ICR_LOW) & ICR_LOW_REG_MASK;
-  icr_low |= low;
-  apic_write(APIC_ICR_LOW, icr_low);
-
+  apic_write(APIC_ICR_LOW, low);
   poll_icr_status();
+  cpu_restore_interrupts(rflags);
   return 0;
 }

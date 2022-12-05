@@ -64,7 +64,7 @@ int set_alarm_timer_value(timer_device_t *timer, clock_t expiry) {
 noreturn void *alarm_event_loop(unused void *arg) {
   kassert(global_one_shot_timer != NULL);
   timer_device_t *timer = global_one_shot_timer;
-  thread_setaffinity(PERCPU_THREAD, cpu_bsp_id); // pin to CPU#0
+  thread_setaffinity(cpu_bsp_id); // pin to CPU#0
 
   kprintf("timer: starting alarm event loop\n");
   while (true) {
@@ -187,7 +187,7 @@ void alarms_init() {
 }
 
 void alarm_reschedule() {
-  // cond_signal(&alarm_cond);
+  cond_signal(&alarm_cond);
 }
 
 clockid_t timer_create_alarm(clock_t expires, timer_cb_t callback, void *data) {

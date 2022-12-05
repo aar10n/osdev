@@ -194,7 +194,7 @@ static inline bool device_is_usb3(_xhci_device_t *device) {
 
 void xhci_host_irq_handler(uint8_t vector, void *data) {
   xhci_controller_t *hc = data;
-  // kprintf(">>>>> xhci: controller interrupt! <<<<<\n");
+  kprintf("[CPU#%d] xhci: >>> controller interrupt <<<\n", PERCPU_ID);
   uint32_t usbsts = read32(hc->op_base, XHCI_OP_USBSTS);
 
   // clear interrupt flag
@@ -221,7 +221,7 @@ void xhci_device_irq_handler(uint8_t vector, void *data) {
   _xhci_device_t *device = data;
   xhci_controller_t *hc = device->host;
   uint8_t n = device->interrupter->index;
-  // kprintf(">>>>> xhci: device interrupt! <<<<<\n");
+  kprintf("[CPU#%d] xhci: >>> device interrupt <<<\n", PERCPU_ID);
 
   // clear interrupt flag
   uint32_t usbsts = read32(hc->op_base, XHCI_OP_USBSTS);
@@ -272,11 +272,11 @@ int _xhci_handle_controller_event(xhci_controller_t *hc, xhci_trb_t trb) {
 
 noreturn void *_xhci_controller_event_loop(void *arg) {
   xhci_controller_t *hc = arg;
-  kprintf("xhci: starting controller event loop\n");
+  kprintf("[CPU#%d] xhci: starting controller event loop\n", PERCPU_ID);
 
   while (true) {
     cond_wait(&hc->evt_ring->cond);
-    // kprintf(">>>>> xhci controller event <<<<<\n");
+    kprintf("[CPU#%d] xhci: controller event\n", PERCPU_ID);
 
     uint64_t old_erdp = _xhci_ring_device_ptr(hc->evt_ring);
     xhci_trb_t trb;
@@ -324,6 +324,7 @@ noreturn void *_xhci_device_event_loop(void *arg) {
 
   while (true) {
     cond_wait(&device->evt_ring->cond);
+    kprintf("[CPU#%d] xhci: device event\n", PERCPU_ID);
 
     // handler transfer event
     uint64_t old_erdp = _xhci_ring_device_ptr(device->evt_ring);

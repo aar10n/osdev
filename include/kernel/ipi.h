@@ -10,11 +10,14 @@
 // inter-processor interrupts and message passing
 
 // ipi types
-#define IPI_PANIC    0
-#define IPI_INVLPG   1
-#define IPI_SCHEDULE 2
-
-#define NUM_IPIS 2
+typedef enum ipi_type {
+  IPI_PANIC,
+  IPI_INVLPG,
+  IPI_SCHEDULE,
+  IPI_NOOP,
+  //
+  NUM_IPIS,
+} ipi_type_t;
 
 // ipi delivery modes
 typedef enum ipi_mode {
@@ -25,7 +28,7 @@ typedef enum ipi_mode {
 
 typedef void (*ipi_handler_t)(uint64_t data);
 
-int ipi_deliver_cpu_id(uint8_t type, uint8_t cpu_id, uint64_t data);
-int ipi_deliver_mode(uint8_t type, ipi_mode_t mode, uint64_t data);
+int ipi_deliver_cpu_id(ipi_type_t type, uint8_t cpu_id, uint64_t data);
+int ipi_deliver_mode(ipi_type_t type, ipi_mode_t mode, uint64_t data);
 
 #endif

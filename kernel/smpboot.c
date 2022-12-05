@@ -12,6 +12,18 @@
 #include <panic.h>
 #include <string.h>
 
+#include <cpu/io.h>
+
+#define QDEBUG_PRINT(str) \
+  ({                      \
+    const char *_ptr = str; \
+    while (*_ptr) {       \
+      outb(0x810 + PERCPU_ID, *_ptr); \
+      _ptr++; \
+    }                     \
+    outb(0x810 + PERCPU_ID, '\0'); \
+  })
+
 #define SMPBOOT_START 0x1000
 #define SMPDATA_START 0x2000
 
@@ -78,6 +90,7 @@ void smp_init() {
   smpdata->lock = 0;
   smpdata->gate = 1;
 
+  QDEBUG_PRINT("---- smp boot start ----");
   // issue INIT-SIPI-SIPI Sequence to start-up all APs
   // INIT
   apic_write_icr(APIC_DM_INIT | APIC_LVL_ASSERT | APIC_DS_ALLBUT, 0);
@@ -88,6 +101,7 @@ void smp_init() {
   // SIPI
   apic_write_icr(APIC_DM_STARTUP | APIC_LVL_ASSERT | APIC_DS_ALLBUT | (eip >> 12), 0);
   apic_udelay(200);
+  QDEBUG_PRINT("---- smp boot end ----");
 
   uint32_t timeout_us = 100;
   while (timeout_us > 0 && smpdata->count < total_apic_count - 1) {
@@ -104,5 +118,6 @@ void smp_init() {
 
   _free_pages(code_pages);
   _free_pages(data_pages);
+  kprintf("smp: total cpus = %d\n", system_num_cpus);
   kprintf("smp: done!\n");
 }

@@ -23,10 +23,12 @@ sched_policy_impl_t *policy_impl[NUM_POLICIES];
 sched_t *_schedulers[MAX_CPUS] = {};
 size_t _num_schedulers = 0;
 
-#define SCHED_UNIPROC
+// #define SCHED_UNIPROC
 
-#define QDEBUG_VALUE(v) \
-  ({ outdw(0x800, v); })
+#define DPRINTF(...)
+// #define DPRINTF(...) kprintf(__VA_ARGS__)
+
+#define QDEBUG_VALUE(v) ({ outdw(0x800, v); })
 
 #define QDEBUG_PRINT(str)
 // #define QDEBUG_PRINT(str) \
@@ -97,7 +99,16 @@ size_t _num_schedulers = 0;
 
 #define IS_BLOCKED(thread) ((thread)->status == THREAD_BLOCKED || (thread)->status == THREAD_SLEEPING)
 
-noreturn void thread_switch(thread_t *thread);
+void thread_switch(thread_t *thread);
+
+static const char *sched_reason_str[] = {
+  [SCHED_BLOCKED] = "SCHED_BLOCKED",
+  [SCHED_PREEMPTED] = "SCHED_PREEMPTED",
+  [SCHED_SLEEPING] = "SCHED_SLEEPING",
+  [SCHED_TERMINATED] = "SCHED_TERMINATED",
+  [SCHED_UPDATED] = "SCHED_UPDATED",
+  [SCHED_YIELDED] = "SCHED_YIELDED",
+};
 
 static inline thread_status_t get_thread_status(sched_cause_t reason) {
   switch (reason) {
@@ -118,17 +129,6 @@ static inline void register_policy(uint8_t policy, sched_policy_impl_t *impl) {
   sched_t *sched = PERCPU_SCHED;
   sched->policies[policy].data = impl->init(sched);
   spin_init(&sched->policies[policy].lock);
-}
-
-static inline void sched_increment_count(size_t *count) {
-  sched_assert(count != NULL);
-  atomic_fetch_add(count, 1);
-}
-
-static inline void sched_decrement_count(size_t *count) {
-  sched_assert(count != NULL);
-  sched_assert(*count > 0);
-  atomic_fetch_sub(count, 1);
 }
 
 // ----------------------------------------------------------
@@ -294,12 +294,13 @@ bool sched_should_preempt(sched_t *sched, thread_t *thread) {
 
 void sched_migrate_thread(sched_t *old_sched, sched_t *new_sched, thread_t *thread) {
   sched_assert(old_sched != new_sched);
-
   sched_assert(thread->cpu_id == old_sched->cpu_id);
   sched_assert(thread->status == THREAD_READY);
 
-  kprintf("sched: migrating thread %d.%d from CPU#%d to CPU#%d\n",
-          thread->process->pid, thread->tid, old_sched->cpu_id, new_sched->cpu_id);
+  DPRINTF("[CPU#%d] sched: migrating thread %d.%d [%s] from CPU#%d to CPU#%d\n",
+          PERCPU_ID, thread->process->pid, thread->tid, thread->name, old_sched->cpu_id, new_sched->cpu_id);
+  // DPRINTF("sched: migrating thread %d.%d from CPU#%d to CPU#%d\n",
+  //         thread->process->pid, thread->tid, old_sched->cpu_id, new_sched->cpu_id);
 
   LOCK_THREAD(thread);
   LOCK_SCHED(old_sched);
@@ -337,12 +338,20 @@ noreturn void *sched_idle_thread(void *arg) {
       retries++;
     }
 
+    LOCK_SCHED(sched);
     if (sched->ready_count > 0) {
       retries = 0;
-      kprintf("sched: exiting idle [CPU#%d]\n", PERCPU_ID);
+      DPRINTF("sched: exiting idle [CPU#%d]\n", PERCPU_ID);
+
+      UNLOCK_SCHED(sched);
       sched_yield();
       expire = now + MS_TO_NS(1000);
+    } else {
+      UNLOCK_SCHED(sched);
     }
+
+    cpu_pause();
+    cpu_pause();
     cpu_pause();
   }
   unreachable;
@@ -365,6 +374,7 @@ noreturn void sched_init(process_t *root) {
   idle->process = root;
   idle->priority = 255;
   idle->policy = 255;
+  idle->name = kasprintf("idle.%d", PERCPU_ID);
   LOCK(root);
   LIST_ADD(&root->threads, idle, group);
   UNLOCK(root);
@@ -407,6 +417,14 @@ noreturn void sched_init(process_t *root) {
   }
 
   kprintf("sched: CPU#%d initialized\n", PERCPU_ID);
+
+  if (PERCPU_IS_BSP) {
+    // wait until all schedulers are initialized
+    while (_num_schedulers != system_num_cpus) {
+      cpu_pause();
+    }
+  }
+
   sched_reschedule(SCHED_UPDATED);
   unreachable;
 }
@@ -416,9 +434,11 @@ int sched_add(thread_t *thread) {
   sched_assert(thread->policy < NUM_POLICIES);
   sched_t *sched = sched_find_cpu_for_thread(thread);
 
-  kprintf("sched: scheduling thread %d.%d onto CPU#%d [%s]\n",
-          thread->process->pid, thread->tid, sched->cpu_id, thread->name);
+  kprintf("[CPU#%d] sched: adding thread %d.%d [%s] to CPU#%d\n",
+          PERCPU_ID, thread->process->pid, thread->tid, thread->name, sched->cpu_id);
 
+  uint64_t flags;
+  temp_irq_save(flags);
   LOCK_SCHED(sched);
   LOCK_THREAD(thread);
   LOCK_POLICY(sched, thread);
@@ -432,12 +452,15 @@ int sched_add(thread_t *thread) {
   UNLOCK_POLICY(sched, thread);
   UNLOCK_THREAD(thread);
   UNLOCK_SCHED(sched);
+  temp_irq_restore(flags);
 
   if (sched_should_preempt(sched, thread)) {
     if (thread->cpu_id == PERCPU_ID) {
       // reschedule current cpu
       return sched_reschedule(SCHED_PREEMPTED);
     }
+
+    DPRINTF("[CPU#%d] sched: sending ipi to CPU#%d\n", PERCPU_ID, thread->cpu_id);
     return ipi_deliver_cpu_id(IPI_SCHEDULE, thread->cpu_id, SCHED_PREEMPTED);
   }
   return 0;
@@ -455,6 +478,8 @@ int sched_terminate(thread_t *thread) {
     return ipi_deliver_cpu_id(IPI_SCHEDULE, thread->cpu_id, SCHED_TERMINATED);
   }
 
+  uint64_t flags;
+  temp_irq_save(flags);
   LOCK_SCHED(sched);
   LOCK_THREAD(thread);
   LOCK_POLICY(sched, thread);
@@ -473,12 +498,13 @@ int sched_terminate(thread_t *thread) {
   }
 
   thread->status = THREAD_TERMINATED;
-  sched_decrement_count(&sched->total_count);
+  sched->total_count--;
   SCHED_DISPATCH(sched, thread->policy, policy_deinit_thread, thread);
 
   UNLOCK_POLICY(sched, thread);
   UNLOCK_THREAD(thread);
   UNLOCK_SCHED(sched);
+  temp_irq_restore(flags);
   return 0;
 }
 
@@ -486,14 +512,20 @@ int sched_block(thread_t *thread) {
   sched_t *sched = SCHEDULER(thread->cpu_id);
   sched_assert(!IS_BLOCKED(thread));
 
+  DPRINTF("[CPU#%d] sched: blocking thread %d.%d [%s] on CPU#%d\n",
+          PERCPU_ID, thread->process->pid, thread->tid, thread->name, sched->cpu_id);
   if (thread->status == THREAD_RUNNING) {
     if (thread->cpu_id == PERCPU_ID) {
       // reschedule current cpu
       return sched_reschedule(SCHED_BLOCKED);
     }
+
+    DPRINTF("[CPU#%d] sched: sending ipi to CPU#%d\n", PERCPU_ID, thread->cpu_id);
     return ipi_deliver_cpu_id(IPI_SCHEDULE, thread->cpu_id, SCHED_BLOCKED);
   }
 
+  uint64_t flags;
+  temp_irq_save(flags);
   LOCK_SCHED(sched);
   LOCK_THREAD(thread);
   LOCK_POLICY(sched, thread);
@@ -506,6 +538,7 @@ int sched_block(thread_t *thread) {
   UNLOCK_POLICY(sched, thread);
   UNLOCK_THREAD(thread);
   UNLOCK_SCHED(sched);
+  temp_irq_restore(flags);
   return 0;
 }
 
@@ -515,6 +548,11 @@ int sched_unblock(thread_t *thread) {
     panic("thread %d.%d not blocked [%s]", thread->tid, thread->process->pid, thread->name);
   }
 
+  DPRINTF("[CPU#%d] sched: unblocking thread %d.%d [%s] on CPU#%d\n",
+          PERCPU_ID, thread->process->pid, thread->tid, thread->name, sched->cpu_id);
+
+  uint64_t flags;
+  temp_irq_save(flags);
   LOCK_SCHED(sched);
   LOCK_THREAD(thread);
   LOCK_POLICY(sched, thread);
@@ -526,6 +564,7 @@ int sched_unblock(thread_t *thread) {
   UNLOCK_POLICY(sched, thread);
   UNLOCK_THREAD(thread);
   UNLOCK_SCHED(sched);
+  temp_irq_restore(flags);
 
   if (sched_should_preempt(sched, thread)) {
     if (thread->cpu_id == PERCPU_ID) {
@@ -533,6 +572,7 @@ int sched_unblock(thread_t *thread) {
       return sched_reschedule(SCHED_PREEMPTED);
     }
 
+    DPRINTF("[CPU#%d] sched: sending ipi to CPU#%d\n", PERCPU_ID, thread->cpu_id);
     return ipi_deliver_cpu_id(IPI_SCHEDULE, thread->cpu_id, SCHED_PREEMPTED);
   }
   return 0;
@@ -542,6 +582,11 @@ int sched_wakeup(thread_t *thread) {
   sched_t *sched = SCHEDULER(thread->cpu_id);
   sched_assert(thread->status == THREAD_SLEEPING);
 
+  DPRINTF("[CPU#%d] sched: waking up thread %d.%d [%s] on CPU#%d\n",
+          PERCPU_ID, thread->process->pid, thread->tid, thread->name, thread->cpu_id);
+
+  uint64_t flags;
+  temp_irq_save(flags);
   LOCK_SCHED(sched);
   LOCK_THREAD(thread);
   LOCK_POLICY(sched, thread);
@@ -553,6 +598,7 @@ int sched_wakeup(thread_t *thread) {
   UNLOCK_POLICY(sched, thread);
   UNLOCK_THREAD(thread);
   UNLOCK_SCHED(sched);
+  temp_irq_restore(flags);
 
   if (sched_should_preempt(sched, thread)) {
     if (thread->cpu_id == PERCPU_ID) {
@@ -560,6 +606,8 @@ int sched_wakeup(thread_t *thread) {
       return sched_reschedule(SCHED_PREEMPTED);
     }
     // rescheduler another cpu
+
+    DPRINTF("[CPU#%d] sched: sending ipi to CPU#%d\n", PERCPU_ID, thread->cpu_id);
     return ipi_deliver_cpu_id(IPI_SCHEDULE, thread->cpu_id, SCHED_PREEMPTED);
   }
   return 0;
@@ -569,6 +617,8 @@ int sched_setsched(sched_opts_t opts) {
   thread_t *thread = PERCPU_THREAD;
   sched_t *sched = SCHEDULER(thread->cpu_id);
 
+  uint64_t flags;
+  temp_irq_save(flags);
   LOCK_SCHED(sched);
   LOCK_THREAD(thread);
   LOCK_POLICY(sched, thread);
@@ -582,13 +632,15 @@ int sched_setsched(sched_opts_t opts) {
     thread->priority = opts.priority;
   }
   if (opts.affinity != thread->affinity) {
+    DPRINTF("[CPU#%d] sched: changing affinity of thread %d.%d [%s] to %d\n",
+            PERCPU_ID, thread->process->pid, thread->tid, thread->name, opts.affinity);
     kassert(opts.affinity < system_num_cpus);
-    kprintf("sched: changing affinity of thread %d.%d to %d\n", thread->process->pid, thread->tid, opts.affinity);
     thread->affinity = opts.affinity;
     if (opts.affinity >= 0 && opts.affinity != PERCPU_ID) {
       UNLOCK_POLICY(sched, thread);
       UNLOCK_THREAD(thread);
       UNLOCK_SCHED(sched);
+      temp_irq_restore(flags);
       return sched_reschedule(SCHED_UPDATED);
     }
   }
@@ -596,12 +648,17 @@ int sched_setsched(sched_opts_t opts) {
   UNLOCK_POLICY(sched, thread);
   UNLOCK_THREAD(thread);
   UNLOCK_SCHED(sched);
+  temp_irq_restore(flags);
   return 0;
 }
 
 int sched_sleep(uint64_t ns) {
   thread_t *thread = PERCPU_THREAD;
   sched_assert(thread->status == THREAD_RUNNING);
+
+  DPRINTF("[CPU#%d] sched: sleeping thread %d.%d [%s]\n",
+          PERCPU_ID, getpid(), gettid(), thread->name, thread->cpu_id);
+
   clock_t now = clock_now();
   thread->alarm_id = timer_create_alarm(now + ns, (void *) sched_wakeup, thread);
   if (thread->alarm_id < 0) {
@@ -613,12 +670,21 @@ int sched_sleep(uint64_t ns) {
 int sched_yield() {
   thread_t *thread = PERCPU_THREAD;
   sched_assert(thread->status == THREAD_RUNNING);
+
+  DPRINTF("[CPU#%d] sched: yielding thread %d.%d [%s]\n",
+          PERCPU_ID, getpid(), gettid(), thread->name, thread->cpu_id);
+
   return sched_reschedule(SCHED_YIELDED);
 }
 
 //
 
 int sched_reschedule(sched_cause_t reason) {
+  DPRINTF("[CPU#%d] sched: rescheduling [%s]\n", PERCPU_ID, sched_reason_str[reason]);
+
+  uint64_t flags;
+  temp_irq_save(flags);
+
   sched_assert(reason <= SCHED_YIELDED);
   sched_t *sched = PERCPU_SCHED;
   thread_t *curr = PERCPU_THREAD;
@@ -694,9 +760,23 @@ LABEL(next_thread_first);
   UNLOCK_SCHED(sched);
 
   if (next != curr) {
+    if (curr != NULL) {
+      DPRINTF("[CPU#%d] sched: switching from thread %d.%d [%s] to %d.%d [%s]\n",
+              PERCPU_ID,
+              curr->process->pid, curr->tid, curr->name,
+              next->process->pid, next->tid, next->name);
+    }
+
+    temp_irq_restore(flags);
     thread_switch(next);
+    DPRINTF("[CPU#%d] sched: now in thread %d.%d [%s]\n",
+            PERCPU_ID, PERCPU_THREAD->process->pid, PERCPU_THREAD->tid, PERCPU_THREAD->name);
+    return 0;
   }
 
 LABEL(end);
+  temp_irq_restore(flags);
+  DPRINTF("[CPU#%d] sched: continuing in thread %d.%d [%s]\n",
+          PERCPU_ID, PERCPU_THREAD->process->pid, PERCPU_THREAD->tid, PERCPU_THREAD->name);
   return 0;
 }
