@@ -194,7 +194,7 @@ static inline bool device_is_usb3(_xhci_device_t *device) {
 
 void xhci_host_irq_handler(uint8_t vector, void *data) {
   xhci_controller_t *hc = data;
-  kprintf("[CPU#%d] xhci: >>> controller interrupt <<<\n", PERCPU_ID);
+  // kprintf("[CPU#%d] xhci: >>> controller interrupt <<<\n", PERCPU_ID);
   uint32_t usbsts = read32(hc->op_base, XHCI_OP_USBSTS);
 
   // clear interrupt flag
@@ -221,7 +221,7 @@ void xhci_device_irq_handler(uint8_t vector, void *data) {
   _xhci_device_t *device = data;
   xhci_controller_t *hc = device->host;
   uint8_t n = device->interrupter->index;
-  kprintf("[CPU#%d] xhci: >>> device interrupt <<<\n", PERCPU_ID);
+  // kprintf("[CPU#%d] xhci: >>> device interrupt <<<\n", PERCPU_ID);
 
   // clear interrupt flag
   uint32_t usbsts = read32(hc->op_base, XHCI_OP_USBSTS);
@@ -276,7 +276,7 @@ noreturn void *_xhci_controller_event_loop(void *arg) {
 
   while (true) {
     cond_wait(&hc->evt_ring->cond);
-    kprintf("[CPU#%d] xhci: controller event\n", PERCPU_ID);
+    // kprintf("[CPU#%d] xhci: controller event\n", PERCPU_ID);
 
     uint64_t old_erdp = _xhci_ring_device_ptr(hc->evt_ring);
     xhci_trb_t trb;
@@ -324,7 +324,7 @@ noreturn void *_xhci_device_event_loop(void *arg) {
 
   while (true) {
     cond_wait(&device->evt_ring->cond);
-    kprintf("[CPU#%d] xhci: device event\n", PERCPU_ID);
+    // kprintf("[CPU#%d] xhci: device event\n", PERCPU_ID);
 
     // handler transfer event
     uint64_t old_erdp = _xhci_ring_device_ptr(device->evt_ring);
@@ -357,10 +357,10 @@ noreturn void *_xhci_device_event_loop(void *arg) {
         }
 
         uint64_t event_raw = *((uint64_t *) &usb_event);
-        kprintf("xhci event: %s | %s [CPU#%d]\n",
-                usb_get_event_type_string(usb_event.type),
-                usb_get_status_string(usb_event.status),
-                PERCPU_ID);
+        // kprintf("xhci event: %s | %s [CPU#%d]\n",
+        //         usb_get_event_type_string(usb_event.type),
+        //         usb_get_status_string(usb_event.status),
+        //         PERCPU_ID);
         chan_send(usb_ep->event_ch, event_raw);
       }
     }

@@ -11,22 +11,6 @@
 #include <panic.h>
 #include <atomic.h>
 
-#define QDEBUG_VALUE(v) ({ outdw(0x800, v); })
-
-#define QDEBUG_LOCK(d1, d2, c0, c1, c2, c3) \
-  ({                                      \
-    outdw(0x808, SIGNATURE_32(c0, c1, c2, c3)); \
-    outdw(0x804, SIGNATURE_32(PERCPU_ID, 1, ((d1) & 0xFF), ((d2) & 0xFF))); \
-  })
-#define QDEBUG_UNLOCK(d1, d2, c0, c1, c2, c3) \
-  ({                                        \
-    outdw(0x808, SIGNATURE_32(c0, c1, c2, c3)); \
-    outdw(0x804, SIGNATURE_32(PERCPU_ID, 0, ((d1) & 0xFF), ((d2) & 0xFF))); \
-  })
-
-#define DEBUG_LOCK() QDEBUG_LOCK(PERCPU_ID, 0, 'c', 'l', 'c', 'k')
-#define DEBUG_UNLOCK() QDEBUG_UNLOCK(PERCPU_ID, 0, 'c', 'l', 'c', 'k')
-
 
 LIST_HEAD(clock_source_t) clock_sources;
 clock_source_t *current_clock_source;

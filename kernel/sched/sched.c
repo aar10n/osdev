@@ -28,45 +28,15 @@ size_t _num_schedulers = 0;
 #define DPRINTF(...)
 // #define DPRINTF(...) kprintf(__VA_ARGS__)
 
-#define QDEBUG_VALUE(v) ({ outdw(0x800, v); })
-
-#define QDEBUG_PRINT(str)
-// #define QDEBUG_PRINT(str) \
-//   ({                      \
-//     const char *_ptr = str; \
-//     while (*_ptr) {       \
-//       outb(0x810 + PERCPU_ID, *_ptr); \
-//       _ptr++; \
-//     }                     \
-//     outb(0x810 + PERCPU_ID, '\0'); \
-//   })
-
-#define QDEBUG_LOCK(d1, d2, c0, c1, c2, c3) \
-  ({                                      \
-    outdw(0x808, SIGNATURE_32(c0, c1, c2, c3)); \
-    outdw(0x804, SIGNATURE_32(PERCPU_ID, 1, ((d1) & 0xFF), ((d2) & 0xFF))); \
-  })
-#define QDEBUG_UNLOCK(d1, d2, c0, c1, c2, c3) \
-  ({                                        \
-    outdw(0x808, SIGNATURE_32(c0, c1, c2, c3)); \
-    outdw(0x804, SIGNATURE_32(PERCPU_ID, 0, ((d1) & 0xFF), ((d2) & 0xFF))); \
-  })
-
 #define LOCK(obj) (spin_lock(&(obj)->lock))
 #define UNLOCK(obj) (spin_unlock(&(obj)->lock))
 
 #define LOCK_SCHED(sched) LOCK(sched)
-// #define LOCK_SCHED(sched) ({ QDEBUG_LOCK((sched)->cpu_id, (sched)->lock.lock_count, 's', 'c', 'e', 'd'); LOCK(sched); })
 #define UNLOCK_SCHED(sched) UNLOCK(sched)
-// #define UNLOCK_SCHED(sched) ({ QDEBUG_UNLOCK((sched)->cpu_id, (sched)->lock.lock_count, 's', 'c', 'e', 'd'); UNLOCK(sched); })
 #define LOCK_THREAD(thread) LOCK(thread)
-// #define LOCK_THREAD(thread) ({ QDEBUG_LOCK((thread)->tid, (thread)->lock.lock_count, 't', 'h', 'r', 'd'); LOCK(thread); })
 #define UNLOCK_THREAD(thread) UNLOCK(thread)
-// #define UNLOCK_THREAD(thread) ({ QDEBUG_UNLOCK((thread)->tid, (thread)->lock.lock_count, 't', 'h', 'r', 'd'); UNLOCK(thread); })
 #define LOCK_POLICY(sched, thread) LOCK(POLICY_T(sched, thread))
-// #define LOCK_POLICY(sched, thread) ({ QDEBUG_LOCK((sched)->cpu_id, 0, 'p', 'o', 'l', 'i'); LOCK(POLICY_T(sched, thread)); })
 #define UNLOCK_POLICY(sched, thread) UNLOCK(POLICY_T(sched, thread))
-// #define UNLOCK_POLICY(sched, thread) ({ QDEBUG_UNLOCK((sched)->cpu_id, 0, 'p', 'o', 'l', 'i'); UNLOCK(POLICY_T(sched, thread)); })
 
 #define sched_assert(expr) kassert(expr)
 // #define sched_assert(expr)

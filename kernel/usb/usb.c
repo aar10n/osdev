@@ -419,8 +419,6 @@ int usb_device_init(usb_device_t *device) {
     return -1;
   }
 
-  kprintf("usb: ------\n");
-
   // read device descriptor
   usb_device_descriptor_t *desc = NULL;
   if (host->device_impl->read_device_descriptor(device, &desc) < 0) {

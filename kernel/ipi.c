@@ -40,8 +40,8 @@ __used void ipi_handler(cpu_irq_stack_t *frame, cpu_registers_t *regs) {
   uint8_t type = ipi_type;
   uint64_t data = ipi_data;
   kassert(type < NUM_IPIS);
-  QDEBUG_PRINT("RECEIVED IPI");
   atomic_fetch_add(&ipi_ack, 1);
+  QDEBUG_PRINT("RECEIVED IPI");
 
   // kprintf("[CPU#%d] ipi %d\n", PERCPU_ID, type);
   switch (type) {
@@ -76,7 +76,7 @@ int ipi_deliver_cpu_id(ipi_type_t type, uint8_t cpu_id, uint64_t data) {
     return -1;
   }
 
-  kprintf("[CPU#%d] delivering ipi to CPU#%d\n", PERCPU_ID, cpu_id);
+  // kprintf("[CPU#%d] delivering ipi to CPU#%d\n", PERCPU_ID, cpu_id);
 
   // we cant use spin_lock here because it disables interrupts
   while (!spin_trylock(&ipi_lock)) {
