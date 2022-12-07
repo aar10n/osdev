@@ -1,8 +1,8 @@
 diff --git a/src/lib/libdwarf/dwarf_error.c b/src/lib/libdwarf/dwarf_error.c
-index 5be75070..c31df779 100644
+index c961de6e..aab14aea 100644
 --- a/src/lib/libdwarf/dwarf_error.c
 +++ b/src/lib/libdwarf/dwarf_error.c
-@@ -189,12 +189,12 @@ _dwarf_error_string(Dwarf_Debug dbg, Dwarf_Error * error,
+@@ -188,12 +188,12 @@ _dwarf_error_string(Dwarf_Debug dbg, Dwarf_Error * error,
          dbg->de_errhand(errptr, dbg->de_errarg);
          return;
      }
@@ -21,40 +21,16 @@ index 5be75070..c31df779 100644
      return;
  }
  
-diff --git a/src/lib/libdwarf/dwarf_tied.c b/src/lib/libdwarf/dwarf_tied.c
-index 909cf4a5..4027328f 100644
---- a/src/lib/libdwarf/dwarf_tied.c
-+++ b/src/lib/libdwarf/dwarf_tied.c
-@@ -49,19 +49,19 @@
- #include "dwarf_tsearch.h"
- #include "dwarf_tied_decls.h"
+diff --git a/src/lib/libdwarf/dwarf_fill_in_attr_form.c b/src/lib/libdwarf/dwarf_fill_in_attr_form.c
+index 98a16367..52b63516 100644
+--- a/src/lib/libdwarf/dwarf_fill_in_attr_form.c
++++ b/src/lib/libdwarf/dwarf_fill_in_attr_form.c
+@@ -90,7 +90,7 @@ _dwarf_fill_in_attr_form_abtable(Dwarf_CU_Context context,
+             return DW_DLV_ERROR;
+         }
+     }
+-    if (!abbrev_list->abl_attr || !abbrev_list->abl_form ) {
++    if (abbrev_list->abl_abbrev_count > 0 && (!abbrev_list->abl_attr || !abbrev_list->abl_form)) {
+         dwarfstring m;
  
--void
--_dwarf_dumpsig(const char *msg, Dwarf_Sig8 *sig,int lineno)
--{
--    const char *sigv = 0;
--    unsigned u = 0;
--
--    printf("%s 0x",msg);
--    sigv = &sig->signature[0];
--    for (u = 0; u < 8; u++) {
--        printf("%02x",0xff&sigv[u]);
--    }
--    printf(" line %d\n",lineno);
--}
-+// void
-+// _dwarf_dumpsig(const char *msg, Dwarf_Sig8 *sig,int lineno)
-+// {
-+//     const char *sigv = 0;
-+//     unsigned u = 0;
-+//
-+//     printf("%s 0x",msg);
-+//     sigv = &sig->signature[0];
-+//     for (u = 0; u < 8; u++) {
-+//         printf("%02x",0xff&sigv[u]);
-+//     }
-+//     printf(" line %d\n",lineno);
-+// }
- 
- void *
- _dwarf_tied_make_entry(Dwarf_Sig8 *key, Dwarf_CU_Context val)
+         dwarfstring_constructor(&m);

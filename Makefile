@@ -39,7 +39,7 @@ $(call init-modules,$(modules))
 
 # build targets
 
-all: $(BUILD_DIR)/osdev.img
+all: $(BUILD_DIR)/osdev.img $(BUILD_DIR)/ext2.img
 
 bootloader: $(BUILD_DIR)/boot$(WINARCH).efi
 kernel: $(BUILD_DIR)/kernel.elf
@@ -156,15 +156,19 @@ $(BUILD_DIR)/boot$(WINARCH).efi: $(BUILD_DIR)/loader.dll
 KERNEL_CFLAGS = $(CFLAGS) -mcmodel=large -mno-red-zone -fno-stack-protector \
 				-fno-omit-frame-pointer -fstrict-volatile-bitfields -fno-builtin-memset \
 				$(KERNEL_DEFINES)
-KERNEL_LDFLAGS = $(LDFLAGS) -Tlinker.ld -nostdlib -z max-page-size=0x1000 -L$(BUILD_DIR) -L$(SYS_ROOT)/usr/lib
+KERNEL_LDFLAGS = $(LDFLAGS) -Tlinker.ld -nostdlib -z max-page-size=0x1000 -L$(SYS_ROOT)/usr/lib -L$(BUILD_DIR)
 
 KERNEL_INCLUDE = $(INCLUDE) -Iinclude/kernel -Iinclude/fs -Ilib
 
 KERNEL_DEFINES = $(DEFINES) -D__KERNEL__
 
 
-$(BUILD_DIR)/kernel.elf: $(KERNEL_OBJECTS)
-	$(LD) $(KERNEL_LDFLAGS) $^ -l:libdwarf_kernel.a --no-relax -o $@
+$(BUILD_DIR)/kernel.elf: $(KERNEL_OBJECTS) $(BUILD_DIR)/libdwarf.a
+	$(LD) $(KERNEL_LDFLAGS) $^ -l:libdwarf.a --no-relax -o $@
+
+# libdwarf
+$(BUILD_DIR)/libdwarf.a:
+	bash toolchain/libdwarf.sh build $(WINARCH)
 
 # bootable USB image
 $(BUILD_DIR)/osdev.img: $(BUILD_DIR)/boot$(WINARCH).efi $(BUILD_DIR)/kernel.elf config.ini
