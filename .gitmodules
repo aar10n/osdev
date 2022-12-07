@@ -1,6 +1,3 @@
 [submodule "third-party/mlibc"]
 	path = third-party/mlibc
 	url = https://github.com/aar10n/mlibc.git
-[submodule "third-party/libdwarf"]
-	path = third-party/libdwarf
-	url = https://github.com/aar10n/libdwarf-slim.git
