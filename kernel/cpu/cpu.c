@@ -10,7 +10,7 @@
 #include <device/pit.h>
 
 #include <mm.h>
-#include <cpuid.h>
+// #include <cpuid.h>
 #include <string.h>
 #include <panic.h>
 #include <printf.h>
@@ -43,6 +43,27 @@ per_cpu_t *percpu_structs[MAX_CPUS] = {};
 uint8_t cpu_id_to_apic_id_table[MAX_CPUS] = {};
 
 
+#define __cpuid(level, a, b, c, d) \
+  __asm("cpuid\n\t" : "=a" (a), "=b" (b), "=c" (c), "=d" (d) : "0" (level))
+
+static inline uint32_t __get_cpuid_max(uint32_t ext) {
+  uint32_t eax, ebx, ecx, edx;
+  __cpuid(ext, eax, ebx, ecx, edx);
+  return eax;
+}
+
+static inline int __get_cpuid(uint32_t leaf,
+                              uint32_t *eax, uint32_t *ebx, // NOLINT(readability-non-const-parameter)
+                              uint32_t *ecx, uint32_t *edx) // NOLINT(readability-non-const-parameter)
+{
+  unsigned int ext = leaf & 0x80000000;
+  unsigned int maxlevel = __get_cpuid_max(ext);
+  if (maxlevel == 0 || maxlevel < leaf)
+    return 0;
+
+  __cpuid(leaf, *eax, *ebx, *ecx, *edx);
+  return 1;
+}
 
 static inline int do_cpuid(int leaf, uint32_t *a, uint32_t *b, uint32_t *c, uint32_t *d) {
   *a = 0;

@@ -18,6 +18,7 @@ readonly LIBDWARF_VERSION=0.5.0
 # env:
 #   LIBDWARF_BUILD_DIR   - build directory (default = <BUILD_DIR>/libdwarf)
 #   LIBDWARF_SYSROOT     - sysroot override (default = <SYS_ROOT>)
+#   LIBDWARF_INSTALL_DIR - install override (default = <SYS_ROOT>)
 #
 # example:
 #   toolchain::libdwarf::build
@@ -37,8 +38,8 @@ toolchain::libdwarf::build() {
   esac
 
   local version="${LIBDWARF_VERSION}"
-  local src_dir=${PROJECT_DIR}/third-party/libdwarf
   local build_dir=${LIBDWARF_BUILD_DIR:-${BUILD_DIR}/libdwarf}
+  local install_dir=${LIBDWARF_INSTALL_DIR:-${SYS_ROOT}}
   local sysroot="${LIBDWARF_SYSROOT:-${SYS_ROOT}}"
   local tool_prefix="${sysroot}/usr/bin/${arch}-osdev-"
 
@@ -59,13 +60,16 @@ toolchain::libdwarf::build() {
       export AR="${tool_prefix}gcc-ar"
       export RANLIB="${tool_prefix}gcc-ranlib"
 
-      ${src_dir}/configure \
+      ../src/configure \
         --host=${arch}-elf \
+        --prefix=${install_dir} \
         --with-sysroot=${sysroot} \
         --with-pic \
         --disable-libelf
 
       ${MAKE_j}
+      ${MAKE} install
+
       ${tool_prefix}objcopy \
           --redefine-sym malloc=kmalloc \
           --redefine-sym calloc=kcalloc \

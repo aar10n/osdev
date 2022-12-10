@@ -20,8 +20,8 @@ NASMFLAGS +=
 INCLUDE += -Iinclude/
 
 ifeq ($(DEBUG),1)
-CFLAGS += -gdwarf
-CXXFLAGS += -gdwarf
+CFLAGS += -gdwarf-5
+CXXFLAGS += -gdwarf-5
 LDFLAGS += -g
 ASFLAGS += -gdwarf-5
 NASMFLAGS += -g -F dwarf -O0
@@ -153,12 +153,19 @@ $(BUILD_DIR)/boot$(WINARCH).efi: $(BUILD_DIR)/loader.dll
 #       Kernel        #
 # ------------------- #
 
-KERNEL_CFLAGS = $(CFLAGS) -mcmodel=large -mno-red-zone -fno-stack-protector \
-				-fno-omit-frame-pointer -fstrict-volatile-bitfields -fno-builtin-memset \
+#KERNEL_CFLAGS = $(CFLAGS) -mcmodel=large -mno-red-zone -fno-stack-protector \
+#				-fno-omit-frame-pointer -fstrict-volatile-bitfields -fno-builtin-memset \
+#				$(KERNEL_DEFINES)
+
+KERNEL_CC = $(CLANG)
+
+KERNEL_CFLAGS = $(CFLAGS) -target $(ARCH) -mcmodel=large -mno-red-zone \
+				-fno-stack-protector -fno-omit-frame-pointer -fno-builtin-memset \
 				$(KERNEL_DEFINES)
+
 KERNEL_LDFLAGS = $(LDFLAGS) -Tlinker.ld -nostdlib -z max-page-size=0x1000 -L$(SYS_ROOT)/usr/lib -L$(BUILD_DIR)
 
-KERNEL_INCLUDE = $(INCLUDE) -Iinclude/kernel -Iinclude/fs -Ilib
+KERNEL_INCLUDE = $(INCLUDE) -Iinclude/kernel -Iinclude/fs -Ilib -I$(SYS_ROOT)/include
 
 KERNEL_DEFINES = $(DEFINES) -D__KERNEL__
 

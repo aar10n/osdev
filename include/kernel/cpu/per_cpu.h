@@ -40,11 +40,11 @@ _Static_assert(sizeof(per_cpu_t) <= PER_CPU_SIZE, "");
 _Static_assert(offsetof(per_cpu_t, thread) == 0x10, "");
 _Static_assert(offsetof(per_cpu_t, process) == 0x18, "");
 
-#define __percpu_get_u16(offset) ({ register uint16_t v; asm("mov %0, gs:%1" : "=r" (v) : "i" (offset)); v; })
-#define __percpu_get_u32(offset) ({ register uint32_t v; asm("mov %0, gs:%1" : "=r" (v) : "i" (offset)); v; })
-#define __percpu_get_u64(offset) ({ register uint64_t v; asm("mov %0, gs:%1" : "=r" (v) : "i" (offset)); v; })
-#define __percpu_set_u32(offset, val) ({ register uint32_t v = (uint32_t)(val); asm("mov gs:%0, %1" : : "i" (offset), "r" (v)); })
-#define __percpu_set_u64(offset, val) ({ register uint64_t v = (uint64_t)(val); asm("mov gs:%0, %1" : : "i" (offset), "r" (v)); })
+#define __percpu_get_u16(offset) ({ register uint16_t v; __asm("mov %0, gs:%1" : "=r" (v) : "i" (offset)); v; })
+#define __percpu_get_u32(offset) ({ register uint32_t v; __asm("mov %0, gs:%1" : "=r" (v) : "i" (offset)); v; })
+#define __percpu_get_u64(offset) ({ register uint64_t v; __asm("mov %0, gs:%1" : "=r" (v) : "i" (offset)); v; })
+#define __percpu_set_u32(offset, val) ({ register uint32_t v = (uint32_t)(val); __asm("mov gs:%0, %1" : : "i" (offset), "r" (v)); })
+#define __percpu_set_u64(offset, val) ({ register uint64_t v = (uint64_t)(val); __asm("mov gs:%0, %1" : : "i" (offset), "r" (v)); })
 
 #define __percpu_get_self() ((uintptr_t) __percpu_get_u64(offsetof(per_cpu_t, self)))
 #define __percpu_get_id() ((uint8_t) __percpu_get_u16(offsetof(per_cpu_t, id)))
