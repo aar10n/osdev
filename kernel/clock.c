@@ -105,3 +105,5 @@ void clock_update_ticks() {
 
   spin_unlock(&source->lock);
 }
+
+MODULE_INIT(clock_init);

@@ -86,7 +86,7 @@ typedef struct sched {
   } policies[NUM_POLICIES];
 } sched_t;
 
-noreturn void sched_init(process_t *root);
+noreturn void sched_init();
 int sched_add(thread_t *thread);
 int sched_terminate(thread_t *thread);
 int sched_block(thread_t *thread);

@@ -7,6 +7,7 @@
 #include <panic.h>
 #include <murmur3.h>
 #include <thread.h>
+#include <memory.h>
 
 // allocates a new dentry struct
 dentry_t *d_alloc(dentry_t *parent, const char *name) {

@@ -195,7 +195,7 @@ ssize_t scsi_write_internal(usb_device_t *device, uint64_t lba, uint32_t count, 
   // kprintf("[scsi] write successful\n");
   return size;
 
-  label(FAIL);
+LABEL(FAIL);
   kfree(cbw);
   kfree(csw);
   // kprintf("[scsi] write failed\n");

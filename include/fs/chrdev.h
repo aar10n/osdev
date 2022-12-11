@@ -10,7 +10,6 @@
 
 typedef struct file_ops file_ops_t;
 
-
 typedef struct chrdev {
   file_ops_t *ops;
 } chrdev_t;

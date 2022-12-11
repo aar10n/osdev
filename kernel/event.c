@@ -191,3 +191,5 @@ char key_event_to_character(key_event_t *event) {
   // kprintf("> %c\n", key_to_character_lower[event->key_code]);
   return key_to_character_lower[event->key_code];
 }
+
+MODULE_INIT(events_init);

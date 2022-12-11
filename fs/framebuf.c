@@ -67,6 +67,8 @@ void framebuf_init() {
   dev_t fb_dev = fs_register_framebuf(0, fb, &framebuf_device_ops);
   kassert(fb_dev != 0);
   if (fs_mknod("/dev/fb0", S_IFFBF, fb_dev) < 0) {
-    panic("failed to create /dev/fb0");
+    panic("failed to create /dev/fb0: %s", strerror(ERRNO));
   }
 }
+
+MODULE_INIT(framebuf_init);

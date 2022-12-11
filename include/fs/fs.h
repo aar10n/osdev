@@ -63,25 +63,14 @@ typedef struct file_system {
 
 #define MAX_DEVICES 64
 
+// major types
 #define DEVICE_BLKDEV  1  // block device
 #define DEVICE_CHRDEV  2  // character device
-#define DEVICE_FB      3  // framebuffer
+#define DEVICE_FRAMBF  3  // framebuffer
 
-static inline dev_t makedev(uint8_t maj, uint8_t min, uint8_t unit) {
-  return maj | (min << 8) | (unit << 16);
-}
-static inline uint8_t major(dev_t dev) {
-  return dev & 0xFF;
-}
-static inline uint16_t minor(dev_t dev) {
-  return (dev >> 8) & 0xFF;
-}
-static inline uint16_t unit(dev_t dev) {
-  return (dev >> 16) & 0xFF;
-}
 
 typedef struct device {
-  dev_t dev;                    // device id (major + minor)
+  dev_t dev;                    // device id (major + minor + unit)
   void *device;                 // device driver (blkdev, chrdev)
   device_ops_t *ops;            // common device operations
   LIST_ENTRY(device_t) devices; // devices list
@@ -115,10 +104,6 @@ typedef struct super_block_ops {
 } super_block_ops_t;
 
 /* ----- Inode ----- */
-
-// fcntl flags
-#define AT_SYMLINK_FOLLOW   0x00000
-#define AT_SYMLINK_NOFOLLOW 0x00001
 
 // inode mode flags
 #define I_TYPE_MASK 0x1FFF0000
@@ -242,9 +227,9 @@ typedef struct file_ops {
   // unsigned int (*poll)(file_t *file, poll_table_struct_t *poll_table);
   // int (*ioctl)(inode_t *inode, file_t *file, unsigned int cmd, unsigned long arg);
   int (*mmap)(file_t *file, uintptr_t vaddr, size_t len, uint16_t flags);
+  // int (*lock)(file_t *file, int cmd, file_lock_t *lock);
   // int (*release)(inode_t *inode, file_t *file);
   // int (*fsync)(file_t *file, dentry_t *dentry, int datasync);
-  // int (*lock)(file_t *file, int cmd, file_lock_t *lock);
   // ssize_t (*readv)(file_t *file, const iovec_t *vector, unsigned long count, off_t *offset);
   // ssize_t (*writev)(file_t *file, const iovec_t *vector, unsigned long count, off_t *offset);
 } file_ops_t;

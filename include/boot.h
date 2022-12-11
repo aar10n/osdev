@@ -12,15 +12,7 @@
 // to the kernel by the bootloader. The data structures
 // include information about system memory, devices
 
-
-// The bootloader will dynamically link the boot_info pointer
-// to variables annotated with the __boot_info attribute.
 #define __boot_data __attribute__((section(".boot_data")))
-#define __load_sections __attribute__((section(".load_sections")))
-
-
-#define LOAD_SECTION(varname, secname) loaded_section_t __load_sections varname = { .name = secname }
-
 
 #define KERNEL_MAX_SIZE  SIZE_2MB
 

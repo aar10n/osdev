@@ -71,7 +71,6 @@
 #define diff(a, b) abs((a) - (b))
 #define udiff(a, b) (max(a, b) - min(a, b))
 
-#define label(lbl) lbl: NULL
 #define LABEL(l) l: NULL
 
 #define barrier() __asm volatile("":::"memory");
@@ -127,9 +126,40 @@
 #define __printf_like(i, j) __attribute((format(printf, i, j)))
 #define __section(name) __attribute((section(name)))
 
+//
+// Special Macros
+//
+
+/**
+ * The LOAD_SECTION macro provides a mechanism to load arbitrary sections of the
+ * kernel image at boot time. The bootloader will go through all symbols declared
+ * with this macro, attempt to load each section and then update the corresponding
+ * struct to hold the physical/virtual address of the section and its length.
+ *
+ * If a section is requested but it has already been loaded in during the normal
+ * elf loading procedure, the struct will point to the virtual address of where it
+ * was mapped to. Otherwise, it will be place in an unoccupied section of memory
+ * and the struct will contain the physical address of where it was placed. It is
+ * up to the kernel to later map these sections into virtual memory.
+ */
+#define LOAD_SECTION(varname, secname) loaded_section_t __attribute__((section(".load_sections"))) varname = { .name = secname }
+
+/**
+ * The MODULE_INIT macro provides a way for kernel components to register initializer
+ * functions without changing any external code. The given function is called after
+ * the core kernel initialization. This means that initializers are free to call most
+ * standard APIs provided by the kernel but this does not include the scheduler or any
+ * process/thread related functions.
+ */
+#define MODULE_INIT(fn) static void __attribute__((constructor)) __do_module_init_ ## fn () { fn(); }
+
+//
+// Global Symbols
+//
 
 extern boot_info_v2_t *boot_info_v2;
 extern uint32_t system_num_cpus;
+extern bool is_smp_enabled;
 
 // linker provided symbols
 extern uintptr_t __kernel_address;
@@ -137,6 +167,5 @@ extern uintptr_t __kernel_virtual_offset;
 extern uintptr_t __kernel_code_start;
 extern uintptr_t __kernel_code_end;
 extern uintptr_t __kernel_data_end;
-
 
 #endif

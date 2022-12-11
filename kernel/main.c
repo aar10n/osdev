@@ -21,6 +21,7 @@
 #include <bus/pcie.h>
 #include <usb/usb.h>
 #include <irq.h>
+#include <init.h>
 #include <ipi.h>
 #include <event.h>
 #include <signal.h>
@@ -40,47 +41,10 @@
 
 // This relates to custom qemu patch that ive written to make debugging easier.
 #define QEMU_DEBUG_INIT() ({ outb(0x801, 1); })
-#define QDEBUG_VALUE(v) ({ outdw(0x800, v); })
 
+bool is_smp_enabled = false;
 boot_info_v2_t __boot_data *boot_info_v2;
-
-const char *argv[] = {
-  "/usr/bin/hello",
-  NULL
-};
-
 _Noreturn void launch();
-
-static void dump_bytes(uint8_t *buffer, size_t length) {
-  kprintf("DUMPING BYTES [buffer = %018p, length = %zu]\n", buffer, length);
-  size_t index = 0;
-  while (length > 0) {
-    kprintf("      ");
-    for (size_t i = 0; i < 32; i++) {
-      kprintf("%02x ", buffer[index]);
-      index++;
-      length--;
-    }
-    kprintf("\n");
-  }
-}
-
-static noreturn void *cpu_test_thread(void *arg) {
-  thread_setaffinity(1);
-  thread_yield();
-
-  uint32_t timeout = 100000;
-  while (timeout > 0) {
-    cpu_pause();
-    timeout--;
-  }
-
-  kprintf("[CPU#%d] knock knock\n", PERCPU_ID);
-  ipi_deliver_cpu_id(IPI_NOOP, 0, 0);
-
-  thread_block();
-  unreachable;
-}
 
 //
 // Kernel entry
@@ -91,27 +55,56 @@ __used void kmain() {
   console_early_init();
   cpu_init();
 
+  // We now have very primitive debugging via the serial port.
+  // In order to initialize the real kernel memory allocators
+  // we need basic physical mem allocation and a kernel heap.
+  // This is also the point where we switch from the virtual
+  // mappings provided by the bootloader.
   mm_early_init();
   irq_early_init();
   acpi_early_init();
   screen_early_init();
   debug_early_init();
 
+  // The next step is to set up our physical and virtual memory
+  // managers and then switch to a new managed kernel address
+  // space. We also initialize a few other misc bits.
   irq_init();
   init_mem_zones();
   init_address_space();
+  syscalls_init();
   screen_init();
+
+  // Initialize debugging info sooner than later so that we
+  // get helpful stacktraces in the event of a panic or fault.
   debug_init();
 
-  clock_init();
-  events_init();
+  // Next we want to initialize the filesystem so that drivers
+  // and other subsystems can register devices, create special
+  // files and expose APIs through the filesystem.
+  //
+  // But before we can call `fs_init` we will allocate the root
+  // process and set it as the "current" process. This is done
+  // so that our fs code can safely access `PERCPU_PROCESS->pwd`
+  // even though were not yet running the root process.
+  process_t *root = process_create_root(launch);
+  PERCPU_SET_PROCESS(root);
+  PERCPU_SET_THREAD(root->main);
+  fs_init();
 
-  syscalls_init();
+  // The kernel has now initialized the foundational set of APIs
+  // needed for most normal function. At this point we can call
+  // the initializer functions registered with the `MODULE_INIT`
+  // macro.
+  do_module_initializers();
+
+  // All of the 'one-time' initialization is now complete. We will
+  // now boot up the other CPUs (if enabled) and then finish kernel
+  // initialization by switching to the root (launch) process.
   smp_init();
 
   cpu_enable_interrupts();
-  process_t *root = process_create_root(launch);
-  sched_init(root);
+  sched_init();
   unreachable;
 }
 
@@ -125,7 +118,7 @@ __used void ap_main() {
   kprintf("[CPU#%d] done!\n", PERCPU_ID);
 
   cpu_enable_interrupts();
-  sched_init(NULL);
+  sched_init();
   unreachable;
 }
 
@@ -133,13 +126,10 @@ __used void ap_main() {
 // Launch process
 //
 
-extern size_t _num_schedulers;
-
 _Noreturn void launch() {
   kprintf("==> launch\n");
   alarms_init();
 
-  fs_init();
   usb_init();
   pcie_discover();
 

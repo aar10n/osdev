@@ -11,7 +11,6 @@
 
 static uint8_t __minor_ids[3] = { 1, 1, 1 };
 LIST_HEAD(device_t) devices[3][32] = {};
-spinlock_t lock = {};
 
 
 dev_t register_device(uint8_t major, uint8_t minor, void *data, device_ops_t *ops) {
@@ -21,7 +20,7 @@ dev_t register_device(uint8_t major, uint8_t minor, void *data, device_ops_t *op
 
   uint8_t u = 0;
   device_t *d;
-  LIST_FOREACH(d, &devices[major][minor], devices) {
+  LIST_FOREACH(d, &devices[major - 1][minor], devices) {
     u = unit(d->dev);
   }
 
@@ -33,7 +32,7 @@ dev_t register_device(uint8_t major, uint8_t minor, void *data, device_ops_t *op
   device->device = data;
   device->ops = ops;
 
-  LIST_ADD(&devices[major][minor], device, devices);
+  LIST_ADD(&devices[major - 1][minor], device, devices);
   return makedev(major, minor, u);
 }
 
@@ -48,7 +47,7 @@ dev_t register_chrdev(uint8_t minor, chrdev_t *chrdev, device_ops_t *ops) {
 }
 
 dev_t register_framebuf(uint8_t minor, framebuf_t *frambuf, device_ops_t *ops) {
-  return register_device(DEVICE_FB, minor, frambuf, ops);
+  return register_device(DEVICE_FRAMBF, minor, frambuf, ops);
 }
 
 device_t *locate_device(dev_t dev) {
@@ -57,7 +56,7 @@ device_t *locate_device(dev_t dev) {
   uint8_t uni = unit(dev);
 
   device_t *d;
-  LIST_FOREACH(d, &devices[maj][min], devices) {
+  LIST_FOREACH(d, &devices[maj - 1][min], devices) {
     if (unit(d->dev) == uni) {
       return d;
     }

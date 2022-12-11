@@ -14,16 +14,6 @@
 
 #include <cpu/io.h>
 
-#define QDEBUG_PRINT(str) \
-  ({                      \
-    const char *_ptr = str; \
-    while (*_ptr) {       \
-      outb(0x810 + PERCPU_ID, *_ptr); \
-      _ptr++; \
-    }                     \
-    outb(0x810 + PERCPU_ID, '\0'); \
-  })
-
 #define SMPBOOT_START 0x1000
 #define SMPDATA_START 0x2000
 
@@ -72,6 +62,12 @@ int smp_boot_ap(uint16_t id, smp_data_t *smpdata) {
 }
 
 void smp_init() {
+  if (!is_smp_enabled) {
+    kprintf("smp: disabled\n");
+    system_num_cpus = 1;
+    return;
+  }
+
   page_t *code_pages = _alloc_pages_at(SMPBOOT_START, 1, PG_WRITE | PG_EXEC | PG_FORCE);
   page_t *data_pages = _alloc_pages_at(SMPDATA_START, 1, PG_NOCACHE | PG_WRITE | PG_FORCE);
   uintptr_t eip = PAGE_PHYS_ADDR(code_pages);
@@ -90,7 +86,6 @@ void smp_init() {
   smpdata->lock = 0;
   smpdata->gate = 1;
 
-  QDEBUG_PRINT("---- smp boot start ----");
   // issue INIT-SIPI-SIPI Sequence to start-up all APs
   // INIT
   apic_write_icr(APIC_DM_INIT | APIC_LVL_ASSERT | APIC_DS_ALLBUT, 0);
@@ -101,7 +96,6 @@ void smp_init() {
   // SIPI
   apic_write_icr(APIC_DM_STARTUP | APIC_LVL_ASSERT | APIC_DS_ALLBUT | (eip >> 12), 0);
   apic_udelay(200);
-  QDEBUG_PRINT("---- smp boot end ----");
 
   uint32_t timeout_us = 100;
   while (timeout_us > 0 && smpdata->count < total_apic_count - 1) {

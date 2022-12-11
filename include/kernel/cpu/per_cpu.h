@@ -61,6 +61,8 @@ _Static_assert(offsetof(per_cpu_t, process) == 0x18, "");
 #define __percpu_get_cpu_info() ((struct cpu_info *) __percpu_get_u64(offsetof(per_cpu_t, cpu_info)))
 
 #define __percpu_set_errno(value) __percpu_set_u32(offsetof(per_cpu_t, errno), value)
+#define __percpu_set_thread(value) __percpu_set_u64(offsetof(per_cpu_t, thread), (uintptr_t) value)
+#define __percpu_set_process(value) __percpu_set_u64(offsetof(per_cpu_t, process), (uintptr_t) value)
 #define __percpu_set_rflags(value) __percpu_set_u64(offsetof(per_cpu_t, rflags), value)
 #define __percpu_set_address_space(value) __percpu_set_u64(offsetof(per_cpu_t, address_space), (uintptr_t) value)
 #define __percpu_set_sched(value) __percpu_set_u64(offsetof(per_cpu_t, sched), (uintptr_t) value)
@@ -95,6 +97,8 @@ _Static_assert(offsetof(per_cpu_t, process) == 0x18, "");
 #define PERCPU_SCHED __percpu_get_sched()
 #define PERCPU_CPU_INFO __percpu_get_cpu_info()
 
+#define PERCPU_SET_THREAD(value) __percpu_set_thread(value)
+#define PERCPU_SET_PROCESS(value) __percpu_set_process(value)
 #define PERCPU_SET_RFLAGS(value) __percpu_set_rflags(value)
 #define PERCPU_SET_ADDRESS_SPACE(value) __percpu_set_address_space(value)
 #define PERCPU_SET_SCHED(value) __percpu_set_sched(value)

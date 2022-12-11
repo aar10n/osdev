@@ -135,3 +135,4 @@ void ext2_init() {
   }
 }
 
+MODULE_INIT(ext2_init);

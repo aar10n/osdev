@@ -126,7 +126,6 @@ typedef struct {
 
 
 #ifdef __KERNEL__
-void events_init();
 key_event_t *wait_for_key_event();
 void dispatch_key_event(key_event_t *event);
 char key_event_to_character(key_event_t *event);

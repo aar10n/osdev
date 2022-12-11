@@ -11,8 +11,4 @@
 #include <mm/pmalloc.h>
 #include <mm/vmalloc.h>
 
-// #include <mm/mm.h>
-// #include <mm/vm.h>
-// #include <cpu/cpu.h>
-
 #endif

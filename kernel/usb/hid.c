@@ -239,5 +239,6 @@ int hid_device_init(usb_device_t *device) {
 
 int hid_device_deinit(usb_device_t *device) {
   // TODO: this
+  panic("not implemented");
   return -1;
 }

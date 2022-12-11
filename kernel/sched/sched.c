@@ -23,7 +23,7 @@ sched_policy_impl_t *policy_impl[NUM_POLICIES];
 sched_t *_schedulers[MAX_CPUS] = {};
 size_t _num_schedulers = 0;
 
-// #define SCHED_UNIPROC
+#define SCHED_UNIPROC
 
 #define DPRINTF(...)
 // #define DPRINTF(...) kprintf(__VA_ARGS__)
@@ -329,8 +329,9 @@ noreturn void *sched_idle_thread(void *arg) {
 
 //
 
-noreturn void sched_init(process_t *root) {
+noreturn void sched_init() {
   static bool done = false;
+  process_t *root = PERCPU_PROCESS;
   if (!PERCPU_IS_BSP) {
     // AP processors need to wait for BSP to finish
     kprintf("sched: CPU#%d waiting\n", PERCPU_ID);
@@ -379,10 +380,10 @@ noreturn void sched_init(process_t *root) {
   init_oneshot_timer();
   timer_enable(TIMER_ONE_SHOT);
   if (PERCPU_IS_BSP) {
-    thread_t *thread = root->main;
-    SCHED_DISPATCH(sched, thread->policy, policy_init_thread, thread);
+    thread_t *root_main = root->main;
+    SCHED_DISPATCH(sched, root_main->policy, policy_init_thread, root_main);
     sched->total_count++;
-    sched_add_ready_thread(sched, thread);
+    sched_add_ready_thread(sched, root_main);
     done = true;
   }
 
@@ -395,6 +396,7 @@ noreturn void sched_init(process_t *root) {
     }
   }
 
+  PERCPU_SET_THREAD(NULL);
   sched_reschedule(SCHED_UPDATED);
   unreachable;
 }

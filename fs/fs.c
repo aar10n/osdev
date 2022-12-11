@@ -208,9 +208,6 @@ void fs_init() {
   map_init(&fs_types);
 
   ramfs_init();
-  devfs_init();
-  ext2_init();
-
   file_system_t *ramfs = map_get(&fs_types, "ramfs");
   kassert(ramfs != NULL);
 
@@ -221,17 +218,11 @@ void fs_init() {
   }
   d_populate_dir(dentry);
   fs_root = dentry;
+  PERCPU_PROCESS->pwd = &fs_root;
 
-  // mount device filesystem
-  file_system_t *devfs = map_get(&fs_types, "devfs");
-  kassert(devfs != NULL);
-
-  if (mount_internal("/dev", NULL, devfs) < 0) {
-    panic("failed to mount /dev");
+  if (fs_mkdir("/dev", S_IFDIR | S_IRUSR | S_IWUSR | S_IROTH) < 0) {
+    panic("failed to create /dev directory: %s", strerror(ERRNO));
   }
-
-  // initialize framebuf
-  framebuf_init();
 }
 
 int fs_register(file_system_t *fs) {

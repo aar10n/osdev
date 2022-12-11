@@ -27,7 +27,6 @@ typedef struct clock_source {
 
 void register_clock_source(clock_source_t *source);
 
-void clock_init();
 clock_t clock_now();
 clock_t clock_kernel_time_ns();
 uint64_t clock_current_ticks();
