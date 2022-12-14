@@ -3,10 +3,11 @@
 //
 
 #include "hash_table.h"
+
 #include <printf.h>
 
 #ifndef _malloc
-#include <mm/heap.h>
+#include <mm.h>
 #define _malloc(size) kmalloc(size)
 #define _free(ptr) kfree(ptr)
 #endif
