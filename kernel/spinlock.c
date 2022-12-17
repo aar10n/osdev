@@ -18,9 +18,9 @@ void spin_init(spinlock_t *lock) {
   lock->lock_count = 0;
 }
 
-void spin_lock(spinlock_t *lock) {
+int spin_lock(spinlock_t *lock) {
   if (lock == NULL) {
-    return;
+    return -1;
   }
 
   uint64_t id = PERCPU_ID;
@@ -30,7 +30,7 @@ void spin_lock(spinlock_t *lock) {
     if (lock->locked_by == id) {
       // held by us so it's re-entrant
       lock->lock_count++;
-      return;
+      return 0;
     }
 
     // wait for spinlock
@@ -52,6 +52,7 @@ void spin_lock(spinlock_t *lock) {
   lock->locked_by = id;
   lock->lock_count = 1;
   PERCPU_SET_RFLAGS(rflags);
+  return 0;
 }
 
 int spin_trylock(spinlock_t *lock) {
@@ -81,9 +82,9 @@ int spin_trylock(spinlock_t *lock) {
   return 1;
 }
 
-void spin_unlock(spinlock_t *lock) {
+int spin_unlock(spinlock_t *lock) {
   if (lock == NULL) {
-    return;
+    return -1;
   }
 
   uint64_t id = PERCPU_ID;
@@ -94,12 +95,12 @@ void spin_unlock(spinlock_t *lock) {
       atomic_lock_test_and_reset(&lock->locked);
       lock->lock_count = 0;
       cpu_restore_interrupts(PERCPU_RFLAGS); // restore interrupts
-      return;
+      return 0;
     }
 
     // re-entrant unlock
     lock->lock_count--;
-    return;
+    return 0;
   }
 
   // lock was not held by anyone

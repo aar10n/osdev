@@ -10,5 +10,6 @@
 #include <mm/heap.h>
 #include <mm/pmalloc.h>
 #include <mm/vmalloc.h>
+#include <mm/init.h>
 
 #endif
