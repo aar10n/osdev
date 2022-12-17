@@ -8,103 +8,108 @@
 #include <usb/hid-usage.h>
 
 #include <mm.h>
-#include <event.h>
+#include <input.h>
 #include <string.h>
-#include <printf.h>
+#include <asm/bits.h>
 
-key_code_t hid_keyboard_layout[] = {
-  [HID_KEYBOARD_A] = VK_KEYCODE_A,
-  [HID_KEYBOARD_B] = VK_KEYCODE_B,
-  [HID_KEYBOARD_C] = VK_KEYCODE_C,
-  [HID_KEYBOARD_D] = VK_KEYCODE_D,
-  [HID_KEYBOARD_E] = VK_KEYCODE_E,
-  [HID_KEYBOARD_F] = VK_KEYCODE_F,
-  [HID_KEYBOARD_G] = VK_KEYCODE_G,
-  [HID_KEYBOARD_H] = VK_KEYCODE_H,
-  [HID_KEYBOARD_I] = VK_KEYCODE_I,
-  [HID_KEYBOARD_J] = VK_KEYCODE_J,
-  [HID_KEYBOARD_K] = VK_KEYCODE_K,
-  [HID_KEYBOARD_L] = VK_KEYCODE_L,
-  [HID_KEYBOARD_M] = VK_KEYCODE_M,
-  [HID_KEYBOARD_N] = VK_KEYCODE_N,
-  [HID_KEYBOARD_O] = VK_KEYCODE_O,
-  [HID_KEYBOARD_P] = VK_KEYCODE_P,
-  [HID_KEYBOARD_Q] = VK_KEYCODE_Q,
-  [HID_KEYBOARD_R] = VK_KEYCODE_R,
-  [HID_KEYBOARD_S] = VK_KEYCODE_S,
-  [HID_KEYBOARD_T] = VK_KEYCODE_T,
-  [HID_KEYBOARD_U] = VK_KEYCODE_U,
-  [HID_KEYBOARD_V] = VK_KEYCODE_V,
-  [HID_KEYBOARD_W] = VK_KEYCODE_W,
-  [HID_KEYBOARD_X] = VK_KEYCODE_X,
-  [HID_KEYBOARD_Y] = VK_KEYCODE_Y,
-  [HID_KEYBOARD_Z] = VK_KEYCODE_Z,
-  [HID_KEYBOARD_1] = VK_KEYCODE_1,
-  [HID_KEYBOARD_2] = VK_KEYCODE_2,
-  [HID_KEYBOARD_3] = VK_KEYCODE_3,
-  [HID_KEYBOARD_4] = VK_KEYCODE_4,
-  [HID_KEYBOARD_5] = VK_KEYCODE_5,
-  [HID_KEYBOARD_6] = VK_KEYCODE_6,
-  [HID_KEYBOARD_7] = VK_KEYCODE_7,
-  [HID_KEYBOARD_8] = VK_KEYCODE_8,
-  [HID_KEYBOARD_9] = VK_KEYCODE_9,
-  [HID_KEYBOARD_0] = VK_KEYCODE_0,
-  [HID_KEYBOARD_RETURN] = VK_KEYCODE_RETURN,
-  [HID_KEYBOARD_ESCAPE] = VK_KEYCODE_ESCAPE,
-  [HID_KEYBOARD_DELETE] = VK_KEYCODE_DELETE,
-  [HID_KEYBOARD_TAB] = VK_KEYCODE_TAB,
-  [HID_KEYBOARD_SPACE] = VK_KEYCODE_SPACE,
-  [HID_KEYBOARD_MINUS] = VK_KEYCODE_MINUS,
-  [HID_KEYBOARD_EQUAL] = VK_KEYCODE_EQUAL,
-  [HID_KEYBOARD_LSQUARE] = VK_KEYCODE_LSQUARE,
-  [HID_KEYBOARD_RSQUARE] = VK_KEYCODE_RSQUARE,
-  [HID_KEYBOARD_BACKSLASH] = VK_KEYCODE_BACKSLASH,
-  [HID_KEYBOARD_SEMICOLON] = VK_KEYCODE_SEMICOLON,
-  [HID_KEYBOARD_APOSTROPHE] = VK_KEYCODE_APOSTROPHE,
-  [HID_KEYBOARD_TILDE] = VK_KEYCODE_TILDE,
-  [HID_KEYBOARD_COMMA] = VK_KEYCODE_COMMA,
-  [HID_KEYBOARD_PERIOD] = VK_KEYCODE_PERIOD,
-  [HID_KEYBOARD_SLASH] = VK_KEYCODE_SLASH,
-  [HID_KEYBOARD_CAPSLOCK] = VK_KEYCODE_CAPSLOCK,
-  [HID_KEYBOARD_F1] = VK_KEYCODE_F1,
-  [HID_KEYBOARD_F2] = VK_KEYCODE_F2,
-  [HID_KEYBOARD_F3] = VK_KEYCODE_F3,
-  [HID_KEYBOARD_F4] = VK_KEYCODE_F4,
-  [HID_KEYBOARD_F5] = VK_KEYCODE_F5,
-  [HID_KEYBOARD_F6] = VK_KEYCODE_F6,
-  [HID_KEYBOARD_F7] = VK_KEYCODE_F7,
-  [HID_KEYBOARD_F8] = VK_KEYCODE_F8,
-  [HID_KEYBOARD_F9] = VK_KEYCODE_F9,
-  [HID_KEYBOARD_F10] = VK_KEYCODE_F10,
-  [HID_KEYBOARD_F11] = VK_KEYCODE_F11,
-  [HID_KEYBOARD_F12] = VK_KEYCODE_F12,
-  [HID_KEYBOARD_PRINTSCR] = VK_KEYCODE_PRINTSCR,
-  [HID_KEYBOARD_SCROLL_LOCK] = VK_KEYCODE_SCROLL_LOCK,
-  [HID_KEYBOARD_PAUSE] = VK_KEYCODE_PAUSE,
-  [HID_KEYBOARD_INSERT] = VK_KEYCODE_INSERT,
-  [HID_KEYBOARD_HOME] = VK_KEYCODE_HOME,
-  [HID_KEYBOARD_PAGE_UP] = VK_KEYCODE_PAGE_UP,
-  [HID_KEYBOARD_DELETE_FWD] = VK_KEYCODE_DELETE_FWD,
-  [HID_KEYBOARD_END] = VK_KEYCODE_END,
-  [HID_KEYBOARD_PAGE_DOWN] = VK_KEYCODE_PAGE_DOWN,
-  [HID_KEYBOARD_RIGHT] = VK_KEYCODE_RIGHT,
-  [HID_KEYBOARD_LEFT] = VK_KEYCODE_LEFT,
-  [HID_KEYBOARD_DOWN] = VK_KEYCODE_DOWN,
-  [HID_KEYBOARD_UP] = VK_KEYCODE_UP
+uint16_t hid_keyboard_to_input_key[] = {
+  [HID_KEYBOARD_A] = KEY_A,
+  [HID_KEYBOARD_B] = KEY_B,
+  [HID_KEYBOARD_C] = KEY_C,
+  [HID_KEYBOARD_D] = KEY_D,
+  [HID_KEYBOARD_E] = KEY_E,
+  [HID_KEYBOARD_F] = KEY_F,
+  [HID_KEYBOARD_G] = KEY_G,
+  [HID_KEYBOARD_H] = KEY_H,
+  [HID_KEYBOARD_I] = KEY_I,
+  [HID_KEYBOARD_J] = KEY_J,
+  [HID_KEYBOARD_K] = KEY_K,
+  [HID_KEYBOARD_L] = KEY_L,
+  [HID_KEYBOARD_M] = KEY_M,
+  [HID_KEYBOARD_N] = KEY_N,
+  [HID_KEYBOARD_O] = KEY_O,
+  [HID_KEYBOARD_P] = KEY_P,
+  [HID_KEYBOARD_Q] = KEY_Q,
+  [HID_KEYBOARD_R] = KEY_R,
+  [HID_KEYBOARD_S] = KEY_S,
+  [HID_KEYBOARD_T] = KEY_T,
+  [HID_KEYBOARD_U] = KEY_U,
+  [HID_KEYBOARD_V] = KEY_V,
+  [HID_KEYBOARD_W] = KEY_W,
+  [HID_KEYBOARD_X] = KEY_X,
+  [HID_KEYBOARD_Y] = KEY_Y,
+  [HID_KEYBOARD_Z] = KEY_Z,
+  [HID_KEYBOARD_1] = KEY_1,
+  [HID_KEYBOARD_2] = KEY_2,
+  [HID_KEYBOARD_3] = KEY_3,
+  [HID_KEYBOARD_4] = KEY_4,
+  [HID_KEYBOARD_5] = KEY_5,
+  [HID_KEYBOARD_6] = KEY_6,
+  [HID_KEYBOARD_7] = KEY_7,
+  [HID_KEYBOARD_8] = KEY_8,
+  [HID_KEYBOARD_9] = KEY_9,
+  [HID_KEYBOARD_0] = KEY_0,
+  [HID_KEYBOARD_RETURN] = KEY_RETURN,
+  [HID_KEYBOARD_ESCAPE] = KEY_ESCAPE,
+  [HID_KEYBOARD_DELETE] = KEY_DELETE,
+  [HID_KEYBOARD_TAB] = KEY_TAB,
+  [HID_KEYBOARD_SPACE] = KEY_SPACE,
+  [HID_KEYBOARD_MINUS] = KEY_MINUS,
+  [HID_KEYBOARD_EQUAL] = KEY_EQUAL,
+  [HID_KEYBOARD_LSQUARE] = KEY_LSQUARE,
+  [HID_KEYBOARD_RSQUARE] = KEY_RSQUARE,
+  [HID_KEYBOARD_BACKSLASH] = KEY_BACKSLASH,
+  [HID_KEYBOARD_SEMICOLON] = KEY_SEMICOLON,
+  [HID_KEYBOARD_APOSTROPHE] = KEY_APOSTROPHE,
+  [HID_KEYBOARD_TILDE] = KEY_TILDE,
+  [HID_KEYBOARD_COMMA] = KEY_COMMA,
+  [HID_KEYBOARD_PERIOD] = KEY_PERIOD,
+  [HID_KEYBOARD_SLASH] = KEY_SLASH,
+  [HID_KEYBOARD_CAPSLOCK] = KEY_CAPSLOCK,
+  [HID_KEYBOARD_F1] = KEY_F1,
+  [HID_KEYBOARD_F2] = KEY_F2,
+  [HID_KEYBOARD_F3] = KEY_F3,
+  [HID_KEYBOARD_F4] = KEY_F4,
+  [HID_KEYBOARD_F5] = KEY_F5,
+  [HID_KEYBOARD_F6] = KEY_F6,
+  [HID_KEYBOARD_F7] = KEY_F7,
+  [HID_KEYBOARD_F8] = KEY_F8,
+  [HID_KEYBOARD_F9] = KEY_F9,
+  [HID_KEYBOARD_F10] = KEY_F10,
+  [HID_KEYBOARD_F11] = KEY_F11,
+  [HID_KEYBOARD_F12] = KEY_F12,
+  [HID_KEYBOARD_PRINTSCR] = KEY_PRINTSCR,
+  [HID_KEYBOARD_SCROLL_LOCK] = KEY_SCROLL_LOCK,
+  [HID_KEYBOARD_PAUSE] = KEY_PAUSE,
+  [HID_KEYBOARD_INSERT] = KEY_INSERT,
+  [HID_KEYBOARD_HOME] = KEY_HOME,
+  [HID_KEYBOARD_PAGE_UP] = KEY_PAGE_UP,
+  [HID_KEYBOARD_DELETE_FWD] = KEY_DELETE_FWD,
+  [HID_KEYBOARD_END] = KEY_END,
+  [HID_KEYBOARD_PAGE_DOWN] = KEY_PAGE_DOWN,
+  [HID_KEYBOARD_RIGHT] = KEY_RIGHT,
+  [HID_KEYBOARD_LEFT] = KEY_LEFT,
+  [HID_KEYBOARD_DOWN] = KEY_DOWN,
+  [HID_KEYBOARD_UP] = KEY_UP
 };
 
-static inline key_event_t *make_key_event(key_code_t code, uint8_t modifiers, bool released) {
-  key_event_t *event = kmalloc(sizeof(key_event_t));
-  memset(event, 0, sizeof(key_event_t));
-  event->modifiers = modifiers;
-  event->key_code = code;
-  event->release = released;
-  event->next = NULL;
-  return event;
-}
+uint16_t hid_modifier_bit_to_input_key[] = {
+  [HID_BIT_LCONTROL] = KEY_LCTRL,
+  [HID_BIT_LSHIFT] = KEY_LSHIFT,
+  [HID_BIT_LALT] = KEY_LALT,
+  [HID_BIT_LSPECIAL] = KEY_LMETA,
+  [HID_BIT_RCONTROL] = KEY_RCTRL,
+  [HID_BIT_RSHIFT] = KEY_RSHIFT,
+  [HID_BIT_RALT] = KEY_RALT,
+  [HID_BIT_RSPECIAL] = KEY_RMETA,
+};
 
-key_code_t hid_keyboard_get_key(uint8_t key) {
-  return hid_keyboard_layout[key];
+static inline bool u8_in_buffer(const uint8_t *buffer, size_t len, uint8_t val) {
+  for (int i = 0; i < len; i++) {
+    if (buffer[i] == val)
+      return true;
+  }
+  return false;
 }
 
 hid_keyboard_t *hid_keyboard_init(report_format_t *format) {
@@ -148,42 +153,55 @@ hid_keyboard_t *hid_keyboard_init(report_format_t *format) {
 
 void hid_keyboard_handle_input(hid_device_t *device, uint8_t *buffer) {
   hid_keyboard_t *kb = device->data;
-  uint32_t modifiers = buffer[kb->modifier_offset];
-
-  uint8_t *curr = buffer;
-  uint8_t *prev = kb->prev_buffer;
   uint8_t char_idx = kb->buffer_offset;
   uint8_t char_max = char_idx + kb->buffer_size;
+  size_t len = kb->buffer_size - kb->buffer_offset;
 
+  uint8_t prev_mod = kb->prev_buffer[kb->modifier_offset];
+  uint8_t curr_mod = buffer[kb->modifier_offset];
+  uint8_t *curr = buffer;
+  uint8_t *prev = kb->prev_buffer;
+
+  // handle modifiers first
+  uint8_t moddiff = curr_mod ^ prev_mod;
+  while (moddiff != 0) {
+    uint8_t b = __bsf8(moddiff);
+    uint8_t mod = 1 << b;
+    uint8_t state = (prev_mod & mod) ? 0 : 1;
+
+    // emit the event
+    uint16_t key = hid_modifier_bit_to_input_key[b];
+    input_event(EV_KEY, 0, KEY_VALUE(key, state));
+
+    moddiff ^= mod;
+  }
+
+  // handle key presses
   for (int i = char_idx; i < char_max; i++) {
-    // check for pressed keys
-    if (curr[i] != 0) {
-      // a key is pressed
-      for (int j = char_idx; j < char_max; j++) {
-        if (curr[i] == prev[j]) {
-          // key was held down, dont emit an event
-          goto outer;
-        }
-      }
-      // create key press event
-      key_code_t code = hid_keyboard_layout[curr[i]];
-      key_event_t *event = make_key_event(code, modifiers, false);
-      dispatch_key_event(event);
-      continue; // check next byte
-    } else {
-      // check for released keys
-      for (int j = char_idx; j < char_max; j++) {
-        if (prev[j] != 0) {
-          // create key release event
-          key_code_t code = hid_keyboard_layout[prev[i]];
-          key_event_t *event = make_key_event(code, modifiers, true);
-          dispatch_key_event(event);
-        }
-      }
-      break; // no more bytes changed
-    }
+    uint8_t val = curr[i];
+    if (val == 0)
+      break;
+    // skip if it is also in the previous buffer
+    if (u8_in_buffer(prev + char_idx, len, val))
+      continue;
 
-  LABEL(outer);
+    // emit the event
+    uint16_t key = hid_keyboard_to_input_key[val];
+    input_event(EV_KEY, 0, KEY_VALUE(key, 1));
+  }
+
+  // handle key releases
+  for (int i = char_idx; i < char_max; i++) {
+    uint8_t val = prev[i];
+    if (val == 0)
+      break;
+    // skip if it is in the current buffer
+    if (u8_in_buffer(curr + char_idx, len, val))
+      continue;
+
+    // emit the event
+    uint16_t key = hid_keyboard_to_input_key[val];
+    input_event(EV_KEY, 0, KEY_VALUE(key, 0));
   }
 
   memcpy(kb->prev_buffer, buffer, device->size);

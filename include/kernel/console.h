@@ -7,16 +7,17 @@
 
 #include <base.h>
 
-typedef struct console {
-  void *ptr;
-  void (*puts)(void *ptr, const char *s);
-  void (*putc)(void *ptr, char c);
-  char (*getc)(void *ptr);
-} console_t;
-
+/// Writes a string to the kernel command line.
 void kputs(const char *s);
+/// Writes a single character to the kernel command line.
 void kputc(char c);
-char kgetc(void);
+/// Gets the next character from the kernel command line input.
+int kgetc(void);
+
+/// Writes a string to the kernel debug console.
+void debug_kputs(const char *s);
+/// Writes a single character to the kernel debug console.
+void debug_kputc(char c);
 
 void console_early_init();
 

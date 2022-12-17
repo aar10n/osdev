@@ -100,6 +100,15 @@
 #define HID_KEYBOARD_RALT         0xE6 // right alt
 #define HID_KEYBOARD_RGUI         0xE7 // right command/windows key
 
+#define HID_BIT_LCONTROL 0
+#define HID_BIT_LSHIFT   1
+#define HID_BIT_LALT     2
+#define HID_BIT_LSPECIAL 3
+#define HID_BIT_RCONTROL 4
+#define HID_BIT_RSHIFT   5
+#define HID_BIT_RALT     6
+#define HID_BIT_RSPECIAL 7
+
 typedef struct {
   uint8_t modifier_offset;
   uint8_t led_offset;

@@ -114,13 +114,13 @@ void kprintf(const char *format, ...) {
   va_start(valist, format);
   print_format(format, str, BUFFER_SIZE, valist, true);
   va_end(valist);
-  kputs(str);
+  debug_kputs(str);
 }
 
 void kvfprintf(const char *format, va_list valist) {
   char str[BUFFER_SIZE];
   print_format(format, str, BUFFER_SIZE, valist, true);
-  kputs(str);
+  debug_kputs(str);
 }
 
 

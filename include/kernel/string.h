@@ -7,6 +7,19 @@
 
 #include <base.h>
 
+#define isalpha(c) (islower(c) || isupper(c))
+#define isalnum(c) (isalpha(c) || isdigit(c))
+#define islower(c) ((c) >= 'a' && (c) <= 'z')
+#define isupper(c) ((c) >= 'A' && (c) <= 'Z')
+#define isdigit(c) ((c) >= '0' && (c) <= '9')
+#define isctrl(c)  (((c) >= 0 && (c) <= 31) || (c) == 127)
+#define ispunct(c) \
+  (((c) >= '!' && (c) <= '/') || ((c) >= ':' && (c) <= '@') || \
+  ((c) >= '[' && (c) <= '`') || ((c) >= '{' && (c) <= '~'))
+#define isspace(c) \
+  ((c) == ' ' || (c) == '\n' || (c) == '\t' || (c) == '\v' || \
+  (c) == '\f' || (c) == '\r')
+
 int memcmp(const void *str1, const void *str2, size_t count);
 void *memcpy(void *dest, const void *src, size_t len);
 void *memmove(void *dest, const void *src, size_t len);
