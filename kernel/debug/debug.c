@@ -75,10 +75,18 @@ static dwarf_line_t *get_line_by_addr(dwarf_file_t *file, uintptr_t addr) {
 //
 
 void debug_early_init() {
+  if (!is_debug_enabled)
+    return;
+
   dwarf_early_init();
 }
 
 void debug_init() {
+  if (!is_debug_enabled) {
+    has_debug_info = false;
+    return;
+  }
+
   if (dwarf_init_debug() < 0) {
     // only returns -1 if there is no debugging information or we
     // failed to initialize libdwarf (possibly bad debug info?)

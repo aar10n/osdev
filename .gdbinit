@@ -93,6 +93,15 @@ end
 set disassembly-flavor intel
 add-symbol-file build/kernel.elf
 
+# Loading in-kernel debugging info is too slow to be used while also
+# debugging with gdb. We disable it via the runtime option before the
+# kernel starts.
+b kmain
+commands
+  set variable is_debug_enabled = 0
+  print is_debug_enabled
+end
+
 b process.c:254
 commands
   add-symbol-file-all build/sysroot/usr/lib/ld.so 0x7fc0000000

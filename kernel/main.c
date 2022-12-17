@@ -23,7 +23,6 @@
 #include <irq.h>
 #include <init.h>
 #include <ipi.h>
-#include <event.h>
 #include <signal.h>
 #include <ipc.h>
 #include <smpboot.h>
@@ -43,6 +42,7 @@
 #define QEMU_DEBUG_INIT() ({ outb(0x801, 1); })
 
 bool is_smp_enabled = false;
+bool is_debug_enabled = true;
 boot_info_v2_t __boot_data *boot_info_v2;
 _Noreturn void launch();
 
@@ -127,7 +127,7 @@ __used void ap_main() {
 //
 
 _Noreturn void launch() {
-  kprintf("==> launch\n");
+  kprintf("launch\n");
   alarms_init();
 
   usb_init();

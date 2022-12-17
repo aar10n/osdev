@@ -160,6 +160,7 @@
 extern boot_info_v2_t *boot_info_v2;
 extern uint32_t system_num_cpus;
 extern bool is_smp_enabled;
+extern bool is_debug_enabled;
 
 // linker provided symbols
 extern uintptr_t __kernel_address;
