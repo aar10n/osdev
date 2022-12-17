@@ -10,7 +10,6 @@
 #include <printf.h>
 #include <panic.h>
 #include <string.h>
-#include <vector.h>
 #include <mm.h>
 
 #include <drivers/serial.h>

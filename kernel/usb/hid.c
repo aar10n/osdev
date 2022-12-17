@@ -11,7 +11,6 @@
 #include <usb/usb.h>
 
 #include <mm.h>
-#include <event.h>
 #include <printf.h>
 #include <panic.h>
 #include <string.h>

@@ -27,6 +27,7 @@
  *
  * The macro declares the following type:
  *     hash_map_t
+ *
  * The macro declares the following functions:
  *
  *     /// Allocates a new hash map with the default initial size.
