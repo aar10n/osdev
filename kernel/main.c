@@ -114,6 +114,8 @@ __used void ap_main() {
 // Launch process
 //
 
+int command_line_main();
+
 _Noreturn void launch() {
   kprintf("launch\n");
   alarms_init();
@@ -121,10 +123,13 @@ _Noreturn void launch() {
   usb_init();
   pcie_discover();
 
-  int ch;
-  while ((ch = kgetc()) > 0) {
-    kputc(ch);
-  }
+  // thread_sleep(250);
+
+  command_line_main();
+  // int ch;
+  // while ((ch = kgetc()) > 0) {
+  //   kputc(ch);
+  // }
 
   kprintf("haulting...\n");
   thread_block();

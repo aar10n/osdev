@@ -7,6 +7,8 @@
 
 #include <base.h>
 
+/// Writes a formatted string to the kernel command line.
+void kputsf(const char *format, ...);
 /// Writes a string to the kernel command line.
 void kputs(const char *s);
 /// Writes a single character to the kernel command line.

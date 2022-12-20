@@ -14,6 +14,7 @@
 
 #include <drivers/serial.h>
 #include <gui/screen.h>
+#include <format.h>
 
 #define CMD_BUFFER_SIZE 256
 
@@ -53,6 +54,14 @@ console_t *debug_console;
 
 // MARK: Kernel Console I/O
 
+void kputsf(const char *format, ...) {
+  char str[CMD_BUFFER_SIZE];
+  va_list valist;
+  va_start(valist, format);
+  print_format(format, str, CMD_BUFFER_SIZE, valist, true);
+  va_end(valist);
+  DISPATCH(cmdline_console, puts, str);
+}
 void kputs(const char *s) { DISPATCH(cmdline_console, puts, s); }
 void kputc(char c) { DISPATCH(cmdline_console, putc, c); }
 int kgetc() { return DISPATCH(cmdline_console, getc); }
@@ -189,3 +198,216 @@ void console_cmdline_init() {
   cmdline_console = (console_t *) &cmdline_console_impl;
 }
 MODULE_INIT(console_cmdline_init);
+
+//
+//
+// MARK: Command Line
+// TODO: move into separate standalone binary
+//
+
+static ssize_t cmdline_get_input_line(char *buffer, size_t size) {
+  kassert(size > 1);
+
+  // collect input line
+  int ch;
+  size_t len = 0;
+  while ((ch = kgetc()) > 0) {
+    if (ch == '\b') {
+      if (len > 0) {
+        buffer[len--] = '\0';
+        kputc(ch);
+      }
+      continue;
+    } else if (ch == '\n') {
+      buffer[len] = '\0';
+      kputc('\n');
+      break;
+    }
+
+    if (len < size - 2) {
+      buffer[len++] = ch;
+      kputc(ch);
+    }
+  }
+
+  if (ch <= 0) {
+    kprintf("cmdline: call to kgetc failed\n");
+    return -1;
+  }
+  return len;
+}
+
+static char **cmdline_split_line(const char *line, size_t len, size_t *outlen) {
+  if (len == 0) {
+    return NULL;
+  }
+
+  // count delimiters
+  size_t sep_count = 0;
+  bool ignore_space = true;
+  for (int i = 0; i < len; i++) {
+    if (isspace(line[i])) {
+      if (!ignore_space) {
+        sep_count++;
+        ignore_space = true;
+      }
+    } else {
+      ignore_space = false;
+    }
+  }
+
+  size_t array_size = sep_count + 2; // include NULL sentinel
+  size_t array_len = 0;
+  char **strings = kmalloc(sizeof(char *) * array_size);
+
+  const char *ptr = line;
+  const char *lptr = ptr;
+  const char *eptr = line + len;
+
+  // skip initial spaces
+  while (ptr < eptr && isspace(*ptr))
+    ptr++;
+
+  while (ptr < eptr) {
+    if (!isspace(*ptr)) {
+      ptr++;
+      continue;
+    }
+
+    // delimiter
+    size_t slen = ptr - lptr;
+    if (slen == 0) {
+      ptr++;
+      continue;
+    }
+
+    // add it to the array
+    char *string = kmalloc(slen + 1);
+    memcpy(string, lptr, slen);
+    string[slen] = '\0';
+    strings[array_len++] = string;
+    ptr++;
+    lptr = ptr;
+  }
+
+  // handle remainder of buffer
+  size_t slen = ptr - lptr;
+  if (slen > 0) {
+    char *string = kmalloc(slen + 1);
+    memcpy(string, lptr, slen);
+    string[slen] = '\0';
+    strings[array_len++] = string;
+  }
+  strings[array_size - 1] = NULL;
+
+  if (outlen) {
+    *outlen = array_len;
+  }
+  return strings;
+}
+
+static void cmdline_free_strings(char **strings) {
+  char **ptr = strings;
+  while (*ptr) {
+    kfree(*ptr++);
+  }
+  kfree(strings);
+}
+
+// MARK: Console Commands
+
+#include <fs.h>
+#include <thread.h>
+
+static int cmdline_ls_command(const char **args, size_t args_len) {
+  if (args_len == 0) {
+    kputsf("error: ls <path>\n");
+    return -1;
+  }
+  kputsf("listing contents of %s\n", args[0]);
+
+  const char *path = args[0];
+  int fd = fs_open(path, O_RDONLY | O_DIRECTORY, 0);
+  if (fd < 0) {
+    kputsf("error: %s\n", strerror(ERRNO));
+    return -1;
+  }
+
+  dentry_t *dentry;
+  while ((dentry = fs_readdir(fd)) != NULL) {
+    if (strcmp(dentry->name, ".") == 0 || strcmp(dentry->name, "..") == 0) {
+      continue;
+    }
+
+    if (IS_IFDIR(dentry->mode)) {
+      kputsf("  %s/\n", dentry->name);
+    } else {
+      kputsf("  %s\n", dentry->name);
+    }
+  }
+
+  fs_close(fd);
+  return 0;
+}
+
+static int cmdline_mount_command(const char **args, size_t args_len) {
+  if (args_len != 3) {
+    kputsf("error: mount <device> <path> <format>\n");
+    return -1;
+  }
+
+  const char *device = args[0];
+  const char *path = args[1];
+  const char *format = args[2];
+  int result = fs_mount(path, device, format);
+  if (result < 0) {
+    kputsf("error: %s\n", strerror(ERRNO));
+    return -1;
+  }
+
+  kputsf("ok\n");
+  return 0;
+}
+
+// MARK: Console Main
+
+static int cmdline_process_line(const char *buffer, size_t len) {
+#define HANDLE_COMMAND(name, func) \
+  if (strcmp(command, name) == 0) {\
+    int result = func((const char **)(strings + 1), num_strings - 1); \
+    cmdline_free_strings(strings); \
+    return result; \
+  }
+
+  size_t num_strings;
+  char **strings = cmdline_split_line(buffer, len, &num_strings);
+  kassert(strings != NULL);
+  kassert(num_strings > 0);
+
+  const char *command = strings[0];
+  HANDLE_COMMAND("ls", cmdline_ls_command);
+  HANDLE_COMMAND("mount", cmdline_mount_command);
+
+  kputsf("error: unknown command %s\n", command);
+  cmdline_free_strings(strings);
+  return 0;
+}
+
+int command_line_main() {
+  kprintf("console: starting command line\n");
+  char buffer[CMD_BUFFER_SIZE];
+
+  while (true) {
+    kputs("<kernel>: "); // prompt
+
+    // collect input line
+    ssize_t len = cmdline_get_input_line(buffer, CMD_BUFFER_SIZE);
+    if (len < 0) {
+      panic("failed to get cmdline input line");
+    } else if (len == 0) {
+      continue;
+    }
+
+    cmdline_process_line(buffer, len);
+  }
+}
