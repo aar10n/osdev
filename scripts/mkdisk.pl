@@ -1,4 +1,4 @@
-#!/usr/bin/perl
+#!/usr/bin/env perl
 use strict;
 use warnings FATAL => 'all';
 use feature qw(state);
@@ -13,7 +13,7 @@ Usage: $0 -o <file> [-s <size>] [-L <label>] [<src>:<dest> ...]
 EOF
 
 GetOptions(
-    "o|outfile=s" => \(my $outfile),
+    "o|out-file=s" => \(my $outfile),
     "s|size=s" => \(my $size),
     "L|label=s" => \(my $label),
 );

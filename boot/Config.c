@@ -20,8 +20,6 @@ typedef struct _INI_BUCKET {
   struct _INI_BUCKET *Next;
 } INI_BUCKET;
 
-const CHAR16 *ConfigFilePath = L"/EFI/BOOT/config.ini";
-
 // The number of allocated elements in the HashMap array
 static UINTN HashMapLength = 0;
 // The total number of key-value pairs in the HashMap
@@ -275,7 +273,7 @@ EFI_STATUS EFIAPI ConfigParse(void *Buffer, UINTN BufferSize) {
     CopyMem(Key, CurrentKey, KeyLen);
     CopyMem(Value, CurrentValue, ValueLen);
 
-    PRINT_INFO("INI: %a=%a", Key, Value);
+    PRINT_INFO("  %d | %a=%a", Line, Key, Value);
     Variable->Key = Key;
     Variable->Value = Value;
 
@@ -300,7 +298,6 @@ EFI_STATUS EFIAPI ConfigParse(void *Buffer, UINTN BufferSize) {
     Ptr++;
   }
 
-  PRINT_INFO("INI: %d lines parsed", Line);
   return EFI_SUCCESS;
 }
 
@@ -310,16 +307,17 @@ EFI_STATUS EFIAPI InitializeConfig() {
   EFI_STATUS Status;
 
   EFI_FILE *File = NULL;
-  PRINT_INFO("Looking for config file");
   Status = LocateFileByName(NULL, L"config.ini", TRUE, &File);
   if (EFI_ERROR(Status)) {
     if (Status == EFI_NOT_FOUND) {
-      PRINT_WARN("No config file found at %s", ConfigFilePath);
+      PRINT_WARN("No config file found");
     } else {
       PRINT_ERROR("Failed to open config file");
     }
     return Status;
   }
+
+  PRINT_INFO("Loading config");
 
   UINTN ConfigFileSize = 0;
   VOID *ConfigFile = NULL;
@@ -336,6 +334,8 @@ EFI_STATUS EFIAPI InitializeConfig() {
     File->Close(File);
     return Status;
   }
+
+  PRINT_INFO("Config loaded");
 
   File->Close(File);
   return EFI_SUCCESS;
@@ -418,6 +418,10 @@ CHAR16 *EFIAPI ConfigGetStringD(CHAR8 *Key, CONST CHAR16 *Default) {
   CHAR16 *String;
   EFI_STATUS Status = ConfigGetStringS(Key, &String);
   if (EFI_ERROR(Status)) {
+    if (Default == NULL) {
+      return NULL;
+    }
+
     UINTN Length = StrSize(Default);
     String = AllocatePool((Length + 1) * sizeof(CHAR16));
     if (String == NULL) {

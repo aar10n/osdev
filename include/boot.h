@@ -94,6 +94,9 @@ typedef struct boot_info_v2 {
   uint32_t fb_height;             // framebuffer height
   uint32_t fb_pixel_format;       // framebuffer pixel format
   uint32_t : 32;                  // reserved
+  // initrd
+  uint64_t initrd_addr;           // initrd address
+  uint64_t initrd_size;           // initrd size in bytes
   // system configuration
   uint32_t efi_runtime_services;  // EFI Runtime Services table
   uint32_t acpi_ptr;              // ACPI RDSP table address

@@ -32,6 +32,7 @@ struct bitmap;
 // page flags
 #define PG_USED       (1 << 0)
 #define PG_MAPPED     (1 << 1)
+#define PG_READ       0
 #define PG_WRITE      (1 << 2)
 #define PG_EXEC       (1 << 3)
 #define PG_USER       (1 << 4)

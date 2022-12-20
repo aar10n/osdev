@@ -242,7 +242,7 @@ EFI_STATUS EFIAPI LoadElf(IN VOID *Buffer, IN UINT64 PhysAddr, OUT PAGE_DESCRIPT
     if (ProgramHdr->p_type == PT_NULL) {
       goto NEXT;
     } else if (ProgramHdr->p_type != PT_LOAD) {
-      PRINT_WARN("Unsupported program header in ELF file (%d)", ProgramHdr->p_type);
+      PRINT_WARN("Unsupported program header in ELF file (%u)", ProgramHdr->p_type);
       goto NEXT;
     }
 
@@ -252,13 +252,13 @@ EFI_STATUS EFIAPI LoadElf(IN VOID *Buffer, IN UINT64 PhysAddr, OUT PAGE_DESCRIPT
     if (ProgramHdr->p_flags & PF_W) {
       PRINT_INFO("Loading data segment");
       PRINT_INFO("  start: 0x%p", ProgramHdr->p_vaddr);
-      PRINT_INFO("  size: 0x%x (0x%x)", MemSize, ProgramHdr->p_memsz);
+      PRINT_INFO("  size: 0x%llx (aligned 0x%llx)", ProgramHdr->p_memsz, MemSize);
       Flags |= PD_WRITE;
     }
     if (ProgramHdr->p_flags & PF_X) {
       PRINT_INFO("Loading code segment");
       PRINT_INFO("  start: 0x%p", ProgramHdr->p_vaddr);
-      PRINT_INFO("  size: 0x%x (0x%x)", MemSize, ProgramHdr->p_memsz);
+      PRINT_INFO("  size: 0x%llx (aligned 0x%llx)", ProgramHdr->p_memsz, MemSize);
       Flags |= PD_EXECUTE;
     }
 
@@ -347,7 +347,7 @@ EFI_STATUS EFIAPI LoadKernelRequestedSections(IN Elf64_Ehdr *ElfHdr, IN PAGE_DES
     CHAR8 *SectionName = (VOID *) SectionNamePhysAddr;
 
     // now we can find and load the requested section
-    PRINT_INFO("Loading section '%a'", SectionName, SymName);
+    PRINT_INFO("  loading section '%a' %a", SectionName, SymName);
     Elf64_Shdr *SectionHdr = ElfLocateSectionHeaderByName(ElfHdr, SectionName);
     if (SectionHdr == NULL) {
       PRINT_WARN("Failed to load section '%a', does not exist", SectionName);
@@ -394,7 +394,9 @@ EFI_STATUS EFIAPI LoadKernel(
 ) {
   EFI_STATUS Status;
 
-  PRINT_INFO("Loading kernel...");
+  PRINT_INFO("Loading kernel");
+  PRINT_INFO("  phys addr: 0x%p", PhysAddr);
+
   EFI_FILE *KernelImageHandle;
   Status = OpenFile(Path, &KernelImageHandle);
   if (EFI_ERROR(Status)) {
@@ -417,7 +419,7 @@ EFI_STATUS EFIAPI LoadKernel(
     return Status;
   }
 
-  PRINT_INFO("Kernel image size: %d", KernelImageSize);
+  PRINT_INFO("  image size: %llu", KernelImageSize);
 
   UINT64 KernelEntry;
   UINTN MemSize;
@@ -428,8 +430,8 @@ EFI_STATUS EFIAPI LoadKernel(
     return Status;
   }
 
-  PRINT_INFO("Kernel entry point: %d", KernelEntry);
-  PRINT_INFO("Kernel memory size: %d", MemSize);
+  PRINT_INFO("  kernel entry: 0x%p", KernelEntry);
+  PRINT_INFO("  memory size: %llu", MemSize);
 
   // load elf segments
   PAGE_DESCRIPTOR *KernelPages = NULL;
@@ -439,7 +441,6 @@ EFI_STATUS EFIAPI LoadKernel(
     FreePool(KernelImageBuffer);
     return Status;
   }
-  PRINT_INFO("Kernel entry point: 0x%p", KernelEntry);
 
   // load sections requested by the kernel
   Status = LoadKernelRequestedSections(KernelImageBuffer, KernelPages);
@@ -457,9 +458,63 @@ EFI_STATUS EFIAPI LoadKernel(
   *BootInfoSymbol = BootInfoSym != NULL ? BootInfoSym->st_value : 0;
   *Pages = KernelPages;
 
-  PRINT_INFO("Kernel loaded!");
+  PRINT_INFO("Kernel loaded");
   FreePool(KernelImageBuffer);
   return EFI_SUCCESS;
+}
+
+EFI_STATUS EFIAPI LoadRawFile(
+  IN CONST CHAR16 *Path,
+  IN EFI_MEMORY_MAP *MemoryMap,
+  IN UINT64 LoadMinimumAddress,
+  OUT UINT64 *FileAddr,
+  OUT UINT64 *FileSize
+) {
+  EFI_STATUS Status;
+  EFI_FILE *File = NULL;
+
+  PRINT_INFO("Loading file %s", Path);
+
+  Status = OpenFile(Path, &File);
+  if (EFI_ERROR(Status))
+    return Status;
+
+  EFI_FILE_INFO *FileInfo;
+  Status = GetFileInfo(File, &FileInfo);
+  if (EFI_ERROR(Status))
+    goto LOAD_ERROR;
+
+  // find place to load the initrd
+  UINT64 PhysAddr;
+  UINTN NumPages = EFI_SIZE_TO_PAGES(FileInfo->FileSize) + 1;
+  FreePool(FileInfo);
+  Status = LocateFreeMemoryRegion(MemoryMap, NumPages, LoadMinimumAddress, &PhysAddr);
+  if (EFI_ERROR(Status))
+    goto LOAD_ERROR;
+
+  UINTN BufferSize;
+  VOID *Buffer;
+  Status = ReadFile(File, &BufferSize, &Buffer);
+  if (EFI_ERROR(Status))
+    goto LOAD_ERROR;
+
+  PRINT_INFO("  addr: 0x%p", PhysAddr);
+  PRINT_INFO("  size: %llu", BufferSize);
+
+  // load it at the physical address
+  UINTN MemorySize = EFI_PAGES_TO_SIZE(NumPages);
+  CopyMem((VOID *) PhysAddr, Buffer, BufferSize);
+  ZeroMem((VOID *) (PhysAddr + BufferSize), MemorySize - BufferSize);
+
+  *FileAddr = PhysAddr;
+  *FileSize = MemorySize;
+  CloseFile(File);
+  FreePool(Buffer);
+  return EFI_SUCCESS;
+
+LOAD_ERROR:
+  CloseFile(File);
+  return Status;
 }
 
 //

@@ -3,6 +3,7 @@
 //
 
 #include <mm/pmalloc.h>
+#include <mm/vmalloc.h>
 #include <mm/pgtable.h>
 #include <mm/init.h>
 
@@ -10,26 +11,20 @@
 #include <printf.h>
 #include <panic.h>
 #include <bitmap.h>
+#include <init.h>
 
 void *kmalloc(size_t size) __malloc_like;
 void kfree(void *ptr);
 
-LIST_HEAD(mem_zone_t) mem_zones[MAX_ZONE_TYPE];
-size_t zone_page_count[MAX_ZONE_TYPE];
-size_t reserved_pages = 128;
+static LIST_HEAD(mem_zone_t) mem_zones[MAX_ZONE_TYPE];
+static size_t zone_page_count[MAX_ZONE_TYPE];
+static size_t reserved_pages = 128;
 
-size_t zone_limits[MAX_ZONE_TYPE] = {
+static size_t zone_limits[MAX_ZONE_TYPE] = {
   ZONE_LOW_MAX,
   ZONE_DMA_MAX,
   ZONE_NORMAL_MAX,
   ZONE_HIGH_MAX
-};
-
-mem_zone_type_t next_zone_type[MAX_ZONE_TYPE] = {
-  ZONE_TYPE_NORMAL,
-  ZONE_TYPE_HIGH,
-  ZONE_TYPE_DMA,
-  MAX_ZONE_TYPE
 };
 
 const char *zone_names[MAX_ZONE_TYPE] = {
@@ -37,6 +32,15 @@ const char *zone_names[MAX_ZONE_TYPE] = {
   "DMA",
   "Normal",
   "High"
+};
+
+#define ZONE_ALLOC_DEFAULT ZONE_TYPE_HIGH
+// this specifies the zone preference order for allocating pages after the first
+static mem_zone_type_t zone_alloc_order[MAX_ZONE_TYPE] = {
+  [ZONE_TYPE_HIGH] = ZONE_TYPE_NORMAL,
+  [ZONE_TYPE_NORMAL] = ZONE_TYPE_DMA,
+  [ZONE_TYPE_DMA] = ZONE_TYPE_LOW,
+  [ZONE_TYPE_LOW] = MAX_ZONE_TYPE, // out of zones
 };
 
 mem_zone_type_t get_mem_zone_type(uintptr_t addr) {
@@ -98,7 +102,7 @@ bitmap_t *alloc_pages_bitmap(size_t num_pages) {
     }
 
     uintptr_t buffer_phys = mm_early_alloc_pages(num_bmp_pages);
-    void *buffer = mm_early_map_pages_reserved(buffer_phys, num_bmp_pages, PG_WRITE);
+    void *buffer = mm_early_map_pages_reserved(buffer_phys, num_bmp_pages, PG_WRITE | PG_NOCACHE);
     memset(buffer, 0, nbytes);
 
     frames = kmalloc(sizeof(bitmap_t));
@@ -116,6 +120,17 @@ bitmap_t *alloc_pages_bitmap(size_t num_pages) {
 }
 
 //
+
+static void remap_initrd_image(void *_arg) {
+  kassert(is_aligned(boot_info_v2->initrd_addr, PAGE_SIZE));
+  kassert(is_aligned(boot_info_v2->initrd_size, PAGE_SIZE));
+
+  boot_info_v2->initrd_addr = (uintptr_t) _vmap_phys(boot_info_v2->initrd_addr, boot_info_v2->initrd_size, PG_READ);
+  vm_mapping_t *initrd_vm = _vmap_get_mapping(boot_info_v2->initrd_addr);
+  initrd_vm->name = "initrd";
+  initrd_vm->type = VM_ATTR_RESERVED;
+  initrd_vm->attr = VM_ATTR_MMIO;
+}
 
 void init_mem_zones() {
   // reserve pages in zone entry
@@ -179,6 +194,14 @@ void init_mem_zones() {
     pad[pad_len] = '\0';
 
     kprintf("  %s zone:%s [%018p-%018p] %d pages\n", zone_names[i], pad, zone_start, zone_end, zone_page_count[i]);
+  }
+
+  if (boot_info_v2->initrd_addr != 0) {
+    size_t num_pages = SIZE_TO_PAGES(boot_info_v2->initrd_size);
+    if (_reserve_pages(boot_info_v2->initrd_addr, num_pages) < 0) {
+      panic("failed to reserve pages for initrd");
+    }
+    register_init_address_space_callback(remap_initrd_image, NULL);
   }
 }
 
@@ -248,7 +271,7 @@ page_t *_alloc_pages_zone(mem_zone_type_t zone_type, size_t count, uint32_t flag
 page_t *_alloc_pages(size_t count, uint32_t flags) {
   flags &= ~PG_FORCE;
 
-  mem_zone_type_t zone_type = ZONE_TYPE_NORMAL;
+  mem_zone_type_t zone_type = ZONE_ALLOC_DEFAULT;
   page_t *pages = NULL;
   while (pages == NULL) {
     if (zone_type == MAX_ZONE_TYPE) {
@@ -257,7 +280,7 @@ page_t *_alloc_pages(size_t count, uint32_t flags) {
 
     pages = _alloc_pages_zone(zone_type, count, flags);
     if (pages == NULL) {
-      zone_type = next_zone_type[zone_type];
+      zone_type = zone_alloc_order[zone_type];
     }
   }
 
@@ -334,6 +357,50 @@ page_t *_alloc_pages_at(uintptr_t address, size_t count, uint32_t flags) {
   // construct a list of page structs
   uint64_t frame = zone->base + PAGES_TO_SIZE(frame_index);
   return make_page_structs(zone, frame, count, stride, flags);
+}
+
+int _reserve_pages(uintptr_t address, size_t count) {
+  kassert(is_aligned(address, PAGE_SIZE));
+  kassert(count > 0);
+
+  mem_zone_type_t type = get_mem_zone_type(address);
+  mem_zone_type_t end_type = get_mem_zone_type(address + PAGES_TO_SIZE(count));
+  if (type != end_type) {
+    panic("requested pages cross zone boundary");
+  }
+
+  // find zone which contains the requested address
+  mem_zone_t *zone = locate_owning_mem_zone(address);
+  mem_zone_t *end_zone = locate_owning_mem_zone(address + PAGES_TO_SIZE(count) - 1);
+  if (zone != end_zone) {
+    panic("requested pages cross zone boundary");
+  }
+
+  if (zone == NULL && end_zone == NULL) {
+    return 0;
+  }
+
+  // mark frames as used
+  kassert(zone != NULL);
+  spin_lock(&zone->lock);
+  size_t before_count;
+  index_t frame_index = SIZE_TO_PAGES(address - zone->base);
+  if (count == 1) {
+    // common case - fastest
+    before_count = bitmap_set(zone->frames, frame_index) ? 1 : 0;
+  } else {
+    // less common case - slower
+    before_count = bitmap_get_n(zone->frames, frame_index, count);
+    if (before_count == 0) {
+      bitmap_set_n(zone->frames, frame_index, count);
+    }
+  }
+  spin_unlock(&zone->lock);
+  if (before_count == 0) {
+    panic("requested pages are already allocated");
+  }
+
+  return 0;
 }
 
 /**

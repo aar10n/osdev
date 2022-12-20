@@ -38,7 +38,7 @@
   })
 
 #define PRINT_INFO(string, ...) PRINT(L"[Loader] INFO:     " L##string L"\n", ##__VA_ARGS__)
-#define PRINT_WARN(string, ...) PRINT(L"[Loader] WARNING:  " L##string L"\n", ##__VA_ARGS__)
+#define PRINT_WARN(string, ...) PRINT(L"[Loader] WARN:     " L##string L"\n", ##__VA_ARGS__)
 #define PRINT_ERROR(string, ...) PRINT(L"[Loader] ERROR:    " L##string L"\n", ##__VA_ARGS__)
 #define PRINT_STATUS(status) PRINT(L"[Loader] Status: %r\n", status)
 

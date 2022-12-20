@@ -4,7 +4,6 @@
 
 #include <File.h>
 
-#include <Guid/FileInfo.h>
 #include <Protocol/LoadedImage.h>
 #include <Protocol/SimpleFileSystem.h>
 #include <Library/BaseMemoryLib.h>
@@ -126,13 +125,41 @@ EFI_STATUS EFIAPI OpenFile(IN CONST CHAR16 *Path, OUT EFI_FILE **File) {
   return EFI_SUCCESS;
 }
 
+EFI_STATUS EFIAPI GetFileInfo(IN EFI_FILE *File, OUT EFI_FILE_INFO **OutFileInfo) {
+  ASSERT(File != NULL);
+  EFI_STATUS Status;
+  EFI_GUID FileInfoGuid = EFI_FILE_INFO_ID;
+  UINTN FileInfoSize = sizeof(EFI_FILE_INFO);
+  EFI_FILE_INFO *_FileInfo = NULL;
+
+RETRY:;
+  EFI_FILE_INFO *FileInfo = AllocatePool(FileInfoSize);
+  if (_FileInfo == NULL) {
+    return EFI_OUT_OF_RESOURCES;
+  }
+
+  Status = File->GetInfo(File, &FileInfoGuid, &FileInfoSize, _FileInfo);
+  if (EFI_ERROR(Status)) {
+    if (Status == EFI_BUFFER_TOO_SMALL) {
+      FreePool(_FileInfo);
+      goto RETRY;
+    }
+
+    FreePool(_FileInfo);
+    PRINT_ERROR("Failed to get file info");
+    return Status;
+  }
+
+  *OutFileInfo = FileInfo;
+  return EFI_SUCCESS;
+}
+
 EFI_STATUS EFIAPI ReadFile(IN EFI_FILE *File, OUT UINTN *BufferSize, OUT VOID **Buffer) {
   EFI_STATUS Status;
   EFI_GUID FileInfoGuid = EFI_FILE_INFO_ID;
   UINTN FileInfoSize = sizeof(EFI_FILE_INFO);
 
-RETRY: NULL;
-
+RETRY:;
   EFI_FILE_INFO *FileInfo = AllocatePool(FileInfoSize);
   if (FileInfo == NULL) {
     PRINT_ERROR("Failed to allocate memory for file info");
@@ -179,6 +206,19 @@ RETRY: NULL;
   *Buffer = Data;
   *BufferSize = FileSize;
   FreePool(FileInfo);
+  return EFI_SUCCESS;
+}
+
+EFI_STATUS EFIAPI CloseFile(IN EFI_FILE *File) {
+  ASSERT(File != NULL);
+  EFI_STATUS Status;
+
+  Status = File->Close(File);
+  if (EFI_ERROR(Status)) {
+    PRINT_ERROR("Failed to close file");
+    return Status;
+  }
+
   return EFI_SUCCESS;
 }
 
@@ -236,7 +276,6 @@ EFI_STATUS EFIAPI LocateFileByName(
       *File = Result;
       return EFI_SUCCESS;
     } else if (FileInfo->Attribute & EFI_FILE_DIRECTORY && Recurse) {
-      Print(L"opening directory\n");
       // look for the file one directory down
       EFI_FILE_HANDLE NextDir;
       Status = Dir->Open(Dir, &NextDir, FileInfo->FileName, EFI_FILE_MODE_READ, 0);
@@ -245,7 +284,6 @@ EFI_STATUS EFIAPI LocateFileByName(
         return Status;
       }
 
-      Print(L"<recursing>\n");
       Status = LocateFileByName(NextDir, Name, TRUE, File);
       NextDir->Close(NextDir);
       if (Status == EFI_SUCCESS) {

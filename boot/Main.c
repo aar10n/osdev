@@ -22,16 +22,11 @@
     return status; \
   }
 
-#define BLUE_COLOR 0x000000FF
-#define GREEN_COLOR 0x0000FF00
-#define RED_COLOR 0x00FF0000
-#define QEMU_DEBUG_PORT 0x402
-
-
 typedef void (*KERNEL_ENTRY)(boot_info_v2_t*) __attribute__((sysv_abi));
 
 CHAR16 *DefaultKernelPath = L"/EFI/BOOT/kernel.elf";
 UINT64 KernelPhysAddr = 0x100000;
+UINT64 InitrdPhysAddrBase = 0x1000000;
 
 EFI_GUID Acpi10TableGuid = EFI_ACPI_TABLE_GUID;
 EFI_GUID Acpi20TableGuid = EFI_ACPI_20_TABLE_GUID;
@@ -42,6 +37,7 @@ EFI_GUID Smbios3TableGuid = SMBIOS3_TABLE_GUID;
 BOOLEAN Debug;
 BOOLEAN FastBoot;
 CHAR16 *KernelImagePath;
+CHAR16 *InitrdImagePath;
 //
 UINT64 FramebufferBase;
 UINT32 ScreenWidth;
@@ -49,87 +45,6 @@ UINT32 ScreenHeight;
 CHAR8 DebugBuffer[1024];
 
 BOOLEAN PostExitBootServices = FALSE;
-
-CHAR8 EFIAPI *DebugUInt64ToDecStr(UINT64 Value) {
-  CONST CHAR8 *Digits = "0123456789";
-
-  CHAR8 *Buffer = DebugBuffer + 1023;
-  *Buffer-- = '\0';
-  if (Value == 0) {
-    *Buffer-- = '0';
-  } else {
-    while (Value != 0) {
-      *Buffer-- = Digits[Value % 10];
-      Value /= 10;
-    }
-  }
-  return Buffer + 1;
-}
-
-CHAR8 EFIAPI *DebugUInt64ToHexStr(UINT64 Value) {
-  CONST CHAR8 *Digits = "0123456789ABCDEF";
-
-  CHAR8 *Buffer = DebugBuffer + 1023;
-  *Buffer-- = '\0';
-  if (Value == 0) {
-    *Buffer-- = '0';
-  } else {
-    while (Value != 0) {
-      *Buffer-- = Digits[Value % 16];
-      Value /= 16;
-    }
-  }
-  return Buffer + 1;
-}
-
-VOID EFIAPI QemuDebugWriteStr(CONST CHAR8 *String) {
-  while (*String) {
-    IoWrite8(QEMU_DEBUG_PORT, *String);
-    String++;
-  }
-}
-
-VOID EFIAPI QemuDebugWriteHex(UINT64 Value) {
-  QemuDebugWriteStr("0x");
-  QemuDebugWriteStr(DebugUInt64ToHexStr(Value));
-  QemuDebugWriteStr("\n");
-}
-
-VOID EFIAPI QemuDebugPrintMemoryMap(IN EFI_MEMORY_MAP *MemoryMap) {
-  EFI_MEMORY_DESCRIPTOR *Desc = MemoryMap->Map;
-  while (!AT_MEMORY_MAP_END(Desc, MemoryMap)) {
-    QemuDebugWriteStr("Type: ");
-    QemuDebugWriteStr(DebugUInt64ToDecStr(Desc->Type));
-    QemuDebugWriteStr(" | VirtualStart: 0x");
-    QemuDebugWriteStr(DebugUInt64ToHexStr(Desc->VirtualStart));
-    QemuDebugWriteStr(" | PysicalStart: 0x");
-    QemuDebugWriteStr(DebugUInt64ToHexStr(Desc->PhysicalStart));
-    QemuDebugWriteStr(" | NumberOfPages: ");
-    QemuDebugWriteStr(DebugUInt64ToDecStr(Desc->NumberOfPages));
-    QemuDebugWriteStr("\n");
-
-    Desc = MEMORY_MAP_NEXT(Desc, MemoryMap);
-  }
-}
-
-VOID EFIAPI QemuDebugPrintBootMemoryMap(IN memory_map_t *MemoryMap) {
-  UINTN NumEntries = MemoryMap->size / sizeof(memory_map_entry_t);
-  QemuDebugWriteStr("NumEntries: ");
-  QemuDebugWriteStr(DebugUInt64ToDecStr(NumEntries));
-  QemuDebugWriteStr("\n");
-  for (UINTN i = 0; i < NumEntries; i++) {
-    memory_map_entry_t *Entry = &MemoryMap->map[i];
-    QemuDebugWriteStr("Type: ");
-    QemuDebugWriteStr(DebugUInt64ToDecStr(Entry->type));
-    QemuDebugWriteStr(" | [0x");
-    QemuDebugWriteStr(DebugUInt64ToHexStr(Entry->base));
-    QemuDebugWriteStr(" - 0x");
-    QemuDebugWriteStr(DebugUInt64ToHexStr(Entry->base + Entry->size));
-    QemuDebugWriteStr("]\n");
-  }
-}
-
-//
 
 EFI_STATUS EFIAPI AllocateBootInfoStruct(OUT boot_info_v2_t **BootInfo) {
   UINTN NumPages = EFI_SIZE_TO_PAGES(sizeof(boot_info_v2_t));
@@ -169,6 +84,7 @@ EFI_STATUS EFIMAIN UefiMain(IN EFI_HANDLE ImageHandle, IN EFI_SYSTEM_TABLE *Syst
   Debug = ConfigGetBooleanD("debug", FALSE);
   FastBoot = ConfigGetBooleanD("fastboot", TRUE);
   KernelImagePath = ConfigGetStringD("kernel", DefaultKernelPath);
+  InitrdImagePath = ConfigGetStringD("initrd", NULL);
 
   // Set video mode if specified
   GRAPHICS_MODE_INFO *GraphicsMode = NULL;
@@ -186,6 +102,11 @@ EFI_STATUS EFIMAIN UefiMain(IN EFI_HANDLE ImageHandle, IN EFI_SYSTEM_TABLE *Syst
   Status = GetFramebufferInfo(&FramebufferBase, &FramebufferSize, &ScreenWidth, &ScreenHeight);
   CHECK_ERROR(Status);
 
+  // Get initial memory map
+  EFI_MEMORY_MAP *MemoryMap = AllocateZeroPool(sizeof(EFI_MEMORY_MAP));
+  Status = GetMemoryMap(MemoryMap);
+  CHECK_ERROR(Status);
+
   // Load kernel
   UINT64 KernelEntry = 0;
   UINTN KernelSize = 0;
@@ -201,6 +122,20 @@ EFI_STATUS EFIMAIN UefiMain(IN EFI_HANDLE ImageHandle, IN EFI_SYSTEM_TABLE *Syst
   );
   CHECK_ERROR(Status);
   ASSERT(KernelSize <= KERNEL_MAX_SIZE);
+
+  // Load initrd
+  UINT64 InitrdPhysAddr = 0;
+  UINTN InitrdSize = 0;
+  if (InitrdImagePath != NULL) {
+    PRINT_INFO("Loading initrd");
+    Status = LoadRawFile(InitrdImagePath, MemoryMap, InitrdPhysAddrBase, &InitrdPhysAddr, &InitrdSize);
+    if (EFI_ERROR(Status)) {
+      PRINT_ERROR("Failed to load initrd");
+      CHECK_ERROR(Status);
+      UNREACHABLE();
+    }
+    PRINT_INFO("Loaded initrd");
+  }
 
   // Setup page tables
   UINT64 PML4Address = 0;
@@ -224,6 +159,9 @@ EFI_STATUS EFIMAIN UefiMain(IN EFI_HANDLE ImageHandle, IN EFI_SYSTEM_TABLE *Syst
   BootInfo->fb_width = ScreenWidth;
   BootInfo->fb_height = ScreenHeight;
   BootInfo->fb_pixel_format = GetBootInfoPixelFormat(GraphicsMode->PixelFormat);
+
+  BootInfo->initrd_addr = InitrdPhysAddr;
+  BootInfo->initrd_size = InitrdSize;
 
   // pre-allocate memory for the boot memory_map_t array
   VOID *BootMemoryMapBuffer = AllocateRuntimePages(MMAP_MAX_SIZE);
@@ -265,13 +203,12 @@ EFI_STATUS EFIMAIN UefiMain(IN EFI_HANDLE ImageHandle, IN EFI_SYSTEM_TABLE *Syst
   PRINT_INFO("Done");
   PRINT_INFO("Exiting UEFI...");
 
-  // final efi memory map
-  EFI_MEMORY_MAP *MemoryMap = AllocateZeroPool(sizeof(EFI_MEMORY_MAP));
+  // get final efi memory map
   Status = GetMemoryMap(MemoryMap);
   CHECK_ERROR(Status);
 
-  // NOTE: No use of any functions which might allocate/free memory
-  //       after this point. This includes all console interfaces.
+  // NOTE: No use of any uefi system functions which might allocate/free
+  //       memory after this point. This includes all console interfaces.
 
   BootInfo->mem_map.size = BootInfo->mem_map.capacity;
   Status = ConvertEfiMemoryMapToBootFormat(

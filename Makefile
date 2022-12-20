@@ -167,19 +167,25 @@ KERNEL_DEFINES = $(DEFINES) -D__KERNEL__
 $(BUILD_DIR)/kernel.elf: $(KERNEL_OBJECTS) $(BUILD_DIR)/libdwarf.a
 	$(LD) $(KERNEL_LDFLAGS) $^ -l:libdwarf.a --no-relax -o $@
 
+# initial ramdisk
+$(BUILD_DIR)/initrd.img: .initrd
+	scripts/mkinitrd.py -o $@ -f $<
+
 # libdwarf
 $(BUILD_DIR)/libdwarf.a:
 	bash toolchain/libdwarf.sh build $(WINARCH)
 
 # bootable USB image
-$(BUILD_DIR)/osdev.img: $(BUILD_DIR)/boot$(WINARCH).efi $(BUILD_DIR)/kernel.elf config.ini
-	dd if=/dev/zero of=$@ bs=1k count=2880
-	mformat -i $@ -f 2880 -v osdev ::
+$(BUILD_DIR)/osdev.img: $(BUILD_DIR)/boot$(WINARCH).efi $(BUILD_DIR)/kernel.elf config.ini $(BUILD_DIR)/initrd.img
+	dd if=/dev/zero of=$@ bs=1M count=256
+# 	256M -> 268435456 / 512 = 524288 sectors
+	mformat -i $@ -F -h 64 -s 32 -T 524288 -c 1 -v osdev ::
 	mmd -i $@ ::/EFI
 	mmd -i $@ ::/EFI/BOOT
 	mcopy -i $@ $< ::/EFI/BOOT
 	mcopy -i $@ config.ini ::/EFI/BOOT
 	mcopy -i $@ $(BUILD_DIR)/kernel.elf ::/EFI/BOOT
+	mcopy -i $@ $(BUILD_DIR)/initrd.img ::/EFI/BOOT
 
 # ------------------- #
 #      External       #
