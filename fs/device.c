@@ -8,6 +8,21 @@
 #include <queue.h>
 #include <atomic.h>
 #include <string.h>
+#include <bitmap.h>
+
+
+// typedef struct device_type {
+//   dev_t maj_min;
+//   bitmap_t *units;
+//   //
+//   LIST_HEAD(device_t) devices;
+// } device_type_t;
+//
+// static rb_tree_t *__devices;
+//
+//
+// dev_t device_register_type(uint8_t major, uint8_t minor, )
+
 
 static uint8_t __minor_ids[3] = { 1, 1, 1 };
 LIST_HEAD(device_t) devices[3][32] = {};
@@ -29,7 +44,7 @@ dev_t register_device(uint8_t major, uint8_t minor, void *data, device_ops_t *op
 
   u++;
   device->dev = makedev(major, minor, u);
-  device->device = data;
+  device->data = data;
   device->ops = ops;
 
   LIST_ADD(&devices[major - 1][minor], device, devices);
@@ -51,6 +66,10 @@ dev_t register_framebuf(uint8_t minor, framebuf_t *frambuf, device_ops_t *ops) {
 }
 
 device_t *locate_device(dev_t dev) {
+  if (dev == 0) {
+    return NULL;
+  }
+
   uint8_t maj = major(dev);
   uint8_t min = minor(dev);
   uint8_t uni = unit(dev);

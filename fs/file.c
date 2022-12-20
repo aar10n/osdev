@@ -116,10 +116,10 @@ file_t *f_alloc(dentry_t *dentry, int flags) {
   file->device = device;
 
   if (IS_IFCHR(dentry->mode)) {
-    chrdev_t *chrdev = device->device;
+    chrdev_t *chrdev = device->data;
     file->ops = chrdev->ops;
   } else if (IS_IFFBF(dentry->mode)) {
-    framebuf_t *fb = device->device;
+    framebuf_t *fb = device->data;
     file->ops = fb->ops;
   }
 
@@ -233,7 +233,7 @@ ssize_t f_read(file_t *file, char *buf, size_t count) {
     nread = sizeof(dirent_t);
   } else if (IS_IFBLK(file->mode)) {
     uint64_t lba = SIZE_TO_SECS(file->pos);
-    nread = blkdev_readbuf(file->device->device, lba, count, buf);
+    nread = blkdev_readbuf(file->device->data, lba, count, buf);
     if (nread > 0) {
       file->pos += nread;
     }

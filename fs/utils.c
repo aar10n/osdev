@@ -98,5 +98,5 @@ blkdev_t *fs_get_blkdev(const char *path) {
     return NULL;
   }
 
-  return device->device;
+  return device->data;
 }

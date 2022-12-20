@@ -77,16 +77,14 @@ int ramfs_rename(inode_t *old_dir, dentry_t *old_dentry, inode_t *new_dir, dentr
 
 //
 
-inode_ops_t inode_ops = {
+static inode_ops_t inode_ops = {
   .create = ramfs_create,
   .mknod = ramfs_mknod,
   .mkdir = ramfs_mkdir,
   .rename = ramfs_rename,
 };
 
-dentry_ops_t dentry_ops = {
-
-};
+static dentry_ops_t dentry_ops = {};
 
 inode_ops_t *ramfs_inode_ops = &inode_ops;
 dentry_ops_t *ramfs_dentry_ops = &dentry_ops;

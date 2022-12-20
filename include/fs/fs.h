@@ -46,7 +46,7 @@ extern dentry_t *fs_root;
 #define FS_NO_ROOT  0x002 // no root inode
 
 typedef struct file_system {
-  char *name;                // filesystem name
+  const char *name;          // filesystem name
   uint32_t flags;            // filesystem flags
 
   super_block_t *(*mount)(file_system_t *fs, dev_t devid, blkdev_t *dev, dentry_t *mount);
@@ -68,10 +68,9 @@ typedef struct file_system {
 #define DEVICE_CHRDEV  2  // character device
 #define DEVICE_FRAMBF  3  // framebuffer
 
-
 typedef struct device {
   dev_t dev;                    // device id (major + minor + unit)
-  void *device;                 // device driver (blkdev, chrdev)
+  void *data;                   // device data (blkdev, chrdev)
   device_ops_t *ops;            // common device operations
   LIST_ENTRY(device_t) devices; // devices list
 } device_t;
@@ -306,5 +305,20 @@ char *fs_getcwd(char *buf, size_t size);
 
 void *fs_mmap(void *addr, size_t len, int prot, int flags, int fd, off_t off);
 int fs_munmap(void *addr, size_t len);
+
+//
+
+static inline dev_t makedev(uint8_t maj, uint8_t min, uint8_t unit) {
+  return maj | (min << 8) | (unit << 16);
+}
+static inline uint8_t major(dev_t dev) {
+  return dev & 0xFF;
+}
+static inline uint16_t minor(dev_t dev) {
+  return (dev >> 8) & 0xFF;
+}
+static inline uint16_t unit(dev_t dev) {
+  return (dev >> 16) & 0xFF;
+}
 
 #endif

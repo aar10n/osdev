@@ -3,7 +3,6 @@
 //
 
 #include <ramfs/ramfs.h>
-
 #include <string.h>
 
 int ramfs_open(file_t *file, dentry_t *dentry) {
@@ -65,7 +64,7 @@ ssize_t ramfs_write(file_t *file, const char *buf, size_t count, off_t *offset) 
 
 //
 
-file_ops_t file_ops = {
+static file_ops_t file_ops = {
   .open = ramfs_open,
   .flush = ramfs_flush,
   .read = ramfs_read,

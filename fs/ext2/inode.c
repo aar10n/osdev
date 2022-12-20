@@ -42,9 +42,10 @@ int ext2_create(inode_t *dir, dentry_t *dentry, mode_t mode) {
 dentry_t *ext2_lookup(inode_t *dir, const char *name, bool filldir) {
   dentry_t *parent = LIST_FIRST(&dir->dentries);
   dentry_t *dentry = NULL;
+  kassert(parent != NULL);
 
   // check existing dentries
-  dentry_t *child = parent ? LIST_FIRST(&parent->children) : NULL;
+  dentry_t *child = LIST_FIRST(&parent->children);
   while (child) {
     if (strcmp(child->name, name) == 0) {
       // filldir == true && IS_FULL(dir->mode) -> true
@@ -113,7 +114,8 @@ dentry_t *ext2_lookup(inode_t *dir, const char *name, bool filldir) {
     }
   }
 
-  parent->mode |= S_ISFLL;
+  if (filldir)
+    parent->mode |= S_ISFLL;
   return dentry;
 }
 
@@ -158,5 +160,5 @@ int ext2_readlink(dentry_t *dentry, char *buffer, int buflen) {
 }
 
 void ext2_truncate(inode_t *inode) {
-
+  ERRNO = ENOTSUP;
 }

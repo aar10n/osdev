@@ -41,7 +41,7 @@ int ramfs_write_inode(super_block_t *sb, inode_t *inode) {
 
 //
 
-super_block_ops_t super_ops = {
+static super_block_ops_t super_ops = {
   ramfs_alloc_inode,
   ramfs_destroy_inode,
   ramfs_read_inode,

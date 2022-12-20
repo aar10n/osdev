@@ -120,7 +120,7 @@ super_block_t *ext2_mount(file_system_t *fs, dev_t devid, blkdev_t *dev, dentry_
 
 file_system_t ext2_file_system = {
   .name = "ext2",
-  .flags = 0,
+  .flags = FS_READONLY,
   .mount = ext2_mount,
   .sb_ops = &ext2_super_ops,
   .inode_ops = &ext2_inode_ops,
@@ -134,5 +134,4 @@ void ext2_init() {
     panic("failed to register");
   }
 }
-
 MODULE_INIT(ext2_init);

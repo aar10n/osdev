@@ -21,7 +21,7 @@ int framebuf_mmap(file_t *file, uintptr_t vaddr, size_t len, uint16_t flags) {
     return -1;
   }
 
-  framebuf_t *fb = dev->device;
+  framebuf_t *fb = dev->data;
   fb->vaddr = _vmap_phys_addr(vaddr, fb->paddr, len, flags);
   return 0;
 }
@@ -34,7 +34,7 @@ file_ops_t framebuf_file_ops = {
 //
 
 void framebuf_fill_inode(device_t *device, inode_t *inode) {
-  framebuf_t *fb = device->device;
+  framebuf_t *fb = device->data;
   inode->size = fb->size;
 }
 
@@ -70,5 +70,4 @@ void framebuf_init() {
     panic("failed to create /dev/fb0: %s", strerror(ERRNO));
   }
 }
-
 MODULE_INIT(framebuf_init);

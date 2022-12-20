@@ -11,13 +11,13 @@
 #include <path.h>
 #include <thread.h>
 #include <process.h>
-#include <hash_table.h>
+#include <hash_map.h>
 #include <panic.h>
 
 #include <ramfs/ramfs.h>
+#include <initrd/initrd.h>
 #include <devfs/devfs.h>
-#include <ext2/ext2.h>
-#include <printf.h>
+
 #include <cpu/cpu.h>
 
 // #define FS_DEBUG
@@ -27,8 +27,10 @@
 #define fs_trace_debug(str, args...)
 #endif
 
+MAP_TYPE_DECLARE(file_system_t *);
+
 dentry_t *fs_root;
-map_t(file_system_t *) fs_types;
+hash_map_t *fs_types;
 
 
 int validate_open_flags(dentry_t *dentry, int flags) {
@@ -97,7 +99,7 @@ int mount_root(device_t *device, file_system_t *fs) {
   dentry->parent = dentry;
 
   dev_t devid = device ? device->dev : 0;
-  blkdev_t *blkdev = device ? device->device : NULL;
+  blkdev_t *blkdev = device ? device->data : NULL;
   super_block_t *sb = fs->mount(fs, devid, blkdev, dentry);
   if (sb == NULL) {
     return -1;
@@ -176,7 +178,7 @@ int mount_internal(const char *path, device_t *device, file_system_t *fs) {
   }
 
   dev_t devid = device ? device->dev : 0;
-  blkdev_t *blkdev = device ? device->device : NULL;
+  blkdev_t *blkdev = device ? device->data : NULL;
   super_block_t *sb = fs->mount(fs, devid, blkdev, dentry);
   if (sb == NULL) {
     return -1;
@@ -203,34 +205,56 @@ int mount_internal(const char *path, device_t *device, file_system_t *fs) {
 
 
 void fs_init() {
+  fs_types = hash_map_new();
   dcache_init();
   path_init();
-  map_init(&fs_types);
 
   ramfs_init();
-  file_system_t *ramfs = map_get(&fs_types, "ramfs");
+  initrd_init();
+  devfs_init();
+  file_system_t *ramfs = hash_map_get(fs_types, "ramfs");
   kassert(ramfs != NULL);
 
   dentry_t *dentry = d_alloc(NULL, "/");
   dentry->parent = dentry;
-  if (ramfs->mount(ramfs, 0, NULL, dentry) < 0) {
-    panic("failed to mount root fs");
+  dentry->mode |= S_IFDIR | S_IFMNT;
+
+  file_system_t *rootfs;
+  if (boot_info_v2->initrd_addr != 0) {
+    file_system_t *initrd = hash_map_get(fs_types, "initrd");
+    kassert(initrd != NULL);
+    if (initrd->mount(initrd, 0, NULL, dentry) < 0) {
+      panic("failed to mount initrd: %s", strerror(ERRNO));
+    }
+    rootfs = initrd;
+  } else {
+    // empty ramfs root
+    if (ramfs->mount(ramfs, 0, NULL, dentry) < 0) {
+      panic("failed to mount root fs: %s", strerror(ERRNO));
+    }
+    rootfs = ramfs;
   }
   d_populate_dir(dentry);
+
   fs_root = dentry;
   PERCPU_PROCESS->pwd = &fs_root;
+  if (rootfs->post_mount) {
+    rootfs->post_mount(rootfs, fs_root->inode->sb);
+  }
 
-  if (fs_mkdir("/dev", S_IFDIR | S_IRUSR | S_IWUSR | S_IROTH) < 0) {
-    panic("failed to create /dev directory: %s", strerror(ERRNO));
+  file_system_t *devfs = hash_map_get(fs_types, "devfs");
+  kassert(devfs != NULL);
+  if (mount_internal("/dev", NULL, devfs) < 0) {
+    panic("failed to mount devfs: %s", strerror(ERRNO));
   }
 }
 
 int fs_register(file_system_t *fs) {
-  if (map_get(&fs_types, fs->name)) {
+  if (hash_map_get(fs_types, fs->name)) {
     ERRNO = EINVAL;
     return -1;
   }
-  map_set(&fs_types, (char *) fs->name, fs);
+  hash_map_set_c(fs_types, fs->name, fs);
   return 0;
 }
 
@@ -264,7 +288,7 @@ int fs_mount(const char *path, const char *device, const char *format) {
     return -1;
   }
 
-  file_system_t *fs = map_get(&fs_types, (char *) format);
+  file_system_t *fs = hash_map_get(fs_types, format);
   return mount_internal(path, dev, fs);
 }
 
