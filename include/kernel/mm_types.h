@@ -23,8 +23,11 @@
 #define PAGES_TO_SIZE(pages) ((pages) << PAGE_SHIFT)
 #define SIZE_TO_PAGES(size) (((size) >> PAGE_SHIFT) + (((size) & PAGE_FLAGS_MASK) ? 1 : 0))
 
+struct page;
+struct address_space;
 struct vm_mapping;
 struct mem_zone;
+
 struct intvl_tree;
 struct file;
 struct bitmap;
