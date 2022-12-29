@@ -5,6 +5,9 @@ for the past few years, and it is an ongoing effort with much left to add. Right
 a fully working OS, however many subsystems are in a more-or-less working state and so this may 
 serve as a useful reference to some.
 
+*Note* — I am currently rewriting the filesystem from the ground-up on the 
+[fs-rewrite-v2](https://github.com/aar10n/osdev/tree/fs-rewrite-v2) branch.
+
 ```
 ├── apps          userspace programs
 ├── boot          uefi edk2 bootloader
