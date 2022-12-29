@@ -17,26 +17,27 @@
 #include <abi/vm-flags.h>
 
 struct page;
+struct vm_mapping;
 
 struct fs_type;
 struct super_block;
 struct super_block_ops;
 struct inode;
+struct itable;
 struct inode_ops;
 struct dentry;
+struct dcache;
 struct dentry_out;
 struct dentry_ops;
 struct file;
 struct file_ops;
+
 struct device;
 struct device_ops;
-
 struct bdev;
 struct bdev_ops;
 struct cdev;
 struct cdev_ops;
-
-struct vm_mapping;
 
 //
 //
@@ -82,6 +83,8 @@ typedef struct super_block {
   mutex_t lock;
 
   struct dentry *mount;           // the mount point dentry
+  struct itable *itable;          // inode table
+  struct dcache *dcache;          // dentry cache
   struct bdev *bdev;              // block device containing the filesystem
   struct fs_type *fs;             // filesystem type
   struct super_block_ops *ops;    // superblock operations

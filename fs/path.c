@@ -3,10 +3,10 @@
 //
 
 #include <path.h>
-#include <string.h>
-#include <murmur3.h>
 #include <mm.h>
 #include <printf.h>
+#include <string.h>
+#include <murmur3.h>
 
 #define HASH_SEED 0xDEADBEEF
 

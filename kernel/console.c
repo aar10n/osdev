@@ -316,7 +316,6 @@ static void cmdline_free_strings(char **strings) {
 
 // MARK: Console Commands
 
-#include <fs.h>
 #include <thread.h>
 
 static int cmdline_ls_command(const char **args, size_t args_len) {
@@ -324,30 +323,31 @@ static int cmdline_ls_command(const char **args, size_t args_len) {
     kputsf("error: ls <path>\n");
     return -1;
   }
-  kputsf("listing contents of %s\n", args[0]);
-
-  const char *path = args[0];
-  int fd = fs_open(path, O_RDONLY | O_DIRECTORY, 0);
-  if (fd < 0) {
-    kputsf("error: %s\n", strerror(ERRNO));
-    return -1;
-  }
-
-  dentry_t *dentry;
-  while ((dentry = fs_readdir(fd)) != NULL) {
-    if (strcmp(dentry->name, ".") == 0 || strcmp(dentry->name, "..") == 0) {
-      continue;
-    }
-
-    if (IS_IFDIR(dentry->mode)) {
-      kputsf("  %s/\n", dentry->name);
-    } else {
-      kputsf("  %s\n", dentry->name);
-    }
-  }
-
-  fs_close(fd);
-  return 0;
+  return -1;
+  // kputsf("listing contents of %s\n", args[0]);
+  //
+  // const char *path = args[0];
+  // int fd = fs_open(path, O_RDONLY | O_DIRECTORY, 0);
+  // if (fd < 0) {
+  //   kputsf("error: %s\n", strerror(ERRNO));
+  //   return -1;
+  // }
+  //
+  // dentry_t *dentry;
+  // while ((dentry = fs_readdir(fd)) != NULL) {
+  //   if (strcmp(dentry->name, ".") == 0 || strcmp(dentry->name, "..") == 0) {
+  //     continue;
+  //   }
+  //
+  //   if (IS_IFDIR(dentry->mode)) {
+  //     kputsf("  %s/\n", dentry->name);
+  //   } else {
+  //     kputsf("  %s\n", dentry->name);
+  //   }
+  // }
+  //
+  // fs_close(fd);
+  // return 0;
 }
 
 static int cmdline_mount_command(const char **args, size_t args_len) {

@@ -5,14 +5,6 @@
 #ifndef FS_DEVICE_H
 #define FS_DEVICE_H
 
-#include <fs.h>
-
-// major number is just to differentiate type (blkdev, chardev)
-// minor number is the same for all devices using the same driver
-
-dev_t register_blkdev(uint8_t minor, blkdev_t *blkdev, device_ops_t *ops);
-dev_t register_chrdev(uint8_t minor, chrdev_t *chrdev, device_ops_t *ops);
-dev_t register_framebuf(uint8_t minor, framebuf_t *frambuf, device_ops_t *ops);
-device_t *locate_device(dev_t dev);
+#include <fs_types.h>
 
 #endif

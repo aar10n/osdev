@@ -13,9 +13,6 @@
 #include <loader.h>
 #include <ipc.h>
 
-#include <fs.h>
-#include <file.h>
-
 #include <string.h>
 #include <printf.h>
 #include <panic.h>
@@ -84,8 +81,8 @@ process_t *process_alloc(pid_t pid, pid_t ppid, void *(start_routine)(void *), v
   process->num_threads = 1;
   process->uid = -1;
   process->gid = -1;
-  process->pwd = &fs_root;
-  process->files = create_file_table();
+  process->pwd = NULL;
+  process->files = NULL;
   spin_init(&process->lock);
 
   mutex_init(&process->sig_mutex, MUTEX_REENTRANT | MUTEX_SHARED);
@@ -172,7 +169,7 @@ pid_t process_fork() {
   process->ppid = parent->pid;
   process->address_space = fork_address_space();
   process->pwd = parent->pwd;
-  process->files = copy_file_table(parent->files);
+  process->files = NULL;
 
   // clone main thread
   thread_t *main = thread_copy(parent_thread);

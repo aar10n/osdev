@@ -16,7 +16,6 @@
 #define PROCESS_UNLOCK(proc) (spin_unlock(&(proc)->lock))
 
 typedef struct thread thread_t;
-typedef struct file_table file_table_t;
 typedef struct address_space address_space_t;
 typedef struct dentry dentry_t;
 typedef struct signal signal_t;
@@ -33,7 +32,7 @@ typedef struct process {
   uid_t uid;                      // user id
   gid_t gid;                      // group id
   dentry_t **pwd;                 // process working directory
-  file_table_t *files;            // open file table
+  void *files;                    // open file table
   size_t num_threads;             // number of threads
   spinlock_t lock;                // process lock
 

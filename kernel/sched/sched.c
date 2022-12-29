@@ -108,6 +108,7 @@ static inline void sched_add_ready_thread(sched_t *sched, thread_t *thread) {
   int result = SCHED_DISPATCH(sched, thread->policy, add_thread, thread);
   sched_assert(result == 0);
   sched->ready_count++;
+  // kprintf("sched: added ready thread\n");
 }
 
 void sched_remove_ready_thread(sched_t *sched, thread_t *thread) {
@@ -115,6 +116,7 @@ void sched_remove_ready_thread(sched_t *sched, thread_t *thread) {
   sched_assert(result == 0);
   sched_assert(sched->ready_count > 0);
   sched->ready_count--;
+  // kprintf("sched: removed ready thread\n");
 }
 
 void sched_add_blocked_thread(sched_t *sched, thread_t *thread) {
@@ -197,6 +199,7 @@ thread_t *sched_get_next_thread(sched_t *sched) {
   }
 
   sched->ready_count--;
+  // kprintf("sched: removed ready (next) thread\n");
 
   sched_assert(thread != NULL);
   sched_assert(thread->status == THREAD_READY);

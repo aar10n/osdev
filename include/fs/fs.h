@@ -5,308 +5,10 @@
 #ifndef FS_FS_H
 #define FS_FS_H
 
-#include <base.h>
-#include <abi/fcntl.h>
-#include <abi/seek-whence.h>
-#include <abi/stat.h>
-#include <abi/vm-flags.h>
+#include <fs_types.h>
 
-#include <blkdev.h>
-#include <chrdev.h>
-#include <framebuf.h>
-#include <mutex.h>
-#include <queue.h>
-#include <mm.h>
-#include <rb_tree.h>
+#define MAP_FAILED ((void *)F_ERROR)
 
-#define MAX_PATH 256
-#define MAX_SYMLINKS 8
-#define MAX_FILE_NAME 32
-
-#define is_root(node) ((node)->parent == (node))
-
-typedef struct file_system file_system_t;
-typedef struct device device_t;
-typedef struct device_ops device_ops_t;
-typedef struct super_block super_block_t;
-typedef struct super_block_ops super_block_ops_t;
-typedef struct inode inode_t;
-typedef struct inode_ops inode_ops_t;
-typedef struct dentry dentry_t;
-typedef struct dentry_ops dentry_ops_t;
-typedef struct file file_t;
-typedef struct file_ops file_ops_t;
-
-extern dentry_t *fs_root;
-
-/* ----- Filesystem ----- */
-
-// filesystem flags
-#define FS_READONLY 0x001 // read-only
-#define FS_NO_ROOT  0x002 // no root inode
-
-typedef struct file_system {
-  const char *name;          // filesystem name
-  uint32_t flags;            // filesystem flags
-
-  super_block_t *(*mount)(file_system_t *fs, dev_t devid, blkdev_t *dev, dentry_t *mount);
-  int (*post_mount)(file_system_t *fs, super_block_t *sb);
-
-  super_block_ops_t *sb_ops; // superblock operations
-  inode_ops_t *inode_ops;    // inode operations
-  dentry_ops_t *dentry_ops;  // dentry operations
-  file_ops_t *file_ops;      // file operations
-  void *data;                // filesystem setup data
-} file_system_t;
-
-/* ----- Device ----- */
-
-#define MAX_DEVICES 64
-
-// major types
-#define DEVICE_BLKDEV  1  // block device
-#define DEVICE_CHRDEV  2  // character device
-#define DEVICE_FRAMBF  3  // framebuffer
-
-typedef struct device {
-  dev_t dev;                    // device id (major + minor + unit)
-  void *data;                   // device data (blkdev, chrdev)
-  device_ops_t *ops;            // common device operations
-  LIST_ENTRY(device_t) devices; // devices list
-} device_t;
-
-typedef struct device_ops {
-  void (*fill_inode)(device_t *device, inode_t *inode);
-} device_ops_t;
-
-/* ----- Superblock ----- */
-
-typedef struct super_block {
-  char id[32];               // volume id
-  uint32_t flags;            // mount flags
-  blksize_t blksize;         // block size in bytes
-  dentry_t *root;            // mount dentry
-  blkdev_t *dev;             // associated block device
-  dev_t devid;               // device id
-  LIST_HEAD(inode_t) inodes; // all inodes from this fs
-  file_system_t *fs;         // filesystem type
-  super_block_ops_t *ops;    // superblock operations
-  rb_tree_t *inode_cache;    // inode cache
-  void *data;                // filesystem specific data
-} super_block_t;
-
-typedef struct super_block_ops {
-  inode_t *(*alloc_inode)(super_block_t *sb);
-  int (*destroy_inode)(super_block_t *sb, inode_t *inode);
-  int (*read_inode)(super_block_t *sb, inode_t *inode);
-  int (*write_inode)(super_block_t *sb, inode_t *inode);
-} super_block_ops_t;
-
-/* ----- Inode ----- */
-
-// inode mode flags
-#define I_TYPE_MASK 0x1FFF0000
-#define I_PERM_MASK 0x0000FFFF
-#define I_FILE_MASK (S_IFREG | S_IFDIR | S_IFLNK)
-#define I_MKNOD_MASK (S_IFFBF | S_IFIFO | S_IFCHR | S_IFDIR | S_IFBLK | S_IFREG)
-
-#define S_ISFLL  0x8000000 // Dentry is full.
-#define S_ISDTY  0x4000000 // Inode is dirty.
-#define S_ISLDD  0x2000000 // Inode is loaded.
-
-#define IS_IFFBF(mode) ((mode) & S_IFFBF)
-#define IS_IFMNT(mode) ((mode) & S_IFMNT)
-#define IS_IFCHR(mode) ((mode) & S_IFCHR)
-#define IS_IFIFO(mode) ((mode) & S_IFIFO)
-#define IS_IFLNK(mode) ((mode) & S_IFLNK)
-#define IS_IFSOCK(mode) ((mode) & S_IFSOCK)
-#define IS_IFBLK(mode) ((mode) & S_IFBLK)
-#define IS_IFDIR(mode) ((mode) & S_IFDIR)
-#define IS_IFREG(mode) ((mode) & S_IFREG)
-
-#define IS_LOADED(mode) ((mode) & S_ISLDD)
-#define IS_DIRTY(mode) ((mode) & S_ISDTY)
-#define IS_FULL(mode) ((mode) & S_ISFLL)
-
-typedef struct inode {
-  ino_t ino;                    // inode number
-  mode_t mode;                  // access permissions
-  nlink_t nlink;                // number of hard links
-  uid_t uid;                    // user id of owner
-  gid_t gid;                    // group id of owner
-  off_t size;                   // file size in bytes
-  dev_t dev;                    // inode device
-  time_t atime;                 // last access time
-  time_t mtime;                 // last modify time
-  time_t ctime;                 // last change time
-  rw_lock_t lock;               // read/write lock
-  blksize_t blksize;            // block size in bytes
-  blkcnt_t blocks;              // file size in blocks
-  blkdev_t *blkdev;             // block device
-  page_t *pages;                // inode data pages
-  LIST_HEAD(dentry_t) dentries; // list of associated dentries
-  LIST_ENTRY(inode_t) inodes;   // list of inodes from same fs
-  super_block_t *sb;            // super block
-  inode_ops_t *ops;             // inode operations
-  void *data;                   // filesystem data
-} inode_t;
-
-typedef struct inode_ops {
-  int (*create)(inode_t *dir, dentry_t *dentry, mode_t mode);
-  dentry_t *(*lookup)(inode_t *dir, const char *name, bool filldir);
-  int (*link)(inode_t *dir, dentry_t *old_dentry, dentry_t *dentry);
-  int (*unlink)(inode_t *dir, dentry_t *dentry);
-  int (*symlink)(inode_t *dir, dentry_t *dentry, const char *path);
-  int (*mkdir)(inode_t *dir, dentry_t *dentry, mode_t mode);
-  int (*rmdir)(inode_t *dir, dentry_t *dentry);
-  int (*mknod)(inode_t *dir, dentry_t *dentry, mode_t mode, dev_t dev);
-  int (*rename)(inode_t *old_dir, dentry_t *old_dentry, inode_t *new_dir, dentry_t *new_dentry);
-  int (*readlink)(dentry_t *dentry, char *buffer, int buflen);
-  // int (*follow_link)(dentry_t *dentry, nameidata_t *nd);
-  void (*truncate)(inode_t *inode);
-  // int permission(inode_t *inode, int mask);
-  // int setattr(dentry_t *dentry, iattr_t *attr);
-  // int getattr(vfsmount_t *mnt, dentry_t *dentry, kstat_t *stat);
-  // int setxattr(dentry_t *dentry, const char *name, const void *value, size_t size, int flags);
-  // ssize_t getxattr(dentry_t *dentry, const char *name, void *value, size_t size);
-  // ssize_t listxattr(dentry_t *dentry, char *list, size_t size);
-  // int removexattr(dentry_t *dentry, const char *name);
-} inode_ops_t;
-
-/* ----- Dentry ----- */
-
-typedef struct dentry {
-  ino_t ino;                     // inode number
-  mode_t mode;                   // dentry mode
-  char name[MAX_FILE_NAME];      // dentry name
-  uint32_t hash;                 // dentry hash
-  inode_t *inode;                // associated inode
-  dentry_t *parent;              // parent dentry
-  LIST_HEAD(dentry_t) children;  // child dentries
-  LIST_ENTRY(dentry_t) siblings; // sibling dentries
-  LIST_ENTRY(dentry_t) dentries; // inode dentries
-  LIST_ENTRY(dentry_t) bucket;   // dcache hash bucket
-  dentry_ops_t *ops;             // dentry operations
-} dentry_t;
-
-typedef struct dentry_ops {
-  int (*create)(dentry_t *dentry);
-  // int (*delete)(dentry_t *dentry);
-  // int (*compare)(dentry_t *dentry, )
-} dentry_ops_t;
-
-/* ----- File ----- */
-
-#define OPEN_TYPE_MASK    0x1F
-#define OPEN_OPTIONS_MASK 0x1FFE0
-
-#define MAX_PROC_FILES 1024
-#define DIR_FILE_FLAGS (O_DIRECTORY | O_RDONLY)
-
-typedef struct file {
-  int fd;              // file descriptor
-  dentry_t *dentry;    // associated dentry
-  int flags;           // flags specified on open
-  int fd_flags;        // file descriptor flags
-  mode_t mode;         // file access mode
-  off_t pos;           // file offset
-  uid_t uid;           // user id
-  gid_t gid;           // group id
-  file_ops_t *ops;     // file operations
-  device_t *device;    // file device
-} file_t;
-
-typedef struct file_ops {
-  int (*open)(file_t *file, dentry_t *dentry);
-  int (*flush)(file_t *file);
-  ssize_t (*read)(file_t *file, char *buf, size_t count, off_t *offset);
-  ssize_t (*write)(file_t *file, const char *buf, size_t count, off_t *offset);
-  off_t (*lseek)(file_t *file, off_t offset, int origin);
-  int (*readdir)(file_t *file, dentry_t *dirent, bool fill);
-  // unsigned int (*poll)(file_t *file, poll_table_struct_t *poll_table);
-  // int (*ioctl)(inode_t *inode, file_t *file, unsigned int cmd, unsigned long arg);
-  int (*mmap)(file_t *file, uintptr_t vaddr, size_t len, uint16_t flags);
-  // int (*lock)(file_t *file, int cmd, file_lock_t *lock);
-  // int (*release)(inode_t *inode, file_t *file);
-  // int (*fsync)(file_t *file, dentry_t *dentry, int datasync);
-  // ssize_t (*readv)(file_t *file, const iovec_t *vector, unsigned long count, off_t *offset);
-  // ssize_t (*writev)(file_t *file, const iovec_t *vector, unsigned long count, off_t *offset);
-} file_ops_t;
-
-// dirent
-
-#define DT_UNKNOWN 0
-#define DT_FIFO 1
-#define DT_CHR 2
-#define DT_DIR 4
-#define DT_BLK 6
-#define DT_REG 8
-#define DT_LNK 10
-#define DT_SOCK 12
-#define DT_WHT 14
-
-typedef struct dirent {
-  ino_t d_ino;
-  off_t d_off;
-  unsigned short d_reclen;
-  unsigned char d_type;
-  char d_name[1024];
-} dirent_t;
-
-/* ----- Mmap ----- */
-
-#define MAP_FAILED NULL
-
-
-/* ----- API ----- */
-
-void fs_init();
-int fs_register(file_system_t *fs);
-dev_t fs_register_blkdev(uint8_t minor, blkdev_t *blkdev, device_ops_t *ops);
-dev_t fs_register_chrdev(uint8_t minor, chrdev_t *chrdev, device_ops_t *ops);
-dev_t fs_register_framebuf(uint8_t minor, framebuf_t *framebuf, device_ops_t *ops);
-
-int fs_mount(const char *path, const char *device, const char *format);
-int fs_unmount(const char *path);
-
-int fs_open(const char *path, int flags, mode_t mode);
-int fs_creat(const char *path, mode_t mode);
-int fs_mkdir(const char *path, mode_t mode);
-int fs_mknod(const char *path, mode_t mode, dev_t dev);
-int fs_close(int fd);
-
-int fs_stat(const char *path, struct stat *statbuf);
-int fs_fstat(int fd, struct stat *statbuf);
-
-ssize_t fs_read(int fd, void *buf, size_t nbytes);
-ssize_t fs_write(int fd, void *buf, size_t nbytes);
-off_t fs_lseek(int fd, off_t offset, int whence);
-
-int fs_dup(int fd);
-int fs_dup2(int fd, int fd2);
-int fs_fcntl(int fd, int cmd, uint64_t arg);
-
-dentry_t *fs_readdir(int fd);
-long fs_telldir(int fd);
-void fs_seekdir(int fd, long loc);
-void fs_rewinddir(int fd);
-
-int fs_link(const char *path1, const char *path2);
-int fs_unlink(const char *path);
-int fs_symlink(const char *path1, const char *path2);
-int fs_rename(const char *oldfile, const char *newfile);
-ssize_t fs_readlink(const char *restrict path, char *restrict buf, size_t bufsize);
-int fs_rmdir(const char *path);
-int fs_chdir(const char *path);
-int fs_chmod(const char *path, mode_t mode);
-int fs_chown(const char *path, uid_t owner, gid_t group);
-
-char *fs_getcwd(char *buf, size_t size);
-
-void *fs_mmap(void *addr, size_t len, int prot, int flags, int fd, off_t off);
-int fs_munmap(void *addr, size_t len);
-
-//
 
 static inline dev_t makedev(uint8_t maj, uint8_t min, uint8_t unit) {
   return maj | (min << 8) | (unit << 16);
@@ -320,5 +22,387 @@ static inline uint16_t minor(dev_t dev) {
 static inline uint16_t unit(dev_t dev) {
   return (dev >> 16) & 0xFF;
 }
+
+/* ----- API ----- */
+
+/**
+ * Initializes the file system module.
+ *
+ * This function should be called before any other file system functions are used.
+ */
+void fs_init();
+
+/**
+ * Registers a new file system type.
+ *
+ * @param fs_type The file system type to register.
+ * @return
+ */
+int fs_register_type(fs_type_t *fs_type);
+
+//
+// MARK: Mounting and unmounting
+//
+
+/**
+ * Mounts a file system at the specified mount point.
+ *
+ * @param source The source device or file to mount.
+ * @param mount The mount point.
+ * @param fs_type The file system type to use.
+ * @return F_OK on success, F_ERROR on failure.
+ */
+int fs_mount(const char *source, const char *mount, const char *fs_type);
+
+/**
+ * Unmounts a file system at the specified mount point.
+ *
+ * @param path The mount point of the file system to unmount.
+ * @return F_OK on success, F_ERROR on failure.
+ */
+int fs_unmount(const char *path);
+
+//
+// MARK: File and directory metadata
+//
+
+/**
+ * Gets the metadata for a file or directory.
+ *
+ * @param path The path to the file or directory.
+ * @param stat A pointer to a `struct stat` where the metadata will be stored.
+ * @return F_OK on success, F_ERROR on failure.
+ */
+int fs_stat(const char *path, struct stat *stat);
+
+/**
+ * Gets the metadata for an open file.
+ *
+ * @param fd The file descriptor of the open file.
+ * @param stat A pointer to a `struct stat` where the metadata will be stored.
+ * @return F_OK on success, F_ERROR on failure.
+ */
+int fs_fstat(int fd, struct stat *stat);
+
+//
+// MARK: File and directory manipulation
+//
+
+/**
+ * Opens a file.
+ *
+ * @param path The path to the file.
+ * @param flags Flags indicating how the file should be opened.
+ * @param mode The file permissions to use if the file is being created.
+ * @return A file descriptor on success, F_ERROR on failure.
+ */
+int fs_open(const char *path, int flags, mode_t mode);
+
+/**
+ * Creates a new file.
+ *
+ * If the file already exists, it is truncated to zero length.
+ *
+ * @param path The path to the file to create.
+ * @param mode The file permissions to use.
+ * @return A file descriptor on success, F_ERROR on failure.
+ */
+int fs_creat(const char *path, mode_t mode);
+
+/**
+ * Creates a new directory.
+ *
+ * @param path The path to the directory to create.
+ * @param mode The directory permissions to use.
+ * @return F_OK on success, F_ERROR on failure.
+ */
+int fs_mkdir(const char *path, mode_t mode);
+
+/**
+ * Creates a new file or special file.
+ *
+ * @param path The path to the file to create.
+ * @param mode The file permissions to use.
+ * @param dev The device identifier for a special file.
+ * @return F_OK on success, F_ERROR on failure.
+ */
+int fs_mknod(const char *path, mode_t mode, dev_t dev);
+
+/**
+ * Closes an open file.
+ *
+ * @param fd The file descriptor of the open file.
+ * @return F_OK on success, F_ERROR on failure.
+ */
+int fs_close(int fd);
+
+//
+// MARK: File read and write operations
+//
+
+/**
+ * Reads data from an open file.
+ *
+ * @param fd The file descriptor of the open file.
+ * @param buf A buffer to store the read data.
+ * @param nbytes The maximum number of bytes to read.
+ * @return The number of bytes read on success, F_ERROR on failure.
+ */
+ssize_t fs_read(int fd, void *buf, size_t nbytes);
+
+/**
+ * Writes data to an open file.
+ *
+ * @param fd The file descriptor of the open file.
+ * @param buf A buffer containing the data to write.
+ * @param nbytes The number of bytes to write.
+ * @return The number of bytes written on success, F_ERROR on failure.
+ */
+ssize_t fs_write(int fd, void *buf, size_t nbytes);
+
+/**
+ * Changes the read/write position of an open file.
+ *
+ * @param fd The file descriptor of the open file.
+ * @param offset The new position relative to the whence parameter.
+ * @param whence The reference point for the offset parameter.
+ * @return The new position on success, F_ERROR on failure.
+ */
+off_t fs_lseek(int fd, off_t offset, int whence);
+
+/**
+ *
+ * Reads data from an open file using multiple buffers.
+ * @param fd The file descriptor of the open file.
+ * @param iov An array of struct iovec buffers to store the read data.
+ * @param iovcnt The number of buffers in the iov array.
+ * @return The number of bytes read on success, F_ERROR on failure.
+ */
+ssize_t fs_readv(int fd, const struct iovec *iov, int iovcnt);
+
+/**
+ * Writes data to an open file using multiple buffers.
+ *
+ * @param fd The file descriptor of the open file.
+ * @param iov An array of struct iovec buffers containing the data to write.
+ * @param iovcnt The number of buffers in the iov array.
+ * @return The number of bytes written on success, F_ERROR on failure.
+ */
+ssize_t fs_writev(int fd, const struct iovec *iov, int iovcnt);
+
+/**
+ * Reads data from a specific position in an open file using multiple buffers.
+ *
+ * @param fd The file descriptor of the open file.
+ * @param iov An array of `struct iovec` buffers to store the read data.
+ * @param iovcnt The number of buffers in the `iov` array.
+ * @param offset The position in the file to read from.
+ * @return The number of bytes read on success, F_ERROR on failure.
+ */
+ssize_t fs_preadv(int fd, const struct iovec *iov, int iovcnt, off_t offset);
+
+/**
+ * Writes data to a specific position in an open file using multiple buffers.
+ *
+ * @param fd The file descriptor of the open file.
+ * @param iov An array of `struct iovec` buffers containing the data to write.
+ * @param iovcnt The number of buffers in the `iov` array.
+ * @param offset The position in the file to write to.
+ *
+ * @return The number of bytes written on success, F_ERROR on failure.
+ */
+ssize_t fs_pwritev(int fd, const struct iovec *iov, int iovcnt, off_t offset);
+
+//
+// MARK: File descriptor manipulation
+//
+
+/**
+ * Duplicates an open file descriptor.
+ *
+ * @param fd The file descriptor to duplicate.
+ * @return The new file descriptor on success, F_ERROR on failure.
+ */
+int fs_dup(int fd);
+
+/**
+ * Duplicates an open file descriptor to a specific descriptor number.
+ *
+ * @param fd The file descriptor to duplicate.
+ * @param fd2 The descriptor number to use for the duplicate.
+ * @return The new file descriptor on success, F_ERROR on failure.
+ */
+int fs_dup2(int fd, int fd2);
+
+/**
+ * Performs file control operations on an open file.
+ *
+ * @param fd The file descriptor of the open file.
+ * @param cmd The operation to perform.
+ * @param arg An argument for the operation.
+ * @return The result of the file control operation, or F_ERROR on failure.
+ */
+int fs_fcntl(int fd, int cmd, uint64_t arg);
+
+//
+// MARK: Directory iteration
+//
+
+/**
+ * Reads the next directory entry from an open directory.
+ *
+ * @param fd The file descriptor of the open directory.
+ * @return A pointer to a `dentry_t` structure on success, `NULL` on failure or end of directory.
+ */
+dentry_t *fs_readdir(int fd);
+
+/**
+ * Gets the current position in an open directory.
+ *
+ * @param fd The file descriptor of the open directory.
+ * @return The current position on success, F_ERROR on failure.
+ */
+long fs_telldir(int fd);
+
+/**
+ * Sets the position in an open directory.
+ *
+ * @param fd The file descriptor of the open directory.
+ * @param loc The new position.
+ */
+void fs_seekdir(int fd, long loc);
+
+/**
+ * Resets the position in an open directory to the beginning.
+ *
+ * @param fd The file descriptor of the open directory.
+ */
+void fs_rewinddir(int fd);
+
+//
+// MARK: File and directory linking
+//
+
+/**
+ * Creates a hard link to a file.
+ *
+ * @param path1 The path to the file to link to.
+ * @param path2 The path to the new link.
+ * @return F_OK on success, F_ERROR on failure.
+ */
+int fs_link(const char *path1, const char *path2);
+
+/**
+ * Removes a link to a file.
+ * If the file is not a link or has multiple links, it is deleted when all links to it are removed.
+ *
+ * @param path The path to the link to remove.
+ * @return F_OK on success, F_ERROR on failure.
+ */
+int fs_unlink(const char *path);
+
+/**
+ * Creates a symbolic link to a file.
+ *
+ * @param path1 The path to the file to link to.
+ * @param path2 The path to the new symbolic link.
+ * @return F_OK on success, F_ERROR on failure.
+ */
+int fs_symlink(const char *path1, const char *path2);
+
+/**
+ * Renames a file or directory.
+ *
+ * @param oldfile The current name of the file or directory.
+ * @param newfile The new name for the file or directory.
+ * @return F_OK on success, F_ERROR on failure.
+ */
+int fs_rename(const char *oldfile, const char *newfile);
+
+/**
+ * Reads the target of a symbolic link.
+ *
+ * @param path The path to the symbolic link.
+ * @param buf A buffer to store the target path.
+ * @param bufsize The size of the `buf` buffer.
+ * @return The number of bytes read on success, F_ERROR on failure.
+ */
+ssize_t fs_readlink(const char *restrict path, char *restrict buf, size_t bufsize);
+
+/**
+ * Removes a directory.
+ *
+ * The directory must be empty.
+ *
+ * @param path The path to the directory to remove.
+ * @return F_OK on success, F_ERROR on failure.
+ */
+int fs_rmdir(const char *path);
+
+//
+// MARK: Current working directory and file system access
+//
+
+/**
+ * Changes the current working directory.
+ *
+ * @param path The path to the new current working directory.
+ * @return F_OK on success, F_ERROR on failure.
+ */
+int fs_chdir(const char *path);
+
+/**
+ * Changes the permissions of a file or directory.
+ *
+ * @param path The path to the file or directory.
+ * @param mode The new permissions to use.
+ * @return F_OK on success, F_ERROR on failure.
+ */
+int fs_chmod(const char *path, mode_t mode);
+
+/**
+ * Changes the owner and group of a file or directory.
+ *
+ * @param path The path to the file or directory.
+ * @param owner The new owner identifier.
+ * @param group The new group identifier.
+ * @return F_OK on success, F_ERROR on failure.
+ */
+int fs_chown(const char *path, uid_t owner, gid_t group);
+
+/**
+ * Gets the current working directory.
+ *
+ * @param buf A buffer to store the path.
+ * @param size The size of the `buf` buffer.
+ * @return A pointer to the `buf` buffer on success, `NULL` on failure.
+ */
+char *fs_getcwd(char *buf, size_t size);
+
+//
+// MARK: Memory mapping
+//
+
+/**
+ * Maps a file into memory.
+ *
+ * @param addr A hint for the address to map the file to.
+ * @param len The number of bytes to map.
+ * @param prot The memory protection to use.
+ * @param flags The mapping flags to use.
+ * @param fd The file descriptor of the open file.
+ * @param off The offset in the file to start mapping from.
+ * @return A pointer to the mapped memory on success, `MAP_FAILED` on failure.
+ */
+void *fs_mmap(void *addr, size_t len, int prot, int flags, int fd, off_t off);
+
+/**
+ * Unmaps a file from memory.
+ *
+ * @param addr The start address of the mapped memory.
+ * @param len The number of bytes to unmap.
+ * @return F_OK on success, F_ERROR on failure.
+ */
+int fs_munmap(void *addr, size_t len);
 
 #endif

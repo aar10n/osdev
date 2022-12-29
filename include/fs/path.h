@@ -6,7 +6,6 @@
 #define FS_PATH_H
 
 #include <base.h>
-#include <fs.h>
 
 #define p_len(path) \
   ((path).end - (path).start)
