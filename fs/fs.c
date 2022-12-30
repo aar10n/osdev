@@ -130,7 +130,6 @@ long fs_telldir(int fd) {
   unimplemented("fs_telldir");
 }
 
-
 void fs_seekdir(int fd, long loc) {
   unimplemented("fs_seekdir");
 }
@@ -187,12 +186,14 @@ char *fs_getcwd(char *buf, size_t size) {
   return NULL;
 }
 
-
+//
 // MARK: Memory mapping
+//
 
 void *fs_mmap(void *addr, size_t len, int prot, int flags, int fd, off_t off) {
   unimplemented("fs_mmap");
 }
+
 int fs_munmap(void *addr, size_t len) {
   unimplemented("fs_munmap");
 }
