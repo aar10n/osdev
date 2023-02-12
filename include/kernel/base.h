@@ -94,7 +94,12 @@
 #define SIGNATURE_32(A, B, C, D) (SIGNATURE_16(A, B) | (SIGNATURE_16(C, D) << 16))
 #define SIGNATURE_64(A, B, C, D, E, F, G, H) (SIGNATURE_32(A, B, C, D) | ((uint64_t) SIGNATURE_32(E, F, G, H) << 32))
 
-#define ASSERT_IS_TYPE(type, value) static_assert(_Generic(value, type: 1, default: 0) == 1)
+#define ASSERT_IS_TYPE(type, value) \
+  _Static_assert(_Generic(value, type: 1, default: 0) == 1, "Failed type assertion: " #value " is not of type " #type)
+
+#define __type_checked(type, param, rest) ({ ASSERT_IS_TYPE(type, param); rest; })
+
+#define ARRAY_SIZE(a) (sizeof(a) / sizeof((a)[0]))
 
 //
 // Compiler Attributes
@@ -125,6 +130,8 @@
 #define __malloc_like __attribute((malloc))
 #define __printf_like(i, j) __attribute((format(printf, i, j)))
 #define __section(name) __attribute((section(name)))
+#define __sentinel(n) __attribute((sentinel(n)))
+#define __nonnull(...) __attribute((nonnull(__VA_ARGS__)))
 
 //
 // Special Macros
@@ -145,11 +152,17 @@
 #define LOAD_SECTION(varname, secname) loaded_section_t __attribute__((section(".load_sections"))) varname = { .name = secname }
 
 /**
- * The MODULE_INIT macro provides a way for kernel components to register initializer
- * functions without changing any external code. The given function is called after
- * the core kernel initialization. This means that initializers are free to call most
- * standard APIs provided by the kernel but this does not include the scheduler or any
- * process/thread related functions.
+ * The STATIC_INIT macro provides a way for kernel components to register static
+ * initializer functions. The initializers may use the memory management or irq
+ * APIs. In general they should only perform basic initialization.
+ */
+#define STATIC_INIT(fn) static __attribute__((section(".static_init_array"))) void (*__do_static_init_ ## fn)() = fn
+
+/**
+ * The MODULE_INIT macro provides a way for kernel components to register module
+ * initializer functions. The initializers are called in the root process and have
+ * access to all kernel APIs. Drivers may use this to register themselves with the
+ * kernel or spawn additional processes.
  */
 #define MODULE_INIT(fn) static void __attribute__((constructor)) __do_module_init_ ## fn () { fn(); }
 

@@ -15,8 +15,8 @@ typedef uint16_t char16_t;
 typedef int64_t blkcnt_t;    // Used for file block counts.
 typedef int64_t blksize_t;   // Used for block sizes.
 typedef uint64_t clock_t;    // Used for system times in clock ticks or CLOCKS_PER_SEC
-typedef int32_t  clockid_t;  // Used for clock ID type in the clock and timer functions.
-typedef uint32_t dev_t;      // Used for device IDs.
+typedef int32_t clockid_t;   // Used for clock ID type in the clock and timer functions.
+typedef int32_t dev_t;       // Used for device IDs.
 typedef uint64_t fsblkcnt_t; // Used for file system block counts.
 typedef uint64_t fsfilcnt_t; // Used for file system file counts.
 typedef uint32_t gid_t;      // Used for group IDs.
