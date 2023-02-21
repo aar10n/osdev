@@ -236,7 +236,7 @@ void pci_probe_busses(pci_callback_t callback, void *context) {
   }
 }
 
-/* ---- pci enumerate busses ---- */
+/* ---- pci enumerate buses ---- */
 
 int pci_enumerate_busses_cb(pci_device_t *device, void *context) {
   pci_print_debug_device(device);

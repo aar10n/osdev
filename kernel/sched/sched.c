@@ -334,13 +334,11 @@ noreturn void *sched_idle_thread(void *arg) {
 
 noreturn void sched_init() {
   static bool done = false;
-  process_t *root = PERCPU_PROCESS;
+  process_t *root = process_get(0);
   if (!PERCPU_IS_BSP) {
     // AP processors need to wait for BSP to finish
     kprintf("sched: CPU#%d waiting\n", PERCPU_ID);
     while (!done) cpu_pause();
-    root = process_get(0);
-    kassert(root != NULL);
   }
 
   id_t tid = atomic_fetch_add(&root->num_threads, 1);
@@ -383,6 +381,7 @@ noreturn void sched_init() {
   init_oneshot_timer();
   timer_enable(TIMER_ONE_SHOT);
   if (PERCPU_IS_BSP) {
+    // schedule the root main thread onto the primary core
     thread_t *root_main = root->main;
     SCHED_DISPATCH(sched, root_main->policy, policy_init_thread, root_main);
     sched->total_count++;

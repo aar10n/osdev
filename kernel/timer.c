@@ -320,7 +320,6 @@ void timer_udelay(uint64_t us) {
 //
 
 void timer_dump_pending_alarms() {
-  kprintf("==== timer dump ====\n");
   kprintf("  now = %llu\n", clock_now());
   if (alarm_expiry_tree == NULL) {
     return;

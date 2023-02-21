@@ -54,6 +54,8 @@ void *kmalloca(size_t size, size_t alignment) __malloc_like;
 void kfree(void *ptr);
 void *kcalloc(size_t nmemb, size_t size) __malloc_like;
 
+void kheap_dump_stats();
+
 int kheap_is_valid_ptr(void *ptr);
 uintptr_t kheap_ptr_to_phys(void *ptr);
 

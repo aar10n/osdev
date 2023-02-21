@@ -4,6 +4,8 @@
 
 #ifndef INCLUDE_BASE_H
 #define INCLUDE_BASE_H
+#pragma clang diagnostic push
+#pragma ide diagnostic ignored "bugprone-macro-parentheses"
 
 #include <abi/types.h>
 #include <boot.h>
@@ -34,22 +36,22 @@
 
 #define PAGE_SIZE 0x1000
 
-#define SIZE_1KB  0x400
-#define SIZE_2KB  0x800
-#define SIZE_4KB  0x1000
-#define SIZE_8KB  0x2000
-#define SIZE_16KB 0x4000
-#define SIZE_1MB  0x100000
-#define SIZE_2MB  0x200000
-#define SIZE_4MB  0x400000
-#define SIZE_8MB  0x800000
-#define SIZE_16MB 0x1000000
-#define SIZE_1GB  0x40000000
-#define SIZE_2GB  0x80000000
-#define SIZE_4GB  0x100000000
-#define SIZE_8GB  0x200000000
-#define SIZE_16GB 0x400000000
-#define SIZE_1TB  0x10000000000
+#define SIZE_1KB  0x400ULL
+#define SIZE_2KB  0x800ULL
+#define SIZE_4KB  0x1000ULL
+#define SIZE_8KB  0x2000ULL
+#define SIZE_16KB 0x4000ULL
+#define SIZE_1MB  0x100000ULL
+#define SIZE_2MB  0x200000ULL
+#define SIZE_4MB  0x400000ULL
+#define SIZE_8MB  0x800000ULL
+#define SIZE_16MB 0x1000000ULL
+#define SIZE_1GB  0x40000000ULL
+#define SIZE_2GB  0x80000000ULL
+#define SIZE_4GB  0x100000000ULL
+#define SIZE_8GB  0x200000000ULL
+#define SIZE_16GB 0x400000000ULL
+#define SIZE_1TB  0x10000000000ULL
 
 //
 // General Macros
@@ -156,7 +158,7 @@
  * initializer functions. The initializers may use the memory management or irq
  * APIs. In general they should only perform basic initialization.
  */
-#define STATIC_INIT(fn) static __attribute__((section(".static_init_array"))) void (*__do_static_init_ ## fn)() = fn
+#define STATIC_INIT(fn) static __attribute__((section(".init_array.static"))) void (*__do_static_init_ ## fn)() = fn
 
 /**
  * The MODULE_INIT macro provides a way for kernel components to register module
@@ -164,7 +166,7 @@
  * access to all kernel APIs. Drivers may use this to register themselves with the
  * kernel or spawn additional processes.
  */
-#define MODULE_INIT(fn) static void __attribute__((constructor)) __do_module_init_ ## fn () { fn(); }
+#define MODULE_INIT(fn) static __attribute__((section(".init_array.module"))) void (*__do_module_init_ ## fn)() = fn
 
 //
 // Global Symbols
@@ -182,4 +184,6 @@ extern uintptr_t __kernel_code_start;
 extern uintptr_t __kernel_code_end;
 extern uintptr_t __kernel_data_end;
 
+
+#pragma clang diagnostic pop
 #endif

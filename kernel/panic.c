@@ -61,11 +61,12 @@ noreturn void panic(const char *fmt, ...) {
     cpu_pause();
   }
 
-  // while (!spin_trylock(&panic_lock)) cpu_pause();
-
   kprintf("thread %d.%d [%s]\n", getpid(), gettid(), PERCPU_THREAD->name);
   stackframe_t *frame = (void *) __builtin_frame_address(0);
   debug_unwind(frame->rip, (uintptr_t) frame->rbp);
+  kprintf("==== kernel heap ====\n");
+  kheap_dump_stats();
+  kprintf("==== timer alarms ====\n");
   timer_dump_pending_alarms();
   atomic_lock_test_and_reset(&lock);
 

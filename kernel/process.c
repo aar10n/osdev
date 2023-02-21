@@ -128,7 +128,7 @@ void process_free(process_t *process) {
 
 //
 
-process_t *process_create_root(void (function)()) {
+void process_create_root(void (function)()) {
   pid_t pid = alloc_pid();
   process_t *process = process_alloc(pid, -1, root_process_wrapper, function);
 
@@ -140,7 +140,6 @@ process_t *process_create_root(void (function)()) {
 
   ptable[0] = process;
   ptable_size = 1;
-  return process;
 }
 
 pid_t process_create(void (start_routine)()) {

@@ -25,7 +25,6 @@ struct timespec {
 
 #define S_IFMT   0xFFF0000
 
-#define S_IFFBF  0x1000000 // Framebuffer special.
 #define S_IFMNT  0x0800000 // Filesystem mount.
 #define S_IFCHR  0x0400000 // Character special (tty).
 #define S_IFIFO  0x0200000 // FIFO special (pipe).

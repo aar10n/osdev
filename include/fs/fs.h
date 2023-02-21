@@ -6,22 +6,11 @@
 #define FS_FS_H
 
 #include <fs_types.h>
+#include <device.h>
+#include <kio.h>
 
 #define MAP_FAILED ((void *)F_ERROR)
 
-
-static inline dev_t makedev(uint8_t maj, uint8_t min, uint8_t unit) {
-  return maj | (min << 8) | (unit << 16);
-}
-static inline uint8_t major(dev_t dev) {
-  return dev & 0xFF;
-}
-static inline uint16_t minor(dev_t dev) {
-  return (dev >> 8) & 0xFF;
-}
-static inline uint16_t unit(dev_t dev) {
-  return (dev >> 16) & 0xFF;
-}
 
 /* ----- API ----- */
 

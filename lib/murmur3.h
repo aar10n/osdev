@@ -17,4 +17,11 @@ static inline uint32_t murmur_hash32(const void *key, int len, uint32_t seed) {
   return hash;
 }
 
+static inline uint64_t murmur_hash64(const void *key, int len, uint32_t seed) {
+  uint64_t hash[2] = {0, 0};
+  murmur_hash_x64_128(key, len, seed, &hash);
+  // is this the best way to combine the two 64-bit hashes?
+  return hash[0] ^ hash[1];
+}
+
 #endif

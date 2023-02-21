@@ -14,8 +14,8 @@ typedef struct callback_obj {
   LIST_ENTRY(struct callback_obj) list;
 } callback_obj_t;
 
-LOAD_SECTION(__static_init_array, ".static_init_array");
-LOAD_SECTION(__module_init_array, ".module_init_array");
+LOAD_SECTION(__static_init_array, ".init_array.static");
+LOAD_SECTION(__module_init_array, ".init_array.module");
 LIST_HEAD(callback_obj_t) init_address_space_cb_list = LIST_HEAD_INITR;
 
 void register_init_address_space_callback(init_callback_t callback, void *data) {

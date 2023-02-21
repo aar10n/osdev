@@ -216,7 +216,7 @@ void *__kmalloc(mm_heap_t *heap, size_t size, size_t alignment) {
     kprintf("      free count = %zu\n", heap->stats.free_count);
 
     kprintf("      request_sizes:\n");
-    for (int i = 0; i < 8; i++) {
+    for (int i = 0; i < ARRAY_SIZE(hist_labels); i++) {
       kprintf("        %s - %zu\n", hist_labels[i], heap->stats.alloc_sizes[i]);
     }
 
@@ -336,4 +336,18 @@ uintptr_t kheap_ptr_to_phys(void *ptr) {
   kassert(kheap_is_valid_ptr(ptr));
   size_t offset = ((uintptr_t) ptr) - kheap.virt_addr;
   return kheap.phys_addr + offset;
+}
+
+//
+
+void kheap_dump_stats() {
+  kprintf("  size = %zu\n", kheap.size);
+  kprintf("  used = %zu\n", kheap.used);
+  kprintf("  alloc count = %zu\n", kheap.stats.alloc_count);
+  kprintf("  free count = %zu\n", kheap.stats.free_count);
+
+  kprintf("  request_sizes:\n");
+  for (int i = 0; i < 8; i++) {
+    kprintf("    %s - %zu\n", hist_labels[i], kheap.stats.alloc_sizes[i]);
+  }
 }

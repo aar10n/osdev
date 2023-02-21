@@ -7,10 +7,10 @@
 
 #include <base.h>
 #include <queue.h>
-#include <iov.h>
 #include <spinlock.h>
 #include <mutex.h>
 
+#include <abi/iov.h>
 #include <abi/fcntl.h>
 #include <abi/seek-whence.h>
 #include <abi/stat.h>
@@ -18,6 +18,7 @@
 
 struct page;
 struct vm_mapping;
+struct kio;
 
 struct fs_type;
 struct super_block;
@@ -31,13 +32,7 @@ struct dentry_out;
 struct dentry_ops;
 struct file;
 struct file_ops;
-
 struct device;
-struct device_ops;
-struct bdev;
-struct bdev_ops;
-struct cdev;
-struct cdev_ops;
 
 //
 //
@@ -65,6 +60,11 @@ typedef struct fs_type {
 //
 //
 
+// helper macros
+#define S_OPS(sb) __type_checked(super_block_t *, sb, (sb)->ops)
+#define S_LOCK(sb) __type_checked(super_block_t *, sb, mutex_lock(&(sb)->lock))
+#define S_UNLOCK(sb) __type_checked(super_block_t *, sb, mutex_unlock(&(sb)->lock))
+
 #define IS_RDONLY(sb) ((sb)->mount_flags & FS_RDONLY)
 
 // All read-write fields except for data should only be written to once
@@ -80,20 +80,21 @@ typedef struct super_block {
   /* read-only */
   uint32_t flags;                 // superblock flags
   uint32_t mount_flags;           // mount flags (same as filesystem flags but possibly more restricted)
-  mutex_t lock;
+  mutex_t lock;                   // superblock lock
 
   struct dentry *mount;           // the mount point dentry
   struct itable *itable;          // inode table
   struct dcache *dcache;          // dentry cache
-  struct bdev *bdev;              // block device containing the filesystem
-  struct fs_type *fs;             // filesystem type
-  struct super_block_ops *ops;    // superblock operations
+  struct device *dev;             // block device containing the filesystem
+
+  const struct fs_type *fs;       // filesystem type
+  const struct super_block_ops *ops; // superblock operations
 
   LIST_HEAD(struct inode) inodes; // owned inodes
 } super_block_t;
 
 /// Describes operations that involve or relate to the superblock.
-typedef struct super_block_ops {
+struct super_block_ops {
   /**
    * Mounts the superblock for a filesystem. \b Required.
    *
@@ -103,7 +104,7 @@ typedef struct super_block_ops {
    *
    * By default the vfs allocates a new virtual inode 0 to act as the root before
    * this function is called. If the filesystem has its own internal concept of a
-   * root node, it should take ownership over the root using i_takeown() to ensure
+   * root node, it should take ownership over the root using sb_takeown() to ensure
    * it uses the filesystem inode_ops. In either case the function is free to modify
    * the root inode's read-write fields
    *
@@ -191,7 +192,7 @@ typedef struct super_block_ops {
    * @return
    */
   int (*sb_delete_inode)(struct super_block *sb, struct inode *inode);
-} super_block_ops_t;
+};
 
 //
 //
@@ -206,10 +207,32 @@ typedef struct super_block_ops {
 #define I_MKNOD_MASK (S_IFFBF | S_IFIFO | S_IFCHR | S_IFDIR | S_IFBLK | S_IFREG)
 
 // inode flags
-#define IFLOADED  0x01  // inode fields have been loaded
-#define IFDIRTY   0x04  // inode fields have been modified
-#define IFFLLDIR  0x08  // all child entries for inode are loaded (S_IFDIR)
-#define IFRAW     0x10  // inode data is raw memory
+#define I_LOADED  0x01  // inode fields have been loaded
+#define I_DIRTY   0x04  // inode fields have been modified
+#define I_FLLDIR  0x08  // all child entries for inode are loaded (S_IFDIR)
+#define I_RAWDAT  0x10  // inode data is raw memory
+
+// helper macros
+#define I_OPS(inode) __type_checked(inode_t *, inode, (inode)->ops)
+#define I_LOCK(inode) __type_checked(inode_t *, inode, mutex_lock(&(inode)->lock))
+#define I_UNLOCK(inode) __type_checked(inode_t *, inode, mutex_unlock(&(inode)->lock))
+#define I_DATA_LOCK_RO(inode) __type_checked(inode_t *, inode, rw_lock_read(&(inode)->data_lock))
+#define I_DATA_UNLOCK_RO(inode) __type_checked(inode_t *, inode, rw_unlock_read(&(inode)->data_lock))
+#define I_DATA_LOCK_RW(inode) __type_checked(inode_t *, inode, rw_lock_write(&(inode)->data_lock))
+#define I_DATA_UNLOCK_RW(inode) __type_checked(inode_t *, inode, rw_unlock_write(&(inode)->data_lock))
+
+#define IS_IFMNT(inode) ((inode)->mode & S_IFMNT)
+#define IS_IFCHR(inode) ((inode)->mode & S_IFCHR)
+#define IS_IFIFO(inode) ((inode)->mode & S_IFIFO)
+#define IS_IFLNK(inode) ((inode)->mode & S_IFLNK)
+#define IS_IFSOCK(inode) ((inode)->mode & S_IFSOCK)
+#define IS_IFBLK(inode) ((inode)->mode & S_IFBLK)
+#define IS_IFDIR(inode) ((inode)->mode & S_IFDIR)
+#define IS_IFREG(inode) ((inode)->mode & S_IFREG)
+
+#define IS_ILOADED(inode) ((inode)->flags & I_LOADED)
+#define IS_IDIRTY(inode) ((inode)->flags & I_DIRTY)
+#define IS_IFLLDIR(inode) ((inode)->flags & I_FLLDIR)
 
 typedef struct inode {
   /* read-write */
@@ -218,7 +241,7 @@ typedef struct inode {
   uid_t uid;                          // user id of owner
   gid_t gid;                          // group id of owner
   off_t size;                         // file size in bytes
-  dev_t rdev;                         // inode owning device
+  dev_t rdev;                         // device owning inode
   time_t atime;                       // last access time
   time_t mtime;                       // last modify time
   time_t ctime;                       // last change time
@@ -229,20 +252,18 @@ typedef struct inode {
   /* read-only */
   uint32_t nlinks;                    // number of links to this inode (set initally with
   uint32_t flags;                     // inode flags
-  spinlock_t lock;                    // inode struct lock
-  mutex_t data_lock;                  // inode associated data lock
+  mutex_t lock;                       // inode lock
+  rw_lock_t data_lock;                // inode associated data lock
 
   struct super_block *sb;             // owning superblock
-  struct inode_ops *ops;              // inode operations
+  const struct inode_ops *ops;        // inode operations
 
   // associated data
   union {
-    void *i_raw;                      // inode raw data
-    struct page *i_pages;             // inode mapped pages
-    struct bdev *i_bdev;              // inode block device (S_IFBLK)
-    struct cdev *i_cdev;              // inode character device (S_IFCHR)
+    void *i_raw;                      // raw data
     char *i_link;                     // inode symlink (S_IFLNK)
-    struct inode *i_mount;            // inode shadowed by mount (S_IFMNT)
+    struct inode *i_mount;            // mount root node (S_IFMNT)
+    struct device *i_device;          // device node (S_IFCHR, S_IFBLK)
   };
 
   LIST_HEAD(struct dentry) links;     // list of dentries linked to inode
@@ -250,7 +271,7 @@ typedef struct inode {
 } inode_t;
 
 /// Describes operations that involve or relate to inodes.
-typedef struct inode_ops {
+struct inode_ops {
   /**
    * Searches for a dentry by name in a given directory. \b Optional.
    * By default this will use i_loaddir() to load the directory and then search
@@ -429,57 +450,17 @@ typedef struct inode_ops {
   // int (*i_permission)(struct inode *inode, int mask);
   // int (*i_setattr)(struct inode *inode, struct iattr *attr);
   // int (*i_getattr)(struct inode *inode, struct iattr *attr);
-} inode_ops_t;
-
-// inode helper macros
-#define IS_IFFBF(inode) ((inode)->mode & S_IFFBF)
-#define IS_IFMNT(inode) ((inode)->mode & S_IFMNT)
-#define IS_IFCHR(inode) ((inode)->mode & S_IFCHR)
-#define IS_IFIFO(inode) ((inode)->mode & S_IFIFO)
-#define IS_IFLNK(inode) ((inode)->mode & S_IFLNK)
-#define IS_IFSOCK(inode) ((inode)->mode & S_IFSOCK)
-#define IS_IFBLK(inode) ((inode)->mode & S_IFBLK)
-#define IS_IFDIR(inode) ((inode)->mode & S_IFDIR)
-#define IS_IFREG(inode) ((inode)->mode & S_IFREG)
-
-#define IS_LOADED(inode) ((inode)->flags & IFLOADED)
-#define IS_DIRTY(inode) ((inode)->flags & IFDIRTY)
-
-// ============ Inode API ============
-// The functions below operate on inode objects and most of them are interfaces
-// to the underlying inode ops and handle the setup/teardown of the calls. These
-// should almost never be called from any *_ops functions unless otherwise noted.
-
-/// Allocates an empty inode object. The inode is not a part of any filesystem.
-struct inode *i_alloc();
-/// Frees an inode object. The inode should be unlinked and have no associated data.
-void i_free(struct inode *inode);
-/// Binds an inode object to an owning filesystem. The inode should be empty and
-/// not be a part of any other filesystem. The inode number should be set to a
-/// unique and valid value for the filesystem before calling this.
-void i_takeown(struct inode *inode, struct super_block *sb);
-/// Adds the given inode to the filesystem inode table.
-int i_table_add(struct inode *inode);
-/// Removes the given inode from the filesystem inode table.
-int i_table_remove(struct inode *inode);
-
-struct dentry *i_locate(struct inode *inode, struct dentry *dentry, const char *name);
-int i_loaddir(struct inode *inode, struct dentry *dentry);
-int i_create(struct inode *dir, struct inode *inode, struct dentry *dentry);
-int i_mknod(struct inode *dir, struct dentry *dentry, dev_t dev);
-int i_link(struct inode *dir, struct inode *inode, struct dentry *dentry);
-int i_unlink(struct inode *dir, struct dentry *dentry);
-int i_symlink(struct inode *dir, struct inode *dentry, const char *path);
-int i_readlink(struct dentry *dentry, size_t buflen, char *buffer);
-int i_mkdir(struct inode *dir, struct dentry *dentry);
-int i_rmdir(struct inode *dir, struct dentry *dentry);
-int i_rename(struct inode *o_dir, struct dentry *o_dentry, struct inode *n_dir, struct dentry *n_dentry);
+};
 
 //
 //
 // MARK: Dentry
 //
 //
+
+#define D_OPS(dentry) __type_checked(dentry_t *, dentry, (dentry)->ops)
+#define D_LOCK(dentry) __type_checked(dentry_t *, dentry, spin_lock(&(dentry)->lock))
+#define D_UNLOCK(dentry) __type_checked(dentry_t *, dentry, spin_unlock(&(dentry)->lock))
 
 typedef struct dentry {
   /* read-write */
@@ -490,9 +471,11 @@ typedef struct dentry {
   uint64_t hash;                    // dentry hash
 
   /* read-only */
+  spinlock_t lock;                  // dentry struct lock
+
   struct inode *inode;              // associated inode
   struct dentry *parent;            // parent dentry
-  struct dentry_ops *ops;           // dentry operations
+  const struct dentry_ops *ops;     // dentry operations
 
   LIST_ENTRY(struct dentry) links;  // inode->links list
   LIST_ENTRY(struct dentry) bucket; // dcache hash bucket
@@ -511,21 +494,22 @@ struct dentry_out {
   char name[NAME_MAX];
 };
 
-typedef struct dentry_ops {
+struct dentry_ops {
   /**
-   * Hashes a dentry. \b Optional.
-   * By default, dentries are hashed by name
+   * Hashes a dentry name. \b Optional.
    *
-   * @param dentry The dentry to hash.
+   * \default The murmur3 hash is used.
+   *
+   * @param name The dentry to hash.
+   * @param namelen The length of the name.
    * @param [out] hash The hash of the dentry.
    */
-  void (*d_hash)(const struct dentry *dentry, uint64_t *hash);
+  void (*d_hash)(const char *name, size_t namelen, uint64_t *hash);
 
   /**
    * Compares a dentry against a name. \b Optional.
-   * By default, dentries are compared by hash.
    *
-   * \default
+   * \default The name is hashed and compared against the dentry hash.
    *
    * @param dentry The dentry to compare.
    * @param name The name to compare.
@@ -533,32 +517,7 @@ typedef struct dentry_ops {
    * @return 0 if the dentry matches the name, non-zero otherwise.
    */
   int (*d_compare)(const struct dentry *dentry, const char *name, size_t namelen);
-} dentry_ops_t;
-
-/// ============ Dentry API ============
-/// The functions below operate on the vfs only and do not make any changes to the
-/// underlying filesystem. The only functions which might call into the dentry ops
-/// are d_compare() and d_hash(), which have default implementations.
-
-/// Allocates an empty dentry.
-struct dentry *d_alloc(ino_t ino, mode_t mode, const char *name);
-/// Frees a dentry. It must not be linked to an inode and must not have any children.
-void d_free(struct dentry *dentry);
-/// Links the dentry to the inode and increments nlink by one.
-void d_attach(struct dentry *dentry, struct inode *inode);
-/// Unlinks the dentry from the inode and decrements nlink by one.
-void d_detach(struct dentry *dentry);
-/// Adds a child dentry to the parent dentry. The parent must be a directory.
-void d_add_child(struct dentry *parent, struct dentry *child);
-/// Removes a child dentry from the parent dentry. The parent must be a directory.
-void d_remove_child(struct dentry *parent, struct dentry *child);
-/// Finds a child dentry in the parent dentry using d_compare(). The parent must
-/// be a directory, and this assumes that all children are loaded.
-struct dentry *d_locate_child(struct dentry *parent, const char *name);
-/// Hashes a dentry and sets the hash field.
-void d_hash(struct dentry *dentry);
-/// Compares a dentry to a name. Returns 0 if they match.
-int d_compare(struct dentry *dentry, const char *name, size_t len);
+};
 
 //
 //
@@ -568,112 +527,77 @@ int d_compare(struct dentry *dentry, const char *name, size_t len);
 
 typedef struct file {
   /* read-only */
-  int fd;               // file descriptor
-  int fd_flags;         // file descriptor flags
-  int flags;            // flags specified on open
-  mode_t mode;          // file access mode
-  off_t pos;            // file offset
-  uid_t uid;            // user id
-  gid_t gid;            // group id
+  int fd;                     // file descriptor
+  int fd_flags;               // file descriptor flags
+  int flags;                  // flags specified on open
+  mode_t mode;                // file access mode
+  off_t pos;                  // file offset
+  uid_t uid;                  // user id
+  gid_t gid;                  // group id
 
-  const char *path;     // path to file (not always same as path used to open)
-  struct inode *inode;  // associated inode
-  struct file_ops *ops; // file operations
+  char *path;                 // path to file (not always same as path used to open)
+  struct inode *inode;        // associated inode
+  const struct file_ops *ops; // file operations
+  void *data;                 // private data
 } file_t;
 
-typedef struct file_ops {
+struct file_ops {
   /**
-   * Reads from a file. \b Required.
-   *
-   * This function should read bytes from the file into the buffers specified by
-   * the iov array. The read should start at the given offset and read the data
-   * into the buffers one at a time until the buffers are full or the end of the
-   * file is reached.
-   *
-   * \note Both f_read() and f_write() follow the same rules as the preadv() and
-   * pwritev() functions.
-   *
-   * @param file The file to read from.
-   * @param iov The array of iov buffers to read into.
-   * @param iovcnt The number of iov entries.
-   * @param offset The offset to start reading from.
-   * @return
-   */
-  ssize_t (*f_read)(struct file *file, struct iovec *iov, int iovcnt, off_t offset);
-
-  /**
-   * Writes to a file. \b Required if not read-only.
-   *
-   * This function should write bytes from the buffers specified by the iov array
-   * into the file. The write should start at the given offset and write the data
-   * from the buffers one at a time until all the buffers have been written.
-   *
-   * \note Both f_read() and f_write() follow the same rules as the preadv() and
-   * pwritev() functions.
-   *
-   * @param file The file to write to.
-   * @param iov The array of iov buffers to write from.
-   * @param iovcnt The number of iov entries.
-   * @param offset The offset to start write from.
-   * @return
-   */
-  ssize_t (*f_write)(struct file *file, const struct iovec *iov, int iovcnt, off_t offset);
-
-  // ============ Overrides ============
-  // The functions below are all optional and each have a default implementation.
-  // In other words, things will work without them but they may not be optimal for
-  // the filesystem.
-
-  /**
-   * Opens a file. \b Optional.
-   *
-   * This is called on file open(). All fields in the file object are set before
-   * this is called. The file object is not added to the file table until after
-   * the function.
-   *
-   * \default Does nothing and returns F_OK.
+   * Opens a file. \b Required.
    *
    * @param file The file object.
-   * @return
+   * @return 0 on success, -1 on error.
    */
   int (*f_open)(struct file *file);
 
   /**
-   * Synchronizes a file. \b Optional.
+   * Closes a file. \b Required.
    *
-   * This is called when close() and fsync() are called on a file. It should
-   * synchronize the file with the underlying filesystem.
-   *
-   * \default Does nothing and returns F_OK.
-   *
-   * @param file The file to synchronize.
-   * @return
+   * @param file The file to close.
+   * @return 0 on success, -1 on error.
    */
-  int (*f_sync)(struct file *file);
+  int (*f_close)(struct file *file);
 
   /**
-   * Reads a directory entry. \b Optional.
-   *
-   * This is called when readdir() is called on the directory. It should read the
-   * next directory entry and fill in the dentry_out fields of outp.
-   *
-   * \default The directory children are loaded with i_loaddir() (if needed) and
-   * the entries are returned one-by-one until the end of the directory is reached.
+   * Reads from a file.
    *
    * @param file The file to read from.
-   * @param outp The dentry_out struct to fill.
-   * @return
+   * @param kio The kio object to read into.
+   * @return 0 on success, -1 on error.
    */
-  int (*f_readdir)(struct file *file, struct dentry_out *outp);
+  ssize_t (*f_read)(struct file *file, struct kio *kio);
 
-  // TODO: mmap, poll, ioctl, etc.
-} file_ops_t;
+  /**
+   * Writes to a file.
+   *
+   * @param file The file to write to.
+   * @param kio The kio object to write from.
+   * @return 0 on success, -1 on error.
+   */
+  ssize_t (*f_write)(struct file *file, struct kio *kio);
 
-//
-// MARK: File System Errors
-//
+  /**
+   * Maps a file into memory.
+   *
+   * TODO: the mapping should be reserved and have an api to change it
+   *
+   * @param file The file to map.
+   * @param vm The reserved vm_mapping region to map into.
+   * @param prot The protection flags.
+   * @param flags The mapping flags.
+   * @param off The offset into the file.
+   * @return 0 on success, -1 on error.
+   */
+  int (*f_mmap)(struct file *file, struct vm_mapping *vm, int prot, int flags, off_t off);
 
-#define F_OK      0 // 'success' value
-#define F_ERROR  -1 // generic error
+  /**
+   * Unmaps a file from memory.
+   *
+   * @param file The file to unmap.
+   * @param vm The vm_mapping region to unmap.
+   * @return 0 on success, -1 on error.
+   */
+  int (*f_munmap)(struct file *file, struct vm_mapping *vm);
+};
 
 #endif

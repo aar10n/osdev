@@ -13,9 +13,28 @@
 
 #include <interval_tree.h>
 
+static const char *preload_files[] = {
+  "kernel/main.c",
+  "kernel/process.c",
+  "kernel/thread.c",
+  "kernel/panic.c",
+  "kernel/mutex.c",
+  "kernel/string.c",
+  "kernel/spinlock.c",
+  "kernel/sched/sched.c"
+};
+
 static intvl_tree_t *debug_files;
 static intvl_tree_t *debug_functions;
 static bool has_debug_info = false;
+
+static bool matches_suffix(const char *str, const char *suffix, size_t suffix_len) {
+  size_t str_len = strlen(str);
+  if (str_len < suffix_len) {
+    return false;
+  }
+  return strncmp(str + str_len - suffix_len, suffix, suffix_len) == 0;
+}
 
 static dwarf_file_t *locate_or_load_dwarf_file(uintptr_t addr) {
   intvl_node_t *node = intvl_tree_find(debug_files, intvl(addr, addr + 1));
@@ -82,6 +101,13 @@ void debug_early_init() {
 }
 
 void debug_init() {
+  // NOTE: Initializing debugging information is quite slow and unbearably so while
+  //   running with a debugger (hence the is_debug_enabled flag). I suspect it is
+  //   due to libdwarf reallocating internal data structures a very large number of
+  //   times as we load in line information top-to-bottom of each file. Maybe the
+  //   library isnt well suited to this type of access, but the kernel heap allocator
+  //   is probably the reason. Maybe it should be benchmarked, or link libdwarf to
+  //   a different specialty allocator.
   if (!is_debug_enabled) {
     has_debug_info = false;
     return;
@@ -107,20 +133,16 @@ void debug_init() {
   debug_functions = create_intvl_tree();
   RLIST_FOR_IN(file, files, list) {
     intvl_tree_insert(debug_files, intvl(file->addr_lo, file->addr_hi), file);
-  }
 
-  kprintf("debug: files loaded\n");
-
-  // preload things
-  static const char *prefix = "/Users/aaron/Projects/osdev/kernel";
-  RLIST_FOR_IN(file, files, list) {
-    if (strncmp(prefix, file->name, strlen(prefix)) == 0) {
-      kprintf("debug: preloading %s\n", file->name);
-      locate_or_load_dwarf_file(file->addr_lo);
+    // preload files that will almost always be in the call stack
+    for (int i = 0; i < ARRAY_SIZE(preload_files); i++) {
+      if (matches_suffix(file->name, preload_files[i], strlen(preload_files[i]))) {
+        kprintf("debug: preloading %s\n", file->name);
+        locate_or_load_dwarf_file(file->addr_lo);
+      }
     }
   }
 
-  // kprintf("debug: loaded functions\n");
   kprintf("debug: initialized\n");
 }
 
@@ -143,7 +165,7 @@ const char *debug_function_name(uintptr_t addr) {
 char *debug_addr2line(uintptr_t addr) {
   if (addr == 0) {
     return kasprintf("<null>");
-  } else if (!mm_is_kernel_code_ptr(addr)) {
+  } if (!mm_is_kernel_code_ptr(addr)) {
     return kasprintf("<invalid>");
   } else if (!has_debug_info) {
     goto INVALID;

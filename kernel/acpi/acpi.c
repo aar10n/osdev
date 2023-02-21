@@ -11,7 +11,8 @@
 #include <device/ioapic.h>
 #include <device/hpet.h>
 
-#include <bus/pcie.h>
+// #include <bus/pcie.h>
+#include <bus/pci_v2.h>
 
 #include <mm.h>
 #include <init.h>
@@ -217,7 +218,8 @@ void acpi_parse_mcfg() {
     uint8_t bus_start = entry->start_bus_number;
     uint8_t bus_end = entry->end_bus_number;
     uint64_t address = entry->base_address;
-    register_pcie_segment_group(number, bus_start, bus_end, address);
+    register_pci_segment_group(number, bus_start, bus_end, address);
+    // register_pcie_segment_group(number, bus_start, bus_end, address);
   }
 }
 

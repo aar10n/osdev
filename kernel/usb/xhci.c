@@ -392,7 +392,7 @@ void register_xhci_controller(pcie_device_t *device) {
 
   xhci_controller_t *controller = NULL;
   LIST_FOREACH(controller, &controllers, list) {
-    // why are duplicate devices showing up while enumerating the pci busses?
+    // why are duplicate devices showing up while enumerating the pci buses?
     // this is needed as a workaround to prevent double-registering xhci
     // controllers.
     if (controller->phys_addr == bar->phys_addr) {

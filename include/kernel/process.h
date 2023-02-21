@@ -50,7 +50,7 @@ typedef struct process {
   LIST_HEAD(struct process) list; // process list
 } process_t;
 
-process_t *process_create_root(void (function)());
+void process_create_root(void (function)());
 
 pid_t process_create(void (start_routine)());
 pid_t process_create_1(void (start_routine)(), void *arg);

@@ -5,17 +5,12 @@
 #include <fs.h>
 #include <panic.h>
 
-#define FS_DEBUG
-#ifdef FS_DEBUG
-#define DPRINTF(str, args...) kprintf("fs: " str "\n", ##args)
-#else
-#define DPRINTF(str, args...)
-#endif
+#define ASSERT(x) kassert(x)
+#define DPRINTF(fmt, ...) kprintf("fs: %s: " fmt, __func__, ##__VA_ARGS__)
+// #define DPRINTF(str, args...)
 
 
-void fs_init() {
-  unimplemented("fs_init");
-}
+void fs_init() {}
 
 int fs_register_type(fs_type_t *fs_type) {
   unimplemented("fs_register_type");
@@ -26,6 +21,13 @@ int fs_register_type(fs_type_t *fs_type) {
 //
 
 int fs_mount(const char *source, const char *mount, const char *fs_type) {
+  // 1. check if source exists and that it is a block device
+  // 2. check if mount point exists and is an empty directory
+  // 3. check if fs_type is registered
+
+  // 6. call sb_mount
+
+
   unimplemented("fs_mount");
 }
 
