@@ -6,13 +6,13 @@ kernel += entry.asm memory.asm smpboot.asm syscall.asm thread.asm \
 	chan.c clock.c console.c errno.c ipc.c init.c irq.c loader.c \
 	main.c mutex.c panic.c printf.c process.c semaphore.c signal.c \
 	smpboot.c spinlock.c string.c syscall.c thread.c timer.c queue.c \
-	ipi.c input.c
+	ipi.c input.c device.c kio.c
 
 # kernel/acpi
 kernel += acpi/acpi.c acpi/pm_timer.c
 
 # kernel/bus
-kernel += bus/pci.c bus/pci_tables.c bus/pcie.c
+kernel += bus/pci.c bus/pci_tables.c bus/pcie.c bus/pci_v2.c
 
 # kernel/cpu
 kernel += cpu/cpu.asm cpu/idt.asm cpu/io.asm cpu/exception.asm \
