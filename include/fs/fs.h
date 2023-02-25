@@ -9,23 +9,13 @@
 #include <device.h>
 #include <kio.h>
 
-#define MAP_FAILED ((void *)F_ERROR)
-
-
 /* ----- API ----- */
-
-/**
- * Initializes the file system module.
- *
- * This function should be called before any other file system functions are used.
- */
-void fs_init();
 
 /**
  * Registers a new file system type.
  *
- * @param fs_type The file system type to register.
- * @return
+ * \note The name, flags and all operations pointers must be set before calling
+ *       this function.
  */
 int fs_register_type(fs_type_t *fs_type);
 

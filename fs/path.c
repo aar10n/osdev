@@ -5,32 +5,99 @@
 #include <path.h>
 #include <mm.h>
 #include <printf.h>
+#include <panic.h>
 #include <string.h>
 #include <murmur3.h>
 
+
+#define ASSERT(x) kassert(x)
 #define HASH_SEED 0xDEADBEEF
 
-const char *slash = "/";
-const char *dot = ".";
 
-// path constants
-path_t path_null;
-path_t path_slash;
-path_t path_dot;
+// MARK: Path API
 
+path_t str2path(const char *str) {
+  if (str == NULL) {
+    return NULL_PATH;
+  }
 
-void path_init() {
-  path_null = (path_t) { NULL, 0, 0, NULL, NULL };
-  path_slash = str_to_path(slash);
-  path_dot = str_to_path(dot);
+  size_t len = strlen(str);
+  ASSERT(len <= UINT16_MAX);
+  return strn2path(str, (uint16_t) len);
 }
 
-// internal helpers
+path_t strn2path(const char *str, uint16_t len) {
+  if (str == NULL) {
+    return NULL_PATH;
+  }
 
-int path_num_occurrences(path_t path, char c) {
+  return (path_t){
+    .storage = { .str = str, .len = len },
+    .view = { .off = 0, .len = len },
+  };
+}
+
+char *path2str(path_t path) {
+  if (path_is_null(path)) {
+    return NULL;
+  }
+
+  size_t len = path_len(path);
+  char *str = kmalloc(len + 1);
+  memcpy(str, path_start(path), len);
+  str[len] = '\0';
+  return str;
+}
+
+size_t path_copy(char *dest, size_t size, path_t path) {
+  if (path_is_null(path) || size == 0) {
+    return 0;
+  }
+
+  size_t len = min(size - 1, path_len(path));
+  memcpy(dest, path_start(path), len);
+  dest[len] = '\0';
+  return len;
+}
+
+//
+
+bool path_eq(path_t path1, path_t path2) {
+  if (path_len(path1) != path_len(path2)) {
+    return false;
+  }
+  return memcmp(path_start(path1), path_start(path2), path_len(path1)) == 0;
+}
+
+bool path_eq_str(path_t path, const char *str) {
+  if (path_is_null(path)) {
+    return str == NULL;
+  }
+
+  size_t len = strlen(str);
+  if (path_len(path) != len) {
+    return false;
+  }
+  return memcmp(path_start(path), str, len) == 0;
+}
+
+bool path_eq_strn(path_t path, const char *str, uint16_t len) {
+  if (path_is_null(path)) {
+    return str == NULL && len == 0;
+  }
+
+  if (path_len(path) != len) {
+    return false;
+  }
+  return memcmp(path_start(path), str, len) == 0;
+}
+
+int path_count_char(path_t path, char c) {
+  const char *ptr = path_start(path);
+  const char *eptr = path_end(path);
+
   int count = 0;
-  char *ptr = path.start;
-  while (ptr < path.end) {
+  while (ptr < eptr) {
     if (*ptr == c) {
       count++;
     }
@@ -39,260 +106,145 @@ int path_num_occurrences(path_t path, char c) {
   return count;
 }
 
-char *path_first_occurence(path_t path, char c) {
-  char *ptr = path.start;
-  while (*ptr != c && ptr < path.end) {
+// MARK: Path Manipulation
+
+path_t path_drop_first(path_t path) {
+  uint16_t len = path_len(path);
+  uint16_t off = path.view.off;
+  if (len > 0) {
+    len--;
+    off++;
+  }
+  return (path_t){
+    .storage = path.storage,
+    .view = { .off = off, .len = len },
+  };
+}
+
+path_t path_strip_leading(path_t path, char c) {
+  const char *ptr = path_start(path);
+  const char *eptr = path_end(path);
+  while (ptr < eptr && *ptr == c) {
     ptr++;
+    path.view.off++;
+    path.view.len--;
   }
-
-  if (*ptr != c) {
-    return NULL;
-  }
-  return ptr;
-}
-
-path_t path_skip_over(path_t path, char c) {
-  char *ptr = path.start;
-  while (ptr < path.end && *ptr == c) {
-    ptr++;
-  }
-  return (path_t){ path.str, path.len, path.count, ptr, path.end };
-}
-
-path_t path_skip_until(path_t path, char c) {
-  char *ptr = path.start;
-  while (ptr < path.end && *ptr != c) {
-    ptr++;
-  }
-  return (path_t){ path.str, path.len, path.count, ptr, path.end };
-}
-
-path_t path_skip_over_reverse(path_t path, char c) {
-  char *ptr = path.end;
-  while (ptr > path.start && *(ptr - 1) == c) {
-    ptr--;
-  }
-  return (path_t){ path.str, path.len, path.count, path.start, ptr };
-}
-
-path_t path_skip_until_reverse(path_t path, char c) {
-  char *ptr = path.end;
-  while (ptr > path.start && *(ptr - 1) != c) {
-    ptr--;
-  }
-  return (path_t){ path.str, path.len, path.count, path.start, ptr };
-}
-
-// path_t operations
-
-path_t str_to_path(const char *path) {
-  if (path == NULL) {
-    return path_null;
-  }
-
-  size_t len = strlen(path);
-  return (path_t) { path, len, 0, (char *) path, (char *) path + len };
-}
-
-char *path_to_str(path_t path) {
-  size_t len = path.end - path.start;
-  char *str = kmalloc(len + 1);
-  memcpy(str, path.start, len);
-  str[len] = '\0';
-  return str;
-}
-
-uint32_t path_to_hash(path_t path) {
-  size_t len = path.end - path.start;
-  uint32_t out;
-  murmur_hash_x86_32(path.start, len, HASH_SEED, &out);
-  return out;
-}
-
-//
-
-void pathcpy(char *dest, path_t path) {
-  size_t len = p_len(path);
-  memcpy(dest, path.start, len);
-  dest[len] = '\0';
-}
-
-int patheq(path_t path1, path_t path2) {
-  if (p_is_null(path1)) return 1;
-  if (p_is_null(path2)) return -1;
-
-  size_t len1 = p_len(path1);
-  size_t len2 = p_len(path2);
-  if (len1 < len2) return -1;
-  if (len1 > len2) return 1;
-  return memcmp(path1.start, path2.start, len1);
-}
-
-int pathcmp(path_t path1, path_t path2) {
-  if (p_is_null(path1)) return 1;
-  if (p_is_null(path2)) return -1;
-
-  size_t len = min(p_len(path1), p_len(path2));
-  return memcmp(path1.start, path2.start, len);
-}
-
-int pathcmp_s(path_t path, const char *str) {
-  if (p_is_null(path)) {
-    return 1;
-  }
-
-  size_t len = p_len(path);
-  return memcmp(path.start, str, len);
-}
-
-int patheq_s(path_t path, const char *str) {
-  if (p_is_null(path)) {
-    return 1;
-  }
-
-  size_t len1 = p_len(path);
-  size_t len2 = strlen(str);
-  if (len1 < len2) return -1;
-  if (len1 > len2) return 1;
-  return memcmp(path.start, str, len1);
-}
-
-//
-
-path_t path_dirname(path_t path) {
-  if (p_is_null(path) || path.len == 0 || p_len(path) == 0) {
-    return path_dot;
-  }
-
-  // remove trailing slashes
-  path = path_skip_over_reverse(path, '/');
-  // count remaining slashes
-  int slashes = path_num_occurrences(path, '/');
-  if (p_len(path) == 0 || p_len(path) == slashes) {
-    return path_slash;
-  } else if (slashes == 0) {
-    return path_dot;
-  }
-
-  // remove trailing non-slash characters
-  path = path_skip_until_reverse(path, '/');
-  // remove trailing slashes (again)
-  path = path_skip_over_reverse(path, '/');
-
-  if (p_len(path) == 0) {
-    return path_slash;
-  }
-
-  path.len = path.end - path.start;
   return path;
 }
 
+path_t path_strip_trailing(path_t path, char c) {
+  const char *ptr = path_start(path);
+  const char *eptr = path_end(path);
+  while (eptr > ptr && *(eptr - 1) == c) {
+    eptr--;
+    path.view.len--;
+  }
+  return path;
+}
+
+path_t path_remove_until(path_t path, char c) {
+  const char *ptr = path_start(path);
+  const char *eptr = path_end(path);
+  while (ptr < eptr && *ptr != c) {
+    ptr++;
+    path.view.off++;
+    path.view.len--;
+  }
+  return path;
+}
+
+path_t path_remove_until_reverse(path_t path, char c) {
+  const char *ptr = path_start(path);
+  const char *eptr = path_end(path);
+  while (eptr > ptr && *(eptr - 1) != c) {
+    eptr--;
+    path.view.len--;
+  }
+  return path;
+}
+
+//
+
 path_t path_basename(path_t path) {
-  if (p_is_null(path) || path.len == 0 || p_len(path) == 0) {
-    return path_dot;
+  if (path_is_null(path)) {
+    return DOT_PATH;
   }
 
-  // remove any trailing slashes
-  path = path_skip_over_reverse(path, '/');
-  // count remaining slashes
-  int slashes = path_num_occurrences(path, '/');
-  if (p_len(path) == 0 || p_len(path) == slashes) {
-    return path_slash;
+  // remove any trailing slashes and count remaining slashes
+  path = path_strip_trailing(path, '/');
+  int slashes = path_count_char(path, '/');
+  if (path_len(path) == 0) {
+    return SLASH_PATH;
   } else if (slashes == 0) {
     return path;
   }
 
   // remove characters up to and including any last slashes
-  char *ptr = path.start;
-  while (slashes > 0) {
-    if (*ptr == '/') {
+  while (slashes > 0 && path_len(path) > 0) {
+    path = path_remove_until(path, '/');
+    while (path_first_char(path) == '/') {
+      path = path_drop_first(path);
       slashes--;
     }
-    ptr++;
   }
-
-  size_t len = path.end - ptr;
-  return (path_t){ path.str, len, path.count, ptr, path.end };
+  return path;
 }
 
-path_t path_prefix(path_t path) {
-  if (pathcmp(path_slash, path) == 0) {
-    return path_slash;
+path_t path_dirname(path_t path) {
+  if (path_is_null(path) || path_len(path) == 0) {
+    return DOT_PATH;
   }
-  return path_dot;
+
+  // remove any trailing slashes and count remaining slashes
+  path = path_strip_trailing(path, '/');
+  int slashes = path_count_char(path, '/');
+  if (path_len(path) == 0) {
+    return SLASH_PATH;
+  } else if (slashes == 0) {
+    return DOT_PATH;
+  }
+
+  // remove basename and then any trailing slashes
+  path = path_remove_until_reverse(path, '/');
+  path = path_strip_trailing(path, '/');
+  if (path_is_null(path)) {
+    return SLASH_PATH;
+  }
+  return path;
 }
 
-path_t path_suffix(path_t path) {
-  if (*(path.end - 1) == '/') {
-    return path_slash;
-  }
-  return path_null;
-}
 
+// on call with a regular path, it will return the first component
+// with path.view.iter set to 1. subsequent calls will return the
+// next component until the end of the path is reached, at which
+// point it will return a null path. the parts do not include any
+// leading or trailing slashes.
 path_t path_next_part(path_t path) {
-  if (path.start >= path.str + path.len) {
-    return path_null;
+  if (path_is_null(path)) {
+    path.view.iter = 0;
+    return path;
   }
 
-  char *real_end = (char *) path.str + path.len;
-  if (path.count == 0 && *path.start == '/') {
-    return (path_t){ path.str, path.len, path.count + 1, path.start, path.start + 1 };
-  } else if (path.count > 0) {
-    path.start = path.end;
-    path.end = real_end;
+  if (path.view.iter == 0) {
+    path.view.iter = 1;
+    path.view.off = 0;
+    path.view.len = path.storage.len;
+    path = path_strip_leading(path, '/');
+
+    uint16_t off = path.view.off;
+    uint16_t len = path_remove_until(path, '/').view.off - off;
+    path.view.off = off;
+    path.view.len = len;
+    return path;
   }
 
-  // skip leading slashes
-  path = path_skip_over(path, '/');
-  // next part start ptr
-  char *start = path.start;
-  // skip until next slash (or end)
-  path = path_skip_until(path, '/');
-  // next part end ptr
-  char *end = path.start;
+  path.view.off += path.view.len;
+  path.view.len = path.storage.len - path.view.off;
+  path = path_strip_leading(path, '/');
 
-  if (start >= real_end && end >= real_end) {
-    return path_null;
-  }
-
-  return (path_t){ path.str, path.len, path.count + 1, start, end };
-}
-
-void path_print(path_t path) {
-  char str[p_len(path) + 1];
-  pathcpy(str, path);
-  kprintf("path: %s\n", str);
-}
-
-//
-
-// returns a path with exactly one '/' separating all components
-// and no trailing slashes
-int path_cleanup(const char *path, char *buf, size_t len) {
-  if (len == 0) {
-    return -ENOBUFS;
-  }
-
-  size_t index = 0;
-  path_t part = str_to_path(path);
-
-  path_t prefix = path_prefix(part);
-  if (p_is_dot(prefix)) {
-    buf[index++] = '.';
-  }
-
-  while (!p_is_null(part = path_next_part(part))) {
-    if (index + p_len(part) + 1 >= len) {
-      return -ENOBUFS;
-    }
-
-    buf[index++] = '/';
-    pathcpy(buf + index, part);
-  }
-
-  if (index >= len) {
-    return -ENOBUFS;
-  }
-  buf[index++] = '\0';
-  return index - 1;
+  uint16_t off = path.view.off;
+  uint16_t len = path_remove_until(path, '/').view.off - off;
+  path.view.off = off;
+  path.view.len = len;
+  return path;
 }

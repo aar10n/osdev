@@ -3,17 +3,50 @@
 //
 
 #include <fs.h>
+#include <device.h>
 #include <panic.h>
+#include <printf.h>
+#include <hash_map.h>
 
 #define ASSERT(x) kassert(x)
 #define DPRINTF(fmt, ...) kprintf("fs: %s: " fmt, __func__, ##__VA_ARGS__)
 // #define DPRINTF(str, args...)
 
+MAP_TYPE_DECLARE(fs_type_t *);
 
-void fs_init() {}
+static hash_map_t *fs_type_by_name;
+static LIST_HEAD(struct fs_type) fs_types;
+static spinlock_t fs_types_lock;
+
+
+static void fs_static_init() {
+  fs_type_by_name = hash_map_new();
+  LIST_INIT(&fs_types);
+  spin_init(&fs_types_lock);
+}
+STATIC_INIT(fs_static_init);
+
+//
 
 int fs_register_type(fs_type_t *fs_type) {
-  unimplemented("fs_register_type");
+  if (fs_type->name == NULL || fs_type->sb_ops == NULL || fs_type->inode_ops == NULL ||
+      fs_type->dentry_ops == NULL || fs_type->file_ops == NULL) {
+    DPRINTF("invalid bus: missing one or more required field(s)\n");
+    return -1;
+  }
+
+  if (hash_map_get(fs_type_by_name, fs_type->name) != NULL) {
+    DPRINTF("fs type '%s' already registered\n", fs_type->name);
+    return -1;
+  }
+
+  SPIN_LOCK(&fs_types_lock);
+  LIST_ADD(&fs_types, fs_type, list);
+  hash_map_set_c(fs_type_by_name, fs_type->name, fs_type);
+  SPIN_UNLOCK(&fs_types_lock);
+
+  kprintf("fs: registered type '%s'\n", fs_type->name);
+  return 0;
 }
 
 //

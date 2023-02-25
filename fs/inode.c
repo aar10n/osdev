@@ -77,22 +77,22 @@ dentry_t *i_locate(inode_t *inode, dentry_t *dentry, const char *name) {
   }
 
   size_t name_len = strlen(name);
-  LIST_FOR_IN(d, &dentry->d_children, list) {
-    if (D_OPS(d)->d_compare != NULL && D_OPS(d)->d_compare(d, name, name_len) == 0) {
-      return d;
-    } else {
-      uint64_t hash = 0;
-      if (D_OPS(d)->d_hash) {
-        D_OPS(d)->d_hash(name, name_len, &hash);
-      } else {
-        hash = murmur_hash64(name, name_len, MURMUR3_SEED);
-      }
-
-      if (hash == d->hash) {
-        return d;
-      }
-    }
-  }
+  // LIST_FOR_IN(d, &dentry->d_children, list) {
+  //   if (D_OPS(d)->d_compare != NULL && D_OPS(d)->d_compare(d, name, name_len) == 0) {
+  //     return d;
+  //   } else {
+  //     uint64_t hash = 0;
+  //     if (D_OPS(d)->d_hash) {
+  //       D_OPS(d)->d_hash(name, name_len, &hash);
+  //     } else {
+  //       hash = murmur_hash64(name, name_len, MURMUR3_SEED);
+  //     }
+  //
+  //     if (hash == d->hash) {
+  //       return d;
+  //     }
+  //   }
+  // }
 
   return NULL;
 }

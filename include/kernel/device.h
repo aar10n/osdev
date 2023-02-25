@@ -41,7 +41,7 @@ typedef struct device {
   const struct file_ops *ops;
 
   LIST_HEAD(struct device) children;
-  LIST_HEAD(struct dentry) dentries;
+  LIST_HEAD(struct inode) inodes;
 
   SLIST_ENTRY(struct device) dev_list;
   SLIST_ENTRY(struct device) bus_list;

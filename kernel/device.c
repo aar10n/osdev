@@ -93,7 +93,7 @@ device_t *free_device(device_t *dev) {
   ASSERT(dev->data == NULL);
   ASSERT(dev->driver == NULL);
   ASSERT(LIST_FIRST(&dev->children) == NULL);
-  ASSERT(LIST_FIRST(&dev->dentries) == NULL);
+  ASSERT(LIST_FIRST(&dev->inodes) == NULL);
   kfree(dev);
   return NULL;
 }
@@ -184,7 +184,7 @@ int register_bus_device(device_bus_t *bus, void *bus_device) {
   dev->bus_device = bus_device;
   dev->bus = bus;
   LIST_INIT(&dev->children);
-  LIST_INIT(&dev->dentries);
+  LIST_INIT(&dev->inodes);
 
   // look for a driver that can handle this device
   device_driver_t *driver = NULL;

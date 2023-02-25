@@ -27,6 +27,8 @@
 #include <printf.h>
 #include <panic.h>
 
+#include <path.h>
+
 // This relates to custom qemu patch that ive written to make debugging easier.
 #define QEMU_DEBUG_INIT() ({ outb(0x801, 1); })
 
@@ -104,7 +106,6 @@ int command_line_main();
 noreturn void root() {
   kprintf("starting root process\n");
   alarms_init();
-  fs_init();
 
   do_module_initializers();
   probe_all_buses();

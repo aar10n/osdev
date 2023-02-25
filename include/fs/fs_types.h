@@ -42,16 +42,20 @@ struct device;
 
 // filesystem flags
 #define FS_RDONLY  0x01 // filesystem is inherently read-only
-#define FS_VIRTUAL 0x02 // filesystem is purely in-memory (not backed by disk)
 
 typedef struct fs_type {
-  const char *name;                 // filesystem name
-  uint32_t flags;                   // filesystem flags
+  const char *name;                      // filesystem name
+  uint32_t flags;                        // filesystem flags
 
-  struct super_block_ops *sb_ops;   // superblock operations
-  struct inode_ops *inode_ops;      // inode operations
-  struct dentry_ops *dentry_ops;    // dentry operations
-  struct file_ops *file_ops;        // file operations
+  const struct super_block_ops *sb_ops;  // superblock operations
+  const struct inode_ops *inode_ops;     // inode operations
+  const struct dentry_ops *dentry_ops;   // dentry operations
+  const struct file_ops *file_ops;       // file operations
+
+  spinlock_t lock;                       // filesystem lock
+  LIST_HEAD(struct super_block) mounts;  // mounted filesystems
+
+  LIST_ENTRY(struct fs_type) list;       // filesystem list
 } fs_type_t;
 
 //
@@ -266,7 +270,7 @@ typedef struct inode {
     struct device *i_device;          // device node (S_IFCHR, S_IFBLK)
   };
 
-  LIST_HEAD(struct dentry) links;     // list of dentries linked to inode
+  LIST_HEAD(struct dentry) links;     // list of inodes linked to inode
   LIST_ENTRY(struct inode) sb_list;   // entry in superblock list of inodes
 } inode_t;
 
@@ -283,7 +287,7 @@ struct inode_ops {
    * is not set, the function must search through the remaining entries on the
    * device.
    *
-   * The function may choose to lazy load the dentries during its search by using
+   * The function may choose to lazy load the inodes during its search by using
    * the d_alloc() and d_add_child() functions in the same manner as is described
    * for the i_loaddir method.
    *
@@ -477,13 +481,11 @@ typedef struct dentry {
   struct dentry *parent;            // parent dentry
   const struct dentry_ops *ops;     // dentry operations
 
+  LIST_HEAD(struct dentry) children; // child inodes (S_IFDIR)
+
   LIST_ENTRY(struct dentry) links;  // inode->links list
   LIST_ENTRY(struct dentry) bucket; // dcache hash bucket
-  LIST_ENTRY(struct dentry) list;   // sibling dentries
-
-  union {
-    LIST_HEAD(struct dentry) d_children; // child dentries (S_IFDIR)
-  };
+  LIST_ENTRY(struct dentry) list;   // sibling inodes
 } dentry_t;
 
 struct dentry_out {
