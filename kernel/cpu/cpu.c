@@ -65,7 +65,7 @@ static inline int __get_cpuid(uint32_t leaf,
   return 1;
 }
 
-static inline int do_cpuid(int leaf, uint32_t *a, uint32_t *b, uint32_t *c, uint32_t *d) {
+static inline int do_cpuid(uint32_t leaf, uint32_t *a, uint32_t *b, uint32_t *c, uint32_t *d) {
   *a = 0;
   *b = 0;
   *c = 0;
