@@ -4,14 +4,11 @@
 
 #include <path.h>
 #include <mm.h>
-#include <printf.h>
 #include <panic.h>
 #include <string.h>
-#include <murmur3.h>
 
 
 #define ASSERT(x) kassert(x)
-#define HASH_SEED 0xDEADBEEF
 
 
 // MARK: Path API
@@ -23,12 +20,14 @@ path_t str2path(const char *str) {
 
   size_t len = strlen(str);
   ASSERT(len <= UINT16_MAX);
-  return strn2path(str, (uint16_t) len);
+  return strn2path(str, len);
 }
 
-path_t strn2path(const char *str, uint16_t len) {
-  if (str == NULL) {
+path_t strn2path(const char *str, size_t len) {
+  if (str == NULL || len == 0) {
     return NULL_PATH;
+  } else if (len > MAX_PATH_LEN) {
+    len = MAX_PATH_LEN;
   }
 
   return (path_t){

@@ -280,12 +280,15 @@
     var;                                \
   })
 
-#define RLIST_GET_LAST(el, name)              \
-  {                                           \
-    while ((el) && (el)->name.next != NULL) { \
-      (el) = (el)->name.next;                 \
-    }                                         \
-  }
+#define RLIST_GET_LAST(el, name) \
+  ({                                  \
+    typeof(el) var;                   \
+    RLIST_FOREACH(var, el, name) {    \
+      if (var->name.next == NULL)     \
+        break;                        \
+    }                                 \
+    var;                              \
+  })
 
 // List accessors
 

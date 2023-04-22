@@ -28,6 +28,8 @@
 #include <panic.h>
 
 #include <path.h>
+#include <dcache.h>
+#include <dentry.h>
 
 // This relates to custom qemu patch that ive written to make debugging easier.
 #define QEMU_DEBUG_INIT() ({ outb(0x801, 1); })
@@ -37,6 +39,32 @@ bool is_debug_enabled = true;
 boot_info_v2_t __boot_data *boot_info_v2;
 
 noreturn void root();
+
+dentry_t *create_vfs_tree() {
+  dentry_t *root = d_alloc_dir("/", NULL);
+  {
+    dentry_t *bin = d_alloc_dir("bin", NULL);
+    d_add_child(root, bin);
+    {
+      d_add_child(bin, d_alloc("ls", S_IFREG, NULL));
+      d_add_child(bin, d_alloc("cat", S_IFREG, NULL));
+      d_add_child(bin, d_alloc("echo", S_IFREG, NULL));
+    }
+  }
+  {
+    dentry_t *home = d_alloc_dir("home", NULL);
+    d_add_child(root, home);
+    {
+      dentry_t *aaron = d_alloc_dir("aaron", NULL);
+      d_add_child(home, aaron);
+      {
+        d_add_child(aaron, d_alloc("hello.txt", S_IFREG, NULL));
+      }
+    }
+  }
+
+  return root;
+}
 
 //
 // Kernel entry
@@ -50,7 +78,7 @@ __used void kmain() {
   // We now have primitive debugging via the serial port. In order to initialize
   // the real kernel memory allocators we need basic physical memory allocation
   // and a kernel heap. We also need to read the acpi tables and reserve virtual
-  // address space for a number of mem
+  // address space for a number of memory regions.
   mm_early_init();
   irq_early_init();
   acpi_early_init();
@@ -106,9 +134,14 @@ int command_line_main();
 noreturn void root() {
   kprintf("starting root process\n");
   alarms_init();
+  // do_module_initializers();
+  // probe_all_buses();
 
-  do_module_initializers();
-  probe_all_buses();
+  //////////////////////////////////////////
+
+  // dentry_t *root = create_vfs_tree();
+
+  //////////////////////////////////////////
 
   kprintf("haulting...\n");
   thread_block();

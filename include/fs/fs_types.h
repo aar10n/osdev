@@ -4,6 +4,7 @@
 
 #ifndef FS_FS_TYPES_H
 #define FS_FS_TYPES_H
+#define __FS_TYPES__
 
 #include <base.h>
 #include <queue.h>
@@ -33,6 +34,8 @@ struct dentry_ops;
 struct file;
 struct file_ops;
 struct device;
+
+typedef uint64_t hash_t;
 
 //
 //
@@ -65,7 +68,7 @@ typedef struct fs_type {
 //
 
 // helper macros
-#define S_OPS(sb) __type_checked(super_block_t *, sb, (sb)->ops)
+#define S_OPS(sb) __const_type_checked(super_block_t *, sb, (sb)->ops)
 #define S_LOCK(sb) __type_checked(super_block_t *, sb, mutex_lock(&(sb)->lock))
 #define S_UNLOCK(sb) __type_checked(super_block_t *, sb, mutex_unlock(&(sb)->lock))
 
@@ -217,7 +220,7 @@ struct super_block_ops {
 #define I_RAWDAT  0x10  // inode data is raw memory
 
 // helper macros
-#define I_OPS(inode) __type_checked(inode_t *, inode, (inode)->ops)
+#define I_OPS(inode) __const_type_checked(inode_t *, inode, (inode)->ops)
 #define I_LOCK(inode) __type_checked(inode_t *, inode, mutex_lock(&(inode)->lock))
 #define I_UNLOCK(inode) __type_checked(inode_t *, inode, mutex_unlock(&(inode)->lock))
 #define I_DATA_LOCK_RO(inode) __type_checked(inode_t *, inode, rw_lock_read(&(inode)->data_lock))
@@ -462,9 +465,9 @@ struct inode_ops {
 //
 //
 
-#define D_OPS(dentry) __type_checked(dentry_t *, dentry, (dentry)->ops)
-#define D_LOCK(dentry) __type_checked(dentry_t *, dentry, spin_lock(&(dentry)->lock))
-#define D_UNLOCK(dentry) __type_checked(dentry_t *, dentry, spin_unlock(&(dentry)->lock))
+#define D_OPS(dentry) __const_type_checked(dentry_t *, dentry, (dentry)->ops)
+#define D_LOCK(dentry) __type_checked(dentry_t *, dentry, mutex_lock(&(dentry)->lock))
+#define D_UNLOCK(dentry) __type_checked(dentry_t *, dentry, mutex_unlock(&(dentry)->lock))
 
 typedef struct dentry {
   /* read-write */
@@ -472,10 +475,11 @@ typedef struct dentry {
   mode_t mode;                      // dentry mode
   char *name;                       // dentry name
   size_t namelen;                   // dentry name length
-  uint64_t hash;                    // dentry hash
 
   /* read-only */
-  spinlock_t lock;                  // dentry struct lock
+  hash_t hash;                      // dentry hash
+  hash_t dhash;                     // path hash (for dcache)
+  mutex_t lock;                  // dentry struct lock
 
   struct inode *inode;              // associated inode
   struct dentry *parent;            // parent dentry
@@ -498,20 +502,10 @@ struct dentry_out {
 
 struct dentry_ops {
   /**
-   * Hashes a dentry name. \b Optional.
-   *
-   * \default The murmur3 hash is used.
-   *
-   * @param name The dentry to hash.
-   * @param namelen The length of the name.
-   * @param [out] hash The hash of the dentry.
-   */
-  void (*d_hash)(const char *name, size_t namelen, uint64_t *hash);
-
-  /**
    * Compares a dentry against a name. \b Optional.
    *
-   * \default The name is hashed and compared against the dentry hash.
+   * \default If d_hash_str is set, the name is hashed and compared against the dentry hash.
+   *          Otherwise, the name is compared against the dentry name.
    *
    * @param dentry The dentry to compare.
    * @param name The name to compare.
@@ -519,6 +513,17 @@ struct dentry_ops {
    * @return 0 if the dentry matches the name, non-zero otherwise.
    */
   int (*d_compare)(const struct dentry *dentry, const char *name, size_t namelen);
+
+  /**
+   * Hashes a dentry name. \b Optional.
+   *
+   * \default The default hasher is used.
+   *
+   * @param name The dentry to hash.
+   * @param namelen The length of the name.
+   * @param [out] hash The hash of the dentry.
+   */
+  void (*d_hash)(const char *name, size_t namelen, hash_t *hash);
 };
 
 //

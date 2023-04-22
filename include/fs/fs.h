@@ -29,7 +29,7 @@ int fs_register_type(fs_type_t *fs_type);
  * @param source The source device or file to mount.
  * @param mount The mount point.
  * @param fs_type The file system type to use.
- * @return F_OK on success, F_ERROR on failure.
+ * @return 0 on success, or \< 0 on error.
  */
 int fs_mount(const char *source, const char *mount, const char *fs_type);
 
@@ -37,7 +37,7 @@ int fs_mount(const char *source, const char *mount, const char *fs_type);
  * Unmounts a file system at the specified mount point.
  *
  * @param path The mount point of the file system to unmount.
- * @return F_OK on success, F_ERROR on failure.
+ * @return 0 on success, or \< 0 on error.
  */
 int fs_unmount(const char *path);
 
@@ -50,7 +50,7 @@ int fs_unmount(const char *path);
  *
  * @param path The path to the file or directory.
  * @param stat A pointer to a `struct stat` where the metadata will be stored.
- * @return F_OK on success, F_ERROR on failure.
+ * @return 0 on success, or \< 0 on error.
  */
 int fs_stat(const char *path, struct stat *stat);
 
@@ -59,7 +59,7 @@ int fs_stat(const char *path, struct stat *stat);
  *
  * @param fd The file descriptor of the open file.
  * @param stat A pointer to a `struct stat` where the metadata will be stored.
- * @return F_OK on success, F_ERROR on failure.
+ * @return 0 on success, or \< 0 on error.
  */
 int fs_fstat(int fd, struct stat *stat);
 
@@ -93,7 +93,7 @@ int fs_creat(const char *path, mode_t mode);
  *
  * @param path The path to the directory to create.
  * @param mode The directory permissions to use.
- * @return F_OK on success, F_ERROR on failure.
+ * @return 0 on success, or \< 0 on error.
  */
 int fs_mkdir(const char *path, mode_t mode);
 
@@ -103,7 +103,7 @@ int fs_mkdir(const char *path, mode_t mode);
  * @param path The path to the file to create.
  * @param mode The file permissions to use.
  * @param dev The device identifier for a special file.
- * @return F_OK on success, F_ERROR on failure.
+ * @return 0 on success, or \< 0 on error.
  */
 int fs_mknod(const char *path, mode_t mode, dev_t dev);
 
@@ -111,7 +111,7 @@ int fs_mknod(const char *path, mode_t mode, dev_t dev);
  * Closes an open file.
  *
  * @param fd The file descriptor of the open file.
- * @return F_OK on success, F_ERROR on failure.
+ * @return 0 on success, or \< 0 on error.
  */
 int fs_close(int fd);
 
@@ -125,7 +125,7 @@ int fs_close(int fd);
  * @param fd The file descriptor of the open file.
  * @param buf A buffer to store the read data.
  * @param nbytes The maximum number of bytes to read.
- * @return The number of bytes read on success, F_ERROR on failure.
+ * @return The number of bytes read on success, or \< 0 on error.
  */
 ssize_t fs_read(int fd, void *buf, size_t nbytes);
 
@@ -135,7 +135,7 @@ ssize_t fs_read(int fd, void *buf, size_t nbytes);
  * @param fd The file descriptor of the open file.
  * @param buf A buffer containing the data to write.
  * @param nbytes The number of bytes to write.
- * @return The number of bytes written on success, F_ERROR on failure.
+ * @return The number of bytes written on success, or \< 0 on error.
  */
 ssize_t fs_write(int fd, void *buf, size_t nbytes);
 
@@ -145,7 +145,7 @@ ssize_t fs_write(int fd, void *buf, size_t nbytes);
  * @param fd The file descriptor of the open file.
  * @param offset The new position relative to the whence parameter.
  * @param whence The reference point for the offset parameter.
- * @return The new position on success, F_ERROR on failure.
+ * @return The new position on success, or \< 0 on error.
  */
 off_t fs_lseek(int fd, off_t offset, int whence);
 
@@ -155,7 +155,7 @@ off_t fs_lseek(int fd, off_t offset, int whence);
  * @param fd The file descriptor of the open file.
  * @param iov An array of struct iovec buffers to store the read data.
  * @param iovcnt The number of buffers in the iov array.
- * @return The number of bytes read on success, F_ERROR on failure.
+ * @return The number of bytes read on success, or \< 0 on error.
  */
 ssize_t fs_readv(int fd, const struct iovec *iov, int iovcnt);
 
@@ -165,7 +165,7 @@ ssize_t fs_readv(int fd, const struct iovec *iov, int iovcnt);
  * @param fd The file descriptor of the open file.
  * @param iov An array of struct iovec buffers containing the data to write.
  * @param iovcnt The number of buffers in the iov array.
- * @return The number of bytes written on success, F_ERROR on failure.
+ * @return The number of bytes written on success, or \< 0 on error.
  */
 ssize_t fs_writev(int fd, const struct iovec *iov, int iovcnt);
 
@@ -176,7 +176,7 @@ ssize_t fs_writev(int fd, const struct iovec *iov, int iovcnt);
  * @param iov An array of `struct iovec` buffers to store the read data.
  * @param iovcnt The number of buffers in the `iov` array.
  * @param offset The position in the file to read from.
- * @return The number of bytes read on success, F_ERROR on failure.
+ * @return The number of bytes read on success, or \< 0 on error.
  */
 ssize_t fs_preadv(int fd, const struct iovec *iov, int iovcnt, off_t offset);
 
@@ -188,7 +188,7 @@ ssize_t fs_preadv(int fd, const struct iovec *iov, int iovcnt, off_t offset);
  * @param iovcnt The number of buffers in the `iov` array.
  * @param offset The position in the file to write to.
  *
- * @return The number of bytes written on success, F_ERROR on failure.
+ * @return The number of bytes written on success, or \< 0 on error.
  */
 ssize_t fs_pwritev(int fd, const struct iovec *iov, int iovcnt, off_t offset);
 
@@ -200,7 +200,7 @@ ssize_t fs_pwritev(int fd, const struct iovec *iov, int iovcnt, off_t offset);
  * Duplicates an open file descriptor.
  *
  * @param fd The file descriptor to duplicate.
- * @return The new file descriptor on success, F_ERROR on failure.
+ * @return The new file descriptor on success, or \< 0 on error.
  */
 int fs_dup(int fd);
 
@@ -209,7 +209,7 @@ int fs_dup(int fd);
  *
  * @param fd The file descriptor to duplicate.
  * @param fd2 The descriptor number to use for the duplicate.
- * @return The new file descriptor on success, F_ERROR on failure.
+ * @return The new file descriptor on success, or \< 0 on error.
  */
 int fs_dup2(int fd, int fd2);
 
@@ -219,7 +219,7 @@ int fs_dup2(int fd, int fd2);
  * @param fd The file descriptor of the open file.
  * @param cmd The operation to perform.
  * @param arg An argument for the operation.
- * @return The result of the file control operation, or F_ERROR on failure.
+ * @return The result of the file control operation, or \< 0 on error.
  */
 int fs_fcntl(int fd, int cmd, uint64_t arg);
 
@@ -267,7 +267,7 @@ void fs_rewinddir(int fd);
  *
  * @param path1 The path to the file to link to.
  * @param path2 The path to the new link.
- * @return F_OK on success, F_ERROR on failure.
+ * @return 0 on success, or \< 0 on error.
  */
 int fs_link(const char *path1, const char *path2);
 
@@ -276,7 +276,7 @@ int fs_link(const char *path1, const char *path2);
  * If the file is not a link or has multiple links, it is deleted when all links to it are removed.
  *
  * @param path The path to the link to remove.
- * @return F_OK on success, F_ERROR on failure.
+ * @return 0 on success, or \< 0 on error.
  */
 int fs_unlink(const char *path);
 
@@ -285,7 +285,7 @@ int fs_unlink(const char *path);
  *
  * @param path1 The path to the file to link to.
  * @param path2 The path to the new symbolic link.
- * @return F_OK on success, F_ERROR on failure.
+ * @return 0 on success, or \< 0 on error.
  */
 int fs_symlink(const char *path1, const char *path2);
 
@@ -294,7 +294,7 @@ int fs_symlink(const char *path1, const char *path2);
  *
  * @param oldfile The current name of the file or directory.
  * @param newfile The new name for the file or directory.
- * @return F_OK on success, F_ERROR on failure.
+ * @return 0 on success, or \< 0 on error.
  */
 int fs_rename(const char *oldfile, const char *newfile);
 
@@ -314,7 +314,7 @@ ssize_t fs_readlink(const char *restrict path, char *restrict buf, size_t bufsiz
  * The directory must be empty.
  *
  * @param path The path to the directory to remove.
- * @return F_OK on success, F_ERROR on failure.
+ * @return 0 on success, or \< 0 on error.
  */
 int fs_rmdir(const char *path);
 
@@ -326,7 +326,7 @@ int fs_rmdir(const char *path);
  * Changes the current working directory.
  *
  * @param path The path to the new current working directory.
- * @return F_OK on success, F_ERROR on failure.
+ * @return 0 on success, or \< 0 on error.
  */
 int fs_chdir(const char *path);
 
@@ -335,7 +335,7 @@ int fs_chdir(const char *path);
  *
  * @param path The path to the file or directory.
  * @param mode The new permissions to use.
- * @return F_OK on success, F_ERROR on failure.
+ * @return 0 on success, or \< 0 on error.
  */
 int fs_chmod(const char *path, mode_t mode);
 
@@ -345,7 +345,7 @@ int fs_chmod(const char *path, mode_t mode);
  * @param path The path to the file or directory.
  * @param owner The new owner identifier.
  * @param group The new group identifier.
- * @return F_OK on success, F_ERROR on failure.
+ * @return 0 on success, or \< 0 on error.
  */
 int fs_chown(const char *path, uid_t owner, gid_t group);
 
@@ -380,7 +380,7 @@ void *fs_mmap(void *addr, size_t len, int prot, int flags, int fd, off_t off);
  *
  * @param addr The start address of the mapped memory.
  * @param len The number of bytes to unmap.
- * @return F_OK on success, F_ERROR on failure.
+ * @return 0 on success, or \< 0 on error.
  */
 int fs_munmap(void *addr, size_t len);
 

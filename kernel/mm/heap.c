@@ -250,6 +250,12 @@ void *kmalloc(size_t size) {
   return __kmalloc(&kheap, size, CHUNK_MIN_ALIGN);
 }
 
+void *kmallocz(size_t size) {
+  void *p = __kmalloc(&kheap, size, CHUNK_MIN_ALIGN);
+  memset(p, 0, size);
+  return p;
+}
+
 void *kmalloca(size_t size, size_t alignment) {
   return __kmalloc(&kheap, size, alignment);
 }

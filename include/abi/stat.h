@@ -20,8 +20,8 @@ struct timespec {
 #include <bits/off_t.h>
 #endif
 
-#define PATH_MAX 256
-#define NAME_MAX 32
+#define PATH_MAX 4096
+#define NAME_MAX 256
 
 #define S_IFMT   0xFFF0000
 

@@ -3,6 +3,7 @@
 //
 
 #include <inode.h>
+#include <dentry.h>
 #include <mm.h>
 
 #include <printf.h>
@@ -12,15 +13,12 @@
 
 #define ASSERT(x) kassert(x)
 
-#define MURMUR3_SEED 0xDEADBEEF
-
 //
 // MARK: Virtual API
 //
 
 inode_t *i_alloc_empty() {
-  inode_t *inode = kmalloc(sizeof(inode_t));
-  memset(inode, 0, sizeof(inode_t));
+  inode_t *inode = kmallocz(sizeof(inode_t));
   mutex_init(&inode->lock, MUTEX_REENTRANT);
   rw_lock_init(&inode->data_lock);
   return inode;
@@ -31,27 +29,31 @@ void i_free(inode_t *inode) {
   kfree(inode);
 }
 
-int i_add_dentry(inode_t *inode, dentry_t *dentry) {
+int i_link_dentry(inode_t *inode, dentry_t *dentry) {
   ASSERT(dentry->inode == NULL);
   I_LOCK(inode);
   D_LOCK(dentry);
-  inode->nlinks++;
-  LIST_ADD(&inode->links, dentry, list);
-  dentry->inode = inode;
-  dentry->ino = inode->ino;
+  {
+    inode->nlinks++;
+    LIST_ADD(&inode->links, dentry, list);
+    dentry->inode = inode;
+    dentry->ino = inode->ino;
+  }
   D_UNLOCK(dentry);
   I_UNLOCK(inode);
   return 0;
 }
 
-int i_remove_dentry(inode_t *inode, dentry_t *dentry) {
+int i_unlink_dentry(inode_t *inode, dentry_t *dentry) {
   ASSERT(dentry->inode == inode);
   I_LOCK(inode);
   D_LOCK(dentry);
-  dentry->ino = 0;
-  dentry->inode = NULL;
-  LIST_REMOVE(&inode->links, dentry, list);
-  inode->nlinks--;
+  {
+    dentry->ino = 0;
+    dentry->inode = NULL;
+    LIST_REMOVE(&inode->links, dentry, list);
+    inode->nlinks--;
+  }
   D_UNLOCK(dentry);
   I_UNLOCK(inode);
   return 0;
@@ -61,45 +63,26 @@ int i_remove_dentry(inode_t *inode, dentry_t *dentry) {
 // MARK: Operations
 //
 
-dentry_t *i_locate(inode_t *inode, dentry_t *dentry, const char *name) {
-  kassert(IS_IFDIR(inode));
+dentry_t *i_locate(inode_t *inode, dentry_t *dentry, const char *name, size_t name_len) {
+  ASSERT(IS_IFDIR(inode));
   if (I_OPS(inode)->i_locate != NULL) {
     return I_OPS(inode)->i_locate(inode, dentry, name);
   }
 
-  // default implementation
-  if (i_loaddir(inode, dentry) < 0) {
-    kprintf("i_locate: failed to load directory\n");
-    // it's possible it has been loaded at some other point
-    if (!IS_IFLLDIR(inode)) {
+  // load children if not already loaded and compare children names to find a match
+  if (!IS_IFLLDIR(inode)) {
+    if (i_loaddir(inode, dentry) < 0) {
+      kprintf("i_locate: failed to load directory\n");
       return NULL;
     }
   }
 
-  size_t name_len = strlen(name);
-  // LIST_FOR_IN(d, &dentry->d_children, list) {
-  //   if (D_OPS(d)->d_compare != NULL && D_OPS(d)->d_compare(d, name, name_len) == 0) {
-  //     return d;
-  //   } else {
-  //     uint64_t hash = 0;
-  //     if (D_OPS(d)->d_hash) {
-  //       D_OPS(d)->d_hash(name, name_len, &hash);
-  //     } else {
-  //       hash = murmur_hash64(name, name_len, MURMUR3_SEED);
-  //     }
-  //
-  //     if (hash == d->hash) {
-  //       return d;
-  //     }
-  //   }
-  // }
-
-  return NULL;
+  return d_lookup_child(dentry, name, name_len);
 }
 
 int i_loaddir(inode_t *inode, dentry_t *dentry) {
-  kassert(I_OPS(inode)->i_loaddir != NULL);
-  kassert(IS_IFDIR(inode));
+  ASSERT(I_OPS(inode)->i_loaddir != NULL);
+  ASSERT(IS_IFDIR(inode));
   return I_OPS(inode)->i_loaddir(inode, dentry);
 }
 

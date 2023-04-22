@@ -7,6 +7,8 @@
 
 #include <base.h>
 
+#define MAX_PATH_LEN UINT16_MAX
+
 #define NULL_PATH   ((path_t){{NULL, 0}, {0, 0}})
 #define SLASH_PATH  ((path_t){{"/", 1}, {0, 1}})
 #define DOT_PATH    ((path_t){{".", 1}, {0, 1}})
@@ -42,12 +44,17 @@ static inline bool path_is_null(path_t path) { return path_len(path)== 0; }
 static inline bool path_is_slash(path_t path) { return path_len(path) == 1 && path_start(path)[0] == '/'; }
 static inline bool path_is_dot(path_t path) { return path_len(path) == 1 && path_start(path)[0] == '.'; }
 static inline bool path_is_dotdot(path_t path) { return path_len(path) == 2 && path_start(path)[0] == '.' && path_start(path)[1] == '.'; }
+static inline bool path_is_special(path_t path) { return path_is_slash(path) || path_is_dot(path) || path_is_dotdot(path); }
+static inline bool path_is_absolute(path_t path) { return path_len(path) && path_start(path)[0] == '/'; }
+static inline bool path_is_relative(path_t path) { return !path_is_absolute(path); }
 
 /// Creates a new path from a string.
 path_t str2path(const char *str);
 
 /// Creates a new path from a string with a specified length.
-path_t strn2path(const char *str, uint16_t len);
+/// Note: the length must be less than or equal to MAX_PATH_LEN
+///       or else the string will be truncated.
+path_t strn2path(const char *str, size_t len);
 
 /// Allocates a new string and copies the path into it. The caller is responsible
 /// for freeing the string.
@@ -94,7 +101,7 @@ path_t path_basename(path_t path);
 /// Returns the directory name of a path.
 path_t path_dirname(path_t path);
 
-/// Returns the first or next component of a path.
+/// Returns the first or next component of a path. Returns NULL_PATH if there are no more.
 path_t path_next_part(path_t path);
 
 #endif

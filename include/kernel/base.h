@@ -97,9 +97,15 @@
 #define SIGNATURE_64(A, B, C, D, E, F, G, H) (SIGNATURE_32(A, B, C, D) | ((uint64_t) SIGNATURE_32(E, F, G, H) << 32))
 
 #define ASSERT_IS_TYPE(type, value) \
-  _Static_assert(_Generic(value, type: 1, default: 0) == 1, "Failed type assertion: " #value " is not of type " #type)
+  _Static_assert(_Generic(value, type: 1, default: 0) == 1, \
+  "Failed type assertion: " #value " is not of type " #type)
+
+#define ASSERT_IS_TYPE_OR_CONST(type, value) \
+  _Static_assert(_Generic(value, type: 1, const type: 1, default: 0) == 1, \
+  "Failed type assertion: " #value " is not of type " #type)
 
 #define __type_checked(type, param, rest) ({ ASSERT_IS_TYPE(type, param); rest; })
+#define __const_type_checked(type, param, rest) ({ ASSERT_IS_TYPE_OR_CONST(type, param); rest; })
 
 #define ARRAY_SIZE(a) (sizeof(a) / sizeof((a)[0]))
 
@@ -147,7 +153,7 @@
  *
  * If a section is requested but it has already been loaded in during the normal
  * elf loading procedure, the struct will point to the virtual address of where it
- * was mapped to. Otherwise, it will be place in an unoccupied section of memory
+ * was mapped to. Otherwise, it will be placed in an unoccupied section of memory
  * and the struct will contain the physical address of where it was placed. It is
  * up to the kernel to later map these sections into virtual memory.
  */

@@ -51,15 +51,10 @@ void mm_init_kheap();
 void kheap_init();
 
 void *kmalloc(size_t size) __malloc_like;
+void *kmallocz(size_t size) __malloc_like;
 void *kmalloca(size_t size, size_t alignment) __malloc_like;
 void kfree(void *ptr);
 void *kcalloc(size_t nmemb, size_t size) __malloc_like;
-
-static inline void *kmalloc_z(size_t size) {
-  void *p = kmalloc(size);
-  memset(p, 0, size);
-  return p;
-}
 
 void kheap_dump_stats();
 
