@@ -11,6 +11,8 @@
 
 #define MURMUR3_SEED 0xDEADBEEF
 
+static const struct dentry_ops empty_ops;
+
 bool d_hash_equal(hash_t a, hash_t b) {
   return a == b;
 }
@@ -34,11 +36,14 @@ hash_t d_default_hash_name(const char *name, size_t len) {
 
 dentry_t *d_alloc_empty() {
   dentry_t *dentry = kmallocz(sizeof(dentry_t));
+  dentry->ops = &empty_ops;
   mutex_init(&dentry->lock, MUTEX_REENTRANT);
   return dentry;
 }
 
 dentry_t *d_alloc(const char *name, mode_t mode, const struct dentry_ops *ops) {
+  if (!ops)
+    ops = &empty_ops;
   size_t len = strlen(name);
   ASSERT(len > 0 && len <= NAME_MAX);
   char *name_copy = kmallocz(len + 1);
@@ -49,30 +54,34 @@ dentry_t *d_alloc(const char *name, mode_t mode, const struct dentry_ops *ops) {
   dentry->namelen = len;
   dentry->mode = mode;
   dentry->hash = d_hash_str(ops, name, len);
-  dentry->ops = ops;
+  dentry->ops = ops ? ops : &empty_ops;
   return dentry;
 }
 
 dentry_t *d_alloc_dir(const char *name, const struct dentry_ops *ops) {
   dentry_t *dentry = d_alloc(name, S_IFDIR, ops);
-  d_add_child(dentry, d_alloc_dot());
-  d_add_child(dentry, d_alloc_dotdot());
+  d_add_child(dentry, d_alloc_dot(ops));
+  d_add_child(dentry, d_alloc_dotdot(ops));
   return dentry;
 }
 
-dentry_t *d_alloc_dot() {
+dentry_t *d_alloc_dot(const struct dentry_ops *ops) {
   dentry_t *dentry = d_alloc_empty();
   dentry->name = strdup(".");
   dentry->namelen = 1;
-  dentry->hash = 0;
+  dentry->hash = d_hash_str(ops, ".", 1);
+  dentry->mode = S_IFREG;
+  dentry->ops = ops;
   return dentry;
 }
 
-dentry_t *d_alloc_dotdot() {
+dentry_t *d_alloc_dotdot(const struct dentry_ops *ops) {
   dentry_t *dentry = d_alloc_empty();
   dentry->name = strdup("..");
   dentry->namelen = 2;
-  dentry->hash = 0;
+  dentry->hash = d_hash_str(ops, "..", 2);
+  dentry->mode = S_IFREG;
+  dentry->ops = ops;
   return dentry;
 }
 
@@ -117,7 +126,8 @@ dentry_t *d_lookup_child(dentry_t *parent, const char *name, size_t len) {
   D_LOCK(parent);
   {
     LIST_FOR_IN(d, &parent->children, list) {
-      if (d_compare(child, name, len) == 0) {
+      if (d_compare(d, name, len) == 0) {
+        child = d;
         break;
       }
     }

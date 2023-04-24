@@ -6,6 +6,7 @@
 #define INCLUDE_KERNEL_SBUF_H
 
 #include <base.h>
+#include <string.h>
 
 /// StaticBuffer is a simple non-owning wrapper around a byte buffer and
 /// provides safe interfaces for reading and writing data.
@@ -33,9 +34,10 @@ static inline uint8_t *sbuf_access(sbuf_t *sbuf, size_t index) {
 }
 
 static inline uint8_t sbuf_peek(sbuf_t *sbuf) {
-  if (sbuf == NULL || sbuf_len(sbuf) == 0)
-    return 0;
-  return *sbuf->ptr;
+  if (sbuf && sbuf_len(sbuf) > 0) {
+    return *sbuf->ptr;
+  }
+  return 0;
 }
 
 // MARK: - Methods
@@ -60,7 +62,10 @@ static inline size_t sbuf_seek(sbuf_t *sbuf, ssize_t offset) {
 static inline uint8_t sbuf_pop(sbuf_t *sbuf) {
   if (sbuf == NULL || sbuf_len(sbuf) == 0)
     return 0;
-  return *sbuf->ptr++;
+  uint8_t b = *sbuf->ptr;
+  *sbuf->ptr = 0;
+  sbuf->ptr--;
+  return b;
 }
 
 static inline void sbuf_reverse(sbuf_t *sbuf) {
@@ -93,6 +98,19 @@ static inline size_t sbuf_write(sbuf_t *sbuf, const void *data, size_t size) {
   size = min(size, sbuf_rem(sbuf));
   memcpy(sbuf->ptr, data, size);
   sbuf->ptr += size;
+  return size;
+}
+
+static inline size_t sbuf_write_reverse(sbuf_t *sbuf, const void *data, size_t size) {
+  if (sbuf == NULL)
+    return 0;
+
+  size = min(size, sbuf_rem(sbuf));
+  for (size_t i = 0; i < size; i++) {
+    size_t ir = size - i - 1;
+    *sbuf->ptr = ((uint8_t*)data)[ir];
+    sbuf->ptr++;
+  }
   return size;
 }
 

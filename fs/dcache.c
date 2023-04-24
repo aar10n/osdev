@@ -241,7 +241,7 @@ int get_dentry_path(const dentry_t *root, const dentry_t *dentry, sbuf_t *buf, i
 
   int d = 0;
   while (dentry != root) {
-    if ((sbuf_write(buf, dentry->name, dentry->namelen) == 0) || (sbuf_write_char(buf, '/') == 0)) {
+    if ((sbuf_write_reverse(buf, dentry->name, dentry->namelen) == 0) || (sbuf_write_char(buf, '/') == 0)) {
       return -ENOBUFS;
     }
 
@@ -266,15 +266,8 @@ int expand_path(const dentry_t *root, const dentry_t *at, path_t path, sbuf_t *b
   int depth = 0;
 
   // get the starting dentry
-  if (path_is_slash(part)) {
+  if (path_is_absolute(path)) {
     dentry = root;
-    part = path_next_part(part);
-  } else if (path_is_dot(part)) {
-    dentry = at;
-    part = path_next_part(part);
-  } else if (path_is_dotdot(part)) {
-    dentry = at->parent;
-    part = path_next_part(part);
   } else {
     dentry = at;
   }
@@ -287,9 +280,9 @@ int expand_path(const dentry_t *root, const dentry_t *at, path_t path, sbuf_t *b
 
   // iterate over the path parts
   while (!path_is_null(part = path_next_part(part))) {
-    if (path_is_dot(part) == 0) {
+    if (path_is_dot(part)) {
       continue; // '.' is a no-op
-    } else if (path_is_dotdot(part) == 0) {
+    } else if (path_is_dotdot(part)) {
       if (depth == 0) {
         continue; // ignore '..' at the root
       }
@@ -318,14 +311,18 @@ int expand_path(const dentry_t *root, const dentry_t *at, path_t path, sbuf_t *b
 
 
 int resolve_path(dentry_t *root, dentry_t *at, path_t path, int flags, dentry_t **result) {
-  dcache_t *dcache = at->inode->sb->dcache;
   int res;
+  dcache_t *dcache = NULL;
+  if (at->inode && at->inode->sb) {
+    dcache = at->inode->sb->dcache;
+  }
 
   // first try to get the dentry from the dcache
-  if ((res = dcache_get(dcache, path, result)) == 0) {
+  if (dcache && (res = dcache_get(dcache, path, result)) == 0) {
     return 0;
   }
 
+  // full walk
   dentry_t *dentry;
   dentry_t *last;
   path_t part = path;
@@ -364,16 +361,16 @@ int resolve_path(dentry_t *root, dentry_t *at, path_t path, int flags, dentry_t 
     if (sbuf_write(&curpath, name, len) != len) {
       return -ENOBUFS;
     }
-    // and put the intermediate paths into the dcache
-    if (dcache_put_path(dcache, sbuf_to_path(&curpath), dentry) < 0) {
-      DPRINTF("failed to add dentry to dcache: {:.*s}\n", tmp, sbuf_len(&curpath));
-    }
 
     if (IS_IFDIR(dentry)) {
       dentry = d_lookup_child(dentry, name, len);
       if (dentry == NULL)
         break;
 
+      // and put the intermediate paths into the dcache
+      if (dcache && dcache_put_path(dcache, sbuf_to_path(&curpath), dentry) < 0) {
+        DPRINTF("failed to add dentry to dcache: {:.*s}\n", tmp, sbuf_len(&curpath));
+      }
       continue;
     } else if (IS_IFLNK(dentry)) {
       unimplemented("symlinks");
@@ -390,7 +387,7 @@ int resolve_path(dentry_t *root, dentry_t *at, path_t path, int flags, dentry_t 
     return -ENOENT;
   }
 
-  if (dcache_put_path(dcache, sbuf_to_path(&curpath), dentry) < 0) {
+  if (dcache && dcache_put_path(dcache, sbuf_to_path(&curpath), dentry) < 0) {
     DPRINTF("failed to add dentry to dcache: {:.*s}\n", tmp, sbuf_len(&curpath));
   }
   *result = dentry;

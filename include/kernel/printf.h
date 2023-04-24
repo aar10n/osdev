@@ -101,6 +101,7 @@
  *         'p'             - pointer
  *
  *         'M'             - memory quantity
+ *         'path'          - pointer to path_t
  *
  * https://github.com/aar10n/fmt_c
  */
