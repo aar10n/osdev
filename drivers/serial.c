@@ -5,6 +5,7 @@
 #include <drivers/serial.h>
 #include <cpu/io.h>
 
+#include <device.h>
 #include <fs.h>
 #include <mm.h>
 
@@ -57,37 +58,45 @@ struct serial_device {
   int port;
 };
 
-static int serial_fopen(file_t *file) {
-  struct serial_device *dev = DEVFILE_DATA(file);
+static int serial_fopen(device_t *device) {
+  struct serial_device *dev = device->data;
   return 0;
 }
 
-static int serial_fclose(file_t *file) {
+static int serial_fclose(device_t *device) {
   return 0;
 }
 
-static ssize_t serial_fread(file_t *file, struct kio *kio) {
-  struct serial_device *dev = DEVFILE_DATA(file);
+static ssize_t serial_fread(device_t *device, size_t off, kio_t *kio) {
+  struct serial_device *dev = device->data;
+  if (off != 0) {
+    return -EINVAL;
+  }
 
-  while (kio_moveinb(kio, serial_read_char(dev->port)));
-  return 0;
+  while (kio_moveinb(kio, serial_read_char(dev->port)) > 0) {
+    // do nothing
+  }
+  return (ssize_t) kio_transfered(kio);
 }
 
-static ssize_t serial_fwrite(file_t *file, struct kio *kio) {
-  struct serial_device *dev = DEVFILE_DATA(file);
+static ssize_t serial_fwrite(device_t *device, size_t off, kio_t *kio) {
+  struct serial_device *dev = device->data;
+  if (off != 0) {
+    return -EINVAL;
+  }
 
   uint8_t byte;
-  while (kio_moveoutb(kio, &byte)) {
+  while (kio_moveoutb(kio, &byte) > 0) {
     serial_write_char(dev->port, (char) byte);
   }
-  return 0;
+  return (ssize_t) kio_transfered(kio);
 }
 
-static struct file_ops serial_ops = {
-  .f_open = serial_fopen,
-  .f_close = serial_fclose,
-  .f_read = serial_fread,
-  .f_write = serial_fwrite,
+static struct device_ops serial_ops = {
+  .d_open = serial_fopen,
+  .d_close = serial_fclose,
+  .d_read = serial_fread,
+  .d_write = serial_fwrite,
 };
 
 static void serial_module_init() {

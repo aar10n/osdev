@@ -2,4 +2,4 @@
 $(call register,drivers,KERNEL)
 
 # drivers/
-drivers += ahci.c serial.c
+drivers += ahci.c rawmem.c serial.c
