@@ -41,34 +41,6 @@ struct dentry_ops dentry_ops;
 
 noreturn void root();
 
-
-dentry_t *create_vfs_tree() {
-  dentry_t *root = d_alloc_dir("/", &dentry_ops);
-  root->parent = root;
-  {
-    dentry_t *bin = d_alloc_dir("bin", &dentry_ops);
-    d_add_child(root, bin);
-    {
-      d_add_child(bin, d_alloc("ls", S_IFREG, &dentry_ops));
-      d_add_child(bin, d_alloc("cat", S_IFREG, &dentry_ops));
-      d_add_child(bin, d_alloc("echo", S_IFREG, &dentry_ops));
-    }
-  }
-  {
-    dentry_t *home = d_alloc_dir("home", &dentry_ops);
-    d_add_child(root, home);
-    {
-      dentry_t *aaron = d_alloc_dir("aaron", &dentry_ops);
-      d_add_child(home, aaron);
-      {
-        d_add_child(aaron, d_alloc("hello.txt", S_IFREG, &dentry_ops));
-      }
-    }
-  }
-
-  return root;
-}
-
 //
 // Kernel entry
 //
@@ -132,43 +104,32 @@ __used void ap_main() {
 // Launch process
 //
 
+#include <super.h>
+
 int command_line_main();
 
 noreturn void root() {
   kprintf("starting root process\n");
   alarms_init();
-  // do_module_initializers();
+  do_module_initializers();
   // probe_all_buses();
 
   //////////////////////////////////////////
 
-  dentry_t *root = create_vfs_tree();
-  path_t path = str2path("/home/aaron/");
+  const fs_type_t *initrd_fs = fs_type_get("initrd");
+  kassert(initrd_fs != NULL);
+  device_t *initrd_dev = device_get(make_rdev(1, 0, 0));
+  kassert(initrd_dev != NULL);
+
+  super_block_t *sb = sb_alloc(initrd_fs);
+  dentry_t *root = d_alloc("/", 1, S_IFDIR | 0755, &dentry_ops);
 
   int res;
-  dentry_t *aaron = NULL;
-  if ((res = resolve_path(root, root, path, 0, &aaron)) < 0) {
-    kprintf("failed to resolve path: {:path}\n", &path);
-    kprintf("error: %d\n", res);
-  } else {
-    kprintf("resolve dentry: {:.*s}\n", aaron->name, aaron->namelen);
+  if ((res = sb_mount(sb, root, initrd_dev)) < 0) {
+    kprintf("failed to mount initrd: %s\n", strerror(res));
   }
 
-  char tmp[PATH_MAX+1] = {0};
-  sbuf_t buf = sbuf_init(tmp, PATH_MAX+1);
-  if ((res = get_dentry_path(root, aaron, &buf, NULL)) < 0) {
-    kprintf("failed to get dentry path [%d]\n", -res);
-    WHILE_TRUE;
-  }
-
-
-  sbuf_reset(&buf);
-  path = str2path("..");
-  if ((res = expand_path(root, aaron, path, &buf)) < 0) {
-    kprintf("failed to expand path: {:path} [%d]\n", &path, -res);
-  } else {
-    kprintf("expanded {:path} -> {:s}\n", &path, tmp);
-  }
+  kprintf("it worked!\n");
 
   //////////////////////////////////////////
 
