@@ -32,8 +32,11 @@ typedef struct path {
   struct {
     uint16_t off;
     uint16_t len;
-    uint32_t iter : 1;
   } view;
+  struct {
+    uint16_t orig_len;  // original length
+    uint16_t valid : 1; // path is an iterator
+  } iter;
 } path_t;
 
 static inline size_t path_len(path_t path) { return path.view.len; }

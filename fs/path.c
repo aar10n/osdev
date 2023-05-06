@@ -220,12 +220,14 @@ path_t path_dirname(path_t path) {
 // leading or trailing slashes.
 path_t path_next_part(path_t path) {
   if (path_is_null(path)) {
-    path.view.iter = 0;
     return path;
   }
 
-  if (path.view.iter == 0) {
-    path.view.iter = 1;
+  // first call returns the first part
+  if (path.iter.valid == 0) {
+    path.iter.valid = 1;
+    path.iter.orig_len = path.view.len;
+
     path.view.off = 0;
     path.view.len = path.storage.len;
     path = path_strip_leading(path, '/');
@@ -238,7 +240,7 @@ path_t path_next_part(path_t path) {
   }
 
   path.view.off += path.view.len;
-  path.view.len = path.storage.len - path.view.off;
+  path.view.len = path.iter.orig_len - path.view.off;
   path = path_strip_leading(path, '/');
 
   uint16_t off = path.view.off;
