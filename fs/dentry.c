@@ -41,46 +41,15 @@ dentry_t *d_alloc_empty() {
   return dentry;
 }
 
-dentry_t *d_alloc(const char *name, mode_t mode, const struct dentry_ops *ops) {
+dentry_t *d_alloc(const char *name, size_t namelen, mode_t mode, const struct dentry_ops *ops) {
   if (!ops)
     ops = &empty_ops;
-  size_t len = strlen(name);
-  ASSERT(len > 0 && len <= NAME_MAX);
-  char *name_copy = kmallocz(len + 1);
-  memcpy(name_copy, name, len); // NOLINT(bugprone-not-null-terminated-result)
 
   dentry_t *dentry = d_alloc_empty();
-  dentry->name = name_copy;
-  dentry->namelen = len;
+  dentry->name = strdup(name);
+  dentry->namelen = namelen;
   dentry->mode = mode;
-  dentry->hash = d_hash_str(ops, name, len);
-  dentry->ops = ops ? ops : &empty_ops;
-  return dentry;
-}
-
-dentry_t *d_alloc_dir(const char *name, const struct dentry_ops *ops) {
-  dentry_t *dentry = d_alloc(name, S_IFDIR, ops);
-  d_add_child(dentry, d_alloc_dot(ops));
-  d_add_child(dentry, d_alloc_dotdot(ops));
-  return dentry;
-}
-
-dentry_t *d_alloc_dot(const struct dentry_ops *ops) {
-  dentry_t *dentry = d_alloc_empty();
-  dentry->name = strdup(".");
-  dentry->namelen = 1;
-  dentry->hash = d_hash_str(ops, ".", 1);
-  dentry->mode = S_IFREG;
-  dentry->ops = ops;
-  return dentry;
-}
-
-dentry_t *d_alloc_dotdot(const struct dentry_ops *ops) {
-  dentry_t *dentry = d_alloc_empty();
-  dentry->name = strdup("..");
-  dentry->namelen = 2;
-  dentry->hash = d_hash_str(ops, "..", 2);
-  dentry->mode = S_IFREG;
+  dentry->hash = d_hash_str(ops, name, namelen);
   dentry->ops = ops;
   return dentry;
 }
@@ -120,13 +89,13 @@ int d_remove_child(dentry_t *parent, dentry_t *child) {
   return 0;
 }
 
-dentry_t *d_lookup_child(dentry_t *parent, const char *name, size_t len) {
+dentry_t *d_get_child(dentry_t *parent, const char *name, size_t len) {
   ASSERT(IS_IFDIR(parent));
   dentry_t *child = NULL;
   D_LOCK(parent);
   {
     LIST_FOR_IN(d, &parent->children, list) {
-      if (d_compare(d, name, len) == 0) {
+      if (d_compare(d, name, len)) {
         child = d;
         break;
       }
@@ -153,7 +122,7 @@ hash_t d_hash_path(const struct dentry_ops *ops, path_t path) {
   return d_hash_str(ops, path_start(path), path_len(path));
 }
 
-int d_compare(const struct dentry *d, const char *name, size_t len) {
+bool d_compare(const struct dentry *d, const char *name, size_t len) {
   if (D_OPS(d)->d_compare != NULL) {
     return D_OPS(d)->d_compare(d, name, len);
   } else if (D_OPS(d)->d_hash != NULL) {
@@ -165,9 +134,9 @@ int d_compare(const struct dentry *d, const char *name, size_t len) {
   if (d->namelen != len) {
     return 1;
   }
-  return strncmp(d->name, name, len);
+  return strncmp(d->name, name, len) == 0;
 }
 
-int d_compare_path(const struct dentry *d, path_t path) {
+bool d_compare_path(const struct dentry *d, path_t path) {
   return d_compare(d, path_start(path), path_len(path));
 }

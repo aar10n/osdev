@@ -4,14 +4,43 @@
 
 #include <inode.h>
 #include <dentry.h>
-#include <mm.h>
 
+#include <mm.h>
 #include <printf.h>
 #include <string.h>
 #include <panic.h>
-#include <murmur3.h>
 
 #define ASSERT(x) kassert(x)
+#define DPRINTF(fmt, ...) kprintf("inode: %s: " fmt, __func__, ##__VA_ARGS__)
+
+static inline void link_dentry(inode_t *inode, dentry_t *dentry) {
+  ASSERT(dentry->inode == NULL);
+  I_LOCK(inode);
+  D_LOCK(dentry);
+  {
+    inode->nlinks++;
+    LIST_ADD(&inode->links, dentry, links);
+    dentry->mode = inode->mode;
+    dentry->inode = inode;
+    dentry->ino = inode->ino;
+  }
+  D_UNLOCK(dentry);
+  I_UNLOCK(inode);
+}
+
+static inline void unlink_dentry(inode_t *inode, dentry_t *dentry) {
+  ASSERT(dentry->inode == inode);
+  I_LOCK(inode);
+  D_LOCK(dentry);
+  {
+    dentry->ino = 0;
+    dentry->inode = NULL;
+    LIST_REMOVE(&inode->links, dentry, links);
+    inode->nlinks--;
+  }
+  D_UNLOCK(dentry);
+  I_UNLOCK(inode);
+}
 
 //
 // MARK: Virtual API
@@ -24,38 +53,62 @@ inode_t *i_alloc_empty() {
   return inode;
 }
 
+inode_t *i_alloc(super_block_t *sb, ino_t ino, mode_t mode) {
+  inode_t *inode = i_alloc_empty();
+  inode->ino = ino;
+  inode->mode = mode;
+  inode->sb = sb;
+  inode->ops = sb->fs->inode_ops;
+  return inode;
+}
+
 void i_free(inode_t *inode) {
+  // must be unlinked prior
+  ASSERT(inode->sb == NULL);
   memset(inode, 0, sizeof(inode_t));
   kfree(inode);
 }
 
 int i_link_dentry(inode_t *inode, dentry_t *dentry) {
   ASSERT(dentry->inode == NULL);
-  I_LOCK(inode);
-  D_LOCK(dentry);
-  {
-    inode->nlinks++;
-    LIST_ADD(&inode->links, dentry, list);
-    dentry->inode = inode;
-    dentry->ino = inode->ino;
+  if (IS_IFDIR(inode) && inode->nlinks == 0) {
+    // first time a 'directory' inode is getting linked to a child. add the
+    // dot and dot dot entries before linking. handle the case where it is
+    // a root node and has no parent.
+    dentry_t *dparent = dentry->parent ? dentry->parent : dentry;
+    inode_t *iparent = dparent->inode ? dparent->inode : inode;
+
+    dentry_t *dot = d_alloc(".", 1, inode->mode, dentry->ops);
+    d_add_child(dentry, dot);
+    dentry_t *dotdot = d_alloc("..", 2, iparent->mode, dparent->ops);
+    d_add_child(dentry, dotdot);
+
+    link_dentry(inode, dot);
+    link_dentry(iparent, dotdot);
+    link_dentry(inode, dentry);
+  } else {
+    // normal case
+    link_dentry(inode, dentry);
   }
-  D_UNLOCK(dentry);
-  I_UNLOCK(inode);
   return 0;
 }
 
 int i_unlink_dentry(inode_t *inode, dentry_t *dentry) {
   ASSERT(dentry->inode == inode);
-  I_LOCK(inode);
-  D_LOCK(dentry);
-  {
-    dentry->ino = 0;
-    dentry->inode = NULL;
-    LIST_REMOVE(&inode->links, dentry, list);
-    inode->nlinks--;
+  unlink_dentry(inode, dentry);
+
+  if (IS_IFDIR(dentry)) {
+    // remove dot and dotdot dentries
+    dentry_t *dot = d_get_child(dentry, ".", 1);
+    ASSERT(dot != NULL);
+    unlink_dentry(inode, dot);
+    d_free(dot);
+
+    dentry_t *dotdot = d_get_child(dentry, "..", 2);
+    ASSERT(dotdot != NULL);
+    unlink_dentry(dentry->parent->inode, dotdot);
+    d_free(dotdot);
   }
-  D_UNLOCK(dentry);
-  I_UNLOCK(inode);
   return 0;
 }
 
@@ -72,12 +125,12 @@ dentry_t *i_locate(inode_t *inode, dentry_t *dentry, const char *name, size_t na
   // load children if not already loaded and compare children names to find a match
   if (!IS_IFLLDIR(inode)) {
     if (i_loaddir(inode, dentry) < 0) {
-      kprintf("i_locate: failed to load directory\n");
+      DPRINTF("i_locate: failed to load directory\n");
       return NULL;
     }
   }
 
-  return d_lookup_child(dentry, name, name_len);
+  return d_get_child(dentry, name, name_len);
 }
 
 int i_loaddir(inode_t *inode, dentry_t *dentry) {

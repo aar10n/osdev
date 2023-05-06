@@ -9,6 +9,7 @@
 #include <queue.h>
 #include <spinlock.h>
 #include <mutex.h>
+#include <kio.h>
 
 struct file_ops;
 
@@ -38,7 +39,7 @@ typedef struct device {
 
   struct device_bus *bus;
   struct device_driver *driver;
-  const struct file_ops *ops;
+  const struct device_ops *ops;
 
   LIST_HEAD(struct device) children;
   LIST_HEAD(struct inode) inodes;
@@ -46,6 +47,13 @@ typedef struct device {
   SLIST_ENTRY(struct device) dev_list;
   SLIST_ENTRY(struct device) bus_list;
 } device_t;
+
+struct device_ops {
+  int (*d_open)(struct device *device);
+  int (*d_close)(struct device *device);
+  ssize_t (*d_read)(struct device *device, size_t off, struct kio *kio);
+  ssize_t (*d_write)(struct device *device, size_t off, struct kio *kio);
+};
 
 /**
  * A device driver.
@@ -55,9 +63,9 @@ typedef struct device {
  * native type for the bus.
  */
 typedef struct device_driver {
-  const char *name;              // the driver identifier
-  void *data;                    // private data
-  struct device_ops *device_ops; // device interface
+  const char *name;                  // the driver identifier
+  void *data;                        // private data
+  const struct device_ops *ops;      // device interface
 
   /**
    * Checks whether the driver supports a device.
@@ -101,9 +109,11 @@ typedef struct device_bus {
   LIST_ENTRY(struct device_bus) list;
 } device_bus_t;
 
-
+static inline dev_t make_rdev(uint8_t major, uint8_t minor, uint8_t unit) {
+  return ((dev_t)major) | ((dev_t)minor << 8) | ((dev_t)unit << 16);
+}
 static inline dev_t make_dev(device_t *dev) {
-  return dev->major | (dev->minor << 8) | (dev->unit << 16);
+  return ((dev_t)dev->major) | ((dev_t)dev->minor << 8) | ((dev_t)dev->unit << 16);
 }
 static inline uint8_t dev_major(dev_t dev) {
   return dev & 0xFF;
@@ -115,7 +125,7 @@ static inline uint16_t dev_unit(dev_t dev) {
   return (dev >> 16) & 0xFF;
 }
 
-device_t *alloc_device(void *data, const struct file_ops *ops);
+device_t *alloc_device(void *data, const struct device_ops *ops);
 device_t *free_device(device_t *dev);
 
 void probe_all_buses();
@@ -171,5 +181,17 @@ int register_bus_device(device_bus_t *bus, void *bus_device);
  * On failure, the device will remain anonymous.
  */
 int register_dev(const char *dev_type, device_t *dev);
+
+// MARK: Device Operation Helpers
+
+static inline ssize_t __dev_read(device_t *dev, size_t off, void *buf, size_t len) {
+  kio_t kio = kio_new(buf, len);
+  return dev->ops->d_read(dev, off, &kio);
+}
+
+static inline ssize_t __dev_write(device_t *dev, size_t off, const void *buf, size_t len) {
+  kio_t kio = kio_new((void *)buf, len);
+  return dev->ops->d_write(dev, off, &kio);
+}
 
 #endif

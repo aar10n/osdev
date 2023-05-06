@@ -9,7 +9,6 @@
 #include <mm.h>
 #include <panic.h>
 #include <printf.h>
-#include <murmur3.h>
 
 #include <sbuf.h>
 
@@ -95,7 +94,7 @@ int dcache_get(dcache_t *dcache, path_t path, dentry_t **dentry) {
   DCACHE_LOCK(dcache);
   dentry_t *d = dcache->buckets[index];
   while (d != NULL) {
-    if (d_compare(d, path_start(path), path_len(path))) {
+    if (d_compare_path(d, path)) {
       *dentry = d;
       DCACHE_UNLOCK(dcache);
       return 0;
@@ -313,7 +312,7 @@ int expand_path(const dentry_t *root, const dentry_t *at, path_t path, sbuf_t *b
 int resolve_path(dentry_t *root, dentry_t *at, path_t path, int flags, dentry_t **result) {
   int res;
   dcache_t *dcache = NULL;
-  if (at->inode && at->inode->sb) {
+  if (at->inode && at->inode->sb && at->inode->sb->dcache) {
     dcache = at->inode->sb->dcache;
   }
 
@@ -363,7 +362,7 @@ int resolve_path(dentry_t *root, dentry_t *at, path_t path, int flags, dentry_t 
     }
 
     if (IS_IFDIR(dentry)) {
-      dentry = d_lookup_child(dentry, name, len);
+      dentry = d_get_child(dentry, name, len);
       if (dentry == NULL)
         break;
 

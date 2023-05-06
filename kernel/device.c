@@ -75,7 +75,7 @@ STATIC_INIT(device_static_init);
 // MARK: Device API
 //
 
-device_t *alloc_device(void *data, const struct file_ops *ops) {
+device_t *alloc_device(void *data, const struct device_ops *ops) {
   // data can be NULL
   ASSERT(ops != NULL);
   device_t *dev = kmalloc(sizeof(device_t));

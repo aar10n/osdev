@@ -10,6 +10,7 @@
 // ============ Virtual API ============
 
 inode_t *i_alloc_empty();
+inode_t *i_alloc(super_block_t *sb, ino_t ino, mode_t mode);
 void i_free(inode_t *inode);
 int i_link_dentry(inode_t *inode, dentry_t *dentry);
 int i_unlink_dentry(inode_t *inode, dentry_t *dentry);

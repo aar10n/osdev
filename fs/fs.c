@@ -49,6 +49,10 @@ int fs_register_type(fs_type_t *fs_type) {
   return 0;
 }
 
+const fs_type_t *fs_type_get(const char *name) {
+  return hash_map_get(fs_type_by_name, name);
+}
+
 //
 // MARK: Mounting and unmounting
 //

@@ -88,14 +88,13 @@ typedef struct super_block {
   uint32_t flags;                 // superblock flags
   uint32_t mount_flags;           // mount flags (same as filesystem flags but possibly more restricted)
   mutex_t lock;                   // superblock lock
+  const struct fs_type *fs;       // filesystem type
+  const struct super_block_ops *ops; // superblock operations
 
   struct dentry *mount;           // the mount point dentry
   struct itable *itable;          // inode table
   struct dcache *dcache;          // dentry cache
-  struct device *dev;             // block device containing the filesystem
-
-  const struct fs_type *fs;       // filesystem type
-  const struct super_block_ops *ops; // superblock operations
+  struct device *device;          // block device containing the filesystem
 
   LIST_HEAD(struct inode) inodes; // owned inodes
 } super_block_t;
@@ -107,21 +106,17 @@ struct super_block_ops {
    *
    * This is called when mounting a filesystem. It should load the superblock from
    * the block device (if required), perform any initialization of internal data
-   * and fill out the relevent superblock read-write fields.
-   *
-   * By default the vfs allocates a new virtual inode 0 to act as the root before
-   * this function is called. If the filesystem has its own internal concept of a
-   * root node, it should take ownership over the root using sb_takeown() to ensure
-   * it uses the filesystem inode_ops. In either case the function is free to modify
-   * the root inode's read-write fields
+   * and fill out the relevent superblock read-write fields. The given mount dentry
+   * will already have a linked inode, as well as both '.' and '..' child entries
+   * attached.
    *
    * \note All read-only fields shall be initialized prior to this function.
    *
-   * @param sb [in,out] The superblock to be filled in.
-   * @param root [in,out] The root inode for the filesystem.
+   * @param sb The superblock to be filled in.
+   * @param mount The mount point dentry.
    * @return
    */
-  int (*sb_mount)(struct super_block *sb, struct inode *root);
+  int (*sb_mount)(struct super_block *sb, struct dentry *mount);
 
   /**
    * Unmounts the superblock for a filesystem. \b Required.
@@ -152,7 +147,7 @@ struct super_block_ops {
    * This should load the inode (specified by the given inode's ino field) from
    * the superblock and fill in the relevent read-write fields.
    *
-   * \note The inode IFLOADED flag will be set after this function.
+   * \note The inode I_LOADED flag will be set after this function.
    *
    * @param sb The superblock to read the inode from.
    * @param inode [in,out] The inode to be filled in.
@@ -166,7 +161,7 @@ struct super_block_ops {
    * This should write the given inode to the on-device superblock and it is called
    * when certain read-write fields change.
    *
-   * \note The inode IFDIRTY flag will be cleared after this function.
+   * \note The inode I_DIRTY flag will be cleared after this function.
    *
    * @param sb The superblock to write the inode to.
    * @param inode The inode to be writen.
@@ -269,7 +264,7 @@ typedef struct inode {
   union {
     void *i_raw;                      // raw data
     char *i_link;                     // inode symlink (S_IFLNK)
-    struct inode *i_mount;            // mount root node (S_IFMNT)
+    struct dentry *i_mount;           // mount point (S_IFMNT)
     struct device *i_device;          // device node (S_IFCHR, S_IFBLK)
   };
 
@@ -314,7 +309,7 @@ struct inode_ops {
    * The function should handle this by skipping the existing entries and loading
    * just the remaining ones.
    *
-   * \note The inode IFFLLDIR flag is set after this function.
+   * \note The inode IFFLLDIR flag is set after this function returns successfully.
    *
    * @param inode The directory inode.
    * @param dentry [in,out] The directory dentry we attach the children to.
@@ -479,7 +474,7 @@ typedef struct dentry {
   /* read-only */
   hash_t hash;                      // dentry hash
   hash_t dhash;                     // path hash (for dcache)
-  mutex_t lock;                  // dentry struct lock
+  mutex_t lock;                     // dentry struct lock
 
   struct inode *inode;              // associated inode
   struct dentry *parent;            // parent dentry

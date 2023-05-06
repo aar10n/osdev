@@ -3,6 +3,8 @@
 //
 
 #include <super.h>
+#include <inode.h>
+#include <dcache.h>
 #include <mm.h>
 
 #include <string.h>
@@ -24,30 +26,40 @@ struct itable {
   spinlock_t lock;
 };
 
+static struct itable *itable_alloc() {
+  struct itable *itable = kmallocz(sizeof(struct itable));
+  itable->tree = create_rb_tree();
+  spin_init(&itable->lock);
+  return itable;
+}
+
+static void itable_free(struct itable *itable) {
+  kfree(itable->tree->nil);
+  kfree(itable->tree);
+  kfree(itable);
+}
+
 //
 // MARK: Superblock API
 //
 
-super_block_t *sb_alloc(fs_type_t *fs_type) {
-  super_block_t *sb = kmalloc(sizeof(super_block_t));
-  memset(sb, 0, sizeof(super_block_t));
+super_block_t *sb_alloc(const fs_type_t *fs_type) {
+  super_block_t *sb = kmallocz(sizeof(super_block_t));
+  sb->fs = fs_type;
+  sb->ops = fs_type->sb_ops;
   mutex_init(&sb->lock, MUTEX_REENTRANT);
-
-  sb->itable = kmalloc(sizeof(struct itable));
-  memset(sb->itable, 0, sizeof(struct itable));
-  sb->itable->tree = create_rb_tree();
-  spin_init(&sb->itable->lock);
   return sb;
 }
 
 void sb_free(super_block_t *sb) {
   ASSERT(sb->data == NULL);
+  ASSERT(sb->dcache == NULL);
   ASSERT(sb->ino_count == 0);
-  ASSERT(ITABLE(sb)->tree->nodes == 0);
 
-  kfree(ITABLE(sb)->tree->nil);
-  kfree(ITABLE(sb)->tree);
-  kfree(ITABLE(sb));
+  if (sb->itable != NULL) {
+    // in case the superblock was never mounted or the unmount went wrong
+    itable_free(sb->itable);
+  }
   kfree(sb);
 }
 
@@ -66,7 +78,7 @@ int sb_add_inode(super_block_t *sb, inode_t *inode) {
   ASSERT(inode->sb == NULL);
   ASSERT(inode->ops == NULL);
   if (rb_tree_find(sb->itable->tree, inode->ino) != NULL) {
-    DPRINTF("duplicate inode %d already exists", inode->ino);
+    DPRINTF("duplicate inode %d already exists\n", inode->ino);
     return -1;
   }
 
@@ -88,7 +100,7 @@ int sb_remove_inode(super_block_t *sb, inode_t *inode) {
   ASSERT(inode->sb == sb);
   ASSERT(inode->ops == sb->fs->inode_ops);
   if (rb_tree_find(sb->itable->tree, inode->ino) == NULL) {
-    DPRINTF("inode %d not found in itable", inode->ino);
+    DPRINTF("inode %d not found in itable\n", inode->ino);
     return -1;
   }
 
@@ -110,102 +122,142 @@ int sb_remove_inode(super_block_t *sb, inode_t *inode) {
 // MARK: Superblock Operations
 //
 
-// int sb_mount(inode_t *root) {
-//   ASSERT(sb->fs != NULL);
-//   // ASSERT(IS_IFDIR(mount))
-//   super_block_t *sb = sb_alloc();
-//   sb->mount = mount;
-//   // ASSERT(S_OPS(sb)->sb_mount != NULL);
-//
-//   return -1;
-// }
+int sb_mount(super_block_t *sb, dentry_t *mount, device_t *device) {
+  ASSERT(IS_IFDIR(mount));
+  ASSERT(mount->inode == NULL);
 
-/**
- * Unmounts the superblock for a filesystem. \b Required.
- *
- * This is called when unmounting a filesystem and should perform any cleanup
- * of internal data. It does not need to sync the superblock or any inodes as
- * that is handled before this is called.
- *
- * @param sb The superblock being unmounted.
- * @return
- */
+  inode_t *inode = i_alloc(sb, 0, S_IFDIR);
+  i_link_dentry(inode, mount);
+
+  int res;
+  sb->itable = itable_alloc();
+  sb->dcache = dcache_create(mount);
+  sb->mount = mount;
+  sb->device = device;
+
+  if ((res = S_OPS(sb)->sb_mount(sb, mount)) < 0) {
+    DPRINTF("failed to mount filesystem: %d\n", res);
+    dcache_destroy(sb->dcache);
+    itable_free(sb->itable);
+    // TODO: tear down and unlink inode
+    return res;
+  }
+
+  ASSERT(mount->inode != NULL);
+  if ((res = I_OPS(mount->inode)->i_loaddir(mount->inode, mount)) < 0) {
+    DPRINTF("failed to load directory: %d\n", res);
+    dcache_destroy(sb->dcache);
+    itable_free(sb->itable);
+    // TODO: tear down and unlink inodes
+    return res;
+  }
+
+  // TODO: add to mounts
+  return 0;
+}
+
 int sb_unmount(super_block_t *sb) {
-  return -1;
+  int res;
+  if ((res = S_OPS(sb)->sb_unmount(sb)) < 0) {
+    DPRINTF("failed to unmount filesystem: %d\n", res);
+    return res;
+  }
+
+  dcache_destroy(sb->dcache);
+  sb->dcache = NULL;
+  itable_free(sb->itable);
+  sb->itable = NULL;
+  return 0;
 }
 
-/**
- * Write the superblock to the on-device filesystem. \b Required if not read-only.
- *
- * This should write the superblock to the on-device filesystem. It is called
- * when certain read-write fields change to sync the changes to disk.
- *
- * @param sb The superblock to write.
- * @return
- */
 int sb_write(super_block_t *sb) {
-  return -1;
+  ASSERT(!(sb->mount_flags & FS_RDONLY));
+
+  int res;
+  S_LOCK(sb);
+  {
+    if ((res = S_OPS(sb)->sb_write(sb)) < 0) {
+      DPRINTF("failed to write superblock: %d\n", res);
+      S_UNLOCK(sb);
+      return res;
+    }
+  }
+  S_UNLOCK(sb);
+  return 0;
 }
 
-/**
- * Reads an inode from the filesystem. \b Required.
- *
- * This should load the inode (specified by the given inode's ino field) from
- * the superblock and fill in the relevent read-write fields.
- *
- * \note The inode IFLOADED flag will be set after this function.
- *
- * @param sb The superblock to read the inode from.
- * @param inode [in,out] The inode to be filled in.
- * @return
- */
 int sb_read_inode(super_block_t *sb, inode_t *inode) {
-  return -1;
+  if (inode->flags & I_LOADED)
+    return 0;
+
+  int res;
+  S_LOCK(sb);
+  I_LOCK(inode);
+  {
+    if ((res = S_OPS(sb)->sb_read_inode(sb, inode)) < 0) {
+      DPRINTF("failed to read inode %d: %d\n", inode->ino, res);
+      I_UNLOCK(inode);
+      S_UNLOCK(sb);
+      return res;
+    }
+    inode->flags |= I_LOADED;
+  }
+  I_UNLOCK(inode);
+  S_UNLOCK(sb);
+  return 0;
 }
 
-/**
- * Writes an inode to the on-device filesystem. \b Required if not read-only.
- *
- * This should write the given inode to the on-device superblock and it is called
- * when certain read-write fields change.
- *
- * \note The inode IFDIRTY flag will be cleared after this function.
- *
- * @param sb The superblock to write the inode to.
- * @param inode The inode to be writen.
- * @return
- */
 int sb_write_inode(super_block_t *sb, inode_t *inode) {
-  return -1;
+  ASSERT(!(inode->sb->mount_flags & FS_RDONLY));
+  if (!(inode->flags & I_DIRTY))
+    return 0;
+
+  int res;
+  S_LOCK(sb);
+  I_LOCK(inode);
+  {
+    if ((res = S_OPS(sb)->sb_write_inode(sb, inode)) < 0) {
+      DPRINTF("failed to write inode %d: %d\n", inode->ino, res);
+      I_UNLOCK(inode);
+      S_UNLOCK(sb);
+      return res;
+    }
+    inode->flags &= ~I_DIRTY;
+  }
+  I_UNLOCK(inode);
+  S_UNLOCK(sb);
+  return 0;
 }
 
-/**
- * Allocates a new inode in the superblock. \b Required if not read-only.
- *
- * This should allocate a new inode in the superblock and then fill in the
- * provided inode with the ino number. It should not pre-allocate any blocks
- * for associated data.
- *
- * @param sb The superblock to allocate the inode in.
- * @param inode [in,out] The inode to be filled in.
- * @return
- */
 int sb_alloc_inode(super_block_t *sb, inode_t *inode) {
-  return -1;
+  ASSERT(!(inode->sb->mount_flags & FS_RDONLY));
+
+  int res;
+  S_LOCK(sb);
+  {
+    if ((res = S_OPS(sb)->sb_alloc_inode(sb, inode)) < 0) {
+      DPRINTF("failed to allocate inode: %d\n", res);
+      S_UNLOCK(sb);
+      return res;
+    }
+  }
+  S_UNLOCK(sb);
+  return 0;
 }
 
-/**
- * Deletes an inode from the superblock. \b Required if not read-only.
- *
- * This should delete the given inode from the superblock and release any data
- * data blocks still held by this inode. It should also assume that there are
- * no links to the inode and nlinks is 0.
- *
- * @param sb The superblock to write the inode to.
- * @param inode The inode to be deleted.
- * @return
- */
 int sb_delete_inode(super_block_t *sb, inode_t *inode) {
-  return -1;
+  ASSERT(!(inode->sb->mount_flags & FS_RDONLY));
+
+  int res;
+  S_LOCK(sb);
+  {
+    if ((res = S_OPS(sb)->sb_delete_inode(sb, inode)) < 0) {
+      DPRINTF("failed to delete inode: %d\n", res);
+      S_UNLOCK(sb);
+      return res;
+    }
+  }
+  S_UNLOCK(sb);
+  return 0;
 }
 

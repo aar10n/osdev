@@ -18,6 +18,7 @@
  *       this function.
  */
 int fs_register_type(fs_type_t *fs_type);
+const fs_type_t *fs_type_get(const char *name);
 
 //
 // MARK: Mounting and unmounting
