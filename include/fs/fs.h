@@ -9,7 +9,10 @@
 #include <device.h>
 #include <kio.h>
 
+
 /* ----- API ----- */
+
+void fs_init();
 
 /**
  * Registers a new file system type.
@@ -18,7 +21,8 @@
  *       this function.
  */
 int fs_register_type(fs_type_t *fs_type);
-const fs_type_t *fs_type_get(const char *name);
+fs_type_t *fs_get_type(const char *name);
+dentry_t *fs_get_root();
 
 //
 // MARK: Mounting and unmounting

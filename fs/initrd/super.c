@@ -2,9 +2,10 @@
 // Created by Aaron Gill-Braun on 2023-04-25.
 //
 
-#include <initrd/initrd.h>
+#include "fs/initrd/initrd.h"
 
 #include <device.h>
+#include <super.h>
 #include <inode.h>
 #include <dentry.h>
 #include <path.h>
@@ -92,6 +93,7 @@ int initrd_sb_mount(super_block_t *sb, dentry_t *mount) {
     dentry_t *child = d_alloc(path_start(path), path_len(path), mode, fs->dentry_ops);
     i_link_dentry(inode, child);
     d_add_child(parent, child);
+    sb_add_inode(sb, inode);
 
     entry = offset_ptr(entry, sizeof(struct initrd_entry) + entry->path_len + 1);
   }

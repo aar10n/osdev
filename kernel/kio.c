@@ -5,6 +5,7 @@
 #include <kio.h>
 #include <panic.h>
 #include <string.h>
+#include <mm.h>
 
 #define ASSERT(x) kassert(x)
 
@@ -19,6 +20,7 @@ size_t kio_remaining(const kio_t *kio) {
 }
 
 size_t kio_movein(kio_t *kio, const void *buf, size_t len, size_t off) {
+  ASSERT(kio->dir == KIO_IN);
   size_t remain = kio_remaining(kio);
   if (off > len) {
     return 0;
@@ -37,6 +39,7 @@ size_t kio_movein(kio_t *kio, const void *buf, size_t len, size_t off) {
 }
 
 size_t kio_moveout(kio_t *kio, void *buf, size_t len, size_t off) {
+  ASSERT(kio->dir == KIO_OUT);
   size_t remain = kio_remaining(kio);
   if (off > len) {
     return 0;

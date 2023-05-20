@@ -68,7 +68,23 @@ int d_add_child(dentry_t *parent, dentry_t *child) {
   D_LOCK(child);
   {
     child->parent = parent;
+    parent->nchildren++;
     LIST_ADD(&parent->children, child, list);
+  }
+  D_UNLOCK(child);
+  D_UNLOCK(parent);
+  return 0;
+}
+
+int d_add_child_front(dentry_t *parent, dentry_t *child) {
+  ASSERT(IS_IFDIR(parent));
+  ASSERT(child->parent == NULL);
+  D_LOCK(parent);
+  D_LOCK(child);
+  {
+    child->parent = parent;
+    parent->nchildren++;
+    LIST_ADD_FRONT(&parent->children, child, list);
   }
   D_UNLOCK(child);
   D_UNLOCK(parent);
@@ -82,6 +98,7 @@ int d_remove_child(dentry_t *parent, dentry_t *child) {
   D_LOCK(child);
   {
     child->parent = NULL;
+    parent->nchildren--;
     LIST_REMOVE(&parent->children, child, list);
   }
   D_UNLOCK(child);

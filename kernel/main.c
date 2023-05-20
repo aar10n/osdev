@@ -116,7 +116,7 @@ noreturn void root() {
 
   //////////////////////////////////////////
 
-  const fs_type_t *initrd_fs = fs_type_get("initrd");
+  const fs_type_t *initrd_fs = fs_get_type("initrd");
   kassert(initrd_fs != NULL);
   device_t *initrd_dev = device_get(make_rdev(1, 0, 0));
   kassert(initrd_dev != NULL);

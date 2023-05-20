@@ -9,11 +9,17 @@
 #include <abi/iov.h>
 #include <panic.h>
 
+typedef enum kio_dir {
+  KIO_IN,
+  KIO_OUT,
+} kio_dir_t;
+
 /// Kernel I/O transfer structure.
 ///
 /// The kio structure is used to represent a data transfer. It does not
 /// own the underlying buffers.
 typedef struct kio {
+  kio_dir_t dir;     // transfer direction
   size_t size;       // total size of the transfer
   union {
     struct {
@@ -24,11 +30,36 @@ typedef struct kio {
   };
 } kio_t;
 
-static inline kio_t kio_new(void *base, size_t len) {
+static inline kio_t kio_new(kio_dir_t dir, void *base, size_t len) {
   return (kio_t) {
+    .dir = dir,
     .size = len,
     .buf = {
       .base = base,
+      .len = len,
+      .off = 0,
+    },
+  };
+}
+
+static inline kio_t kio_new_writeonly(void *base, size_t len) {
+  return (kio_t) {
+    .dir = KIO_IN,
+    .size = len,
+    .buf = {
+      .base = (void *) base,
+      .len = len,
+      .off = 0,
+    },
+  };
+}
+
+static inline kio_t kio_new_readonly(const void *base, size_t len) {
+  return (kio_t) {
+    .dir = KIO_OUT,
+    .size = len,
+    .buf = {
+      .base = (void *) base,
       .len = len,
       .off = 0,
     },

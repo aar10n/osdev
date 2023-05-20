@@ -18,6 +18,7 @@ dentry_t *d_alloc_empty();
 dentry_t *d_alloc(const char *name, size_t namelen, mode_t mode, const struct dentry_ops *ops);
 void d_free(dentry_t *dentry);
 int d_add_child(dentry_t *parent, dentry_t *child);
+int d_add_child_front(dentry_t *parent, dentry_t *child);
 int d_remove_child(dentry_t *parent, dentry_t *child);
 dentry_t *d_get_child(dentry_t *parent, const char *name, size_t len);
 

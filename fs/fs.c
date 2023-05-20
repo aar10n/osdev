@@ -3,6 +3,14 @@
 //
 
 #include <fs.h>
+
+#include <dcache.h>
+#include <super.h>
+#include <inode.h>
+#include <dentry.h>
+#include <file.h>
+
+#include <process.h>
 #include <device.h>
 #include <panic.h>
 #include <printf.h>
@@ -18,15 +26,22 @@ static hash_map_t *fs_type_by_name;
 static LIST_HEAD(struct fs_type) fs_types;
 static spinlock_t fs_types_lock;
 
+static dentry_t *root_dentry;
 
 static void fs_static_init() {
   fs_type_by_name = hash_map_new();
   LIST_INIT(&fs_types);
   spin_init(&fs_types_lock);
+
+  root_dentry = d_alloc("/", 1, S_IFDIR | 0755, NULL);
 }
 STATIC_INIT(fs_static_init);
 
 //
+
+void fs_init() {
+  DPRINTF("initializing\n");
+}
 
 int fs_register_type(fs_type_t *fs_type) {
   if (fs_type->name == NULL || fs_type->sb_ops == NULL || fs_type->inode_ops == NULL ||
@@ -49,8 +64,12 @@ int fs_register_type(fs_type_t *fs_type) {
   return 0;
 }
 
-const fs_type_t *fs_type_get(const char *name) {
+fs_type_t *fs_get_type(const char *name) {
   return hash_map_get(fs_type_by_name, name);
+}
+
+dentry_t *fs_get_root() {
+  return root_dentry;
 }
 
 //
@@ -58,12 +77,46 @@ const fs_type_t *fs_type_get(const char *name) {
 //
 
 int fs_mount(const char *source, const char *mount, const char *fs_type) {
-  // 1. check if source exists and that it is a block device
-  // 2. check if mount point exists and is an empty directory
-  // 3. check if fs_type is registered
+  int res;
+  dentry_t *source_dentry;
+  dentry_t *mount_dentry;
+  dentry_t *at_dentry = PERCPU_PROCESS->pwd;
 
-  // 6. call sb_mount
+  fs_type_t *type = fs_get_type(fs_type);
+  if (type == NULL) {
+    return -ENODEV;
+  }
 
+  // check if source exists and that it is a block device
+  if ((res = resolve_path(root_dentry, at_dentry, str2path(source), 0, &source_dentry)) < 0) {
+    return res;
+  }
+  if (!IS_IFBLK(source_dentry)) {
+    return -ENOTBLK;
+  }
+
+  device_t *mount_dev = device_get(source_dentry->inode->i_dev);
+  if (mount_dev == NULL) {
+    return -ENODEV;
+  }
+
+  // check if mount point exists and that it is an empty directory
+  if ((res = resolve_path(root_dentry, at_dentry, str2path(mount), RESOLVE_DIRECTORY, &mount_dentry)) < 0) {
+    return res;
+  }
+  if (!D_ISEMPTY(mount_dentry)) {
+    return -ENOTEMPTY;
+  }
+
+  // allocate a new superblock and mount it
+  super_block_t *sb = sb_alloc(type);
+  if ((res = sb_mount(sb, mount_dentry, mount_dev, 0)) < 0) {
+    return res;
+  }
+
+  ASSERT(mount_dentry->inode != NULL);
+  // finalize unlinking of original inode
+  // i_unlink(original, mount_dentry);
 
   unimplemented("fs_mount");
 }

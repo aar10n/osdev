@@ -20,7 +20,7 @@ typedef struct dcache_dir {
 } dcache_dir_t;
 
 typedef struct dcache {
-  const struct dentry *root; // root dentry of paths in this cache
+  struct dentry **root; // reference to the owning sb's root dentry
   size_t size;
   size_t count;
   mutex_t lock;
@@ -35,7 +35,7 @@ typedef struct dcache {
 
 // ============= Dcache API =============
 
-dcache_t *dcache_create(const struct dentry *root);
+dcache_t *dcache_create(struct dentry **root);
 void dcache_destroy(dcache_t *dcache);
 int dcache_get(dcache_t *dcache, path_t path, dentry_t **dentry);
 int dcache_put(dcache_t *dcache, dentry_t *dentry);
@@ -43,6 +43,22 @@ int dcache_put_path(dcache_t *dcache, path_t path, dentry_t *dentry);
 int dcache_remove(dcache_t *dcache, dentry_t *dentry);
 
 // ============= Path Operations =============
+
+#define RESOLVE_FOLLOW    0x1 // follow symlinks
+#define RESOLVE_DIRECTORY 0x2 // only resolve directories
+
+
+/**
+ * Resolve a path to a dentry.
+ *
+ * @param root The root dentry
+ * @param at The dentry from which to resolve relative references.
+ * @param path The path to walk.
+ * @param resolve_flags The flags to use for the walk. (RESOLVE_* flags)
+ * @param [out] result The resolved dentry
+ * @return 0 on success, \< 0 on error.
+ */
+int resolve_path(dentry_t *root, dentry_t *at, path_t path, int resolve_flags, dentry_t **result);
 
 /**
  * Writes the absolute path of a dentry into a buffer.
@@ -66,16 +82,5 @@ int get_dentry_path(const dentry_t *root, const dentry_t *dentry, sbuf_t *buf, i
  */
 int expand_path(const dentry_t *root, const dentry_t *at, path_t path, sbuf_t *buf);
 
-/**
- * Resolve a path to a dentry.
- *
- * @param root The root dentry
- * @param at The dentry from which to resolve relative references.
- * @param path The path to walk.
- * @param flags The flags to use for the walk.
- * @param [out] result The resolved dentry
- * @return 0 on success, \< 0 on error.
- */
-int resolve_path(dentry_t *root, dentry_t *at, path_t path, int flags, dentry_t **result);
 
 #endif

@@ -46,6 +46,9 @@ typedef uint64_t hash_t;
 // filesystem flags
 #define FS_RDONLY  0x01 // filesystem is inherently read-only
 
+#define FS_TYPE_LOCK(fs_type) __type_checked(fs_type_t *, fs_type, SPIN_LOCK(&(fs_type)->lock))
+#define FS_TYPE_UNLOCK(fs_type) __type_checked(fs_type_t *, fs_type, SPIN_UNLOCK(&(fs_type)->lock))
+
 typedef struct fs_type {
   const char *name;                      // filesystem name
   uint32_t flags;                        // filesystem flags
@@ -85,10 +88,9 @@ typedef struct super_block {
   void *data;                     // private data
 
   /* read-only */
-  uint32_t flags;                 // superblock flags
   uint32_t mount_flags;           // mount flags (same as filesystem flags but possibly more restricted)
   mutex_t lock;                   // superblock lock
-  const struct fs_type *fs;       // filesystem type
+  struct fs_type *fs;             // filesystem type
   const struct super_block_ops *ops; // superblock operations
 
   struct dentry *mount;           // the mount point dentry
@@ -97,6 +99,7 @@ typedef struct super_block {
   struct device *device;          // block device containing the filesystem
 
   LIST_HEAD(struct inode) inodes; // owned inodes
+  LIST_ENTRY(struct super_block) list; // superblock list
 } super_block_t;
 
 /// Describes operations that involve or relate to the superblock.
@@ -265,7 +268,7 @@ typedef struct inode {
     void *i_raw;                      // raw data
     char *i_link;                     // inode symlink (S_IFLNK)
     struct dentry *i_mount;           // mount point (S_IFMNT)
-    struct device *i_device;          // device node (S_IFCHR, S_IFBLK)
+    dev_t i_dev;                      // device number (S_IFCHR, S_IFBLK)
   };
 
   LIST_HEAD(struct dentry) links;     // list of inodes linked to inode
@@ -292,9 +295,11 @@ struct inode_ops {
    * @param inode The directory inode.
    * @param dentry The directory dentry.
    * @param name The name of the child dentry.
-   * @return The dentry if found or NULL.
+   * @param name_len The length of the name.
+   * @param res The resulting dentry.
+   * @return 0 if the dentry was found, -ENOENT if not.
    */
-  struct dentry *(*i_locate)(struct inode *inode, struct dentry *dentry, const char *name);
+  int (*i_locate)(struct inode *inode, struct dentry *dentry, const char *name, size_t name_len, struct dentry **res);
 
   /**
    * Loads the directory entries for a given inode. \b Required.
@@ -321,108 +326,133 @@ struct inode_ops {
    * Creates a regular file associated with the given inode. \b Optional.
    * Needed to support file creation.
    *
-   * This should create a regular file entry in the parent directory. The inode and
-   * dentry are both filled in and linked before this is called. If the blocks field
-   * of the inode is non-zero, this function may want to preallocate some or all of
-   * the requested blocks.
+   * The inode and dentry are already linked and the inode is filled in prior to
+   * this function being called. The filesystem should create a regular file entry
+   * under the parent directory, and allocate any associated data and attach
+   * it to the inode.
    *
-   * @param dir The parent directory inode.
-   * @param inode The regular file inode.
+   * If the inode is persistent, the filesystem should mark the inode as dirty.
+   *
+   * @param inode The inode for the regular file.
    * @param dentry The dentry for the inode.
+   * @param dir The parent directory inode.
    * @return
    */
-  int (*i_create)(struct inode *dir, struct inode *inode, struct dentry *dentry);
+  int (*i_create)(struct inode *inode, struct dentry *dentry, struct inode *dir);
 
   /**
    * Creates a special device file. \b Optional.
    * Needed to support device file creation.
    *
-   * This should create a special device file entry with dev in the parent directory.
-   * The dentry is filled and linked to the inode before this is called. The filesystem
-   * is not involved when the device file is opened.
+   * The inode and dentry are already linked and the inode is filled in prior to
+   * this function being called. The filesystem should create a special device file
+   * entry under the parent directory. All file operations on this inode are handled
+   * by the device subsystem and do not pass through the filesystem.
    *
-   * @param dir The parent directory inode.
+   * If the inode is persistent, the filesystem should mark the inode as dirty.
+   *
+   * @param inode The inode for the device file.
    * @param dentry The dentry for the inode.
+   * @param dir The parent directory inode.
    * @param dev The device number.
    * @return
    */
-  int (*i_mknod)(struct inode *dir, struct dentry *dentry, dev_t dev);
-
-  /**
-   * Creates a hard link to the given inode. \b Optional.
-   * Needed to support hard links (not needed for '.' and '..').
-   *
-   * This should create a hard link entry to the given inode in the parent directory.
-   * The dentry is filled and linked to the inode before this is called.
-   *
-   * @param dir The parent directory inode.
-   * @param inode The inode to link to.
-   * @param dentry The dentry for the inode.
-   * @return
-   */
-  int (*i_link)(struct inode *dir, struct inode *inode, struct dentry *dentry);
-
-  /**
-   * Unlinks a dentry from its inode. \b Optional.
-   * Needed to support file deletion (unlink).
-   *
-   * This should remove the given dentry from the parent directory. The dentry is
-   * unlinked from the inode before this is called.
-   *
-   * @param dir The parent directory inode.
-   * @param dentry The dentry to unlink.
-   * @return
-   */
-  int (*i_unlink)(struct inode *dir, struct dentry *dentry);
+  int (*i_mknod)(struct inode *inode, struct dentry *dentry, struct inode *dir, dev_t dev);
 
   /**
    * Creates a symbolic link. \b Optional.
    * Needed to support symbolic links.
    *
-   * This should create a symbolic link entry in the parent directory. The inode and
-   * dentry are both filled in and linked before this is called.
+   * The inode and dentry are already linked and the inode is filled in prior to
+   * this function being called. The filesystem should create a symbolic link entry
+   * under the parent directory and allocate any associated data for the inode.
    *
-   * @param dir The parent directory inode.
+   * If the inode is persistent, the filesystem should mark the inode as dirty.
+   *
+   * @param inode The inode for the symlink.
    * @param dentry The dentry for the inode.
+   * @param dir The parent directory inode.
    * @param path The path to link to.
+   * @param len The length of the path.
    * @return
    */
-  int (*i_symlink)(struct inode *dir, struct inode *dentry, const char *path);
+  int (*i_symlink)(struct inode *inode, struct dentry *dentry, struct inode *dir, const char *path, size_t len);
 
   /**
-   * Reads the contents of a symbolic link. \b Optional.
-   * Needed to support symbolic links.
+  * Reads the contents of a symbolic link. \b Optional.
+  * Needed to support symbolic links.
+  *
+  * This should read the contents of the symbolic link into the given buffer.
+  * The buffer is guaranteed to be at least PATH_MAX bytes long and it should
+  * not be null terminated.
+  *
+  * @param inode The symlink inode
+  * @param buflen The length of the buffer.
+  * @param buffer [in,out] The buffer to read into.
+  * @return
+  */
+  int (*i_readlink)(struct inode *inode, size_t buflen, char *buffer);
+
+  /**
+   * Creates a hard link to the given inode. \b Optional.
+   * Needed to support hard links (not needed for '.' and '..').
    *
-   * This should read the contents of the symbolic link into the given buffer.
-   * The buffer is guaranteed to be at least PATH_MAX bytes long.
+   * This is called when adding a new hard link to an existing regular fileinode.
+   * The inode and dentry are already linked and the inode is filled in prior to
+   * this function being called. The filesystem should create a regular file entry
+   * under the parent directory, and allocate any associated data and attach it to
+   * the inode.
    *
+   * @param inode The inode to link to.
    * @param dentry The dentry for the inode.
-   * @param buflen The length of the buffer.
-   * @param buffer [in,out]The buffer to read into.
+   * @param dir The parent directory inode.
    * @return
    */
-  int (*i_readlink)(struct dentry *dentry, size_t buflen, char *buffer);
+  int (*i_hardlink)(struct inode *inode, struct dentry *dentry, struct inode *dir);
+
+  /**
+   * Unlinks a dentry from its inode. \b Optional.
+   * Needed to support file deletion (unlink).
+   *
+   * This is called when a dentry is unlinked from its inode. The filesystem should
+   * remove the entry from the parent directory and free any associated data. The
+   * inode and dentry will be unlinked after this function returns, and the inode
+   * will be removed by the kernel if there are no other references to it.
+   *
+   * If the inode is persistent, the filesystem should mark the inode as dirty.
+   *
+   * @param inode The inode to unlink.
+   * @param dentry The dentry to unlink.
+   * @param dir The parent directory inode.
+   * @return
+   */
+  int (*i_unlink)(struct inode *inode, struct dentry *dentry, struct inode *dir);
 
   /**
    * Creates a directory. \b Optional.
    * Needed to support directory creation.
    *
-   * This should create a directory entry in the parent directory. The inode and
-   * dentry are both filled in, and the directory has both the '.' and '..' entries
-   * prepopulated before this is called.
+   * The inode and dentry are already linked and the inode is filled in prior to
+   * this function being called, and the dentry is prepopulated with '.' and '..'
+   * entries. The filesystem should create a directory entry under the parent directory
+   * and and allocate any associated data and attach it to the inode.
    *
-   * @param dir The parent directory inode.
+   * If the inode is persistent, the filesystem should mark the inode as dirty.
+   *
+   * @param inode The inode for the directory.
    * @param dentry The dentry for the inode.
+   * @param dir The parent directory inode.
    * @return
    */
-  int (*i_mkdir)(struct inode *dir, struct dentry *dentry);
+  int (*i_mkdir)(struct inode *inode, struct dentry *dentry, struct inode *dir);
 
   /**
    * Removes a directory. \b Optional.
    * Needed to support directory deletion.
    *
    * This should remove the given dentry from the parent directory. The dentry is
-   * unlinked from the inode before this is called. The directory must be empty.
+   * unlinked from the inode after this function returns, and the inode is removed
+   * by the kernel if there are no other references to it.
    *
    * @param dir The parent directory inode.
    * @param dentry The dentry to unlink.
@@ -434,19 +464,20 @@ struct inode_ops {
    * Renames a dentry. \b Optional.
    * Needed to support file renaming.
    *
-   * This should rename the given dentry in the parent directory. The old dentry
-   * is still linked to the inode and the new dentry is filled but unlinked before
-   * this is called.
+   * This should create a new entry under the new parent directory and remove the old
+   * entry from the old parent directory. The inode is still linked to the old dentry
+   * until after this function returns.
    *
    * The relinking will be done after this function.
    *
-   * @param o_dir The parent directory inode of the old dentry.
+   * @param inode The inode to rename.
    * @param o_dentry The old dentry.
-   * @param n_dir The parent directory inode of the new dentry.
+   * @param o_dir The parent directory inode of the old dentry.
    * @param n_dentry The new dentry.
+   * @param n_dir The parent directory inode of the new dentry.
    * @return
    */
-  int (*i_rename)(struct inode *o_dir, struct dentry *o_dentry, struct inode *n_dir, struct dentry *n_dentry);
+  int (*i_rename)(struct inode *inode, struct dentry *o_dentry, struct inode *o_dir, struct dentry *n_dentry, struct inode *n_dir);
 
   // TODO: permissions, atrributes, etc.
   // int (*i_permission)(struct inode *inode, int mask);
@@ -464,6 +495,8 @@ struct inode_ops {
 #define D_LOCK(dentry) __type_checked(dentry_t *, dentry, mutex_lock(&(dentry)->lock))
 #define D_UNLOCK(dentry) __type_checked(dentry_t *, dentry, mutex_unlock(&(dentry)->lock))
 
+#define D_ISEMPTY(dentry) ((dentry)->inode == NULL ? (dentry)->nchildren == 0 : (dentry)->nchildren == 2)
+
 typedef struct dentry {
   /* read-write */
   ino_t ino;                        // inode number
@@ -480,6 +513,7 @@ typedef struct dentry {
   struct dentry *parent;            // parent dentry
   const struct dentry_ops *ops;     // dentry operations
 
+  uint32_t nchildren;                // number of children
   LIST_HEAD(struct dentry) children; // child inodes (S_IFDIR)
 
   LIST_ENTRY(struct dentry) links;  // inode->links list
@@ -561,45 +595,54 @@ struct file_ops {
   int (*f_close)(struct file *file);
 
   /**
+   * Synchronizes a file. \b Optional.
+   * This is called when a file should be flushed to disk.
+   *
+   * @param file The file to sync.
+   */
+  void (*f_sync)(struct file *file);
+
+  /**
+   * Truncates a file to a given length. \b Optional.
+   *
+   * @note If len is greater than the current file size, the file is extended with
+   *       zeroed bytes.
+   *
+   * @param file The file to truncate.
+   * @param len The length to truncate to.
+   * @return
+   */
+  int (*f_truncate)(struct file *file, size_t len);
+
+  /**
    * Reads from a file.
    *
    * @param file The file to read from.
+   * @param off The offset to read from.
    * @param kio The kio object to read into.
-   * @return 0 on success, -1 on error.
+   * @return
    */
-  ssize_t (*f_read)(struct file *file, struct kio *kio);
+  ssize_t (*f_read)(struct file *file, off_t off, struct kio *kio);
 
   /**
    * Writes to a file.
    *
    * @param file The file to write to.
+   * @param off The offset to write to.
    * @param kio The kio object to write from.
-   * @return 0 on success, -1 on error.
+   * @return
    */
-  ssize_t (*f_write)(struct file *file, struct kio *kio);
+  ssize_t (*f_write)(struct file *file, off_t off, struct kio *kio);
 
   /**
    * Maps a file into memory.
    *
-   * TODO: the mapping should be reserved and have an api to change it
-   *
    * @param file The file to map.
-   * @param vm The reserved vm_mapping region to map into.
-   * @param prot The protection flags.
-   * @param flags The mapping flags.
-   * @param off The offset into the file.
-   * @return 0 on success, -1 on error.
+   * @param off The offset to map from.
+   * @param vm The vm mapping to map into.
+   * @return
    */
-  int (*f_mmap)(struct file *file, struct vm_mapping *vm, int prot, int flags, off_t off);
-
-  /**
-   * Unmaps a file from memory.
-   *
-   * @param file The file to unmap.
-   * @param vm The vm_mapping region to unmap.
-   * @return 0 on success, -1 on error.
-   */
-  int (*f_munmap)(struct file *file, struct vm_mapping *vm);
+  int (*f_mmap)(struct file *file, off_t off, struct vm_mapping *vm);
 };
 
 #endif

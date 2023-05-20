@@ -59,7 +59,7 @@ static void dcache_dir_remove(dcache_dir_t *dir, hash_t hash) {
 // MARK: Dcache API
 //
 
-dcache_t *dcache_create(const struct dentry *root) {
+dcache_t *dcache_create(struct dentry **root) {
   ASSERT(root != NULL);
 
   dcache_t *dcache = kmallocz(sizeof(struct dcache));
@@ -88,14 +88,16 @@ void dcache_destroy(dcache_t *dcache) {
 }
 
 int dcache_get(dcache_t *dcache, path_t path, dentry_t **dentry) {
-  hash_t hash = d_hash_path(D_OPS(dcache->root), path);
+  hash_t hash = d_hash_path(D_OPS(*dcache->root), path);
   uint64_t index = d_hash_index(hash, dcache->size);
 
   DCACHE_LOCK(dcache);
   dentry_t *d = dcache->buckets[index];
   while (d != NULL) {
     if (d_compare_path(d, path)) {
-      *dentry = d;
+      if (d != NULL) {
+        *dentry = d;
+      }
       DCACHE_UNLOCK(dcache);
       return 0;
     }
@@ -111,14 +113,14 @@ int dcache_put(dcache_t *dcache, dentry_t *dentry) {
   int res;
 
   // get path for this dentry
-  if ((res = get_dentry_path(dcache->root, dentry, &buf, NULL)) < 0) {
+  if ((res = get_dentry_path(*dcache->root, dentry, &buf, NULL)) < 0) {
     return res;
   }
   return dcache_put_path(dcache, strn2path(tmp, res), dentry);
 }
 
 int dcache_put_path(dcache_t *dcache, path_t path, dentry_t *dentry) {
-  hash_t dhash = d_hash_path(D_OPS(dcache->root), path);
+  hash_t dhash = d_hash_path(D_OPS(*dcache->root), path);
   uint64_t index = d_hash_index(dhash, dcache->size);
   DCACHE_LOCK(dcache);
   {
@@ -228,6 +230,141 @@ int dcache_remove(dcache_t *dcache, dentry_t *dentry) {
 // MARK: Path Operations
 //
 
+int resolve_path(dentry_t *root, dentry_t *at, path_t path, int flags, dentry_t **result) {
+  int res;
+  dcache_t *dcache = NULL;
+  if (at->inode && at->inode->sb && at->inode->sb->dcache) {
+    dcache = at->inode->sb->dcache;
+  }
+
+  // first try to get the dentry from the dcache
+  if (dcache && (res = dcache_get(dcache, path, result)) == 0) {
+    return 0;
+  }
+
+  // full walk
+  dentry_t *dentry;
+  dentry_t *last;
+  path_t part = path;
+  int depth = 0;
+
+  // keep track of the current path as we walk it
+  // so we can cache the intermediate dentries
+  char tmp[PATH_MAX+1] = {0};
+  sbuf_t curpath = sbuf_init(tmp, PATH_MAX+1);
+
+  // get the starting dentry
+  if (path_is_slash(part)) {
+    dentry = root;
+    part = path_next_part(part);
+    sbuf_write_char(&curpath, '/');
+  } else if (path_is_dot(part)) {
+    dentry = at;
+    part = path_next_part(part);
+  } else if (path_is_dotdot(part)) {
+    dentry = at->parent;
+    part = path_next_part(part);
+  } else {
+    dentry = at;
+  }
+
+  // walk the path
+  while (!path_is_null(part = path_next_part(part))) {
+    last = dentry;
+    if (path_len(part) > NAME_MAX) {
+      return -ENAMETOOLONG;
+    }
+
+    // write each part into the buffer as we iterate
+    char name[NAME_MAX+1] = {0};
+    size_t len = path_copy(name, NAME_MAX+1, part);
+    if (sbuf_write(&curpath, name, len) != len) {
+      return -ENOBUFS;
+    }
+
+    if (IS_IFDIR(dentry)) {
+      // load children if we haven't already
+      if (!IS_IFLLDIR(dentry->inode)) {
+        if ((res = i_loaddir(dentry->inode, dentry)) < 0) {
+          return res;
+        }
+      }
+
+      dentry = d_get_child(dentry, name, len);
+      if (dentry == NULL)
+        break;
+
+      // put the intermediate paths into the dcache
+      if (dcache) {
+        if (dcache_get(dcache, sbuf_to_path(&curpath), NULL) < 0) {
+          if (dcache_put_path(dcache, sbuf_to_path(&curpath), dentry) < 0) {
+            DPRINTF("failed to add dentry to dcache: {:.*s}\n", tmp, sbuf_len(&curpath));
+          }
+        }
+      }
+      continue;
+    } else if (IS_IFLNK(dentry)) {
+      if (flags & O_NOFOLLOW) {
+        return -ELOOP;
+      }
+
+      // follow the symlink
+      inode_t *inode = dentry->inode;
+      char *linkpath = inode->i_link;
+      if (linkpath == NULL) {
+        // read the link target
+        linkpath = kmalloc(inode->size + 1);
+        if ((res = I_OPS(inode)->i_readlink(inode, inode->size + 1, linkpath)) < 0) {
+          DPRINTF("failed to read symlink: {:.*s} [ino={:d}]\n", tmp, sbuf_len(&curpath), inode->ino);
+          kfree(linkpath);
+          return res;
+        }
+
+        // cache the target path
+        inode->i_link = linkpath;
+      }
+
+      // resolve the link target
+      dentry_t *link = NULL;
+      if ((res = resolve_path(root, dentry, strn2path(linkpath, inode->size), flags, &link)) < 0) {
+        DPRINTF("failed to resolve symlink: {:.*s} -> {:.*s}\n", tmp, sbuf_len(&curpath), linkpath, inode->size);
+        kfree(linkpath);
+        return res;
+      }
+
+      // cache the link target
+      if (dcache) {
+        if (dcache_put_path(dcache, sbuf_to_path(&curpath), link) < 0) {
+          DPRINTF("failed to add dentry to dcache: {:.*s}\n", tmp, sbuf_len(&curpath));
+        }
+      }
+
+      // and follow it
+      dentry = link;
+      continue;
+    } else {
+      // we can't walk a non-directory
+      return -ENOTDIR;
+    }
+
+    if (path_end(part) != path_end(path)) {
+      // there was more to the path but we're not in a directory
+      return -ENOTDIR;
+    }
+    break;
+  }
+
+  if (dentry == NULL) {
+    return -ENOENT;
+  }
+
+  if (dcache && dcache_put_path(dcache, sbuf_to_path(&curpath), dentry) < 0) {
+    DPRINTF("failed to add dentry to dcache: {:.*s}\n", tmp, sbuf_len(&curpath));
+  }
+  *result = dentry;
+  return 0;
+}
+
 int get_dentry_path(const dentry_t *root, const dentry_t *dentry, sbuf_t *buf, int *depth) {
   if (sbuf_rem(buf) == 0) {
     return -ENOBUFS;
@@ -306,89 +443,4 @@ int expand_path(const dentry_t *root, const dentry_t *at, path_t path, sbuf_t *b
   }
 
   return (int)sbuf_len(buf);
-}
-
-
-int resolve_path(dentry_t *root, dentry_t *at, path_t path, int flags, dentry_t **result) {
-  int res;
-  dcache_t *dcache = NULL;
-  if (at->inode && at->inode->sb && at->inode->sb->dcache) {
-    dcache = at->inode->sb->dcache;
-  }
-
-  // first try to get the dentry from the dcache
-  if (dcache && (res = dcache_get(dcache, path, result)) == 0) {
-    return 0;
-  }
-
-  // full walk
-  dentry_t *dentry;
-  dentry_t *last;
-  path_t part = path;
-  int depth = 0;
-
-  // keep track of the current path as we walk it
-  // so we can cache the intermediate dentries
-  char tmp[PATH_MAX+1] = {0};
-  sbuf_t curpath = sbuf_init(tmp, PATH_MAX+1);
-
-  // get the starting dentry
-  if (path_is_slash(part)) {
-    dentry = root;
-    part = path_next_part(part);
-    sbuf_write_char(&curpath, '/');
-  } else if (path_is_dot(part)) {
-    dentry = at;
-    part = path_next_part(part);
-  } else if (path_is_dotdot(part)) {
-    dentry = at->parent;
-    part = path_next_part(part);
-  } else {
-    dentry = at;
-  }
-
-  // walk the path
-  while (!path_is_null(part = path_next_part(part))) {
-    last = dentry;
-    if (path_len(part) > NAME_MAX) {
-      return -ENAMETOOLONG;
-    }
-
-    // write each part into the buffer as we iterate
-    char name[NAME_MAX+1] = {0};
-    size_t len = path_copy(name, NAME_MAX+1, part);
-    if (sbuf_write(&curpath, name, len) != len) {
-      return -ENOBUFS;
-    }
-
-    if (IS_IFDIR(dentry)) {
-      dentry = d_get_child(dentry, name, len);
-      if (dentry == NULL)
-        break;
-
-      // and put the intermediate paths into the dcache
-      if (dcache && dcache_put_path(dcache, sbuf_to_path(&curpath), dentry) < 0) {
-        DPRINTF("failed to add dentry to dcache: {:.*s}\n", tmp, sbuf_len(&curpath));
-      }
-      continue;
-    } else if (IS_IFLNK(dentry)) {
-      unimplemented("symlinks");
-    }
-
-    if (path_end(part) != path_end(path)) {
-      // there was more to the path but we're not in a directory
-      return -ENOTDIR;
-    }
-    break;
-  }
-
-  if (dentry == NULL) {
-    return -ENOENT;
-  }
-
-  if (dcache && dcache_put_path(dcache, sbuf_to_path(&curpath), dentry) < 0) {
-    DPRINTF("failed to add dentry to dcache: {:.*s}\n", tmp, sbuf_len(&curpath));
-  }
-  *result = dentry;
-  return 0;
 }

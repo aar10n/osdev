@@ -43,7 +43,7 @@ static void itable_free(struct itable *itable) {
 // MARK: Superblock API
 //
 
-super_block_t *sb_alloc(const fs_type_t *fs_type) {
+super_block_t *sb_alloc(fs_type_t *fs_type) {
   super_block_t *sb = kmallocz(sizeof(super_block_t));
   sb->fs = fs_type;
   sb->ops = fs_type->sb_ops;
@@ -61,17 +61,6 @@ void sb_free(super_block_t *sb) {
     itable_free(sb->itable);
   }
   kfree(sb);
-}
-
-int sb_takeown(super_block_t *sb, inode_t *inode) {
-  ASSERT(inode->sb == NULL);
-  S_LOCK(sb);
-  I_LOCK(inode);
-  inode->sb = sb;
-  inode->ops = sb->fs->inode_ops;
-  I_UNLOCK(inode);
-  S_UNLOCK(sb);
-  return 0;
 }
 
 int sb_add_inode(super_block_t *sb, inode_t *inode) {
@@ -122,24 +111,25 @@ int sb_remove_inode(super_block_t *sb, inode_t *inode) {
 // MARK: Superblock Operations
 //
 
-int sb_mount(super_block_t *sb, dentry_t *mount, device_t *device) {
+int sb_mount(super_block_t *sb, dentry_t *mount, device_t *device, int flags) {
   ASSERT(IS_IFDIR(mount));
   ASSERT(mount->inode == NULL);
 
+  // allocate new inode for mount point
   inode_t *inode = i_alloc(sb, 0, S_IFDIR);
-  i_link_dentry(inode, mount);
 
   int res;
   sb->itable = itable_alloc();
-  sb->dcache = dcache_create(mount);
+  sb->dcache = dcache_create(&sb->mount);
   sb->mount = mount;
   sb->device = device;
+  sb->mount_flags = sb->fs->flags | flags;
 
   if ((res = S_OPS(sb)->sb_mount(sb, mount)) < 0) {
     DPRINTF("failed to mount filesystem: %d\n", res);
     dcache_destroy(sb->dcache);
     itable_free(sb->itable);
-    // TODO: tear down and unlink inode
+    i_free(inode);
     return res;
   }
 
@@ -148,11 +138,15 @@ int sb_mount(super_block_t *sb, dentry_t *mount, device_t *device) {
     DPRINTF("failed to load directory: %d\n", res);
     dcache_destroy(sb->dcache);
     itable_free(sb->itable);
-    // TODO: tear down and unlink inodes
+    i_unlink_dentry(inode, mount);
+    i_free(inode);
     return res;
   }
 
-  // TODO: add to mounts
+  // add to mounts
+  FS_TYPE_LOCK(sb->fs);
+  LIST_ADD(&sb->fs->mounts, sb, list);
+  FS_TYPE_UNLOCK(sb->fs);
   return 0;
 }
 

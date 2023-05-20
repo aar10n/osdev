@@ -31,7 +31,7 @@ typedef struct process {
 
   uid_t uid;                      // user id
   gid_t gid;                      // group id
-  dentry_t **pwd;                 // process working directory
+  dentry_t *pwd;                  // process working directory
   void *files;                    // open file table
   size_t num_threads;             // number of threads
   spinlock_t lock;                // process lock

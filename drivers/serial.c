@@ -58,16 +58,16 @@ struct serial_device {
   int port;
 };
 
-static int serial_fopen(device_t *device) {
+static int serial_d_open(device_t *device) {
   struct serial_device *dev = device->data;
   return 0;
 }
 
-static int serial_fclose(device_t *device) {
+static int serial_d_close(device_t *device) {
   return 0;
 }
 
-static ssize_t serial_fread(device_t *device, size_t off, kio_t *kio) {
+static ssize_t serial_d_read(device_t *device, size_t off, kio_t *kio) {
   struct serial_device *dev = device->data;
   if (off != 0) {
     return -EINVAL;
@@ -79,7 +79,7 @@ static ssize_t serial_fread(device_t *device, size_t off, kio_t *kio) {
   return (ssize_t) kio_transfered(kio);
 }
 
-static ssize_t serial_fwrite(device_t *device, size_t off, kio_t *kio) {
+static ssize_t serial_d_write(device_t *device, size_t off, kio_t *kio) {
   struct serial_device *dev = device->data;
   if (off != 0) {
     return -EINVAL;
@@ -93,10 +93,10 @@ static ssize_t serial_fwrite(device_t *device, size_t off, kio_t *kio) {
 }
 
 static struct device_ops serial_ops = {
-  .d_open = serial_fopen,
-  .d_close = serial_fclose,
-  .d_read = serial_fread,
-  .d_write = serial_fwrite,
+  .d_open = serial_d_open,
+  .d_close = serial_d_close,
+  .d_read = serial_d_read,
+  .d_write = serial_d_write,
 };
 
 static void serial_module_init() {

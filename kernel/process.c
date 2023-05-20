@@ -12,6 +12,7 @@
 #include <signal.h>
 #include <loader.h>
 #include <ipc.h>
+#include <fs.h>
 
 #include <string.h>
 #include <printf.h>
@@ -81,7 +82,7 @@ process_t *process_alloc(pid_t pid, pid_t ppid, void *(start_routine)(void *), v
   process->num_threads = 1;
   process->uid = -1;
   process->gid = -1;
-  process->pwd = NULL;
+  process->pwd = fs_get_root();
   process->files = NULL;
   spin_init(&process->lock);
 
@@ -136,7 +137,7 @@ void process_create_root(void (function)()) {
   size_t num_pages = SIZE_TO_PAGES(sizeof(process_t *) * MAX_PROCS);
   ptable_pages = valloc_zero_pages(num_pages, PG_WRITE);
   kassert(ptable_pages != NULL);
-  ptable = (void *) PAGE_VIRT_ADDR(ptable_pages);
+  ptable = PAGE_VIRT_ADDRP(ptable_pages);
 
   ptable[0] = process;
   ptable_size = 1;

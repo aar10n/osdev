@@ -68,6 +68,7 @@ typedef struct page {
 
 #define PAGE_PHYS_ADDR(page) ((page)->address)
 #define PAGE_VIRT_ADDR(page) ((page)->mapping->address)
+#define PAGE_VIRT_ADDRP(page) ((void *)((page)->mapping->address))
 
 #define IS_PG_MAPPED(flags)    ((flags) & PG_MAPPED)
 #define IS_PG_WRITABLE(flags)  ((flags) & PG_WRITE)
@@ -89,9 +90,8 @@ typedef struct address_space {
 // vm types
 #define VM_TYPE_PHYS   0 // direct physical mapping
 #define VM_TYPE_PAGE   1 // mapped page structures
-#define VM_TYPE_FILE   2 // mmap'd file
-#define VM_TYPE_ANON   3 // mmap'd anonymous memory
-#define VM_TYPE_RSVD   4 // reserved memory
+#define VM_TYPE_ANON   2 // mmap'd anonymous memory
+#define VM_TYPE_RSVD   3 // reserved memory
 
 // vm attributes
 #define VM_ATTR_USER        (1 << 0) // region is in user space
@@ -113,8 +113,7 @@ typedef struct vm_mapping {
   union {
     void *ptr;
     uint64_t phys;     // VM_TYPE_PHYS
-    struct page *page; // VM_TYPE_PAGE
-    struct file *file; // VM_TYPE_FILE
+    struct page *page; // VM_TYPE_PAGE|VM_TYPE_ANON
   } data;
 } vm_mapping_t;
 

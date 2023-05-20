@@ -184,13 +184,21 @@ int register_dev(const char *dev_type, device_t *dev);
 
 // MARK: Device Operation Helpers
 
+static inline int __dev_open(device_t *dev) {
+  return dev->ops->d_open(dev);
+}
+
+static inline int __dev_close(device_t *dev) {
+  return dev->ops->d_close(dev);
+}
+
 static inline ssize_t __dev_read(device_t *dev, size_t off, void *buf, size_t len) {
-  kio_t kio = kio_new(buf, len);
+  kio_t kio = kio_new_writeonly(buf, len);
   return dev->ops->d_read(dev, off, &kio);
 }
 
 static inline ssize_t __dev_write(device_t *dev, size_t off, const void *buf, size_t len) {
-  kio_t kio = kio_new((void *)buf, len);
+  kio_t kio = kio_new_readonly(buf, len);
   return dev->ops->d_write(dev, off, &kio);
 }
 

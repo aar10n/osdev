@@ -23,18 +23,18 @@ struct rawmem_device {
 };
 
 
-int rawmem_open(device_t *device) {
+int rawmem_d_open(device_t *device) {
   struct rawmem_device *dev = device->data;
   ASSERT(dev->base != NULL);
   // TODO: map phys to virt of not already and unmap on close
   return -1;
 }
 
-int rawmem_close(device_t *device) {
+int rawmem_d_close(device_t *device) {
   return 0;
 }
 
-ssize_t rawmem_read(device_t *device, size_t off, kio_t *kio) {
+ssize_t rawmem_d_read(device_t *device, size_t off, kio_t *kio) {
   struct rawmem_device *dev = device->data;
   if (off > dev->size) {
     return -ERANGE;
@@ -42,7 +42,7 @@ ssize_t rawmem_read(device_t *device, size_t off, kio_t *kio) {
   return (ssize_t) kio_movein(kio, dev->base, dev->size, off);
 }
 
-ssize_t rawmem_write(device_t *device, size_t off, kio_t *kio) {
+ssize_t rawmem_d_write(device_t *device, size_t off, kio_t *kio) {
   struct rawmem_device *dev = device->data;
   if (off > dev->size) {
     return -ERANGE;
@@ -51,10 +51,10 @@ ssize_t rawmem_write(device_t *device, size_t off, kio_t *kio) {
 }
 
 static struct device_ops rawmem_ops = {
-  .d_open = rawmem_open,
-  .d_close = rawmem_close,
-  .d_read = rawmem_read,
-  .d_write = rawmem_write,
+  .d_open = rawmem_d_open,
+  .d_close = rawmem_d_close,
+  .d_read = rawmem_d_read,
+  .d_write = rawmem_d_write,
 };
 
 static void rawmem_initrd_module_init() {
