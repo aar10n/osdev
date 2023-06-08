@@ -71,8 +71,10 @@ typedef struct {
 } rb_iter_t;
 
 rb_tree_t *create_rb_tree();
+void rb_tree_free(rb_tree_t *tree);
 rb_tree_t *copy_rb_tree(rb_tree_t *tree);
 rb_tree_t *copy_rb_tree_pred(rb_tree_t *tree, rb_pred_t pred, void *arg);
+void *rb_tree_get(rb_tree_t *tree, uint64_t key);
 rb_node_t *rb_tree_find(rb_tree_t *tree, uint64_t key);
 rb_node_t *rb_tree_find_closest(rb_tree_t *tree, uint64_t key);
 void rb_tree_insert(rb_tree_t *tree, uint64_t key, void *data);

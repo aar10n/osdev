@@ -1,6 +1,8 @@
 #ifndef INCLUDE_ABI_STAT_H
 #define INCLUDE_ABI_STAT_H
 
+#include "types.h"
+
 #ifdef __KERNEL__
 struct timespec {
   time_t tv_sec;
@@ -20,12 +22,8 @@ struct timespec {
 #include <bits/off_t.h>
 #endif
 
-#define PATH_MAX 256
-#define NAME_MAX 32
-
 #define S_IFMT   0xFFF0000
 
-#define S_IFFBF  0x1000000 // Framebuffer special.
 #define S_IFMNT  0x0800000 // Filesystem mount.
 #define S_IFCHR  0x0400000 // Character special (tty).
 #define S_IFIFO  0x0200000 // FIFO special (pipe).

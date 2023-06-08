@@ -32,7 +32,7 @@ endif
 # --------- #
 
 modules := BOOT KERNEL
-targets = apps boot drivers fs kernel lib
+targets = apps boot fs kernel lib # drivers
 include $(foreach target,$(targets),$(target)/Makefile)
 $(call init-modules,$(modules))
 
@@ -96,21 +96,28 @@ endif
 
 # misc
 
+.PHONY: update-libfmt
+update-libfmt:
+	cd lib/fmt && git pull origin main
+
 .PHONY: clean
 clean:
 	rm -f $(BUILD_DIR)/{*.efi,*.elf}
 	rm -rf $(OBJ_DIR)
 	mkdir $(OBJ_DIR)
 
+.PHONY: clean-bootloader
 clean-bootloader:
 	rm -f $(BUILD_DIR)/boot$(WINARCH).efi
 	rm -f $(BUILD_DIR)/loader{.dll,.lib}
 	rm -rf $(OBJ_DIR)/boot
 
+.PHONY: clean-bootloader-all
 clean-bootloader-all: clean-bootloader
 	rm -f $(BUILD_DIR)/static_library_files.lst
 	rm -rf $(EDK_DIR)/Build/Loader
 
+.PHONY: clean-kernel
 clean-kernel:
 	rm -f $(BUILD_DIR)/osdev.img
 	rm -f $(BUILD_DIR)/kernel.elf
@@ -165,7 +172,7 @@ KERNEL_DEFINES = $(DEFINES) -D__KERNEL__
 
 
 $(BUILD_DIR)/kernel.elf: $(KERNEL_OBJECTS) $(BUILD_DIR)/libdwarf.a
-	$(LD) $(KERNEL_LDFLAGS) $^ -l:libdwarf.a --no-relax -o $@
+	$(LD) $(KERNEL_LDFLAGS) -o $@ --no-relax $^
 
 # initial ramdisk
 $(BUILD_DIR)/initrd.img: .initrd

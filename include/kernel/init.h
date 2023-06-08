@@ -10,6 +10,8 @@
 typedef void (*init_callback_t)(void *);
 
 void register_init_address_space_callback(init_callback_t callback, void *data);
+
+void do_static_initializers();
 void do_module_initializers();
 
 #endif

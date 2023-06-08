@@ -5,7 +5,6 @@
 #include <usb/scsi.h>
 #include <usb/usb.h>
 #include <printf.h>
-#include <fs.h>
 #include <mm.h>
 #include <panic.h>
 #include <string.h>
@@ -74,19 +73,19 @@ int scsi_device_init(usb_device_t *device) {
   kfree(cbw);
   kfree(csw);
 
-  blkdev_t *blkdev = blkdev_init(device, scsi_read, scsi_write);
-  dev_t d = fs_register_blkdev(0, blkdev, NULL);
-  kassert(d > 0);
-
-  char suffix = sd_suffix;
-  sd_suffix++;
-
-  char path[12];
-  ksnprintf(path, 12, "/dev/sd%c", suffix);
-
-  if (fs_mknod(path, S_IFBLK, d) < 0) {
-    panic("failed to add device node");
-  }
+  // blkdev_t *blkdev = blkdev_init(device, scsi_read, scsi_write);
+  // dev_t d = fs_register_blkdev(0, blkdev, NULL);
+  // kassert(d > 0);
+  //
+  // char suffix = sd_suffix;
+  // sd_suffix++;
+  //
+  // char path[12];
+  // ksnprintf(path, 12, "/dev/sd%c", suffix);
+  //
+  // if (fs_mknod(path, S_IFBLK, d) < 0) {
+  //   panic("failed to add device node");
+  // }
 
   device->driver_data = scsi_dev;
   kprintf("scsi: device init finished!\n");

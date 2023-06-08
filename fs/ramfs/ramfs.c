@@ -1,52 +1,96 @@
 //
-// Created by Aaron Gill-Braun on 2020-11-02.
+// Created by Aaron Gill-Braun on 2023-05-14.
 //
 
-#include <ramfs/ramfs.h>
-#include <super.h>
-#include <dentry.h>
+#include "ramfs.h"
+#include "ramfs_file.h"
+
+#include <mm.h>
 #include <panic.h>
+#include <printf.h>
+#include <fs.h>
 
-super_block_t *ramfs_mount(file_system_t *fs, dev_t devid, blkdev_t *dev, dentry_t *mount) {
-  ramfs_super_t *rsb = kmalloc(sizeof(ramfs_super_t));
-  bitmap_init(&rsb->inodes, RAMFS_MAX_FILES);
-  spin_init(&rsb->lock);
+#define ASSERT(x) kassert(x)
+#define DPRINTF(fmt, ...) kprintf("ramfs: " fmt, ##__VA_ARGS__)
 
-  super_block_t *sb = kmalloc(sizeof(super_block_t));
-  sb->flags = 0;
-  sb->blksize = PAGE_SIZE;
-  sb->dev = dev;
-  sb->devid = devid;
-  sb->fs = fs;
-  sb->ops = fs->sb_ops;
-  sb->root = mount;
-  sb->data = rsb;
+#define LOCK_MOUNT(mount) SPIN_LOCK(&(mount)->lock)
+#define UNLOCK_MOUNT(mount) SPIN_UNLOCK(&(mount)->lock)
+#define LOCK_NODE(node) mutex_lock(&(node)->lock)
+#define UNLOCK_NODE(node) mutex_unlock(&(node)->lock)
 
-  // handle special case on root mount
-  if (mount->inode == NULL) {
-    inode_t *root = sb_alloc_inode(sb);
-    root->mode = S_IFMNT | S_IFDIR;
-    root->sb = sb;
-    d_attach(mount, root);
+extern struct vfs_ops ramfs_vfs_ops;
+extern struct vnode_ops ramfs_vnode_ops;
+extern struct ventry_ops ramfs_ventry_ops;
+static fs_type_t ramfs_type;
+
+
+static void ramfs_static_init() {
+  ramfs_type.name = "ramfs";
+  ramfs_type.vfs_ops = &ramfs_vfs_ops;
+  ramfs_type.vnode_ops = &ramfs_vnode_ops;
+  ramfs_type.ventry_ops = &ramfs_ventry_ops;
+  if (fs_register_type(&ramfs_type) < 0) {
+    DPRINTF("failed to register ramfs type\n");
   }
-  return sb;
+}
+STATIC_INIT(ramfs_static_init);
+
+
+// MARK: ramfs node functions
+
+ramfs_node_t *ramfs_node_alloc(ramfs_mount_t *mount, enum vtype type, mode_t mode) {
+  LOCK_MOUNT(mount);
+  id_t id = mount->next_id++;
+  UNLOCK_MOUNT(mount);
+
+  ramfs_node_t *node = kmallocz(sizeof(ramfs_node_t));
+  node->mount = mount;
+  node->type = type;
+  node->mode = mode;
+  mutex_init(&node->lock, 0);
+  return node;
 }
 
-//
+void ramfs_node_free(ramfs_node_t *node) {
+  ASSERT(mutex_trylock(&node->lock) == 0);
+  kfree(node);
+}
 
-file_system_t ramfs_file_system = {
-  .name = "ramfs",
-  .flags = FS_NO_ROOT,
-  .mount = ramfs_mount,
-};
+void ramfs_dir_add(ramfs_node_t *dir, ramfs_dirent_t *dirent) {
+  ASSERT(dir->type == V_DIR);
+  ASSERT(dirent->parent == NULL);
+  LOCK_NODE(dir);
+  dirent->parent = dir;
+  LIST_ADD(&dir->n_dir, dirent, list);
+  UNLOCK_NODE(dir);
+}
 
-void ramfs_init() {
-  ramfs_file_system.sb_ops = ramfs_super_ops;
-  ramfs_file_system.inode_ops = ramfs_inode_ops;
-  ramfs_file_system.dentry_ops = ramfs_dentry_ops;
-  ramfs_file_system.file_ops = ramfs_file_ops;
+void ramfs_dir_remove(ramfs_node_t *dir, ramfs_dirent_t *dirent) {
+  ASSERT(dir->type == V_DIR);
+  ASSERT(dirent->parent == dir);
+  LOCK_NODE(dir);
+  LIST_REMOVE(&dir->n_dir, dirent, list);
+  UNLOCK_NODE(dir);
+}
 
-  if (fs_register(&ramfs_file_system) < 0) {
-    panic("failed to register");
-  }
+
+ramfs_dirent_t *ramfs_dirent_alloc(ramfs_node_t *node, cstr_t name) {
+  ramfs_dirent_t *dirent = kmallocz(sizeof(ramfs_dirent_t));
+  dirent->node = node;
+  dirent->name = str_copy_cstr(name);
+  return dirent;
+}
+
+void ramfs_dirent_free(ramfs_dirent_t *dirent) {
+  str_free(&dirent->name);
+  kfree(dirent);
+}
+
+ramfs_dirent_t *ramfs_dirent_lookup(ramfs_node_t *dir, cstr_t name) {
+  ASSERT(dir->type == V_DIR);
+  ramfs_dirent_t *dirent = NULL;
+  LOCK_NODE(dir);
+  dirent = LIST_FIND(d, &dir->n_dir, list, str_eq_c(d->name, name));
+  UNLOCK_NODE(dir);
+  return dirent;
 }

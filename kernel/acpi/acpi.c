@@ -11,7 +11,8 @@
 #include <device/ioapic.h>
 #include <device/hpet.h>
 
-#include <bus/pcie.h>
+// #include <bus/pcie.h>
+#include <bus/pci_v2.h>
 
 #include <mm.h>
 #include <init.h>
@@ -74,11 +75,11 @@ void acpi_early_init() {
   acpi_tables = (void *)((uint64_t) xsdt + sizeof(acpi_table_header_t));
 
   kprintf("ACPI %s\n", rsdp->revision == 0 ? "1.0" : "2.0");
-  kprintf("  RSDT %p (v%d %6s)\n", rsdp->rsdt_address, rsdp->revision, rsdp->oem_id);
-  kprintf("  XSDT %p (v%d %6s)\n", rsdp->xsdt_address, xsdt->revision, xsdt->oem_id);
+  kprintf("  RSDT %p (v%d %.6s)\n", rsdp->rsdt_address, rsdp->revision, rsdp->oem_id);
+  kprintf("  XSDT %p (v%d %.6s)\n", rsdp->xsdt_address, xsdt->revision, xsdt->oem_id);
   for (size_t i = 0; i < acpi_num_tables; i++) {
     acpi_table_header_t *table = (void *)((uint64_t) acpi_tables[i]);
-    kprintf("  %4s %p (v%d %6s)\n", &table->signature, table, table->revision, table->oem_id);
+    kprintf("  %.4s %p (v%d %.6s)\n", &table->signature, table, table->revision, table->oem_id);
   }
 
   acpi_parse_fadt();
@@ -217,7 +218,8 @@ void acpi_parse_mcfg() {
     uint8_t bus_start = entry->start_bus_number;
     uint8_t bus_end = entry->end_bus_number;
     uint64_t address = entry->base_address;
-    register_pcie_segment_group(number, bus_start, bus_end, address);
+    register_pci_segment_group(number, bus_start, bus_end, address);
+    // register_pcie_segment_group(number, bus_start, bus_end, address);
   }
 }
 

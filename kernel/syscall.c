@@ -6,7 +6,6 @@
 
 #include <cpu/cpu.h>
 
-#include <fs.h>
 #include <sched.h>
 #include <process.h>
 #include <thread.h>
@@ -90,37 +89,19 @@ static int sys_execve(const char *path, char *const argv[], char *const envp[]) 
 }
 
 static int sys_open(const char *path, int flags, mode_t mode) {
-  // kprintf("sys_open(\"%s\", %d, %ud)\n", path, flags, mode);
-  int result = fs_open(path, flags, mode);
-  if (result < 0) {
-    return -ERRNO;
-  }
-  // kprintf("-> %d\n", result);
-  return result;
+  unimplemented("sys_open");
 }
 
 static int sys_close(int fd) {
-  int result = fs_close(fd);
-  if (result < 0) {
-    return -ERRNO;
-  }
-  return result;
+  unimplemented("sys_close");
 }
 
 static ssize_t sys_read(int fd, void *buf, size_t nbytes) {
-  ssize_t result = fs_read(fd, buf, nbytes);
-  if (result < 0) {
-    return -ERRNO;
-  }
-  return result;
+  unimplemented("sys_read");
 }
 
 static ssize_t sys_write(int fd, void *buf, size_t nbytes) {
-  ssize_t result = fs_write(fd, buf, nbytes);
-  if (result < 0) {
-    return -ERRNO;
-  }
-  return result;
+  unimplemented("sys_write");
 }
 
 // int sys_poll(struct pollfd fds[], nfds_t nfds, int timeout) {
@@ -128,83 +109,43 @@ static ssize_t sys_write(int fd, void *buf, size_t nbytes) {
 // }
 
 static off_t sys_lseek(int fd, off_t offset, int whence) {
-  off_t result = fs_lseek(fd, offset, whence);
-  if (result < 0) {
-    return -ERRNO;
-  }
-  return result;
+  unimplemented("sys_lseek");
 }
 
 static int sys_fnctl(int fd, int cmd, uint64_t arg) {
-  int result = fs_fcntl(fd, cmd, arg);
-  if (result < 0) {
-    return -ERRNO;
-  }
-  return result;
+  unimplemented("sys_fnctl");
 }
 
 static int sys_creat(const char *path, mode_t mode) {
-  int result = fs_creat(path, mode);
-  if (result < 0) {
-    return -ERRNO;
-  }
-  return result;
+  unimplemented("sys_creat");
 }
 
 static int sys_mknod(const char *path, mode_t mode, dev_t dev) {
-  int result = fs_mknod(path, mode, dev);
-  if (result < 0) {
-    return -ERRNO;
-  }
-  return result;
+  unimplemented("sys_mknod");
 }
 
 static int sys_mkdir(const char *path, mode_t mode) {
-  int result = fs_mkdir(path, mode);
-  if (result < 0) {
-    return -ERRNO;
-  }
-  return result;
+  unimplemented("sys_mkdir");
 }
 
 static int sys_link(const char *path1, const char *path2) {
-  int result = fs_link(path1, path2);
-  if (result < 0) {
-    return -ERRNO;
-  }
-  return result;
+  unimplemented("sys_link");
 }
 
 static int sys_unlink(const char *path) {
-  int result = fs_unlink(path);
-  if (result < 0) {
-    return -ERRNO;
-  }
-  return result;
+  unimplemented("sys_unlink");
 }
 
 static int sys_symlink(const char *path1, const char *path2) {
-  int result = fs_symlink(path1, path2);
-  if (result < 0) {
-    return -ERRNO;
-  }
-  return result;
+  unimplemented("sys_symlink");
 }
 
 static int sys_rename(const char *oldfile, const char *newfile) {
-  int result = fs_rename(oldfile, newfile);
-  if (result < 0) {
-    return -ERRNO;
-  }
-  return result;
+  unimplemented("sys_rename");
 }
 
 static ssize_t sys_readlink(const char *restrict path, char *restrict buf, size_t bufsize) {
-  ssize_t result = fs_readlink(path, buf, bufsize);
-  if (result < 0) {
-    return -ERRNO;
-  }
-  return 0;
+  unimplemented("sys_readlink");
 }
 
 // SYS_READDIR
@@ -213,43 +154,23 @@ static ssize_t sys_readlink(const char *restrict path, char *restrict buf, size_
 // SYS_REWINDDIR
 
 static int sys_rmdir(const char *path) {
-  int result = fs_rmdir(path);
-  if (result < 0) {
-    return -ERRNO;
-  }
-  return 0;
+  unimplemented("sys_rmdir");
 }
 
 static int sys_chdir(const char *path) {
-  int result = fs_chdir(path);
-  if (result < 0) {
-    return -ERRNO;
-  }
-  return 0;
+  unimplemented("sys_chdir");
 }
 
 static int sys_chmod(const char *path, mode_t mode) {
-  int result = fs_chmod(path, mode);
-  if (result < 0) {
-    return -ERRNO;
-  }
-  return 0;
+  unimplemented("sys_chmod");
 }
 
 static int sys_stat(const char *path, struct stat *statbuf) {
-  int result = fs_stat(path, statbuf);
-  if (result < 0) {
-    return -ERRNO;
-  }
-  return 0;
+  unimplemented("sys_stat");
 }
 
 static int sys_fstat(int fd, struct stat *statbuf) {
-  int result = fs_fstat(fd, statbuf);
-  if (result < 0) {
-    return -ERRNO;
-  }
-  return 0;
+  unimplemented("sys_fstat");
 }
 
 static int sys_sleep(uint32_t seconds) {
@@ -263,23 +184,11 @@ static int sys_yield() {
 }
 
 static void *sys_mmap(void *addr, size_t len, int prot, int flags, int fd, off_t off) {
-  // kprintf("sys_mmap(%p, %llu, %d, %d, %d, %lld)\n",
-  //         addr, len, prot, flags, fd, off);
-
-  void *result = fs_mmap(addr, len, prot, flags, fd, off);
-  if (result == MAP_FAILED) {
-    return as_void(-ERRNO);
-  }
-  // kprintf("-> %p\n", result);
-  return result;
+  unimplemented("sys_mmap");
 }
 
 static int sys_munmap(void *addr, size_t length) {
-  int result = fs_munmap(addr, length);
-  if (result < 0) {
-    return -ERRNO;
-  }
-  return 0;
+  unimplemented("sys_munmap");
 }
 
 static pid_t sys_fork() {
@@ -343,20 +252,11 @@ static int sys_signal(int sig, void (*func)(int)) {
 // SYS_SIGACTION
 
 static int sys_dup(int fd) {
-  int result = fs_dup(fd);
-  if (result < 0) {
-    return -ERRNO;
-  }
-  return result;
+  unimplemented("sys_dup");
 }
 
-// SYS_DUP2
 static int sys_dup2(int fd, int fd2) {
-  int result = fs_dup2(fd, fd2);
-  if (result < 0) {
-    return -ERRNO;
-  }
-  return result;
+  unimplemented("sys_dup2");
 }
 
 //
@@ -396,7 +296,7 @@ static syscall_t syscalls[] = {
   [SYS_GETTID] = to_syscall(gettid),
   [SYS_GETUID] = to_syscall(getuid),
   [SYS_GETGID] = to_syscall(getgid),
-  [SYS_GET_CWD] = to_syscall(fs_getcwd),
+  // [SYS_GET_CWD] = to_syscall(fs_getcwd),
   [SYS_MMAP] = to_syscall(sys_mmap),
   [SYS_MUNMAP] = to_syscall(sys_munmap),
   [SYS_FORK] = to_syscall(sys_fork),

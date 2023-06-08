@@ -8,6 +8,7 @@
 #include <base.h>
 #include <queue.h>
 #include <mutex.h>
+#include <string.h>
 
 // TODO: switch to better allocator for large sizes
 #define CHUNK_MIN_SIZE   8
@@ -50,9 +51,12 @@ void mm_init_kheap();
 void kheap_init();
 
 void *kmalloc(size_t size) __malloc_like;
+void *kmallocz(size_t size) __malloc_like;
 void *kmalloca(size_t size, size_t alignment) __malloc_like;
 void kfree(void *ptr);
 void *kcalloc(size_t nmemb, size_t size) __malloc_like;
+
+void kheap_dump_stats();
 
 int kheap_is_valid_ptr(void *ptr);
 uintptr_t kheap_ptr_to_phys(void *ptr);

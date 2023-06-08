@@ -19,7 +19,7 @@
 #define is_io_bar_valid(b) (((b) & 0xFFFFFFFC) != 0)
 #define is_bar_valid(bar) (((bar) & 1) == 0 ? is_mem_bar_valid(bar) : is_io_bar_valid(bar))
 
-#define msi_msg_addr(cpu) (0xFEE00000 | (cpu << 12))
+#define msi_msg_addr(cpu) (0xFEE00000ULL | ((uint64_t)(cpu) << 12))
 #define msi_msg_data(vec, e, d) \
   (((vec) & 0xFF) | ((e) == 1 ? 0 : (1 << 15)) | ((d) == 1 ? 0 : (1 << 14)))
 
@@ -256,15 +256,15 @@ void pcie_probe_bus(struct pcie_segment_group *group, uint8_t bus) {
       dev->next = NULL;
 
       add_device(dev);
-      if (!(
-        header->class_code == PCI_SERIAL_BUS_CONTROLLER && header->subclass == PCI_USB_CONTROLLER
-        && header->prog_if == USB_PROG_IF_XHCI
-      )) {
-        continue;
-      }
+      // if (!(
+      //   header->class_code == PCI_SERIAL_BUS_CONTROLLER && header->subclass == PCI_USB_CONTROLLER
+      //   && header->prog_if == USB_PROG_IF_XHCI
+      // )) {
+      //   continue;
+      // }
 
-      // pcie_print_device(dev);
-      register_xhci_controller(dev);
+      pcie_print_device(dev);
+      // register_xhci_controller(dev);
 
       if (!header->multifn) {
         break;

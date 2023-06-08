@@ -18,7 +18,8 @@
   if (!(expression)) \
     panic("assertion failed: " msg ", file %s, line %d\n", ##args, __FILE__, __LINE__);
 
-#define unreachable kassertf(false, "unreachable")
+#define unreachable panic("unreachable: file %s, line %d\n", __FILE__, __LINE__)
+#define unimplemented(msg) panic("not implemented: " msg ", file %s, line %d\n", __FILE__, __LINE__)
 
 noreturn void panic(const char *fmt, ...);
 

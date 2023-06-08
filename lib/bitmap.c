@@ -43,6 +43,14 @@ void bitmap_init(bitmap_t *bmp, size_t n) {
   memset(bmp->map, 0, bytes);
 }
 
+void bitmap_free(bitmap_t *bmp) {
+  _free(bmp->map);
+  bmp->map = NULL;
+  bmp->size = 0;
+  bmp->used = 0;
+  bmp->free = 0;
+}
+
 /**
  * Returns the value of the bit at the specified index.
  */

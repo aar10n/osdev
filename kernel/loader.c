@@ -7,7 +7,6 @@
 #include <cpu/cpu.h>
 
 #include <mm.h>
-#include <fs.h>
 #include <elf.h>
 #include <thread.h>
 #include <panic.h>
@@ -112,44 +111,45 @@ int load_elf(void *buf, elf_program_t *prog) {
 //
 
 int load_elf_file(const char *path, elf_program_t *prog) {
-  int fd = fs_open(path, O_RDONLY, 0);
-  if (fd < 0) {
-    return -1;
-  }
-
-  stat_t stat;
-  if (fs_fstat(fd, &stat) < 0) {
-    fs_close(fd);
-    return -1;
-  }
-
-  page_t *program = valloc_pages(SIZE_TO_PAGES(stat.st_size), PG_WRITE);
-  ssize_t nread = fs_read(fd, (void *) PAGE_VIRT_ADDR(program), stat.st_size);
-  if (nread < 0) {
-    vfree_pages(program);
-    fs_close(fd);
-    return -1;
-  }
-
-  prog->file_pages = program;
-  if (load_elf((void *) PAGE_VIRT_ADDR(program), prog) < 0) {
-    vfree_pages(program);
-    fs_close(fd);
-  }
-
-  kprintf("loaded %s at %018p [entry = %018p]\n", path, prog->base, prog->entry);
-  if (prog->interp != NULL) {
-    elf_program_t *linker = kmalloc(sizeof(elf_program_t));
-    memset(linker, 0, sizeof(elf_program_t));
-
-    linker->base = 0x7FC0000000;
-    if (load_elf_file("/lib/ld.so", linker) < 0) {
-      vfree_pages(program);
-      fs_close(fd);
-      panic("failed to load ld.so\n");
-    }
-
-    prog->linker = linker;
-  }
-  return 0;
+  unimplemented("load_elf_file");
+  // int fd = fs_open(path, O_RDONLY, 0);
+  // if (fd < 0) {
+  //   return -1;
+  // }
+  //
+  // stat_t stat;
+  // if (fs_fstat(fd, &stat) < 0) {
+  //   fs_close(fd);
+  //   return -1;
+  // }
+  //
+  // page_t *program = valloc_pages(SIZE_TO_PAGES(stat.st_size), PG_WRITE);
+  // ssize_t nread = fs_read(fd, (void *) PAGE_VIRT_ADDR(program), stat.st_size);
+  // if (nread < 0) {
+  //   vfree_pages(program);
+  //   fs_close(fd);
+  //   return -1;
+  // }
+  //
+  // prog->file_pages = program;
+  // if (load_elf((void *) PAGE_VIRT_ADDR(program), prog) < 0) {
+  //   vfree_pages(program);
+  //   fs_close(fd);
+  // }
+  //
+  // kprintf("loaded %s at %018p [entry = %018p]\n", path, prog->base, prog->entry);
+  // if (prog->interp != NULL) {
+  //   elf_program_t *linker = kmalloc(sizeof(elf_program_t));
+  //   memset(linker, 0, sizeof(elf_program_t));
+  //
+  //   linker->base = 0x7FC0000000;
+  //   if (load_elf_file("/lib/ld.so", linker) < 0) {
+  //     vfree_pages(program);
+  //     fs_close(fd);
+  //     panic("failed to load ld.so\n");
+  //   }
+  //
+  //   prog->linker = linker;
+  // }
+  // return 0;
 }

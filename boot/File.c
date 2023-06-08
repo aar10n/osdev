@@ -130,22 +130,21 @@ EFI_STATUS EFIAPI GetFileInfo(IN EFI_FILE *File, OUT EFI_FILE_INFO **OutFileInfo
   EFI_STATUS Status;
   EFI_GUID FileInfoGuid = EFI_FILE_INFO_ID;
   UINTN FileInfoSize = sizeof(EFI_FILE_INFO);
-  EFI_FILE_INFO *_FileInfo = NULL;
 
 RETRY:;
   EFI_FILE_INFO *FileInfo = AllocatePool(FileInfoSize);
-  if (_FileInfo == NULL) {
+  if (FileInfo == NULL) {
     return EFI_OUT_OF_RESOURCES;
   }
 
-  Status = File->GetInfo(File, &FileInfoGuid, &FileInfoSize, _FileInfo);
+  Status = File->GetInfo(File, &FileInfoGuid, &FileInfoSize, FileInfo);
   if (EFI_ERROR(Status)) {
     if (Status == EFI_BUFFER_TOO_SMALL) {
-      FreePool(_FileInfo);
+      FreePool(FileInfo);
       goto RETRY;
     }
 
-    FreePool(_FileInfo);
+    FreePool(FileInfo);
     PRINT_ERROR("Failed to get file info");
     return Status;
   }

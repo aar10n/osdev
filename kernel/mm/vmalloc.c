@@ -19,9 +19,10 @@
 #include <interval_tree.h>
 
 // internal vmap flags
-#define VMAP_FIXED      (1 << 0)
-#define VMAP_USERSPACE  (1 << 1)
-#define VMAP_DOWNWARD   (1 << 2)
+#define VMAP_FIXED      (1 << 0) // the address is fixed
+#define VMAP_USERSPACE  (1 << 1) // the mapping is in userspace
+#define VMAP_DOWNWARD   (1 << 2) // the mapping grows downward
+#define VMAP_SHORTLIVED (1 << 3) // the mapping does not need to be bound to a page
 
 void execute_init_address_space_callbacks();
 extern uintptr_t entry_initial_stack_top;
@@ -177,6 +178,31 @@ vm_mapping_t *allocate_vm_mapping(address_space_t *space, uintptr_t addr, size_t
 
 //
 
+void vmap_fill_from_pages(page_t *pages, address_space_t *space, vm_mapping_t *vm, uint32_t vm_flags) {
+  page_t *curr = pages;
+  uintptr_t ptr = vm->address;
+  size_t realsize = 0;
+  while (curr != NULL) {
+    page_t *out_table_pages = NULL;
+    recursive_map_entry(ptr, curr->address, curr->flags, &out_table_pages);
+    if (out_table_pages != NULL) {
+      SLIST_ADD(&space->table_pages, out_table_pages, next);
+    }
+
+    curr->flags |= PG_MAPPED;
+    if (!(vm_flags & VMAP_SHORTLIVED)) {
+      curr->mapping = vm;
+    }
+
+    size_t pgsz = pg_flags_to_size(curr->flags);
+    ptr += pgsz;
+    realsize += pgsz;
+    curr = curr->next;
+  }
+  cpu_flush_tlb();
+  kassert(realsize == vm->size);
+}
+
 vm_mapping_t *vmap_pages_internal(page_t *pages, uintptr_t hint, uint32_t vm_flags) {
   kassert(pages->flags & PG_LIST_HEAD);
   if (vm_flags & VMAP_USERSPACE) {
@@ -198,23 +224,7 @@ vm_mapping_t *vmap_pages_internal(page_t *pages, uintptr_t hint, uint32_t vm_fla
   mapping->data.page = pages;
   mapping->name = "page";
 
-  page_t *curr = pages;
-  uintptr_t ptr = mapping->address;
-  while (curr != NULL) {
-    page_t *out_table_pages = NULL;
-    recursive_map_entry(ptr, curr->address, curr->flags, &out_table_pages);
-    if (out_table_pages != NULL) {
-      SLIST_ADD(&space->table_pages, out_table_pages, next);
-    }
-
-    curr->flags |= PG_MAPPED;
-    curr->mapping = mapping;
-
-    ptr += pg_flags_to_size(curr->flags);
-    curr = curr->next;
-  }
-
-  cpu_flush_tlb();
+  vmap_fill_from_pages(pages, space, mapping, vm_flags);
   return mapping;
 }
 
@@ -449,6 +459,21 @@ void *_vmap_pages(page_t *pages) {
   return (void *) mapping->address;
 }
 
+void *_vmap_named_pages(page_t *pages, const char *name) {
+  if (pages == NULL) {
+    return NULL;
+  }
+
+  uint32_t vm_flags = (pages->flags & PG_USER ? VMAP_USERSPACE : 0);
+  uintptr_t hint = select_vmap_hint(vm_flags);
+  vm_mapping_t *mapping = vmap_pages_internal(pages, hint, vm_flags);
+  if (mapping == NULL) {
+    return NULL;
+  }
+  mapping->name = name;
+  return (void *) mapping->address;
+}
+
 void *_vmap_pages_addr(uintptr_t virt_addr, page_t *pages) {
   kassert(virt_addr % PAGE_SIZE == 0);
   if (pages == NULL) {
@@ -481,6 +506,29 @@ void *_vmap_phys_addr(uintptr_t virt_addr, uintptr_t phys_addr, size_t size, uin
   return (void *) mapping->address;
 }
 
+void *_vmap_reserved_shortlived(vm_mapping_t *mapping, page_t *pages) {
+  // this function is only used for short-lived mappings into a reserved range
+  // this is used in mmap where the owning mapping of the pages is guaranteed to
+  // outlive the mmap mapping itself.
+  if (mapping->type != VM_TYPE_RSVD) {
+    return NULL;
+  }
+
+  address_space_t *space = select_address_space(mapping->address);
+  if (mapping->attr & VM_ATTR_USER) {
+    space = PERCPU_ADDRESS_SPACE;
+    if (!(pages->flags & PG_USER)) {
+      kprintf("vmap_reserved: mapping is marked as user but pages are not\n");
+      return NULL;
+    }
+  }
+
+  vmap_fill_from_pages(pages, space, mapping, VMAP_SHORTLIVED);
+  return (void *) mapping->address;
+}
+
+//
+
 void *_vmap_stack_pages(page_t *pages) {
   if (pages == NULL) {
     return NULL;
@@ -510,35 +558,6 @@ void *_vmap_mmio(uintptr_t phys_addr, size_t size, uint32_t flags) {
   return (void *) mapping->address;
 }
 
-void *_vmap_mmap_anon(page_t *pages, uintptr_t hint) {
-  if (hint < SIZE_1MB * 128) {
-    hint = USER_SPACE_START + SIZE_1GB;
-  }
-
-  vm_mapping_t *mapping = vmap_pages_internal(pages, hint, VMAP_USERSPACE);
-  if (mapping == NULL) {
-    return NULL;
-  }
-
-  mapping->attr |= VM_TYPE_ANON;
-  mapping->name = "mmap";
-  mapping->data.page = pages;
-  return (void *) mapping->address;
-}
-
-void *_vmap_mmap_anon_fixed(uintptr_t virt_addr, page_t *pages) {
-  kassert(virt_addr >= USER_SPACE_START && virt_addr < USER_SPACE_END);
-  vm_mapping_t *mapping = vmap_pages_internal(pages, virt_addr, VMAP_FIXED | VMAP_USERSPACE);
-  if (mapping == NULL) {
-    return NULL;
-  }
-
-  mapping->attr |= VM_TYPE_ANON;
-  mapping->name = "mmap";
-  mapping->data.page = pages;
-  return (void *) mapping->address;
-}
-
 vm_mapping_t *_vmap_reserve(uintptr_t virt_addr, size_t size) {
   uint32_t vm_flags = VMAP_FIXED;
   uint16_t attr = 0;
@@ -549,6 +568,27 @@ vm_mapping_t *_vmap_reserve(uintptr_t virt_addr, size_t size) {
 
   address_space_t *space = select_address_space(virt_addr);
   vm_mapping_t *mapping = allocate_vm_mapping(space, virt_addr, size, vm_flags);
+  if (mapping == NULL) {
+    return NULL;
+  }
+
+  mapping->type = VM_TYPE_RSVD;
+  mapping->attr = attr;
+  mapping->data.ptr = NULL;
+  mapping->name = "reserved";
+  return mapping;
+}
+
+vm_mapping_t *_vmap_reserve_range(size_t size, uintptr_t hint) {
+  uint32_t vm_flags = VMAP_FIXED;
+  uint16_t attr = 0;
+  if (hint < KERNEL_SPACE_START) {
+    vm_flags |= VMAP_USERSPACE;
+    attr = VM_ATTR_USER;
+  }
+
+  address_space_t *space = select_address_space(hint);
+  vm_mapping_t *mapping = allocate_vm_mapping(space, hint, size, vm_flags);
   if (mapping == NULL) {
     return NULL;
   }
@@ -687,17 +727,25 @@ page_t *_vm_virt_to_page(uintptr_t virt_addr) {
 
 // utility functions
 
-page_t *valloc_page(uint32_t flags) {
-  page_t *page = _alloc_pages(1, flags);
-  if (_vmap_pages(page) == NULL) {
-    panic("could not map pages");
-  }
-  return page;
-}
-
 page_t *valloc_pages(size_t count, uint32_t flags) {
   page_t *pages = _alloc_pages(count, flags);
+  if (pages == NULL) {
+    panic("could not allocate pages");
+  }
+
   if (_vmap_pages(pages) == NULL) {
+    panic("could not map pages");
+  }
+  return pages;
+}
+
+page_t *valloc_named_pagesz(size_t count, uint32_t flags, const char *name) {
+  page_t *pages = _alloc_pages(count, flags);
+  if (pages == NULL) {
+    panic("could not allocate pages");
+  }
+
+  if (_vmap_named_pages(pages, name) == NULL) {
     panic("could not map pages");
   }
   return pages;

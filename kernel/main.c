@@ -8,6 +8,7 @@
 #include <init.h>
 #include <mm.h>
 #include <fs.h>
+#include <device.h>
 #include <syscall.h>
 #include <process.h>
 #include <thread.h>
@@ -16,11 +17,9 @@
 #include <sched.h>
 
 #include <acpi/acpi.h>
-#include <bus/pcie.h>
 #include <cpu/cpu.h>
 #include <cpu/io.h>
 #include <debug/debug.h>
-#include <usb/usb.h>
 #include <gui/screen.h>
 
 #include <printf.h>
@@ -32,7 +31,13 @@
 bool is_smp_enabled = false;
 bool is_debug_enabled = true;
 boot_info_v2_t __boot_data *boot_info_v2;
-_Noreturn void launch();
+
+noreturn void root();
+
+#include <vfs/vcache.h>
+#include <vfs/ventry.h>
+#include <vfs/vnode.h>
+#include <vfs/vfs.h>
 
 //
 // Kernel entry
@@ -43,54 +48,41 @@ __used void kmain() {
   console_early_init();
   cpu_init();
 
-  // We now have very primitive debugging via the serial port.
-  // In order to initialize the real kernel memory allocators
-  // we need basic physical mem allocation and a kernel heap.
-  // This is also the point where we switch from the virtual
-  // mappings provided by the bootloader.
+  // We now have primitive debugging via the serial port. In order to initialize
+  // the real kernel memory allocators we need basic physical memory allocation
+  // and a kernel heap. We also need to read the acpi tables and reserve virtual
+  // address space for a number of memory regions.
   mm_early_init();
   irq_early_init();
   acpi_early_init();
   screen_early_init();
   debug_early_init();
 
-  // The next step is to set up our physical and virtual memory
-  // managers and then switch to a new managed kernel address
-  // space. We also initialize a few other misc bits.
+  // The next step is to set up our irq abstraction layer and the physical and
+  // virtual memory managers. Then we switch to a new kernel address space.
   irq_init();
   init_mem_zones();
   init_address_space();
   syscalls_init();
-  screen_init();
+  fs_early_init();
 
-  // Initialize debugging info sooner than later so that we
-  // get helpful stacktraces in the event of a panic or fault.
+  do_static_initializers();
+
+  // Initialize debugging info early before we enter the root process.
   debug_init();
-
-  // Next we want to initialize the filesystem so that drivers
-  // and other subsystems can register devices, create special
-  // files and expose APIs through the filesystem.
-  //
-  // But before we can call `fs_init` we will allocate the root
-  // process and set it as the "current" process. This is done
-  // so that our fs code can safely access `PERCPU_PROCESS->pwd`
-  // even though were not yet running the root process.
-  process_t *root = process_create_root(launch);
-  PERCPU_SET_PROCESS(root);
-  PERCPU_SET_THREAD(root->main);
-  fs_init();
-
-  // The kernel has now initialized the foundational set of APIs
-  // needed for most normal function. At this point we can call
-  // the initializer functions registered with the `MODULE_INIT`
-  // macro.
-  do_module_initializers();
 
   // All of the 'one-time' initialization is now complete. We will
   // now boot up the other CPUs (if enabled) and then finish kernel
-  // initialization by switching to the root (launch) process.
+  // initialization by switching to the root process.
   smp_init();
 
+  // Finally initialize the filesystem and the root process.
+  fs_init();
+  process_create_root(root);
+
+  // This is the last step of the early kernel initialization. We now need to
+  // start the scheduler and switch to the root process at which point we can
+  // begin to initialize the core subsystems and drivers.
   cpu_enable_interrupts();
   sched_init();
   unreachable;
@@ -116,20 +108,54 @@ __used void ap_main() {
 
 int command_line_main();
 
-_Noreturn void launch() {
-  kprintf("launch\n");
+id_t last_id = 0;
+
+static inline ventry_t *make_ventry(vfs_t *vfs, const char *name, enum vtype type) __move {
+  vnode_t *vn = vn_alloc_empty(type);
+  vn->id = ++last_id;
+  vfs_add_vnode(vfs, vn);
+  ventry_t *ve = ve_alloc_linked(cstr_make(name), vn);
+  ve_syncvn(ve);
+  vn_release(&vn);
+  return ve_moveref(&ve);
+}
+
+static inline void cache_entry(vcache_t *vcache, const char *path, __move ventry_t *ve) {
+  vcache_put(vcache, cstr_make(path), ve);
+  ve_release(&ve);
+}
+
+noreturn void root() {
+  kprintf("starting root process\n");
   alarms_init();
+  do_module_initializers();
+  // probe_all_buses();
 
-  usb_init();
-  pcie_discover();
+  //////////////////////////////////////////
 
-  // thread_sleep(250);
-
-  command_line_main();
-  // int ch;
-  // while ((ch = kgetc()) > 0) {
-  //   kputc(ch);
+  // int fd = fs_mkdir("/test", 0777);
+  // if (fd < 0) {
+  //   panic("mkdir failed: {:err}\n", fd);
   // }
+  //
+  // fd = fs_open("/test/test.txt", O_CREAT | O_RDWR, 0777);
+  // if (fd < 0) {
+  //   panic("open failed: {:err}\n", fd);
+  // }
+  //
+  // ssize_t nbytes = fs_write(fd, "hello world\n", 12);
+  // if (nbytes < 0) {
+  //   panic("write failed: {:err}\n", nbytes);
+  // }
+  //
+  // int res = fs_close(fd);
+  // if (res < 0) {
+  //   panic("close failed: {:err}\n", res);
+  // }
+
+  kprintf("it worked!\n");
+
+  //////////////////////////////////////////
 
   kprintf("haulting...\n");
   thread_block();

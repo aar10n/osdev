@@ -37,11 +37,6 @@ void screen_early_init() {
   register_init_address_space_callback(remap_framebuffer_mmio, NULL);
 }
 
-void screen_init() {
-  // clear screen
-  __memset8((void *) FRAMEBUFFER_VA, 0x00, boot_info_v2->fb_size);
-}
-
 void screen_print_char(char ch) {
   switch (ch) {
     case '\n':
@@ -88,3 +83,11 @@ void screen_print_str(const char *string) {
     screen_print_char(string[i]);
   }
 }
+
+//
+
+static void screen_init() {
+  // clear screen
+  __memset8((void *) FRAMEBUFFER_VA, 0x00, boot_info_v2->fb_size);
+}
+STATIC_INIT(screen_init);

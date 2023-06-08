@@ -292,7 +292,7 @@ int rw_lock_read(rw_lock_t *lock) {
 int rw_lock_write(rw_lock_t *lock) {
   mutex_lock(&lock->mutex);
   for (int64_t i = 0; i < lock->readers; i++) {
-    cond_signal(&lock->cond);
+    cond_wait(&lock->cond);
   }
   return 0;
 }
@@ -308,7 +308,6 @@ int rw_unlock_read(rw_lock_t *lock) {
 }
 
 int rw_unlock_write(rw_lock_t *lock) {
-  cond_signal(&lock->cond);
   mutex_unlock(&lock->mutex);
   return 0;
 }

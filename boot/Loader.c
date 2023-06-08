@@ -489,14 +489,18 @@ EFI_STATUS EFIAPI LoadRawFile(
   UINTN NumPages = EFI_SIZE_TO_PAGES(FileInfo->FileSize) + 1;
   FreePool(FileInfo);
   Status = LocateFreeMemoryRegion(MemoryMap, NumPages, LoadMinimumAddress, &PhysAddr);
-  if (EFI_ERROR(Status))
+  if (EFI_ERROR(Status)) {
+    PRINT_ERROR("Failed to locate free memory region for file");
     goto LOAD_ERROR;
+  }
 
   UINTN BufferSize;
   VOID *Buffer;
   Status = ReadFile(File, &BufferSize, &Buffer);
-  if (EFI_ERROR(Status))
+  if (EFI_ERROR(Status)) {
+    PRINT_ERROR("Failed to read file");
     goto LOAD_ERROR;
+  }
 
   PRINT_INFO("  addr: 0x%p", PhysAddr);
   PRINT_INFO("  size: %llu", BufferSize);

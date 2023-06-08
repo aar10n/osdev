@@ -4,80 +4,120 @@
 
 #include <drivers/serial.h>
 #include <cpu/io.h>
-#include <string.h>
+
+#include <device.h>
+#include <fs.h>
+#include <mm.h>
+
 #include <printf.h>
 
-typedef enum serial_reg {
-  SERIAL_DATA       = 0x00, // data register
-  SERIAL_INTR_EN    = 0x01, // interrupt enable register
-  SERIAL_FIFO_CTRL  = 0x02, // FIFO control register
-  SERIAL_LINE_CTRL  = 0x03, // line control register
-  SERIAL_MODEM_CTRL = 0x04, // modem control register
-  SERIAL_LINE_STS   = 0x05, // line status register
-  SERIAL_MODEM_STS  = 0x06, // model status register
-  SERIAL_SCRATCH    = 0x07, // scratch register
-} serial_reg_t;
 
+#define ASSERT(x) kassert(x)
+#define DPRINTF(fmt, ...) kprintf("serial: %s: " fmt, __func__, ##__VA_ARGS__)
 
-#define DATA_READY_INT  0b00000001
-#define THR_EMPTY_INT   0b00000010
-#define STATUS_INT      0b00000100
-#define MODEM_STS_INT   0b00001000
+#define SERIAL_DATA 0
+#define SERIAL_INTR_EN 1
+#define SERIAL_FIFO_CTRL 2
+#define SERIAL_LINE_CTRL 3
+#define SERIAL_MODEM_CTRL 4
+#define SERIAL_LINE_STATUS 5
+#define SERIAL_MODEM_STATUS 6
 
-#define FIFO_ENABLE   0b00000001
-//
-#define CLEAR_RX      0b00000010
-#define CLEAR_TX      0b00000100
-//
-#define TRIGGER_1     0b00000000
-#define TRIGGER_4     0b01000000
-#define TRIGGER_8     0b10000000
-#define TRIGGER_14    0b11000000
+static int init_test_port(int port) {
+  outb(port + SERIAL_INTR_EN, 0x00);    // disable interrupts
+  outb(port + SERIAL_LINE_CTRL, 0x80);  // set baud rate divisor
+  outw(port + SERIAL_DATA, 0x01);       // 115200 baud
+  outb(port + SERIAL_LINE_CTRL, 0x03);  // 8 bits, one stop bit, no parity
+  outb(port + SERIAL_FIFO_CTRL, 0xC7);  // enable FIFO, clear, 14-byte threshold
+  outb(port + SERIAL_MODEM_CTRL, 0x0B); // enable IRQs, RTS/DSR set
+  outb(port + SERIAL_MODEM_CTRL, 0x1E); // set in loopback mode, test the serial chip
+  outb(port + SERIAL_DATA, 0xAE);       // send the test character
 
-#define LENGTH_5_BITS 0b00000000
-#define LENGTH_6_BITS 0b00000001
-#define LENGTH_7_BITS 0b00000010
-#define LENGTH_8_BITS 0b00000011
-//
-#define STOP_BITS     0b00000100
-//
-#define NO_PARITY     0b00000000
-#define ODD_PARITY    0b00001000
-#define EVEN_PARITY   0b00011000
-#define MARK_PARITY   0b00101000
-#define SPACE_PARITY  0b00111000
-//
-#define FORCE_BREAK   0b01000000
-//
-#define DLAB          0b10000000
+  // check that the port sends back the test character
+  if (inb(port + SERIAL_DATA) != 0xAE) {
+    return -1;
+  }
 
-#define DTR           0b00000001
-#define RTS           0b00000010
-#define OUT1          0b00000100
-#define OUT2          0b00001000
-#define LOOPBACK      0b00010000
-
-void serial_init(int port) {
-  outb(port + SERIAL_INTR_EN, 0); // disable interrupts
-  outb(port + SERIAL_FIFO_CTRL, FIFO_ENABLE | TRIGGER_14);
-  outb(port + SERIAL_LINE_CTRL, DLAB);
-  outw(port + SERIAL_DATA, 1); // 115200 baud
-  outb(port + SERIAL_LINE_CTRL, LENGTH_8_BITS | NO_PARITY);
-  outb(port + SERIAL_MODEM_CTRL, OUT1);
+  outb(port + SERIAL_MODEM_CTRL, 0x0F); // reset the serial chip
+  return 0;
 }
 
-void serial_write_char(int port, char a) {
-  while(!(inb(port + 5) & 0x20)); // wait for empty
+static char serial_read_char(int port) {
+  while (!(inb(port + SERIAL_LINE_STATUS) & 0x01)); // wait for rx buffer to be full
+  return (char) inb(port);
+}
+
+static void serial_write_char(int port, char a) {
+  while (!(inb(port + SERIAL_LINE_STATUS) & 0x20)); // wait for tx buffer to be empty
   outb(port, a);
 }
 
-void serial_write(int port, const char *s) {
-  size_t l = strlen(s);
-  serial_nwrite(port, s, l);
+// Device API
+
+struct serial_device {
+  int port;
+};
+
+static int serial_d_open(device_t *device) {
+  struct serial_device *dev = device->data;
+  return 0;
 }
 
-void serial_nwrite(int port, const char *s, size_t l) {
-  for (int i = 0; i < l; i++) {
-    serial_write_char(port, s[i]);
+static int serial_d_close(device_t *device) {
+  return 0;
+}
+
+static ssize_t serial_d_read(device_t *device, size_t off, kio_t *kio) {
+  struct serial_device *dev = device->data;
+  if (off != 0) {
+    return -EINVAL;
+  }
+
+  while (kio_moveinb(kio, serial_read_char(dev->port)) > 0) {
+    // do nothing
+  }
+  return (ssize_t) kio_transfered(kio);
+}
+
+static ssize_t serial_d_write(device_t *device, size_t off, kio_t *kio) {
+  struct serial_device *dev = device->data;
+  if (off != 0) {
+    return -EINVAL;
+  }
+
+  uint8_t byte;
+  while (kio_moveoutb(kio, &byte) > 0) {
+    serial_write_char(dev->port, (char) byte);
+  }
+  return (ssize_t) kio_transfered(kio);
+}
+
+static struct device_ops serial_ops = {
+  .d_open = serial_d_open,
+  .d_close = serial_d_close,
+  .d_read = serial_d_read,
+  .d_write = serial_d_write,
+};
+
+static void serial_module_init() {
+  static const int ports[] = { COM1, COM2, COM3, COM4 };
+  for (int i = 0; i < ARRAY_SIZE(ports); i++) {
+    if (init_test_port(ports[i]) < 0) {
+      continue;
+    }
+
+    kprintf("serial: found serial device on port COM%d\n", i+1);
+
+    struct serial_device *serial_dev = kmalloc(sizeof(struct serial_device));
+    serial_dev->port = ports[i];
+
+    device_t *dev = alloc_device(serial_dev, &serial_ops);
+    if (register_dev("serial", dev) < 0) {
+      DPRINTF("failed to register device");
+      dev->data = NULL;
+      free_device(dev);
+      kfree(serial_dev);
+    }
   }
 }
+MODULE_INIT(serial_module_init);

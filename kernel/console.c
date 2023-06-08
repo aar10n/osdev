@@ -11,6 +11,7 @@
 #include <panic.h>
 #include <string.h>
 #include <mm.h>
+#include <cpu/io.h>
 
 #include <drivers/serial.h>
 #include <gui/screen.h>
@@ -52,6 +53,19 @@ typedef struct console {
 console_t *cmdline_console;
 console_t *debug_console;
 
+// super simple com port driver
+// moved here so the real serial driver can stand on its own
+static void com_write_char(int port, char a) {
+  while (!(inb(port + 5) & 0x20)); // wait for tx buffer to be empty
+  outb(port, a);
+}
+
+static void com_write_string(int port, const char *s) {
+  while (*s) {
+    com_write_char(port, *s++);
+  }
+}
+
 // MARK: Kernel Console I/O
 
 void kputsf(const char *format, ...) {
@@ -89,7 +103,7 @@ struct early_console {
 int early_puts(void *ptr, const char *s) {
   struct early_console *con = ptr;
   spin_lock(&con->lock);
-  serial_write(con->port, s);
+  com_write_string(con->port, s);
   spin_unlock(&con->lock);
   return 0;
 }
@@ -97,7 +111,7 @@ int early_puts(void *ptr, const char *s) {
 int early_putc(void *ptr, char c) {
   struct early_console *con = ptr;
   spin_lock(&con->lock);
-  serial_write_char(con->port, c);
+  com_write_char(con->port, c);
   spin_unlock(&con->lock);
   return 0;
 }
@@ -118,8 +132,7 @@ static struct early_console early_console_impl = {
 
 void console_early_init() {
   spin_init(&early_console_impl.lock);
-  serial_init(early_console_impl.port);
-
+  // COM1 port is already initialized by the bootloader
   cmdline_console = (console_t *) &early_console_impl;
   debug_console = (console_t *) &early_console_impl;
 }
@@ -140,7 +153,7 @@ struct cmdline_console {
 int cmdline_puts(void *ptr, const char *s) {
   struct cmdline_console *con = ptr;
   mutex_lock(&con->lock);
-  serial_write(con->port, s);
+  com_write_string(con->port, s);
   screen_print_str(s);
   mutex_unlock(&con->lock);
   return 0;
@@ -149,7 +162,7 @@ int cmdline_puts(void *ptr, const char *s) {
 int cmdline_putc(void *ptr, char c) {
   struct cmdline_console *con = ptr;
   mutex_lock(&con->lock);
-  serial_write_char(con->port, c);
+  com_write_char(con->port, c);
   screen_print_char(c);
   mutex_unlock(&con->lock);
   return 0;
@@ -194,7 +207,6 @@ static struct cmdline_console cmdline_console_impl = {
 
 void console_cmdline_init() {
   mutex_init(&cmdline_console_impl.lock, 0);
-  serial_init(cmdline_console_impl.port);
   cmdline_console = (console_t *) &cmdline_console_impl;
 }
 MODULE_INIT(console_cmdline_init);
@@ -316,7 +328,6 @@ static void cmdline_free_strings(char **strings) {
 
 // MARK: Console Commands
 
-#include <fs.h>
 #include <thread.h>
 
 static int cmdline_ls_command(const char **args, size_t args_len) {
@@ -324,30 +335,31 @@ static int cmdline_ls_command(const char **args, size_t args_len) {
     kputsf("error: ls <path>\n");
     return -1;
   }
-  kputsf("listing contents of %s\n", args[0]);
-
-  const char *path = args[0];
-  int fd = fs_open(path, O_RDONLY | O_DIRECTORY, 0);
-  if (fd < 0) {
-    kputsf("error: %s\n", strerror(ERRNO));
-    return -1;
-  }
-
-  dentry_t *dentry;
-  while ((dentry = fs_readdir(fd)) != NULL) {
-    if (strcmp(dentry->name, ".") == 0 || strcmp(dentry->name, "..") == 0) {
-      continue;
-    }
-
-    if (IS_IFDIR(dentry->mode)) {
-      kputsf("  %s/\n", dentry->name);
-    } else {
-      kputsf("  %s\n", dentry->name);
-    }
-  }
-
-  fs_close(fd);
-  return 0;
+  return -1;
+  // kputsf("listing contents of %s\n", args[0]);
+  //
+  // const char *path = args[0];
+  // int fd = fs_open(path, O_RDONLY | O_DIRECTORY, 0);
+  // if (fd < 0) {
+  //   kputsf("error: %s\n", strerror(ERRNO));
+  //   return -1;
+  // }
+  //
+  // dentry_t *dentry;
+  // while ((dentry = fs_readdir(fd)) != NULL) {
+  //   if (strcmp(dentry->name, ".") == 0 || strcmp(dentry->name, "..") == 0) {
+  //     continue;
+  //   }
+  //
+  //   if (IS_IFDIR(dentry->mode)) {
+  //     kputsf("  %s/\n", dentry->name);
+  //   } else {
+  //     kputsf("  %s\n", dentry->name);
+  //   }
+  // }
+  //
+  // fs_close(fd);
+  // return 0;
 }
 
 static int cmdline_mount_command(const char **args, size_t args_len) {
@@ -359,11 +371,11 @@ static int cmdline_mount_command(const char **args, size_t args_len) {
   const char *device = args[0];
   const char *path = args[1];
   const char *format = args[2];
-  int result = fs_mount(path, device, format);
-  if (result < 0) {
-    kputsf("error: %s\n", strerror(ERRNO));
-    return -1;
-  }
+  // int result = fs_mount(path, device, format);
+  // if (result < 0) {
+  //   kputsf("error: %s\n", strerror(ERRNO));
+  //   return -1;
+  // }
 
   kputsf("ok\n");
   return 0;

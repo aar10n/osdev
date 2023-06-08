@@ -7,18 +7,15 @@
 
 #include <base.h>
 #include <mutex.h>
-#include <spinlock.h>
 
 // -------- Semaphores --------
 
 typedef struct semaphore {
-  spinlock_t lock;
   cond_t wait;
-  int64_t value;
+  int value;
 } semaphore_t;
 
-
-void semaphore_init(semaphore_t *sem, int64_t max_count);
+void semaphore_init(semaphore_t *sem, int max_count);
 int semaphore_aquire(semaphore_t *sem);
 int semaphore_release(semaphore_t *sem);
 

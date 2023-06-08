@@ -12,9 +12,4 @@
 #define COM3 0x3E8
 #define COM4 0x2E8
 
-void serial_init(int port);
-void serial_write_char(int port, char a);
-void serial_write(int port, const char *s);
-void serial_nwrite(int port, const char *s, size_t l);
-
 #endif

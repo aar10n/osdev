@@ -7,7 +7,6 @@
 #include <bus/pcie.h>
 
 #include <mm.h>
-#include <fs.h>
 #include <panic.h>
 #include <printf.h>
 #include <string.h>
@@ -173,19 +172,19 @@ void ahci_discover(ahci_controller_t *controller) {
       ahci_device_t *port = port_init(controller, i);
       ports[i] = port;
 
-      blkdev_t *blkdev = blkdev_init(port, ahci_read, ahci_write);
-      dev_t d = fs_register_blkdev(0, blkdev, NULL);
-      kassert(d > 0);
-
-      char suffix = hd_suffix;
-      hd_suffix++;
-
-      char path[12];
-      ksnprintf(path, 12, "/dev/hd%c", suffix);
-
-      if (fs_mknod(path, S_IFBLK, d) < 0) {
-        panic("failed to add device node");
-      }
+      // blkdev_t *blkdev = blkdev_init(port, ahci_read, ahci_write);
+      // dev_t d = fs_register_blkdev(0, blkdev, NULL);
+      // kassert(d > 0);
+      //
+      // char suffix = hd_suffix;
+      // hd_suffix++;
+      //
+      // char path[12];
+      // ksnprintf(path, 12, "/dev/hd%c", suffix);
+      //
+      // if (fs_mknod(path, S_IFBLK, d) < 0) {
+      //   panic("failed to add device node");
+      // }
     } else {
       ports[i] = NULL;
     }

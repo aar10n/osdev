@@ -46,7 +46,10 @@ thread_t *fprr_get_next_thread(void *self) {
   }
 
   thread_t *thread = LIST_FIRST(&fprr->queue);
-  kassert(thread != NULL);
+  if (thread == NULL) {
+    kassert(thread != NULL);
+  }
+
   LIST_REMOVE(&fprr->queue, thread, list);
   fprr->count--;
   return thread;

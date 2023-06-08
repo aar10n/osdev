@@ -3,12 +3,12 @@
 //
 
 #include <spinlock.h>
-#include <atomic.h>
 #include <panic.h>
 #include <thread.h>
-#include <clock.h>
 
 #include <cpu/cpu.h>
+
+#include <atomic.h>
 
 //
 
@@ -33,7 +33,7 @@ int spin_lock(spinlock_t *lock) {
       return 0;
     }
 
-    // wait for spinlock
+    // wait for spinlock (wow this is bad!!! but it works)
     register uint64_t timeout asm ("r15") = 10000000 + (PERCPU_ID * 1000000);
 
     cpu_enable_interrupts(); // enable interrupts
@@ -105,4 +105,12 @@ int spin_unlock(spinlock_t *lock) {
 
   // lock was not held by anyone
   panic("spin_unlock() on lock that is not held [%p]", lock);
+}
+
+int spin_getowner(spinlock_t *lock) {
+  if (lock == NULL) {
+    return -1;
+  }
+
+  return (int)lock->locked_by;
 }

@@ -323,10 +323,15 @@ for d in directives:
     paths[d.path] = (d, offset)
 
 # order intermediate directories by depth
+path_list = list(sorted(paths.keys()))
 dir_list = list(sorted(dir_set, key=lambda path: path.count('/')))
+for d in dir_list:
+    name = os.path.basename(d)
+    metadata_size += ENTRY_SIZE + len(d) + 1
+
 
 # second pass: write the image
-entry_count = len(paths)
+entry_count = len(path_list) + len(dir_list)
 data_size = curr_data_offset
 data_start_offset = HEADER_SIZE + metadata_size
 total_size = data_start_offset + data_size
@@ -341,7 +346,7 @@ with open(output_file, 'wb') as f:
         f.write(format_entry(d.kind, 0, 0, d.path))
     # write rest of the entries
     for d in directives:
-        offset = paths[d.path][1]
+        offset = paths[d.path][1] + data_start_offset
         f.write(format_entry(d.kind, offset, d.size, d.path))
 
     # write data
