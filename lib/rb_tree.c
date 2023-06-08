@@ -349,6 +349,12 @@ rb_tree_t *create_rb_tree() {
   return tree;
 }
 
+void rb_tree_free(rb_tree_t *tree) {
+  kassert(tree->root == tree->nil);
+  kfree(tree->nil);
+  kfree(tree);
+}
+
 rb_tree_t *copy_rb_tree(rb_tree_t *tree) {
   rb_tree_t *new_tree = create_rb_tree();
   new_tree->events = tree->events;
@@ -380,6 +386,14 @@ rb_tree_t *copy_rb_tree_pred(rb_tree_t *tree, rb_pred_t pred, void *arg) {
 }
 
 //
+
+void *rb_tree_get(rb_tree_t *tree, uint64_t key) {
+  rb_node_t *node = rb_tree_find(tree, key);
+  if (node) {
+    return node->data;
+  }
+  return NULL;
+}
 
 rb_node_t *rb_tree_find(rb_tree_t *tree, uint64_t key) {
   rb_node_t *node = tree->root;

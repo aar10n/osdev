@@ -1,6 +1,8 @@
 #ifndef INCLUDE_ABI_STAT_H
 #define INCLUDE_ABI_STAT_H
 
+#include "types.h"
+
 #ifdef __KERNEL__
 struct timespec {
   time_t tv_sec;
@@ -19,9 +21,6 @@ struct timespec {
 #include <abi-bits/uid_t.h>
 #include <bits/off_t.h>
 #endif
-
-#define PATH_MAX 4096
-#define NAME_MAX 256
 
 #define S_IFMT   0xFFF0000
 

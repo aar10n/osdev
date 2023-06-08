@@ -4,6 +4,7 @@
 
 #ifndef INCLUDE_KERNEL_SBUF_H
 #define INCLUDE_KERNEL_SBUF_H
+#define __SBUF__
 
 #include <base.h>
 #include <string.h>
@@ -23,6 +24,7 @@ typedef struct sbuf {
 
 // MARK: - Getters
 
+static inline const void *sbuf_cptr(sbuf_t *sbuf) { return sbuf ? sbuf->data : NULL; }
 static inline size_t sbuf_cap(sbuf_t *sbuf) { return sbuf ? sbuf->size : 0; }
 static inline size_t sbuf_len(sbuf_t *sbuf) { return sbuf ? sbuf->ptr - sbuf->data : 0; }
 static inline size_t sbuf_rem(sbuf_t *sbuf) { return sbuf ? sbuf->size - sbuf_len(sbuf) : 0; }
@@ -118,10 +120,6 @@ static inline size_t sbuf_write_char(sbuf_t *sbuf, char ch) {
   return sbuf_write(sbuf, &ch, 1);
 }
 
-static inline size_t sbuf_write_str(sbuf_t *sbuf, const char *str) {
-  return sbuf_write(sbuf, str, strlen(str));
-}
-
 #ifdef __FS_TYPES__
 
 #include <path.h>
@@ -133,3 +131,23 @@ static inline path_t sbuf_to_path(sbuf_t *sbuf) {
 #endif // __FS_TYPES__
 
 #endif
+
+
+#ifdef __STR__
+#ifndef __SBUF_STR__
+#define __SBUF_STR__
+
+static inline size_t sbuf_write_cstr(sbuf_t *sbuf, cstr_t str) {
+  return sbuf_write(sbuf, cstr_ptr(str), cstr_len(str));
+}
+
+static inline size_t sbuf_write_cstr_reverse(sbuf_t *sbuf, cstr_t str) {
+  return sbuf_write_reverse(sbuf, cstr_ptr(str), cstr_len(str));
+}
+
+static inline size_t sbuf_write_str(sbuf_t *sbuf, str_t str) {
+  return sbuf_write(sbuf, str_cptr(str), str_len(str));
+}
+
+#endif
+#endif // __SBUF_STR__

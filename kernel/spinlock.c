@@ -106,3 +106,11 @@ int spin_unlock(spinlock_t *lock) {
   // lock was not held by anyone
   panic("spin_unlock() on lock that is not held [%p]", lock);
 }
+
+int spin_getowner(spinlock_t *lock) {
+  if (lock == NULL) {
+    return -1;
+  }
+
+  return (int)lock->locked_by;
+}

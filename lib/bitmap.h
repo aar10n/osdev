@@ -18,6 +18,7 @@ typedef ptrdiff_t index_t;
 
 bitmap_t *create_bitmap(size_t n);
 void bitmap_init(bitmap_t *bmp, size_t n);
+void bitmap_free(bitmap_t *bmp);
 
 bool bitmap_get(bitmap_t *bmp, index_t index);
 bool bitmap_set(bitmap_t *bmp, index_t index);

@@ -19,6 +19,25 @@ size_t kio_remaining(const kio_t *kio) {
   return kio->buf.len - kio->buf.off;
 }
 
+//
+
+size_t kio_copy(kio_t *dst, kio_t *src) {
+  ASSERT(dst->dir == KIO_OUT);
+  ASSERT(src->dir == KIO_IN);
+  size_t remain = kio_remaining(dst);
+  size_t to_copy = kio_remaining(src);
+  if (to_copy > remain) {
+    to_copy = remain;
+  }
+
+  if (to_copy > 0) {
+    memcpy(dst->buf.base + dst->buf.off, src->buf.base + src->buf.off, to_copy);
+    dst->buf.off += to_copy;
+    src->buf.off += to_copy;
+  }
+  return to_copy;
+}
+
 size_t kio_movein(kio_t *kio, const void *buf, size_t len, size_t off) {
   ASSERT(kio->dir == KIO_IN);
   size_t remain = kio_remaining(kio);

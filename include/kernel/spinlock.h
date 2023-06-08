@@ -18,6 +18,8 @@ int spin_lock(spinlock_t *lock);
 int spin_trylock(spinlock_t *lock);
 int spin_unlock(spinlock_t *lock);
 
+int spin_getowner(spinlock_t *lock);
+
 #define SPIN_LOCK(lock) __type_checked(spinlock_t *, lock, spin_lock(lock))
 #define SPIN_UNLOCK(lock) __type_checked(spinlock_t *, lock, spin_unlock(lock))
 

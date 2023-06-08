@@ -2,8 +2,9 @@
 // Created by Aaron Gill-Braun on 2020-11-01.
 //
 
-#ifndef FS_PATH_H
-#define FS_PATH_H
+#ifndef KERNEL_VFS_PATH_H
+#define KERNEL_VFS_PATH_H
+#define __PATH__
 
 #include <base.h>
 
@@ -52,12 +53,12 @@ static inline bool path_is_absolute(path_t path) { return path_len(path) && path
 static inline bool path_is_relative(path_t path) { return !path_is_absolute(path); }
 
 /// Creates a new path from a string.
-path_t str2path(const char *str);
+path_t path_make(const char *str);
 
 /// Creates a new path from a string with a specified length.
 /// Note: the length must be less than or equal to MAX_PATH_LEN
 ///       or else the string will be truncated.
-path_t strn2path(const char *str, size_t len);
+path_t path_new(const char *str, size_t len);
 
 /// Allocates a new string and copies the path into it. The caller is responsible
 /// for freeing the string.
@@ -106,5 +107,8 @@ path_t path_dirname(path_t path);
 
 /// Returns the first or next component of a path. Returns NULL_PATH if there are no more.
 path_t path_next_part(path_t path);
+
+/// Returns whether the path iterator has reached the end.
+bool path_iter_end(path_t path);
 
 #endif

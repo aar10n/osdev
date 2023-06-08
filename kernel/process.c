@@ -4,7 +4,6 @@
 
 #include <process.h>
 
-
 #include <mm.h>
 #include <sched.h>
 #include <mutex.h>
@@ -22,6 +21,7 @@
 
 #include <cpu/cpu.h>
 #include <debug/debug.h>
+#include <vfs/file.h>
 
 // #define PROCESS_DEBUG
 #ifdef PROCESS_DEBUG
@@ -82,8 +82,8 @@ process_t *process_alloc(pid_t pid, pid_t ppid, void *(start_routine)(void *), v
   process->num_threads = 1;
   process->uid = -1;
   process->gid = -1;
-  process->pwd = fs_get_root();
-  process->files = NULL;
+  process->pwd = fs_root_getref();
+  process->files = ftable_alloc();
   spin_init(&process->lock);
 
   mutex_init(&process->sig_mutex, MUTEX_REENTRANT | MUTEX_SHARED);
@@ -169,7 +169,8 @@ pid_t process_fork() {
   process->ppid = parent->pid;
   process->address_space = fork_address_space();
   process->pwd = parent->pwd;
-  process->files = NULL;
+  process->files = ftable_alloc(); // TODO: copy file table
+  kprintf("process: warning - file table not copied\n");
 
   // clone main thread
   thread_t *main = thread_copy(parent_thread);

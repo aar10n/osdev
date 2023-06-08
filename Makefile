@@ -32,7 +32,7 @@ endif
 # --------- #
 
 modules := BOOT KERNEL
-targets = apps boot drivers fs kernel lib
+targets = apps boot fs kernel lib # drivers
 include $(foreach target,$(targets),$(target)/Makefile)
 $(call init-modules,$(modules))
 

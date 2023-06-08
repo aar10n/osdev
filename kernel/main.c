@@ -17,19 +17,13 @@
 #include <sched.h>
 
 #include <acpi/acpi.h>
-#include <bus/pcie.h>
 #include <cpu/cpu.h>
 #include <cpu/io.h>
 #include <debug/debug.h>
-#include <usb/usb.h>
 #include <gui/screen.h>
 
 #include <printf.h>
 #include <panic.h>
-
-#include <path.h>
-#include <dcache.h>
-#include <dentry.h>
 
 // This relates to custom qemu patch that ive written to make debugging easier.
 #define QEMU_DEBUG_INIT() ({ outb(0x801, 1); })
@@ -37,9 +31,13 @@
 bool is_smp_enabled = false;
 bool is_debug_enabled = true;
 boot_info_v2_t __boot_data *boot_info_v2;
-struct dentry_ops dentry_ops;
 
 noreturn void root();
+
+#include <vfs/vcache.h>
+#include <vfs/ventry.h>
+#include <vfs/vnode.h>
+#include <vfs/vfs.h>
 
 //
 // Kernel entry
@@ -66,21 +64,25 @@ __used void kmain() {
   init_mem_zones();
   init_address_space();
   syscalls_init();
+  fs_early_init();
 
   do_static_initializers();
 
   // Initialize debugging info early before we enter the root process.
   debug_init();
 
-  // // All of the 'one-time' initialization is now complete. We will
-  // // now boot up the other CPUs (if enabled) and then finish kernel
-  // // initialization by switching to the root process.
-  // smp_init();
+  // All of the 'one-time' initialization is now complete. We will
+  // now boot up the other CPUs (if enabled) and then finish kernel
+  // initialization by switching to the root process.
+  smp_init();
+
+  // Finally initialize the filesystem and the root process.
+  fs_init();
+  process_create_root(root);
 
   // This is the last step of the early kernel initialization. We now need to
   // start the scheduler and switch to the root process at which point we can
   // begin to initialize the core subsystems and drivers.
-  process_create_root(root);
   cpu_enable_interrupts();
   sched_init();
   unreachable;
@@ -104,9 +106,24 @@ __used void ap_main() {
 // Launch process
 //
 
-#include <super.h>
-
 int command_line_main();
+
+id_t last_id = 0;
+
+static inline ventry_t *make_ventry(vfs_t *vfs, const char *name, enum vtype type) __move {
+  vnode_t *vn = vn_alloc_empty(type);
+  vn->id = ++last_id;
+  vfs_add_vnode(vfs, vn);
+  ventry_t *ve = ve_alloc_linked(cstr_make(name), vn);
+  ve_syncvn(ve);
+  vn_release(&vn);
+  return ve_moveref(&ve);
+}
+
+static inline void cache_entry(vcache_t *vcache, const char *path, __move ventry_t *ve) {
+  vcache_put(vcache, cstr_make(path), ve);
+  ve_release(&ve);
+}
 
 noreturn void root() {
   kprintf("starting root process\n");
@@ -116,18 +133,25 @@ noreturn void root() {
 
   //////////////////////////////////////////
 
-  const fs_type_t *initrd_fs = fs_get_type("initrd");
-  kassert(initrd_fs != NULL);
-  device_t *initrd_dev = device_get(make_rdev(1, 0, 0));
-  kassert(initrd_dev != NULL);
-
-  super_block_t *sb = sb_alloc(initrd_fs);
-  dentry_t *root = d_alloc("/", 1, S_IFDIR | 0755, &dentry_ops);
-
-  int res;
-  if ((res = sb_mount(sb, root, initrd_dev)) < 0) {
-    kprintf("failed to mount initrd: %s\n", strerror(res));
-  }
+  // int fd = fs_mkdir("/test", 0777);
+  // if (fd < 0) {
+  //   panic("mkdir failed: {:err}\n", fd);
+  // }
+  //
+  // fd = fs_open("/test/test.txt", O_CREAT | O_RDWR, 0777);
+  // if (fd < 0) {
+  //   panic("open failed: {:err}\n", fd);
+  // }
+  //
+  // ssize_t nbytes = fs_write(fd, "hello world\n", 12);
+  // if (nbytes < 0) {
+  //   panic("write failed: {:err}\n", nbytes);
+  // }
+  //
+  // int res = fs_close(fd);
+  // if (res < 0) {
+  //   panic("close failed: {:err}\n", res);
+  // }
 
   kprintf("it worked!\n");
 

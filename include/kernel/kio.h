@@ -4,6 +4,7 @@
 
 #ifndef KERNEL_KIO_H
 #define KERNEL_KIO_H
+#define __KIO__
 
 #include <base.h>
 #include <abi/iov.h>
@@ -70,6 +71,9 @@ static inline kio_t kio_new_readonly(const void *base, size_t len) {
 size_t kio_transfered(const kio_t *kio);
 /// Return the number of bytes remaining in the transfer.
 size_t kio_remaining(const kio_t *kio);
+
+/// Copy data to a IN (write) kio from a OUT (read) kio.
+size_t kio_copy(kio_t *dst, kio_t *src);
 /// Move data from the buffer at the given offset into the kio. Returns the number of bytes moved.
 size_t kio_movein(kio_t *kio, const void *buf, size_t len, size_t off);
 /// Move data from the kio into the buffer at the given offset. Returns the number of bytes moved.
@@ -79,4 +83,20 @@ size_t kio_moveinb(kio_t *kio, uint8_t byte);
 /// Move a byte out of the kio.
 size_t kio_moveoutb(kio_t *kio, uint8_t *byte);
 
+#endif
+
+#ifdef __PRINTF__
+#ifndef KIO_PRINTF
+#define KIO_PRINTF
+
+static size_t kio_sprintf(kio_t *kio, const char *fmt, ...) {
+  char buf[1024];
+  va_list args;
+  va_start(args, fmt);
+  size_t len = kvsnprintf(buf, 1024, fmt, args);
+  va_end(args);
+  return kio_movein(kio, buf, len, 0);
+}
+
+#endif
 #endif

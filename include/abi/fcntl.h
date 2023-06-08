@@ -1,11 +1,7 @@
 #ifndef INCLUDE_ABI_FCNTL_H
 #define INCLUDE_ABI_FCNTL_H
 
-#ifdef __KERNEL__
-#include <abi/abi.h>
-#else
-#include <abi-bits/abi.h>
-#endif
+#include "abi.h"
 
 // constants for fcntl()'s command argument
 #define F_DUPFD 1
@@ -40,8 +36,9 @@
 #define AT_REMOVEDIR 8
 #define AT_EACCESS 512
 
-#define AT_FDCWD -100
+#define AT_FDCWD (-100)
 
+#define O_ACCMODE    __MLIBC_O_ACCMODE
 // open flags
 #define O_EXEC       __MLIBC_O_EXEC
 #define O_RDONLY     __MLIBC_O_RDONLY
@@ -52,7 +49,7 @@
 #define O_APPEND     __MLIBC_O_APPEND
 #define O_CLOEXEC    __MLIBC_O_CLOEXEC
 #define O_CREAT      __MLIBC_O_CREAT
-#define O_DIRECTORY  __MLIBC_O_DIRECTORY
+// #define O_DIRECTORY  __MLIBC_O_DIRECTORY
 #define O_DSYNC      __MLIBC_O_DSYNC
 #define O_EXCL       __MLIBC_O_EXCL
 #define O_NOCTTY     __MLIBC_O_NOCTTY
@@ -61,7 +58,7 @@
 #define O_RSYNC      __MLIBC_O_RSYNC
 #define O_SYNC       __MLIBC_O_SYNC
 #define O_TRUNC      __MLIBC_O_TRUNC
-#define O_TTY_INIT   -1
+#define O_TTY_INIT   (-1)
 #define O_PATH       __MLIBC_O_PATH
 
 #endif

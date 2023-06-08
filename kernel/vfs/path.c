@@ -2,7 +2,7 @@
 // Created by Aaron Gill-Braun on 2020-11-01.
 //
 
-#include <path.h>
+#include <vfs/path.h>
 #include <mm.h>
 #include <panic.h>
 #include <string.h>
@@ -13,17 +13,17 @@
 
 // MARK: Path API
 
-path_t str2path(const char *str) {
+path_t path_make(const char *str) {
   if (str == NULL) {
     return NULL_PATH;
   }
 
   size_t len = strlen(str);
   ASSERT(len <= UINT16_MAX);
-  return strn2path(str, len);
+  return path_new(str, len);
 }
 
-path_t strn2path(const char *str, size_t len) {
+path_t path_new(const char *str, size_t len) {
   if (str == NULL || len == 0) {
     return NULL_PATH;
   } else if (len > MAX_PATH_LEN) {
@@ -248,4 +248,8 @@ path_t path_next_part(path_t path) {
   path.view.off = off;
   path.view.len = len;
   return path;
+}
+
+bool path_iter_end(path_t path) {
+  return path_is_null(path_next_part(path));
 }

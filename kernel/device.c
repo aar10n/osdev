@@ -1,3 +1,4 @@
+
 //
 // Created by Aaron Gill-Braun on 2020-11-03.
 //
@@ -13,7 +14,7 @@
 #define ASSERT(x) kassert(x)
 #define DPRINTF(fmt, ...) kprintf("device: %s: " fmt, __func__, ##__VA_ARGS__)
 
-#define DEFINE_DEV_TYPE(name, major) [major] = { name, major }
+#define DEFINE_DEV_TYPE(name, major, type) [major] = { name, major, type }
 
 MAP_TYPE_DECLARE(void *);
 
@@ -30,6 +31,7 @@ struct bus_type {
 struct dev_type {
   const char *name;
   uint8_t major;
+  enum dtype type;
 
   uint8_t last_minor;
   LIST_HEAD(struct device) devices;
@@ -44,8 +46,8 @@ struct bus_type bus_types[] = {
 
 struct dev_type dev_types[] = {
   { /* reserved */ },
-  DEFINE_DEV_TYPE("mem", 1),
-  DEFINE_DEV_TYPE("serial", 2),
+  DEFINE_DEV_TYPE("mem", 1, DTYPE_BLOCK),
+  DEFINE_DEV_TYPE("serial", 2, DTYPE_CHAR),
 };
 
 static rb_tree_t *device_tree;
@@ -93,7 +95,7 @@ device_t *free_device(device_t *dev) {
   ASSERT(dev->data == NULL);
   ASSERT(dev->driver == NULL);
   ASSERT(LIST_FIRST(&dev->children) == NULL);
-  ASSERT(LIST_FIRST(&dev->inodes) == NULL);
+  ASSERT(LIST_FIRST(&dev->entries) == NULL);
   kfree(dev);
   return NULL;
 }
@@ -184,7 +186,7 @@ int register_bus_device(device_bus_t *bus, void *bus_device) {
   dev->bus_device = bus_device;
   dev->bus = bus;
   LIST_INIT(&dev->children);
-  LIST_INIT(&dev->inodes);
+  LIST_INIT(&dev->entries);
 
   // look for a driver that can handle this device
   device_driver_t *driver = NULL;
@@ -220,6 +222,7 @@ int register_dev(const char *dev_type, device_t *dev) {
   ASSERT(dev->data != NULL);
 
   SPIN_LOCK(&type->lock);
+  dev->dtype = type->type;
   dev->major = type->major;
   dev->minor = type->last_minor++;
   dev->unit = 0;

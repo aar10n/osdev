@@ -9,12 +9,7 @@
 #include <asm/atomic.h>
 
 #define atomic_fetch_add(ptr, val)  \
-  (_Generic((*ptr),                 \
-    uint8_t: __atomic_fetch_add8,   \
-    uint16_t: __atomic_fetch_add16, \
-    uint32_t: __atomic_fetch_add32, \
-    uint64_t: __atomic_fetch_add64  \
-  )(ptr, val))
+  __sync_fetch_and_add(ptr, val)
 
 #define atomic_fetch_sub(ptr, val) \
   __sync_fetch_and_sub(ptr, val)

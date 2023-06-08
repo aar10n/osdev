@@ -2,6 +2,7 @@
 // Created by Aaron Gill-Braun on 2021-03-07.
 //
 
+#define __PRINTF__
 #ifndef KERNEL_PRINTF_H
 #define KERNEL_PRINTF_H
 
@@ -101,6 +102,12 @@
  *         'p'             - pointer
  *
  *         'M'             - memory quantity
+ *
+ *  not supported in printf style specifiers:
+ *
+ *         'err'           - error code as string
+ *         'str'           - pointer to str_t
+ *         'cstr'          - pointer to cstr_t
  *         'path'          - pointer to path_t
  *
  * https://github.com/aar10n/fmt_c

@@ -11,14 +11,20 @@
 #include <mutex.h>
 #include <kio.h>
 
-struct file_ops;
-
 struct device;
 struct device_driver;
 struct device_bus;
 
+struct ventry;
+
 #define DEVICE_DATA(d) __type_checked(struct device *, d, (d)->data)
 #define DEVFILE_DATA(f) __type_checked(struct file *, f, (f)->inode->i_device->data)
+
+enum dtype {
+  DTYPE_NONE,
+  DTYPE_BLOCK,
+  DTYPE_CHAR,
+};
 
 /**
  * A system device.
@@ -30,6 +36,7 @@ struct device_bus;
  * devices are not accessible.
  */
 typedef struct device {
+  enum dtype dtype;
   uint8_t major;
   uint8_t minor;
   uint8_t unit;
@@ -42,7 +49,7 @@ typedef struct device {
   const struct device_ops *ops;
 
   LIST_HEAD(struct device) children;
-  LIST_HEAD(struct inode) inodes;
+  LIST_HEAD(struct ventry) entries;
 
   SLIST_ENTRY(struct device) dev_list;
   SLIST_ENTRY(struct device) bus_list;
