@@ -73,7 +73,7 @@ static ssize_t serial_d_read(device_t *device, size_t off, kio_t *kio) {
     return -EINVAL;
   }
 
-  while (kio_moveinb(kio, serial_read_char(dev->port)) > 0) {
+  while (kio_writeb(kio, serial_read_char(dev->port)) > 0) {
     // do nothing
   }
   return (ssize_t) kio_transfered(kio);
@@ -86,7 +86,7 @@ static ssize_t serial_d_write(device_t *device, size_t off, kio_t *kio) {
   }
 
   uint8_t byte;
-  while (kio_moveoutb(kio, &byte) > 0) {
+  while (kio_readb(kio, &byte) > 0) {
     serial_write_char(dev->port, (char) byte);
   }
   return (ssize_t) kio_transfered(kio);

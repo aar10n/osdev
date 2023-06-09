@@ -48,6 +48,9 @@ static int vresolve_internal(vcache_t *vcache, ventry_t *at, cstr_t path, int fl
 }
 
 static int vresolve_validate_result(ventry_t *ve, int flags) {
+  if ((flags & VR_NOTDIR) && V_ISDIR(ve)) {
+    return -EISDIR;
+  }
   if ((flags & VR_DIR) && !V_ISDIR(ve)) {
     return -ENOTDIR;
   }
@@ -271,7 +274,6 @@ LABEL(success);
       goto error;
   }
 
-  vcache_put(vc, path, ve);
 
   if (flags & VR_UNLOCKED)
     ve_unlock(ve);

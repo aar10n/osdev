@@ -9,7 +9,6 @@
 
 void semaphore_init(semaphore_t *sem, int max_value) {
   kassert(max_value > 0);
-  spin_init(&sem->lock);
   cond_init(&sem->wait, 0);
   sem->value = max_value;
 }

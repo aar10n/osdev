@@ -71,7 +71,7 @@ int ramfs_vn_map(vnode_t *vn, off_t off, vm_mapping_t *vm);
 int ramfs_vn_load(vnode_t *vn);
 int ramfs_vn_save(vnode_t *vn);
 int ramfs_vn_readlink(vnode_t *vn, kio_t *kio);
-ssize_t ramfs_vn_readdir(vnode_t *vn, off_t off, kio_t *kio, bool *eof);
+ssize_t ramfs_vn_readdir(vnode_t *vn, off_t off, kio_t *kio);
 
 int ramfs_vn_lookup(vnode_t *dir, cstr_t name, __move ventry_t **result);
 int ramfs_vn_create(vnode_t *dir, cstr_t name, struct vattr *vattr, __move ventry_t **result);

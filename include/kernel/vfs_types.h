@@ -19,7 +19,6 @@
 #include <abi/vm-flags.h>
 
 #define PATH_MAX 4096
-#define NAME_MAX 256
 
 
 struct device;
@@ -182,6 +181,7 @@ typedef struct vnode {
   uint32_t nopen;                 // number of open file descriptors
   cond_t waiters;                 // waiters for nopen == 0
 
+  id_t parent_id;                 // parent vnode id
   struct device *device;          // owning device
   struct vfs *vfs;                // owning vfs
   struct vnode_ops *ops;          // vnode operations
@@ -235,7 +235,7 @@ struct vnode_ops {
   int (*v_load)(struct vnode *vn);
   int (*v_save)(struct vnode *vn);
   int (*v_readlink)(struct vnode *vn, struct kio *kio);
-  ssize_t (*v_readdir)(struct vnode *vn, off_t off, kio_t *dirbuf, bool *eof);
+  ssize_t (*v_readdir)(struct vnode *vn, off_t off, kio_t *dirbuf);
 
   // directory operations
   int (*v_lookup)(struct vnode *dir, cstr_t name, __move struct ventry **result);

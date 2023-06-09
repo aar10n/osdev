@@ -41,8 +41,8 @@ void ve_shadow_mount(ventry_t *mount_ve, ventry_t *root_ve); // mount_ve = l, ro
 void ve_unshadow_mount(ventry_t *mount_ve); // mount_ve = l
 void ve_add_child(ventry_t *parent, ventry_t *child); // parent = l, child = _
 void ve_remove_child(ventry_t *parent, ventry_t *child); // parent = l, child = l
-void ve_destroy(__move ventry_t **veref); // ve = l
 bool ve_syncvn(ventry_t *ve); // ve = l
+void ve_hash(ventry_t *ve); // ve = _
 
 hash_t ve_hash_cstr(ventry_t *ve, cstr_t str);
 bool ve_cmp_cstr(ventry_t *ve, cstr_t str);
@@ -69,8 +69,6 @@ static inline void ve_unlock_release(__move ventry_t **ve) {
   ve_release(ve);
 }
 
-static inline void v_unlock_linked_vn(ventry_t *ve) { mutex_unlock(&VN(ve)->lock); }
-
 static inline void assert_new_ventry_valid(ventry_t *ve) {
   ve_syncvn(ve);
   if (!VE_ISLINKED(ve)) {
@@ -78,11 +76,6 @@ static inline void assert_new_ventry_valid(ventry_t *ve) {
   }
   if (!V_ISEMPTY(ve)) {
     panic("vnode is not empty - did you accidentally call vfs_add_vnode()?");
-  }
-  if (V_ISDIR(ve)) {
-    if (ve->chld_count != 2) {
-      panic("directory vnode is missing . and .. entries");
-    }
   }
 }
 

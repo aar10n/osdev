@@ -7,14 +7,18 @@
 
 #include "types.h"
 
+#define NAME_MAX 256
+
 struct dirent {
-  ino_t d_ino;              // inode number
-  off_t d_off;              // offset to the next dirent
-  unsigned short d_reclen;  // length of this record
-  unsigned char d_type;     // type of file
-  char d_name[];            // filename (null-terminated)
-                            //    length = d_reclen - offsetof(struct dirent, d_name) - 1
+  ino_t d_ino;             // inode number
+  uint16_t d_reclen;       // length of this record
+  uint8_t d_type;          // type of file
+  uint8_t d_namlen;        // length of d_name
+  char d_name[];           // filename string (null-terminated)
 };
+
+#define DIRENT_MIN_SIZE (sizeof(struct dirent)+2)
+#define DIRENT_MAX_SIZE (sizeof(struct dirent)+NAME_MAX+1)
 
 #define DT_UNKNOWN       0
 #define DT_REG           1

@@ -67,21 +67,17 @@ static inline kio_t kio_new_readonly(const void *base, size_t len) {
   };
 }
 
-/// Return the number of bytes transfered.
 size_t kio_transfered(const kio_t *kio);
-/// Return the number of bytes remaining in the transfer.
 size_t kio_remaining(const kio_t *kio);
 
-/// Copy data to a IN (write) kio from a OUT (read) kio.
 size_t kio_copy(kio_t *dst, kio_t *src);
-/// Move data from the buffer at the given offset into the kio. Returns the number of bytes moved.
-size_t kio_movein(kio_t *kio, const void *buf, size_t len, size_t off);
-/// Move data from the kio into the buffer at the given offset. Returns the number of bytes moved.
-size_t kio_moveout(kio_t *kio, void *buf, size_t len, size_t off);
-/// Move a byte into the kio.
-size_t kio_moveinb(kio_t *kio, uint8_t byte);
-/// Move a byte out of the kio.
-size_t kio_moveoutb(kio_t *kio, uint8_t *byte);
+size_t kio_read(kio_t *kio, void *buf, size_t len, size_t off);
+size_t kio_write(kio_t *kio, const void *buf, size_t len, size_t off);
+size_t kio_fill(kio_t *kio, uint8_t byte, size_t len);
+
+static inline size_t kio_readb(kio_t *kio, uint8_t *byte) { return kio_read(kio, byte, 1, 0); }
+static inline size_t kio_writeb(kio_t *kio, uint8_t byte) { return kio_write(kio, &byte, 1, 0); }
+static inline size_t kio_remfill(kio_t *kio, uint8_t byte) { return kio_fill(kio, byte, kio_remaining(kio)); }
 
 #endif
 
@@ -90,12 +86,12 @@ size_t kio_moveoutb(kio_t *kio, uint8_t *byte);
 #define KIO_PRINTF
 
 static size_t kio_sprintf(kio_t *kio, const char *fmt, ...) {
-  char buf[1024];
   va_list args;
   va_start(args, fmt);
-  size_t len = kvsnprintf(buf, 1024, fmt, args);
+  size_t len = kvsnprintf(kio->buf.base + kio->buf.off, kio_remaining(kio), fmt, args);
   va_end(args);
-  return kio_movein(kio, buf, len, 0);
+  kio->buf.off += len;
+  return len;
 }
 
 #endif

@@ -106,15 +106,13 @@ int ramfs_vn_readlink(vnode_t *vn, struct kio *kio) {
   return 0;
 }
 
-ssize_t ramfs_vn_readdir(vnode_t *vn, off_t off, kio_t *dirbuf, bool *eof) {
+ssize_t ramfs_vn_readdir(vnode_t *vn, off_t off, kio_t *dirbuf) {
   TRACE("readdir id=%u\n", vn->id);
   ramfs_node_t *node = vn->data;
 
   size_t i = 0;
-  size_t count = 0;
-  *eof = true;
   ramfs_dirent_t *dent = LIST_FIRST(&node->n_dir);
-  while (dent != NULL) {
+  while (dent) {
     // get to the right offset
     if (i < off) {
       dent = LIST_NEXT(dent, list);
@@ -122,23 +120,25 @@ ssize_t ramfs_vn_readdir(vnode_t *vn, off_t off, kio_t *dirbuf, bool *eof) {
       continue;
     }
 
+    cstr_t name = cstr_from_str(dent->name);
     struct dirent dirent;
     dirent.d_ino = dent->node->id;
     dirent.d_type = vtype_to_dtype(dent->node->type);
     dirent.d_reclen = sizeof(struct dirent) + str_len(dent->name) + 1;
+    dirent.d_namlen = str_len(dent->name);
 
-    if (kio_remaining(dirbuf) < dirent.d_reclen) {
-      *eof = false;
+    if (kio_remaining(dirbuf) < dirent.d_reclen)
       break;
-    }
 
-    kio_movein(dirbuf, &dirent, sizeof(struct dirent), 0); // copy dirent
-    kio_movein(dirbuf, str_cptr(dent->name), str_len(dent->name)+1, 0); // copy name
+    // write the entry
+    kio_write(dirbuf, &dirent, sizeof(struct dirent), 0); // write dirent
+    kio_write(dirbuf, cstr_ptr(name), dirent.d_namlen+1, 0); // write name
 
     dent = LIST_NEXT(dent, list);
+    i++;
   }
 
-  return (ssize_t) count;
+  return (ssize_t) i;
 }
 
 //
@@ -162,10 +162,11 @@ int ramfs_vn_create(vnode_t *dir, cstr_t name, struct vattr *vattr, __move ventr
   // create the vnode and ventry
   vnode_t *vn = vn_alloc(node->id, vattr);
   vn->data = node;
-  ventry_t *ve = ve_alloc_linked(name, vn_moveref(&vn));
+  ventry_t *ve = ve_alloc_linked(name, vn);
   ve->data = dent;
 
   *result = ve_moveref(&ve);
+  vn_release(&vn);
   return 0;
 }
 
@@ -190,10 +191,11 @@ int ramfs_vn_mknod(vnode_t *dir, cstr_t name, struct vattr *vattr, dev_t dev, __
   // create the vnode and ventry
   vnode_t *vn = vn_alloc(node->id, vattr);
   vn->data = node;
-  ventry_t *ve = ve_alloc_linked(name, vn_moveref(&vn));
+  ventry_t *ve = ve_alloc_linked(name, vn);
   ve->data = dent;
 
   *result = ve_moveref(&ve);
+  vn_release(&vn);
   return 0;
 }
 
@@ -212,10 +214,11 @@ int ramfs_vn_symlink(vnode_t *dir, cstr_t name, struct vattr *vattr, cstr_t targ
   // create the vnode and ventry
   vnode_t *vn = vn_alloc(node->id, vattr);
   vn->data = node;
-  ventry_t *ve = ve_alloc_linked(name, vn_moveref(&vn));
+  ventry_t *ve = ve_alloc_linked(name, vn);
   ve->data = dent;
 
   *result = ve_moveref(&ve);
+  vn_release(&vn);
   return 0;
 }
 
@@ -228,7 +231,7 @@ int ramfs_vn_hardlink(vnode_t *dir, cstr_t name, vnode_t *target, __move ventry_
   // create the new entry
   ramfs_dirent_t *dent = ramfs_dirent_alloc(tnode, name);
   ramfs_dir_add(dnode, dent);
-  ventry_t *ve = ve_alloc_linked(name, vn_getref(target));
+  ventry_t *ve = ve_alloc_linked(name, target);
   ve->data = dent;
 
   *result = ve_moveref(&ve);
@@ -258,11 +261,11 @@ int ramfs_vn_mkdir(vnode_t *dir, cstr_t name, struct vattr *vattr, __move ventry
   // create the vnode and ventry
   vnode_t *vn = vn_alloc(node->id, vattr);
   vn->data = node;
-  ventry_t *ve = ve_alloc_linked(name, vn_moveref(&vn));
+  ventry_t *ve = ve_alloc_linked(name, vn);
   ve->data = dent;
   vfs_add_vnode(vfs, vn);
 
-  // create dot and dotdot links
+  // create the dot and dotdot entries
   int res;
   ventry_t *dotve = NULL;
   if ((res = vn_hardlink(ve, vn, cstr_new(".", 1), vn, &dotve)) < 0) {
@@ -276,6 +279,7 @@ int ramfs_vn_mkdir(vnode_t *dir, cstr_t name, struct vattr *vattr, __move ventry
   ve_release(&dotdotve);
 
   *result = ve_moveref(&ve);
+  vn_release(&vn);
   return 0;
 }
 

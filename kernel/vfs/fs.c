@@ -17,6 +17,7 @@
 #include <printf.h>
 #include <hash_map.h>
 #include <str.h>
+#include <kio.h>
 
 #define ASSERT(x) kassert(x)
 #define DPRINTF(fmt, ...) kprintf("fs: %s: " fmt, __func__, ##__VA_ARGS__)
@@ -175,7 +176,7 @@ int fs_open(const char *path, int flags, mode_t mode) {
   if (acc != O_RDONLY && acc != O_WRONLY && acc != O_RDWR)
     goto_error(ret, -EINVAL);
 
-  int vrflags = 0;
+  int vrflags = VR_NOTDIR;
   if (flags & O_NOFOLLOW)
     vrflags |= VR_NOFOLLOW;
   if (flags & O_CREAT) {
@@ -203,13 +204,12 @@ int fs_open(const char *path, int flags, mode_t mode) {
       DPRINTF("failed to create file\n");
       goto ret_unlock;
     }
+
+    vcache_put(vcache, pathstr, ve);
   } else if (res < 0) {
     DPRINTF("failed to resolve path\n");
     goto ret;
   }
-
-  if (V_ISDIR(ve))
-    goto_error(ret_unlock, -EISDIR);
 
   if (flags & VR_NOFOLLOW) {
     // check if the file is a symlink or mount
@@ -251,8 +251,11 @@ int fs_close(int fd) {
   if (!f_lock(file))
     goto_error(ret, -EBADF); // file is closed
 
-  // close the file
   vnode_t *vn = file->vnode;
+  if (V_ISDIR(vn))
+    goto_error(ret, -EISDIR); // file is a directory
+
+  // close the file
   if ((res = vn_close(vn)) < 0) {
     DPRINTF("failed to close file\n");
     goto ret_unlock;
@@ -418,6 +421,7 @@ int fs_opendir(const char *path) {
 
   res = fd; // success
 LABEL(ret);
+  ve_unlock(ve);
   ve_release(&ve);
   ve_release(&at_ve);
   return fd;
@@ -453,7 +457,7 @@ LABEL(ret);
   return res;
 }
 
-int fs_readdir(int fd, struct dirent *dirp, size_t len) {
+ssize_t fs_readdir(int fd, void *dirp, size_t len) {
   ssize_t res;
   file_t *file = ftable_get_file(FTABLE, fd);
   if (file == NULL)
@@ -467,10 +471,9 @@ int fs_readdir(int fd, struct dirent *dirp, size_t len) {
     goto_error(ret, -EBADF); // file is closed
 
   // read the directory
-  bool eof = false;
   kio_t kio = kio_new_writeonly(dirp, len);
   vn_begin_data_read(vn);
-  res = vn_readdir(vn, file->offset, &kio, &eof);
+  res = vn_readdir(vn, file->offset, &kio);
   vn_end_data_read(vn);
   if (res < 0) {
     DPRINTF("failed to read directory\n");
@@ -480,12 +483,14 @@ int fs_readdir(int fd, struct dirent *dirp, size_t len) {
   // update the file offset
   file->offset += res;
 
-  res = eof ? 0 : 1; // success
+  res = (ssize_t) kio_transfered(&kio);
+  kio_remfill(&kio, 0);
+  // success
 LABEL(ret_unlock);
   f_unlock(file);
 LABEL(ret);
   f_release(&file);
-  return (int) res;
+  return res;
 }
 
 long fs_telldir(int fd) {
@@ -605,14 +610,18 @@ int fs_mknod(const char *path, mode_t mode, dev_t dev) {
   if ((res = vresolve(vcache, at_ve, pathstr, VR_EXCLUSV, &dve)) < 0)
     goto ret;
 
+  ventry_t *ve = NULL;
   vnode_t *dvn = VN(dve);
   vn_begin_data_write(dvn);
-  res = vn_mknod(dve, dvn, cstr_basename(pathstr), mode, dev, NULL); // create the node
+  res = vn_mknod(dve, dvn, cstr_basename(pathstr), mode, dev, &ve); // create the node
   vn_end_data_write(dvn);
   if (res < 0) {
     DPRINTF("failed to create node\n");
     goto ret_unlock;
   }
+
+  vcache_put(vcache, pathstr, ve);
+  ve_release(&ve);
 
   res = 0; // success
 LABEL(ret_unlock);
@@ -633,14 +642,18 @@ int fs_symlink(const char *target, const char *linkpath) {
   if ((res = vresolve(vcache, at_ve, pathstr, VR_EXCLUSV, &dve)) < 0)
     goto ret;
 
+  ventry_t *ve = NULL;
   vnode_t *dvn = VN(dve);
   vn_begin_data_write(dvn);
-  res = vn_symlink(dve, dvn, cstr_basename(pathstr), cstr_make(target), NULL); // create the symlink
+  res = vn_symlink(dve, dvn, cstr_basename(pathstr), cstr_make(target), &ve); // create the symlink
   vn_end_data_write(dvn);
   if (res < 0) {
     DPRINTF("failed to create symlink\n");
     goto ret_unlock;
   }
+
+  vcache_put(vcache, pathstr, ve);
+  ve_release(&ve);
 
   res = 0; // success
 LABEL(ret_unlock);
@@ -658,7 +671,7 @@ int fs_link(const char *oldpath, const char *newpath) {
   int res;
 
   // resolve the oldpath
-  if ((res = vresolve(vcache, at_ve, cstr_make(oldpath), 0, &ove)) < 0)
+  if ((res = vresolve(vcache, at_ve, cstr_make(oldpath), VR_NOTDIR, &ove)) < 0)
     goto ret;
 
   // resolve the parent directory
@@ -666,17 +679,21 @@ int fs_link(const char *oldpath, const char *newpath) {
   if ((res = vresolve(vcache, at_ve, pathstr, VR_EXCLUSV, &dve)) < 0)
     goto ret;
 
+  ventry_t *ve = NULL;
   vnode_t *dvn = VN(dve);
   vnode_t *ovn = VN(ove);
   vn_lock(ovn);
   vn_begin_data_write(dvn);
-  res = vn_hardlink(dve, dvn, cstr_basename(pathstr), ovn, NULL); // create the hard link
+  res = vn_hardlink(dve, dvn, cstr_basename(pathstr), ovn, &ve); // create the hard link
   vn_end_data_write(dvn);
   vn_unlock(ovn);
   if (res < 0) {
     DPRINTF("failed to create hard link\n");
     goto ret_unlock;
   }
+
+  vcache_put(vcache, pathstr, ve);
+  ve_release(&ve);
 
   res = 0; // success
 LABEL(ret_unlock);
@@ -737,14 +754,18 @@ int fs_mkdir(const char *path, mode_t mode) {
   if ((res = vresolve(vcache, at_ve, pathstr, VR_EXCLUSV, &dve)) < 0)
     goto ret;
 
+  ventry_t *ve = NULL;
   vnode_t *dvn = VN(dve);
   vn_begin_data_write(dvn);
-  res = vn_mkdir(dve, dvn, cstr_basename(pathstr), mode, NULL); // create the directory
+  res = vn_mkdir(dve, dvn, cstr_basename(pathstr), mode, &ve); // create the directory
   vn_end_data_write(dvn);
   if (res < 0) {
     DPRINTF("failed to create directory\n");
     goto ret_unlock;
   }
+
+  vcache_put(vcache, pathstr, ve);
+  ve_release(&ve);
 
   res = 0; // success
 LABEL(ret_unlock);

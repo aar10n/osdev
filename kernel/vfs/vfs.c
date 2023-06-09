@@ -33,23 +33,6 @@ static inline void vtable_free(struct vtable *table) {
   kfree(table);
 }
 
-static inline void vtable_insert(struct vtable *table, vnode_t *vnode) {
-  ASSERT(rb_tree_find(table->tree, vnode->id) == NULL);
-  SPIN_LOCK(&table->lock);
-  rb_tree_insert(table->tree, vnode->id, vn_getref(vnode));
-  table->count++;
-  SPIN_UNLOCK(&table->lock);
-}
-
-static inline void vtable_remove(struct vtable *table, vnode_t *vnode) {
-  ASSERT(rb_tree_find(table->tree, vnode->id) != NULL);
-  SPIN_LOCK(&table->lock);
-  rb_tree_delete(table->tree, vnode->id);
-  vn_release(&vnode);
-  table->count--;
-  SPIN_UNLOCK(&table->lock);
-}
-
 static void vfs_cleanup(vfs_t *vfs) {
   ASSERT(vfs->state == V_DEAD);
   ASSERT(vfs->vtable->count == 0);
@@ -88,6 +71,8 @@ void vfs_add_vnode(vfs_t *vfs, vnode_t *vnode) {
   vnode->ops = vfs->type->vnode_ops;
 
   struct vtable *table = vfs->vtable;
+  if (rb_tree_find(table->tree, vnode->id) != NULL)
+    panic("vnode already exists in table [id={:d}]", vnode->id);
   rb_tree_insert(table->tree, vnode->id, vn_getref(vnode));
   table->count++;
   LIST_ADD(&vfs->vnodes, vnode, list);
@@ -121,13 +106,13 @@ int vfs_mount(vfs_t *vfs, device_t *device, ventry_t *mount_ve) {
     DPRINTF("mount point is not empty\n");
     return -ENOTEMPTY;
   }
-  if (device->dtype != DTYPE_BLOCK) {
+  if (device && device->dtype != DTYPE_BLOCK) {
     DPRINTF("device is not a block device\n");
     return -ENOTBLK;
   }
 
   vfs_t *host_vfs = VN(mount_ve)->vfs;
-  if (!vfs_lock(host_vfs)) {
+  if (host_vfs && !vfs_lock(host_vfs)) {
     return -EINVAL; // vfs is dead
   }
 
@@ -143,6 +128,7 @@ int vfs_mount(vfs_t *vfs, device_t *device, ventry_t *mount_ve) {
   root_ve->parent = ve_getref(mount_ve); // allow us to traverse back to the mount point
   vnode_t *root_vn = VN(root_ve);
   root_vn->flags |= VN_ROOT;
+  root_vn->parent_id = mount_ve->id;
   vfs_add_vnode(vfs, root_vn);
 
   vfs->state = V_ALIVE;
@@ -150,7 +136,8 @@ int vfs_mount(vfs_t *vfs, device_t *device, ventry_t *mount_ve) {
   vfs->device = device;
 
   ve_shadow_mount(mount_ve, vfs->root_ve);
-  vfs_unlock(host_vfs);
+  if (host_vfs)
+    vfs_unlock(host_vfs);
   return 0;
 }
 
@@ -174,7 +161,7 @@ int vfs_unmount(vfs_t *vfs, ventry_t *mount) {
 
   // obtain exclusive access to vfs (vfs lock already held by caller)
   if (!vfs_begin_write_op(vfs)) {
-    return -EINVAL; // vfs is unmounting
+    return -EINVAL;
   }
 
   // set vfs to dead so that no new vnode operations can be started

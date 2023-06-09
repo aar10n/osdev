@@ -116,8 +116,8 @@ typedef struct device_bus {
   LIST_ENTRY(struct device_bus) list;
 } device_bus_t;
 
-static inline dev_t make_rdev(uint8_t major, uint8_t minor, uint8_t unit) {
-  return ((dev_t)major) | ((dev_t)minor << 8) | ((dev_t)unit << 16);
+static inline dev_t makedev(uint8_t major, uint8_t minor) {
+  return ((dev_t)major) | ((dev_t)minor << 8);
 }
 static inline dev_t make_dev(device_t *dev) {
   return ((dev_t)dev->major) | ((dev_t)dev->minor << 8) | ((dev_t)dev->unit << 16);

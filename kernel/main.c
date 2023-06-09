@@ -106,24 +106,7 @@ __used void ap_main() {
 // Launch process
 //
 
-int command_line_main();
-
-id_t last_id = 0;
-
-static inline ventry_t *make_ventry(vfs_t *vfs, const char *name, enum vtype type) __move {
-  vnode_t *vn = vn_alloc_empty(type);
-  vn->id = ++last_id;
-  vfs_add_vnode(vfs, vn);
-  ventry_t *ve = ve_alloc_linked(cstr_make(name), vn);
-  ve_syncvn(ve);
-  vn_release(&vn);
-  return ve_moveref(&ve);
-}
-
-static inline void cache_entry(vcache_t *vcache, const char *path, __move ventry_t *ve) {
-  vcache_put(vcache, cstr_make(path), ve);
-  ve_release(&ve);
-}
+#include <fs_utils.h>
 
 noreturn void root() {
   kprintf("starting root process\n");
@@ -132,6 +115,14 @@ noreturn void root() {
   // probe_all_buses();
 
   //////////////////////////////////////////
+  
+  // ls("/");
+  // mkdir("/root");
+  // ls("/");
+  // echo("/root/hello.txt", "hello world\n");
+  // ls("/root");
+  // stat("/root/hello.txt");
+  // cat("/root/hello.txt");
 
   // int fd = fs_mkdir("/test", 0777);
   // if (fd < 0) {

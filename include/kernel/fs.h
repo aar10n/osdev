@@ -25,7 +25,7 @@ off_t fs_lseek(int fd, off_t offset, int whence);
 
 int fs_opendir(const char *path);
 int fs_closedir(int fd);
-int fs_readdir(int fd, struct dirent *dirp, size_t len);
+ssize_t fs_readdir(int fd, void *dirp, size_t len);
 long fs_telldir(int fd);
 void fs_seekdir(int fd, long loc);
 

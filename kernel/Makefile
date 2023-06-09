@@ -4,9 +4,9 @@ $(call register,kernel,KERNEL)
 # kernel/
 kernel += entry.asm memory.asm smpboot.asm syscall.asm thread.asm \
 	chan.c clock.c console.c errno.c ipc.c init.c irq.c loader.c \
-	main.c mutex.c panic.c printf.c process.c sem.c signal.c \
+	main.c mutex.c panic.c printf.c process.c semaphore.c signal.c \
 	smpboot.c spinlock.c string.c syscall.c thread.c timer.c \
-	queue.c ipi.c input.c device.c kio.c
+	queue.c ipi.c input.c device.c kio.c fs_utils.c
 
 # kernel/acpi
 kernel += acpi/acpi.c acpi/pm_timer.c
@@ -41,5 +41,5 @@ kernel += usb/usb.c usb/xhci.c \
 	usb/hid-report.c usb/hid-usage.c
 
 # kernel/vfs
-kernel += vfs/file.c vfs/fs.c vfs/fs_tests.c vfs/path.c vfs/vcache.c \
-	vfs/ventry.c vfs/vfs.c vfs/vnode.c vfs/vresolve.c
+kernel += vfs/file.c vfs/fs.c vfs/path.c vfs/vcache.c vfs/ventry.c \
+	vfs/vfs.c vfs/vnode.c vfs/vresolve.c

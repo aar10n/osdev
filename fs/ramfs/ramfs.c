@@ -44,6 +44,7 @@ ramfs_node_t *ramfs_node_alloc(ramfs_mount_t *mount, enum vtype type, mode_t mod
   UNLOCK_MOUNT(mount);
 
   ramfs_node_t *node = kmallocz(sizeof(ramfs_node_t));
+  node->id = id;
   node->mount = mount;
   node->type = type;
   node->mode = mode;

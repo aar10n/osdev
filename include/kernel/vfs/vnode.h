@@ -2,6 +2,7 @@
 // Created by Aaron Gill-Braun on 2023-05-20.
 //
 
+#define __VNODE__
 #ifndef KERNEL_VFS_VNODE_H
 #define KERNEL_VFS_VNODE_H
 
@@ -9,14 +10,6 @@
 #include <device.h>
 
 #define VN_OPS(vn) __type_checked(struct vnode *, vn, (vn)->ops)
-
-#define VN_LOCK(vn) __type_checked(struct vnode *, vn, mutex_lock(&(vn)->lock))
-#define VN_UNLOCK(vn) __type_checked(struct vnode *, vn, mutex_unlock(&(vn)->lock))
-
-#define VN_LOCK_RDATA(vn) __type_checked(struct vnode *, vn, rw_lock_read(&(vn)->data_lock))
-#define VN_UNLOCK_RDATA(vn) __type_checked(struct vnode *, vn, rw_lock_read(&(vn)->data_lock))
-#define VN_LOCK_WDATA(vn) __type_checked(struct vnode *, vn, rw_lock_write(&(vn)->data_lock))
-#define VN_UNLOCK_WDATA(vn) __type_checked(struct vnode *, vn, rw_lock_write(&(vn)->data_lock))
 
 static inline vnode_t *vn_getref(vnode_t *vn) __move {
   ref_get(&vn->refcount);
@@ -56,7 +49,7 @@ int vn_map(vnode_t *vn, off_t off, struct vm_mapping *mapping); // vn = _
 int vn_load(vnode_t *vn); // vn = l
 int vn_save(vnode_t *vn); // vn = l
 int vn_readlink(vnode_t *vn, kio_t *kio); // vn = r
-ssize_t vn_readdir(vnode_t *vn, off_t off, kio_t *dirbuf, bool *eof); // vn = r
+ssize_t vn_readdir(vnode_t *vn, off_t off, kio_t *dirbuf); // vn = r
 
 int vn_lookup(ventry_t *dve, vnode_t *dvn, cstr_t name, __move ventry_t **result); // dve = l, dvn = r
 int vn_create(ventry_t *dve, vnode_t *dvn, cstr_t name, mode_t mode, __move ventry_t **result); // dve = l, dvn = w

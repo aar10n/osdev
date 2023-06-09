@@ -33,8 +33,8 @@ static bool ve_cmp_default(ventry_t *ve, cstr_t str) {
 
 static void ve_cleanup(ventry_t *ve) {
   // called when last reference is released
-  // DPRINTF("cleanup\n");
   ASSERT(ve->state == V_DEAD);
+  DPRINTF("cleanup [id=%u]\n", ve->id);
   if (VE_OPS(ve)->v_cleanup)
     VE_OPS(ve)->v_cleanup(ve);
 
@@ -131,8 +131,11 @@ void ve_add_child(ventry_t *parent, ventry_t *child) {
   ASSERT(parent->type == V_DIR);
   ASSERT(child->parent == NULL);
   child->parent = ve_getref(parent);
-  LIST_ADD(&parent->children, child, list);
+  LIST_ADD(&parent->children, ve_getref(child), list);
   parent->chld_count++;
+  if (VE_ISLINKED(child)) {
+    VN(child)->parent_id = parent->id;
+  }
 }
 
 void ve_remove_child(ventry_t *parent, ventry_t *child) {
@@ -141,14 +144,7 @@ void ve_remove_child(ventry_t *parent, ventry_t *child) {
   ve_release(&child->parent);
   LIST_REMOVE(&parent->children, child, list);
   parent->chld_count--;
-}
-
-void ve_destroy(__move ventry_t **veref) {
-  ventry_t *ve = ve_moveref(veref);
-  ASSERT(V_ISALIVE(ve));
-  ASSERT(ve->chld_count == 0);
-  ve->state = V_DEAD;
-  ve_release(&ve);
+  ve_release(&child);
 }
 
 bool ve_syncvn(ventry_t *ve) {
@@ -159,19 +155,28 @@ bool ve_syncvn(ventry_t *ve) {
   ASSERT(ve->id == vn->id);
   ASSERT(ve->type == vn->type);
   ve->state = vn->state;
+  if (vn->vfs)
+    ve->ops = vn->vfs->type->ventry_ops;
   return true;
+}
+
+void ve_hash(ventry_t *ve) {
+  if (VE_OPS(ve)->v_hash)
+    ve->hash = VE_OPS(ve)->v_hash(cstr_from_str(ve->name));
+  else
+    ve->hash = ve_hash_default(cstr_from_str(ve->name));
 }
 
 //
 
 hash_t ve_hash_cstr(ventry_t *ve, cstr_t str) {
-  if (VE_OPS(ve) && VE_OPS(ve)->v_hash)
+  if (VE_OPS(ve)->v_hash)
     return VE_OPS(ve)->v_hash(str);
   return ve_hash_default(str);
 }
 
 bool ve_cmp_cstr(ventry_t *ve, cstr_t str) {
-  if (VE_OPS(ve) && VE_OPS(ve)->v_cmp)
+  if (VE_OPS(ve)->v_cmp)
     return VE_OPS(ve)->v_cmp(ve, str);
   return ve_cmp_default(ve, str);
 }

@@ -13,6 +13,7 @@
 #define VR_UNLOCKED 0x2   // the result reference will be returned with no ventry lock held
 #define VR_PARENT   0x4   // on -ENOENT in the final directory the result is set to parent entry
 #define VR_EXCLUSV  0x8   // fail if path exists, on success return the parent entry
+#define VR_NOTDIR   0x80  // the path must not be a directory
 #define VR_DIR      0x100 // the path must be a directory
 #define VR_BLK      0x200 // the path must be a block device
 #define VR_LNK      0x400 // the path must be a symlink

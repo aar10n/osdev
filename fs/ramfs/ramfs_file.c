@@ -116,14 +116,14 @@ int ramfs_file_truncate(ramfs_file_t *file, size_t newsize) {
 }
 
 ssize_t ramfs_file_read(ramfs_file_t *file, size_t off, kio_t *kio) {
-  return (ssize_t) kio_movein(kio, get_backing_mem(file), file->size, off);
+  return (ssize_t) kio_write(kio, get_backing_mem(file), file->size, off);
 }
 
 ssize_t ramfs_file_write(ramfs_file_t *file, size_t off, kio_t *kio) {
   if (off >= file->size) {
     resize_file(file, off + kio->size);
   }
-  return (ssize_t) kio_moveout(kio, get_backing_mem(file), file->size, off);
+  return (ssize_t) kio_read(kio, get_backing_mem(file), file->size, off);
 }
 
 int ramfs_file_map(ramfs_file_t *file, vm_mapping_t *vm) {

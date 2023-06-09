@@ -38,26 +38,7 @@ size_t kio_copy(kio_t *dst, kio_t *src) {
   return to_copy;
 }
 
-size_t kio_movein(kio_t *kio, const void *buf, size_t len, size_t off) {
-  ASSERT(kio->dir == KIO_IN);
-  size_t remain = kio_remaining(kio);
-  if (off > len) {
-    return 0;
-  }
-
-  size_t to_copy = len - off;
-  if (to_copy > remain) {
-    to_copy = remain;
-  }
-
-  if (to_copy > 0) {
-    memcpy(kio->buf.base + kio->buf.off, buf + off, to_copy);
-    kio->buf.off += to_copy;
-  }
-  return to_copy;
-}
-
-size_t kio_moveout(kio_t *kio, void *buf, size_t len, size_t off) {
+size_t kio_read(kio_t *kio, void *buf, size_t len, size_t off) {
   ASSERT(kio->dir == KIO_OUT);
   size_t remain = kio_remaining(kio);
   if (off > len) {
@@ -76,10 +57,35 @@ size_t kio_moveout(kio_t *kio, void *buf, size_t len, size_t off) {
   return to_copy;
 }
 
-size_t kio_moveinb(kio_t *kio, uint8_t byte) {
-  return kio_movein(kio, &byte, 1, 0);
+size_t kio_write(kio_t *kio, const void *buf, size_t len, size_t off) {
+  ASSERT(kio->dir == KIO_IN);
+  size_t remain = kio_remaining(kio);
+  if (off > len) {
+    return 0;
+  }
+
+  size_t to_copy = len - off;
+  if (to_copy > remain) {
+    to_copy = remain;
+  }
+
+  if (to_copy > 0) {
+    memcpy(kio->buf.base + kio->buf.off, buf + off, to_copy);
+    kio->buf.off += to_copy;
+  }
+  return to_copy;
 }
 
-size_t kio_moveoutb(kio_t *kio, uint8_t *byte) {
-  return kio_moveout(kio, byte, 1, 0);
+size_t kio_fill(kio_t *kio, uint8_t byte, size_t len) {
+  ASSERT(kio->dir == KIO_IN);
+  size_t remain = kio_remaining(kio);
+  if (len > remain) {
+    len = remain;
+  }
+
+  if (len > 0) {
+    memset(kio->buf.base + kio->buf.off, byte, len);
+    kio->buf.off += len;
+  }
+  return len;
 }
