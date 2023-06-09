@@ -182,6 +182,10 @@ static inline int vcache_put_nolock(vcache_t *vcache, cstr_t path, ventry_t *ve)
   hash_t hash = ve_hash_cstr(ve, path);
   struct vcache_entry *entry = vcache_find_entry(vcache, path, hash);
   if (entry) {
+    if (entry->ve == ve) {
+      return 0; // already exists
+    }
+    // invalidate the old entry
     vcache_invalidate_nolock(vcache, path);
   }
 

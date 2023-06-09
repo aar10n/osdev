@@ -184,7 +184,6 @@ int vresolve_fullwalk(vcache_t *vc, ventry_t *at, cstr_t path, int flags, int de
   path_t part = path_from_cstr(path);
   if (path_is_absolute(part)) {
     ve = ve_getref(vcache_get_root(vc));
-    sbuf_write_char(&curpath, '/');
   } else {
     ve = ve_getref(at);
     vresolve_get_ve_path(ve, &curpath); // get as absolute path
@@ -249,7 +248,7 @@ int vresolve_fullwalk(vcache_t *vc, ventry_t *at, cstr_t path, int flags, int de
     sbuf_write_char(&curpath, '/');
     sbuf_write(&curpath, path_start(part), path_len(part));
     // cache the intermediate path
-    vcache_put(vc, cstr_from_sbuf(&curpath), next_ve);
+    vcache_put(vc, cstr_from_sbuf(&curpath), ve);
 
     // follow the symlink or mount point if needed
     if ((res = vresolve_follow(vc, &ve, flags, is_last, depth, &ve)) < 0)

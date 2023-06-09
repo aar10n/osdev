@@ -59,18 +59,6 @@ enum vstate {
 #define V_ISALIVE(v) ((v)->state == V_ALIVE)
 #define V_ISDEAD(v) ((v)->state == V_DEAD)
 
-#define v_getref(ptr) ({ \
-  static_assert(__builtin_types_compatible_p(typeof(ptr), void *)); \
-  if (ptr) ref_get(&(ptr)->refcount); \
-  ptr;\
-})
-
-#define v_moveref(dptr) ({ \
-  typeof(*(dptr)) __ptr = *(dptr); \
-  *(dptr) = NULL; \
-  __ptr; \
-})
-
 // =================================
 //               vfs
 // =================================
@@ -129,7 +117,7 @@ struct vfs_stat {
 };
 
 struct vfs_ops {
-  int (*v_mount)(struct vfs *vfs, struct device *device, __move struct ventry **root);
+  int (*v_mount)(struct vfs *vfs, struct device *device, struct ventry **root);
   int (*v_unmount)(struct vfs *vfs);
   int (*v_sync)(struct vfs *vfs);
   int (*v_stat)(struct vfs *vfs, struct vfs_stat *stat);
@@ -235,7 +223,7 @@ struct vnode_ops {
   int (*v_load)(struct vnode *vn);
   int (*v_save)(struct vnode *vn);
   int (*v_readlink)(struct vnode *vn, struct kio *kio);
-  ssize_t (*v_readdir)(struct vnode *vn, off_t off, kio_t *dirbuf);
+  ssize_t (*v_readdir)(struct vnode *vn, off_t off, struct kio *dirbuf);
 
   // directory operations
   int (*v_lookup)(struct vnode *dir, cstr_t name, __move struct ventry **result);

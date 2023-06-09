@@ -76,7 +76,7 @@ void ls(const char *path) {
     struct dirent *ent = (void *) buf;
     struct dirent *end = (void *) (buf + nread);
     while (ent < end) {
-      kprintf("  {:s}\n", ent->d_name);
+      kprintf(" {:- 4u} {:s}\n", ent->d_ino, ent->d_name);
       ent = offset_ptr(ent, ent->d_reclen);
     }
   }

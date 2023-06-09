@@ -220,7 +220,7 @@ int vn_lookup(ventry_t *dve, vnode_t *dvn, cstr_t name, __move ventry_t **result
 
   // check already loaded children
   LIST_FOR_IN(child, &dve->children, list) {
-    if (ve_cmp_cstr(child, name) == 0) {
+    if (ve_cmp_cstr(child, name)) {
       // TODO: revalidate ventry
       *result = ve_getref(child); // move new ref to caller
       return 0;
@@ -431,7 +431,7 @@ int vn_mkdir(ventry_t *dve, vnode_t *dvn, cstr_t name, mode_t mode, __move ventr
   CHECK_NAMELEN(name);
   CHECK_SUPPORTED(dvn, v_mkdir);
   vfs_t *vfs = dvn->vfs;
-  ventry_t *tmp;
+  ventry_t *ve;
   int res;
 
   // WRITE BEGIN
@@ -440,18 +440,20 @@ int vn_mkdir(ventry_t *dve, vnode_t *dvn, cstr_t name, mode_t mode, __move ventr
 
   // filesystem mkdir
   struct vattr attr = make_vattr(V_DIR);
-  if ((res = VN_OPS(dvn)->v_mkdir(dvn, name, &attr, &tmp)) < 0) {
+  if ((res = VN_OPS(dvn)->v_mkdir(dvn, name, &attr, &ve)) < 0) {
+    vfs_end_write_op(vfs);
     return res;
   }
+
   vfs_end_write_op(vfs);
   // WRITE END
 
-  ve_syncvn(tmp);
-  ve_add_child(dve, tmp);
+  ve_syncvn(ve);
+  ve_add_child(dve, ve);
   if (result)
-    *result = ve_moveref(&tmp);
+    *result = ve_moveref(&ve);
   else
-    ve_release(&tmp);
+    ve_release(&ve);
   return 0;
 }
 
@@ -459,16 +461,12 @@ int vn_rmdir(ventry_t *dve, vnode_t *dvn, ventry_t *ve, vnode_t *vn) {
   CHECK_DIR(vn);
   CHECK_WRITE(dvn);
   CHECK_SUPPORTED(dvn, v_rmdir);
+  vfs_t *vfs = dvn->vfs;
   int res;
 
   // WRITE BEGIN
-  if (!vfs_begin_write_op(dvn->vfs))
+  if (!vfs_begin_write_op(vfs))
     return -EIO; // vfs is unmounted
-
-  if (vn->nlink > 2) {
-    vfs_end_write_op(dvn->vfs);
-    return -ENOTEMPTY;
-  }
 
   // filesystem rmdir
   if ((res = VN_OPS(dvn)->v_rmdir(dvn, vn, ve)) < 0) {

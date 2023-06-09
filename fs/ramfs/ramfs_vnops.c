@@ -44,6 +44,13 @@ struct ventry_ops ramfs_ventry_ops = {
 };
 
 
+static struct dirent dot_template = {
+  .d_ino = 0,
+  .d_reclen = sizeof(struct dirent),
+  .d_type = DT_DIR,
+  .d_namlen = 1,
+};
+
 static inline unsigned char vtype_to_dtype(enum vtype type) {
   switch (type) {
     case V_REG:
@@ -63,6 +70,23 @@ static inline unsigned char vtype_to_dtype(enum vtype type) {
     default:
       return DT_UNKNOWN;
   }
+}
+
+static inline size_t kio_write_dirent(ino_t ino, enum vtype type, cstr_t name, kio_t *kio) {
+  struct dirent dirent;
+  dirent.d_ino = ino;
+  dirent.d_type = vtype_to_dtype(type);
+  dirent.d_reclen = sizeof(struct dirent) + cstr_len(name) + 1;
+  dirent.d_namlen = cstr_len(name);
+
+  if (kio_remaining(kio) < dirent.d_reclen) {
+    return 0;
+  }
+
+  // write the entry
+  kio_write(kio, &dirent, sizeof(struct dirent), 0); // write dirent
+  kio_write(kio, cstr_ptr(name), dirent.d_namlen+1, 0); // write name
+  return dirent.d_reclen;
 }
 
 
@@ -109,8 +133,21 @@ int ramfs_vn_readlink(vnode_t *vn, struct kio *kio) {
 ssize_t ramfs_vn_readdir(vnode_t *vn, off_t off, kio_t *dirbuf) {
   TRACE("readdir id=%u\n", vn->id);
   ramfs_node_t *node = vn->data;
-
   size_t i = 0;
+
+  if (off == 0) {
+    // write the dot entry
+    if (!kio_write_dirent(vn->id, V_DIR, cstr_new(".", 1), dirbuf))
+      return 0;
+    i++;
+  }
+  if (off <= 1) {
+    // write the dotdot entry
+    if (!kio_write_dirent(vn->parent_id, V_DIR, cstr_new("..", 2), dirbuf))
+      return (ssize_t) i;
+    i++;
+  }
+
   ramfs_dirent_t *dent = LIST_FIRST(&node->n_dir);
   while (dent) {
     // get to the right offset
@@ -121,18 +158,8 @@ ssize_t ramfs_vn_readdir(vnode_t *vn, off_t off, kio_t *dirbuf) {
     }
 
     cstr_t name = cstr_from_str(dent->name);
-    struct dirent dirent;
-    dirent.d_ino = dent->node->id;
-    dirent.d_type = vtype_to_dtype(dent->node->type);
-    dirent.d_reclen = sizeof(struct dirent) + str_len(dent->name) + 1;
-    dirent.d_namlen = str_len(dent->name);
-
-    if (kio_remaining(dirbuf) < dirent.d_reclen)
+    if (!kio_write_dirent(dent->node->id, dent->node->type, name, dirbuf))
       break;
-
-    // write the entry
-    kio_write(dirbuf, &dirent, sizeof(struct dirent), 0); // write dirent
-    kio_write(dirbuf, cstr_ptr(name), dirent.d_namlen+1, 0); // write name
 
     dent = LIST_NEXT(dent, list);
     i++;
@@ -264,19 +291,6 @@ int ramfs_vn_mkdir(vnode_t *dir, cstr_t name, struct vattr *vattr, __move ventry
   ventry_t *ve = ve_alloc_linked(name, vn);
   ve->data = dent;
   vfs_add_vnode(vfs, vn);
-
-  // create the dot and dotdot entries
-  int res;
-  ventry_t *dotve = NULL;
-  if ((res = vn_hardlink(ve, vn, cstr_new(".", 1), vn, &dotve)) < 0) {
-    panic("failed to create dot entry: {:err}\n", res);
-  }
-  ventry_t *dotdotve = NULL;
-  if ((res = vn_hardlink(ve, vn, cstr_new("..", 2), dir, &dotdotve)) < 0) {
-    panic("failed to create dotdot entry: {:err}\n", res);
-  }
-  ve_release(&dotve);
-  ve_release(&dotdotve);
 
   *result = ve_moveref(&ve);
   vn_release(&vn);

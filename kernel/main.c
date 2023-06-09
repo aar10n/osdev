@@ -115,14 +115,14 @@ noreturn void root() {
   // probe_all_buses();
 
   //////////////////////////////////////////
-  
-  // ls("/");
-  // mkdir("/root");
-  // ls("/");
-  // echo("/root/hello.txt", "hello world\n");
-  // ls("/root");
-  // stat("/root/hello.txt");
-  // cat("/root/hello.txt");
+
+  ls("/");
+  mkdir("/root");
+  ls("/");
+  echo("/root/hello.txt", "hello world\n");
+  ls("/root");
+  stat("/root/hello.txt");
+  cat("/root/hello.txt");
 
   // int fd = fs_mkdir("/test", 0777);
   // if (fd < 0) {
