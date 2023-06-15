@@ -98,8 +98,7 @@ static inline void apic_write_timer(apic_reg_lvt_timer_t timer) {
 //
 
 void remap_apic_registers(void *data) {
-  apic_base = (uintptr_t) _vmap_mmio(APIC_BASE_PA, PAGE_SIZE, PG_WRITE | PG_NOCACHE);
-  _vmap_get_mapping(apic_base)->name = "apic";
+  apic_base = (uintptr_t) vm_alloc_map_phys(APIC_BASE_PA, 0, PAGE_SIZE, 0, PG_WRITE | PG_NOCACHE, "apic");
 
   struct apic_device *apic;
   LIST_FOREACH(apic, &apics, list) {

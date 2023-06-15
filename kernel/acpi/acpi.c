@@ -45,9 +45,7 @@ void remap_acpi_tables(void *data) {
   uintptr_t phys_base = (uintptr_t) acpi_global_fadt;
   kassert(phys_base % PAGE_SIZE == 0);
 
-  uintptr_t virt_base = (uintptr_t) _vmap_mmio(phys_base, PAGE_SIZE, 0);
-  _vmap_get_mapping(virt_base)->name = "acpi (fadt)";
-
+  uintptr_t virt_base = (uintptr_t) vm_alloc_map_phys(phys_base, 0, PAGE_SIZE, 0, 0, "acpi (fadt)");
   size_t fadt_offset = ((uintptr_t) acpi_global_fadt) - phys_base;
   acpi_global_fadt = (void *)(virt_base + fadt_offset);
 }

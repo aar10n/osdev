@@ -107,8 +107,6 @@ __used void exception_handler(uint8_t vector, uint32_t error, cpu_irq_stack_t *f
     kprintf("  CR2 = %018p\n", __read_cr2());
   }
 
-
-
   while (true) {
     cpu_pause();
   }

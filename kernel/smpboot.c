@@ -12,7 +12,7 @@
 #include <panic.h>
 #include <string.h>
 
-#include <cpu/io.h>
+#define ASSERT(x) kassert(x)
 
 #define SMPBOOT_START 0x1000
 #define SMPDATA_START 0x2000
@@ -21,7 +21,6 @@ extern void smpboot_start();
 extern void smpboot_end();
 
 uint32_t system_num_cpus = 1;
-
 
 int smp_boot_ap(uint16_t id, smp_data_t *smpdata) {
   // wait until AP aquires lock
@@ -33,17 +32,20 @@ int smp_boot_ap(uint16_t id, smp_data_t *smpdata) {
   kprintf("smp: booting CPU#%d\n", apic_id);
 
   // allocate stack and per-cpu area for ap
-  uintptr_t ap_pml4 = make_ap_page_tables();
-  page_t *percpu_pages = _alloc_pages(SIZE_TO_PAGES(PER_CPU_SIZE), PG_WRITE);
-  void *ap_percpu_ptr = _vmap_pages(percpu_pages);
+  void *ap_percpu_ptr = vmalloc(PER_CPU_SIZE, PG_WRITE);
+  ASSERT(ap_percpu_ptr != NULL);
+
   page_t *stack_pages = _alloc_pages(SIZE_TO_PAGES(KERNEL_STACK_SIZE), PG_WRITE);
-  void *ap_stack_ptr = _vmap_stack_pages(stack_pages);
+  vm_mapping_t *ap_stack_vm = vm_alloc_pages(stack_pages, 0, KERNEL_STACK_SIZE, VM_STACK | VM_GUARD, "ap stack");
+  void *ap_stack_ptr = vm_alloc_map_pages(stack_pages, 0, KERNEL_STACK_SIZE, VM_STACK | VM_GUARD, PG_WRITE, "ap stack");
 
   memset(ap_percpu_ptr, 0, PER_CPU_SIZE);
   ((per_cpu_t *)(ap_percpu_ptr))->self = (uintptr_t) ap_percpu_ptr;
   ((per_cpu_t *)(ap_percpu_ptr))->id = id;
   ((per_cpu_t *)(ap_percpu_ptr))->apic_id = apic_id;
 
+  // setup ap page tables
+  uintptr_t ap_pml4 = make_ap_page_tables();
   smpdata->pml4_addr = (uint32_t) ap_pml4;
   smpdata->percpu_ptr = (uintptr_t) ap_percpu_ptr;
   smpdata->stack_addr = (uintptr_t) ap_stack_ptr;
@@ -68,13 +70,9 @@ void smp_init() {
     return;
   }
 
-  page_t *code_pages = _alloc_pages_at(SMPBOOT_START, 1, PG_WRITE | PG_EXEC | PG_FORCE);
-  page_t *data_pages = _alloc_pages_at(SMPDATA_START, 1, PG_NOCACHE | PG_WRITE | PG_FORCE);
-  uintptr_t eip = PAGE_PHYS_ADDR(code_pages);
-  void *code_ptr = _vmap_pages(code_pages);
-  void *data_ptr = _vmap_pages(data_pages);
-  kassert(code_ptr != NULL);
-  kassert(data_ptr != NULL);
+  void *code_ptr = vmalloc_at_phys(SMPBOOT_START, PAGE_SIZE, PG_WRITE|PG_EXEC|PG_FORCE);
+  void *data_ptr = vmalloc_at_phys(SMPDATA_START, PAGE_SIZE, PG_NOCACHE|PG_WRITE|PG_FORCE);
+  uintptr_t eip = vm_virt_to_phys((uintptr_t) code_ptr);
 
   size_t smpboot_size = smpboot_end - smpboot_start;
   kassert(smpboot_size <= PAGE_SIZE);
@@ -110,8 +108,8 @@ void smp_init() {
     system_num_cpus++;
   }
 
-  _free_pages(code_pages);
-  _free_pages(data_pages);
+  vfree(code_ptr);
+  vfree(data_ptr);
   kprintf("smp: total cpus = %d\n", system_num_cpus);
   kprintf("smp: done!\n");
 }

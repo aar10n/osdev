@@ -402,8 +402,7 @@ void register_xhci_controller(pcie_device_t *device) {
   }
 
   // map the xhci into the virtual memory space
-  bar->virt_addr = (uintptr_t) _vmap_mmio(bar->phys_addr, align(bar->size, PAGE_SIZE), PG_NOCACHE | PG_WRITE);
-  _vmap_get_mapping(bar->virt_addr)->name = "xhci";
+  bar->virt_addr = (uintptr_t) vm_alloc_map_phys(bar->phys_addr, 0, align(bar->size, PAGE_SIZE), 0, PG_NOCACHE | PG_WRITE, "xhci");
 
   if (!HCCPARAMS1_AC64(read32(bar->virt_addr, XHCI_CAP_HCCPARAMS1))) {
     // we dont support 32-bit controllers right now
@@ -775,7 +774,7 @@ int _xhci_setup_controller(xhci_controller_t *hc) {
   write32(hc->op_base, XHCI_OP_CONFIG, CONFIG_MAX_SLOTS_EN(max_slots));
 
   // setup device context base array pointer
-  uint64_t dcbaap_ptr = _vm_virt_to_phys((uintptr_t) hc->dcbaap);
+  uint64_t dcbaap_ptr = virt_to_phys(hc->dcbaap);
   write64(hc->op_base, XHCI_OP_DCBAAP, DCBAAP_PTR(dcbaap_ptr));
 
   // set up the command ring
@@ -976,7 +975,7 @@ int _xhci_setup_device(_xhci_device_t *device) {
   xhci_endpoint_t *ep0 = device->endpoints[0];
   ep0->ctx->max_packt_sz = get_default_ep0_packet_size(device->port);
   device->ictx->slot->intrptr_target = device->interrupter->index;
-  hc->dcbaap[device->slot_id] = PAGE_PHYS_ADDR(device->dctx->pages);
+  hc->dcbaap[device->slot_id] = virt_to_phys(device->dctx->buffer);
 
   // address device
   if (_xhci_run_address_device_cmd(hc, device) < 0) {
@@ -1088,7 +1087,7 @@ int _xhci_run_address_device_cmd(xhci_controller_t *hc, _xhci_device_t *device) 
   clear_trb(&cmd);
   cmd.trb_type = TRB_ADDR_DEV_CMD;
   cmd.slot_id = device->slot_id;
-  cmd.input_ctx = PAGE_PHYS_ADDR(device->ictx->pages);
+  cmd.input_ctx = virt_to_phys(device->ictx->buffer);
   return _xhci_run_command_trb(hc, cast_trb(&cmd), NULL);
 }
 
@@ -1098,7 +1097,7 @@ int _xhci_run_configure_ep_cmd(xhci_controller_t *hc, _xhci_device_t *device) {
   clear_trb(&cmd);
   cmd.trb_type = TRB_CONFIG_EP_CMD;
   cmd.slot_id = device->slot_id;
-  cmd.input_ctx = PAGE_PHYS_ADDR(device->ictx->pages);
+  cmd.input_ctx = virt_to_phys(device->ictx->buffer);
   return _xhci_run_command_trb(hc, cast_trb(&cmd), NULL);
 }
 
@@ -1108,7 +1107,7 @@ int _xhci_run_evaluate_ctx_cmd(xhci_controller_t *hc, _xhci_device_t *device) {
   xhci_eval_ctx_cmd_trb_t cmd;
   cmd.trb_type = TRB_EVAL_CTX_CMD;
   cmd.slot_id = device->slot_id;
-  cmd.input_ctx = PAGE_PHYS_ADDR(device->ictx->pages);
+  cmd.input_ctx = virt_to_phys(device->ictx->buffer);
   return _xhci_run_command_trb(hc, cast_trb(&cmd), NULL);
 }
 
@@ -1411,12 +1410,10 @@ xhci_ictx_t *_xhci_alloc_input_ctx(_xhci_device_t *device) {
   size_t ctxsz = is_64_byte_context(hc) ? 64 : 32;
 
   // input context
-  page_t *page = valloc_zero_pages(1, PG_WRITE | PG_NOCACHE);
-  void *ptr = (void *) PAGE_VIRT_ADDR(page);
+  void *ptr = vmalloc(PAGE_SIZE, PG_WRITE | PG_NOCACHE);
 
-  xhci_ictx_t *ictx = kmalloc(sizeof(xhci_ictx_t));
-  memset(ictx, 0, sizeof(xhci_ictx_t));
-  ictx->pages = page;
+  xhci_ictx_t *ictx = kmallocz(sizeof(xhci_ictx_t));
+  ictx->buffer = ptr;
   ictx->ctrl = ptr;
   ictx->slot = offset_ptr(ptr, ctxsz);
   for (int i = 0; i < MAX_ENDPOINTS; i++) {
@@ -1435,7 +1432,7 @@ xhci_ictx_t *_xhci_alloc_input_ctx(_xhci_device_t *device) {
 }
 
 int _xhci_free_input_ctx(xhci_ictx_t *ictx) {
-  vfree_pages(ictx->pages);
+  vfree(ictx->buffer);
   kfree(ictx);
   return 0;
 }
@@ -1445,22 +1442,18 @@ xhci_dctx_t *_xhci_alloc_device_ctx(_xhci_device_t *device) {
   size_t ctxsz = is_64_byte_context(hc) ? 64 : 32;
 
   // input context
-  page_t *page = valloc_zero_pages(1, PG_WRITE | PG_NOCACHE);
-  void *ptr = (void *) PAGE_VIRT_ADDR(page);
-
-  xhci_dctx_t *dctx = kmalloc(sizeof(xhci_dctx_t));
-  memset(dctx, 0, sizeof(xhci_dctx_t));
-  dctx->pages = page;
-  dctx->slot = ptr;
+  xhci_dctx_t *dctx = kmallocz(sizeof(xhci_dctx_t));
+  dctx->buffer = vmalloc(PAGE_SIZE, PG_WRITE | PG_NOCACHE);
+  dctx->slot = dctx->buffer;
   for (int i = 0; i < 31; i++) {
-    dctx->endpoint[i] = offset_ptr(ptr, ctxsz * (i + 2));
+    dctx->endpoint[i] = offset_ptr(dctx->buffer, ctxsz * (i + 2));
   }
 
   return dctx;
 }
 
 int _xhci_free_device_ctx(xhci_dctx_t *dctx) {
-  vfree_pages(dctx->pages);
+  vfree(dctx->buffer);
   kfree(dctx);
   return 0;
 }
@@ -1470,28 +1463,25 @@ int _xhci_free_device_ctx(xhci_dctx_t *dctx) {
 //
 
 _xhci_ring_t *_xhci_alloc_ring(size_t capacity) {
-  size_t num_pages = SIZE_TO_PAGES(capacity * sizeof(xhci_trb_t));
-  size_t num_trbs = PAGES_TO_SIZE(num_pages) / sizeof(xhci_trb_t);
+  size_t size = capacity * sizeof(xhci_trb_t);
 
-  _xhci_ring_t *ring = kmalloc(sizeof(_xhci_ring_t));
-  memset(ring, 0, sizeof(_xhci_ring_t));
-  ring->page = valloc_zero_pages(num_pages, PG_WRITE);
-  ring->ptr = (void *) PAGE_VIRT_ADDR(ring->page);
+  _xhci_ring_t *ring = kmallocz(sizeof(_xhci_ring_t));
+  ring->base = vmalloc(capacity * sizeof(xhci_trb_t), PG_WRITE);
   ring->index = 0;
-  ring->max_index = num_trbs;
+  ring->max_index = capacity;
   ring->cycle = 1;
   return ring;
 }
 
 void _xhci_free_ring(_xhci_ring_t *ring) {
-  vfree_pages(ring->page);
+  vfree(ring->base);
   kfree(ring);
 }
 
 int _xhci_ring_enqueue_trb(_xhci_ring_t *ring, xhci_trb_t trb) {
   kassert(trb.trb_type != 0);
   trb.cycle = ring->cycle;
-  ring->ptr[ring->index] = trb;
+  ring->base[ring->index] = trb;
   ring->index++;
 
   if (ring->index == ring->max_index - 1) {
@@ -1500,8 +1490,8 @@ int _xhci_ring_enqueue_trb(_xhci_ring_t *ring, xhci_trb_t trb) {
     link.trb_type = TRB_LINK;
     link.cycle = ring->cycle;
     link.toggle_cycle = 1;
-    link.rs_addr = PAGE_PHYS_ADDR(ring->page);
-    ring->ptr[ring->index] = cast_trb(&link);
+    link.rs_addr = virt_to_phys(ring->base);
+    ring->base[ring->index] = cast_trb(&link);
 
     ring->index = 0;
     ring->cycle = !ring->cycle;
@@ -1511,7 +1501,7 @@ int _xhci_ring_enqueue_trb(_xhci_ring_t *ring, xhci_trb_t trb) {
 
 bool _xhci_ring_dequeue_trb(_xhci_ring_t *ring, xhci_trb_t *out) {
   kassert(out != NULL);
-  xhci_trb_t trb = ring->ptr[ring->index];
+  xhci_trb_t trb = ring->base[ring->index];
   if (trb.trb_type == 0) {
     return false;
   }
@@ -1526,7 +1516,7 @@ bool _xhci_ring_dequeue_trb(_xhci_ring_t *ring, xhci_trb_t *out) {
 }
 
 uint64_t _xhci_ring_device_ptr(_xhci_ring_t *ring) {
-  return PAGE_PHYS_ADDR(ring->page) + (ring->index * sizeof(xhci_trb_t));
+  return virt_to_phys(ring->base) + (ring->index * sizeof(xhci_trb_t));
 }
 
 size_t _xhci_ring_size(_xhci_ring_t *ring) {

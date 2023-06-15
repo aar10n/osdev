@@ -23,12 +23,11 @@ int elf_pt_load(Elf64_Phdr *pheader, void *buf, elf_program_t *prog) {
     flags |= PG_WRITE;
 
   size_t memsz = align_down(pheader->p_memsz, pheader->p_align) + pheader->p_align;
-
-  page_t *pages = _alloc_pages(SIZE_TO_PAGES(memsz), flags);
   uintptr_t v_aligned = align_down(pheader->p_vaddr + prog->base, pheader->p_align);
   void *addr = (void *)(pheader->p_vaddr + prog->base);
 
-  void *res = _vmap_pages_addr(v_aligned, pages);
+  page_t *pages = _alloc_pages(SIZE_TO_PAGES(memsz), flags);
+  void *res = vm_alloc_map_pages(pages, v_aligned, memsz, VM_FIXED|VM_USER, flags, "elf pt_load");
   if (res == NULL) {
     panic("exec: could not load executable");
   }
@@ -59,13 +58,13 @@ int elf_pt_dynamic(Elf64_Phdr *pheader, void *buf, elf_program_t *prog) {
   }
 
   uintptr_t page_boundary = align_down(pheader->p_vaddr + prog->base, PAGE_SIZE);
-  vm_mapping_t *mapping = _vmap_get_mapping(page_boundary);
-  if (mapping == NULL) {
+  vm_mapping_t *vm = vm_get_mapping(page_boundary);
+  if (vm == NULL) {
     return elf_pt_load(pheader, buf, prog);
   }
 
   void *addr = (void *)(pheader->p_vaddr + prog->base);
-  kassert(pheader->p_vaddr + pheader->p_memsz < page_boundary + mapping->size);
+  kassert(pheader->p_vaddr + pheader->p_memsz < page_boundary + vm->size);
   cpu_disable_write_protection();
   memcpy(addr, buf + pheader->p_offset, pheader->p_filesz);
   cpu_enable_write_protection();

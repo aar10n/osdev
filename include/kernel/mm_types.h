@@ -6,6 +6,7 @@
 #define KERNEL_MM_TYPES_H
 
 #include <base.h>
+#include <str.h>
 #include <queue.h>
 #include <spinlock.h>
 
@@ -29,13 +30,11 @@ struct vm_mapping;
 struct mem_zone;
 
 struct intvl_tree;
+struct rb_tree;
 struct file;
 struct bitmap;
 
 // page flags
-#define PG_USED       (1 << 0)
-#define PG_MAPPED     (1 << 1)
-#define PG_READ       0
 #define PG_WRITE      (1 << 2)
 #define PG_EXEC       (1 << 3)
 #define PG_USER       (1 << 4)
@@ -51,71 +50,71 @@ struct bitmap;
 #define PG_ZERO       (1 << 19)
 
 typedef struct page {
-  uint64_t address;              // page address
-  uint32_t flags;                // page flags (PG_*)
+  uint64_t address;              // physical address
+  uint32_t flags;                // page flags
   union {
     struct {
       uint32_t list_sz;          // size of list
     } head;// if PG_LIST_HEAD == 1
-    struct {
-      uint32_t raw;
-    } reserved;
   };
-  struct vm_mapping *mapping;    // virtual mapping
+  struct vm_mapping *new_mapping;
   struct mem_zone *zone;         // owning memory zone
   SLIST_ENTRY(struct page) next;
 } page_t;
 
 #define PAGE_PHYS_ADDR(page) ((page)->address)
-#define PAGE_VIRT_ADDR(page) ((page)->mapping->address)
-#define PAGE_VIRT_ADDRP(page) ((void *)((page)->mapping->address))
-
-#define IS_PG_MAPPED(flags)    ((flags) & PG_MAPPED)
-#define IS_PG_WRITABLE(flags)  ((flags) & PG_WRITE)
-#define IS_PG_USER(flags)      ((flags) & PG_USER)
-#define IS_PG_LIST_HEAD(flags) ((flags) & PG_LIST_HEAD)
 
 //
 
 typedef struct address_space {
-  struct intvl_tree *root;
+  struct intvl_tree *tree;
   uintptr_t min_addr;
   uintptr_t max_addr;
   spinlock_t lock;
+
+  size_t num_mappings;
+  LIST_HEAD(struct vm_mapping) mappings;
+  struct intvl_tree *new_tree;
 
   uintptr_t page_table;
   LIST_HEAD(struct page) table_pages;
 } address_space_t;
 
-// vm types
-#define VM_TYPE_PHYS   0 // direct physical mapping
-#define VM_TYPE_PAGE   1 // mapped page structures
-#define VM_TYPE_ANON   2 // mmap'd anonymous memory
-#define VM_TYPE_RSVD   3 // reserved memory
 
-// vm attributes
-#define VM_ATTR_USER        (1 << 0) // region is in user space
-#define VM_ATTR_RESERVED    (1 << 1) // region is reserved
-#define VM_ATTR_MMIO        (1 << 2) // region is memory-mapped I/O
+enum vm_type {
+  VM_TYPE_RSVD, // reserved memory
+  VM_TYPE_PHYS, // direct physical mapping
+  VM_TYPE_PAGE, // mapped pages
+};
+
+// vm flags
+#define VM_USER   0x01  // mapping lives in user space
+#define VM_FIXED  0x02  // mapping has fixed address (hint used for address)
+#define VM_GUARD  0x04  // leave a guard page at the end of the allocation (only for VM_TYPE_PAGE)
+#define VM_STACK  0x08  // mapping grows downwards (only for VM_TYPE_PAGE)
+#define VM_GROWS  0x10  // mapping can grow or shrink (conflicts with VM_FIXED)
 
 typedef struct vm_mapping {
-  uint64_t address;    // virtual address
-  uint64_t size;       // mapping size
+  enum vm_type type : 8;    // vm type
+  uint32_t flags;           // vm flags
+  uint32_t pg_flags;        // page flags (when mapped)
 
-  uint16_t type;       // mapping type (VM_TYPE_*)
-  uint16_t attr;       // mapping attributes (VM_ATTR_*)
-  uint32_t reserved;   // reserved
+  spinlock_t lock;          // mapping lock
+  address_space_t *space;   // owning address space
+  str_t name;               // name of the mapping
 
-  uint32_t flags;      // page flags (PG_*) [if type != VM_TYPE_PAGE]
-  spinlock_t lock;     // mapping lock
+  uint64_t address;         // virtual address
+  size_t size;              // mapping size
+  size_t virt_size;         // mapping size in the address space
 
-  const char *name;    // name of the mapping
   union {
-    void *ptr;
-    uint64_t phys;     // VM_TYPE_PHYS
-    struct page *page; // VM_TYPE_PAGE|VM_TYPE_ANON
-  } data;
+    uintptr_t vm_phys;
+    struct page *vm_pages;
+  };
+
+  LIST_ENTRY(struct vm_mapping) list; // list of mappings
 } vm_mapping_t;
+
 
 // zone boundaries
 #define ZONE_LOW_MAX    SIZE_1MB
@@ -148,11 +147,9 @@ typedef struct mem_zone {
 #define KERNEL_SPACE_START  0xFFFF800000000000ULL
 #define KERNEL_SPACE_END    0xFFFFFFFFFFFFFFFFULL
 
-#define FRAMEBUFFER_VA      0xFFFFC00000000000ULL
-#define MMIO_BASE_VA        0xFFFFC00200000000ULL
+#define FRAMEBUFFER_VA      0xFFFFBFFF00000000ULL
 #define KERNEL_HEAP_VA      0xFFFFFF8000400000ULL
 #define KERNEL_RESERVED_VA  0xFFFFFF8000C00000ULL
-#define KERNEL_STACK_TOP_VA 0xFFFFFF8040000000ULL
 
 #define KERNEL_HEAP_SIZE   (SIZE_4MB + SIZE_2MB)
 #define KERNEL_STACK_SIZE  SIZE_16KB

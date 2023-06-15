@@ -26,8 +26,7 @@ typedef struct xhci_controller xhci_controller_t;
 typedef struct _xhci_device _xhci_device_t;
 
 typedef struct _xhci_ring {
-  xhci_trb_t *ptr;    // ring base
-  page_t *page;       // ring pages
+  xhci_trb_t *base;   // ring base
   uint32_t index;     // ring enqueue/dequeue index
   uint32_t max_index; // max index
   int cycle;          // cycle state
@@ -49,14 +48,14 @@ typedef struct xhci_ictx {
   xhci_input_ctrl_ctx_t *ctrl;
   xhci_slot_ctx_t *slot;
   xhci_endpoint_ctx_t *endpoint[31];
-  page_t *pages;
+  void *buffer;
 } xhci_ictx_t;
 
 // device context
 typedef struct xhci_dctx {
   xhci_slot_ctx_t *slot;
   xhci_endpoint_ctx_t *endpoint[31];
-  page_t *pages;
+  void *buffer;
 } xhci_dctx_t;
 
 typedef struct _xhci_port {

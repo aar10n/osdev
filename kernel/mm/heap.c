@@ -108,6 +108,7 @@ void mm_init_kheap() {
     early_map_entries(virt_addr, phys_addr, page_count, PG_WRITE);
   }
 
+  memset(&kheap, 0, sizeof(mm_heap_t));
   kheap.phys_addr = phys_addr;
   kheap.virt_addr = KERNEL_HEAP_VA;
   kheap.size = KERNEL_HEAP_SIZE;
@@ -119,6 +120,10 @@ void mm_init_kheap() {
   mutex_init(&kheap.lock, MUTEX_REENTRANT | MUTEX_SHARED);
 
   kprintf("initialized kernel heap\n");
+}
+
+uintptr_t kheap_phys_addr() {
+  return kheap.phys_addr;
 }
 
 // ----- kmalloc -----
@@ -209,7 +214,9 @@ void *__kmalloc(mm_heap_t *heap, size_t size, size_t alignment) {
   }
 
   if (aligned_mem + size > END_ADDR(heap)) {
+    kprintf("heap: allocation overflows end of heap: %p (size=%zu, align=%zu)\n", aligned_mem, size, alignment);
     kprintf("heap: heap out of memory\n");
+    kprintf("      virt_addr = %p\n", heap->virt_addr);
     kprintf("      size = %zu\n", heap->size);
     kprintf("      used = %zu\n", heap->used);
     kprintf("      alloc count = %zu\n", heap->stats.alloc_count);

@@ -28,21 +28,21 @@
 
 hid_buffer_t *hid_buffer_create(uint16_t alloc_size) {
   hid_buffer_t *buffer = kmalloc(sizeof(hid_buffer_t));
-  page_t *page = valloc_zero_pages(1, PG_WRITE);
+  void *buf = vmalloc_phys(PAGE_SIZE, PG_WRITE | PG_USER);
 
-  buffer->alloc_ptr = PAGE_PHYS_ADDR(page);
-  buffer->read_ptr = PAGE_VIRT_ADDR(page);
+  buffer->alloc_ptr = virt_to_phys(buf);
+  buffer->read_ptr = (uintptr_t) buf;
   buffer->alloc_size = alloc_size;
   buffer->max_index = PAGE_SIZE / alloc_size;
-  buffer->page = page;
+  buffer->virt_base = (uintptr_t) buf;
   return buffer;
 }
 
 uintptr_t hid_buffer_alloc(hid_buffer_t *buffer) {
   uintptr_t ptr = buffer->alloc_ptr;
-  int index = (ptr - PAGE_PHYS_ADDR(buffer->page)) / buffer->alloc_size;
+  size_t index = (ptr - buffer->phys_base) / (size_t)buffer->alloc_size;
   if (index == buffer->max_index - 1) {
-    buffer->alloc_ptr = PAGE_PHYS_ADDR(buffer->page);
+    buffer->alloc_ptr = buffer->phys_base;
   } else {
     buffer->alloc_ptr += buffer->alloc_size;
   }
@@ -51,9 +51,9 @@ uintptr_t hid_buffer_alloc(hid_buffer_t *buffer) {
 
 void *hid_buffer_read(hid_buffer_t *buffer) {
   uintptr_t ptr = buffer->read_ptr;
-  int index = (ptr - PAGE_VIRT_ADDR(buffer->page)) / buffer->alloc_size;
+  size_t index = (ptr - buffer->phys_base) / buffer->alloc_size;
   if (index == buffer->max_index - 1) {
-    buffer->read_ptr = PAGE_VIRT_ADDR(buffer->page);
+    buffer->read_ptr = buffer->virt_base;
   } else {
     buffer->read_ptr += buffer->alloc_size;
   }
@@ -62,8 +62,8 @@ void *hid_buffer_read(hid_buffer_t *buffer) {
 
 void *hid_buffer_read_last(hid_buffer_t *buffer) {
   uintptr_t ptr = buffer->read_ptr;
-  if (ptr == PAGE_VIRT_ADDR(buffer->page)) {
-    return (void *) PAGE_VIRT_ADDR(buffer->page) + PAGE_SIZE - buffer->alloc_size;
+  if (ptr == buffer->virt_base) {
+    return (void *) buffer->virt_base + PAGE_SIZE - buffer->alloc_size;
   }
   return (void *) ptr - buffer->alloc_size;
 }

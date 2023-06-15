@@ -176,13 +176,13 @@
   }
 
 
-#define SLIST_GET_LAST(el, name)         \
-  ({                                      \
-    typeof(el) ptr = el;                 \
-    while (ptr && ptr->name != NULL) {   \
-      ptr = ptr->name;                   \
-    }                                    \
-    ptr;                                 \
+#define SLIST_GET_LAST(el, name)            \
+  ({                                        \
+    typeof(el) __ptr = el;                  \
+    while (__ptr && __ptr->name != NULL) {  \
+      __ptr = __ptr->name;                  \
+    }                                       \
+    __ptr;                                  \
   })
 
 // Raw list functions

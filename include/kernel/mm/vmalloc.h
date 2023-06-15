@@ -13,38 +13,51 @@
 void init_address_space();
 void init_ap_address_space();
 uintptr_t make_ap_page_tables();
-address_space_t *new_address_space();
 address_space_t *fork_address_space();
 
-void *_vmap_pages(page_t *pages);
-void *_vmap_named_pages(page_t *pages, const char *name);
-void *_vmap_pages_addr(uintptr_t virt_addr, page_t *pages);
-void *_vmap_phys(uintptr_t phys_addr, size_t size, uint32_t flags);
-void *_vmap_phys_addr(uintptr_t virt_addr, uintptr_t phys_addr, size_t size, uint32_t flags);
-void *_vmap_reserved_shortlived(vm_mapping_t *mapping, page_t *pages);
+// virtual memory api
+//
 
-void *_vmap_stack_pages(page_t *pages);
-void *_vmap_mmio(uintptr_t phys_addr, size_t size, uint32_t flags);
+vm_mapping_t *vm_alloc(enum vm_type type, uintptr_t hint, size_t size, uint32_t vm_flags, const char *name);
+vm_mapping_t *vm_alloc_rsvd(uintptr_t hint, size_t size, uint32_t vm_flags, const char *name);
+vm_mapping_t *vm_alloc_phys(uintptr_t phys_addr, uintptr_t hint, size_t size, uint32_t vm_flags, const char *name);
+vm_mapping_t *vm_alloc_pages(page_t *pages, uintptr_t hint, size_t size, uint32_t vm_flags, const char *name);
+void *vm_alloc_map_phys(uintptr_t phys_addr, uintptr_t hint, size_t size, uint32_t vm_flags, uint32_t pg_flags, const char *name);
+void *vm_alloc_map_pages(page_t *pages, uintptr_t hint, size_t size, uint32_t vm_flags, uint32_t pg_flags, const char *name);
+void vm_free(vm_mapping_t *vm);
 
-vm_mapping_t *_vmap_reserve(uintptr_t virt_addr, size_t size);
-vm_mapping_t *_vmap_reserve_range(size_t size, uintptr_t hint);
+void *vm_map(vm_mapping_t *vm, uint32_t pg_flags);
+void vm_unmap(vm_mapping_t *vm);
+int vm_resize(vm_mapping_t *vm, size_t new_size, bool allow_move);
 
-void _vunmap_pages(page_t *pages);
-void _vunmap_addr(uintptr_t virt_addr, size_t size);
+int vm_putpage(vm_mapping_t *vm, size_t off, page_t *page);
+page_t *vm_getpage(vm_mapping_t *vm, size_t off);
 
-vm_mapping_t *_vmap_get_mapping(uintptr_t virt_addr);
-uintptr_t _vm_virt_to_phys(uintptr_t virt_addr);
-page_t *_vm_virt_to_page(uintptr_t virt_addr);
+vm_mapping_t *vm_get_mapping(uintptr_t virt_addr);
+uintptr_t vm_virt_to_phys(uintptr_t virt_addr);
+uintptr_t vm_mapping_to_phys(vm_mapping_t *vm, uintptr_t virt_addr);
 
-page_t *valloc_pages(size_t count, uint32_t flags);
-page_t *valloc_named_pagesz(size_t count, uint32_t flags, const char *name);
-page_t *valloc_zero_pages(size_t count, uint32_t flags);
-void vfree_pages(page_t *pages);
+#define virt_to_phys(virt_addr) vm_virt_to_phys((uintptr_t)(virt_addr))
 
-void _address_space_print_mappings(address_space_t *space);
-void _address_space_to_graphiz(address_space_t *space);
-void vm_print_debug_address_space();
+// vmalloc api
+//
+// The vmalloc functions provide a kmalloc-like interface for allocating regions
+// of page backed memory. While all vmalloc functions return virtually contiguous
+// memory, only the _phys functions guarentee that the backing pages are physically
+// contiguous as well. The pointer returned by all functions points to the start
+// of the allocated region. The pointer given to vfree() must be the same as the
+// one returned by the vmalloc functions.
 
-#define virt_to_phys_addr(addr) (_vm_virt_to_phys((uintptr_t)(addr)))
+void *vmalloc(size_t size, uint32_t pg_flags);
+void *vmalloc_at(uintptr_t virt_addr, size_t size, uint32_t pg_flags);
+void *vmalloc_phys(size_t size, uint32_t pg_flags);
+void *vmalloc_at_phys(uintptr_t phys_addr, size_t size, uint32_t pg_flags);
+void vfree(void *ptr);
+
+// debug
+void vm_print_mappings(address_space_t *space);
+void vm_print_space_tree_graphiz(address_space_t *space);
+void vm_print_address_space();
+
 
 #endif

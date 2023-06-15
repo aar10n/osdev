@@ -330,8 +330,7 @@ void remap_dwarf_sections(void *data) {
     return;
   }
 
-  section->virt_addr = (uintptr_t) _vmap_phys(section->phys_addr, size, 0);
-  _vmap_get_mapping(section->virt_addr)->name = section->name;
+  section->virt_addr = (uintptr_t) vm_alloc_map_phys(section->phys_addr, 0, size, 0, 0, section->name);
 }
 
 void dwarf_early_init() {

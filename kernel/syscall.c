@@ -204,7 +204,7 @@ static pid_t sys_fork() {
 // SYS_IOCTL
 
 static int sys_set_fs_base(uintptr_t addr) {
-  PERCPU_THREAD->tls->addr = addr;
+  PERCPU_THREAD->fs_base = addr;
   cpu_write_fsbase(addr);
   return 0;
 }

@@ -11,7 +11,7 @@
 typedef struct ramfs_file {
   size_t size;
   size_t capacity;
-  page_t *pages;
+  vm_mapping_t *vm;
 } ramfs_file_t;
 
 // ramfs file api

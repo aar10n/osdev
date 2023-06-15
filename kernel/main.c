@@ -43,6 +43,8 @@ noreturn void root();
 // Kernel entry
 //
 
+void page_fault_handler(uint8_t vector, uint32_t error_code, cpu_irq_stack_t *frame, cpu_registers_t *regs);
+
 __used void kmain() {
   QEMU_DEBUG_INIT();
   console_early_init();
@@ -63,6 +65,7 @@ __used void kmain() {
   irq_init();
   init_mem_zones();
   init_address_space();
+
   syscalls_init();
   fs_early_init();
 
@@ -115,14 +118,6 @@ noreturn void root() {
   // probe_all_buses();
 
   //////////////////////////////////////////
-
-  ls("/");
-  mkdir("/root");
-  ls("/");
-  echo("/root/hello.txt", "hello world\n");
-  ls("/root");
-  stat("/root/hello.txt");
-  cat("/root/hello.txt");
 
   // int fd = fs_mkdir("/test", 0777);
   // if (fd < 0) {

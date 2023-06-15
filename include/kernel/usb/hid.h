@@ -104,7 +104,9 @@ typedef struct hid_buffer {
   uintptr_t read_ptr;
   uint16_t alloc_size;
   uint16_t max_index;
-  page_t *page;
+
+  uintptr_t virt_base;
+  uintptr_t phys_base;
 } hid_buffer_t;
 
 typedef struct hid_device {

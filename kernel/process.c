@@ -34,7 +34,6 @@ static bitmap_t *pid_nums = NULL;
 static spinlock_t pid_nums_lock;
 static process_t **ptable = NULL;
 static size_t ptable_size = 0;
-static page_t *ptable_pages = NULL;
 
 static inline int ptr_list_len(const uintptr_t *list) {
   if (list == NULL) {
@@ -86,18 +85,6 @@ process_t *process_alloc(pid_t pid, pid_t ppid, void *(start_routine)(void *), v
   process->files = ftable_alloc();
   spin_init(&process->lock);
 
-  mutex_init(&process->sig_mutex, MUTEX_REENTRANT | MUTEX_SHARED);
-  process->sig_handlers = kmalloc(NSIG * sizeof(uintptr_t));
-  memset(process->sig_handlers, 0, NSIG * sizeof(uintptr_t));
-  process->sig_threads = kmalloc(NSIG * sizeof(uintptr_t));
-  memset(process->sig_threads, 0, NSIG * sizeof(uintptr_t));
-  signal_init_handlers(process);
-
-  mutex_init(&process->ipc_mutex, MUTEX_SHARED);
-  cond_init(&process->ipc_cond_avail, 0);
-  cond_init(&process->ipc_cond_recvd, 0);
-  process->ipc_msg = NULL;
-
   thread_t *main = thread_alloc(0, start_routine, arg, false);
   main->process = process;
   const char *func_name = debug_function_name((uintptr_t) start_routine);
@@ -134,11 +121,7 @@ void process_create_root(void (function)()) {
   process_t *process = process_alloc(pid, -1, root_process_wrapper, function);
 
   // allocate process table
-  size_t num_pages = SIZE_TO_PAGES(sizeof(process_t *) * MAX_PROCS);
-  ptable_pages = valloc_zero_pages(num_pages, PG_WRITE);
-  kassert(ptable_pages != NULL);
-  ptable = PAGE_VIRT_ADDRP(ptable_pages);
-
+  ptable = kmallocz(sizeof(process_t *) * MAX_PROCS);
   ptable[0] = process;
   ptable_size = 1;
 }
@@ -175,10 +158,14 @@ pid_t process_fork() {
   // clone main thread
   thread_t *main = thread_copy(parent_thread);
 
-  uintptr_t stack = PAGE_VIRT_ADDR(main->kernel_stack);
+  uintptr_t stack = main->kernel_stack->address;
+  vm_mapping_t *vm = vm_get_mapping(stack);
+  kassert(vm != NULL);
+
   uintptr_t frame = (uintptr_t) __builtin_frame_address(0);
-  uintptr_t offset = frame - KERNEL_STACK_TOP_VA;
-  uintptr_t rsp = stack + KERNEL_STACK_SIZE - offset;
+  uintptr_t offset = frame - (stack + vm->size);
+
+  uintptr_t rsp = stack + vm->size - offset;
   main->ctx->rsp = rsp;
   kprintf("[process] rsp: %p\n", rsp);
 
@@ -207,9 +194,9 @@ int process_execve(const char *path, char *const argv[], char *const envp[]) {
   thread_t *thread = PERCPU_THREAD;
   if (thread->user_stack == NULL) {
     thread_alloc_stack(thread, true); // allocate user stack
-    memset((void *) PAGE_VIRT_ADDR(thread->user_stack), 0, USER_PSTACK_SIZE);
+    memset((void *) thread->user_stack->address, 0, USER_STACK_SIZE);
   }
-  uintptr_t stack_top = PAGE_VIRT_ADDR(thread->user_stack) + USER_PSTACK_SIZE;
+  uintptr_t stack_top = thread->user_stack->address + USER_STACK_SIZE;
   uint64_t *rsp = (void *) stack_top;
 
   int argc = ptr_list_len((void *) argv);

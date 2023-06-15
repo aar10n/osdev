@@ -18,7 +18,12 @@ typedef struct cstr {
   size_t len;
 } cstr_t;
 
+#define cstr_null ((cstr_t){ NULL, 0 })
+
 static inline cstr_t cstr_new(const char *str, size_t len) {
+  if (!str)
+    return cstr_null;
+
   return (cstr_t) {
     .str = str,
     .len = len,
@@ -26,6 +31,8 @@ static inline cstr_t cstr_new(const char *str, size_t len) {
 }
 
 static inline cstr_t cstr_make(const char *str) {
+  if (!str)
+    return cstr_null;
   return cstr_new(str, strlen(str));
 }
 
@@ -54,6 +61,8 @@ typedef struct str {
   size_t len;
 } str_t;
 
+#define str_null ((str_t) { NULL, 0 })
+
 static inline cstr_t cstr_from_str(str_t str) {
   return cstr_new(str.str, str.len);
 }
@@ -68,6 +77,9 @@ static inline str_t str_alloc(size_t len) {
 }
 
 static inline str_t str_new(const char *str) {
+  if (!str)
+    return str_null;
+
   size_t len = strlen(str);
   char *buf = kmalloc(len + 1);
   memcpy(buf, str, len);
@@ -79,6 +91,9 @@ static inline str_t str_new(const char *str) {
 }
 
 static inline str_t str_make(const char *str, size_t len) {
+  if (!str)
+    return str_null;
+
   char *buf = kmalloc(len + 1);
   memcpy(buf, str, len);
   buf[len] = '\0';

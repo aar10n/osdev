@@ -64,6 +64,10 @@ static dwarf_file_t *locate_or_load_dwarf_file(uintptr_t addr) {
 }
 
 static dwarf_function_t *locate_or_load_dwarf_function(uintptr_t addr) {
+  if (!has_debug_info) {
+    return NULL;
+  }
+
   intvl_node_t *node = intvl_tree_find(debug_functions, intvl(addr, addr + 1));
   if (node == NULL) {
     dwarf_file_t *file = locate_or_load_dwarf_file(addr);
@@ -187,10 +191,6 @@ LABEL(INVALID);
 }
 
 int debug_unwind(uintptr_t rip, uintptr_t rbp) {
-  if (!has_debug_info) {
-    return -1;
-  }
-
   kprintf("backtrace\n");
 
   stackframe_t *frame = (void *) rbp;
@@ -207,7 +207,7 @@ int debug_unwind(uintptr_t rip, uintptr_t rbp) {
       }
     }
 
-    if (_vm_virt_to_phys((uintptr_t) frame->rbp) == 0) {
+    if (virt_to_phys(frame->rbp) == 0) {
       kprintf("    ?? %018p\n", frame->rip);
       break;
     }

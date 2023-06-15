@@ -33,7 +33,6 @@ static_assert(sizeof(mm_chunk_t) == 24);
 typedef struct mm_heap {
   uintptr_t phys_addr;          // physical address of heap
   uintptr_t virt_addr;          // virtual address of heap base
-  page_t *pages;                // pages representing the heap
   mm_chunk_t *last_chunk;       // the last created chunk
   LIST_HEAD(mm_chunk_t) chunks; // linked list of free chunks
   mutex_t lock;                 // heap lock (must be held to alloc/free)
@@ -48,7 +47,7 @@ typedef struct mm_heap {
 } mm_heap_t;
 
 void mm_init_kheap();
-void kheap_init();
+uintptr_t kheap_phys_addr();
 
 void *kmalloc(size_t size) __malloc_like;
 void *kmallocz(size_t size) __malloc_like;

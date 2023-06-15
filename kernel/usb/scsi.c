@@ -54,7 +54,7 @@ int scsi_device_init(usb_device_t *device) {
     return -1;
   }
 
-  usb_add_transfer(device, USB_IN, virt_to_phys_addr(info), sizeof(scsi_device_info_t));
+  usb_add_transfer(device, USB_IN, virt_to_phys(info), sizeof(scsi_device_info_t));
   if (usb_start_await_transfer(device, USB_IN) < 0) {
     kprintf("scsi: failed to read device info\n");
     kfree(cbw);
@@ -104,7 +104,7 @@ ssize_t scsi_read_internal(usb_device_t *device, uint64_t lba, uint32_t count, v
   kassert(count > 0 && count <= SCSI_MAX_XFER);
   // kprintf("scsi: read [lba = %llu, count = %u]\n", lba, count);
 
-  uint64_t size = count * 512;
+  uint64_t size = (uint64_t)count * 512;
   scsi_read16_cmd_t read_cmd = {
     .op_code = SCSI_OP_READ_16,
     .dld2 = 0,
@@ -129,7 +129,7 @@ ssize_t scsi_read_internal(usb_device_t *device, uint64_t lba, uint32_t count, v
     goto FAIL;
   }
 
-  usb_add_transfer(device, USB_IN, virt_to_phys_addr(buf), size);
+  usb_add_transfer(device, USB_IN, virt_to_phys(buf), size);
   if (usb_start_await_transfer(device, USB_IN) < 0) {
     goto FAIL;
   }
@@ -142,7 +142,7 @@ ssize_t scsi_read_internal(usb_device_t *device, uint64_t lba, uint32_t count, v
   kfree(cbw);
   kfree(csw);
   // kprintf("scsi: read successful\n");
-  return size;
+  return (ssize_t) size;
 
 LABEL(FAIL);
   kfree(cbw);
@@ -155,7 +155,7 @@ ssize_t scsi_write_internal(usb_device_t *device, uint64_t lba, uint32_t count, 
   kassert(count)
   kassert(count > 0 && count <= SCSI_MAX_XFER);
 
-  uint64_t size = count * 512;
+  uint64_t size = (uint64_t) count * 512;
   scsi_write16_cmd_t write_cmd = {
     .op_code = SCSI_OP_WRITE_16,
     .dld2 = 0,
@@ -179,7 +179,7 @@ ssize_t scsi_write_internal(usb_device_t *device, uint64_t lba, uint32_t count, 
     goto FAIL;
   }
 
-  usb_add_transfer(device, USB_OUT, _vm_virt_to_phys((uintptr_t) buf), size);
+  usb_add_transfer(device, USB_OUT, virt_to_phys(buf), size);
   if (usb_start_await_transfer(device, USB_OUT) < 0) {
     goto FAIL;
   }
@@ -192,7 +192,7 @@ ssize_t scsi_write_internal(usb_device_t *device, uint64_t lba, uint32_t count, 
   kfree(cbw);
   kfree(csw);
   // kprintf("[scsi] write successful\n");
-  return size;
+  return (ssize_t) size;
 
 LABEL(FAIL);
   kfree(cbw);
@@ -223,7 +223,7 @@ ssize_t scsi_read(usb_device_t *device, uint64_t lba, uint32_t count, void *buf)
     lba_offset += ccount;
     count -= ccount;
   }
-  return buf_offset;
+  return (ssize_t) buf_offset;
 }
 
 
@@ -245,5 +245,5 @@ ssize_t scsi_write(usb_device_t *device, uint64_t lba, uint32_t count, void *buf
     lba_offset += ccount;
     count -= ccount;
   }
-  return buf_offset;
+  return (ssize_t) buf_offset;
 }

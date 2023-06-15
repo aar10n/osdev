@@ -16,7 +16,7 @@
 
 
 static inline void *get_backing_mem(ramfs_file_t *file) {
-  return PAGE_VIRT_ADDRP(file->pages);
+  return (void *) file->vm->address;
 }
 
 static inline void alloc_backing_mem(ramfs_file_t *file, size_t size) {
@@ -24,77 +24,23 @@ static inline void alloc_backing_mem(ramfs_file_t *file, size_t size) {
     return;
   }
 
-  file->pages = valloc_pages(SIZE_TO_PAGES(size), RAMFS_PG_FLAGS);
+  // file->vm = vm_alloc_pages();
   file->size = size;
   file->capacity = PAGES_TO_SIZE(SIZE_TO_PAGES(size));
 }
 
 static inline void free_backing_mem(ramfs_file_t *file) {
-  vfree_pages(file->pages);
-  file->pages = NULL;
-}
-
-// resizes and or allocates backing memory for a file to the given size.
-// if the new size is less than the current capacity, the backing memory
-// will be resized down if the new size is less than half the capacity.
-static inline void resize_file(ramfs_file_t *file, size_t newsize) {
-  if (newsize == file->capacity) {
+  if (file->vm == NULL) {
     return;
   }
-
-  if (file->capacity == 0) {
-    // first time allocating backing memory
-    alloc_backing_mem(file, newsize);
-    return;
-  }
-
-  if (newsize < file->capacity) {
-    if (newsize == 0) {
-      // truncate the file
-      free_backing_mem(file);
-      file->size = 0;
-      file->capacity = 0;
-      return;
-    }
-
-    // if the new size is less than half the capacity, resize it down
-    if (newsize < (file->capacity / 2)) {
-      size_t npages = SIZE_TO_PAGES(newsize);
-      if (PAGES_TO_SIZE(npages) == file->capacity) {
-        // dont change backing memory
-        file->size = newsize;
-        return;
-      }
-
-      page_t *newpages = valloc_named_pagesz(npages, RAMFS_PG_FLAGS, "ramfs file");
-      memcpy(PAGE_VIRT_ADDRP(newpages), PAGE_VIRT_ADDRP(file->pages), newsize);
-      vfree_pages(file->pages);
-
-      file->pages = newpages;
-      file->size = newsize;
-      file->capacity = PAGES_TO_SIZE(npages);
-      return;
-    }
-
-    // otherwise dont change backing memory
-    file->size = newsize;
-    return;
-  }
-
-  // if the new size is greater than the capacity, resize it up
-  size_t npages = SIZE_TO_PAGES(newsize);
-  page_t *newpages = valloc_named_pagesz(npages, RAMFS_PG_FLAGS, "ramfs file");
-  memcpy(PAGE_VIRT_ADDRP(newpages), PAGE_VIRT_ADDRP(file->pages), file->size);
-  vfree_pages(file->pages);
-
-  file->pages = newpages;
-  file->size = newsize;
-  file->capacity = PAGES_TO_SIZE(npages);
+  // vm_free(file->vm);
 }
 
 //
 // MARK: RamFS File API
 //
+
+// TODO: fix this with new vm api
 
 ramfs_file_t *ramfs_file_alloc(size_t size) {
   ramfs_file_t *file = kmallocz(sizeof(ramfs_file_t));
@@ -111,7 +57,7 @@ void ramfs_file_free(ramfs_file_t *file) {
 }
 
 int ramfs_file_truncate(ramfs_file_t *file, size_t newsize) {
-  resize_file(file, newsize);
+  // resize_file(file, newsize);
   return 0;
 }
 
@@ -121,7 +67,7 @@ ssize_t ramfs_file_read(ramfs_file_t *file, size_t off, kio_t *kio) {
 
 ssize_t ramfs_file_write(ramfs_file_t *file, size_t off, kio_t *kio) {
   if (off >= file->size) {
-    resize_file(file, off + kio->size);
+    // resize_file(file, off + kio->size);
   }
   return (ssize_t) kio_read(kio, get_backing_mem(file), file->size, off);
 }
@@ -132,14 +78,14 @@ int ramfs_file_map(ramfs_file_t *file, vm_mapping_t *vm) {
   }
 
   if (vm->size > file->size) {
-    resize_file(file, vm->size);
+    // resize_file(file, vm->size);
   }
 
-  // map the file into memory
-  if (_vmap_reserved_shortlived(vm, file->pages) == NULL) {
-    DPRINTF("failed to map file\n");
-    return -EFAILED;
-  }
+  // // map the file into memory
+  // if (_vmap_reserved_shortlived(vm, file->pages) == NULL) {
+  //   DPRINTF("failed to map file\n");
+  //   return -EFAILED;
+  // }
   return 0;
 }
 

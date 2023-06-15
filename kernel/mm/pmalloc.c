@@ -14,6 +14,7 @@
 #include <init.h>
 
 void *kmalloc(size_t size) __malloc_like;
+void *kmallocz(size_t size) __malloc_like;
 void kfree(void *ptr);
 
 static LIST_HEAD(mem_zone_t) mem_zones[MAX_ZONE_TYPE];
@@ -72,11 +73,9 @@ page_t *make_page_structs(mem_zone_t *zone, uint64_t frame, size_t count, size_t
 
   LIST_HEAD(page_t) pages = LIST_HEAD_INITR;
   while (count > 0) {
-    page_t *page = kmalloc(sizeof(page_t));
+    page_t *page = kmallocz(sizeof(page_t));
     page->address = frame;
     page->flags = flags;
-    page->reserved.raw = 0;
-    page->mapping = NULL;
     page->zone = zone;
     frame += stride;
 
@@ -125,11 +124,8 @@ static void remap_initrd_image(void *_arg) {
   kassert(is_aligned(boot_info_v2->initrd_addr, PAGE_SIZE));
   kassert(is_aligned(boot_info_v2->initrd_size, PAGE_SIZE));
 
-  boot_info_v2->initrd_addr = (uintptr_t) _vmap_phys(boot_info_v2->initrd_addr, boot_info_v2->initrd_size, PG_READ);
-  vm_mapping_t *initrd_vm = _vmap_get_mapping(boot_info_v2->initrd_addr);
-  initrd_vm->name = "initrd";
-  initrd_vm->type = VM_ATTR_RESERVED;
-  initrd_vm->attr = VM_ATTR_MMIO;
+  vm_mapping_t *vm = vm_alloc_phys(boot_info_v2->initrd_addr, 0, boot_info_v2->initrd_size, 0, "initrd");
+  boot_info_v2->initrd_addr = (uintptr_t) vm_map(vm, 0);
 }
 
 void init_mem_zones() {

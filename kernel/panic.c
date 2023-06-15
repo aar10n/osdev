@@ -57,11 +57,14 @@ noreturn void panic(const char *fmt, ...) {
   kvfprintf(fmt, valist);
   va_end(valist);
   kprintf("\n");
-  while (atomic_lock_test_and_set(&lock)) {
+  while (atomic_lock_test_and_set(&lock) != 0) {
     cpu_pause();
   }
 
-  kprintf("thread %d.%d [%s]\n", getpid(), gettid(), PERCPU_THREAD->name);
+  thread_t *thread = PERCPU_THREAD;
+  if (thread) {
+    kprintf("thread %d.%d [%s]\n", thread->process->pid, thread->tid, thread->name);
+  }
   stackframe_t *frame = (void *) __builtin_frame_address(0);
   debug_unwind(frame->rip, (uintptr_t) frame->rbp);
   kprintf("==== kernel heap ====\n");
@@ -71,6 +74,8 @@ noreturn void panic(const char *fmt, ...) {
   atomic_lock_test_and_reset(&lock);
 
   ipi_deliver_mode(IPI_PANIC, IPI_ALL_EXCL, (uint64_t) panic_other_cpus);
+
+  kprintf(">>>> STOPPING CPU#%d <<<<\n", PERCPU_ID);
   while (true) {
     cpu_hlt();
   }

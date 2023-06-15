@@ -170,6 +170,25 @@ intvl_node_t *intvl_tree_find(intvl_tree_t *tree, interval_t interval) {
   return node->data;
 }
 
+void *intvl_tree_get_point(intvl_tree_t *tree, uint64_t point) {
+  rb_tree_t *rb = tree->tree;
+  interval_t i = intvl(point, point+1);
+
+  rb_node_t *node = rb->root;
+  while (node != rb->nil && !overlaps(i, get_interval(rb, node))) {
+    if (node->left != rb->nil && get_max(rb, node->left) > point) {
+      node = node->left;
+    } else {
+      node = node->right;
+    }
+  }
+
+  if (node != rb->nil) {
+    return ((intvl_node_t *) node->data)->data;
+  }
+  return NULL;
+}
+
 intvl_node_t *intvl_tree_find_closest(intvl_tree_t *tree, interval_t interval) {
   rb_tree_t *rb = tree->tree;
   interval_t i = interval;
@@ -223,6 +242,14 @@ void intvl_tree_insert(intvl_tree_t *tree, interval_t interval, void *data) {
 
 void intvl_tree_delete(intvl_tree_t *tree, interval_t interval) {
   rb_tree_delete(tree->tree, interval.start);
+}
+
+void intvl_tree_update_interval(intvl_tree_t *tree, intvl_node_t *node, off_t ds, off_t de) {
+  node->interval.start += ds;
+  node->interval.end += de;
+  node->min = min(node->min, node->interval.start);
+  node->max = max(node->max, node->interval.end);
+  recalculate_min_max(tree->tree, node->node);
 }
 
 //

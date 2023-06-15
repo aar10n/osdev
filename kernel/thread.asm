@@ -28,7 +28,7 @@
 %define THREAD_CTX       0x08
 %define THREAD_META_CTX  0x10
 %define THREAD_PROCESS   0x18
-%define THREAD_TLS_BLCK  0x20
+%define THREAD_FS_BASE   0x20
 %define THREAD_KERNEL_SP 0x28
 %define THREAD_USER_SP   0x30
 
@@ -113,10 +113,10 @@ thread_switch:
 .switch_thread: ; update thread
   mov CURRENT_THREAD, rdi
 
-  ; avoid msr access if thread doesnt use tls
-  mov rax, [rdi + THREAD_TLS_BLCK]
-  mov rax, [rax + TLS_BASE_ADDR]
+  ; fs base
+  mov rax, [rdi + THREAD_FS_BASE]
   cmp rax, NULL
+  ; avoid msr access if thread doesnt use tls
   je .switch_process
 
   ; update thread local storage pointer

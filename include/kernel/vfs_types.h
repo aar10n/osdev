@@ -65,13 +65,6 @@ enum vstate {
 
 /**
  * A virtual filesystem.
- *
- *
- *
- * Locking:
- *   lock     - held while vfs struct is being accessed/modified
- *   op_lock  - held during vnode operations within this vfs
- *   mnt_lock - held during the call to vfs_mount() on a submount
  */
 typedef struct vfs {
   enum vstate state : 8;          // lifecycle state
@@ -186,7 +179,7 @@ typedef struct vnode {
   union {
     dev_t v_dev;                  // device number (V_BLK, V_CHR)
     str_t v_link;                 // symlink (V_LNK)
-    struct vnode *v_shadow;       // shadowed vnode (V_DIR && VN_MOUNT)
+    struct vnode *v_shadow;       // shadowed vnode (VN_MOUNT)
   };
 
   LIST_ENTRY(struct vnode) list;  // vfs vnode list
@@ -216,8 +209,8 @@ struct vnode_ops {
   int (*v_close)(struct vnode *vn);
   ssize_t (*v_read)(struct vnode *vn, off_t off, struct kio *kio);
   ssize_t (*v_write)(struct vnode *vn, off_t off, struct kio *kio);
-  int (*v_falloc)(struct vnode *vn, off_t off, size_t len);
   int (*v_map)(struct vnode *vn, off_t off, struct vm_mapping *mapping);
+  int (*v_fallocate)(struct vnode *vn, size_t len);
 
   // node operations
   int (*v_load)(struct vnode *vn);

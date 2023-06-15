@@ -8,11 +8,11 @@
 #include <base.h>
 #include <queue.h>
 #include <mutex.h>
+#include <mm_types.h>
 
 #define ERRNO (PERCPU_THREAD->errno)
 
-#define USER_VSTACK_SIZE  0x20000  // 128 KiB
-#define USER_PSTACK_SIZE  0x20000  // 128 KiB
+#define USER_STACK_SIZE  0x20000  // 128 KiB
 #define TLS_SIZE          0x2000   // 8 KiB
 #define DEFAULT_RFLAGS 0x246
 
@@ -37,8 +37,6 @@ typedef enum thread_status {
 
 typedef struct tls_block {
   uintptr_t addr; // base address of tls
-  size_t size;    // tls memory size
-  page_t *pages;  // pages used for tls
 } tls_block_t;
 
 typedef struct thread_ctx {
@@ -71,7 +69,7 @@ typedef struct thread {
   thread_ctx_t *ctx;           // thread context
   thread_meta_ctx_t *mctx;     // thread meta context
   process_t *process;          // owning process
-  tls_block_t *tls;            // thread local storage
+  uintptr_t fs_base;           // fs base address
   uintptr_t kernel_sp;         // kernel stack pointer
   uintptr_t user_sp;           // user stack pointer
   // !!! DO NOT CHANGE ABOVE HERE !!!
@@ -96,8 +94,8 @@ typedef struct thread {
   int preempt_count;           // preempt disable counter
   void *data;                  // thread data pointer
 
-  page_t *kernel_stack;        // kernel stack pages
-  page_t *user_stack;          // user stack pages
+  vm_mapping_t *kernel_stack; // kernel stack mapping
+  vm_mapping_t *user_stack; // user stack mapping
 
   LIST_ENTRY(thread_t) group;  // thread group (threads from same process)
   LIST_ENTRY(thread_t) list;   // generic thread list (used by scheduler, mutex, cond, etc)

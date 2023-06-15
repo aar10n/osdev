@@ -78,9 +78,11 @@ intvl_tree_t *create_intvl_tree();
 intvl_tree_t *copy_intvl_tree(intvl_tree_t *tree);
 intvl_tree_t *copy_intvl_tree_pred(intvl_tree_t *tree, intvl_pred_t pred);
 intvl_node_t *intvl_tree_find(intvl_tree_t *tree, interval_t interval);
+void *intvl_tree_get_point(intvl_tree_t *tree, uint64_t point);
 intvl_node_t *intvl_tree_find_closest(intvl_tree_t *tree, interval_t interval);
 void intvl_tree_insert(intvl_tree_t *tree, interval_t interval, void *data);
 void intvl_tree_delete(intvl_tree_t *tree, interval_t interval);
+void intvl_tree_update_interval(intvl_tree_t *tree, intvl_node_t *node, off_t ds, off_t de);
 
 intvl_iter_t *intvl_iter_tree(intvl_tree_t *tree);
 intvl_node_t *intvl_iter_next(intvl_iter_t *iter);

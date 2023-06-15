@@ -40,8 +40,8 @@ uint64_t acpi_pm_timer_io_read(struct clock_source *cs) {
 
 void remap_pm_timer_registers(void *data) {
   clock_source_t *cs = data;
-  cs->data = _vmap_mmio(align_down((uintptr_t) cs->data, PAGE_SIZE), PAGE_SIZE, PG_NOCACHE);
-  _vmap_get_mapping((uintptr_t) cs->data)->name = "pm_timer";
+  uintptr_t phys_addr = align_down((uintptr_t) cs->data, PAGE_SIZE);
+  cs->data = vm_alloc_map_phys(phys_addr, 0, PAGE_SIZE, 0, PG_NOCACHE, "pm_timer");
 }
 
 //

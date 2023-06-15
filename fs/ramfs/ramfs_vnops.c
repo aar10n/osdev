@@ -6,7 +6,6 @@
 #include <vfs/vnode.h>
 #include <vfs/ventry.h>
 
-#include <mm.h>
 #include <panic.h>
 #include <printf.h>
 
@@ -43,13 +42,6 @@ struct ventry_ops ramfs_ventry_ops = {
   .v_cleanup = ramfs_ve_cleanup,
 };
 
-
-static struct dirent dot_template = {
-  .d_ino = 0,
-  .d_reclen = sizeof(struct dirent),
-  .d_type = DT_DIR,
-  .d_namlen = 1,
-};
 
 static inline unsigned char vtype_to_dtype(enum vtype type) {
   switch (type) {
@@ -90,19 +82,19 @@ static inline size_t kio_write_dirent(ino_t ino, enum vtype type, cstr_t name, k
 }
 
 
-ssize_t ramfs_vn_read(vnode_t *vn, off_t off, struct kio *kio) {
+ssize_t ramfs_vn_read(vnode_t *vn, off_t off, kio_t *kio) {
   ramfs_node_t *node = vn->data;
   ramfs_file_t *file = node->n_file;
   return ramfs_file_read(file, off, kio);
 }
 
-ssize_t ramfs_vn_write(vnode_t *vn, off_t off, struct kio *kio) {
+ssize_t ramfs_vn_write(vnode_t *vn, off_t off, kio_t *kio) {
   ramfs_node_t *node = vn->data;
   ramfs_file_t *file = node->n_file;
   return ramfs_file_write(file, off, kio);
 }
 
-int ramfs_vn_map(vnode_t *vn, off_t off, struct vm_mapping *mapping) {
+int ramfs_vn_map(vnode_t *vn, off_t off, vm_mapping_t *mapping) {
   ramfs_node_t *node = vn->data;
   ramfs_file_t *file = node->n_file;
   return ramfs_file_map(file, mapping);

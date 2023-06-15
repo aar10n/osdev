@@ -305,10 +305,10 @@ void ahci_init() {
   }
 
   pcie_bar_t *bar = pcie_get_bar(pci_dev, 5);
-  void *ahci_base = _vmap_mmio(bar->phys_addr, bar->size, PG_WRITE);
+  void *ahci_base = vm_alloc_map_phys(bar->phys_addr, 0, bar->size, 0, PG_WRITE, "pci-ahci");
 
   hba_reg_mem_t *hba_mem = ahci_base;
-  ahci_controller_t *controller = kmalloc(sizeof(ahci_controller_t));
+  ahci_controller_t *controller = kmallocz(sizeof(ahci_controller_t));
   controller->mem = hba_mem;
   controller->pci = pci_dev;
 
@@ -324,12 +324,12 @@ void ahci_init() {
 }
 
 ssize_t ahci_read(ahci_device_t *port, uint64_t lba, uint32_t count, void *buf) {
-  uintptr_t phys_ptr = _vm_virt_to_phys((uintptr_t) buf);
+  uintptr_t phys_ptr = vm_virt_to_phys((uintptr_t) buf);
   return transfer_dma(DEVICE_TO_HOST, port, lba, count, phys_ptr);
 }
 
 ssize_t ahci_write(ahci_device_t *port, uint64_t lba, uint32_t count, void *buf) {
-  uintptr_t phys_ptr = _vm_virt_to_phys((uintptr_t) buf);
+  uintptr_t phys_ptr = vm_virt_to_phys((uintptr_t) buf);
   return transfer_dma(HOST_TO_DEVICE, port, lba, count, phys_ptr);
 }
 

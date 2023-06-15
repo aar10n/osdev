@@ -18,257 +18,29 @@
 
 #include <interval_tree.h>
 
-// internal vmap flags
-#define VMAP_FIXED      (1 << 0) // the address is fixed
-#define VMAP_USERSPACE  (1 << 1) // the mapping is in userspace
-#define VMAP_DOWNWARD   (1 << 2) // the mapping grows downward
-#define VMAP_SHORTLIVED (1 << 3) // the mapping does not need to be bound to a page
+#define ASSERT(x) kassert(x)
+#define PANIC_IF(x, msg, ...) { if (x) panic(msg, ##__VA_ARGS__); }
+
+
+// these are the default hints for different combinations of vm flags
+// they are used as a starting point for the kernel when searching for
+// a free region
+#define HINT_USER_DEFAULT   0x0000000040000000ULL // for VM_USER
+#define HINT_USER_MALLOC    0x0000010000000000ULL // for VM_USER|VM_MALLOC
+#define HINT_USER_STACK     0x00007FFFFFFFFFFFULL // for VM_USER|VM_STACK
+#define HINT_KERNEL_DEFAULT 0xFFFFC00000000000ULL // for no flags
+#define HINT_KERNEL_MALLOC  0xFFFFC01000000000ULL // for VM_MALLOC
+#define HINT_KERNEL_STACK   0xFFFFFF8040000000ULL // for VM_STACK
+
+// internal vm flags
+#define VM_MAPPED 0x1000 // mapping is currently active
+#define VM_MALLOC 0x2000 // mapping is a vmalloc allocation
+#define VM_CONTIG 0x4000 // mapping is physically contiguous
+
 
 void execute_init_address_space_callbacks();
 extern uintptr_t entry_initial_stack_top;
 address_space_t *kernel_space;
-
-
-__used int fault_handler(uintptr_t rip_addr, uintptr_t fault_addr, uint32_t err) {
-  kprintf("[vm] page fault at %p accessing %p (err 0b%b)\n", rip_addr, fault_addr, err);
-  return -1;
-}
-
-//
-
-static always_inline address_space_t *select_address_space(uintptr_t address) {
-  if (address >= USER_SPACE_START && address <= USER_SPACE_END) {
-    return PERCPU_ADDRESS_SPACE;
-  } else if (address >= KERNEL_SPACE_START && address <= KERNEL_SPACE_END) {
-    return kernel_space;
-  }
-  panic("non-canonical address: %p", address);
-}
-
-static always_inline uintptr_t select_vmap_hint(uint32_t vm_flags) {
-  if (vm_flags & VMAP_USERSPACE) {
-    return USER_SPACE_START;
-  } else {
-    return KERNEL_SPACE_START;
-  }
-}
-
-uintptr_t locate_free_address_region(address_space_t *space, uintptr_t base, size_t size, uint32_t vm_flags) {
-  kassert(base >= space->min_addr && (base + size) <= space->max_addr);
-
-  int alignment = PAGE_SIZE;
-  if (size >= SIZE_2MB) {
-    alignment = SIZE_2MB;
-  } else if (size >= SIZE_1GB) {
-    alignment = SIZE_1GB;
-  }
-
-  uintptr_t addr = base;
-  interval_t interval = intvl(base, base + size);
-  if (vm_flags & VMAP_DOWNWARD) {
-    kassert(base >= size);
-    addr = base - size;
-    interval = intvl(base - size, base);
-  }
-
-  intvl_node_t *closest = intvl_tree_find_closest(space->root, interval);
-  if (closest == NULL) {
-    return addr;
-  } else if (!overlaps(interval, closest->interval)) {
-    return addr;
-  }
-
-  rb_iter_type_t iter_type = FORWARD;
-  if (vm_flags & VMAP_DOWNWARD) {
-    iter_type = REVERSE;
-  }
-
-  rb_node_t *node = NULL;
-  rb_node_t *last = NULL;
-  rb_iter_t *iter = rb_tree_make_iter(space->root->tree, closest->node, iter_type);
-  while ((node = rb_iter_next(iter))) {
-    interval_t i = ((intvl_node_t *) node->data)->interval;
-    interval_t j = last ? ((intvl_node_t *) last->data)->interval : i;
-
-    // if two consequtive nodes are not contiguous in memory
-    // check that there is enough space between the them to
-    // fit the requested area.
-
-    if (vm_flags & VMAP_DOWNWARD) {
-      bool contig = contiguous(j, i);
-      if (!contig && j.start >= addr && j.start - addr >= size) {
-        kassert(addr + size <= space->max_addr);
-        kfree(iter);
-        return addr;
-      }
-
-      if (i.start < size) {
-        // no space
-        kfree(iter);
-        return 0;
-      }
-      addr = align(i.start - size, alignment);
-    } else {
-      bool contig = contiguous(i, j);
-      if (!contig && i.start > addr && i.start - addr >= size) {
-        kassert(addr + size <= space->max_addr);
-        kfree(iter);
-        return addr;
-      }
-      addr = align(i.end, alignment);
-    }
-
-    last = node;
-  }
-
-  kfree(iter);
-  if (addr + size <= space->max_addr) {
-    return addr;
-  }
-  return 0;
-}
-
-bool check_address_region_free(address_space_t *space, uintptr_t base, size_t size) {
-  kassert(base >= space->min_addr && (base + size) <= space->max_addr);
-  interval_t interval = intvl(base, base + size);
-  intvl_node_t *closest = intvl_tree_find_closest(space->root, interval);
-  if (closest == NULL) {
-    return true;
-  }
-
-  return !overlaps(interval, closest->interval);
-}
-
-vm_mapping_t *allocate_vm_mapping(address_space_t *space, uintptr_t addr, size_t size, uint32_t vm_flags) {
-  vm_mapping_t *mapping = kmalloc(sizeof(vm_mapping_t));
-
-  spin_lock(&space->lock);
-  uintptr_t virt_addr;
-  if (vm_flags & VMAP_FIXED) {
-    virt_addr = addr;
-    if (!check_address_region_free(space, addr, size)) {
-      spin_unlock(&space->lock);
-      kfree(mapping);
-      kprintf("allocate_vm_mapping: address region already allocated");
-      return NULL;
-    }
-  } else {
-    virt_addr = locate_free_address_region(space, addr, size, vm_flags);
-    if (virt_addr == 0) {
-      spin_unlock(&space->lock);
-      kfree(mapping);
-      panic("no free address space");
-    }
-  }
-
-  intvl_tree_insert(space->root, intvl(virt_addr, virt_addr + size), mapping);
-  spin_unlock(&space->lock);
-
-  mapping->address = virt_addr;
-  mapping->size = size;
-  mapping->data.ptr = NULL;
-  mapping->type = 0;
-  mapping->attr = 0;
-  mapping->reserved = 0;
-  mapping->flags = 0;
-  mapping->name = NULL;
-  spin_init(&mapping->lock);
-  return mapping;
-}
-
-//
-
-void vmap_fill_from_pages(page_t *pages, address_space_t *space, vm_mapping_t *vm, uint32_t vm_flags) {
-  page_t *curr = pages;
-  uintptr_t ptr = vm->address;
-  size_t realsize = 0;
-  while (curr != NULL) {
-    page_t *out_table_pages = NULL;
-    recursive_map_entry(ptr, curr->address, curr->flags, &out_table_pages);
-    if (out_table_pages != NULL) {
-      SLIST_ADD(&space->table_pages, out_table_pages, next);
-    }
-
-    curr->flags |= PG_MAPPED;
-    if (!(vm_flags & VMAP_SHORTLIVED)) {
-      curr->mapping = vm;
-    }
-
-    size_t pgsz = pg_flags_to_size(curr->flags);
-    ptr += pgsz;
-    realsize += pgsz;
-    curr = curr->next;
-  }
-  cpu_flush_tlb();
-  kassert(realsize == vm->size);
-}
-
-vm_mapping_t *vmap_pages_internal(page_t *pages, uintptr_t hint, uint32_t vm_flags) {
-  kassert(pages->flags & PG_LIST_HEAD);
-  if (vm_flags & VMAP_USERSPACE) {
-    kassert(hint >= USER_SPACE_START && hint <= USER_SPACE_END);
-  } else {
-    kassert(hint >= KERNEL_SPACE_START && hint <= KERNEL_SPACE_END);
-  }
-
-  size_t total_size = pages->head.list_sz;
-
-  address_space_t *space = select_address_space(hint);
-  vm_mapping_t *mapping = allocate_vm_mapping(space, hint, total_size, vm_flags);
-  if (mapping == NULL) {
-    return NULL;
-  }
-
-  mapping->type = VM_TYPE_PAGE;
-  mapping->attr = vm_flags & VMAP_USERSPACE ? VM_ATTR_USER : 0;
-  mapping->data.page = pages;
-  mapping->name = "page";
-
-  vmap_fill_from_pages(pages, space, mapping, vm_flags);
-  return mapping;
-}
-
-vm_mapping_t *vmap_phys_internal(uintptr_t phys_addr, size_t size, uint32_t flags, uintptr_t hint, uint32_t vm_flags) {
-  kassert(phys_addr % PAGE_SIZE == 0);
-  kassert(size % PAGE_SIZE == 0 && size > 0);
-  if (vm_flags & VMAP_USERSPACE) {
-    kassert(hint >= USER_SPACE_START && hint <= USER_SPACE_END);
-  } else {
-    kassert(hint >= KERNEL_SPACE_START && hint <= KERNEL_SPACE_END);
-  }
-
-  size_t stride = pg_flags_to_size(flags);
-  size_t count = size / stride;
-
-  address_space_t *space = select_address_space(hint);
-  vm_mapping_t *mapping = allocate_vm_mapping(space, hint, size, vm_flags);
-  if (mapping == NULL) {
-    return NULL;
-  }
-
-  mapping->type = VM_TYPE_PHYS;
-  mapping->attr = vm_flags & VMAP_USERSPACE ? VM_ATTR_USER : 0;
-  mapping->flags = flags;
-  mapping->data.phys = phys_addr;
-  mapping->name = "phys";
-
-  uintptr_t ptr = mapping->address;
-  uintptr_t phys_ptr = phys_addr;
-  while (count > 0) {
-    page_t *out_table_pages = NULL;
-    recursive_map_entry(ptr, phys_ptr, flags, &out_table_pages);
-    if (out_table_pages != NULL) {
-      SLIST_ADD(&space->table_pages, out_table_pages, next);
-    }
-
-    ptr += stride;
-    phys_ptr += stride;
-    count--;
-  }
-
-  cpu_flush_tlb();
-  return mapping;
-}
 
 // called from thread.asm
 __used void swap_address_space(address_space_t *new_space) {
@@ -301,18 +73,379 @@ void page_fault_handler(uint8_t vector, uint32_t error_code, cpu_irq_stack_t *fr
   }
 }
 
+__used int fault_handler(uintptr_t rip_addr, uintptr_t fault_addr, uint32_t err) {
+  kprintf("[vm] page fault at %p accessing %p (err 0b%b)\n", rip_addr, fault_addr, err);
+  return -1;
+}
+
+//
+
+static always_inline bool space_contains(address_space_t *space, uintptr_t addr) {
+  return addr >= space->min_addr && addr < space->max_addr;
+}
+
+static always_inline interval_t mapping_interval(vm_mapping_t *vm) {
+  // if the mapping is a stack mapping and it has a guard the interval base
+  // address is one page below the vm address to account for the guard page
+  if (vm->flags & VM_STACK && vm->flags & VM_GUARD)
+    return intvl(vm->address - PAGE_SIZE, vm->address + vm->virt_size - PAGE_SIZE);
+
+  return intvl(vm->address, vm->address + vm->virt_size);
+}
+
+static always_inline size_t empty_space_size(vm_mapping_t *vm) {
+  size_t size = vm->virt_size - vm->size;
+  if (vm->flags & VM_STACK)
+    size -= PAGE_SIZE;
+  return size;
+}
+
+static inline uintptr_t choose_best_hint(address_space_t *space, uintptr_t hint, uint32_t vm_flags) {
+  if (hint != 0) {
+    if (space_contains(space, hint)) {
+      // caller has provided a hint, use it
+      return hint;
+    }
+    kprintf("vmalloc: hint %p is not in target address space\n", hint);
+  }
+
+  if (vm_flags & VM_USER) {
+    if (vm_flags & VM_MALLOC)
+      return HINT_USER_MALLOC;
+    if (vm_flags & VM_STACK)
+      return HINT_USER_STACK;
+    return HINT_USER_DEFAULT;
+  } else {
+    if (vm_flags & VM_MALLOC)
+      return HINT_KERNEL_MALLOC;
+    if (vm_flags & VM_STACK)
+      return HINT_KERNEL_STACK;
+    return HINT_KERNEL_DEFAULT;
+  }
+}
+
+//
+// mapping/unmapping of the various vm_types
+//
+
+static void vm_map_phys_internal(vm_mapping_t *vm, uint32_t pg_flags) {
+  ASSERT(vm->type == VM_TYPE_PHYS);
+  address_space_t *space = vm->space;
+  size_t stride = pg_flags_to_size(pg_flags);
+  size_t count = vm->size / stride;
+
+  uintptr_t ptr = vm->address;
+  uintptr_t phys_ptr = vm->vm_phys;
+  while (count > 0) {
+    page_t *table_pages = NULL;
+    recursive_map_entry(ptr, phys_ptr, pg_flags, &table_pages);
+    ptr += stride;
+    phys_ptr += stride;
+    count--;
+
+    if (table_pages != NULL) {
+      page_t *last_page = SLIST_GET_LAST(table_pages, next);
+      SLIST_ADD_SLIST(&space->table_pages, table_pages, last_page, next);
+    }
+  }
+
+  cpu_flush_tlb();
+}
+
+static void vm_unmap_phys_internal(vm_mapping_t *vm) {
+  ASSERT(vm->type == VM_TYPE_PHYS);
+  uint32_t pg_flags = vm->pg_flags;
+  size_t stride = pg_flags_to_size(pg_flags);
+  size_t count = vm->size / stride;
+
+  uintptr_t ptr = vm->address;
+  while (count > 0) {
+    recursive_unmap_entry(ptr, pg_flags);
+    ptr += stride;
+    count--;
+  }
+
+  cpu_flush_tlb();
+}
+
+static void vm_resize_phys_internal(vm_mapping_t *vm, uintptr_t oldaddr, size_t oldsize, size_t newsize) {
+  ASSERT(vm->type == VM_TYPE_PHYS);
+  uint32_t pg_flags = vm->pg_flags;
+  size_t stride = pg_flags_to_size(pg_flags);
+  size_t oldcount = oldsize / stride;
+  size_t newcount = newsize / stride;
+  ASSERT(newsize % stride == 0); // newsize must be page aligned
+
+  if (newcount < oldcount) {
+    uintptr_t ptr = oldaddr + newsize;
+    while (newcount < oldcount) {
+      recursive_unmap_entry(ptr, pg_flags);
+      ptr += stride;
+      oldcount--;
+    }
+  } else if (newcount > oldcount) {
+    uintptr_t ptr = vm->address + oldsize;
+    uintptr_t phys_ptr = vm->vm_phys + oldsize;
+    while (newcount > oldcount) {
+      page_t *table_pages = NULL;
+      recursive_map_entry(ptr, phys_ptr, pg_flags, &table_pages);
+      ptr += stride;
+      phys_ptr += stride;
+      oldcount++;
+
+      if (table_pages != NULL) {
+        page_t *last_page = SLIST_GET_LAST(table_pages, next);
+        SLIST_ADD_SLIST(&vm->space->table_pages, table_pages, last_page, next);
+      }
+    }
+
+  }
+
+  cpu_flush_tlb();
+}
+
+static void vm_map_pages_internal(vm_mapping_t *vm, size_t off, page_t *pages, uint32_t pg_flags) {
+  ASSERT(vm->type == VM_TYPE_PAGE);
+  address_space_t *space = vm->space;
+
+  uintptr_t ptr = vm->address + off;
+  page_t *curr = pages;
+  while (curr != NULL) {
+    page_t *table_pages = NULL;
+    recursive_map_entry(ptr, curr->address, curr->flags, &table_pages);
+
+    size_t sz = pg_flags_to_size(curr->flags);
+    ptr += sz;
+    curr->new_mapping = vm;
+    curr = curr->next;
+
+    if (table_pages != NULL) {
+      page_t *last_page = SLIST_GET_LAST(table_pages, next);
+      SLIST_ADD_SLIST(&space->table_pages, table_pages, last_page, next);
+    }
+  }
+
+  cpu_flush_tlb();
+}
+
+static void vm_unmap_pages_internal(vm_mapping_t *vm) {
+  ASSERT(vm->type == VM_TYPE_PAGE);
+
+  uintptr_t ptr = vm->address;
+  page_t *curr = vm->vm_pages;
+  while (curr != NULL) {
+    recursive_unmap_entry(ptr, curr->flags);
+    ptr += pg_flags_to_size(curr->flags);
+    curr->new_mapping = NULL;
+    curr = curr->next;
+  }
+
+  cpu_flush_tlb();
+}
+
+static void vm_resize_pages_internal(vm_mapping_t *vm, uintptr_t oldaddr, size_t oldsize, size_t newsize) {
+  ASSERT(vm->type == VM_TYPE_PAGE);
+
+  if (newsize < oldsize) {
+    // unmap the pages that are no used anymore
+    uintptr_t ptr = oldaddr + newsize;
+    page_t *page = SLIST_FIND(p, vm->vm_pages, next, p->address == ptr);
+    while (page != NULL) {
+      recursive_unmap_entry(ptr, page->flags);
+      ptr += pg_flags_to_size(page->flags);
+      page->new_mapping = NULL;
+      page = page->next;
+    }
+
+    cpu_flush_tlb();
+  } else if (newsize > oldsize) {
+    // leave the new pages unmapped, they will be mapped later
+  }
+}
+
+//
+
+static uintptr_t get_free_region(address_space_t *space, uintptr_t base, size_t size, uintptr_t align,
+                                 uint32_t vm_flags, vm_mapping_t **closest_vm) {
+  uintptr_t addr = base;
+  interval_t interval = intvl(base, base + size);
+  intvl_node_t *closest = intvl_tree_find_closest(space->new_tree, interval);
+  if (!closest)
+    return addr; // first mapping
+  if (!overlaps(interval, closest->interval)) {
+    *closest_vm = closest->data; // the given base address is free
+    return addr;
+  }
+
+  vm_mapping_t *curr = closest->data;
+  vm_mapping_t *prev = NULL;
+  while (curr != NULL) {
+    interval_t i = mapping_interval(curr);
+    interval_t j = prev ? mapping_interval(prev) : i;
+
+    // if two consequtive nodes are not contiguous in memory
+    // check that there is enough space between the them to
+    // fit the requested area.
+
+    if (vm_flags & VM_STACK) {
+      // go backwards looking for a free space from the top of each free region
+      bool contig = contiguous(j, i);
+      if (!contig && j.start >= addr && j.start - addr >= size)
+        break;
+
+      if (i.start < size)
+        return 0; // no space
+
+      addr = align(i.start - size, align);
+      prev = curr;
+      curr = LIST_PREV(curr, list);
+    } else {
+      // go forward looking for a free space from the bottom of each free region
+      bool contig = contiguous(i, j);
+      if (!contig && i.start > addr && i.start - addr >= size)
+        break;
+
+      addr = align(i.end, align);
+      prev = curr;
+      curr = LIST_NEXT(curr, list);
+    }
+  }
+
+  if (size > (UINT64_MAX - addr) || addr + size > space->max_addr) {
+    panic("no free address space");
+  }
+
+  *closest_vm = prev;
+  return addr;
+}
+
+static bool check_range_free(address_space_t *space, uintptr_t base, size_t size, uint32_t vm_flags, vm_mapping_t **prev_vm) {
+  interval_t interval = intvl(base, base + size);
+  intvl_node_t *closest = intvl_tree_find_closest(space->new_tree, interval);
+  if (closest == NULL) {
+    return true;
+  }
+
+  if (!overlaps(interval, closest->interval)) {
+    *prev_vm = closest->data;
+    return true;
+  }
+  return false;
+}
+
+static bool resize_mapping_inplace(vm_mapping_t *vm, size_t new_size) {
+  // vm should be locked while calling this
+  address_space_t *space = vm->space;
+  interval_t interval = mapping_interval(vm);
+  intvl_node_t *node = intvl_tree_find(space->new_tree, interval);
+  ASSERT(node && node->data == vm);
+
+  // if we are shrinking or growing within the existing empty node virtual space
+  // we dont need to update the tree just the mapping size and address
+  size_t delta = new_size - vm->size;
+  if (new_size < vm->size) {
+    vm->size = new_size;
+    if (vm->flags & VM_STACK)
+      vm->address += delta;
+    return true;
+  } else if (new_size > vm->size && new_size <= empty_space_size(vm)) {
+    vm->size = new_size;
+    if (vm->flags & VM_STACK)
+      vm->address -= delta;
+    return true;
+  }
+
+  // for growing beyond the virtual space of the node we need to update the tree
+  // but first we need to make sure we dont overlap with the next node
+  SPIN_LOCK(&space->lock);
+  if (vm->flags & VM_STACK) {
+    vm_mapping_t *prev = LIST_PREV(vm, list);
+    intvl_node_t *prev_node = intvl_tree_find(space->new_tree, mapping_interval(prev));
+
+    // |--prev--| empty space |---vm---|
+    size_t empty_space = interval.start - prev_node->interval.end + empty_space_size(vm);
+    if (empty_space < delta) {
+      SPIN_UNLOCK(&space->lock);
+      return false;
+    }
+
+    node->interval.start -= delta;
+    vm->address -= new_size - vm->size;
+    vm->size = new_size;
+  } else {
+    vm_mapping_t *next = LIST_NEXT(vm, list);
+    intvl_node_t *next_node = intvl_tree_find(space->new_tree, mapping_interval(next));
+
+    // |---vm---| empty space |--next--|
+    size_t empty_space = next_node->interval.start - interval.end + empty_space_size(vm);
+    if (empty_space < delta) {
+      SPIN_UNLOCK(&space->lock);
+      return false;
+    }
+
+    node->interval.end += delta;
+    vm->size = new_size;
+  }
+
+  return true;
+}
+
+static bool move_mapping(vm_mapping_t *vm, size_t newsize) {
+  // space should be locked while calling this
+  address_space_t *space = vm->space;
+  uintptr_t base = vm->address;
+  size_t virt_size = newsize;
+
+  size_t off = 0;
+  if (vm->flags & VM_GUARD) {
+    virt_size += PAGE_SIZE;
+    off = PAGE_SIZE;
+  }
+
+  if (vm->flags & VM_STACK) {
+    base -= virt_size;
+  }
+
+  // look for a new free region
+  vm_mapping_t *closest = NULL;
+  uintptr_t virt_addr = get_free_region(space, base, virt_size, pg_flags_to_size(vm->pg_flags), vm->flags, &closest);
+  if (virt_addr == 0) {
+    return false;
+  }
+
+  // remove from the old node tree and insert the new one
+  intvl_tree_delete(space->new_tree, mapping_interval(vm));
+  intvl_tree_insert(space->new_tree, intvl(virt_addr, virt_addr + virt_size), vm);
+
+  // switch place of the mapping in the space list
+  LIST_REMOVE(&space->mappings, vm, list);
+  if (closest->address > virt_addr) {
+    closest = LIST_PREV(closest, list);
+  }
+  // insert into the list
+  LIST_INSERT(&space->mappings, vm, list, closest);
+
+  // update the mapping
+  vm->address = virt_addr + off;
+  vm->size = newsize;
+  vm->virt_size = virt_size;
+  return true;
+}
+
 //
 
 void init_address_space() {
-  kernel_space = kmalloc(sizeof(address_space_t));
-  kernel_space->root = create_intvl_tree();
+  kernel_space = kmallocz(sizeof(address_space_t));
+  kernel_space->tree = create_intvl_tree();
+  kernel_space->new_tree = create_intvl_tree();
   kernel_space->min_addr = KERNEL_SPACE_START;
   kernel_space->max_addr = KERNEL_SPACE_END;
   LIST_INIT(&kernel_space->table_pages);
   spin_init(&kernel_space->lock);
 
-  address_space_t *user_space = kmalloc(sizeof(address_space_t));
-  user_space->root = create_intvl_tree();
+  address_space_t *user_space = kmallocz(sizeof(address_space_t));
+  user_space->tree = create_intvl_tree();
+  user_space->new_tree = create_intvl_tree();
   user_space->min_addr = USER_SPACE_START;
   user_space->max_addr = USER_SPACE_END;
   LIST_INIT(&user_space->table_pages);
@@ -324,60 +457,37 @@ void init_address_space() {
   kernel_space->page_table = pgtable;
   user_space->page_table = pgtable;
 
-  vm_mapping_t *null_vm = _vmap_reserve(0, PAGE_SIZE);
-  null_vm->name = "null";
-  null_vm->type = VM_TYPE_RSVD;
-  null_vm->data.ptr = NULL;
+  // set up the starting address space layout
+  size_t lowmem_size = kernel_address;
+  size_t kernel_code_size = kernel_code_end - kernel_code_start;
+  size_t kernel_data_size = kernel_data_end - kernel_code_end;
+  size_t reserved_size = kernel_reserved_va_ptr - KERNEL_RESERVED_VA;
 
-  // kernel mapped low memory
-  vm_mapping_t *kernel_lowmem_vm = _vmap_reserve(kernel_virtual_offset, kernel_address - kernel_virtual_offset);
-  kernel_lowmem_vm->name = "reserved";
-  kernel_lowmem_vm->type = VM_TYPE_PHYS;
-  kernel_lowmem_vm->data.phys = kernel_virtual_offset;
-  // kernel code
-  vm_mapping_t *kernel_code_vm = _vmap_reserve(kernel_code_start, kernel_code_end - kernel_code_start);
-  kernel_code_vm->name = "kernel code";
-  kernel_code_vm->type = VM_TYPE_PHYS;
-  kernel_code_vm->data.phys = kernel_code_start;
-  // kernel data
-  vm_mapping_t *kernel_data_vm = _vmap_reserve(kernel_code_end, kernel_data_end - kernel_code_end);
-  kernel_data_vm->name = "kernel data";
-  kernel_data_vm->type = VM_TYPE_PHYS;
-  kernel_data_vm->data.phys = kernel_data_end;
-  // kernel heap
-  vm_mapping_t *kheap_vm = _vmap_reserve(KERNEL_HEAP_VA, KERNEL_HEAP_SIZE);
-  kheap_vm->name = "kernel heap";
-  kheap_vm->type = VM_TYPE_PHYS;
-  kheap_vm->data.phys = kheap_ptr_to_phys((void *) KERNEL_HEAP_VA);
-  // kernel reserved
-  vm_mapping_t *kreserved_vm = _vmap_reserve(KERNEL_RESERVED_VA, kernel_reserved_va_ptr - KERNEL_RESERVED_VA);
-  kreserved_vm->name = "kernel reserved";
-  kreserved_vm->type = VM_TYPE_PHYS;
-  kreserved_vm->data.phys = kernel_reserved_ptr - kreserved_vm->size;
+  vm_alloc_rsvd(0, PAGE_SIZE, VM_FIXED | VM_USER, "null");
+  vm_alloc_phys(0, kernel_virtual_offset, lowmem_size, VM_FIXED, "reserved");
+  vm_alloc_phys(kernel_address, kernel_code_start, kernel_code_size, VM_FIXED, "kernel code");
+  vm_alloc_phys(kernel_address+kernel_code_size, kernel_code_end, kernel_data_size, VM_FIXED, "kernel data");
+  vm_alloc_phys(kheap_phys_addr(), KERNEL_HEAP_VA, KERNEL_HEAP_SIZE, VM_FIXED, "kernel heap");
+  vm_alloc_phys(kernel_reserved_start, KERNEL_RESERVED_VA, reserved_size, VM_FIXED, "kernel reserved");
 
-  // stack
   page_t *stack_pages = _alloc_pages(SIZE_TO_PAGES(KERNEL_STACK_SIZE), PG_WRITE);
-  uintptr_t kstack_bottom = KERNEL_STACK_TOP_VA - KERNEL_STACK_SIZE;
-  _vmap_pages_addr(kstack_bottom, stack_pages);
-  vm_mapping_t *kstack_vm = _vmap_get_mapping(kstack_bottom);
-  kstack_vm->name = "stack";
-  // stack guard
-  _vmap_reserve(kstack_bottom - PAGE_SIZE, PAGE_SIZE);
+  vm_mapping_t *stack_vm = vm_alloc_pages(stack_pages, 0, KERNEL_STACK_SIZE, VM_STACK | VM_GUARD, "kernel stack");
+  vm_map(stack_vm, PG_WRITE);
 
   execute_init_address_space_callbacks();
 
   // relocate boot info struct
-  void *new_boot_info = _vmap_mmio((uintptr_t) boot_info_v2, PAGE_SIZE, 0);
-  boot_info_v2 = new_boot_info;
+  static_assert(sizeof(boot_info_v2_t) <= PAGE_SIZE);
+  boot_info_v2 = vm_alloc_map_phys((uintptr_t) boot_info_v2, 0, PAGE_SIZE, 0, 0, "boot info");
 
-  vm_print_debug_address_space();
+  vm_print_address_space();
 
   // switch to new kernel stack
   kprintf("switching to new kernel stack\n");
   uint64_t rsp = cpu_read_stack_pointer();
   uint64_t stack_offset = ((uint64_t) &entry_initial_stack_top) - rsp;
 
-  uint64_t new_rsp = KERNEL_STACK_TOP_VA - stack_offset;
+  uint64_t new_rsp = stack_vm->address + stack_vm->size - stack_offset;
   memcpy((void *) new_rsp, (void *) rsp, stack_offset);
   cpu_write_stack_pointer(new_rsp);
 
@@ -387,7 +497,8 @@ void init_address_space() {
 
 void init_ap_address_space() {
   address_space_t *user_space = kmalloc(sizeof(address_space_t));
-  user_space->root = create_intvl_tree();
+  user_space->tree = create_intvl_tree();
+  user_space->new_tree = create_intvl_tree();
   user_space->min_addr = USER_SPACE_START;
   user_space->max_addr = USER_SPACE_END;
   user_space->page_table = get_current_pgtable();
@@ -395,10 +506,7 @@ void init_ap_address_space() {
   LIST_INIT(&user_space->table_pages);
   PERCPU_SET_ADDRESS_SPACE(user_space);
 
-  vm_mapping_t *null_vm = _vmap_reserve(0, PAGE_SIZE);
-  null_vm->name = "null";
-  null_vm->type = VM_TYPE_RSVD;
-  null_vm->data.ptr = NULL;
+  vm_alloc_rsvd(0, PAGE_SIZE, VM_FIXED | VM_USER, "null");
 }
 
 uintptr_t make_ap_page_tables() {
@@ -407,27 +515,10 @@ uintptr_t make_ap_page_tables() {
   return pml4;
 }
 
-address_space_t *new_address_space() {
-  address_space_t *space = kmalloc(sizeof(address_space_t));
-  space->root = create_intvl_tree();
-  space->min_addr = USER_SPACE_START;
-  space->max_addr = USER_SPACE_END;
-  LIST_INIT(&space->table_pages);
-  spin_init(&space->lock);
-
-  vm_mapping_t *mapping = allocate_vm_mapping(space, 0, PAGE_SIZE, VMAP_FIXED);
-  kassert(mapping != NULL);
-  mapping->type = VM_TYPE_RSVD;
-  mapping->attr = 0;
-  mapping->data.ptr = NULL;
-  mapping->name = "null";
-  return space;
-}
-
 address_space_t *fork_address_space() {
   address_space_t *current = PERCPU_ADDRESS_SPACE;
   address_space_t *space = kmalloc(sizeof(address_space_t));
-  space->root = copy_intvl_tree(current->root);
+  space->tree = copy_intvl_tree(current->tree);
   space->min_addr = current->min_addr;
   space->max_addr = current->max_addr;
   LIST_INIT(&space->table_pages);
@@ -443,363 +534,463 @@ address_space_t *fork_address_space() {
 }
 
 //
+//
 
-void *_vmap_pages(page_t *pages) {
-  if (pages == NULL) {
-    return NULL;
-  }
+vm_mapping_t *vm_alloc(enum vm_type type, uintptr_t hint, size_t size, uint32_t vm_flags, const char *name) {
+  vm_mapping_t *vm = kmallocz(sizeof(vm_mapping_t));
+  vm->type = type;
+  vm->flags = vm_flags;
+  vm->virt_size = size;
+  vm->size = size;
+  spin_init(&vm->lock);
 
-  uint32_t vm_flags = (pages->flags & PG_USER ? VMAP_USERSPACE : 0);
-  uintptr_t hint = select_vmap_hint(vm_flags);
-  vm_mapping_t *mapping = vmap_pages_internal(pages, hint, vm_flags);
-  if (mapping == NULL) {
-    return NULL;
-  }
-
-  return (void *) mapping->address;
-}
-
-void *_vmap_named_pages(page_t *pages, const char *name) {
-  if (pages == NULL) {
-    return NULL;
-  }
-
-  uint32_t vm_flags = (pages->flags & PG_USER ? VMAP_USERSPACE : 0);
-  uintptr_t hint = select_vmap_hint(vm_flags);
-  vm_mapping_t *mapping = vmap_pages_internal(pages, hint, vm_flags);
-  if (mapping == NULL) {
-    return NULL;
-  }
-  mapping->name = name;
-  return (void *) mapping->address;
-}
-
-void *_vmap_pages_addr(uintptr_t virt_addr, page_t *pages) {
-  kassert(virt_addr % PAGE_SIZE == 0);
-  if (pages == NULL) {
-    return NULL;
-  }
-
-  uint32_t vm_flags = VMAP_FIXED | (pages->flags & PG_USER ? VMAP_USERSPACE : 0);
-  vm_mapping_t *mapping = vmap_pages_internal(pages, virt_addr, vm_flags);
-  if (mapping == NULL) {
-    return NULL;
-  }
-
-  return (void *) mapping->address;
-}
-
-void *_vmap_phys(uintptr_t phys_addr, size_t size, uint32_t flags) {
-  uint32_t vm_flags = flags & PG_USER ? VMAP_USERSPACE : 0;
-  uintptr_t hint = select_vmap_hint(vm_flags);
-  vm_mapping_t *mapping = vmap_phys_internal(phys_addr, size, flags, hint, vm_flags);
-  return (void *) mapping->address;
-}
-
-void *_vmap_phys_addr(uintptr_t virt_addr, uintptr_t phys_addr, size_t size, uint32_t flags) {
-  uint32_t vm_flags = VMAP_FIXED | (flags & PG_USER ? VMAP_USERSPACE : 0);
-  vm_mapping_t *mapping = vmap_phys_internal(phys_addr, size, flags, virt_addr, vm_flags);
-  if (mapping == NULL) {
-    return NULL;
-  }
-
-  return (void *) mapping->address;
-}
-
-void *_vmap_reserved_shortlived(vm_mapping_t *mapping, page_t *pages) {
-  // this function is only used for short-lived mappings into a reserved range
-  // this is used in mmap where the owning mapping of the pages is guaranteed to
-  // outlive the mmap mapping itself.
-  if (mapping->type != VM_TYPE_RSVD) {
-    return NULL;
-  }
-
-  address_space_t *space = select_address_space(mapping->address);
-  if (mapping->attr & VM_ATTR_USER) {
+  address_space_t *space;
+  if (vm_flags & VM_USER) {
     space = PERCPU_ADDRESS_SPACE;
-    if (!(pages->flags & PG_USER)) {
-      kprintf("vmap_reserved: mapping is marked as user but pages are not\n");
+  } else {
+    space = kernel_space;
+  }
+
+  size_t off = 0;
+  if (vm_flags & VM_GUARD) {
+    vm->virt_size += PAGE_SIZE;
+    if (vm_flags & VM_STACK) {
+      off = PAGE_SIZE;
+    }
+  }
+
+  SPIN_LOCK(&space->lock);
+  uintptr_t virt_addr = 0;
+  vm_mapping_t *closest = NULL;
+  if (vm_flags & VM_FIXED) {
+    if (!space_contains(space, hint)) {
+      panic("vm_alloc: hint address not in address space: %p\n", hint);
+    }
+
+    if (vm_flags & VM_STACK) {
+      if (hint < vm->virt_size) {
+        SPIN_UNLOCK(&space->lock);
+        kfree(vm);
+        panic("vm_alloc: hint address is too low for requested stack size");
+      }
+      hint -= vm->virt_size;
+    }
+    virt_addr = hint;
+
+    // make sure the requested range is free
+    if (!check_range_free(space, hint, vm->virt_size, vm_flags, &closest)) {
+      SPIN_UNLOCK(&space->lock);
+      kfree(vm);
+      kprintf("vm_alloc: requested fixed address range is not free\n");
+      return NULL;
+    }
+  } else {
+    // dynamically allocated
+    uintptr_t align = PAGE_SIZE;
+    if (size >= SIZE_2MB) {
+      align = SIZE_2MB; // in case big pages are used
+    } else if (size >= SIZE_1GB) {
+      align = SIZE_1GB; // in case huge pages are used
+    }
+
+    hint = choose_best_hint(space, hint, vm_flags);
+    if (vm_flags & VM_STACK) {
+      ASSERT(hint > vm->virt_size);
+      hint -= vm->virt_size;
+    }
+
+    virt_addr = get_free_region(space, hint, vm->virt_size, align, vm_flags, &closest);
+    if (virt_addr == 0) {
+      SPIN_UNLOCK(&space->lock);
+      kfree(vm);
+      kprintf("vm_alloc: failed to satisfy allocation request\n");
       return NULL;
     }
   }
 
-  vmap_fill_from_pages(pages, space, mapping, VMAP_SHORTLIVED);
-  return (void *) mapping->address;
-}
+  vm->address = virt_addr + off;
+  vm->name = str_new(name);
+  vm->space = space;
 
-//
-
-void *_vmap_stack_pages(page_t *pages) {
-  if (pages == NULL) {
-    return NULL;
-  }
-
-  uint32_t vm_flags = (pages->flags & PG_USER ? VMAP_USERSPACE : 0) | VMAP_DOWNWARD;
-  uintptr_t hint = KERNEL_STACK_TOP_VA;
-  vm_mapping_t *mapping = vmap_pages_internal(pages, hint, vm_flags);
-  if (mapping == NULL) {
-    return NULL;
-  }
-
-  mapping->name = "stack";
-  void *stack_top = (void *)(mapping->address + mapping->size);
-  _vmap_reserve(mapping->address - PAGE_SIZE, PAGE_SIZE);
-  return stack_top;
-}
-
-void *_vmap_mmio(uintptr_t phys_addr, size_t size, uint32_t flags) {
-  vm_mapping_t *mapping = vmap_phys_internal(phys_addr, size, flags, MMIO_BASE_VA, 0);
-  if (mapping == NULL) {
-    return NULL;
-  }
-
-  mapping->attr |= VM_ATTR_MMIO;
-  mapping->name = "mmio";
-  return (void *) mapping->address;
-}
-
-vm_mapping_t *_vmap_reserve(uintptr_t virt_addr, size_t size) {
-  uint32_t vm_flags = VMAP_FIXED;
-  uint16_t attr = 0;
-  if (virt_addr < KERNEL_SPACE_START) {
-    vm_flags |= VMAP_USERSPACE;
-    attr = VM_ATTR_USER;
-  }
-
-  address_space_t *space = select_address_space(virt_addr);
-  vm_mapping_t *mapping = allocate_vm_mapping(space, virt_addr, size, vm_flags);
-  if (mapping == NULL) {
-    return NULL;
-  }
-
-  mapping->type = VM_TYPE_RSVD;
-  mapping->attr = attr;
-  mapping->data.ptr = NULL;
-  mapping->name = "reserved";
-  return mapping;
-}
-
-vm_mapping_t *_vmap_reserve_range(size_t size, uintptr_t hint) {
-  uint32_t vm_flags = VMAP_FIXED;
-  uint16_t attr = 0;
-  if (hint < KERNEL_SPACE_START) {
-    vm_flags |= VMAP_USERSPACE;
-    attr = VM_ATTR_USER;
-  }
-
-  address_space_t *space = select_address_space(hint);
-  vm_mapping_t *mapping = allocate_vm_mapping(space, hint, size, vm_flags);
-  if (mapping == NULL) {
-    return NULL;
-  }
-
-  mapping->type = VM_TYPE_RSVD;
-  mapping->attr = attr;
-  mapping->data.ptr = NULL;
-  mapping->name = "reserved";
-  return mapping;
-}
-
-//
-
-void _vunmap_pages(page_t *pages) {
-  if (pages == NULL) {
-    return;
-  }
-
-  kassert(IS_PG_MAPPED(pages->flags));
-  kassert(pages->flags & PG_LIST_HEAD);
-
-  vm_mapping_t *mapping = pages->mapping;
-  address_space_t *space = select_address_space(mapping->address);
-  uintptr_t virt_ptr = mapping->address;
-
-  interval_t intvl = intvl(mapping->address, mapping->address + mapping->size);
-  intvl_tree_delete(space->root, intvl);
-  // mapping->data.ptr = NULL;
-  // kfree(mapping);
-
-  page_t *curr = pages;
-  while (curr) {
-    kassert(curr->flags & PG_MAPPED);
-    recursive_unmap_entry(virt_ptr, curr->flags);
-    curr->flags ^= PG_MAPPED;
-    curr->mapping = NULL;
-
-    virt_ptr += pg_flags_to_size(curr->flags);
-    curr = curr->next;
-  }
-}
-
-void _vunmap_addr(uintptr_t virt_addr, size_t size) {
-  address_space_t *space = select_address_space(virt_addr);
-  interval_t intvl = intvl(virt_addr, virt_addr + size);
-  intvl_node_t *node = intvl_tree_find(space->root, intvl);
-  if (node == NULL) {
-    panic("unmap: page is not mapped");
-  }
-
-  vm_mapping_t *mapping = node->data;
-  if (mapping->type == VM_TYPE_PAGE) {
-    _vunmap_pages(mapping->data.page);
-    return;
-  }
-
-  kassert(mapping->size == size);
-  size_t flags = mapping->flags;
-  size_t ptr = mapping->address;
-  size_t stride = pg_flags_to_size(mapping->flags);
-
-  intvl_tree_delete(space->root, intvl);
-  mapping->data.ptr = NULL;
-  kfree(mapping);
-
-  while (size > 0) {
-    recursive_unmap_entry(ptr, flags);
-    ptr += stride;
-    size -= stride;
-  }
-}
-
-//
-
-vm_mapping_t *_vmap_get_mapping(uintptr_t virt_addr) {
-  address_space_t *space = select_address_space(virt_addr);
-  interval_t intvl = intvl(virt_addr, virt_addr + 1);
-  intvl_node_t *node = intvl_tree_find(space->root, intvl);
-  if (node == NULL) {
-    return NULL;
-  }
-
-  return node->data;
-}
-
-uintptr_t _vm_virt_to_phys(uintptr_t virt_addr) {
-  if (virt_addr == 0) {
-    return 0;
-  }
-
-  address_space_t *space = select_address_space(virt_addr);
-  interval_t intvl = intvl(virt_addr, virt_addr + 1);
-  intvl_node_t *node = intvl_tree_find(space->root, intvl);
-  if (node == NULL) {
-    return 0;
-  }
-
-  vm_mapping_t *mapping = node->data;
-  size_t offset = virt_addr - mapping->address;
-  if (mapping->type == VM_TYPE_PHYS) {
-    return mapping->data.phys + offset;
-  } else if (mapping->type == VM_TYPE_PAGE) {
-    page_t *curr = mapping->data.page;
-    while (curr) {
-      size_t pgsize = pg_flags_to_size(curr->flags);
-      if (offset < pgsize) {
-        return curr->address + offset;
-      }
-      offset -= pgsize;
-      curr = curr->next;
+  // add it to the mappings list
+  if (closest) {
+    if (closest->address > virt_addr) {
+      // we dont care about closeness here we just want the mapping
+      // immediately before where the new mapping is going to be
+      closest = LIST_PREV(closest, list);
     }
-    // TODO: fix bug - hit while calling _vm_virt_to_phys with stack variable pointer
-    unreachable;
+
+    // insert into the list
+    LIST_INSERT(&space->mappings, vm, list, closest);
+  } else {
+    // first mapping
+    LIST_ADD(&space->mappings, vm, list);
   }
 
-  // kprintf("vm_virt_to_phys: invalid mapping type [%018p]", virt_addr);
+  // insert into address space
+  intvl_tree_insert(space->new_tree, mapping_interval(vm), vm);
+  space->num_mappings++;
+  SPIN_UNLOCK(&space->lock);
+  return vm;
+}
+
+vm_mapping_t *vm_alloc_rsvd(uintptr_t hint, size_t size, uint32_t vm_flags, const char *name) {
+  vm_mapping_t *vm = vm_alloc(VM_TYPE_RSVD, hint, size, vm_flags, name);
+  return vm;
+}
+
+vm_mapping_t *vm_alloc_phys(uintptr_t phys_addr, uintptr_t hint, size_t size, uint32_t vm_flags, const char *name) {
+  vm_mapping_t *vm = vm_alloc(VM_TYPE_PHYS, hint, size, vm_flags, name);
+  vm->vm_phys = phys_addr;
+  return vm;
+}
+
+vm_mapping_t *vm_alloc_pages(page_t *pages, uintptr_t hint, size_t size, uint32_t vm_flags, const char *name) {
+  vm_mapping_t *vm = vm_alloc(VM_TYPE_PAGE, hint, size, vm_flags, name);
+  vm->vm_pages = pages;
+  return vm;
+}
+
+void *vm_alloc_map_phys(uintptr_t phys_addr, uintptr_t hint, size_t size, uint32_t vm_flags, uint32_t pg_flags, const char *name) {
+  vm_mapping_t *vm = vm_alloc_phys(phys_addr, hint, size, vm_flags, name);
+  PANIC_IF(!vm, "vm_alloc_map_phys: failed to allocate mapping \"%s\"", name);
+  void *ptr = vm_map(vm, pg_flags);
+  PANIC_IF(!ptr, "vm_alloc_map_phys: failed to map mapping \"%s\"", name);
+  return ptr;
+}
+
+void *vm_alloc_map_pages(page_t *pages, uintptr_t hint, size_t size, uint32_t vm_flags, uint32_t pg_flags, const char *name) {
+  vm_mapping_t *vm = vm_alloc_pages(pages, hint, size, vm_flags, name);
+  PANIC_IF(!vm, "vm_alloc_map_pages: failed to allocate mapping \"%s\"", name);
+  void *ptr = vm_map(vm, pg_flags);
+  PANIC_IF(!ptr, "vm_alloc_map_pages: failed to map mapping \"%s\"", name);
+  return ptr;
+}
+
+void vm_free(vm_mapping_t *vm) {
+  if (vm->flags & VM_MAPPED) {
+    vm_unmap(vm);
+  }
+
+  if (vm->type == VM_TYPE_PAGE && vm->vm_pages != NULL) {
+    _free_pages(vm->vm_pages);
+    vm->vm_pages = NULL;
+  }
+
+  address_space_t *space = vm->space;
+  SPIN_LOCK(&space->lock);
+  LIST_REMOVE(&space->mappings, vm, list);
+  intvl_tree_delete(space->new_tree, mapping_interval(vm));
+  space->num_mappings--;
+  SPIN_LOCK(&space->lock);
+
+  str_free(&vm->name);
+  memset(vm, 0, sizeof(vm_mapping_t));
+  kfree(vm);
+}
+
+void *vm_map(vm_mapping_t *vm, uint32_t pg_flags) {
+  ASSERT(vm->type != VM_TYPE_RSVD);
+  size_t off;
+
+  SPIN_LOCK(&vm->lock);
+  ASSERT(!(vm->flags & VM_MAPPED));
+  switch (vm->type) {
+    case VM_TYPE_PHYS:
+      vm_map_phys_internal(vm, pg_flags);
+      break;
+    case VM_TYPE_PAGE:
+      vm_map_pages_internal(vm, 0, vm->vm_pages, pg_flags);
+      break;
+    default:
+      unreachable;
+  }
+
+  vm->flags |= VM_MAPPED;
+  vm->pg_flags = pg_flags;
+  SPIN_UNLOCK(&vm->lock);
+  return (void *) vm->address;
+}
+
+void vm_unmap(vm_mapping_t *vm) {
+  SPIN_LOCK(&vm->lock);
+  ASSERT(vm->flags & VM_MAPPED);
+  switch (vm->type) {
+    case VM_TYPE_PHYS:
+      vm_unmap_phys_internal(vm);
+      break;
+    case VM_TYPE_PAGE:
+      vm_unmap_pages_internal(vm);
+      break;
+    default:
+      unreachable;
+  }
+
+  vm->flags &= ~VM_MAPPED;
+  vm->pg_flags = 0;
+  SPIN_UNLOCK(&vm->lock);
+}
+
+int vm_resize(vm_mapping_t *vm, size_t new_size, bool allow_move) {
+  address_space_t *space = vm->space;
+  if (!(vm->flags & VM_GROWS)) {
+    panic("vm_resize: mapping \"%s\" cannot be resized", vm->name);
+  }
+
+  SPIN_LOCK(&vm->lock);
+  if (vm->size == new_size) {
+    SPIN_UNLOCK(&vm->lock);
+    return 0;
+  }
+
+  // first try resizing the existing mapping in place
+  uintptr_t old_addr = vm->address;
+  size_t old_size = vm->size;
+  if (resize_mapping_inplace(vm, new_size)) {
+    SPIN_UNLOCK(&vm->lock);
+    goto update_memory;
+  }
+
+  // okay that didnt work but we can try moving the mapping
+  if (!allow_move) {
+    SPIN_UNLOCK(&vm->lock);
+    return -1;
+  }
+
+  SPIN_LOCK(&space->lock);
+  bool ok = move_mapping(vm, new_size);
+  SPIN_UNLOCK(&space->lock);
+  SPIN_UNLOCK(&vm->lock);
+  if (!ok) {
+    return -1;
+  }
+
+  // finally call the appropriate resize function to update the underlying mappings
+LABEL(update_memory);
+  switch (vm->type) {
+    case VM_TYPE_PHYS:
+      vm_resize_phys_internal(vm, old_addr, old_size, new_size);
+      break;
+    case VM_TYPE_PAGE:
+      vm_resize_pages_internal(vm, old_addr, old_size, new_size);
+      break;
+    default:
+      unreachable;
+  }
   return 0;
 }
 
-page_t *_vm_virt_to_page(uintptr_t virt_addr) {
-  address_space_t *space = select_address_space(virt_addr);
-  interval_t intvl = intvl(virt_addr, virt_addr + 1);
-  intvl_node_t *node = intvl_tree_find(space->root, intvl);
-  if (node == NULL) {
-    return NULL;
-  }
 
-  vm_mapping_t *mapping = node->data;
-  if (mapping->type == VM_TYPE_PAGE) {
-    return mapping->data.page;
-  }
+int vm_putpage(vm_mapping_t *vm, size_t off, page_t *page) {
+  ASSERT(vm->type == VM_TYPE_PAGE);
+  unimplemented("vm_putpage");
+  return 0;
+}
 
-  kprintf("vm_virt_to_page: not a page mapping");
+
+page_t *vm_getpage(vm_mapping_t *vm, size_t off) {
+  unimplemented("vm_getpage");
   return NULL;
 }
 
-// utility functions
+//
 
-page_t *valloc_pages(size_t count, uint32_t flags) {
-  page_t *pages = _alloc_pages(count, flags);
-  if (pages == NULL) {
-    panic("could not allocate pages");
-  }
+vm_mapping_t *vm_get_mapping(uintptr_t virt_addr) {
+  if (virt_addr == 0)
+    return NULL;
 
-  if (_vmap_pages(pages) == NULL) {
-    panic("could not map pages");
-  }
-  return pages;
-}
-
-page_t *valloc_named_pagesz(size_t count, uint32_t flags, const char *name) {
-  page_t *pages = _alloc_pages(count, flags);
-  if (pages == NULL) {
-    panic("could not allocate pages");
-  }
-
-  if (_vmap_named_pages(pages, name) == NULL) {
-    panic("could not map pages");
-  }
-  return pages;
-}
-
-page_t *valloc_zero_pages(size_t count, uint32_t flags) {
-  page_t *pages = _alloc_pages(count, flags);
-  void *ptr = _vmap_pages(pages);
-  if (ptr == NULL) {
-    panic("could not map pages");
-  }
-
-  size_t size = count * pg_flags_to_size(flags);
-  if (IS_PG_WRITABLE(flags)) {
-    memset(ptr, 0, size);
+  address_space_t *space;
+  if (space_contains(PERCPU_ADDRESS_SPACE, virt_addr)) {
+    space = PERCPU_ADDRESS_SPACE;
   } else {
-    cpu_disable_interrupts();
-    cpu_disable_write_protection();
-    memset(ptr, 0, size);
-    cpu_enable_write_protection();
-    cpu_enable_interrupts();
-  }
-
-  return pages;
-}
-
-void vfree_pages(page_t *pages) {
-  if (IS_PG_MAPPED(pages->flags)) {
-    _vunmap_pages(pages);
-  }
-  _free_pages(pages);
-}
-
-// debug functions
-
-void _address_space_print_mappings(address_space_t *space) {
-  if (space == NULL) {
     space = kernel_space;
   }
 
-  intvl_iter_t *iter = intvl_iter_tree(space->root);
-  intvl_node_t *node;
-  while ((node = intvl_iter_next(iter))) {
-    interval_t i = node->interval;
-    vm_mapping_t *mapping = node->data;
-    kprintf("  [%018p-%018p] % 10llu %s\n", i.start, i.end, mapping->size, mapping->name);
-  }
-  kfree(iter);
+  SPIN_LOCK(&space->lock);
+  vm_mapping_t *vm = intvl_tree_get_point(space->new_tree, virt_addr);
+  SPIN_UNLOCK(&space->lock);
+  return vm;
 }
 
-void _address_space_to_graphiz(address_space_t *space) {
-  intvl_iter_t *iter = intvl_iter_tree(space->root);
+uintptr_t vm_virt_to_phys(uintptr_t virt_addr) {
+  vm_mapping_t *vm = vm_get_mapping(virt_addr);
+  if (!vm)
+    return 0;
+
+  return vm_mapping_to_phys(vm, virt_addr);
+}
+
+uintptr_t vm_mapping_to_phys(vm_mapping_t *vm, uintptr_t virt_addr) {
+  if (vm->type == VM_TYPE_RSVD)
+    return 0;
+
+  size_t off = virt_addr - vm->address;
+  if (vm->type == VM_TYPE_PHYS) {
+    return vm->vm_phys + off;
+  } else if (vm->type == VM_TYPE_PAGE) {
+    if (vm->flags & VM_CONTIG) {
+      // we can take a shortcut here if we know the pages are contiguous
+      return vm->vm_pages->address + off;
+    }
+
+    // walk the page list and find the page that contains the address
+    page_t *page = vm->vm_pages;
+    uintptr_t curr_addr = vm->address;
+    while (curr_addr < virt_addr) {
+      size_t sz = pg_flags_to_size(page->flags);
+      if (curr_addr + sz > virt_addr) {
+        // the pointer is within this page
+        return page->address + (virt_addr - curr_addr);
+      }
+
+      page = page->next;
+      curr_addr += sz;
+    }
+    return 0;
+  }
+
+  unreachable;
+}
+
+//
+// vmalloc api
+
+static inline bool is_vmalloc_mapping(vm_mapping_t *vm) {
+  return vm->type == VM_TYPE_PAGE && (vm->flags & VM_MALLOC);
+}
+
+// TODO: propagate failures instead of panicing
+
+void *vmalloc(size_t size, uint32_t pg_flags) {
+  if (size == 0)
+    return NULL;
+
+  // TODO: the pages dont have to be contiguous so we can improve
+  //       the allocation strategy here. for now this is the same
+  //       as vmalloc_phys
+
+  // allocate pages
+  page_t *pages = _alloc_pages(SIZE_TO_PAGES(size), pg_flags);
+  PANIC_IF(!pages, "vmalloc: _alloc_pages failed");
+
+  // allocate and map the virtual memory
+  uint32_t vm_flags = VM_GUARD | VM_MALLOC;
+  if (pg_flags & PG_USER)
+    vm_flags |= VM_USER;
+
+  vm_mapping_t *vm = vm_alloc_pages(pages, 0, size, vm_flags, "vmalloc");
+  PANIC_IF(!vm, "vmalloc: vm_alloc_pages failed");
+
+  void *ptr = vm_map(vm, pg_flags);
+  PANIC_IF(!ptr, "vmalloc: vm_map failed")
+  return ptr;
+}
+
+void *vmalloc_at(uintptr_t virt_addr, size_t size, uint32_t pg_flags) {
+  if (size == 0)
+    return NULL;
+
+  // allocate pages
+  page_t *pages = _alloc_pages(SIZE_TO_PAGES(size), pg_flags);
+  PANIC_IF(!pages, "vmalloc_at: _alloc_pages failed");
+
+  // allocate and map the virtual memory
+  uint32_t vm_flags = VM_FIXED | VM_GUARD | VM_MALLOC;
+  if (pg_flags & PG_USER)
+    vm_flags |= VM_USER;
+
+  vm_mapping_t *vm = vm_alloc_pages(pages, virt_addr, size, vm_flags, "vmalloc");
+  PANIC_IF(!vm, "vmalloc_at: vm_alloc_pages failed");
+
+  void *ptr = vm_map(vm, pg_flags);
+  PANIC_IF(!ptr, "vmalloc_at: vm_map failed")
+  return ptr;
+}
+
+void *vmalloc_phys(size_t size, uint32_t pg_flags) {
+  if (size == 0)
+    return NULL;
+
+  // allocate pages
+  page_t *pages = _alloc_pages(SIZE_TO_PAGES(size), pg_flags);
+  PANIC_IF(!pages, "vmalloc: _alloc_pages failed");
+
+  // allocate and map the virtual memory
+  uint32_t vm_flags = VM_GUARD | VM_MALLOC | VM_CONTIG;
+  if (pg_flags & PG_USER)
+    vm_flags |= VM_USER;
+
+  vm_mapping_t *vm = vm_alloc_pages(pages, 0, size, vm_flags, "vmalloc");
+  PANIC_IF(!vm, "vmalloc_phys: vm_alloc_pages failed");
+
+  void *ptr = vm_map(vm, pg_flags);
+  PANIC_IF(!ptr, "vmalloc_phys: vm_map failed")
+  return ptr;
+}
+
+void *vmalloc_at_phys(uintptr_t phys_addr, size_t size, uint32_t pg_flags) {
+  if (size == 0)
+    return NULL;
+
+  // allocate pages
+  page_t *pages = _alloc_pages_at(phys_addr, SIZE_TO_PAGES(size), pg_flags);
+  PANIC_IF(!pages, "vmalloc_at_phys: _alloc_pages_at failed");
+
+  // allocate and map the virtual memory
+  uint32_t vm_flags = VM_GUARD | VM_MALLOC | VM_CONTIG;
+  if (pg_flags & PG_USER)
+    vm_flags |= VM_USER;
+
+  vm_mapping_t *vm = vm_alloc_pages(pages, 0, size, vm_flags, "vmalloc");
+  PANIC_IF(!vm, "vmalloc_at_phys: vm_alloc_pages failed");
+
+  void *ptr = vm_map(vm, pg_flags);
+  PANIC_IF(!ptr, "vmalloc_at_phys: vm_map failed")
+  return ptr;
+}
+
+void vfree(void *ptr) {
+  if (ptr == NULL)
+    return;
+
+  vm_mapping_t *vm = vm_get_mapping((uintptr_t) ptr);
+  PANIC_IF(!vm, "vfree: invalid pointer: {:018p} is not mapped", ptr);
+  PANIC_IF(!is_vmalloc_mapping(vm), "vfree: invalid pointer: {:018p} is not a vmalloc pointer", ptr);
+  PANIC_IF(((uintptr_t)ptr) != vm->address, "vfree: invalid pointer: {:018p} is not the start of a vmalloc mapping", ptr);
+  vm_free(vm);
+}
+
+
+//
+// debug functions
+
+void vm_print_mappings(address_space_t *space) {
+  vm_mapping_t *prev = NULL;
+  vm_mapping_t *vm = LIST_FIRST(&space->mappings);
+  while (vm) {
+    size_t extra_size = vm->virt_size - vm->size;
+    if ((vm->flags & VM_GUARD) && (vm->flags & VM_STACK)) {
+      // in a stack mapping the guard page comes first in memory
+      // since it is at the logical end or bottom of the stack
+      kprintf("  [%018p-%018p] {:$ >10llu} guard\n",
+              vm->address-extra_size, vm->address, extra_size);
+    }
+
+    kprintf("  [{:018p}-{:018p}] {:$ >10llu} {:str}\n",
+            vm->address, vm->address+vm->size, vm->size, &vm->name);
+
+    if ((vm->flags & VM_GUARD) && !(vm->flags & VM_STACK)) {
+      kprintf("  [%018p-%018p] {:$ >10llu} guard\n",
+              vm->address+vm->size, vm->address+vm->size+extra_size, extra_size);
+    }
+    vm = LIST_NEXT(vm, list);
+  }
+}
+
+void vm_print_space_tree_graphiz(address_space_t *space) {
+  intvl_iter_t *iter = intvl_iter_tree(space->new_tree);
   intvl_node_t *node;
-  rb_node_t *nil = space->root->tree->nil;
+  rb_node_t *nil = space->new_tree->tree->nil;
   int null_count = 0;
 
   kprintf("digraph BST {\n");
@@ -808,8 +999,9 @@ void _address_space_to_graphiz(address_space_t *space) {
     interval_t i = node->interval;
     rb_node_t *rbnode = node->node;
 
-    kprintf("  %llu [label=\"start: %p\\nend: %p\\nmin: %p\\nmax: %p;\"];\n",
-            rbnode->key, i.start, i.end, node->min, node->max);
+    vm_mapping_t *vm = node->data;
+    kprintf("  %llu [label=\"{:str}\\n%p-%p\"];\n",
+            rbnode->key, &vm->name, i.start, i.end);
 
     if (rbnode->left != nil) {
       kprintf("  %llu -> %llu\n", rbnode->key, rbnode->left->key);
@@ -831,8 +1023,11 @@ void _address_space_to_graphiz(address_space_t *space) {
   kfree(iter);
 }
 
-void vm_print_debug_address_space() {
+void vm_print_address_space() {
   kprintf("vm: address space mappings\n");
-  _address_space_print_mappings(PERCPU_ADDRESS_SPACE);
-  _address_space_print_mappings(kernel_space);
+  kprintf("{:$=^80s}\n", " user space ");
+  vm_print_mappings(PERCPU_ADDRESS_SPACE);
+  kprintf("{:$=^80s}\n", " kernel space ");
+  vm_print_mappings(kernel_space);
+  kprintf("{:$=^80}\n");
 }

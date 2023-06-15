@@ -23,7 +23,7 @@ uintptr_t kernel_reserved_va_ptr;
 memory_map_entry_t *reserved_map_entry;
 
 void mm_early_init() {
-  kernel_address = (uintptr_t) &__kernel_code_start;
+  kernel_address = (uintptr_t) &__kernel_address;
   kernel_virtual_offset = (uintptr_t) &__kernel_virtual_offset;
   kernel_code_start = (uintptr_t) &__kernel_code_start;
   kernel_code_end = (uintptr_t) &__kernel_code_end;
