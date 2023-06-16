@@ -8,10 +8,8 @@
 #include <vfs/file.h>
 
 #include <mm.h>
-#include <macros.h>
 #include <printf.h>
 
-#include <abi/fcntl.h>
 
 #define ASSERT(x) kassert(x)
 #define DPRINTF(fmt, ...) kprintf("vnode: %s: " fmt, __func__, ##__VA_ARGS__)
@@ -19,11 +17,8 @@
 #define CHECK_SAMEDEV(vn1, vn2) if ((vn1)->vfs != (vn2)->vfs) return -EXDEV;
 #define CHECK_WRITE(vn) if (VFS_ISRDONLY((vn)->vfs)) return -EROFS;
 #define CHECK_DIR(vn) if ((vn)->type != V_DIR) return -ENOTDIR;
-#define CHECK_NOTDIR(vn) if ((vn)->type == V_DIR) return -EISDIR;
 #define CHECK_NAMELEN(name) if (cstr_len(name) > NAME_MAX) return -ENAMETOOLONG;
 #define CHECK_SUPPORTED(vn, op) if (!(vn)->ops->op) return -ENOTSUP;
-
-#define RET_IF(cond, ret) if (cond) return ret;
 
 #define make_vattr(t) ({ struct vattr __attr = {0}; __attr.type = t; __attr; })
 
@@ -101,16 +96,6 @@ void vn_stat(vnode_t *vn, struct stat *statbuf) {
 //
 
 int vn_open(vnode_t *vn, int flags) {
-  if (V_ISDEV(vn)) {
-    device_t *device = device_get(vn->v_dev);
-    RET_IF(!device, -ENODEV);
-    if (!device->ops->d_open)
-      return 0;
-
-    // device open
-    return device->ops->d_open(device, flags);
-  }
-
   if (!VN_OPS(vn)->v_open)
     return 0;
 
@@ -123,16 +108,6 @@ int vn_open(vnode_t *vn, int flags) {
 }
 
 int vn_close(vnode_t *vn) {
-  if (V_ISDEV(vn)) {
-    device_t *device = device_get(vn->v_dev);
-    RET_IF(!device, -ENODEV);
-    if (!device->ops->d_close)
-      return 0;
-
-    // device close
-    return device->ops->d_close(device);
-  }
-
   if (!VN_OPS(vn)->v_close)
     return 0;
 
@@ -145,18 +120,9 @@ int vn_close(vnode_t *vn) {
 }
 
 ssize_t vn_read(vnode_t *vn, off_t off, kio_t *kio) {
-  if (V_ISDEV(vn)) {
-    device_t *device = device_get(vn->v_dev);
-    RET_IF(!device, -ENODEV);
-    RET_IF(!device->ops->d_read, -ENOTSUP);
-
-    // device read
-    return device->ops->d_read(device, off, kio);
-  }
-
-  RET_IF(!VN_OPS(vn)->v_read, -ENOTSUP);
-  RET_IF(off > vn->size, -EOVERFLOW);
-  RET_IF(off < 0, -EINVAL);
+  if (!VN_OPS(vn)->v_read) return -ENOTSUP;
+  if (off > vn->size) return -EOVERFLOW;
+  if (off < 0) return -EINVAL;
 
   // filesystem read
   return VN_OPS(vn)->v_read(vn, off, kio);
@@ -164,18 +130,9 @@ ssize_t vn_read(vnode_t *vn, off_t off, kio_t *kio) {
 
 ssize_t vn_write(vnode_t *vn, off_t off, kio_t *kio) {
   if (VFS_ISRDONLY(vn->vfs)) return -EROFS;
-  if (V_ISDEV(vn)) {
-    device_t *device = device_get(vn->v_dev);
-    RET_IF(!device, -ENODEV);
-    RET_IF(!device->ops->d_write, -ENOTSUP);
-
-    // device write
-    return device->ops->d_write(device, off, kio);
-  }
-
-  RET_IF(!VN_OPS(vn)->v_write, -ENOTSUP);
-  RET_IF(off > vn->size, -EOVERFLOW);
-  RET_IF(off < 0, -EINVAL);
+  if (!VN_OPS(vn)->v_write) return -ENOTSUP;
+  if (off > vn->size) return -EOVERFLOW;
+  if (off < 0) return -EINVAL;
 
   // filesystem write
   return VN_OPS(vn)->v_write(vn, off, kio);

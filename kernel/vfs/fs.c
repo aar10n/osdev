@@ -218,11 +218,30 @@ int fs_open(const char *path, int flags, mode_t mode) {
     }
   }
 
-  // open the file
   vnode_t *vn = VN(ve);
+  if (V_ISDEV(vn)) {
+    device_t *device = device_get(vn->v_dev);
+    if (!device)
+      goto_error(ret_unlock, -ENODEV);
+    if (!device->ops->d_open) {
+      res = 0;
+      goto done;
+    }
+
+    // device open
+    res = device->ops->d_open(device, flags);
+    if (res < 0) {
+      DPRINTF("failed to open device\n");
+      goto ret_unlock;
+    }
+    goto done;
+  }
+
+  // open the file
   if ((res = vn_open(vn, flags)) < 0)
     goto ret_unlock;
 
+LABEL(done);
   vn_lock(vn);
   vn->nopen++;
   vn_unlock(vn);
@@ -253,7 +272,25 @@ int fs_close(int fd) {
 
   vnode_t *vn = file->vnode;
   if (V_ISDIR(vn))
-    goto_error(ret, -EISDIR); // file is a directory
+    goto_error(ret_unlock, -EISDIR); // file is a directory
+
+  if (V_ISDEV(vn)) {
+    device_t *device = device_get(vn->v_dev);
+    if (!device)
+      goto_error(ret_unlock, -ENODEV);
+    if (!device->ops->d_close) {
+      res = 0;
+      goto done;
+    }
+
+    // device close
+    res = device->ops->d_close(device);
+    if (res < 0) {
+      DPRINTF("failed to close device\n");
+      goto ret_unlock;
+    }
+    goto done;
+  }
 
   // close the file
   if ((res = vn_close(vn)) < 0) {
@@ -261,6 +298,7 @@ int fs_close(int fd) {
     goto ret_unlock;
   }
 
+LABEL(done);
   // release the file descriptor
   ftable_remove_file(FTABLE, fd);
   ftable_free_fd(FTABLE, fd);
@@ -294,6 +332,23 @@ ssize_t fs_read(int fd, void *buf, size_t len) {
   if (!f_lock(file))
     goto_error(ret, -EBADF); // file is closed
 
+  if (V_ISDEV(vn)) {
+    device_t *device = device_get(vn->v_dev);
+    if (!device)
+      goto_error(ret_unlock, -ENODEV);
+    if (!device->ops->d_read)
+      goto_error(ret_unlock, -ENOTSUP);
+
+    // device read
+    kio_t kio = kio_new_writeonly(buf, len);
+    res = device->ops->d_read(device, file->offset, &kio);
+    if (res < 0) {
+      DPRINTF("failed to read device\n");
+      goto ret_unlock;
+    }
+    goto done;
+  }
+
   // read the file
   kio_t kio = kio_new_writeonly(buf, len);
   vn_begin_data_read(vn);
@@ -304,6 +359,7 @@ ssize_t fs_read(int fd, void *buf, size_t len) {
     goto ret_unlock;
   }
 
+LABEL(done);
   // update the file offset
   file->offset += res;
 
@@ -332,6 +388,23 @@ ssize_t fs_write(int fd, const void *buf, size_t len) {
   if (file->flags & O_APPEND)
     file->offset = (off_t) vn->size;
 
+  if (V_ISDEV(vn)) {
+    device_t *device = device_get(vn->v_dev);
+    if (!device)
+      goto_error(ret_unlock, -ENODEV);
+    if (!device->ops->d_write)
+      goto_error(ret_unlock, -ENOTSUP);
+
+    // device write
+    kio_t kio = kio_new_readonly(buf, len);
+    res = device->ops->d_write(device, file->offset, &kio);
+    if (res < 0) {
+      DPRINTF("failed to write device\n");
+      goto ret_unlock;
+    }
+    goto done;
+  }
+
   // write the file
   kio_t kio = kio_new_readonly(buf, len);
   vn_begin_data_write(vn);
@@ -342,6 +415,7 @@ ssize_t fs_write(int fd, const void *buf, size_t len) {
     goto ret_unlock;
   }
 
+LABEL(done);
   // update the file offset
   file->offset += res;
 
