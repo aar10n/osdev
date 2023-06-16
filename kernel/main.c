@@ -24,6 +24,7 @@
 
 #include <printf.h>
 #include <panic.h>
+#include <fs_utils.h>
 
 // This relates to custom qemu patch that ive written to make debugging easier.
 #define QEMU_DEBUG_INIT() ({ outb(0x801, 1); })
@@ -109,7 +110,10 @@ __used void ap_main() {
 // Launch process
 //
 
-#include <fs_utils.h>
+static page_t *get_page(vm_mapping_t *vm, size_t off, uint32_t pg_flags) {
+  page_t *page = _alloc_pages(1, pg_flags);
+  return page;
+}
 
 noreturn void root() {
   kprintf("starting root process\n");
@@ -119,25 +123,11 @@ noreturn void root() {
 
   //////////////////////////////////////////
 
-  // int fd = fs_mkdir("/test", 0777);
-  // if (fd < 0) {
-  //   panic("mkdir failed: {:err}\n", fd);
-  // }
-  //
-  // fd = fs_open("/test/test.txt", O_CREAT | O_RDWR, 0777);
-  // if (fd < 0) {
-  //   panic("open failed: {:err}\n", fd);
-  // }
-  //
-  // ssize_t nbytes = fs_write(fd, "hello world\n", 12);
-  // if (nbytes < 0) {
-  //   panic("write failed: {:err}\n", nbytes);
-  // }
-  //
-  // int res = fs_close(fd);
-  // if (res < 0) {
-  //   panic("close failed: {:err}\n", res);
-  // }
+  void *ptr = vm_alloc_map_file(get_page, 0, PAGE_SIZE, 0, PG_WRITE, "test");
+  kprintf("writing to %p\n", ptr);
+  strcpy(ptr, "hello world");
+
+  vm_mapping_t *vm = vm_get_mapping((uintptr_t) ptr);
 
   kprintf("it worked!\n");
 

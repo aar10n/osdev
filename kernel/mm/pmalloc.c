@@ -4,7 +4,6 @@
 
 #include <mm/pmalloc.h>
 #include <mm/vmalloc.h>
-#include <mm/pgtable.h>
 #include <mm/init.h>
 
 #include <string.h>
@@ -12,10 +11,6 @@
 #include <panic.h>
 #include <bitmap.h>
 #include <init.h>
-
-void *kmalloc(size_t size) __malloc_like;
-void *kmallocz(size_t size) __malloc_like;
-void kfree(void *ptr);
 
 static LIST_HEAD(mem_zone_t) mem_zones[MAX_ZONE_TYPE];
 static size_t zone_page_count[MAX_ZONE_TYPE];
@@ -83,11 +78,7 @@ page_t *make_page_structs(mem_zone_t *zone, uint64_t frame, size_t count, size_t
     SLIST_ADD(&pages, page, next);
   }
 
-  LIST_LAST(&pages)->flags |= PG_LIST_TAIL;
-  page_t *first = LIST_FIRST(&pages);
-  first->flags |= PG_LIST_HEAD;
-  first->head.list_sz = (uint32_t) total_size;
-  return first;
+  return LIST_FIRST(&pages);
 }
 
 bitmap_t *alloc_pages_bitmap(size_t num_pages) {

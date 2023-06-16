@@ -27,6 +27,7 @@
 struct page;
 struct address_space;
 struct vm_mapping;
+struct vm_file;
 struct mem_zone;
 
 struct intvl_tree;
@@ -44,20 +45,13 @@ struct bitmap;
 #define PG_BIGPAGE    (1 << 8)
 #define PG_HUGEPAGE   (1 << 9)
 // flags used during allocation
-#define PG_LIST_HEAD  (1 << 16)
-#define PG_LIST_TAIL  (1 << 17)
-#define PG_FORCE      (1 << 18)
+#define PG_FORCE      (1 << 16)
 #define PG_ZERO       (1 << 19)
 
 typedef struct page {
   uint64_t address;              // physical address
   uint32_t flags;                // page flags
-  union {
-    struct {
-      uint32_t list_sz;          // size of list
-    } head;// if PG_LIST_HEAD == 1
-  };
-  struct vm_mapping *new_mapping;
+  struct vm_mapping *mapping;    // owning mapping (if mapped)
   struct mem_zone *zone;         // owning memory zone
   SLIST_ENTRY(struct page) next;
 } page_t;
@@ -85,6 +79,7 @@ enum vm_type {
   VM_TYPE_RSVD, // reserved memory
   VM_TYPE_PHYS, // direct physical mapping
   VM_TYPE_PAGE, // mapped pages
+  VM_TYPE_FILE, // lazily mapped file
 };
 
 // vm flags
@@ -100,8 +95,8 @@ typedef struct vm_mapping {
   uint32_t pg_flags;        // page flags (when mapped)
 
   spinlock_t lock;          // mapping lock
-  address_space_t *space;   // owning address space
   str_t name;               // name of the mapping
+  address_space_t *space;   // owning address space
 
   uint64_t address;         // virtual address
   size_t size;              // mapping size
@@ -110,9 +105,10 @@ typedef struct vm_mapping {
   union {
     uintptr_t vm_phys;
     struct page *vm_pages;
+    struct vm_file *vm_file;
   };
 
-  LIST_ENTRY(struct vm_mapping) list; // list of mappings
+  LIST_ENTRY(struct vm_mapping) list;
 } vm_mapping_t;
 
 

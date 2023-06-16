@@ -10,6 +10,24 @@
 #include <spinlock.h>
 #include <mm_types.h>
 
+typedef page_t *(*vm_getpage_t)(struct vm_mapping *vm, size_t off, uint32_t pg_flags);
+
+/**
+ * vm_file represents a dynamically loaded region of data.
+ * File mappings initially start empty and are populated on demand by the
+ * get_page function when accesses within the region cause a page fault.
+ * vm_files can also be accessed and populated through the vm_getpage and
+ * vm_putpage functions.
+ */
+struct vm_file {
+  uint32_t pg_flags;  // page flags
+  size_t full_size;   // size of the whole file
+  size_t mapped_size; // size of the mapped part of the file
+  page_t **pages;     // array of pointers to pages
+  vm_getpage_t get_page;
+};
+
+
 void init_address_space();
 void init_ap_address_space();
 uintptr_t make_ap_page_tables();
@@ -22,16 +40,18 @@ vm_mapping_t *vm_alloc(enum vm_type type, uintptr_t hint, size_t size, uint32_t 
 vm_mapping_t *vm_alloc_rsvd(uintptr_t hint, size_t size, uint32_t vm_flags, const char *name);
 vm_mapping_t *vm_alloc_phys(uintptr_t phys_addr, uintptr_t hint, size_t size, uint32_t vm_flags, const char *name);
 vm_mapping_t *vm_alloc_pages(page_t *pages, uintptr_t hint, size_t size, uint32_t vm_flags, const char *name);
+vm_mapping_t *vm_alloc_file(vm_getpage_t get_page_fn, uintptr_t hint, size_t size, uint32_t vm_flags, const char *name);
 void *vm_alloc_map_phys(uintptr_t phys_addr, uintptr_t hint, size_t size, uint32_t vm_flags, uint32_t pg_flags, const char *name);
 void *vm_alloc_map_pages(page_t *pages, uintptr_t hint, size_t size, uint32_t vm_flags, uint32_t pg_flags, const char *name);
+void *vm_alloc_map_file(vm_getpage_t get_page_fn, uintptr_t hint, size_t size, uint32_t vm_flags, uint32_t pg_flags, const char *name);
 void vm_free(vm_mapping_t *vm);
 
 void *vm_map(vm_mapping_t *vm, uint32_t pg_flags);
 void vm_unmap(vm_mapping_t *vm);
 int vm_resize(vm_mapping_t *vm, size_t new_size, bool allow_move);
 
-int vm_putpage(vm_mapping_t *vm, size_t off, page_t *page);
 page_t *vm_getpage(vm_mapping_t *vm, size_t off);
+int vm_putpage(vm_mapping_t *vm, size_t off, page_t *page);
 
 vm_mapping_t *vm_get_mapping(uintptr_t virt_addr);
 uintptr_t vm_virt_to_phys(uintptr_t virt_addr);
@@ -49,7 +69,6 @@ uintptr_t vm_mapping_to_phys(vm_mapping_t *vm, uintptr_t virt_addr);
 // one returned by the vmalloc functions.
 
 void *vmalloc(size_t size, uint32_t pg_flags);
-void *vmalloc_at(uintptr_t virt_addr, size_t size, uint32_t pg_flags);
 void *vmalloc_phys(size_t size, uint32_t pg_flags);
 void *vmalloc_at_phys(uintptr_t phys_addr, size_t size, uint32_t pg_flags);
 void vfree(void *ptr);

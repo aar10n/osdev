@@ -43,6 +43,11 @@
 #define CPU_EXCEPTION_SX  30  // security exception
 #define CPU_MAX_EXCEPTION 31
 
+#define CPU_PF_P  (1 << 0) // present (0 = not present, 1 = present)
+#define CPU_PF_W  (1 << 1) // write (0 = read, 1 = write)
+#define CPU_PF_U  (1 << 2) // user (0 = supervisor, 1 = user)
+#define CPU_PF_I  (1 << 4) // instruction fetch (when NX is enabled)
+
 typedef union cpuid_bits {
   struct {
     // leaf 0x00000001

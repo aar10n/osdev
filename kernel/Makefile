@@ -15,8 +15,8 @@ kernel += acpi/acpi.c acpi/pm_timer.c
 kernel += bus/pci.c bus/pci_tables.c bus/pcie.c bus/pci_v2.c
 
 # kernel/cpu
-kernel += cpu/cpu.asm cpu/idt.asm cpu/io.asm cpu/exception.asm \
-	cpu/cpu.c cpu/gdt.c cpu/idt.c cpu/per_cpu.c
+kernel += cpu/cpu.asm cpu/idt.asm cpu/io.asm cpu/cpu.c \
+	cpu/gdt.c cpu/idt.c cpu/per_cpu.c
 
 # kernel/debug
 kernel += debug/debug.c debug/dwarf.c

@@ -36,7 +36,6 @@ int smp_boot_ap(uint16_t id, smp_data_t *smpdata) {
   ASSERT(ap_percpu_ptr != NULL);
 
   page_t *stack_pages = _alloc_pages(SIZE_TO_PAGES(KERNEL_STACK_SIZE), PG_WRITE);
-  vm_mapping_t *ap_stack_vm = vm_alloc_pages(stack_pages, 0, KERNEL_STACK_SIZE, VM_STACK | VM_GUARD, "ap stack");
   void *ap_stack_ptr = vm_alloc_map_pages(stack_pages, 0, KERNEL_STACK_SIZE, VM_STACK | VM_GUARD, PG_WRITE, "ap stack");
 
   memset(ap_percpu_ptr, 0, PER_CPU_SIZE);
