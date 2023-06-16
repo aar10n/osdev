@@ -522,7 +522,7 @@ void page_fault_handler(uint8_t vector, uint32_t error_code, cpu_irq_stack_t *fr
     DPRINTF("non-present page fault in vm_file [vm={:str},addr=%p]\n", &vm->name, fault_addr);
     struct vm_file *file = vm->vm_file;
     size_t off = fault_addr - vm->address;
-    page_t *page = file->get_page(vm, off, vm->pg_flags);
+    page_t *page = file->get_page(vm, off, vm->pg_flags, file->data);
     if (!page) {
       DPRINTF("failed to get non-present page in vm_file [vm={:str},off=%zu]\n", &vm->name, off);
       goto exception;
@@ -778,7 +778,7 @@ vm_mapping_t *vm_alloc_pages(page_t *pages, uintptr_t hint, size_t size, uint32_
   return vm;
 }
 
-vm_mapping_t *vm_alloc_file(vm_getpage_t get_page_fn, uintptr_t hint, size_t size, uint32_t vm_flags, const char *name) {
+vm_mapping_t *vm_alloc_file(vm_getpage_t get_page_fn, void *data, uintptr_t hint, size_t size, uint32_t vm_flags, const char *name) {
   vm_mapping_t *vm = vm_alloc(VM_TYPE_FILE, hint, size, vm_flags | VM_GROWS, name);
   if (!vm)
     return NULL;
@@ -806,8 +806,8 @@ void *vm_alloc_map_pages(page_t *pages, uintptr_t hint, size_t size, uint32_t vm
   return ptr;
 }
 
-void *vm_alloc_map_file(vm_getpage_t get_page_fn, uintptr_t hint, size_t size, uint32_t vm_flags, uint32_t pg_flags, const char *name) {
-  vm_mapping_t *vm = vm_alloc_file(get_page_fn, hint, size, vm_flags, name);
+void *vm_alloc_map_file(vm_getpage_t get_page_fn, void *data, uintptr_t hint, size_t size, uint32_t vm_flags, uint32_t pg_flags, const char *name) {
+  vm_mapping_t *vm = vm_alloc_file(get_page_fn, data, hint, size, vm_flags, name);
   PANIC_IF(!vm, "vm_alloc_map_file: failed to allocate mapping \"%s\"", name);
   void *ptr = vm_map(vm, pg_flags);
   PANIC_IF(!ptr, "vm_alloc_map_file: failed to map mapping \"%s\"", name);

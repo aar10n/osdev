@@ -56,7 +56,7 @@ typedef struct device {
 } device_t;
 
 struct device_ops {
-  int (*d_open)(struct device *device);
+  int (*d_open)(struct device *device, int flags);
   int (*d_close)(struct device *device);
   ssize_t (*d_read)(struct device *device, size_t off, struct kio *kio);
   ssize_t (*d_write)(struct device *device, size_t off, struct kio *kio);
@@ -191,8 +191,8 @@ int register_dev(const char *dev_type, device_t *dev);
 
 // MARK: Device Operation Helpers
 
-static inline int __dev_open(device_t *dev) {
-  return dev->ops->d_open(dev);
+static inline int __dev_open(device_t *dev, int flags) {
+  return dev->ops->d_open(dev, flags);
 }
 
 static inline int __dev_close(device_t *dev) {

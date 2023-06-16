@@ -142,6 +142,7 @@ enum vtype {
 #define V_ISCHR(v) ((v)->type == V_CHR)
 #define V_ISFIFO(v) ((v)->type == V_FIFO)
 #define V_ISSOCK(v) ((v)->type == V_SOCK)
+#define V_ISDEV(v) (V_ISBLK(v) || V_ISCHR(v))
 
 /**
  * A virtual filesystem node.
@@ -177,6 +178,7 @@ typedef struct vnode {
 
   /* associated data */
   union {
+    struct vm_mapping *v_reg;     // file mapping (V_REG)
     dev_t v_dev;                  // device number (V_BLK, V_CHR)
     str_t v_link;                 // symlink (V_LNK)
     struct vnode *v_shadow;       // shadowed vnode (VN_MOUNT)

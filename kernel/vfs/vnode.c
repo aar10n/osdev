@@ -23,6 +23,8 @@
 #define CHECK_NAMELEN(name) if (cstr_len(name) > NAME_MAX) return -ENAMETOOLONG;
 #define CHECK_SUPPORTED(vn, op) if (!(vn)->ops->op) return -ENOTSUP;
 
+#define RET_IF(cond, ret) if (cond) return ret;
+
 #define make_vattr(t) ({ struct vattr __attr = {0}; __attr.type = t; __attr; })
 
 static inline mode_t vn_to_mode(vnode_t *vnode) {
@@ -99,6 +101,16 @@ void vn_stat(vnode_t *vn, struct stat *statbuf) {
 //
 
 int vn_open(vnode_t *vn, int flags) {
+  if (V_ISDEV(vn)) {
+    device_t *device = device_get(vn->v_dev);
+    RET_IF(!device, -ENODEV);
+    if (!device->ops->d_open)
+      return 0;
+
+    // device open
+    return device->ops->d_open(device, flags);
+  }
+
   if (!VN_OPS(vn)->v_open)
     return 0;
 
@@ -111,6 +123,16 @@ int vn_open(vnode_t *vn, int flags) {
 }
 
 int vn_close(vnode_t *vn) {
+  if (V_ISDEV(vn)) {
+    device_t *device = device_get(vn->v_dev);
+    RET_IF(!device, -ENODEV);
+    if (!device->ops->d_close)
+      return 0;
+
+    // device close
+    return device->ops->d_close(device);
+  }
+
   if (!VN_OPS(vn)->v_close)
     return 0;
 
@@ -123,9 +145,18 @@ int vn_close(vnode_t *vn) {
 }
 
 ssize_t vn_read(vnode_t *vn, off_t off, kio_t *kio) {
-  if (!VN_OPS(vn)->v_read) return -ENOTSUP;
-  if (off > vn->size) return -EOVERFLOW;
-  if (off < 0) return -EINVAL;
+  if (V_ISDEV(vn)) {
+    device_t *device = device_get(vn->v_dev);
+    RET_IF(!device, -ENODEV);
+    RET_IF(!device->ops->d_read, -ENOTSUP);
+
+    // device read
+    return device->ops->d_read(device, off, kio);
+  }
+
+  RET_IF(!VN_OPS(vn)->v_read, -ENOTSUP);
+  RET_IF(off > vn->size, -EOVERFLOW);
+  RET_IF(off < 0, -EINVAL);
 
   // filesystem read
   return VN_OPS(vn)->v_read(vn, off, kio);
@@ -133,9 +164,18 @@ ssize_t vn_read(vnode_t *vn, off_t off, kio_t *kio) {
 
 ssize_t vn_write(vnode_t *vn, off_t off, kio_t *kio) {
   if (VFS_ISRDONLY(vn->vfs)) return -EROFS;
-  if (!VN_OPS(vn)->v_write) return -ENOTSUP;
-  if (off > vn->size) return -EOVERFLOW;
-  if (off < 0) return -EINVAL;
+  if (V_ISDEV(vn)) {
+    device_t *device = device_get(vn->v_dev);
+    RET_IF(!device, -ENODEV);
+    RET_IF(!device->ops->d_write, -ENOTSUP);
+
+    // device write
+    return device->ops->d_write(device, off, kio);
+  }
+
+  RET_IF(!VN_OPS(vn)->v_write, -ENOTSUP);
+  RET_IF(off > vn->size, -EOVERFLOW);
+  RET_IF(off < 0, -EINVAL);
 
   // filesystem write
   return VN_OPS(vn)->v_write(vn, off, kio);
