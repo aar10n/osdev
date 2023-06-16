@@ -26,7 +26,7 @@ int elf_pt_load(Elf64_Phdr *pheader, void *buf, elf_program_t *prog) {
   uintptr_t v_aligned = align_down(pheader->p_vaddr + prog->base, pheader->p_align);
   void *addr = (void *)(pheader->p_vaddr + prog->base);
 
-  page_t *pages = _alloc_pages(SIZE_TO_PAGES(memsz), flags);
+  page_t *pages = alloc_pages(SIZE_TO_PAGES(memsz), flags);
   void *res = vm_alloc_map_pages(pages, v_aligned, memsz, VM_FIXED|VM_USER, flags, "elf pt_load");
   if (res == NULL) {
     panic("exec: could not load executable");

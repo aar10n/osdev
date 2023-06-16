@@ -52,7 +52,7 @@ static inline vm_mapping_t *create_stack(uintptr_t *sp, bool user) {
   uint32_t pg_flags = PG_WRITE | (user ? PG_USER : 0);
   uint32_t vm_flags = VM_STACK | VM_GUARD | (user ? VM_USER : 0);
 
-  page_t *stack_pages = _alloc_pages(SIZE_TO_PAGES(size), pg_flags);
+  page_t *stack_pages = alloc_pages(SIZE_TO_PAGES(size), pg_flags);
   vm_mapping_t *vm = vm_alloc_pages(stack_pages, 0, size, vm_flags, "thread stack");
   uintptr_t base = (uintptr_t) vm_map(vm, pg_flags);
   uintptr_t rsp = vm->address + size;

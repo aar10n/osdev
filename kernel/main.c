@@ -111,7 +111,7 @@ __used void ap_main() {
 //
 
 static page_t *get_page(vm_mapping_t *vm, size_t off, uint32_t pg_flags) {
-  page_t *page = _alloc_pages(1, pg_flags);
+  page_t *page = alloc_pages(1, pg_flags);
   return page;
 }
 

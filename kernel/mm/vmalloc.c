@@ -308,7 +308,7 @@ static void vm_unmap_file_internal(vm_mapping_t *vm, size_t off, size_t size) {
       recursive_unmap_entry(ptr, page->flags);
       page->mapping = NULL;
       file->pages[i] = NULL;
-      _free_pages(page);
+      free_pages(page);
 
       file->mapped_size -= stride;
     }
@@ -591,7 +591,7 @@ void init_address_space() {
   vm_alloc_phys(kheap_phys_addr(), KERNEL_HEAP_VA, KERNEL_HEAP_SIZE, VM_FIXED, "kernel heap");
   vm_alloc_phys(kernel_reserved_start, KERNEL_RESERVED_VA, reserved_size, VM_FIXED, "kernel reserved");
 
-  page_t *stack_pages = _alloc_pages(SIZE_TO_PAGES(KERNEL_STACK_SIZE), PG_WRITE);
+  page_t *stack_pages = alloc_pages(SIZE_TO_PAGES(KERNEL_STACK_SIZE), PG_WRITE);
   vm_mapping_t *stack_vm = vm_alloc_pages(stack_pages, 0, KERNEL_STACK_SIZE, VM_STACK | VM_GUARD, "kernel stack");
   vm_map(stack_vm, PG_WRITE);
 
@@ -820,7 +820,7 @@ void vm_free(vm_mapping_t *vm) {
   }
 
   if (vm->type == VM_TYPE_PAGE && vm->vm_pages != NULL) {
-    _free_pages(vm->vm_pages);
+    free_pages(vm->vm_pages);
     vm->vm_pages = NULL;
   }
 
@@ -1022,8 +1022,8 @@ void *vmalloc(size_t size, uint32_t pg_flags) {
   //       as vmalloc_phys
 
   // allocate pages
-  page_t *pages = _alloc_pages(SIZE_TO_PAGES(size), pg_flags);
-  PANIC_IF(!pages, "vmalloc: _alloc_pages failed");
+  page_t *pages = alloc_pages(SIZE_TO_PAGES(size), pg_flags);
+  PANIC_IF(!pages, "vmalloc: alloc_pages failed");
 
   // allocate and map the virtual memory
   uint32_t vm_flags = VM_GUARD | VM_MALLOC;
@@ -1043,8 +1043,8 @@ void *vmalloc_phys(size_t size, uint32_t pg_flags) {
     return NULL;
 
   // allocate pages
-  page_t *pages = _alloc_pages(SIZE_TO_PAGES(size), pg_flags);
-  PANIC_IF(!pages, "vmalloc: _alloc_pages failed");
+  page_t *pages = alloc_pages(SIZE_TO_PAGES(size), pg_flags);
+  PANIC_IF(!pages, "vmalloc: alloc_pages failed");
 
   // allocate and map the virtual memory
   uint32_t vm_flags = VM_GUARD | VM_MALLOC | VM_CONTIG;
@@ -1064,8 +1064,8 @@ void *vmalloc_at_phys(uintptr_t phys_addr, size_t size, uint32_t pg_flags) {
     return NULL;
 
   // allocate pages
-  page_t *pages = _alloc_pages_at(phys_addr, SIZE_TO_PAGES(size), pg_flags);
-  PANIC_IF(!pages, "vmalloc_at_phys: _alloc_pages_at failed");
+  page_t *pages = alloc_pages_at(phys_addr, SIZE_TO_PAGES(size), pg_flags);
+  PANIC_IF(!pages, "vmalloc_at_phys: alloc_pages_at failed");
 
   // allocate and map the virtual memory
   uint32_t vm_flags = VM_GUARD | VM_MALLOC | VM_CONTIG;

@@ -185,7 +185,7 @@ void init_mem_zones() {
 
   if (boot_info_v2->initrd_addr != 0) {
     size_t num_pages = SIZE_TO_PAGES(boot_info_v2->initrd_size);
-    if (_reserve_pages(boot_info_v2->initrd_addr, num_pages) < 0) {
+    if (reserve_pages(boot_info_v2->initrd_addr, num_pages) < 0) {
       panic("failed to reserve pages for initrd");
     }
     register_init_address_space_callback(remap_initrd_image, NULL);
@@ -194,12 +194,7 @@ void init_mem_zones() {
 
 //
 
-/**
- * Allocates one or more physical pages from the given zone. If there is insufficient
- * memory available to satisfy the request the function will return NULL, unless the
- * PG_FORCE flag is set in which case the function will panic instead.
- */
-page_t *_alloc_pages_zone(mem_zone_type_t zone_type, size_t count, uint32_t flags) {
+page_t *alloc_pages_zone(mem_zone_type_t zone_type, size_t count, uint32_t flags) {
   kassert(zone_type < MAX_ZONE_TYPE);
   if (count == 0) {
     return NULL;
@@ -251,11 +246,7 @@ page_t *_alloc_pages_zone(mem_zone_type_t zone_type, size_t count, uint32_t flag
   return make_page_structs(zone, frame, count, stride, flags);
 }
 
-/**
- * Allocates one or more physical pages from any zone. If there is insufficient
- * memory available to satisfy the request the function panic.
- */
-page_t *_alloc_pages(size_t count, uint32_t flags) {
+page_t *alloc_pages(size_t count, uint32_t flags) {
   flags &= ~PG_FORCE;
 
   mem_zone_type_t zone_type = ZONE_ALLOC_DEFAULT;
@@ -265,7 +256,7 @@ page_t *_alloc_pages(size_t count, uint32_t flags) {
       panic("out of memory");
     }
 
-    pages = _alloc_pages_zone(zone_type, count, flags);
+    pages = alloc_pages_zone(zone_type, count, flags);
     if (pages == NULL) {
       zone_type = zone_alloc_order[zone_type];
     }
@@ -274,12 +265,7 @@ page_t *_alloc_pages(size_t count, uint32_t flags) {
   return pages;
 }
 
-/**
- * Allocates one or more physical pages starting at the given physical address.
- * If there is insufficient memory available to satisfy the request the function
- * will return NULL, unless the PG_FORCE flag is set in which case it will panic.
- */
-page_t *_alloc_pages_at(uintptr_t address, size_t count, uint32_t flags) {
+page_t *alloc_pages_at(uintptr_t address, size_t count, uint32_t flags) {
   kassert(is_aligned(address, PAGE_SIZE));
   if (count == 0) {
     return NULL;
@@ -313,7 +299,7 @@ page_t *_alloc_pages_at(uintptr_t address, size_t count, uint32_t flags) {
 
   if (zone == NULL && end_zone == NULL) {
     if (!(flags & PG_FORCE)) {
-      panic("_alloc_pages_at: invalid address %p", address);
+      panic("alloc_pages_at: invalid address %p", address);
     }
 
     // construct a list of page structs
@@ -346,7 +332,40 @@ page_t *_alloc_pages_at(uintptr_t address, size_t count, uint32_t flags) {
   return make_page_structs(zone, frame, count, stride, flags);
 }
 
-int _reserve_pages(uintptr_t address, size_t count) {
+void free_pages(page_t *pages) {
+  while (pages != NULL) {
+    mem_zone_t *zone = pages->zone;
+    if (zone == NULL) {
+      page_t *next = pages->next;
+      kfree(pages);
+      pages = next;
+      continue;
+    }
+
+    size_t num_4k_pages = 1;
+    if (pages->flags & PG_BIGPAGE) {
+      num_4k_pages = SIZE_TO_PAGES(PAGE_SIZE_2MB);
+    } else if (pages->flags & PG_HUGEPAGE) {
+      num_4k_pages = SIZE_TO_PAGES(PAGE_SIZE_1GB);
+    }
+
+    spin_lock(&zone->lock);
+    index_t index = SIZE_TO_PAGES(pages->address - zone->base);
+    if (num_4k_pages == 1) {
+      bitmap_clear(zone->frames, index);
+    } else {
+      bitmap_clear_n(zone->frames, index, num_4k_pages);
+    }
+    spin_unlock(&zone->lock);
+
+    page_t *next = pages->next;
+    kfree(pages);
+    pages = next;
+  }
+}
+
+
+int reserve_pages(uintptr_t address, size_t count) {
   kassert(is_aligned(address, PAGE_SIZE));
   kassert(count > 0);
 
@@ -388,41 +407,6 @@ int _reserve_pages(uintptr_t address, size_t count) {
   }
 
   return 0;
-}
-
-/**
- * Frees one or more physical pages.
- */
-void _free_pages(page_t *page) {
-  while (page != NULL) {
-    mem_zone_t *zone = page->zone;
-    if (zone == NULL) {
-      page_t *next = page->next;
-      kfree(page);
-      page = next;
-      continue;
-    }
-
-    size_t num_4k_pages = 1;
-    if (page->flags & PG_BIGPAGE) {
-      num_4k_pages = SIZE_TO_PAGES(PAGE_SIZE_2MB);
-    } else if (page->flags & PG_HUGEPAGE) {
-      num_4k_pages = SIZE_TO_PAGES(PAGE_SIZE_1GB);
-    }
-
-    spin_lock(&zone->lock);
-    index_t index = SIZE_TO_PAGES(page->address - zone->base);
-    if (num_4k_pages == 1) {
-      bitmap_clear(zone->frames, index);
-    } else {
-      bitmap_clear_n(zone->frames, index, num_4k_pages);
-    }
-    spin_unlock(&zone->lock);
-
-    page_t *next = page->next;
-    kfree(page);
-    page = next;
-  }
 }
 
 //

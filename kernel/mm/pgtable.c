@@ -224,7 +224,7 @@ uint64_t *recursive_map_entry(uintptr_t virt_addr, uintptr_t phys_addr, uint32_t
     uintptr_t next_table = table[index] & PAGE_FRAME_MASK;
     if (next_table == 0) {
       // create new table
-      page_t *table_page = _alloc_pages(1, 0);
+      page_t *table_page = alloc_pages(1, 0);
       SLIST_ADD(&table_pages, table_page, next);
       table[index] = table_page->address | meta_flags;
       uint64_t *new_table = get_pgtable_address(virt_addr, i - 1);
@@ -271,7 +271,7 @@ uint64_t recursive_duplicate_pgtable(
   }
 
   LIST_HEAD(page_t) table_pages = LIST_HEAD_INITR;
-  page_t *dest_page = _alloc_pages(1, 0);
+  page_t *dest_page = alloc_pages(1, 0);
   dest_parent_table[index] = dest_page->address | PE_WRITE | PE_PRESENT;
   SLIST_ADD(&table_pages, dest_page, next);
 
@@ -318,7 +318,7 @@ size_t pg_flags_to_size(uint32_t flags) {
 
 uintptr_t create_new_ap_page_tables(page_t **out_pages) {
   LIST_HEAD(page_t) table_pages = LIST_HEAD_INITR;
-  page_t *new_pml4 = _alloc_pages_zone(ZONE_TYPE_NORMAL, 1, PG_WRITE);
+  page_t *new_pml4 = alloc_pages_zone(ZONE_TYPE_NORMAL, 1, PG_WRITE);
   SLIST_ADD(&table_pages, new_pml4, next);
 
   uint64_t *pml4 = PML4_PTR;
@@ -337,14 +337,14 @@ uintptr_t create_new_ap_page_tables(page_t **out_pages) {
   }
 
   // identity map bottom of memory
-  page_t *new_low_pdpt = _alloc_pages(1, PG_WRITE);
+  page_t *new_low_pdpt = alloc_pages(1, PG_WRITE);
   SLIST_ADD(&table_pages, new_low_pdpt, next);
   table_virt[0] = PAGE_PHYS_ADDR(new_low_pdpt) | PE_WRITE | PE_PRESENT; // pml4 -> pdpe
 
   uint64_t *low_pdpt = (void *) get_virt_addr(R_ENTRY, R_ENTRY, T_ENTRY, 0);
   memset(low_pdpt, 0, PAGE_SIZE);
 
-  page_t *new_low_pde = _alloc_pages(1, PG_WRITE);
+  page_t *new_low_pde = alloc_pages(1, PG_WRITE);
   SLIST_ADD(&table_pages, new_low_pde, next);
   low_pdpt[0] = PAGE_PHYS_ADDR(new_low_pde) | PE_WRITE | PE_PRESENT; // pdpe -> pde
 
@@ -361,7 +361,7 @@ uintptr_t create_new_ap_page_tables(page_t **out_pages) {
 
 uintptr_t deepcopy_fork_page_tables(page_t **out_pages) {
   LIST_HEAD(page_t) table_pages = LIST_HEAD_INITR;
-  page_t *new_pml4 = _alloc_pages(1, PG_WRITE);
+  page_t *new_pml4 = alloc_pages(1, PG_WRITE);
   SLIST_ADD(&table_pages, new_pml4, next);
 
   PML4_PTR[T_ENTRY] = new_pml4->address | PE_WRITE | PE_PRESENT;
