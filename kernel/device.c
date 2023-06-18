@@ -3,11 +3,11 @@
 // Created by Aaron Gill-Braun on 2020-11-03.
 //
 
-#include <device.h>
-#include <panic.h>
-#include <printf.h>
+#include <kernel/device.h>
+#include <kernel/panic.h>
+#include <kernel/printf.h>
 
-#include <string.h>
+#include <kernel/string.h>
 #include <hash_map.h>
 #include <rb_tree.h>
 

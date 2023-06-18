@@ -2,12 +2,12 @@
 // Created by Aaron Gill-Braun on 2021-03-23.
 //
 
-#include <signal.h>
-#include <process.h>
-#include <thread.h>
-#include <panic.h>
-#include <mm.h>
-#include <string.h>
+#include <kernel/signal.h>
+#include <kernel/process.h>
+#include <kernel/thread.h>
+#include <kernel/panic.h>
+#include <kernel/mm.h>
+#include <kernel/string.h>
 
 extern void thread_sighandle(uintptr_t fn, uintptr_t rsp);
 

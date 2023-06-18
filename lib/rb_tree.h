@@ -5,7 +5,7 @@
 #ifndef LIB_RB_TREE_H
 #define LIB_RB_TREE_H
 
-#include <base.h>
+#include <kernel/base.h>
 
 typedef struct rb_tree rb_tree_t;
 typedef struct rb_node rb_node_t;

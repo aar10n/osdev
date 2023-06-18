@@ -2,10 +2,10 @@
 // Created by Aaron Gill-Braun on 2023-02-17.
 //
 
-#include <kio.h>
-#include <panic.h>
-#include <string.h>
-#include <mm.h>
+#include <kernel/kio.h>
+#include <kernel/panic.h>
+#include <kernel/string.h>
+#include <kernel/mm.h>
 
 #define ASSERT(x) kassert(x)
 

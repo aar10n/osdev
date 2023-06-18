@@ -5,7 +5,7 @@
 #ifndef KERNEL_CONSOLE_H
 #define KERNEL_CONSOLE_H
 
-#include <base.h>
+#include <kernel/base.h>
 
 /// Writes a formatted string to the kernel command line.
 void kputsf(const char *format, ...);

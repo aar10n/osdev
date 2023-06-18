@@ -2,23 +2,23 @@
 // Created by Aaron Gill-Braun on 2022-06-05.
 //
 
-#include <acpi/acpi.h>
-#include <acpi/pm_timer.h>
+#include <kernel/acpi/acpi.h>
+#include <kernel/acpi/pm_timer.h>
 
-#include <cpu/io.h>
+#include <kernel/cpu/io.h>
 
-#include <device/apic.h>
-#include <device/ioapic.h>
-#include <device/hpet.h>
+#include <kernel/device/apic.h>
+#include <kernel/device/ioapic.h>
+#include <kernel/device/hpet.h>
 
-// #include <bus/pcie.h>
-#include <bus/pci_v2.h>
+// #include <kernel/bus/pcie.h>
+#include <kernel/bus/pci_v2.h>
 
-#include <mm.h>
-#include <init.h>
-#include <irq.h>
-#include <printf.h>
-#include <panic.h>
+#include <kernel/mm.h>
+#include <kernel/init.h>
+#include <kernel/irq.h>
+#include <kernel/printf.h>
+#include <kernel/panic.h>
 
 #define ISA_NUM_IRQS 16
 #define MAX_NUM_APICS 128

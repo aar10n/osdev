@@ -5,12 +5,12 @@
 #ifndef INCLUDE_KERNEL_MM_H
 #define INCLUDE_KERNEL_MM_H
 
-#include <base.h>
-#include <mm_types.h>
-#include <mm/heap.h>
-#include <mm/pmalloc.h>
-#include <mm/vmalloc.h>
-#include <mm/init.h>
+#include <kernel/base.h>
+#include <kernel/mm_types.h>
+#include <kernel/mm/heap.h>
+#include <kernel/mm/pmalloc.h>
+#include <kernel/mm/vmalloc.h>
+#include <kernel/mm/init.h>
 
 
 

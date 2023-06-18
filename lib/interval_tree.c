@@ -4,16 +4,16 @@
 
 #include "interval_tree.h"
 
-#include <string.h>
+#include <kernel/string.h>
 
 #ifndef _assert
-#include <panic.h>
+#include <kernel/panic.h>
 #define _assert(expr) kassert((expr))
 #endif
 
 #ifndef _malloc
-#include <mm/heap.h>
-#include <printf.h>
+#include <kernel/mm/heap.h>
+#include <kernel/printf.h>
 #define _malloc(size) kmalloc(size)
 #define _free(ptr) kfree(ptr)
 #endif

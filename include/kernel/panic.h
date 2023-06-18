@@ -5,7 +5,7 @@
 #ifndef KERNEL_PANIC_H
 #define KERNEL_PANIC_H
 
-#include <base.h>
+#include <kernel/base.h>
 
 #define PANIC(msg, args...) \
   panic("kernel panic: " msg ", file %s, line %d\n", ##args, __FILE__, __LINE__);

@@ -5,7 +5,7 @@
 #ifndef KERNEL_SMPBOOT_H
 #define KERNEL_SMPBOOT_H
 
-#include <base.h>
+#include <kernel/base.h>
 
 typedef volatile struct packed smp_data {
   uint16_t lock;              // 0x00 - ap spinlock

@@ -2,12 +2,12 @@
 // Created by Aaron Gill-Braun on 2021-04-17.
 //
 
-#include <usb/hid-report.h>
-#include <usb/hid-usage.h>
+#include <kernel/usb/hid-report.h>
+#include <kernel/usb/hid-usage.h>
 
-#include <mm.h>
-#include <printf.h>
-#include <string.h>
+#include <kernel/mm.h>
+#include <kernel/printf.h>
+#include <kernel/string.h>
 
 // #define HID_DEBUG
 

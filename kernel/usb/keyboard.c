@@ -2,14 +2,14 @@
 // Created by Aaron Gill-Braun on 2021-04-20.
 //
 
-#include <usb/keyboard.h>
-#include <usb/hid.h>
-#include <usb/hid-report.h>
-#include <usb/hid-usage.h>
+#include <kernel/usb/keyboard.h>
+#include <kernel/usb/hid.h>
+#include <kernel/usb/hid-report.h>
+#include <kernel/usb/hid-usage.h>
 
-#include <mm.h>
-#include <input.h>
-#include <string.h>
+#include <kernel/mm.h>
+#include <kernel/input.h>
+#include <kernel/string.h>
 #include <asm/bits.h>
 
 uint16_t hid_keyboard_to_input_key[] = {

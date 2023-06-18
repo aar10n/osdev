@@ -5,8 +5,8 @@
 #ifndef FS_RAMFS_RAMFS_FILE_H
 #define FS_RAMFS_RAMFS_FILE_H
 
-#include <mm_types.h>
-#include <kio.h>
+#include <kernel/mm_types.h>
+#include <kernel/kio.h>
 
 typedef struct ramfs_file {
   size_t size;

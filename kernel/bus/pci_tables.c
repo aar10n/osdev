@@ -2,7 +2,7 @@
 // Created by Aaron Gill-Braun on 2021-03-08.
 //
 
-#include <bus/pci_tables.h>
+#include <kernel/bus/pci_tables.h>
 
 /* --------------- PCI Classses --------------- */
 

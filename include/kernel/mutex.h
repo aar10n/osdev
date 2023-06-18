@@ -5,9 +5,9 @@
 #ifndef KERNEL_MUTEX_H
 #define KERNEL_MUTEX_H
 
-#include <base.h>
-#include <spinlock.h>
-#include <queue.h>
+#include <kernel/base.h>
+#include <kernel/spinlock.h>
+#include <kernel/queue.h>
 
 typedef struct thread thread_t;
 

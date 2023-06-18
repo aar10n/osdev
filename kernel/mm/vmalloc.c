@@ -2,19 +2,19 @@
 // Created by Aaron Gill-Braun on 2022-06-17.
 //
 
-#include <mm/vmalloc.h>
-#include <mm/pmalloc.h>
-#include <mm/pgtable.h>
-#include <mm/heap.h>
-#include <mm/init.h>
+#include <kernel/mm/vmalloc.h>
+#include <kernel/mm/pmalloc.h>
+#include <kernel/mm/pgtable.h>
+#include <kernel/mm/heap.h>
+#include <kernel/mm/init.h>
 
-#include <cpu/cpu.h>
-#include <debug/debug.h>
+#include <kernel/cpu/cpu.h>
+#include <kernel/debug/debug.h>
 
-#include <irq.h>
-#include <panic.h>
-#include <string.h>
-#include <printf.h>
+#include <kernel/irq.h>
+#include <kernel/panic.h>
+#include <kernel/string.h>
+#include <kernel/printf.h>
 
 #include <interval_tree.h>
 

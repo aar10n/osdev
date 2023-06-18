@@ -5,7 +5,7 @@
 #ifndef KERNEL_USB_HID_USAGE_H
 #define KERNEL_USB_HID_USAGE_H
 
-#include <base.h>
+#include <kernel/base.h>
 
 // usage pages
 #define GENERIC_DESKTOP_PAGE 0x01

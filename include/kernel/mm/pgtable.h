@@ -5,8 +5,8 @@
 #ifndef KERNEL_MM_PGTABLE_H
 #define KERNEL_MM_PGTABLE_H
 
-#include <base.h>
-#include <mm_types.h>
+#include <kernel/base.h>
+#include <kernel/mm_types.h>
 
 void early_init_pgtable();
 void *early_map_entries(uintptr_t virt_addr, uintptr_t phys_addr, size_t count, uint32_t flags);

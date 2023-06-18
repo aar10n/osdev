@@ -5,7 +5,7 @@
 #ifndef KERNEL_ACPI_ACPI_H
 #define KERNEL_ACPI_ACPI_H
 
-#include <base.h>
+#include <kernel/base.h>
 
 extern uint16_t enabled_apic_count;
 extern uint16_t online_capable_apic_count;

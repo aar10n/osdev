@@ -2,11 +2,11 @@
 // Created by Aaron Gill-Braun on 2021-03-24.
 //
 
-#include <spinlock.h>
-#include <panic.h>
-#include <thread.h>
+#include <kernel/spinlock.h>
+#include <kernel/panic.h>
+#include <kernel/thread.h>
 
-#include <cpu/cpu.h>
+#include <kernel/cpu/cpu.h>
 
 #include <atomic.h>
 

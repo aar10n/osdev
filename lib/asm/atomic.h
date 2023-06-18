@@ -5,7 +5,7 @@
 #ifndef LIB_ASM_ATOMIC_H
 #define LIB_ASM_ATOMIC_H
 
-#include <base.h>
+#include <kernel/base.h>
 
 uint64_t __atomic_fetch_add64(uint64_t *ptr, uint64_t value);
 uint32_t __atomic_fetch_add32(uint32_t *ptr, uint32_t value);

@@ -5,8 +5,8 @@
 #ifndef KERNEL_MM_PMALLOC_H
 #define KERNEL_MM_PMALLOC_H
 
-#include <base.h>
-#include <mm_types.h>
+#include <kernel/base.h>
+#include <kernel/mm_types.h>
 
 struct frame_allocator_impl;
 struct bitmap;

@@ -5,8 +5,8 @@
 #ifndef KERNEL_BUS_PCIE_H
 #define KERNEL_BUS_PCIE_H
 
-#include <base.h>
-#include <bus/pci.h>
+#include <kernel/base.h>
+#include <kernel/bus/pci.h>
 
 #define ALLOC_MSI  0x1
 #define ALLOC_MSIX 0x2

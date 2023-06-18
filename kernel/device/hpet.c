@@ -2,17 +2,17 @@
 // Created by Aaron Gill-Braun on 2020-10-17.
 //
 
-#include <device/hpet.h>
+#include <kernel/device/hpet.h>
 
-#include <clock.h>
-#include <timer.h>
+#include <kernel/clock.h>
+#include <kernel/timer.h>
 
-#include <mm.h>
-#include <irq.h>
-#include <init.h>
-#include <string.h>
-#include <panic.h>
-#include <printf.h>
+#include <kernel/mm.h>
+#include <kernel/irq.h>
+#include <kernel/init.h>
+#include <kernel/string.h>
+#include <kernel/panic.h>
+#include <kernel/printf.h>
 #include <asm/bits.h>
 
 #define MAX_HPETS 4

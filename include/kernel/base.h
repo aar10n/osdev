@@ -8,11 +8,11 @@
 #pragma ide diagnostic ignored "bugprone-macro-parentheses"
 
 #include <abi/types.h>
+#include <kernel/errno.h>
 #include <boot.h>
-#include <errno.h>
 
 #define __PER_CPU_BASE__
-#include <cpu/per_cpu.h>
+#include <kernel/cpu/per_cpu.h>
 #undef __PER_CPU_BASE__
 
 

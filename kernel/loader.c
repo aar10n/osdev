@@ -2,16 +2,16 @@
 // Created by Aaron Gill-Braun on 2020-11-13.
 //
 
-#include <loader.h>
+#include <kernel/loader.h>
 
-#include <cpu/cpu.h>
+#include <kernel/cpu/cpu.h>
 
-#include <mm.h>
+#include <kernel/mm.h>
 #include <elf.h>
-#include <thread.h>
-#include <panic.h>
-#include <printf.h>
-#include <string.h>
+#include <kernel/thread.h>
+#include <kernel/panic.h>
+#include <kernel/printf.h>
+#include <kernel/string.h>
 
 #include <elf64.h>
 

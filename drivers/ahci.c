@@ -4,12 +4,12 @@
 
 #include <drivers/ahci.h>
 
-#include <bus/pcie.h>
+#include <kernel/bus/pcie.h>
 
-#include <mm.h>
-#include <panic.h>
-#include <printf.h>
-#include <string.h>
+#include <kernel/mm.h>
+#include <kernel/panic.h>
+#include <kernel/printf.h>
+#include <kernel/string.h>
 
 #include <asm/bits.h>
 

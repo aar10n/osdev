@@ -2,12 +2,12 @@
 // Created by Aaron Gill-Braun on 2023-05-25.
 //
 
-#include <vfs/ventry.h>
-#include <vfs/vnode.h>
+#include <kernel/vfs/ventry.h>
+#include <kernel/vfs/vnode.h>
 
-#include <mm.h>
-#include <panic.h>
-#include <printf.h>
+#include <kernel/mm.h>
+#include <kernel/panic.h>
+#include <kernel/printf.h>
 #include <murmur3.h>
 
 #define ASSERT(x) kassert(x)

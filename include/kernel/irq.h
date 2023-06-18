@@ -5,8 +5,8 @@
 #ifndef KERNEL_INTERRUPT_H
 #define KERNEL_INTERRUPT_H
 
-#include <base.h>
-#include <cpu/cpu.h>
+#include <kernel/base.h>
+#include <kernel/cpu/cpu.h>
 
 
 typedef struct cond cond_t;

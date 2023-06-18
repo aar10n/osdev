@@ -2,10 +2,10 @@
 // Created by Aaron Gill-Braun on 2021-07-25.
 //
 
-#include <string.h>
+#include <kernel/string.h>
 #include <limits.h>
-#include <panic.h>
-#include <mm.h>
+#include <kernel/panic.h>
+#include <kernel/mm.h>
 
 extern const char *errno_str[];
 

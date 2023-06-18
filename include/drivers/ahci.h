@@ -5,9 +5,9 @@
 #ifndef DRIVERS_AHCI_H
 #define DRIVERS_AHCI_H
 
-#include <base.h>
-#include <bus/pcie.h>
-#include <usb/usb.h>
+#include <kernel/base.h>
+#include <kernel/bus/pcie.h>
+#include <kernel/usb/usb.h>
 
 #define	SATA_SIG_ATA    0x00000101	// SATA drive
 #define	SATA_SIG_ATAPI  0xEB140101	// SATAPI drive

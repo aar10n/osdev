@@ -5,10 +5,10 @@
 #ifndef KERNEL_REF_H
 #define KERNEL_REF_H
 
-#include <base.h>
+#include <kernel/base.h>
 #include <atomic.h>
-#include <mutex.h>
-#include <spinlock.h>
+#include <kernel/mutex.h>
+#include <kernel/spinlock.h>
 
 // implementation taken from Linux kernel
 // https://www.open-std.org/JTC1/SC22/WG21/docs/papers/2007/n2167.pdf

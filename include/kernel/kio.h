@@ -6,9 +6,9 @@
 #define KERNEL_KIO_H
 #define __KIO__
 
-#include <base.h>
+#include <kernel/base.h>
 #include <abi/iov.h>
-#include <panic.h>
+#include <kernel/panic.h>
 
 typedef enum kio_dir {
   KIO_IN,

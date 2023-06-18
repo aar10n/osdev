@@ -5,8 +5,8 @@
 #ifndef KERNEL_VFS_VRESOLVE_H
 #define KERNEL_VFS_VRESOLVE_H
 
-#include <vfs_types.h>
-#include <vfs/vcache.h>
+#include <kernel/vfs_types.h>
+#include <kernel/vfs/vcache.h>
 
 // flags
 #define VR_NOFOLLOW 0x1   // do not follow symlinks or mount points at the end of the path (return entry itself)

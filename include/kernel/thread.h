@@ -5,10 +5,10 @@
 #ifndef KERNEL_THREAD_H
 #define KERNEL_THREAD_H
 
-#include <base.h>
-#include <queue.h>
-#include <mutex.h>
-#include <mm_types.h>
+#include <kernel/base.h>
+#include <kernel/queue.h>
+#include <kernel/mutex.h>
+#include <kernel/mm_types.h>
 
 #define ERRNO (PERCPU_THREAD->errno)
 

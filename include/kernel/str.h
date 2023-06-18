@@ -6,9 +6,9 @@
 #ifndef KERNEL_STR_H
 #define KERNEL_STR_H
 
-#include <base.h>
-#include <string.h>
-#include <mm/heap.h>
+#include <kernel/base.h>
+#include <kernel/string.h>
+#include <kernel/mm/heap.h>
 
 /**
  * cstr represents a constant fixed-length string.

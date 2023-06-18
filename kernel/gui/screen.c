@@ -2,13 +2,13 @@
 // Created by Aaron Gill-Braun on 2021-04-20.
 //
 
-#include <gui/screen.h>
-#include <gui/font8x8_basic.h>
+#include <kernel/gui/screen.h>
+#include <kernel/gui/font8x8_basic.h>
 
-#include <mm.h>
-#include <init.h>
-#include <string.h>
-#include <printf.h>
+#include <kernel/mm.h>
+#include <kernel/init.h>
+#include <kernel/string.h>
+#include <kernel/printf.h>
 
 #define WIDTH boot_info_v2->fb_width
 #define HEIGHT boot_info_v2->fb_height

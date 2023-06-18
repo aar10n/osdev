@@ -1,4 +1,4 @@
-%include "base.inc"
+%include "kernel/base.inc"
 
 extern kmain
 extern ap_main

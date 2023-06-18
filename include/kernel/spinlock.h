@@ -5,7 +5,7 @@
 #ifndef KERNEL_SPINLOCK_H
 #define KERNEL_SPINLOCK_H
 
-#include <base.h>
+#include <kernel/base.h>
 
 typedef struct spinlock {
   volatile uint8_t locked;

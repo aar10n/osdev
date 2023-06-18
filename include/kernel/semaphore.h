@@ -5,8 +5,8 @@
 #ifndef KERNEL_SEMAPHORE_H
 #define KERNEL_SEMAPHORE_H
 
-#include <base.h>
-#include <mutex.h>
+#include <kernel/base.h>
+#include <kernel/mutex.h>
 
 // -------- Semaphores --------
 

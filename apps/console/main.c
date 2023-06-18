@@ -5,8 +5,8 @@
 #include <stdio.h>
 #include <fcntl.h>
 #include <stdlib.h>
-#include <errno.h>
-#include <string.h>
+#include <kernel/errno.h>
+#include <kernel/string.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <kernel/event.h>

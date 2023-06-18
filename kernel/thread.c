@@ -2,20 +2,20 @@
 // Created by Aaron Gill-Braun on 2021-03-18.
 //
 
-#include <thread.h>
+#include <kernel/thread.h>
 
-#include <mm.h>
-#include <mutex.h>
-#include <sched.h>
+#include <kernel/mm.h>
+#include <kernel/mutex.h>
+#include <kernel/sched.h>
 
-#include <printf.h>
-#include <string.h>
-#include <panic.h>
-#include <process.h>
-#include <signal.h>
+#include <kernel/printf.h>
+#include <kernel/string.h>
+#include <kernel/panic.h>
+#include <kernel/process.h>
+#include <kernel/signal.h>
 #include <atomic.h>
 
-#include <debug/debug.h>
+#include <kernel/debug/debug.h>
 
 // #define THREAD_DEBUG
 #ifdef THREAD_DEBUG

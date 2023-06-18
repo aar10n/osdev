@@ -5,7 +5,7 @@
 #ifndef KERNEL_ACPI_PM_TIMER_H
 #define KERNEL_ACPI_PM_TIMER_H
 
-#include <base.h>
+#include <kernel/base.h>
 
 void register_acpi_pm_timer();
 int pm_timer_udelay(clock_t us);

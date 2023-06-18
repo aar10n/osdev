@@ -5,8 +5,8 @@
 #ifndef KERNEL_VFS_VENTRY_H
 #define KERNEL_VFS_VENTRY_H
 
-#include <vfs_types.h>
-#include <vfs/vnode.h>
+#include <kernel/vfs_types.h>
+#include <kernel/vfs/vnode.h>
 
 #define VN(ve) __type_checked(struct ventry *, ve, ((ve)->vn))
 #define VE_OPS(ve) __type_checked(struct ventry *, ve, (ve)->ops)

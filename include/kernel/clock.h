@@ -5,9 +5,9 @@
 #ifndef KERNEL_CLOCK_H
 #define KERNEL_CLOCK_H
 
-#include <base.h>
-#include <queue.h>
-#include <spinlock.h>
+#include <kernel/base.h>
+#include <kernel/queue.h>
+#include <kernel/spinlock.h>
 
 typedef struct clock_source {
   const char *name;

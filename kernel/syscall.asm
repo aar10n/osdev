@@ -1,4 +1,4 @@
-%include "base.inc"
+%include "kernel/base.inc"
 extern handle_syscall
 
 %macro swapgs_if_needed 1

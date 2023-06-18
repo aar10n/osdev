@@ -2,11 +2,11 @@
 // Created by Aaron Gill-Braun on 2020-10-15.
 //
 
-#include <panic.h>
-#include <cpu/io.h>
-#include <cpu/idt.h>
-#include <device/pit.h>
-#include <printf.h>
+#include <kernel/panic.h>
+#include <kernel/cpu/io.h>
+#include <kernel/cpu/idt.h>
+#include <kernel/device/pit.h>
+#include <kernel/printf.h>
 
 #define PIT0_DATA   0x40
 #define PIT1_DATA   0x41

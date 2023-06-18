@@ -2,21 +2,21 @@
 // Created by Aaron Gill-Braun on 2022-07-24.
 //
 
-#include <sched/sched.h>
-#include <sched/fprr.h>
+#include <kernel/sched/sched.h>
+#include <kernel/sched/fprr.h>
 
-#include <cpu/cpu.h>
-#include <cpu/io.h>
+#include <kernel/cpu/cpu.h>
+#include <kernel/cpu/io.h>
 
-#include <mm.h>
-#include <thread.h>
-#include <process.h>
-#include <clock.h>
-#include <timer.h>
-#include <ipi.h>
+#include <kernel/mm.h>
+#include <kernel/thread.h>
+#include <kernel/process.h>
+#include <kernel/clock.h>
+#include <kernel/timer.h>
+#include <kernel/ipi.h>
 
-#include <printf.h>
-#include <panic.h>
+#include <kernel/printf.h>
+#include <kernel/panic.h>
 #include <atomic.h>
 
 sched_policy_impl_t *policy_impl[NUM_POLICIES];

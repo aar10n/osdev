@@ -1,4 +1,4 @@
-%include "base.inc"
+%include "kernel/base.inc"
 
 ; Interrupts
 

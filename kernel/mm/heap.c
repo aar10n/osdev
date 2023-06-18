@@ -2,15 +2,15 @@
 // Created by Aaron Gill-Braun on 2020-09-30.
 //
 
-#include <mm/heap.h>
-#include <mm/init.h>
-#include <mm/pgtable.h>
+#include <kernel/mm/heap.h>
+#include <kernel/mm/init.h>
+#include <kernel/mm/pgtable.h>
 
-#include <printf.h>
-#include <string.h>
-#include <spinlock.h>
-#include <panic.h>
-#include <mutex.h>
+#include <kernel/printf.h>
+#include <kernel/string.h>
+#include <kernel/spinlock.h>
+#include <kernel/panic.h>
+#include <kernel/mutex.h>
 
 
 #define END_ADDR(heap) ((heap)->virt_addr + (heap)->size)

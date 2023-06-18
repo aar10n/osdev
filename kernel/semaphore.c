@@ -2,9 +2,9 @@
 // Created by Aaron Gill-Braun on 2021-07-09.
 //
 
-#include <semaphore.h>
+#include <kernel/semaphore.h>
 #include <atomic.h>
-#include <panic.h>
+#include <kernel/panic.h>
 
 
 void semaphore_init(semaphore_t *sem, int max_value) {

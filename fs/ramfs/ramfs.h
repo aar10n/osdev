@@ -5,10 +5,10 @@
 #ifndef FS_RAMFS_RAMFS_H
 #define FS_RAMFS_RAMFS_H
 
-#include <vfs_types.h>
-#include <mm_types.h>
-#include <device.h>
-#include <queue.h>
+#include <kernel/vfs_types.h>
+#include <kernel/mm_types.h>
+#include <kernel/device.h>
+#include <kernel/queue.h>
 
 struct ramfs_file;
 struct ramfs_node;

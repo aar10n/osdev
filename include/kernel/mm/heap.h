@@ -5,10 +5,10 @@
 #ifndef KERNEL_MM_HEAP_H
 #define KERNEL_MM_HEAP_H
 
-#include <base.h>
-#include <queue.h>
-#include <mutex.h>
-#include <string.h>
+#include <kernel/base.h>
+#include <kernel/queue.h>
+#include <kernel/mutex.h>
+#include <kernel/string.h>
 
 // TODO: switch to better allocator for large sizes
 #define CHUNK_MIN_SIZE   8

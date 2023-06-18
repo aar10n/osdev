@@ -2,12 +2,12 @@
 // Created by Aaron Gill-Braun on 2020-10-31.
 //
 
-#include <bus/pci.h>
-#include <bus/pci_tables.h>
-#include <cpu/io.h>
-#include <printf.h>
-#include <string.h>
-#include <mm/heap.h>
+#include <kernel/bus/pci.h>
+#include <kernel/bus/pci_tables.h>
+#include <kernel/cpu/io.h>
+#include <kernel/printf.h>
+#include <kernel/string.h>
+#include <kernel/mm/heap.h>
 
 #define config_address(bus, device, function) \
   ((uint32_t) (((bus) & 0xFF) << 16) |        \

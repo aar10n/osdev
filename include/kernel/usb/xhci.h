@@ -5,16 +5,16 @@
 #ifndef KERNEL_USB_XHCI_H
 #define KERNEL_USB_XHCI_H
 
-#include <base.h>
-#include <queue.h>
+#include <kernel/base.h>
+#include <kernel/queue.h>
 
-#include <usb/usb.h>
-#include <usb/xhci_hw.h>
-#include <bus/pcie.h>
+#include <kernel/usb/usb.h>
+#include <kernel/usb/xhci_hw.h>
+#include <kernel/bus/pcie.h>
 
-#include <irq.h>
-#include <mutex.h>
-#include <chan.h>
+#include <kernel/irq.h>
+#include <kernel/mutex.h>
+#include <kernel/chan.h>
 
 #define ep_index(num, dir) ((num) + max((num) - 1, 0) + dir)
 #define ep_number(idx) (((idx) - ((idx) % 2 == 0) + 1) / 2)

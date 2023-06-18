@@ -6,8 +6,8 @@
 #define INCLUDE_KERNEL_SBUF_H
 #define __SBUF__
 
-#include <base.h>
-#include <string.h>
+#include <kernel/base.h>
+#include <kernel/string.h>
 
 /// StaticBuffer is a simple non-owning wrapper around a byte buffer and
 /// provides safe interfaces for reading and writing data.

@@ -5,8 +5,8 @@
 #ifndef KERNEL_BUS_PCI_V2_H
 #define KERNEL_BUS_PCI_V2_H
 
-#include <base.h>
-#include <queue.h>
+#include <kernel/base.h>
+#include <kernel/queue.h>
 
 typedef struct pci_bar {
   uint8_t num : 3;      // bar number

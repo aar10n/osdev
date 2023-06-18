@@ -5,11 +5,11 @@
 #include <bitmap.h>
 #include <asm/bits.h>
 
-#include <panic.h>
-#include <string.h>
-#include <mm/heap.h>
+#include <kernel/panic.h>
+#include <kernel/string.h>
+#include <kernel/mm/heap.h>
 
-#include <printf.h>
+#include <kernel/printf.h>
 
 #ifndef _assert
 #define _assert(expr) kassert((expr))

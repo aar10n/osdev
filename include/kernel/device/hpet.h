@@ -5,7 +5,7 @@
 #ifndef KERNEL_DEVICE_HPET_H
 #define KERNEL_DEVICE_HPET_H
 
-#include <base.h>
+#include <kernel/base.h>
 
 // Registers
 

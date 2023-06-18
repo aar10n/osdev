@@ -5,9 +5,9 @@
 #ifndef KERNEL_USB_MOUSE_H
 #define KERNEL_USB_MOUSE_H
 
-#include <base.h>
-#include <usb/hid.h>
-#include <usb/hid-report.h>
+#include <kernel/base.h>
+#include <kernel/usb/hid.h>
+#include <kernel/usb/hid-report.h>
 
 typedef struct {
   uint8_t buttons_offset;

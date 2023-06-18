@@ -5,7 +5,7 @@
 #ifndef KERNEL_BUS_PCI_HW_H
 #define KERNEL_BUS_PCI_HW_H
 
-#include <base.h>
+#include <kernel/base.h>
 
 #define PCI_CONFIG_ADDR 0xCF8
 #define PCI_CONFIG_DATA 0xCFC

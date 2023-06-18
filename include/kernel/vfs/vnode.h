@@ -6,8 +6,8 @@
 #ifndef KERNEL_VFS_VNODE_H
 #define KERNEL_VFS_VNODE_H
 
-#include <vfs_types.h>
-#include <device.h>
+#include <kernel/vfs_types.h>
+#include <kernel/device.h>
 
 #define VN_OPS(vn) __type_checked(struct vnode *, vn, (vn)->ops)
 

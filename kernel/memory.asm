@@ -1,4 +1,4 @@
-%include "base.inc"
+%include "kernel/base.inc"
 
 %macro memset_slow 2
   mov rcx, rdi

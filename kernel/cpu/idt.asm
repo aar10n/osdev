@@ -2,7 +2,7 @@
 ; Interrupt Handling
 ;
 
-;%include "base.inc"
+;%include "kernel/base.inc"
 
 extern irq_handler
 extern exception_handler

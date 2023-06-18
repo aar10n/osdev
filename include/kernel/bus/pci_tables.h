@@ -5,7 +5,7 @@
 #ifndef KERNEL_BUS_PCI_TABLES_H
 #define KERNEL_BUS_PCI_TABLES_H
 
-#include <base.h>
+#include <kernel/base.h>
 
 typedef struct pci_subclass {
   uint8_t class_code;

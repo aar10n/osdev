@@ -5,10 +5,10 @@
 #ifndef KERNEL_MM_TYPES_H
 #define KERNEL_MM_TYPES_H
 
-#include <base.h>
-#include <str.h>
-#include <queue.h>
-#include <spinlock.h>
+#include <kernel/base.h>
+#include <kernel/str.h>
+#include <kernel/queue.h>
+#include <kernel/spinlock.h>
 
 #define PAGE_SIZE 0x1000
 #define PAGE_SIZE_2MB 0x200000ULL

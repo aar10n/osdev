@@ -5,9 +5,9 @@
 #ifndef KERNEL_CHAN_H
 #define KERNEL_CHAN_H
 
-#include <base.h>
-#include <mutex.h>
-#include <queue.h>
+#include <kernel/base.h>
+#include <kernel/mutex.h>
+#include <kernel/queue.h>
 
 // -------- Channels --------
 

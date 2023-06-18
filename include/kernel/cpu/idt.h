@@ -5,7 +5,7 @@
 #ifndef KERNEL_CPU_IDT_H
 #define KERNEL_CPU_IDT_H
 
-#include <base.h>
+#include <kernel/base.h>
 
 // IDT Gate Types
 #define CALL_GAGE 0xC

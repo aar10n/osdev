@@ -5,11 +5,11 @@
 #ifndef KERNEL_DEVICE_H
 #define KERNEL_DEVICE_H
 
-#include <base.h>
-#include <queue.h>
-#include <spinlock.h>
-#include <mutex.h>
-#include <kio.h>
+#include <kernel/base.h>
+#include <kernel/queue.h>
+#include <kernel/spinlock.h>
+#include <kernel/mutex.h>
+#include <kernel/kio.h>
 
 struct device;
 struct device_driver;

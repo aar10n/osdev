@@ -5,9 +5,9 @@
 #ifndef KERNEL_TIMER_H
 #define KERNEL_TIMER_H
 
-#include <base.h>
-#include <queue.h>
-#include <spinlock.h>
+#include <kernel/base.h>
+#include <kernel/queue.h>
+#include <kernel/spinlock.h>
 
 // Indicates the timer is not shared between logical CPUs.
 #define TIMER_CAP_PER_CPU 0x1

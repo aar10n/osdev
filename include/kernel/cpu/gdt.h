@@ -5,7 +5,7 @@
 #ifndef KERNEL_CPU_GDT_H
 #define KERNEL_CPU_GDT_H
 
-#include <base.h>
+#include <kernel/base.h>
 
 void setup_gdt();
 

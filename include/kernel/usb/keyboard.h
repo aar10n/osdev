@@ -5,9 +5,9 @@
 #ifndef KERNEL_USB_KEYBOARD_H
 #define KERNEL_USB_KEYBOARD_H
 
-#include <base.h>
-#include <usb/hid.h>
-#include <usb/hid-report.h>
+#include <kernel/base.h>
+#include <kernel/usb/hid.h>
+#include <kernel/usb/hid-report.h>
 
 // HID Keyboard Driver
 

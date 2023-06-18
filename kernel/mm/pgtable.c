@@ -2,16 +2,16 @@
 // Created by Aaron Gill-Braun on 2022-06-18.
 //
 
-#include <mm/pgtable.h>
-#include <mm/vmalloc.h>
-#include <mm/pmalloc.h>
-#include <mm/init.h>
-#include <mm_types.h>
+#include <kernel/mm/pgtable.h>
+#include <kernel/mm/vmalloc.h>
+#include <kernel/mm/pmalloc.h>
+#include <kernel/mm/init.h>
+#include <kernel/mm_types.h>
 
-#include <cpu/cpu.h>
-#include <string.h>
-#include <printf.h>
-#include <panic.h>
+#include <kernel/cpu/cpu.h>
+#include <kernel/string.h>
+#include <kernel/printf.h>
+#include <kernel/panic.h>
 
 #define get_virt_addr(l4, l3, l2, l1) ((0xFFFFULL << 48) | ((uint64_t)(l4) << 39) | \
   ((uint64_t)(l3) << 30) | ((uint64_t)(l2) << 21) | ((uint64_t)(l1) << 12))

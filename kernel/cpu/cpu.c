@@ -2,18 +2,18 @@
 // Created by Aaron Gill-Braun on 2022-06-07.
 //
 
-#include <cpu/cpu.h>
-#include <cpu/gdt.h>
-#include <cpu/idt.h>
+#include <kernel/cpu/cpu.h>
+#include <kernel/cpu/gdt.h>
+#include <kernel/cpu/idt.h>
 
-#include <device/apic.h>
-#include <device/pit.h>
+#include <kernel/device/apic.h>
+#include <kernel/device/pit.h>
 
-#include <mm.h>
-// #include <cpuid.h>
-#include <string.h>
-#include <panic.h>
-#include <printf.h>
+#include <kernel/mm.h>
+// #include <kernel/cpuid.h>
+#include <kernel/string.h>
+#include <kernel/panic.h>
+#include <kernel/printf.h>
 
 #define PERCPU_CPUID (PERCPU_CPU_INFO->cpuid_bits)
 

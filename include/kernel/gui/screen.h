@@ -5,7 +5,7 @@
 #ifndef KERNEL_GUI_SCREEN_H
 #define KERNEL_GUI_SCREEN_H
 
-#include <base.h>
+#include <kernel/base.h>
 
 void screen_early_init();
 

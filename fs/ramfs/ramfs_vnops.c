@@ -2,12 +2,12 @@
 // Created by Aaron Gill-Braun on 2023-05-25.
 //
 
-#include <vfs/vfs.h>
-#include <vfs/vnode.h>
-#include <vfs/ventry.h>
+#include <kernel/vfs/vfs.h>
+#include <kernel/vfs/vnode.h>
+#include <kernel/vfs/ventry.h>
 
-#include <panic.h>
-#include <printf.h>
+#include <kernel/panic.h>
+#include <kernel/printf.h>
 
 #include "ramfs.h"
 #include "ramfs_file.h"

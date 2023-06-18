@@ -1,7 +1,7 @@
 ;
 ; SMP Trampoline
 ;
-%include "base.inc"
+%include "kernel/base.inc"
 
 %define SMPBOOT_START 0x1000
 %define SMPDATA_START 0x2000

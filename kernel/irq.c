@@ -2,21 +2,21 @@
 // Created by Aaron Gill-Braun on 2022-06-29.
 //
 
-#include <irq.h>
+#include <kernel/irq.h>
 
-#include <cpu/idt.h>
+#include <kernel/cpu/idt.h>
 
-#include <device/apic.h>
-#include <device/ioapic.h>
+#include <kernel/device/apic.h>
+#include <kernel/device/ioapic.h>
 
-#include <bus/pcie.h>
+#include <kernel/bus/pcie.h>
 
-#include <process.h>
-#include <thread.h>
-#include <spinlock.h>
+#include <kernel/process.h>
+#include <kernel/thread.h>
+#include <kernel/spinlock.h>
 #include <bitmap.h>
-#include <printf.h>
-#include <panic.h>
+#include <kernel/printf.h>
+#include <kernel/panic.h>
 
 #define IRQ_NUM_VECTORS 256
 #define IRQ_NUM_ISA     16

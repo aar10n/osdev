@@ -2,16 +2,16 @@
 // Created by Aaron Gill-Braun on 2020-10-20.
 //
 
-#include <timer.h>
+#include <kernel/timer.h>
 
-#include <mm.h>
-#include <clock.h>
-#include <thread.h>
-#include <mutex.h>
-#include <irq.h>
-#include <spinlock.h>
-#include <printf.h>
-#include <panic.h>
+#include <kernel/mm.h>
+#include <kernel/clock.h>
+#include <kernel/thread.h>
+#include <kernel/mutex.h>
+#include <kernel/irq.h>
+#include <kernel/spinlock.h>
+#include <kernel/printf.h>
+#include <kernel/panic.h>
 
 #include <atomic.h>
 #include <rb_tree.h>

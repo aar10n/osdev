@@ -5,9 +5,9 @@
 #ifndef KERNEL_LOADER_H
 #define KERNEL_LOADER_H
 
-#include <base.h>
+#include <kernel/base.h>
 #include <abi/auxv.h>
-#include <mm.h>
+#include <kernel/mm.h>
 
 typedef struct{
   uint64_t a_type;

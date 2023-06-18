@@ -2,10 +2,10 @@
 // Created by Aaron Gill-Braun on 2023-06-08.
 //
 
-#include <fs_utils.h>
-#include <device.h>
-#include <printf.h>
-#include <panic.h>
+#include <kernel/fs_utils.h>
+#include <kernel/device.h>
+#include <kernel/printf.h>
+#include <kernel/panic.h>
 
 #define FAIL(x, ...) panic("%s: " x, __func__, ##__VA_ARGS__)
 

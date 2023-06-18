@@ -5,8 +5,8 @@
 #ifndef KERNEL_INPUT_H
 #define KERNEL_INPUT_H
 
-#include <base.h>
-#include <chan.h>
+#include <kernel/base.h>
+#include <kernel/chan.h>
 
 typedef enum packed ev_type {
   EV_KEY = 1, // keyboard or button event

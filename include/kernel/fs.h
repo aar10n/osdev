@@ -5,7 +5,7 @@
 #ifndef KERNEL_FS_H
 #define KERNEL_FS_H
 
-#include <vfs_types.h>
+#include <kernel/vfs_types.h>
 
 void fs_early_init();
 int fs_register_type(fs_type_t *fs_type);

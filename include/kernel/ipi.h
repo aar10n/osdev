@@ -5,7 +5,7 @@
 #ifndef KERNEL_IPI_H
 #define KERNEL_IPI_H
 
-#include <base.h>
+#include <kernel/base.h>
 
 // inter-processor interrupts and message passing
 

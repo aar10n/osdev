@@ -5,8 +5,8 @@
 #ifndef KERNEL_DEBUG_DWARF_H
 #define KERNEL_DEBUG_DWARF_H
 
-#include <base.h>
-#include <queue.h>
+#include <kernel/base.h>
+#include <kernel/queue.h>
 
 typedef struct dwarf_file dwarf_file_t;
 typedef struct dwarf_function dwarf_function_t;

@@ -2,14 +2,14 @@
 // Created by Aaron Gill-Braun on 2023-06-04.
 //
 
-#include <vfs/vresolve.h>
-#include <vfs/vnode.h>
-#include <vfs/ventry.h>
-#include <vfs/vcache.h>
+#include <kernel/vfs/vresolve.h>
+#include <kernel/vfs/vnode.h>
+#include <kernel/vfs/ventry.h>
+#include <kernel/vfs/vcache.h>
 
-#include <panic.h>
-#include <sbuf.h>
-#include <str.h>
+#include <kernel/panic.h>
+#include <kernel/sbuf.h>
+#include <kernel/str.h>
 
 #define MAX_LOOP 32 // resolve depth limit
 

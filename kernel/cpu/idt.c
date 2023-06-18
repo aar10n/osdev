@@ -2,11 +2,11 @@
 // Created by Aaron Gill-Braun on 2020-08-25.
 //
 
-#include <cpu/idt.h>
-#include <cpu/cpu.h>
+#include <kernel/cpu/idt.h>
+#include <kernel/cpu/cpu.h>
 
-#include <string.h>
-#include <printf.h>
+#include <kernel/string.h>
+#include <kernel/printf.h>
 
 #define IDT_GATES 256
 #define IDT_STUB_SIZE 32

@@ -2,18 +2,18 @@
 // Created by Aaron Gill-Braun on 2020-09-05.
 //
 
-#include <panic.h>
-#include <ipi.h>
-#include <thread.h>
-#include <process.h>
-#include <timer.h>
-#include <mm.h>
+#include <kernel/panic.h>
+#include <kernel/ipi.h>
+#include <kernel/thread.h>
+#include <kernel/process.h>
+#include <kernel/timer.h>
+#include <kernel/mm.h>
 
-#include <cpu/cpu.h>
-#include <debug/debug.h>
+#include <kernel/cpu/cpu.h>
+#include <kernel/debug/debug.h>
 
 #include <stdarg.h>
-#include <printf.h>
+#include <kernel/printf.h>
 #include <atomic.h>
 
 static int panic_flag = 0;

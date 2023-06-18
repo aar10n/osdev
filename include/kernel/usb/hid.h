@@ -5,10 +5,10 @@
 #ifndef KERNEL_USB_HID_H
 #define KERNEL_USB_HID_H
 
-#include <base.h>
-#include <usb/usb.h>
-#include <usb/xhci.h>
-#include <usb/hid-report.h>
+#include <kernel/base.h>
+#include <kernel/usb/usb.h>
+#include <kernel/usb/xhci.h>
+#include <kernel/usb/hid-report.h>
 
 //
 // Requests

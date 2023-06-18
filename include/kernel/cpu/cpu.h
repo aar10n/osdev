@@ -5,7 +5,7 @@
 #ifndef KERNEL_CPU_CPU_H
 #define KERNEL_CPU_CPU_H
 
-#include <base.h>
+#include <kernel/base.h>
 
 #define MAX_CPUS 64
 

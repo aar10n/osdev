@@ -2,18 +2,18 @@
 // Created by Aaron Gill-Braun on 2021-04-17.
 //
 
-#include <usb/hid.h>
-#include <usb/hid-report.h>
-#include <usb/hid-usage.h>
+#include <kernel/usb/hid.h>
+#include <kernel/usb/hid-report.h>
+#include <kernel/usb/hid-usage.h>
 
-#include <usb/keyboard.h>
-#include <usb/mouse.h>
-#include <usb/usb.h>
+#include <kernel/usb/keyboard.h>
+#include <kernel/usb/mouse.h>
+#include <kernel/usb/usb.h>
 
-#include <mm.h>
-#include <printf.h>
-#include <panic.h>
-#include <string.h>
+#include <kernel/mm.h>
+#include <kernel/printf.h>
+#include <kernel/panic.h>
+#include <kernel/string.h>
 
 #define hid_log(str, args...) kprintf("[hid] " str "\n", ##args)
 

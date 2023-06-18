@@ -2,10 +2,10 @@
 // Created by Aaron Gill-Braun on 2019-04-24.
 //
 
-#include <cpu/cpu.h>
-#include <cpu/gdt.h>
-#include <string.h>
-#include <mm.h>
+#include <kernel/cpu/cpu.h>
+#include <kernel/cpu/gdt.h>
+#include <kernel/string.h>
+#include <kernel/mm.h>
 
 #define segment(base, limit, typ, s, dpl, p, is64, is32, g)  \
   ((gdt_entry_t) {                                            \

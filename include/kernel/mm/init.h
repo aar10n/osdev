@@ -5,8 +5,8 @@
 #ifndef KERNEL_MM_INIT_H
 #define KERNEL_MM_INIT_H
 
-#include <base.h>
-#include <queue.h>
+#include <kernel/base.h>
+#include <kernel/queue.h>
 
 extern uintptr_t kernel_address;
 extern uintptr_t kernel_virtual_offset;

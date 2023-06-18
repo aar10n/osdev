@@ -5,7 +5,7 @@
 #ifndef LIB_BITMAP_H
 #define LIB_BITMAP_H
 
-#include <base.h>
+#include <kernel/base.h>
 
 typedef struct bitmap {
   uint64_t *map; // pointer to the actual bitmap

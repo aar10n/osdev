@@ -2,19 +2,19 @@
 // Created by Aaron Gill-Braun on 2022-06-05.
 //
 
-#include <console.h>
-#include <spinlock.h>
-#include <mutex.h>
-#include <chan.h>
-#include <input.h>
-#include <printf.h>
-#include <panic.h>
-#include <string.h>
-#include <mm.h>
-#include <cpu/io.h>
+#include <kernel/console.h>
+#include <kernel/spinlock.h>
+#include <kernel/mutex.h>
+#include <kernel/chan.h>
+#include <kernel/input.h>
+#include <kernel/printf.h>
+#include <kernel/panic.h>
+#include <kernel/string.h>
+#include <kernel/mm.h>
+#include <kernel/cpu/io.h>
 
 #include <drivers/serial.h>
-#include <gui/screen.h>
+#include <kernel/gui/screen.h>
 #include <format.h>
 
 #define CMD_BUFFER_SIZE 256
@@ -328,7 +328,7 @@ static void cmdline_free_strings(char **strings) {
 
 // MARK: Console Commands
 
-#include <thread.h>
+#include <kernel/thread.h>
 
 static int cmdline_ls_command(const char **args, size_t args_len) {
   if (args_len == 0) {

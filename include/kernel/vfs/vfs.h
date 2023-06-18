@@ -5,8 +5,8 @@
 #ifndef KERNEL_VFS_VFS_H
 #define KERNEL_VFS_VFS_H
 
-#include <vfs_types.h>
-#include <device.h>
+#include <kernel/vfs_types.h>
+#include <kernel/device.h>
 
 #define VFS_OPS(vfs) ((vfs)->ops)
 

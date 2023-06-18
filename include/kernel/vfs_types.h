@@ -5,12 +5,12 @@
 #ifndef KERNEL_VFS_TYPES_H
 #define KERNEL_VFS_TYPES_H
 
-#include <base.h>
-#include <queue.h>
-#include <mutex.h>
-#include <kio.h>
-#include <ref.h>
-#include <str.h>
+#include <kernel/base.h>
+#include <kernel/queue.h>
+#include <kernel/mutex.h>
+#include <kernel/kio.h>
+#include <kernel/ref.h>
+#include <kernel/str.h>
 
 #include <abi/dirent.h>
 #include <abi/fcntl.h>

@@ -2,14 +2,14 @@
 // Created by Aaron Gill-Braun on 2021-09-11.
 //
 
-#include <usb/mouse.h>
-#include <usb/hid.h>
-#include <usb/hid-report.h>
-#include <usb/hid-usage.h>
+#include <kernel/usb/mouse.h>
+#include <kernel/usb/hid.h>
+#include <kernel/usb/hid-report.h>
+#include <kernel/usb/hid-usage.h>
 
-#include <mm.h>
-#include <string.h>
-#include <printf.h>
+#include <kernel/mm.h>
+#include <kernel/string.h>
+#include <kernel/printf.h>
 
 uint16_t mouse_x = 0;
 uint16_t mouse_y = 0;

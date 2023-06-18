@@ -4,7 +4,7 @@
 
 #include "sort.h"
 
-#include <string.h>
+#include <kernel/string.h>
 
 void qsort(void *base, size_t nitems, size_t size, int (*comp)(const void *, const void*)) {
 #define A(idx) (base + ((idx) * size))

@@ -2,21 +2,21 @@
 // Created by Aaron Gill-Braun on 2021-03-04.
 //
 
-#include <usb/xhci.h>
-#include <usb/xhci_hw.h>
+#include <kernel/usb/xhci.h>
+#include <kernel/usb/xhci_hw.h>
 
-#include <usb/usb.h>
-#include <bus/pcie.h>
-#include <cpu/io.h>
+#include <kernel/usb/usb.h>
+#include <kernel/bus/pcie.h>
+#include <kernel/cpu/io.h>
 
-#include <mm.h>
-#include <irq.h>
-#include <sched.h>
-#include <mutex.h>
-#include <clock.h>
-#include <printf.h>
-#include <panic.h>
-#include <string.h>
+#include <kernel/mm.h>
+#include <kernel/irq.h>
+#include <kernel/sched.h>
+#include <kernel/mutex.h>
+#include <kernel/clock.h>
+#include <kernel/printf.h>
+#include <kernel/panic.h>
+#include <kernel/string.h>
 
 #include <bitmap.h>
 

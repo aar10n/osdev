@@ -2,11 +2,11 @@
 // Created by Aaron Gill-Braun on 2023-05-29.
 //
 
-#include <vfs/file.h>
-#include <vfs/vnode.h>
+#include <kernel/vfs/file.h>
+#include <kernel/vfs/vnode.h>
 
-#include <panic.h>
-#include <printf.h>
+#include <kernel/panic.h>
+#include <kernel/printf.h>
 #include <bitmap.h>
 #include <rb_tree.h>
 

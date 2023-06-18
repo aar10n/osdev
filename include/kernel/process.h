@@ -5,9 +5,9 @@
 #ifndef KERNEL_PROCESS_H
 #define KERNEL_PROCESS_H
 
-#include <base.h>
-#include <queue.h>
-#include <mutex.h>
+#include <kernel/base.h>
+#include <kernel/queue.h>
+#include <kernel/mutex.h>
 
 #define MAX_PROCS       1024
 #define DEFAULT_RFLAGS  0x246

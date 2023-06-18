@@ -5,7 +5,7 @@
 #ifndef KERNEL_SYSCALL_H
 #define KERNEL_SYSCALL_H
 
-#include <base.h>
+#include <kernel/base.h>
 #include <common/syscalls.h>
 
 #define IA32_STAR_MSR   0xC0000081 // Ring 0 and ring 3 segment bases (and syscall eip)

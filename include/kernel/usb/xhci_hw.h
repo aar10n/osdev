@@ -5,7 +5,7 @@
 #ifndef KERNEL_USB_XHCI_HW_H
 #define KERNEL_USB_XHCI_HW_H
 
-#include <base.h>
+#include <kernel/base.h>
 
 //
 // Definitions for XHCI registers and structures

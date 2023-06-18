@@ -5,8 +5,8 @@
 #ifndef KERNEL_VFS_FILE_H
 #define KERNEL_VFS_FILE_H
 
-#include <vfs_types.h>
-#include <mutex.h>
+#include <kernel/vfs_types.h>
+#include <kernel/mutex.h>
 
 typedef struct ftable ftable_t;
 

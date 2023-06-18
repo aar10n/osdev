@@ -2,22 +2,22 @@
 // Created by Aaron Gill-Braun on 2023-05-27.
 //
 
-#include <fs.h>
-#include <vfs/file.h>
-#include <vfs/vcache.h>
-#include <vfs/ventry.h>
-#include <vfs/vfs.h>
-#include <vfs/vnode.h>
-#include <vfs/vresolve.h>
+#include <kernel/fs.h>
+#include <kernel/vfs/file.h>
+#include <kernel/vfs/vcache.h>
+#include <kernel/vfs/ventry.h>
+#include <kernel/vfs/vfs.h>
+#include <kernel/vfs/vnode.h>
+#include <kernel/vfs/vresolve.h>
 
-#include <mm.h>
-#include <device.h>
-#include <process.h>
-#include <panic.h>
-#include <printf.h>
+#include <kernel/mm.h>
+#include <kernel/device.h>
+#include <kernel/process.h>
+#include <kernel/panic.h>
+#include <kernel/printf.h>
 #include <hash_map.h>
-#include <str.h>
-#include <kio.h>
+#include <kernel/str.h>
+#include <kernel/kio.h>
 
 #define ASSERT(x) kassert(x)
 #define DPRINTF(fmt, ...) kprintf("fs: %s: " fmt, __func__, ##__VA_ARGS__)

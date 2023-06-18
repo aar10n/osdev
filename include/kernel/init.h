@@ -5,7 +5,7 @@
 #ifndef KERNEL_INIT_H
 #define KERNEL_INIT_H
 
-#include <base.h>
+#include <kernel/base.h>
 
 typedef void (*init_callback_t)(void *);
 

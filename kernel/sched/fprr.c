@@ -2,13 +2,13 @@
 // Created by Aaron Gill-Braun on 2022-07-24.
 //
 
-#include <sched/fprr.h>
+#include <kernel/sched/fprr.h>
 
-#include <mm.h>
-#include <thread.h>
+#include <kernel/mm.h>
+#include <kernel/thread.h>
 
-#include <string.h>
-#include <panic.h>
+#include <kernel/string.h>
+#include <kernel/panic.h>
 
 // Fixed Priority Round Robin Policy
 

@@ -2,13 +2,13 @@
 // Created by Aaron Gill-Braun on 2021-03-07.
 //
 
-#include <printf.h>
+#include <kernel/printf.h>
 #include <fmt/fmt.h>
-#include <console.h>
-#include <panic.h>
-#include <mm.h>
+#include <kernel/console.h>
+#include <kernel/panic.h>
+#include <kernel/mm.h>
 
-#include <string.h>
+#include <kernel/string.h>
 
 #define BUFFER_SIZE 512
 

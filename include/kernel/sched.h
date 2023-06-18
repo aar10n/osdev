@@ -5,6 +5,6 @@
 #ifndef INCLUDE_KERNEL_SCHED_H
 #define INCLUDE_KERNEL_SCHED_H
 
-#include <sched/sched.h>
+#include <kernel/sched/sched.h>
 
 #endif

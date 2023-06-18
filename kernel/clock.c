@@ -2,13 +2,13 @@
 // Created by Aaron Gill-Braun on 2022-06-29.
 //
 
-#include <clock.h>
+#include <kernel/clock.h>
 
-#include <cpu/cpu.h>
-#include <cpu/io.h>
+#include <kernel/cpu/cpu.h>
+#include <kernel/cpu/io.h>
 
-#include <printf.h>
-#include <panic.h>
+#include <kernel/printf.h>
+#include <kernel/panic.h>
 #include <atomic.h>
 
 

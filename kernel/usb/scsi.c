@@ -2,12 +2,12 @@
 // Created by Aaron Gill-Braun on 2021-04-22.
 //
 
-#include <usb/scsi.h>
-#include <usb/usb.h>
-#include <printf.h>
-#include <mm.h>
-#include <panic.h>
-#include <string.h>
+#include <kernel/usb/scsi.h>
+#include <kernel/usb/usb.h>
+#include <kernel/printf.h>
+#include <kernel/mm.h>
+#include <kernel/panic.h>
+#include <kernel/string.h>
 
 #define SCSI_MAX_XFER 64
 

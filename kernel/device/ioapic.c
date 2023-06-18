@@ -2,14 +2,14 @@
 // Created by Aaron Gill-Braun on 2020-10-14.
 //
 
-#include <device/ioapic.h>
+#include <kernel/device/ioapic.h>
 
-#include <mm.h>
-#include <init.h>
-#include <panic.h>
-#include <printf.h>
+#include <kernel/mm.h>
+#include <kernel/init.h>
+#include <kernel/panic.h>
+#include <kernel/printf.h>
 
-#include <cpu/io.h>
+#include <kernel/cpu/io.h>
 
 #define MAX_IOAPICS 16
 

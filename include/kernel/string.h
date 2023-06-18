@@ -5,7 +5,7 @@
 #ifndef KERNEL_STRING_H
 #define KERNEL_STRING_H
 
-#include <base.h>
+#include <kernel/base.h>
 
 #define isalpha(c) (islower(c) || isupper(c))
 #define isalnum(c) (isalpha(c) || isdigit(c))

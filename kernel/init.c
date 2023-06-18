@@ -2,11 +2,11 @@
 // Created by Aaron Gill-Braun on 2022-06-21.
 //
 
-#include <init.h>
-#include <queue.h>
-#include <mm.h>
+#include <kernel/init.h>
+#include <kernel/queue.h>
+#include <kernel/mm.h>
 
-#include <panic.h>
+#include <kernel/panic.h>
 
 typedef struct callback_obj {
   init_callback_t callback;

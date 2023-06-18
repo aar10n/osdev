@@ -2,19 +2,19 @@
 // Created by Aaron Gill-Braun on 2021-03-23.
 //
 
-#include <mutex.h>
+#include <kernel/mutex.h>
 
-#include <cpu/cpu.h>
+#include <kernel/cpu/cpu.h>
 
-#include <mm.h>
-#include <sched.h>
-#include <process.h>
-#include <thread.h>
-#include <timer.h>
+#include <kernel/mm.h>
+#include <kernel/sched.h>
+#include <kernel/process.h>
+#include <kernel/thread.h>
+#include <kernel/timer.h>
 
 #include <atomic.h>
-#include <panic.h>
-#include <printf.h>
+#include <kernel/panic.h>
+#include <kernel/printf.h>
 
 // #define MUTEX_DEBUG
 #ifdef MUTEX_DEBUG

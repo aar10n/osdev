@@ -5,7 +5,7 @@
 #ifndef KERNEL_FSUTILS_H
 #define KERNEL_FSUTILS_H
 
-#include <fs.h>
+#include <kernel/fs.h>
 
 void touch(const char *path);
 void mknod(const char *path, mode_t mode, dev_t dev);

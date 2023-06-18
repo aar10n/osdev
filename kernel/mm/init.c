@@ -2,13 +2,13 @@
 // Created by Aaron Gill-Braun on 2022-06-08.
 //
 
-#include <mm/init.h>
-#include <mm/heap.h>
-#include <mm/pgtable.h>
+#include <kernel/mm/init.h>
+#include <kernel/mm/heap.h>
+#include <kernel/mm/pgtable.h>
 
-#include <cpu/cpu.h>
-#include <printf.h>
-#include <panic.h>
+#include <kernel/cpu/cpu.h>
+#include <kernel/printf.h>
+#include <kernel/panic.h>
 
 uintptr_t kernel_address;
 uintptr_t kernel_virtual_offset;

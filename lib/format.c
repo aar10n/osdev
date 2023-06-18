@@ -3,8 +3,8 @@
 //
 
 #include <format.h>
-#include <string.h>
-#include <vfs/path.h>
+#include <kernel/string.h>
+#include <kernel/vfs/path.h>
 
 #define max(a, b) (((a) > (b)) ? (a) : (b))
 #define abs(a) (((a) < 0) ? (-(a)) : (a))

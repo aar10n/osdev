@@ -5,10 +5,10 @@
 #ifndef KERNEL_MM_VMALLOC_H
 #define KERNEL_MM_VMALLOC_H
 
-#include <base.h>
-#include <queue.h>
-#include <spinlock.h>
-#include <mm_types.h>
+#include <kernel/base.h>
+#include <kernel/queue.h>
+#include <kernel/spinlock.h>
+#include <kernel/mm_types.h>
 
 typedef page_t *(*vm_getpage_t)(struct vm_mapping *vm, size_t off, uint32_t pg_flags, void *data);
 

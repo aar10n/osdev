@@ -5,10 +5,10 @@
 #ifndef KERNEL_SIGNAL_H
 #define KERNEL_SIGNAL_H
 
-#include <base.h>
-#include <mutex.h>
+#include <kernel/base.h>
+#include <kernel/mutex.h>
 #include <abi/signal.h>
-#include <process.h>
+#include <kernel/process.h>
 
 #define sig_masked(thread, sig) ((thread)->signal & (1 << (sig)))
 

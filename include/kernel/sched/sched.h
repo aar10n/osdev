@@ -5,9 +5,9 @@
 #ifndef KERNEL_SCHED_SCHEDULER_H
 #define KERNEL_SCHED_SCHEDULER_H
 
-#include <base.h>
-#include <queue.h>
-#include <spinlock.h>
+#include <kernel/base.h>
+#include <kernel/queue.h>
+#include <kernel/spinlock.h>
 
 #define SCHED_COUNT_CACHE_AFFINITY_THRES  50
 

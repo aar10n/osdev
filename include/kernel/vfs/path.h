@@ -6,7 +6,7 @@
 #define KERNEL_VFS_PATH_H
 #define __PATH__
 
-#include <base.h>
+#include <kernel/base.h>
 
 #define MAX_PATH_LEN UINT16_MAX
 

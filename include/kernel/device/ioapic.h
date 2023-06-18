@@ -5,8 +5,8 @@
 #ifndef KERNEL_DEVICE_IOAPIC_H
 #define KERNEL_DEVICE_IOAPIC_H
 
-#include <base.h>
-#include <cpu/cpu.h>
+#include <kernel/base.h>
+#include <kernel/cpu/cpu.h>
 
 int ioapic_get_max_remappable_irq();
 

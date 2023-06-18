@@ -170,7 +170,7 @@ KERNEL_CFLAGS = $(CFLAGS) -mcmodel=large -mno-red-zone -fno-stack-protector \
 
 KERNEL_LDFLAGS = $(LDFLAGS) -Tlinker.ld -nostdlib -z max-page-size=0x1000 -L$(SYS_ROOT)/lib -L$(BUILD_DIR)
 
-KERNEL_INCLUDE = $(INCLUDE) -Iinclude/kernel -Iinclude/fs -Ilib -I$(TOOL_ROOT)/include
+KERNEL_INCLUDE = $(INCLUDE) -Ilib -I$(TOOL_ROOT)/include
 
 KERNEL_DEFINES = $(DEFINES) -D__KERNEL__
 

@@ -2,10 +2,10 @@
 // Created by Aaron Gill-Braun on 2022-12-09.
 //
 
-#include <input.h>
+#include <kernel/input.h>
 #include <bitmap.h>
-#include <printf.h>
-#include <panic.h>
+#include <kernel/printf.h>
+#include <kernel/panic.h>
 
 static const char *input_code_to_name[] = {
   [BTN_MOUSE1] = "BTN_MOUSE1",

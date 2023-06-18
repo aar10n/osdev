@@ -4,10 +4,12 @@
 
 #include "ramfs_file.h"
 
-#include <mm.h>
-#include <kio.h>
-#include <panic.h>
-#include <printf.h>
+//
+
+#include <kernel/mm.h>
+#include <kernel/kio.h>
+#include <kernel/panic.h>
+#include <kernel/printf.h>
 
 #define ASSERT(x) kassert(x)
 #define DPRINTF(fmt, ...) kprintf("ramfs_file: %s: " fmt, __func__, ##__VA_ARGS__)

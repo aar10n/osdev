@@ -2,29 +2,29 @@
 // Created by Aaron Gill-Braun on 2020-09-24.
 //
 
-#include <base.h>
-#include <console.h>
-#include <irq.h>
-#include <init.h>
-#include <mm.h>
-#include <fs.h>
-#include <device.h>
-#include <syscall.h>
-#include <process.h>
-#include <thread.h>
-#include <smpboot.h>
-#include <timer.h>
-#include <sched.h>
+#include <kernel/base.h>
+#include <kernel/console.h>
+#include <kernel/irq.h>
+#include <kernel/init.h>
+#include <kernel/mm.h>
+#include <kernel/fs.h>
+#include <kernel/device.h>
+#include <kernel/syscall.h>
+#include <kernel/process.h>
+#include <kernel/thread.h>
+#include <kernel/smpboot.h>
+#include <kernel/timer.h>
+#include <kernel/sched.h>
 
-#include <acpi/acpi.h>
-#include <cpu/cpu.h>
-#include <cpu/io.h>
-#include <debug/debug.h>
-#include <gui/screen.h>
+#include <kernel/acpi/acpi.h>
+#include <kernel/cpu/cpu.h>
+#include <kernel/cpu/io.h>
+#include <kernel/debug/debug.h>
+#include <kernel/gui/screen.h>
 
-#include <printf.h>
-#include <panic.h>
-#include <fs_utils.h>
+#include <kernel/printf.h>
+#include <kernel/panic.h>
+#include <kernel/fs_utils.h>
 
 // This relates to custom qemu patch that ive written to make debugging easier.
 #define QEMU_DEBUG_INIT() ({ outb(0x801, 1); })
@@ -35,10 +35,10 @@ boot_info_v2_t __boot_data *boot_info_v2;
 
 noreturn void root();
 
-#include <vfs/vcache.h>
-#include <vfs/ventry.h>
-#include <vfs/vnode.h>
-#include <vfs/vfs.h>
+#include <kernel/vfs/vcache.h>
+#include <kernel/vfs/ventry.h>
+#include <kernel/vfs/vnode.h>
+#include <kernel/vfs/vfs.h>
 
 //
 // Kernel entry

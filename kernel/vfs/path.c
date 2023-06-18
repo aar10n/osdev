@@ -2,10 +2,10 @@
 // Created by Aaron Gill-Braun on 2020-11-01.
 //
 
-#include <vfs/path.h>
-#include <mm.h>
-#include <panic.h>
-#include <string.h>
+#include <kernel/vfs/path.h>
+#include <kernel/mm.h>
+#include <kernel/panic.h>
+#include <kernel/string.h>
 
 
 #define ASSERT(x) kassert(x)

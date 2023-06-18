@@ -5,7 +5,7 @@
 #ifndef KERNEL_SCHED_FPRR_H
 #define KERNEL_SCHED_FPRR_H
 
-#include <sched/sched.h>
+#include <kernel/sched/sched.h>
 
 extern sched_policy_impl_t sched_policy_fprr;
 

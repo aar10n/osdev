@@ -5,8 +5,8 @@
 #ifndef LIB_HASH_MAP_H
 #define LIB_HASH_MAP_H
 
-#include <base.h>
-#include <string.h>
+#include <kernel/base.h>
+#include <kernel/string.h>
 #include <murmur3.h>
 
 /// This is a simple header-only implementation of a generic hash map.
@@ -15,7 +15,7 @@
 /// per file.
 
 #ifndef malloc
-#include <mm/heap.h>
+#include <kernel/mm/heap.h>
 #define malloc(s) kmalloc(s)
 #endif
 #ifndef free

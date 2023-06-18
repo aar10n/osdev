@@ -2,13 +2,13 @@
 // Created by Aaron Gill-Braun on 2023-05-20.
 //
 
-#include <vfs/vnode.h>
-#include <vfs/ventry.h>
-#include <vfs/vfs.h>
-#include <vfs/file.h>
+#include <kernel/vfs/vnode.h>
+#include <kernel/vfs/ventry.h>
+#include <kernel/vfs/vfs.h>
+#include <kernel/vfs/file.h>
 
-#include <mm.h>
-#include <printf.h>
+#include <kernel/mm.h>
+#include <kernel/printf.h>
 
 
 #define ASSERT(x) kassert(x)

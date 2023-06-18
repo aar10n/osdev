@@ -5,8 +5,8 @@
 #ifndef KERNEL_USB_SCSI_H
 #define KERNEL_USB_SCSI_H
 
-#include <base.h>
-#include <usb/usb.h>
+#include <kernel/base.h>
+#include <kernel/usb/usb.h>
 
 //
 // MARK: USB

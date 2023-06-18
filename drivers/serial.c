@@ -3,13 +3,13 @@
 //
 
 #include <drivers/serial.h>
-#include <cpu/io.h>
+#include <kernel/cpu/io.h>
 
-#include <device.h>
-#include <fs.h>
-#include <mm.h>
+#include <kernel/device.h>
+#include <kernel/fs.h>
+#include <kernel/mm.h>
 
-#include <printf.h>
+#include <kernel/printf.h>
 
 
 #define ASSERT(x) kassert(x)

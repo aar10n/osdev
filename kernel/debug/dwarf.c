@@ -2,14 +2,14 @@
 // Created by Aaron Gill-Braun on 2022-11-21.
 //
 
-#include <debug/dwarf.h>
-#include <init.h>
-#include <mm.h>
+#include <kernel/debug/dwarf.h>
+#include <kernel/init.h>
+#include <kernel/mm.h>
 
-#include <queue.h>
-#include <string.h>
-#include <printf.h>
-#include <panic.h>
+#include <kernel/queue.h>
+#include <kernel/string.h>
+#include <kernel/printf.h>
+#include <kernel/panic.h>
 
 #include <libdwarf-0/dwarf.h>
 #include <libdwarf-0/libdwarf.h>

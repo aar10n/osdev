@@ -2,15 +2,15 @@
 // Created by Aaron Gill-Braun on 2020-10-14.
 //
 
-#include <device/apic.h>
-#include <device/pit.h>
+#include <kernel/device/apic.h>
+#include <kernel/device/pit.h>
 
-#include <cpu/cpu.h>
-#include <mm.h>
-#include <init.h>
+#include <kernel/cpu/cpu.h>
+#include <kernel/mm.h>
+#include <kernel/init.h>
 
-#include <panic.h>
-#include <printf.h>
+#include <kernel/panic.h>
+#include <kernel/printf.h>
 
 #define APIC_BASE_PA 0xFEE00000
 

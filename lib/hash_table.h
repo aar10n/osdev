@@ -8,7 +8,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <string.h>
+#include <kernel/string.h>
 
 #ifndef INITIAL_MAP_SIZE
 #define INITIAL_MAP_SIZE 128

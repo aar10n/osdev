@@ -2,15 +2,15 @@
 // Created by Aaron Gill-Braun on 2020-10-25.
 //
 
-#include <smpboot.h>
+#include <kernel/smpboot.h>
 
-#include <acpi/acpi.h>
-#include <device/apic.h>
+#include <kernel/acpi/acpi.h>
+#include <kernel/device/apic.h>
 
-#include <mm.h>
-#include <printf.h>
-#include <panic.h>
-#include <string.h>
+#include <kernel/mm.h>
+#include <kernel/printf.h>
+#include <kernel/panic.h>
+#include <kernel/string.h>
 
 #define ASSERT(x) kassert(x)
 

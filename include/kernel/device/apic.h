@@ -5,7 +5,7 @@
 #ifndef KERNEL_DEVICE_APIC_H
 #define KERNEL_DEVICE_APIC_H
 
-#include <base.h>
+#include <kernel/base.h>
 
 #define IA32_APIC_BASE_MSR    0x1B
 #define IA32_APIC_BASE_BSP    0x100

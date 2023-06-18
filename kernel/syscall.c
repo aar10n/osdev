@@ -2,17 +2,17 @@
 // Created by Aaron Gill-Braun on 2020-11-10.
 //
 
-#include <syscall.h>
+#include <kernel/syscall.h>
 
-#include <cpu/cpu.h>
+#include <kernel/cpu/cpu.h>
 
-#include <sched.h>
-#include <process.h>
-#include <thread.h>
-#include <signal.h>
+#include <kernel/sched.h>
+#include <kernel/process.h>
+#include <kernel/thread.h>
+#include <kernel/signal.h>
 
-#include <panic.h>
-#include <printf.h>
+#include <kernel/panic.h>
+#include <kernel/printf.h>
 
 extern void syscall_handler();
 typedef uint64_t (*syscall_t)(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);

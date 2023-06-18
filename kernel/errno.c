@@ -2,7 +2,7 @@
 // Created by Aaron Gill-Braun on 2020-10-28
 //
 
-#include <errno.h>
+#include <kernel/errno.h>
 
 const char *errno_str[] = {
   [E2BIG] = "Argument list too long",

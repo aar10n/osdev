@@ -2,20 +2,20 @@
 // Created by Aaron Gill-Braun on 2022-07-20.
 //
 
-#include <ipi.h>
+#include <kernel/ipi.h>
 
-#include <device/apic.h>
+#include <kernel/device/apic.h>
 
-#include <sched.h>
-#include <irq.h>
-#include <mm.h>
+#include <kernel/sched.h>
+#include <kernel/irq.h>
+#include <kernel/mm.h>
 
-#include <spinlock.h>
-#include <panic.h>
-#include <printf.h>
+#include <kernel/spinlock.h>
+#include <kernel/panic.h>
+#include <kernel/printf.h>
 #include <atomic.h>
 
-#include <cpu/io.h>
+#include <kernel/cpu/io.h>
 
 static uint8_t ipi_type;
 static uint64_t ipi_data;

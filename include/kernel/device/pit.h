@@ -5,7 +5,7 @@
 #ifndef KERNEL_DEVICE_PIT_H
 #define KERNEL_DEVICE_PIT_H
 
-#include <base.h>
+#include <kernel/base.h>
 
 #define PIT_CLOCK_RATE 1193182UL
 

@@ -5,8 +5,8 @@
 #ifndef KERNEL_VFS_VCACHE_H
 #define KERNEL_VFS_VCACHE_H
 
-#include <vfs_types.h>
-#include <vfs/path.h>
+#include <kernel/vfs_types.h>
+#include <kernel/vfs/path.h>
 
 typedef struct vcache vcache_t;
 

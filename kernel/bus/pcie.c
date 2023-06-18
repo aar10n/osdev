@@ -2,15 +2,15 @@
 // Created by Aaron Gill-Braun on 2021-02-18.
 //
 
-#include <bus/pcie.h>
-#include <bus/pci_tables.h>
+#include <kernel/bus/pcie.h>
+#include <kernel/bus/pci_tables.h>
 
-#include <usb/xhci.h>
+#include <kernel/usb/xhci.h>
 
-#include <mm.h>
-#include <init.h>
-#include <printf.h>
-#include <panic.h>
+#include <kernel/mm.h>
+#include <kernel/init.h>
+#include <kernel/printf.h>
+#include <kernel/panic.h>
 
 #define MAX_PCIE_SEG_GROUPS 1
 #define PCIE_MMIO_SIZE (256 * SIZE_1MB)

@@ -5,7 +5,7 @@
 #ifndef LIB_INTERVAL_TREE_H
 #define LIB_INTERVAL_TREE_H
 
-#include <base.h>
+#include <kernel/base.h>
 #include <rb_tree.h>
 
 #define NULL_SET ((interval_t){ UINT64_MAX, 0 })

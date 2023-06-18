@@ -4,12 +4,12 @@
 
 #include <drivers/rawmem.h>
 
-#include <device.h>
-#include <fs.h>
-#include <mm.h>
+#include <kernel/device.h>
+#include <kernel/fs.h>
+#include <kernel/mm.h>
 
-#include <printf.h>
-#include <panic.h>
+#include <kernel/printf.h>
+#include <kernel/panic.h>
 
 #define ASSERT(x) kassert(x)
 #define DPRINTF(fmt, ...) kprintf("rawmem: %s: " fmt "\n", __func__, ##__VA_ARGS__)

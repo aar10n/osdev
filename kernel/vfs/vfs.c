@@ -2,14 +2,14 @@
 // Created by Aaron Gill-Braun on 2023-05-22.
 //
 
-#include <vfs/vfs.h>
-#include <vfs/vnode.h>
-#include <vfs/ventry.h>
+#include <kernel/vfs/vfs.h>
+#include <kernel/vfs/vnode.h>
+#include <kernel/vfs/ventry.h>
 
-#include <mm.h>
-#include <device.h>
-#include <printf.h>
-#include <panic.h>
+#include <kernel/mm.h>
+#include <kernel/device.h>
+#include <kernel/printf.h>
+#include <kernel/panic.h>
 #include <rb_tree.h>
 
 struct vtable {

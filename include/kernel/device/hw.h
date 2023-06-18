@@ -5,8 +5,8 @@
 #ifndef KERNEL_DEVICE_HW_H
 #define KERNEL_DEVICE_HW_H
 
-#include <base.h>
-#include <queue.h>
+#include <kernel/base.h>
+#include <kernel/queue.h>
 
 typedef struct hw_apic_device {
   uint8_t id;

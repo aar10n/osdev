@@ -5,7 +5,7 @@
 #ifndef KERNEL_USB_HID_REPORT_H
 #define KERNEL_USB_HID_REPORT_H
 
-#include <base.h>
+#include <kernel/base.h>
 
 #define PREFIX_SIZE(p) (((p) >> 0) & 0x3)
 #define PREFIX_TYPE(p) (((p) >> 2) & 0x3)
