@@ -40,10 +40,9 @@ struct intvl_tree;
 #define PG_NOCACHE    (1 << 5)
 #define PG_WRITETHRU  (1 << 6)
 #define PG_GLOBAL     (1 << 7)
-#define PG_BIGPAGE    (1 << 8) /* internal use only */
-#define PG_HUGEPAGE   (1 << 9) /* internal use only */
-// flags used during allocation
-#define PG_ZERO       (1 << 19)
+/* internal use only */
+#define PG_BIGPAGE    (1 << 8)
+#define PG_HUGEPAGE   (1 << 9)
 
 typedef struct page {
   uint64_t address;             // physical address
