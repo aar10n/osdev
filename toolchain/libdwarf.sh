@@ -17,8 +17,8 @@ readonly LIBDWARF_VERSION=0.5.0
 #
 # env:
 #   LIBDWARF_BUILD_DIR   - build directory (default = <BUILD_DIR>/libdwarf)
-#   LIBDWARF_SYSROOT     - sysroot override (default = <SYS_ROOT>)
-#   LIBDWARF_INSTALL_DIR - install override (default = <SYS_ROOT>)
+#   LIBDWARF_SYSROOT     - sysroot override (default = <TOOL_ROOT>)
+#   LIBDWARF_INSTALL_DIR - install override (default = <TOOL_ROOT>)
 #
 # example:
 #   toolchain::libdwarf::build
@@ -39,9 +39,10 @@ toolchain::libdwarf::build() {
 
   local version="${LIBDWARF_VERSION}"
   local build_dir=${LIBDWARF_BUILD_DIR:-${BUILD_DIR}/libdwarf}
-  local install_dir=${LIBDWARF_INSTALL_DIR:-${SYS_ROOT}}
-  local sysroot="${LIBDWARF_SYSROOT:-${SYS_ROOT}}"
-  local tool_prefix="${sysroot}/usr/bin/${arch}-osdev-"
+  local sysroot="${LIBDWARF_SYSROOT:-${TOOL_ROOT}}"
+  local install_dir=${LIBDWARF_INSTALL_DIR:-${TOOL_ROOT}}
+#  local tool_prefix="${sysroot}/bin/${arch}-elf-"
+  local tool_prefix="${BUILD_DIR}/sysroot/usr/bin/${arch}-osdev-"
 
   mkdir -p ${build_dir}
   pushd ${build_dir}

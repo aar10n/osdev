@@ -3,15 +3,19 @@
 # Environment variables:
 #   PROJECT_DIR    - absolute path of the main project directory
 #   BUILD_DIR      - absolute path of the build directory
-#   SYS_ROOT       - system root for the os disk image
+#   TOOL_ROOT      - toolchain sysroot base directory
+#   SYS_ROOT       - system root for the os root filesystem
 #
+# Overridable variables:
 #   NPROC          - number of parallel jobs to use for make
 #   SKIP_CONFIGURE - skip configure step if set
 #   SKIP_BUILD     - skip build step if set
 #   SKIP_INSTALL   - skip install step if set
 
 BUILD_DIR=${BUILD_DIR:-${PROJECT_DIR}/build}
-SYS_ROOT=${SYS_ROOT:-${BUILD_DIR}/sysroot}
+TOOL_ROOT=${TOOL_ROOT:-${BUILD_DIR}/toolchain}
+SYS_ROOT=${SYS_ROOT:-${PROJECT_DIR}/sysroot}
+
 NPROC=${NPROC:-$(nproc)}
 MAKE="${MAKE:-make}"
 MAKE_j="${MAKE:-make} -j${NPROC}"

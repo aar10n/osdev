@@ -10,36 +10,16 @@ source "${PROJECT_DIR}/toolchain/mlibc.sh"
 readonly GCC_VERSION=12.1.0
 
 
-toolchain::gcc::link_binutils() {
-  local target_triple="$1"
-  local install_dir="$2"
-  local sysroot="$3"
-  shift 3
-
-  mkdir -p ${install_dir}/${target_triple}/bin
-  toolchain::util::symlink ${sysroot}/${target_triple}/bin/ar ${install_dir}/${target_triple}/bin/ar
-  toolchain::util::symlink ${sysroot}/${target_triple}/bin/as ${install_dir}/${target_triple}/bin/as
-  toolchain::util::symlink ${sysroot}/${target_triple}/bin/ld ${install_dir}/${target_triple}/bin/ld
-  toolchain::util::symlink ${sysroot}/${target_triple}/bin/ranlib ${install_dir}/${target_triple}/bin/ranlib
-  toolchain::util::symlink ${sysroot}/${target_triple}/bin/strip ${install_dir}/${target_triple}/bin/strip
-
-  toolchain::util::symlink ${sysroot}/bin/${target_triple}-ar ${install_dir}/bin/${target_triple}-ar
-  toolchain::util::symlink ${sysroot}/bin/${target_triple}-as ${install_dir}/bin/${target_triple}-as
-  toolchain::util::symlink ${sysroot}/bin/${target_triple}-ld ${install_dir}/bin/${target_triple}-ld
-  toolchain::util::symlink ${sysroot}/bin/${target_triple}-ranlib ${install_dir}/bin/${target_triple}-ranlib
-  toolchain::util::symlink ${sysroot}/bin/${target_triple}-strip ${install_dir}/bin/${target_triple}-strip
-}
-
 # build and install gcc
 # =====================
 # args:
 #   <1>: target arch (i.e. 'x86_64')
-#   <2>: build kind [kernel|system|bootstrap]
+#   <2>: build kind [kernel|system]
 #
 # env:
 #   GCC_BUILD_DIR   - build directory (default = <BUILD_DIR>/gcc)
 #   GCC_SYSROOT     - gcc sysroot (default = <SYS_ROOT>)
-#   GCC_INSTALL_DIR - install directory (default = <SYS_ROOT>)
+#   GCC_INSTALL_DIR - install directory (default = <TOOL_ROOT>)
 #
 # example:
 #   toolchain::gcc:build x86_64 kernel
@@ -63,22 +43,18 @@ toolchain::gcc:build() {
   local gcc="gcc-${GCC_VERSION}"
   local build_dir=${GCC_BUILD_DIR:-${BUILD_DIR}/gcc}
   local sysroot=${GCC_SYSROOT:-${SYS_ROOT}}
-  local install_dir=${GCC_INSTALL_DIR:-${sysroot}}
+  local install_dir=${GCC_INSTALL_DIR:-${TOOL_ROOT}}
 
-  local target_triple="${arch}-osdev"
-  local installed_prefix="${install_dir}/bin/${target_triple}"
+  local target_triple=""
   local build_subdir=""
   case "$build_kind" in
     kernel)
       build_subdir="build-kernel"
+      target_triple="${arch}-elf"
       ;;
     system)
       build_subdir="build-system"
-      install_dir="${GCC_INSTALL_DIR:-${install_dir}/usr}"
-      ;;
-    bootstrap)
-      build_subdir="build-bootstrap"
-      install_dir="${GCC_INSTALL_DIR:-${install_dir}/bootstrap}"
+      target_triple="${arch}-osdev"
       ;;
     *)
       toolchain::util::error "invalid build kind: $build_kind"
@@ -106,8 +82,6 @@ toolchain::gcc:build() {
       "--enable-gnu-indirect-function"
     )
 
-    # cp -r @SOURCE_ROOT@/patches/kernel-libc/* @BUILD_ROOT@/kernel-root/usr/include/
-
     # kernel gcc steps
     configure_opts="${options[@]}"
     steps+=(
@@ -121,6 +95,8 @@ toolchain::gcc:build() {
     )
   elif [ ${build_kind} == "system" ]; then
     options+=(
+      --includedir=${sysroot}/include
+      --libdir=${sysroot}/lib
       --disable-multilib
       --enable-libstdcxx-filesystem-ts
     )
@@ -147,36 +123,12 @@ toolchain::gcc:build() {
       "toolchain::util::install_step ${MAKE} install-target-libstdc++-v3"
     )
 
-  export MLIBC_SYSROOT=${sysroot}
-  export MLIBC_INSTALL_DIR=${install_dir}
-  export MLIBC_CROSS_PREFIX=${sysroot}/usr/bin/${target_triple}-
-  elif [ ${build_kind} == "bootstrap" ]; then
-    # TODO: Remove 'bootstrap'
-    options+=(
-      --disable-multilib
-      --disable-shared
-    )
-
-    # bootstrap gcc steps
-    configure_opts="${options[@]}"
-    steps+=(
-       # mlibc headers
-       "export MLIBC_INSTALL_DIR=${install_dir}"
-       "toolchain::util::configure_step toolchain::mlibc::build ${arch} headers"
-      # gcc
-      "toolchain::util::configure_step ../src/configure ${configure_opts}"
-      "toolchain::util::build_step ${MAKE_j} inhibit_libc=true all-gcc"
-      "toolchain::util::install_step ${MAKE} install-gcc"
-      # libgcc
-      "toolchain::util::build_step ${MAKE_j} inhibit_libc=true all-target-libgcc"
-      "toolchain::util::install_step ${MAKE} install-target-libgcc"
-    )
+    export MLIBC_SYSROOT=${sysroot}
+    export MLIBC_INSTALL_DIR=${install_dir}
+    export MLIBC_CROSS_PREFIX=${sysroot}/usr/bin/${target_triple}-
   fi
 
-  mkdir -p ${sysroot}/usr/bin
-  mkdir -p ${sysroot}/usr/include
-  mkdir -p ${install_dir}/bin
-  mkdir -p ${install_dir}/include
+  mkdir -p ${install_dir}
   mkdir -p ${build_dir}/${build_subdir}
 
   pushd ${build_dir}

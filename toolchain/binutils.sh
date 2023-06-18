@@ -40,7 +40,7 @@ toolchain::binutils::install_fixup() {
 # env:
 #   BINUTILS_BUILD_DIR   - build directory (default = <BUILD_DIR>/binutils)
 #   BINUTILS_SYSROOT     - binutils sysroot (default = <SYS_ROOT>)
-#   BINUTILS_INSTALL_DIR - install directory (default = <SYS_ROOT>)
+#   BINUTILS_INSTALL_DIR - install directory (default = <TOOL_ROOT>)
 #
 # example:
 #   toolchain::binutils::build x86_64
@@ -49,13 +49,11 @@ toolchain::binutils::build() {
 
   local arch="$1"
   local build_kind="$2"
-  local target_triple=""
   local targets=""
   shift 2
   case "$arch" in
     x86_64* | X64)
       arch="x86_64"
-      target_triple="x86_64-osdev"
       targets="x86_64-elf" # ,x86_64-pe
       ;;
     *)
@@ -67,15 +65,17 @@ toolchain::binutils::build() {
   local binutils="binutils-${BINUTILS_VERSION}"
   local build_dir=${BINUTILS_BUILD_DIR:-${BUILD_DIR}/binutils}
   local sysroot=${BINUTILS_SYSROOT:-${SYS_ROOT}}
-  local install_dir=${BINUTILS_INSTALL_DIR:-${sysroot}}
+  local install_dir=${BINUTILS_INSTALL_DIR:-${TOOL_ROOT}}
+
+  local target_triple=""
   local build_subdir=""
   case "${build_kind}" in
     kernel)
-      install_dir=${BINUTILS_INSTALL_DIR:-${sysroot}}
+      target_triple="x86_64-elf"
       build_subdir="build-kernel"
       ;;
     system)
-      install_dir=${BINUTILS_INSTALL_DIR:-${sysroot}/usr}
+      target_triple="x86_64-osdev"
       build_subdir="build-system"
       ;;
     *)

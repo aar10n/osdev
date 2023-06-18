@@ -2,10 +2,10 @@ NAME := osdev
 PROJECT_DIR := $(shell pwd)
 BUILD_DIR = $(PROJECT_DIR)/build
 OBJ_DIR = $(BUILD_DIR)/$(NAME)
+TOOL_ROOT = $(BUILD_DIR)/toolchain
 SYS_ROOT = $(BUILD_DIR)/sysroot
 
 EDK_DIR = $(BUILD_DIR)/edk2
-TOOLCHAIN_DIR = $(SYS_ROOT)
 
 include scripts/utils.mk
 include Makefile.local
@@ -39,7 +39,7 @@ $(call init-modules,$(modules))
 
 # build targets
 
-all: $(BUILD_DIR)/osdev.img $(BUILD_DIR)/ext2.img
+all: $(BUILD_DIR)/osdev.img
 
 bootloader: $(BUILD_DIR)/boot$(WINARCH).efi
 kernel: $(BUILD_DIR)/kernel.elf
@@ -124,6 +124,10 @@ clean-kernel:
 	rm -rf $(OBJ_DIR)/{$(call join-comma,$(KERNEL_TARGETS))}
 
 
+musl: export CROSS_COMPILE=$(SYS_ROOT)
+musl:
+	$(MAKE) -C third-party/musl
+
 # ------------------- #
 #     Bootloader      #
 # ------------------- #
@@ -166,7 +170,7 @@ KERNEL_CFLAGS = $(CFLAGS) -mcmodel=large -mno-red-zone -fno-stack-protector \
 
 KERNEL_LDFLAGS = $(LDFLAGS) -Tlinker.ld -nostdlib -z max-page-size=0x1000 -L$(SYS_ROOT)/lib -L$(BUILD_DIR)
 
-KERNEL_INCLUDE = $(INCLUDE) -Iinclude/kernel -Iinclude/fs -Ilib -I$(SYS_ROOT)/include
+KERNEL_INCLUDE = $(INCLUDE) -Iinclude/kernel -Iinclude/fs -Ilib -I$(TOOL_ROOT)/include
 
 KERNEL_DEFINES = $(DEFINES) -D__KERNEL__
 
@@ -183,7 +187,7 @@ $(BUILD_DIR)/libdwarf.a:
 	bash toolchain/libdwarf.sh build $(WINARCH)
 
 # bootable USB image
-$(BUILD_DIR)/osdev.img: $(BUILD_DIR)/boot$(WINARCH).efi $(BUILD_DIR)/kernel.elf config.ini $(BUILD_DIR)/initrd.img
+$(BUILD_DIR)/osdev.img: $(BUILD_DIR)/boot$(WINARCH).efi $(BUILD_DIR)/kernel.elf config.ini
 	dd if=/dev/zero of=$@ bs=1M count=256
 # 	256M -> 268435456 / 512 = 524288 sectors
 	mformat -i $@ -F -h 64 -s 32 -T 524288 -c 1 -v osdev ::

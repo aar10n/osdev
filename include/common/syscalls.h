@@ -7,6 +7,7 @@
 
 #include <stdint.h>
 
+
 #define SYS_EXIT 0
 #define SYS_EXEC 1
 #define SYS_OPEN 2
@@ -77,7 +78,7 @@
 #define _syscall1(call, arg1)                             \
   ({                                                      \
     uint64_t _ret;                                        \
-    register uint64_t a __asm("rdi") = (uint64_t) arg1;   \
+    register uint64_t a __asm("rdi") = (uint64_t)(arg1);  \
     __asm volatile(                                       \
       "syscall"                                           \
       : "=a" (_ret)                                       \
@@ -90,8 +91,8 @@
 #define _syscall2(call, arg1, arg2)                      \
   ({                                                     \
     uint64_t _ret;                                       \
-    register uint64_t a __asm("rdi") = (uint64_t) arg1;  \
-    register uint64_t b __asm("rsi") = (uint64_t) arg2;  \
+    register uint64_t a __asm("rdi") = (uint64_t)(arg1); \
+    register uint64_t b __asm("rsi") = (uint64_t)(arg2); \
     __asm volatile(                                      \
       "syscall"                                          \
       : "=a" (_ret)                                      \
@@ -104,9 +105,9 @@
 #define _syscall3(call, arg1, arg2, arg3)                \
   ({                                                     \
     uint64_t _ret;                                       \
-    register uint64_t a __asm("rdi") = (uint64_t) arg1;  \
-    register uint64_t b __asm("rsi") = (uint64_t) arg2;  \
-    register uint64_t c __asm("rdx") = (uint64_t) arg3;  \
+    register uint64_t a __asm("rdi") = (uint64_t)(arg1); \
+    register uint64_t b __asm("rsi") = (uint64_t)(arg2); \
+    register uint64_t c __asm("rdx") = (uint64_t)(arg3); \
     __asm volatile(                                      \
       "syscall"                                          \
       : "=a" (_ret)                                      \
@@ -119,10 +120,10 @@
 #define _syscall4(call, arg1, arg2, arg3, arg4)          \
   ({                                                     \
     uint64_t _ret;                                       \
-    register uint64_t a __asm("rdi") = (uint64_t) arg1;  \
-    register uint64_t b __asm("rsi") = (uint64_t) arg2;  \
-    register uint64_t c __asm("rdx") = (uint64_t) arg3;  \
-    register uint64_t d __asm("r8") = (uint64_t) arg4;   \
+    register uint64_t a __asm("rdi") = (uint64_t)(arg1); \
+    register uint64_t b __asm("rsi") = (uint64_t)(arg2); \
+    register uint64_t c __asm("rdx") = (uint64_t)(arg3); \
+    register uint64_t d __asm("r10") = (uint64_t)(arg4); \
     __asm volatile(                                      \
       "syscall"                                          \
       : "=a" (_ret)                                      \
@@ -136,11 +137,11 @@
 #define _syscall5(call, arg1, arg2, arg3, arg4, arg5)    \
   ({                                                     \
     uint64_t _ret;                                       \
-    register uint64_t a __asm("rdi") = (uint64_t) arg1;  \
-    register uint64_t b __asm("rsi") = (uint64_t) arg2;  \
-    register uint64_t c __asm("rdx") = (uint64_t) arg3;  \
-    register uint64_t d __asm("r8") = (uint64_t) arg4;   \
-    register uint64_t e __asm("r9") = (uint64_t) arg5;   \
+    register uint64_t a __asm("rdi") = (uint64_t)(arg1); \
+    register uint64_t b __asm("rsi") = (uint64_t)(arg2); \
+    register uint64_t c __asm("rdx") = (uint64_t)(arg3); \
+    register uint64_t d __asm("r10") = (uint64_t)(arg4); \
+    register uint64_t e __asm("r8")  = (uint64_t)(arg5); \
     __asm volatile(                                      \
       "syscall"                                          \
       : "=a" (_ret)                                      \
@@ -154,12 +155,12 @@
 #define _syscall6(call, arg1, arg2, arg3, arg4, arg5, arg6)  \
   ({                                                     \
     uint64_t _ret;                                       \
-    register uint64_t a __asm("rdi") = (uint64_t) arg1;  \
-    register uint64_t b __asm("rsi") = (uint64_t) arg2;  \
-    register uint64_t c __asm("rdx") = (uint64_t) arg3;  \
-    register uint64_t d __asm("r8") = (uint64_t) arg4;   \
-    register uint64_t e __asm("r9") = (uint64_t) arg5;   \
-    register uint64_t f __asm("r10") = (uint64_t) arg6;  \
+    register uint64_t a __asm("rdi") = (uint64_t)(arg1); \
+    register uint64_t b __asm("rsi") = (uint64_t)(arg2); \
+    register uint64_t c __asm("rdx") = (uint64_t)(arg3); \
+    register uint64_t d __asm("r10") = (uint64_t)(arg4); \
+    register uint64_t e __asm("r8")  = (uint64_t)(arg5); \
+    register uint64_t f __asm("r9")  = (uint64_t)(arg6); \
     __asm volatile(                                      \
       "syscall"                                          \
       : "=a" (_ret)                                      \
