@@ -38,4 +38,11 @@ static inline int ref_count(refcount_t *ref) {
   return atomic_read(ref);
 }
 
+
+#define _refname refcount
+#define REFCOUNT refcount_t _refname
+
+#define getref(obj) ({ ref_get(&(obj)->_refname); obj; })
+#define moveref(objref) ({ typeof(*(obj)) _obj = *(obj); *(obj) = NULL; _obj; })
+
 #endif

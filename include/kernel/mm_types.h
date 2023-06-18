@@ -24,6 +24,7 @@
 #define PAGES_TO_SIZE(pages) ((pages) << PAGE_SHIFT)
 #define SIZE_TO_PAGES(size) (((size) >> PAGE_SHIFT) + (((size) & PAGE_FLAGS_MASK) ? 1 : 0))
 
+struct frame_allocator;
 struct page;
 struct address_space;
 struct vm_mapping;
@@ -31,9 +32,6 @@ struct vm_file;
 struct mem_zone;
 
 struct intvl_tree;
-struct rb_tree;
-struct file;
-struct bitmap;
 
 // page flags
 #define PG_WRITE      (1 << 2)
@@ -42,21 +40,19 @@ struct bitmap;
 #define PG_NOCACHE    (1 << 5)
 #define PG_WRITETHRU  (1 << 6)
 #define PG_GLOBAL     (1 << 7)
-#define PG_BIGPAGE    (1 << 8)
-#define PG_HUGEPAGE   (1 << 9)
+#define PG_BIGPAGE    (1 << 8) /* internal use only */
+#define PG_HUGEPAGE   (1 << 9) /* internal use only */
 // flags used during allocation
-#define PG_FORCE      (1 << 16)
 #define PG_ZERO       (1 << 19)
 
 typedef struct page {
-  uint64_t address;              // physical address
-  uint32_t flags;                // page flags
-  struct vm_mapping *mapping;    // owning mapping (if mapped)
-  struct mem_zone *zone;         // owning memory zone
+  uint64_t address;             // physical address
+  uint32_t flags;               // page flags
+  struct vm_mapping *mapping;   // owning mapping (if mapped)
+  struct mem_zone *zone;        // owning memory zone
+  struct frame_allocator *fa;   // owning frame allocator
   SLIST_ENTRY(struct page) next;
 } page_t;
-
-#define PAGE_PHYS_ADDR(page) ((page)->address)
 
 //
 
@@ -110,31 +106,6 @@ typedef struct vm_mapping {
 
   LIST_ENTRY(struct vm_mapping) list;
 } vm_mapping_t;
-
-
-// zone boundaries
-#define ZONE_LOW_MAX    SIZE_1MB
-#define ZONE_DMA_MAX    SIZE_16MB
-#define ZONE_NORMAL_MAX SIZE_4GB
-#define ZONE_HIGH_MAX   UINT64_MAX
-
-typedef enum mem_zone_type {
-  ZONE_TYPE_LOW,
-  ZONE_TYPE_DMA,
-  ZONE_TYPE_NORMAL,
-  ZONE_TYPE_HIGH,
-  MAX_ZONE_TYPE
-} mem_zone_type_t;
-
-typedef struct mem_zone {
-  mem_zone_type_t type;
-  uintptr_t base;
-  size_t size;
-
-  spinlock_t lock;
-  struct bitmap *frames;
-  LIST_ENTRY(struct mem_zone) list;
-} mem_zone_t;
 
 // address space layout
 

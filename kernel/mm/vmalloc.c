@@ -22,6 +22,11 @@
 #define DPRINTF(x, ...) kprintf(x, ##__VA_ARGS__)
 #define PANIC_IF(x, msg, ...) { if (x) panic(msg, ##__VA_ARGS__); }
 
+// internal vm flags
+#define VM_MAPPED 0x1000 // mapping is currently active
+#define VM_MALLOC 0x2000 // mapping is a vmalloc allocation
+#define VM_CONTIG 0x4000 // mapping is physically contiguous
+
 // these are the default hints for different combinations of vm flags
 // they are used as a starting point for the kernel when searching for
 // a free region
@@ -32,15 +37,10 @@
 #define HINT_KERNEL_MALLOC  0xFFFFC01000000000ULL // for VM_MALLOC
 #define HINT_KERNEL_STACK   0xFFFFFF8040000000ULL // for VM_STACK
 
-// internal vm flags
-#define VM_MAPPED 0x1000 // mapping is currently active
-#define VM_MALLOC 0x2000 // mapping is a vmalloc allocation
-#define VM_CONTIG 0x4000 // mapping is physically contiguous
-
-
-void execute_init_address_space_callbacks();
 extern uintptr_t entry_initial_stack_top;
 address_space_t *kernel_space;
+
+void execute_init_address_space_callbacks();
 
 // called from thread.asm
 __used void swap_address_space(address_space_t *new_space) {
@@ -185,6 +185,7 @@ static void vm_map_pages_internal(vm_mapping_t *vm, size_t off, page_t *pages, u
   uintptr_t ptr = vm->address + off;
   page_t *curr = pages;
   while (curr != NULL) {
+    curr->flags |= pg_flags;
     page_t *table_pages = NULL;
     recursive_map_entry(ptr, curr->address, curr->flags, &table_pages);
 
@@ -220,6 +221,7 @@ static void vm_unmap_pages_internal(vm_mapping_t *vm, size_t off, size_t size) {
     recursive_unmap_entry(ptr, curr->flags);
     ptr += pg_flags_to_size(curr->flags);
     curr->mapping = NULL;
+    curr->flags &= PG_BIGPAGE|PG_HUGEPAGE;
     // dont free the pages until the mapping is destroyed
     curr = curr->next;
   }
@@ -578,6 +580,8 @@ void init_address_space() {
   kernel_space->page_table = pgtable;
   user_space->page_table = pgtable;
 
+  irq_register_exception_handler(CPU_EXCEPTION_PF, page_fault_handler);
+
   // set up the starting address space layout
   size_t lowmem_size = kernel_address;
   size_t kernel_code_size = kernel_code_end - kernel_code_start;
@@ -591,7 +595,7 @@ void init_address_space() {
   vm_alloc_phys(kheap_phys_addr(), KERNEL_HEAP_VA, KERNEL_HEAP_SIZE, VM_FIXED, "kernel heap");
   vm_alloc_phys(kernel_reserved_start, KERNEL_RESERVED_VA, reserved_size, VM_FIXED, "kernel reserved");
 
-  page_t *stack_pages = alloc_pages(SIZE_TO_PAGES(KERNEL_STACK_SIZE), PG_WRITE);
+  page_t *stack_pages = alloc_pages(SIZE_TO_PAGES(KERNEL_STACK_SIZE));
   vm_mapping_t *stack_vm = vm_alloc_pages(stack_pages, 0, KERNEL_STACK_SIZE, VM_STACK | VM_GUARD, "kernel stack");
   vm_map(stack_vm, PG_WRITE);
 
@@ -611,8 +615,6 @@ void init_address_space() {
   uint64_t new_rsp = stack_vm->address + stack_vm->size - stack_offset;
   memcpy((void *) new_rsp, (void *) rsp, stack_offset);
   cpu_write_stack_pointer(new_rsp);
-
-  irq_register_exception_handler(CPU_EXCEPTION_PF, page_fault_handler);
   pgtable_unmap_user_mappings();
 }
 
@@ -1022,7 +1024,7 @@ void *vmalloc(size_t size, uint32_t pg_flags) {
   //       as vmalloc_phys
 
   // allocate pages
-  page_t *pages = alloc_pages(SIZE_TO_PAGES(size), pg_flags);
+  page_t *pages = alloc_pages(SIZE_TO_PAGES(size));
   PANIC_IF(!pages, "vmalloc: alloc_pages failed");
 
   // allocate and map the virtual memory
@@ -1043,7 +1045,7 @@ void *vmalloc_phys(size_t size, uint32_t pg_flags) {
     return NULL;
 
   // allocate pages
-  page_t *pages = alloc_pages(SIZE_TO_PAGES(size), pg_flags);
+  page_t *pages = alloc_pages(SIZE_TO_PAGES(size));
   PANIC_IF(!pages, "vmalloc: alloc_pages failed");
 
   // allocate and map the virtual memory
@@ -1064,7 +1066,7 @@ void *vmalloc_at_phys(uintptr_t phys_addr, size_t size, uint32_t pg_flags) {
     return NULL;
 
   // allocate pages
-  page_t *pages = alloc_pages_at(phys_addr, SIZE_TO_PAGES(size), pg_flags);
+  page_t *pages = alloc_pages_at(phys_addr, SIZE_TO_PAGES(size), pg_flags_to_size(pg_flags));
   PANIC_IF(!pages, "vmalloc_at_phys: alloc_pages_at failed");
 
   // allocate and map the virtual memory

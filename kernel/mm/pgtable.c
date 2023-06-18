@@ -224,7 +224,7 @@ uint64_t *recursive_map_entry(uintptr_t virt_addr, uintptr_t phys_addr, uint32_t
     uintptr_t next_table = table[index] & PAGE_FRAME_MASK;
     if (next_table == 0) {
       // create new table
-      page_t *table_page = alloc_pages(1, 0);
+      page_t *table_page = alloc_pages(1);
       SLIST_ADD(&table_pages, table_page, next);
       table[index] = table_page->address | meta_flags;
       uint64_t *new_table = get_pgtable_address(virt_addr, i - 1);
@@ -271,7 +271,7 @@ uint64_t recursive_duplicate_pgtable(
   }
 
   LIST_HEAD(page_t) table_pages = LIST_HEAD_INITR;
-  page_t *dest_page = alloc_pages(1, 0);
+  page_t *dest_page = alloc_pages(1);
   dest_parent_table[index] = dest_page->address | PE_WRITE | PE_PRESENT;
   SLIST_ADD(&table_pages, dest_page, next);
 
@@ -322,7 +322,7 @@ uintptr_t create_new_ap_page_tables(page_t **out_pages) {
   SLIST_ADD(&table_pages, new_pml4, next);
 
   uint64_t *pml4 = PML4_PTR;
-  pml4[T_ENTRY] = PAGE_PHYS_ADDR(new_pml4) | PE_WRITE | PE_PRESENT;
+  pml4[T_ENTRY] = new_pml4->address | PE_WRITE | PE_PRESENT;
 
   uint64_t *table_virt = TEMP_PTR;
   memset(table_virt, 0, PAGE_SIZE);
@@ -330,23 +330,23 @@ uintptr_t create_new_ap_page_tables(page_t **out_pages) {
   // shallow copy kernel entries
   for (int i = PML4_INDEX(KERNEL_SPACE_START); i < PML4_INDEX(KERNEL_SPACE_END) + 1; i++) {
     if (i == R_ENTRY) {
-      table_virt[i] = (uint64_t) PAGE_PHYS_ADDR(new_pml4) | PE_WRITE | PE_PRESENT;
+      table_virt[i] = (uint64_t) new_pml4->address | PE_WRITE | PE_PRESENT;
     } else if (i != T_ENTRY) {
       table_virt[i] = pml4[i];
     }
   }
 
   // identity map bottom of memory
-  page_t *new_low_pdpt = alloc_pages(1, PG_WRITE);
+  page_t *new_low_pdpt = alloc_pages(1);
   SLIST_ADD(&table_pages, new_low_pdpt, next);
-  table_virt[0] = PAGE_PHYS_ADDR(new_low_pdpt) | PE_WRITE | PE_PRESENT; // pml4 -> pdpe
+  table_virt[0] = new_low_pdpt->address | PE_WRITE | PE_PRESENT; // pml4 -> pdpe
 
   uint64_t *low_pdpt = (void *) get_virt_addr(R_ENTRY, R_ENTRY, T_ENTRY, 0);
   memset(low_pdpt, 0, PAGE_SIZE);
 
-  page_t *new_low_pde = alloc_pages(1, PG_WRITE);
+  page_t *new_low_pde = alloc_pages(1);
   SLIST_ADD(&table_pages, new_low_pde, next);
-  low_pdpt[0] = PAGE_PHYS_ADDR(new_low_pde) | PE_WRITE | PE_PRESENT; // pdpe -> pde
+  low_pdpt[0] = new_low_pde->address | PE_WRITE | PE_PRESENT; // pdpe -> pde
 
   uint64_t* low_pde = (void *) get_virt_addr(R_ENTRY, T_ENTRY, 0, 0);
   memset(low_pde, 0, PAGE_SIZE);
@@ -356,12 +356,12 @@ uintptr_t create_new_ap_page_tables(page_t **out_pages) {
   if (out_pages != NULL) {
     *out_pages = LIST_FIRST(&table_pages);
   }
-  return PAGE_PHYS_ADDR(new_pml4);
+  return new_pml4->address;
 }
 
 uintptr_t deepcopy_fork_page_tables(page_t **out_pages) {
   LIST_HEAD(page_t) table_pages = LIST_HEAD_INITR;
-  page_t *new_pml4 = alloc_pages(1, PG_WRITE);
+  page_t *new_pml4 = alloc_pages(1);
   SLIST_ADD(&table_pages, new_pml4, next);
 
   PML4_PTR[T_ENTRY] = new_pml4->address | PE_WRITE | PE_PRESENT;

@@ -4,6 +4,7 @@
 
 #include <mm/pmalloc.h>
 #include <mm/vmalloc.h>
+#include <mm/pgtable.h>
 #include <mm/init.h>
 
 #include <string.h>
@@ -12,34 +13,31 @@
 #include <bitmap.h>
 #include <init.h>
 
-static LIST_HEAD(mem_zone_t) mem_zones[MAX_ZONE_TYPE];
+#define ASSERT(x) kassert(x)
+
+#define ZONE_ALLOC_DEFAULT ZONE_TYPE_HIGH
+
+static LIST_HEAD(frame_allocator_t) mem_zones[MAX_ZONE_TYPE];
 static size_t zone_page_count[MAX_ZONE_TYPE];
 static size_t reserved_pages = 128;
 
-static size_t zone_limits[MAX_ZONE_TYPE] = {
-  ZONE_LOW_MAX,
-  ZONE_DMA_MAX,
-  ZONE_NORMAL_MAX,
-  ZONE_HIGH_MAX
+static const size_t zone_limits[MAX_ZONE_TYPE] = {
+  ZONE_LOW_MAX, ZONE_DMA_MAX, ZONE_NORMAL_MAX, ZONE_HIGH_MAX
+};
+static const char *zone_names[MAX_ZONE_TYPE] = {
+  "Low", "DMA", "Normal", "High"
 };
 
-const char *zone_names[MAX_ZONE_TYPE] = {
-  "Low",
-  "DMA",
-  "Normal",
-  "High"
+// this specifies the zone preference order for allocating pages
+static zone_type_t zone_alloc_order[MAX_ZONE_TYPE] = {
+  [ZONE_TYPE_HIGH]    = ZONE_TYPE_NORMAL,
+  [ZONE_TYPE_NORMAL]  = ZONE_TYPE_DMA,
+  [ZONE_TYPE_DMA]     = ZONE_TYPE_LOW,
+  [ZONE_TYPE_LOW]     = MAX_ZONE_TYPE, // out of zones
 };
 
-#define ZONE_ALLOC_DEFAULT ZONE_TYPE_HIGH
-// this specifies the zone preference order for allocating pages after the first
-static mem_zone_type_t zone_alloc_order[MAX_ZONE_TYPE] = {
-  [ZONE_TYPE_HIGH] = ZONE_TYPE_NORMAL,
-  [ZONE_TYPE_NORMAL] = ZONE_TYPE_DMA,
-  [ZONE_TYPE_DMA] = ZONE_TYPE_LOW,
-  [ZONE_TYPE_LOW] = MAX_ZONE_TYPE, // out of zones
-};
 
-mem_zone_type_t get_mem_zone_type(uintptr_t addr) {
+zone_type_t get_mem_zone_type(uintptr_t addr) {
   if (addr < ZONE_LOW_MAX) {
     return ZONE_TYPE_LOW;
   } else if (addr < ZONE_DMA_MAX) {
@@ -50,40 +48,51 @@ mem_zone_type_t get_mem_zone_type(uintptr_t addr) {
   return ZONE_TYPE_HIGH;
 }
 
-mem_zone_t *locate_owning_mem_zone(uintptr_t addr) {
-  mem_zone_type_t zone_type = get_mem_zone_type(addr);
-  mem_zone_t *zone = LIST_FIRST(&mem_zones[zone_type]);
-  while (zone != NULL) {
-    if (addr >= zone->base && addr < zone->base + zone->size) {
-      return zone;
+frame_allocator_t *locate_owning_allocator(uintptr_t addr) {
+  zone_type_t zone_type = get_mem_zone_type(addr);
+  struct frame_allocator *fa = LIST_FIRST(&mem_zones[zone_type]);
+  while (fa != NULL) {
+    if (addr >= fa->base && addr < fa->base + fa->size) {
+      return fa;
     }
-    zone = LIST_NEXT(zone, list);
+    fa = LIST_NEXT(fa, list);
   }
   return NULL;
 }
 
-page_t *make_page_structs(mem_zone_t *zone, uint64_t frame, size_t count, size_t stride, uint32_t flags) {
-  size_t total_size = count * stride;
-  kassert(total_size < UINT32_MAX);
+static page_t *alloc_page_structs(frame_allocator_t *fa, uintptr_t frame, size_t count, size_t pagesize) {
+  uint32_t pg_flags = 0;
+  if (pagesize == BIGPAGE_SIZE) {
+    pg_flags |= PG_BIGPAGE;
+  } else if (pagesize == HUGEPAGE_SIZE) {
+    pg_flags |= PG_HUGEPAGE;
+  }
 
-  LIST_HEAD(page_t) pages = LIST_HEAD_INITR;
+  uintptr_t address = frame;
+  LIST_HEAD(page_t) pages = {0};
   while (count > 0) {
     page_t *page = kmallocz(sizeof(page_t));
-    page->address = frame;
-    page->flags = flags;
-    page->zone = zone;
-    frame += stride;
-
-    count--;
+    page->address = address;
+    page->flags = pg_flags;
+    page->fa = fa;
     SLIST_ADD(&pages, page, next);
+
+    address += pagesize;
+    count--;
   }
 
   return LIST_FIRST(&pages);
 }
 
-bitmap_t *alloc_pages_bitmap(size_t num_pages) {
+//
+// MARK: bitmap frame allocator
+//
+
+static void *bitmap_fa_init(frame_allocator_t *fa) {
+  size_t num_frames = align(fa->size, PAGE_SIZE) / PAGE_SIZE;
+
   bitmap_t *frames = NULL;
-  size_t nbytes = align(num_pages, 8) / 8;
+  size_t nbytes = align(num_frames, 8) / 8;
   if (nbytes >= PAGES_TO_SIZE(2)) {
     // too large for kmalloc
     size_t num_bmp_pages = SIZE_TO_PAGES(nbytes);
@@ -97,18 +106,213 @@ bitmap_t *alloc_pages_bitmap(size_t num_pages) {
 
     frames = kmalloc(sizeof(bitmap_t));
     frames->map = buffer;
-    frames->free = num_pages;
+    frames->free = num_frames;
     frames->used = 0;
     frames->size = nbytes;
 
     reserved_pages -= num_bmp_pages;
   } else {
-    frames = create_bitmap(num_pages);
+    frames = create_bitmap(num_frames);
   }
 
   return frames;
 }
 
+static intptr_t bitmap_fa_alloc(frame_allocator_t *fa, size_t count, size_t pagesize) {
+  bitmap_t *frames = fa->data;
+  if (frames->free == 0) {
+    return -1;
+  }
+
+  size_t num_4k_pages = num_4k_pages = (count * pagesize) / PAGE_SIZE;
+  index_t frame_index;
+  SPIN_LOCK(&fa->lock);
+  if (num_4k_pages == 1) {
+    // common case - fastest
+    frame_index = bitmap_get_set_free(frames);
+  } else {
+    // less common case - slower
+    size_t align = pagesize == PAGE_SIZE ? 0 : SIZE_TO_PAGES(pagesize);
+    frame_index = bitmap_get_set_nfree(frames, num_4k_pages, align);
+  }
+
+  if (frame_index >= 0) {
+    fa->free -= count * pagesize;
+  }
+  SPIN_UNLOCK(&fa->lock);
+  if (frame_index < 0) {
+    return -1;
+  }
+
+  return (intptr_t) fa->base + PAGES_TO_SIZE(frame_index);
+}
+
+static int bitmap_fa_reserve(frame_allocator_t *fa, uintptr_t frame, size_t count, size_t pagesize) {
+  bitmap_t *frames = fa->data;
+  if (frames->free == 0) {
+    return -1;
+  }
+
+  size_t num_4k_pages = num_4k_pages = (count * pagesize) / PAGE_SIZE;
+  size_t before_count;
+  index_t frame_index = SIZE_TO_PAGES(frame - fa->base);
+  // mark frames as used
+  SPIN_LOCK(&fa->lock);
+  if (num_4k_pages == 1) {
+    // common case - fastest
+    before_count = bitmap_set(frames, frame_index) ? 1 : 0;
+  } else {
+    // less common case - slower
+    before_count = bitmap_get_n(frames, frame_index, num_4k_pages);
+    if (before_count == 0) {
+      // all of the bits are zero so we can mark the range as taken
+      bitmap_set_n(frames, frame_index, num_4k_pages);
+    }
+  }
+
+  if (before_count == 0) {
+    fa->free -= count * pagesize;
+  }
+  SPIN_UNLOCK(&fa->lock);
+  if (before_count != 0) {
+    // some or all of the requested pages are allocated
+    return -1;
+  }
+
+  return 0;
+}
+
+static void bitmap_fa_free(frame_allocator_t *fa, uintptr_t frame, size_t count, size_t pagesize) {
+  bitmap_t *frames = fa->data;
+  size_t num_4k_pages = num_4k_pages = (count * pagesize) / PAGE_SIZE;
+
+  index_t frame_index = SIZE_TO_PAGES(frame - fa->base);
+  SPIN_LOCK(&fa->lock);
+  if (num_4k_pages == 1) {
+    // common case - fastest
+    bitmap_clear(frames, frame_index);
+  } else {
+    // less common case - slower
+    bitmap_clear_n(frames, frame_index, num_4k_pages);
+  }
+
+  fa->free += count * pagesize;
+  SPIN_UNLOCK(&fa->lock);
+}
+
+static struct frame_allocator_impl bitmap_allocator = {
+  .fa_init = bitmap_fa_init,
+  .fa_alloc = bitmap_fa_alloc,
+  .fa_reserve = bitmap_fa_reserve,
+  .fa_free = bitmap_fa_free,
+};
+
+//
+// MARK: frame allocator api
+//
+
+frame_allocator_t *new_frame_allocator(uintptr_t base, size_t size, struct frame_allocator_impl *impl) {
+  frame_allocator_t *fa = kmallocz(sizeof(frame_allocator_t));
+  fa->base = base;
+  fa->size = size;
+  fa->free = size;
+  fa->impl = impl;
+  spin_init(&fa->lock);
+
+  fa->data = impl->fa_init(fa);
+  if (fa->data == NULL) {
+    kfree(fa);
+    return NULL;
+  }
+
+  return fa;
+}
+
+page_t *fa_alloc_pages(frame_allocator_t *fa, size_t count, size_t pagesize) {
+  ASSERT(pagesize == PAGE_SIZE || pagesize == PAGE_SIZE_2MB || pagesize == PAGE_SIZE_1GB);
+  if (fa->free == 0 || count == 0) {
+    return NULL;
+  }
+
+  uintptr_t frame = fa->impl->fa_alloc(fa, count, pagesize);
+  if (frame == 0) {
+    return NULL;
+  }
+
+  ASSERT(is_aligned(frame, pagesize));
+  return alloc_page_structs(fa, frame, count, pagesize);
+}
+
+int fa_reserve_pages(frame_allocator_t *fa, uintptr_t frame, size_t count, size_t pagesize) {
+  ASSERT(pagesize == PAGE_SIZE || pagesize == PAGE_SIZE_2MB || pagesize == PAGE_SIZE_1GB);
+  ASSERT(is_aligned(frame, pagesize));
+  ASSERT(frame >= fa->base && frame < fa->base + fa->size);
+  if (fa->free == 0 || count == 0) {
+    return -1;
+  }
+
+  if (fa->impl->fa_reserve(fa, frame, count, pagesize) < 0) {
+    return -1;
+  }
+  return 0;
+}
+
+page_t *fa_alloc_pages_at(frame_allocator_t *fa, uintptr_t frame, size_t count, size_t pagesize) {
+  if (fa_reserve_pages(fa, frame, count, pagesize) < 0) {
+    return NULL;
+  }
+  return alloc_page_structs(fa, frame, count, pagesize);
+}
+
+void fa_free_pages(page_t *pages) {
+  if (pages == NULL) {
+    return;
+  }
+
+  // since the list of pages doesnt have to be contiguous or homogenous we
+  // need to make a separate call to the frame allocator for each contiguous
+  // range of uniform pages.
+  size_t count = 0;
+  uintptr_t start_frame = pages->address;
+  uintptr_t last_address;
+  size_t last_pagesize;
+  frame_allocator_t *last_fa;
+  while (pages != NULL) {
+    page_t *page = pages;
+    pages = page->next;
+    page->next = NULL;
+    ASSERT(page->mapping == NULL); // must be unmapped
+
+    uintptr_t address = page->address;
+    size_t pagesize = pg_flags_to_size(page->flags);
+    if (count == 0) {
+      // first page
+      count++;
+      goto free_struct;
+    }
+
+    if (address == last_address + last_pagesize && pagesize == last_pagesize) {
+      // is contiguous and homogenous
+      count++;
+    } else {
+      // free the range of pages up to the current and start new range
+      last_fa->impl->fa_free(last_fa, start_frame, count, last_pagesize);
+      start_frame = page->address;
+      count = 1;
+    }
+
+  LABEL(free_struct);
+    last_address = address;
+    last_pagesize = pagesize;
+    last_fa = page->fa;
+    kfree(page);
+  }
+
+  // free the last range of pages
+  last_fa->impl->fa_free(last_fa, start_frame, count, last_pagesize);
+}
+
+//
 //
 
 static void remap_initrd_image(void *_arg) {
@@ -134,40 +338,27 @@ void init_mem_zones() {
     uintptr_t base = entry->base;
     size_t size = entry->size;
 
-    mem_zone_type_t type = get_mem_zone_type(base);
-    mem_zone_type_t end_type = get_mem_zone_type(base + size - 1);
+    zone_type_t type = get_mem_zone_type(base);
+    zone_type_t end_type = get_mem_zone_type(base + size - 1);
     if (type != end_type) {
       // an entry should never cross more than two zones
       kassert(end_type - type == 1);
+      uintptr_t end_base = zone_limits[type];
+      size_t end_size = base + size - end_base;
 
-      // create new zone for end of entry
-      mem_zone_t *zone = kmalloc(sizeof(mem_zone_t));
-      zone->type = end_type;
-      zone->base = zone_limits[end_type];
-      zone->size = base + size - zone->base;
-
-      spin_init(&zone->lock);
-
-      size_t page_count = SIZE_TO_PAGES(zone->size);
-      zone->frames = alloc_pages_bitmap(page_count);
-      LIST_ADD(&mem_zones[end_type], zone, list);
-      zone_page_count[end_type] += page_count;
+      // create allocator in the zone which this entry spills into
+      frame_allocator_t *fa = new_frame_allocator(end_base, end_size, &bitmap_allocator);
+      LIST_ADD(&mem_zones[end_type], fa, list);
+      zone_page_count[end_type] += SIZE_TO_PAGES(end_size);
 
       // shrink original entry to end of zone
-      size = zone->base - base;
+      size = fa->base - base;
     }
 
-    mem_zone_t *zone = kmalloc(sizeof(mem_zone_t));
-    zone->type = type;
-    zone->base = base;
-    zone->size = size;
-
-    spin_init(&zone->lock);
-
-    size_t page_count = SIZE_TO_PAGES(size);
-    zone->frames = alloc_pages_bitmap(page_count);
-    LIST_ADD(&mem_zones[type], zone, list);
-    zone_page_count[type] += page_count;
+    frame_allocator_t *fa = new_frame_allocator(base, size, &bitmap_allocator);
+    ASSERT(fa != NULL);
+    LIST_ADD(&mem_zones[type], fa, list);
+    zone_page_count[end_type] += SIZE_TO_PAGES(size);
   }
 
   kprintf("memory zones:\n");
@@ -185,78 +376,86 @@ void init_mem_zones() {
 
   if (boot_info_v2->initrd_addr != 0) {
     size_t num_pages = SIZE_TO_PAGES(boot_info_v2->initrd_size);
-    if (reserve_pages(boot_info_v2->initrd_addr, num_pages) < 0) {
+    if (reserve_pages(boot_info_v2->initrd_addr, num_pages, PAGE_SIZE) < 0) {
       panic("failed to reserve pages for initrd");
     }
     register_init_address_space_callback(remap_initrd_image, NULL);
   }
 }
 
+int reserve_pages(uintptr_t address, size_t count, size_t pagesize) {
+  kassert(is_aligned(address, pagesize));
+  if (count == 0) {
+    return -1;
+  }
+
+  size_t total_size = count * pagesize;
+  zone_type_t type = get_mem_zone_type(address);
+  zone_type_t end_type = get_mem_zone_type(address + total_size - 1);
+  if (type != end_type) {
+    panic("requested pages cross zone boundary");
+  }
+
+  // find allocator which contains the pages
+  frame_allocator_t *fa = locate_owning_allocator(address);
+  frame_allocator_t *fa_end = locate_owning_allocator(address + total_size - 1);
+  if (fa != fa_end) {
+    panic("requested pages cross zone sub-regions");
+  }
+
+  if (fa == NULL && fa_end == NULL) {
+    // not managed by any allocators, the request is fine
+    return 0;
+  }
+  return fa_reserve_pages(fa, address, count, pagesize);
+}
+
 //
 
-page_t *alloc_pages_zone(mem_zone_type_t zone_type, size_t count, uint32_t flags) {
+page_t *alloc_pages_zone(zone_type_t zone_type, size_t count, size_t pagesize) {
   kassert(zone_type < MAX_ZONE_TYPE);
   if (count == 0) {
     return NULL;
   }
 
-  size_t num_4k_pages = count;
-  size_t align = 0;
-  size_t stride = PAGE_SIZE;
-  if (flags & PG_BIGPAGE) {
-    kassert((flags & PG_HUGEPAGE) == 0);
-    num_4k_pages = SIZE_TO_PAGES(count * PAGE_SIZE_2MB);
-    align = SIZE_TO_PAGES(PAGE_SIZE_2MB);
-    stride = PAGE_SIZE_2MB;
-  } else if (flags & PG_HUGEPAGE) {
-    num_4k_pages = SIZE_TO_PAGES(count * PAGE_SIZE_1GB);
-    align = SIZE_TO_PAGES(PAGE_SIZE_1GB);
-    stride = PAGE_SIZE_1GB;
-  }
-
-  // find zone to accommodate allocation
-  mem_zone_t *zone = LIST_FIRST(&mem_zones[zone_type]);
-  while (!zone || zone->frames->free < num_4k_pages) {
-    zone = zone ? LIST_NEXT(zone, list) : NULL;
-    if (!zone) {
-      if (flags & PG_FORCE) {
-        panic("out of memory in zone %s", zone_names[zone_type]);
+  page_t *pages = NULL;
+  size_t total_size = count * pagesize;
+  frame_allocator_t *fa = LIST_FIRST(&mem_zones[zone_type]);
+  while (fa) {
+    // try all of the allocators within the zone
+    if (fa->free >= total_size) {
+      pages = fa_alloc_pages(fa, count, pagesize);
+      if (pages != NULL) {
+        break;
       }
-      return NULL;
     }
+
+    fa = LIST_NEXT(fa, list);
   }
 
-  // mark frames as used
-  spin_lock(&zone->lock);
-  index_t frame_index;
-  if (num_4k_pages == 1) {
-    // common case - fastest
-    frame_index = bitmap_get_set_free(zone->frames);
-  } else {
-    // less common case - slower
-    frame_index = bitmap_get_set_nfree(zone->frames, num_4k_pages, align);
-  }
-  spin_unlock(&zone->lock);
-  if (frame_index < 0) {
-    panic("out of memory");
-  }
-
-  // construct a list of page structs
-  uint64_t frame = zone->base + PAGES_TO_SIZE(frame_index);
-  return make_page_structs(zone, frame, count, stride, flags);
+  return pages;
 }
 
-page_t *alloc_pages(size_t count, uint32_t flags) {
-  flags &= ~PG_FORCE;
+page_t *alloc_pages_at(uintptr_t address, size_t count, size_t pagesize) {
+  if (reserve_pages(address, count, pagesize) < 0) {
+    return NULL;
+  }
 
-  mem_zone_type_t zone_type = ZONE_ALLOC_DEFAULT;
+  frame_allocator_t *fa = locate_owning_allocator(address);
+  return alloc_page_structs(fa, address, count, pagesize);
+}
+
+page_t *alloc_pages_size(size_t count, size_t pagesize) {
+  zone_type_t zone_type = ZONE_ALLOC_DEFAULT;
+
   page_t *pages = NULL;
   while (pages == NULL) {
     if (zone_type == MAX_ZONE_TYPE) {
       panic("out of memory");
     }
 
-    pages = alloc_pages_zone(zone_type, count, flags);
+    // try all of the zones
+    pages = alloc_pages_zone(zone_type, count, pagesize);
     if (pages == NULL) {
       zone_type = zone_alloc_order[zone_type];
     }
@@ -265,148 +464,12 @@ page_t *alloc_pages(size_t count, uint32_t flags) {
   return pages;
 }
 
-page_t *alloc_pages_at(uintptr_t address, size_t count, uint32_t flags) {
-  kassert(is_aligned(address, PAGE_SIZE));
-  if (count == 0) {
-    return NULL;
-  }
-
-  size_t num_4k_pages = count;
-  size_t stride = PAGE_SIZE;
-  if (flags & PG_BIGPAGE) {
-    kassert((flags & PG_HUGEPAGE) == 0);
-    kassert(is_aligned(address, PAGE_SIZE_2MB));
-    num_4k_pages = SIZE_TO_PAGES(count * PAGE_SIZE_2MB);
-    stride = PAGE_SIZE_2MB;
-  } else if (flags & PG_HUGEPAGE) {
-    kassert(is_aligned(address, PAGE_SIZE_1GB));
-    num_4k_pages = SIZE_TO_PAGES(count * PAGE_SIZE_1GB);
-    stride = PAGE_SIZE_1GB;
-  }
-
-  mem_zone_type_t type = get_mem_zone_type(address);
-  mem_zone_type_t end_type = get_mem_zone_type(address + PAGES_TO_SIZE(num_4k_pages));
-  if (type != end_type) {
-    panic("requested pages cross zone boundary");
-  }
-
-  // find zone which contains the requested address
-  mem_zone_t *zone = locate_owning_mem_zone(address);
-  mem_zone_t *end_zone = locate_owning_mem_zone(address + PAGES_TO_SIZE(num_4k_pages) - 1);
-  if (zone != end_zone) {
-    panic("requested pages cross zone boundary");
-  }
-
-  if (zone == NULL && end_zone == NULL) {
-    if (!(flags & PG_FORCE)) {
-      panic("alloc_pages_at: invalid address %p", address);
-    }
-
-    // construct a list of page structs
-    uint64_t frame = address;
-    return make_page_structs(zone, frame, count, stride, flags);
-  }
-
-  // mark frames as used
-  kassert(zone != NULL);
-  spin_lock(&zone->lock);
-  size_t before_count;
-  index_t frame_index = SIZE_TO_PAGES(address - zone->base);
-  if (num_4k_pages == 1) {
-    // common case - fastest
-    before_count = bitmap_set(zone->frames, frame_index) ? 1 : 0;
-  } else {
-    // less common case - slower
-    before_count = bitmap_get_n(zone->frames, frame_index, num_4k_pages);
-    if (before_count == 0) {
-      bitmap_set_n(zone->frames, frame_index, num_4k_pages);
-    }
-  }
-  spin_unlock(&zone->lock);
-  if (before_count == 0 && !(flags & PG_FORCE)) {
-    panic("requested pages are already allocated");
-  }
-
-  // construct a list of page structs
-  uint64_t frame = zone->base + PAGES_TO_SIZE(frame_index);
-  return make_page_structs(zone, frame, count, stride, flags);
+page_t *alloc_pages(size_t count) {
+  return alloc_pages_size(count, PAGE_SIZE);
 }
 
 void free_pages(page_t *pages) {
-  while (pages != NULL) {
-    mem_zone_t *zone = pages->zone;
-    if (zone == NULL) {
-      page_t *next = pages->next;
-      kfree(pages);
-      pages = next;
-      continue;
-    }
-
-    size_t num_4k_pages = 1;
-    if (pages->flags & PG_BIGPAGE) {
-      num_4k_pages = SIZE_TO_PAGES(PAGE_SIZE_2MB);
-    } else if (pages->flags & PG_HUGEPAGE) {
-      num_4k_pages = SIZE_TO_PAGES(PAGE_SIZE_1GB);
-    }
-
-    spin_lock(&zone->lock);
-    index_t index = SIZE_TO_PAGES(pages->address - zone->base);
-    if (num_4k_pages == 1) {
-      bitmap_clear(zone->frames, index);
-    } else {
-      bitmap_clear_n(zone->frames, index, num_4k_pages);
-    }
-    spin_unlock(&zone->lock);
-
-    page_t *next = pages->next;
-    kfree(pages);
-    pages = next;
-  }
-}
-
-
-int reserve_pages(uintptr_t address, size_t count) {
-  kassert(is_aligned(address, PAGE_SIZE));
-  kassert(count > 0);
-
-  mem_zone_type_t type = get_mem_zone_type(address);
-  mem_zone_type_t end_type = get_mem_zone_type(address + PAGES_TO_SIZE(count));
-  if (type != end_type) {
-    panic("requested pages cross zone boundary");
-  }
-
-  // find zone which contains the requested address
-  mem_zone_t *zone = locate_owning_mem_zone(address);
-  mem_zone_t *end_zone = locate_owning_mem_zone(address + PAGES_TO_SIZE(count) - 1);
-  if (zone != end_zone) {
-    panic("requested pages cross zone boundary");
-  }
-
-  if (zone == NULL && end_zone == NULL) {
-    return 0;
-  }
-
-  // mark frames as used
-  kassert(zone != NULL);
-  spin_lock(&zone->lock);
-  size_t before_count;
-  index_t frame_index = SIZE_TO_PAGES(address - zone->base);
-  if (count == 1) {
-    // common case - fastest
-    before_count = bitmap_set(zone->frames, frame_index) ? 1 : 0;
-  } else {
-    // less common case - slower
-    before_count = bitmap_get_n(zone->frames, frame_index, count);
-    if (before_count == 0) {
-      bitmap_set_n(zone->frames, frame_index, count);
-    }
-  }
-  spin_unlock(&zone->lock);
-  if (before_count == 0) {
-    panic("requested pages are already allocated");
-  }
-
-  return 0;
+  fa_free_pages(pages);
 }
 
 //

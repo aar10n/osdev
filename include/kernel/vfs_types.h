@@ -148,7 +148,8 @@ enum vtype {
  * A virtual filesystem node.
  *
  * A vnode represents an object in a filesystem. It owns the data associated
- * with the object and is referenced by one or more ventries.
+ * with the object and must be referenced by one or more ventries to be kept
+ * alive.
  */
 typedef struct vnode {
   id_t id;                        // vnode id
@@ -241,9 +242,7 @@ struct vnode_ops {
 // =================================
 
 /**
- * A virtual filesystem entry.
- *
- * A ventry is a named reference to a vnode.
+ * A virtual filesystem reference to a vnode.
  */
 typedef struct ventry {
   id_t id;                            // vnode id
