@@ -10,7 +10,6 @@
 #include <thread.h>
 #include <signal.h>
 #include <loader.h>
-#include <ipc.h>
 #include <fs.h>
 
 #include <string.h>

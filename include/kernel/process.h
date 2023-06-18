@@ -41,11 +41,6 @@ typedef struct process {
   sig_handler_t **sig_handlers;   // signal handlers
   thread_t **sig_threads;         // signal handling threads
 
-  mutex_t ipc_mutex;              // ipc mutex
-  cond_t ipc_cond_avail;          // ipc message available
-  cond_t ipc_cond_recvd;          // ipc message received
-  message_t *ipc_msg;             // ipc message buffer
-
   thread_t *main;                 // main thread
   LIST_HEAD(thread_t) threads;    // process threads (group)
   LIST_HEAD(struct process) list; // process list
