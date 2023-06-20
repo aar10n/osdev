@@ -4,7 +4,7 @@
 
 ARCH ?= x86_64
 
-CROSS_PREFIX ?= $(TOOL_ROOT)/bin/$(ARCH)-elf-
+CROSS_PREFIX ?= $(TOOL_ROOT)/bin/$(ARCH)-linux-musl-
 
 CC = $(CROSS_PREFIX)gcc
 CXX = $(CROSS_PREFIX)g++

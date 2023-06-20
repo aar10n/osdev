@@ -4,7 +4,6 @@ BUILD_DIR = $(PROJECT_DIR)/build
 OBJ_DIR = $(BUILD_DIR)/$(NAME)
 TOOL_ROOT = $(BUILD_DIR)/toolchain
 SYS_ROOT = $(BUILD_DIR)/sysroot
-
 EDK_DIR = $(BUILD_DIR)/edk2
 
 include scripts/utils.mk
@@ -168,23 +167,23 @@ KERNEL_CFLAGS = $(CFLAGS) -mcmodel=large -mno-red-zone -fno-stack-protector \
 				-fno-omit-frame-pointer -fstrict-volatile-bitfields -fno-builtin-memset \
 				$(KERNEL_DEFINES)
 
-KERNEL_LDFLAGS = $(LDFLAGS) -Tlinker.ld -nostdlib -z max-page-size=0x1000 -L$(SYS_ROOT)/lib -L$(BUILD_DIR)
+KERNEL_LDFLAGS = $(LDFLAGS) -Tlinker.ld -nostdlib -z max-page-size=0x1000 -L$(BUILD_DIR)
 
 KERNEL_INCLUDE = $(INCLUDE) -Ilib -I$(TOOL_ROOT)/include
 
 KERNEL_DEFINES = $(DEFINES) -D__KERNEL__
 
 
-$(BUILD_DIR)/kernel.elf: $(KERNEL_OBJECTS) $(BUILD_DIR)/libdwarf.a
+$(BUILD_DIR)/kernel.elf: $(KERNEL_OBJECTS) $(BUILD_DIR)/libdwarf_kernel.a
 	$(LD) $(KERNEL_LDFLAGS) -o $@ --no-relax $^
+
+# kernel libdwarf
+$(BUILD_DIR)/libdwarf_kernel.a:
+	$(MAKE) -C toolchain libdwarf-kernel TARGET=$(ARCH)-linux-musl
 
 # initial ramdisk
 $(BUILD_DIR)/initrd.img: .initrd
 	scripts/mkinitrd.py -o $@ -f $<
-
-# libdwarf
-$(BUILD_DIR)/libdwarf.a:
-	bash toolchain/libdwarf.sh build $(WINARCH)
 
 # bootable USB image
 $(BUILD_DIR)/osdev.img: $(BUILD_DIR)/boot$(WINARCH).efi $(BUILD_DIR)/kernel.elf config.ini
