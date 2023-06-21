@@ -6,21 +6,6 @@ import posixpath
 import argparse
 
 
-class CustomHelpFormatter(argparse.HelpFormatter):
-    def _fill_text(self, text, width, indent):
-        return ''.join(indent + line for line in text.splitlines(keepends=True))
-
-    def _split_lines(self, text, width):
-        return text.splitlines()
-
-    def _format_action_invocation(self, action):
-        if not action.option_strings or action.nargs == 0:
-            return super()._format_action_invocation(action)
-        default = self._get_default_metavar_for_optional(action)
-        args_string = self._format_args(action, default)
-        return ', '.join(action.option_strings) + ' ' + args_string
-
-
 # Initial Ramdisk Format
 # ======================
 #
@@ -147,7 +132,20 @@ def format_entry(_kind: str, _data_offset: int, _data_size, _path: str) -> bytes
     _kind = _kind.encode('ascii')
     return pack(ENTRY_FORMAT, _kind, len(_path), _data_offset, _data_size) + format_cstring(_path)
 
-#
+
+class CustomHelpFormatter(argparse.HelpFormatter):
+    def _fill_text(self, text, width, indent):
+        return ''.join(indent + line for line in text.splitlines(keepends=True))
+
+    def _split_lines(self, text, width):
+        return text.splitlines()
+
+    def _format_action_invocation(self, action):
+        if not action.option_strings or action.nargs == 0:
+            return super()._format_action_invocation(action)
+        default = self._get_default_metavar_for_optional(action)
+        args_string = self._format_args(action, default)
+        return ', '.join(action.option_strings) + ' ' + args_string
 
 
 class Directive:
@@ -193,7 +191,7 @@ def parse_directive(s: str) -> Directive:
     if s[0] == ':':
         # :<path>/|directory
         kind = 'd'
-        path = posixpath.normpath(s[1:])
+        path = posixpath.normpath(s[1:]) + '/'
         operand = None
     elif s[0] == 'l':
         # l<target>:<path>|symlink
@@ -244,120 +242,108 @@ epilog_text = """
 directives:
     <srcfile>:<path>  add <srcfile> to the image at <path>
     :<path>/          create an empty directory at <path>
-    l<path>:<target>  create a symlink to <target> at <path>
+    l<target>:<path>  create a symlink to <target> at <path>
 """
 
-parser = argparse.ArgumentParser(
-    usage=usage_text,
-    description='Generate an initrd filesystem image.',
-    epilog=epilog_text,
-    formatter_class=CustomHelpFormatter
-)
-parser.add_argument(
-    '-o',
-    '--outfile',
-    required=True,
-    metavar='<file>',
-    dest='outfile',
-    help="write the image to <file>"
-)
-parser.add_argument(
-    '-f',
-    '--file',
-    metavar='<file>',
-    dest='infile',
-    help="reads the directives from <file>"
-)
-parser.add_argument('directives', nargs='*', help=argparse.SUPPRESS)
-args = parser.parse_args()
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        usage=usage_text,
+        description='Generate an initrd filesystem image.',
+        epilog=epilog_text,
+        formatter_class=CustomHelpFormatter
+    )
+    parser.add_argument('-o', '--outfile', required=True, metavar='<file>', dest='outfile',
+                        help="write the image to <file>")
+    parser.add_argument('-f', '--file', metavar='<file>', dest='infile', help="read directives from <file>")
+    parser.add_argument('directives', nargs='*', help=argparse.SUPPRESS)
+    args = parser.parse_args()
 
-output_file = args.outfile
-directives = [parse_directive(s) for s in args.directives]
-if args.infile:
-    try:
-        with open(args.infile, 'r') as f:
-            for line in f.read().splitlines():
-                line = line.strip()
-                if line and not line.startswith('#'):
-                    directives.append(parse_directive(line))
-    except FileNotFoundError:
-        parser.error(f'file not found: {args.infile}')
-    except Exception as e:
-        parser.error(f'{e}')
+    output_file = args.outfile
+    directives = [parse_directive(s) for s in args.directives]
+    if args.infile:
+        try:
+            with open(args.infile, 'r') as f:
+                for line in f.read().splitlines():
+                    line = line.strip()
+                    if line and not line.startswith('#'):
+                        directives.append(parse_directive(line))
+        except FileNotFoundError:
+            parser.error(f'file not found: {args.infile}')
+        except Exception as e:
+            parser.error(f'{e}')
 
-paths = dict()  # type: Dict[str, (Directive, int)] # image path -> (directive, data_offset)
-files = dict()  # type: Dict[str, int] # source file -> data_offset
-dir_set = set()  # type: Set[str] # all intermediate directories
-metadata_size = 0
-curr_data_offset = 0
+    paths = dict()  # type: Dict[str, (Directive, int)] # image path -> (directive, data_offset)
+    files = dict()  # type: Dict[str, int] # source file -> data_offset
+    dir_set = set()  # type: Set[str] # all intermediate directories
+    metadata_size = 0
+    curr_data_offset = 0
 
-# first pass: collect all paths and files
-for d in directives:
-    print(f'adding {d.kind} {d.path}')
-    if d.path in paths:
-        raise argparse.ArgumentTypeError(f'path already exists: {d.path}')
-    elif d.path in dir_set:
-        raise argparse.ArgumentTypeError(f'path is already a directory: {d.path}')
-
-    parts = get_intermediate_paths(d.path)
-    for p in parts:
-        if p in paths:
-            raise argparse.ArgumentTypeError(f'path is already a file: {p}')
-        dir_set.add(p)
-
-    # calculate offsets
-    metadata_size += ENTRY_SIZE + len(d.path) + 1
-
-    offset = 0
-    if d.isfile():
-        if d.operand in files:
-            offset = files[d.operand]
-        else:
-            offset = curr_data_offset
-            files[d.operand] = offset
-            curr_data_offset += d.size
-    elif d.islink():
-        offset = curr_data_offset
-        curr_data_offset += d.size
-
-    paths[d.path] = (d, offset)
-
-# order intermediate directories by depth
-path_list = list(sorted(paths.keys()))
-dir_list = list(sorted(dir_set, key=lambda path: path.count('/')))
-for d in dir_list:
-    name = os.path.basename(d)
-    metadata_size += ENTRY_SIZE + len(d) + 1
-
-
-# second pass: write the image
-entry_count = len(path_list) + len(dir_list)
-data_size = curr_data_offset
-data_start_offset = HEADER_SIZE + metadata_size
-total_size = data_start_offset + data_size
-
-with open(output_file, 'wb') as f:
-    # write header
-    f.write(format_header(MAGIC, 0, total_size, data_start_offset, entry_count))
-
-    # write dependency directories
-    for path in dir_list:
-        d = Directive('d', path, None)
-        f.write(format_entry(d.kind, 0, 0, d.path))
-    # write rest of the entries
+    # first pass: collect all paths and files
     for d in directives:
-        offset = paths[d.path][1] + data_start_offset
-        f.write(format_entry(d.kind, offset, d.size, d.path))
+        print(f'adding {d.kind} {d.path}')
+        if d.path in paths:
+            raise argparse.ArgumentTypeError(f'path already exists: {d.path}')
+        elif d.path in dir_set:
+            raise argparse.ArgumentTypeError(f'path is already a directory: {d.path}')
 
-    # write data
-    for d in directives:
+        parts = get_intermediate_paths(d.path)
+        for p in parts:
+            if p in paths:
+                raise argparse.ArgumentTypeError(f'path is already a file: {p}')
+            dir_set.add(p)
+
+        # calculate offsets
+        metadata_size += ENTRY_SIZE + len(d.path) + 1
+
+        offset = 0
         if d.isfile():
-            with open(d.operand, 'rb') as src:
-                f.write(src.read())
+            if d.operand in files:
+                offset = files[d.operand]
+            else:
+                offset = curr_data_offset
+                files[d.operand] = offset
+                curr_data_offset += d.size
         elif d.islink():
-            f.write(format_cstring(d.operand))
+            offset = curr_data_offset
+            curr_data_offset += d.size
 
-    print(f'wrote {total_size} bytes to {output_file}')
-    print(f'  entry count: {entry_count}')
-    print(f'  data offset: {data_start_offset}')
-    print(f'  data size: {data_size}')
+        paths[d.path] = (d, offset)
+
+    # order intermediate directories by depth
+    path_list = list(sorted(paths.keys()))
+    dir_list = list(sorted(dir_set, key=lambda path: path.count('/')))
+    for d in dir_list:
+        name = os.path.basename(d)
+        metadata_size += ENTRY_SIZE + len(d) + 1
+
+    # second pass: write the image
+    entry_count = len(path_list) + len(dir_list)
+    data_size = curr_data_offset
+    data_start_offset = HEADER_SIZE + metadata_size
+    total_size = data_start_offset + data_size
+
+    with open(output_file, 'wb') as f:
+        # write header
+        f.write(format_header(MAGIC, 0, total_size, data_start_offset, entry_count))
+
+        # write dependency directories
+        for path in dir_list:
+            d = Directive('d', path, None)
+            f.write(format_entry(d.kind, 0, 0, d.path))
+        # write rest of the entries
+        for d in directives:
+            offset = paths[d.path][1] + data_start_offset
+            f.write(format_entry(d.kind, offset, d.size, d.path))
+
+        # write data
+        for d in directives:
+            if d.isfile():
+                with open(d.operand, 'rb') as src:
+                    f.write(src.read())
+            elif d.islink():
+                f.write(format_cstring(d.operand))
+
+        print(f'wrote {total_size} bytes to {output_file}')
+        print(f'  entry count: {entry_count}')
+        print(f'  data offset: {data_start_offset}')
+        print(f'  data size: {data_size}')

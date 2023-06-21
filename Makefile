@@ -123,10 +123,6 @@ clean-kernel:
 	rm -rf $(OBJ_DIR)/{$(call join-comma,$(KERNEL_TARGETS))}
 
 
-musl: export CROSS_COMPILE=$(SYS_ROOT)
-musl:
-	$(MAKE) -C third-party/musl
-
 # ------------------- #
 #     Bootloader      #
 # ------------------- #
