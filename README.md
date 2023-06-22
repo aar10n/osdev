@@ -28,7 +28,8 @@ while working on this so maybe this could be useful to someone else.
 │  ├── usb          usb and usb device drivers
 │  └── vfs          virtual filesystem code
 ├── lib           data structure, algorithm and other useful libraries
-├── scripts       utility scripts and support files
+├── sbin          system binaries
+├── scripts       build related scripts and support files
 ├── third-party   third party dependencies
 └── toolchain     toolchain build files and patches 
 ```

@@ -1,6 +1,17 @@
 # Kernel sources
 $(call register,kernel,KERNEL)
 
+KERNEL_CFLAGS = $(CFLAGS) -mcmodel=large -mno-red-zone -fno-stack-protector \
+				-fno-omit-frame-pointer -fstrict-volatile-bitfields -fno-builtin-memset \
+				$(KERNEL_DEFINES)
+
+KERNEL_LDFLAGS = $(LDFLAGS) -Tlinker.ld -nostdlib -z max-page-size=0x1000 -L$(BUILD_DIR)
+
+KERNEL_INCLUDE = $(INCLUDE) -Ilib -I$(TOOL_ROOT)/include
+
+KERNEL_DEFINES = $(DEFINES) -D__KERNEL__
+
+
 # kernel/
 kernel += entry.asm memory.asm smpboot.asm syscall.asm thread.asm \
 	chan.c clock.c console.c errno.c  init.c irq.c loader.c main.c \

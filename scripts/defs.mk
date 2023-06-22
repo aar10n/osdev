@@ -1,10 +1,17 @@
+# common definitions
+MAKEFLAGS += rR
+
+ifeq ($(ARCH),x86_64)
+WINARCH = X64
+else
+$(error "Unsupported architecture: $(ARCH)")
+endif
+
 # -------------- #
 #   Toolchain    #
 # -------------- #
 
-ARCH ?= x86_64
-
-CROSS_PREFIX ?= $(TOOL_ROOT)/bin/$(ARCH)-linux-musl-
+CROSS_PREFIX ?= $(TOOL_ROOT)/bin/$(TOOLCHAIN)-
 
 CC = $(CROSS_PREFIX)gcc
 CXX = $(CROSS_PREFIX)g++
@@ -19,25 +26,17 @@ STRIP = $(CROSS_PREFIX)strip
 STRINGS = $(CROSS_PREFIX)strings
 RANLIB = $(CROSS_PREFIX)ranlib
 
-NASM ?= nasm
-
 CLANG ?= clang
 CLANGXX ?= clang++
 LLD_LINK ?= lld-link
+NASM ?= nasm
 
 GDB ?= gdb
 QEMU ?= qemu-system-$(ARCH)
-
 SSH ?= ssh
 RSYNC ?= rsync
 
-include toolchain/arch/$(ARCH).mk
-
-ifeq ($(DEBUG),1)
-EDK2_BUILD = DEBUG
-else
-EDK2_BUILD = RELEASE
-endif
+EDK2_BUILD ?= RELEASE
 
 # -------------- #
 #  QEMU Options  #
@@ -76,3 +75,6 @@ QEMU_OPTIONS ?= \
 	$(QEMU_EXTRA_OPTIONS) \
 	$(QEMU_DEBUG_OPTIONS)
 
+ifeq ($(ARCH),x86_64)
+QEMU_CPU ?= Nehalem
+endif

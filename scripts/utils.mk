@@ -1,3 +1,5 @@
+# Contains a bunch of functions that are the core of the build system.
+
 comma := ,
 space := $(subst ,, )
 
@@ -152,19 +154,19 @@ module-header-deps = $(foreach module,$1,$($(module)_OBJECTS:%.o=%.d))
 # example:
 #   CFLAGS = default
 #   KERNEL_CFLAGS = custom
-#   $(call get-module-var,CFLAGS,KERNEL) -> custom
-#   $(call get-module-var,CFLAGS,BOOT) -> default
-get-module-var = $(shell perl scripts/overrides.pl $(call expand-vars,$2_$1 $1))
+#   $(call module-var,CFLAGS,KERNEL) -> custom
+#   $(call module-var,CFLAGS,BOOT) -> default
+module-var = $(shell perl scripts/overrides.pl $(call expand-vars,$2_$1 $1))
 
 # Returns the module name for a given file.
 # args:
 #   $1 - file
 # example:
 #   $(call module-name,fs/foo.c) -> KERNEL
-get-file-module = $($(call get-file-target,$1)-module)
+file-module = $($(call get-file-target,$1)-module)
 
 # Resolves the value of the specified module variable for the given file.
-# This is a convenience function that wraps get-module-var and accepts source
+# This is a convenience function that wraps module-var and accepts source
 # or object file paths instead of a module name.
 # args:
 #   $1 - variable name
@@ -175,13 +177,4 @@ get-file-module = $($(call get-file-target,$1)-module)
 #   $(call var,VAR,kernel/foo.c) -> 2
 # 	$(call var,VAR,drivers/bar.c) -> 2
 # 	$(call var,VAR,boot/baz.c) -> 1
-var = $(call get-module-var,$1,$(call get-file-module,$(call object2source,$2)))
-
-
-
-# if included in root makefile
-ifeq ($(abspath $(firstword $(MAKEFILE_LIST))),$(PROJECT_DIR)/Makefile)
-ifeq ($(call exists,Makefile.local),false)
-$(shell cp toolchain/Makefile.template Makefile.local)
-endif
-endif
+var = $(call module-var,$1,$(call file-module,$(call object2source,$2)))

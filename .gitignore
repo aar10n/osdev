@@ -3,17 +3,13 @@
 *.o
 /build
 /out
-/sysroot
 *.log
-
-.env
-.env.*
 compile_commands.json
 
 # Build system related files
 Makefile.local
-toolchain.txt
-.initrd
+.config
+.initrdrc
 
 ### CLion ###
 .idea
