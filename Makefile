@@ -3,9 +3,7 @@
 #	- clang
 #	- lld-link
 #	- nasm
-#
-#
-#
+#	- mtools
 include scripts/utils.mk
 
 
@@ -26,6 +24,7 @@ setup:
 	@mkdir -p $(TOOL_ROOT)
 	@mkdir -p $(SYS_ROOT)
 	cp -n toolchain/Makefile.template Makefile.local || true
+	cp -n toolchain/initrdrc.template .initrdrc || true
 	git submodule update --init --recursive
 
 	@echo
@@ -44,7 +43,8 @@ setup:
 		exit 1; \
 	fi
 
-	$(file > .config,ARCH := $(ARCH))
+#   write .config file
+	$(file >  .config,ARCH := $(ARCH))
 	$(file >> .config,TOOLCHAIN := $(TOOLCHAIN))
 	$(file >> .config,PROJECT_DIR := $(shell pwd))
 	$(file >> .config,BUILD_DIR := $(abspath $(BUILD_DIR)))
@@ -79,11 +79,11 @@ INCLUDE += -Iinclude/
 
 # arch-specific flags
 ifeq ($(ARCH),x86_64)
-  CFLAGS += -m64 -masm=intel
-  CXXFLAGS += -m64
-  LDFLAGS += -m elf_x86_64
-  BOOT_NASMFLAGS += -f win64
-  KERNEL_NASMFLAGS += $(NASMFLAGS) -f elf64
+CFLAGS += -m64 -masm=intel
+CXXFLAGS += -m64
+LDFLAGS += -m elf_x86_64
+BOOT_NASMFLAGS += -f win64
+KERNEL_NASMFLAGS += $(NASMFLAGS) -f elf64
 else
 $(error "Unsupported architecture: $(ARCH)")
 endif
@@ -91,22 +91,27 @@ endif
 include Makefile.local
 include scripts/defs.mk
 
+ifeq ($(DEBUG),1)
+CFLAGS += -gdwarf-5
+CXXFLAGS += -gdwarf-5
+LDFLAGS += -g
+ASFLAGS += -gdwarf-5
+NASMFLAGS += -g -F dwarf -O0
+endif
+
+
 # kernel + bootloader sources
 MODULES = BOOT KERNEL
 TARGETS = boot fs kernel lib # drivers
 include $(foreach target,$(TARGETS),$(target)/Makefile)
 $(call init-modules,$(MODULES))
 
-# userspace directories
+# directories with userspace binaries
 USERSPACE_DIRS = sbin
 
 # =========== Build Rules =========== #
 
 all: $(BUILD_DIR)/osdev.img
-bootloader: $(BUILD_DIR)/boot$(WINARCH).efi
-kernel: $(BUILD_DIR)/kernel.elf
-ovmf: $(BUILD_DIR)/OVMF_$(WINARCH).fd
-ext2_img: $(BUILD_DIR)/ext2.img
 
 run: $(BUILD_DIR)/osdev.img
 	$(QEMU) $(QEMU_OPTIONS) -monitor stdio
@@ -131,10 +136,33 @@ endif
 	$(RSYNC) -av $(BUILD_DIR)/OVMF_$(WINARCH).fd $(REMOTE_USER)@$(REMOTE_HOST):~/
 	$(SSH) -t $(REMOTE_USER)@$(REMOTE_HOST) "$(REMOTE_QEMU) $(REMOTE_QEMU_OPTIONS) -monitor stdio"
 
-clean:
-	rm -f $(BUILD_DIR)/{*.efi,*.elf}
-	rm -rf $(OBJ_DIR)
-	mkdir $(OBJ_DIR)
+clean: clean-bootloader clean-kernel clean-userspace
+	rm -f $(BUILD_DIR)/osdev.img
+	rm -f $(BUILD_DIR)/initrd.img
+	rm -f $(BUILD_DIR)/sysroot_sha1
+	rm -f $(BUILD_DIR)/initrdrc
+	rm -rf $(SYS_ROOT)
+
+
+# efi bootable image
+$(BUILD_DIR)/osdev.img: config.ini $(BUILD_DIR)/boot$(WINARCH).efi $(BUILD_DIR)/kernel.elf $(BUILD_DIR)/initrd.img
+	dd if=/dev/zero of=$@ bs=1M count=256
+# 	256M -> 268435456 / 512 = 524288 sectors
+	mformat -i $@ -F -h 64 -s 32 -T 524288 -c 1 -v osdev ::
+	mmd -i $@ ::/EFI
+	mmd -i $@ ::/EFI/BOOT
+	mcopy -i $@ $^ ::/EFI/BOOT
+
+# initrd filesystem image
+initrd: $(BUILD_DIR)/initrd.img
+$(BUILD_DIR)/initrd.img: .initrdrc $(BUILD_DIR)/initrdrc
+	scripts/mkinitrd.py -o $@ $(foreach file,$^,-f $(file)) > /dev/null
+
+#
+# bootloader
+#
+
+bootloader: $(BUILD_DIR)/boot$(WINARCH).efi
 
 clean-bootloader:
 	rm -f $(BUILD_DIR)/boot$(WINARCH).efi
@@ -145,77 +173,93 @@ clean-bootloader-all: clean-bootloader
 	rm -f $(BUILD_DIR)/static_library_files.lst
 	rm -rf $(EDK_DIR)/Build/Loader
 
-clean-kernel:
-	rm -f $(BUILD_DIR)/osdev.img
-	rm -f $(BUILD_DIR)/kernel.elf
-	rm -rf $(OBJ_DIR)/{$(call join-comma,$(KERNEL_TARGETS))}
-
-#
-# bootloader
-#
-
-# edk2 library dependencies
-$(BUILD_DIR)/static_library_files.lst: boot/LoaderPkg.dsc boot/Loader.inf
-	@EDK2_DIR=$(EDK_DIR) EDK2_BUILD_TYPE=$(EDK2_BUILD) bash toolchain/edk2.sh build $(WINARCH) loader-lst
+# bootloader efi application
+$(BUILD_DIR)/boot$(WINARCH).efi: $(BUILD_DIR)/loader.dll
+	$(EDK_DIR)/BaseTools/BinWrappers/PosixLike/GenFw -e UEFI_APPLICATION -o $@ $^
 
 $(BUILD_DIR)/loader.dll: $(BUILD_DIR)/static_library_files.lst $(BOOT_OBJECTS)
 	$(LLD_LINK) $(BOOT_LDFLAGS) /lldmap @$< /OUT:$@ $(BOOT_OBJECTS)
 
-$(BUILD_DIR)/boot$(WINARCH).efi: $(BUILD_DIR)/loader.dll
-	$(EDK_DIR)/BaseTools/BinWrappers/PosixLike/GenFw -e UEFI_APPLICATION -o $@ $^
+# edk2 library dependencies
+$(BUILD_DIR)/static_library_files.lst: boot/LoaderPkg.dsc boot/Loader.inf
+	EDK2_DIR=$(EDK_DIR) EDK2_BUILD_TYPE=$(EDK2_BUILD) bash toolchain/edk2.sh build $(WINARCH) loader-lst
 
 #
 # kernel
 #
 
+kernel: $(BUILD_DIR)/kernel.elf
+
+clean-kernel:
+	rm -f $(BUILD_DIR)/kernel.elf
+	rm -rf $(OBJ_DIR)/{$(call join-comma,$(KERNEL_TARGETS))}
+
 # loadable kernel elf
 $(BUILD_DIR)/kernel.elf: $(KERNEL_OBJECTS) $(BUILD_DIR)/libdwarf_kernel.a
 	$(LD) $(call module-var,LDFLAGS,KERNEL) -o $@ --no-relax $^
 
-# initial ramdisk
-$(BUILD_DIR)/initrd.img: .initrdrc
-	scripts/mkinitrd.py -o $@ -f $<
-
-# bootable USB image
-$(BUILD_DIR)/osdev.img: $(BUILD_DIR)/boot$(WINARCH).efi $(BUILD_DIR)/kernel.elf config.ini
-	dd if=/dev/zero of=$@ bs=1M count=256
-# 	256M -> 268435456 / 512 = 524288 sectors
-	mformat -i $@ -F -h 64 -s 32 -T 524288 -c 1 -v osdev ::
-	mmd -i $@ ::/EFI
-	mmd -i $@ ::/EFI/BOOT
-	mcopy -i $@ $< ::/EFI/BOOT
-	mcopy -i $@ config.ini ::/EFI/BOOT
-	mcopy -i $@ $(BUILD_DIR)/kernel.elf ::/EFI/BOOT
-	mcopy -i $@ $(BUILD_DIR)/initrd.img ::/EFI/BOOT
+# kernel libdwarf
+$(BUILD_DIR)/libdwarf_kernel.a: $(TOOL_ROOT)/lib/libdwarf.a
+	$(OBJCOPY) $^ $@ \
+		--redefine-sym malloc=kmalloc \
+		--redefine-sym calloc=kcalloc \
+		--redefine-sym free=kfree \
+		--redefine-sym printf=kprintf \
+		--redefine-sym realloc=__debug_realloc_stub \
+		--redefine-sym fclose=__debug_fclose_stub \
+		--redefine-sym getcwd=__debug_getcwd_stub \
+		--redefine-sym do_decompress_zlib=__debug_do_decompress_zlib_stub \
+		--redefine-sym uncompress=__debug_uncompress_stub
 
 $(TOOL_ROOT)/lib/libdwarf.a:
-	$(MAKE) -C toolchain libdwarf TARGET=$(TOOL_TARGET)
+	$(MAKE) -C toolchain libdwarf
 
 #
 # userspace
 #
 
-sbin: userspace-sbin
-clean-sbin: userspace-sbin-clean
-userspace: $(USERSPACE_DIRS:%=userspace-%)
-clean-userspace: $(USERSPACE_DIRS:%=userspace-%-clean)
+userspace: $(USERSPACE_DIRS:%=userspace-dir-%)
+install-userspace: $(USERSPACE_DIRS:%=userspace-dir-install-%)
+clean-userspace: $(USERSPACE_DIRS:%=userspace-dir-clean-%)
 
-userspace-%: INSTALL = 0
-userspace-%:
-	if [ $(INSTALL) -eq 1 ]; then \
-		$(MAKE) -C $* install; \
-	else \
-		$(MAKE) -C $*; \
-	fi
+userspace-dir-%:
+	$(MAKE) -C $*
 
-userspace-%-clean:
+userspace-dir-install-%: sysroot
+	$(MAKE) -C $* install
+	@touch $(BUILD_DIR)/sysroot_sha1
+
+userspace-dir-clean-%:
 	$(MAKE) -C $* clean
+	@touch $(BUILD_DIR)/sysroot_sha1
+
+#
+# sysroot
+#
+
+sysroot: $(SYS_ROOT)
+
+.PHONY: $(SYS_ROOT)
+$(SYS_ROOT): | install-userspace
+	$(MAKE) -C toolchain musl-headers DESTDIR=$(SYS_ROOT)/usr
+	@touch $(BUILD_DIR)/sysroot_sha1
+
+# sysroot sha1sum
+$(BUILD_DIR)/sysroot_sha1:
+	echo "$$(tar -cf - $(SYS_ROOT) | sha1sum | awk '{print $$1}')" > $@
 
 #
 # external dependencies
 #
 
-# edk2 ovmf uefi firmware
+ovmf: $(BUILD_DIR)/OVMF_$(WINARCH).fd
+ext2_img: $(BUILD_DIR)/ext2.img
+
+# sysroot initrd manifest
+$(BUILD_DIR)/initrdrc: $(BUILD_DIR)/sysroot_sha1 | $(SYS_ROOT)
+	scripts/gen_initrdrc.py $@ -S $(SYS_ROOT) -d $(SYS_ROOT):/
+
+# edk2 ovmf firmware
 $(BUILD_DIR)/OVMF_$(WINARCH).fd:
 	@EDK2_DIR=$(EDK_DIR) EDK2_BUILD_TYPE=$(EDK2_BUILD) bash toolchain/edk2.sh build $(WINARCH) ovmf
 

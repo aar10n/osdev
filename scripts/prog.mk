@@ -6,7 +6,6 @@
 #     CFLAGS
 #     INCLUDE
 #     DEFINES
-#     LDFLAGS
 #	  LIBS
 #
 # * = must be defined by including makefile
@@ -30,11 +29,10 @@ OBJS = $(SRCS:%=$(OBJ_DIR)/%.o)
 
 $(OBJ_DIR)/$(NAME): $(OBJS)
 	@mkdir -p $(@D)
-	$(LD) $(LDFLAGS) $^ -o $@ $(LIBS)
+	$(CC) $^ -o $@ $(LIBS)
 
 $(OBJ_DIR)/%.c.o: $(PROJECT_DIR)/$(PROG_DIR)/%.c
 	@mkdir -p $(@D)
-	@echo "CC $(CC)"
 	$(CC) $(CFLAGS) $(INCLUDE) $(DEFINES) -c $< -o $@
 
 .PHONY: build
@@ -44,8 +42,8 @@ build: $(OBJ_DIR)/$(NAME)
 install: PREFIX = $(SYS_ROOT)
 install: BINDIR = $(PREFIX)/$(GROUP)
 install: build
-	$(INSTALL) -d $(BINDIR)
-	$(INSTALL) $(OBJ_DIR)/$(NAME) $(BINDIR)
+	@mkdir -p $(BINDIR)
+	cp $(OBJ_DIR)/$(NAME) $(BINDIR)
 
 .PHONY: clean
 clean:

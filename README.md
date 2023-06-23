@@ -33,3 +33,11 @@ while working on this so maybe this could be useful to someone else.
 ├── third-party   third party dependencies
 └── toolchain     toolchain build files and patches 
 ```
+
+
+# Toolchain
+
+To build the full toolchain from source:
+```shell
+make -C toolchain all -j$(nproc)
+```

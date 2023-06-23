@@ -240,9 +240,9 @@ usage_text = f"""\
 
 epilog_text = """
 directives:
-    <srcfile>:<path>  add <srcfile> to the image at <path>
     :<path>/          create an empty directory at <path>
     l<target>:<path>  create a symlink to <target> at <path>
+    <srcfile>:<path>  add <srcfile> to the image at <path>
 """
 
 if __name__ == "__main__":
@@ -254,23 +254,26 @@ if __name__ == "__main__":
     )
     parser.add_argument('-o', '--outfile', required=True, metavar='<file>', dest='outfile',
                         help="write the image to <file>")
-    parser.add_argument('-f', '--file', metavar='<file>', dest='infile', help="read directives from <file>")
+    parser.add_argument('-f', '--file', action='append', metavar='<file>', dest='infiles', default=[],
+                        help="read directives from <file>")
     parser.add_argument('directives', nargs='*', help=argparse.SUPPRESS)
     args = parser.parse_args()
 
     output_file = args.outfile
-    directives = [parse_directive(s) for s in args.directives]
-    if args.infile:
+    directives = []
+    for filename in args.infiles:
         try:
-            with open(args.infile, 'r') as f:
+            with open(filename, 'r') as f:
                 for line in f.read().splitlines():
                     line = line.strip()
                     if line and not line.startswith('#'):
-                        directives.append(parse_directive(line))
+                        directives += [parse_directive(line)]
         except FileNotFoundError:
-            parser.error(f'file not found: {args.infile}')
+            parser.error(f'file not found: {filename}')
         except Exception as e:
             parser.error(f'{e}')
+    # put these at the end
+    directives += [parse_directive(s) for s in args.directives]
 
     paths = dict()  # type: Dict[str, (Directive, int)] # image path -> (directive, data_offset)
     files = dict()  # type: Dict[str, int] # source file -> data_offset

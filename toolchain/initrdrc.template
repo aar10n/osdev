@@ -1,0 +1,6 @@
+# place initrd directives in here to customize the image
+#
+# directives:
+#   :<path>/          create an empty directory at <path>
+#   l<target>:<path>  create a symlink to <target> at <path>
+#   <srcfile>:<path>  add <srcfile> to the image at <path>

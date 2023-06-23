@@ -10,11 +10,13 @@ PKGCONFIG_DIR = $(BUILD_DIR)/pkgconfig/build
 LIBDWARF_DIR = $(BUILD_DIR)/libdwarf/build
 
 
+.NOTPARALLEL:
 all: binutils gcc musl libdwarf
 
 binutils: $(BINUTILS_DIR)/.install
 gcc: $(GCC_DIR)/.install
 musl: $(MUSL_DIR)/.install
+musl-headers: $(MUSL_DIR)/.install-headers
 pkg-config: $(PKGCONFIG_DIR)/.install
 libdwarf: $(LIBDWARF_DIR)/.install
 
@@ -118,7 +120,7 @@ MUSL_PREFIX = $(TOOL_ROOT)/usr
 
 MUSL_CONFIG = \
 	--target=$(TOOLCHAIN) \
-	--prefix=$(MUSL_PREFIX) \
+	--prefix= \
 	--srcdir=$(MUSL_SRC_DIR) \
 	\
 	CC="$(GCC_DIR)/gcc/xgcc -B $(GCC_DIR)/gcc" \
@@ -139,11 +141,13 @@ $(MUSL_DIR)/.build: $(MUSL_DIR)/.configure
 	@touch $@
 
 .PHONY: $(MUSL_DIR)/.install
+$(MUSL_DIR)/.install: export DESTDIR = $(MUSL_PREFIX)
 $(MUSL_DIR)/.install: $(MUSL_DIR)/.build
 	cd $(@D) && $(MAKE) install $(MUSL_VARS)
 	ln -s $(MUSL_PREFIX)/include/sys $(TOOL_ROOT)/include/sys
 
 .PHONY: $(MUSL_DIR)/.install-headers
+$(MUSL_DIR)/.install-headers: export DESTDIR = $(MUSL_PREFIX)
 $(MUSL_DIR)/.install-headers: $(MUSL_DIR)/.configure
 	cd $(@D) && $(MAKE) install-headers
 
