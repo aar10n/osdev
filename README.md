@@ -10,7 +10,6 @@ mass storage),  and a few other things. I read a lot of source code from other p
 while working on this so maybe this could be useful to someone else.
 
 ```
-├── apps          userspace programs
 ├── boot          uefi edk2 bootloader
 ├── drivers       external device drivers
 ├── fs            filesystem types

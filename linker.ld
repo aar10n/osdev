@@ -1,7 +1,5 @@
 ENTRY(entry)
 
-
-
 SECTIONS {
   __kernel_address = 0x100000;
   __kernel_virtual_offset = 0xFFFF800000000000;
