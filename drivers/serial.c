@@ -2,18 +2,19 @@
 // Created by Aaron Gill-Braun on 2020-09-30.
 //
 
-#include <drivers/serial.h>
-#include <kernel/cpu/io.h>
-
 #include <kernel/device.h>
-#include <kernel/fs.h>
+#include <kernel/cpu/io.h>
 #include <kernel/mm.h>
 
 #include <kernel/printf.h>
 
-
 #define ASSERT(x) kassert(x)
 #define DPRINTF(fmt, ...) kprintf("serial: %s: " fmt, __func__, ##__VA_ARGS__)
+
+#define COM1 0x3F8
+#define COM2 0x2F8
+#define COM3 0x3E8
+#define COM4 0x2E8
 
 #define SERIAL_DATA 0
 #define SERIAL_INTR_EN 1
@@ -58,7 +59,7 @@ struct serial_device {
   int port;
 };
 
-static int serial_d_open(device_t *device) {
+static int serial_d_open(device_t *device, int flags) {
   struct serial_device *dev = device->data;
   return 0;
 }
