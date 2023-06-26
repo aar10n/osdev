@@ -29,27 +29,33 @@ struct page;
 struct address_space;
 struct vm_mapping;
 struct vm_file;
-struct mem_zone;
 
 struct intvl_tree;
 
 // page flags
-#define PG_WRITE      (1 << 2)
-#define PG_EXEC       (1 << 3)
-#define PG_USER       (1 << 4)
-#define PG_NOCACHE    (1 << 5)
-#define PG_WRITETHRU  (1 << 6)
-#define PG_GLOBAL     (1 << 7)
+#define PG_WRITE      (1 << 1)
+#define PG_EXEC       (1 << 2)
+#define PG_USER       (1 << 3)
+#define PG_NOCACHE    (1 << 4)
+#define PG_WRITETHRU  (1 << 5)
+#define PG_GLOBAL     (1 << 6)
 /* internal use only */
 #define PG_BIGPAGE    (1 << 8)
 #define PG_HUGEPAGE   (1 << 9)
+#define PG_PRESENT    (1 << 10)
+#define PG_HEAD       (1 << 10)
+#define PG_COW        (1 << 11)
+
+#define PG_FLAGS_MASK 0x3F
 
 typedef struct page {
-  uint64_t address;             // physical address
-  uint32_t flags;               // page flags
-  struct vm_mapping *mapping;   // owning mapping (if mapped)
-  struct mem_zone *zone;        // owning memory zone
-  struct frame_allocator *fa;   // owning frame allocator
+  uint64_t address;           // physical address
+  uint32_t flags;             // page flags
+  struct {
+    uint32_t count;           // number of pages in the list
+  } head;                     // (only valid if PG_HEAD)
+  struct vm_mapping *mapping; // owning virtual mapping (if mapped)
+  struct frame_allocator *fa; // owning frame allocator
   SLIST_ENTRY(struct page) next;
 } page_t;
 
@@ -74,13 +80,13 @@ enum vm_type {
   VM_TYPE_RSVD, // reserved memory
   VM_TYPE_PHYS, // direct physical mapping
   VM_TYPE_PAGE, // mapped pages
-  VM_TYPE_FILE, // lazily mapped file
+  VM_TYPE_FILE, // on-demand mapped file
 };
 
 // vm flags
 #define VM_USER   0x01  // mapping lives in user space
 #define VM_FIXED  0x02  // mapping has fixed address (hint used for address)
-#define VM_GUARD  0x04  // leave a guard page at the end of the allocation (only for VM_TYPE_PAGE)
+#define VM_GUARD  0x04  // leave a null guard page at the end of the allocation (only for VM_TYPE_PAGE)
 #define VM_STACK  0x08  // mapping grows downwards (only for VM_TYPE_PAGE)
 #define VM_GROWS  0x10  // mapping can grow or shrink (conflicts with VM_FIXED)
 
@@ -101,6 +107,10 @@ typedef struct vm_mapping {
     uintptr_t vm_phys;
     struct page *vm_pages;
     struct vm_file *vm_file;
+    struct {
+      size_t offset;
+      struct vm_mapping *vm;
+    } vm_view;
   };
 
   LIST_ENTRY(struct vm_mapping) list;

@@ -11,6 +11,7 @@
 #include <kernel/cpu/cpu.h>
 #include <kernel/debug/debug.h>
 
+#include <kernel/init.h>
 #include <kernel/irq.h>
 #include <kernel/panic.h>
 #include <kernel/string.h>
@@ -27,6 +28,8 @@
 #define VM_MALLOC 0x2000 // mapping is a vmalloc allocation
 #define VM_CONTIG 0x4000 // mapping is physically contiguous
 
+#define PG_SZ_MASK 0x300
+
 // these are the default hints for different combinations of vm flags
 // they are used as a starting point for the kernel when searching for
 // a free region
@@ -39,8 +42,6 @@
 
 extern uintptr_t entry_initial_stack_top;
 address_space_t *kernel_space;
-
-void execute_init_address_space_callbacks();
 
 // called from thread.asm
 __used void swap_address_space(address_space_t *new_space) {
@@ -98,17 +99,21 @@ static inline uintptr_t choose_best_hint(address_space_t *space, uintptr_t hint,
 }
 
 //
-// mapping/unmapping of the various vm_types
+// MARK: Mapping type functions
 //
 
-static void vm_map_phys_internal(vm_mapping_t *vm, uint32_t pg_flags) {
-  ASSERT(vm->type == VM_TYPE_PHYS);
-  address_space_t *space = vm->space;
-  size_t stride = pg_flags_to_size(pg_flags);
-  size_t count = vm->size / stride;
+// phys type
 
-  uintptr_t ptr = vm->address;
-  uintptr_t phys_ptr = vm->vm_phys;
+static void vm_phys_map_internal(vm_mapping_t *vm, uintptr_t phys, size_t off, size_t size) {
+  address_space_t *space = vm->space;
+  uint32_t pg_flags = vm->pg_flags;
+  size_t stride = pg_flags_to_size(pg_flags);
+  ASSERT(off % stride == 0);
+  ASSERT(off + size <= vm->size);
+
+  size_t count = size / stride;
+  uintptr_t ptr = vm->address + off;
+  uintptr_t phys_ptr = phys + off;
   while (count > 0) {
     page_t *table_pages = NULL;
     recursive_map_entry(ptr, phys_ptr, pg_flags, &table_pages);
@@ -125,13 +130,14 @@ static void vm_map_phys_internal(vm_mapping_t *vm, uint32_t pg_flags) {
   cpu_flush_tlb();
 }
 
-static void vm_unmap_phys_internal(vm_mapping_t *vm) {
-  ASSERT(vm->type == VM_TYPE_PHYS);
+static void vm_phys_unmap_internal(vm_mapping_t *vm, size_t off, size_t size) {
   uint32_t pg_flags = vm->pg_flags;
   size_t stride = pg_flags_to_size(pg_flags);
-  size_t count = vm->size / stride;
+  ASSERT(off % stride == 0);
+  ASSERT(off + size <= vm->size);
 
-  uintptr_t ptr = vm->address;
+  size_t count = size / stride;
+  uintptr_t ptr = vm->address + off;
   while (count > 0) {
     recursive_unmap_entry(ptr, pg_flags);
     ptr += stride;
@@ -141,58 +147,43 @@ static void vm_unmap_phys_internal(vm_mapping_t *vm) {
   cpu_flush_tlb();
 }
 
-static void vm_resize_phys_internal(vm_mapping_t *vm, uintptr_t oldaddr, size_t oldsize, size_t newsize) {
-  ASSERT(vm->type == VM_TYPE_PHYS);
-  uint32_t pg_flags = vm->pg_flags;
-  size_t stride = pg_flags_to_size(pg_flags);
-  size_t oldcount = oldsize / stride;
-  size_t newcount = newsize / stride;
-  ASSERT(newsize % stride == 0); // newsize must be page aligned
-
-  if (newcount < oldcount) {
-    uintptr_t ptr = oldaddr + newsize;
-    while (newcount < oldcount) {
-      recursive_unmap_entry(ptr, pg_flags);
-      ptr += stride;
-      oldcount--;
-    }
-  } else if (newcount > oldcount) {
-    uintptr_t ptr = vm->address + oldsize;
-    uintptr_t phys_ptr = vm->vm_phys + oldsize;
-    while (newcount > oldcount) {
-      page_t *table_pages = NULL;
-      recursive_map_entry(ptr, phys_ptr, pg_flags, &table_pages);
-      ptr += stride;
-      phys_ptr += stride;
-      oldcount++;
-
-      if (table_pages != NULL) {
-        page_t *last_page = SLIST_GET_LAST(table_pages, next);
-        SLIST_ADD_SLIST(&vm->space->table_pages, table_pages, last_page, next);
-      }
-    }
-
-  }
-
-  cpu_flush_tlb();
+static page_t *vm_phys_getpage_internal(vm_mapping_t *vm, size_t off) {
+  // physical mappings are assumed to be reserved and so must be unmanaged
+  return alloc_cow_pages_at(vm->vm_phys + off, 1, vm->pg_flags);
 }
 
-static void vm_map_pages_internal(vm_mapping_t *vm, size_t off, page_t *pages, uint32_t pg_flags) {
-  ASSERT(vm->type == VM_TYPE_PAGE);
-  ASSERT(off < vm->size);
-  address_space_t *space = vm->space;
+// pages type
 
+static void vm_page_map_internal(vm_mapping_t *vm, page_t *pages, size_t off, size_t size) {
+  uint32_t pg_flags = vm->pg_flags;
+  address_space_t *space = vm->space;
+  size_t stride = pg_flags_to_size(pg_flags);
+  ASSERT(off % stride == 0);
+  ASSERT(off + size <= vm->size);
+
+  size_t count = size / stride;
   uintptr_t ptr = vm->address + off;
   page_t *curr = pages;
   while (curr != NULL) {
-    curr->flags |= pg_flags;
-    page_t *table_pages = NULL;
-    recursive_map_entry(ptr, curr->address, curr->flags, &table_pages);
+    if (count == 0) {
+      DPRINTF("more pages than needed to map region {:str}\n", &vm->name);
+      free_pages(curr); // free the rest of the pages
+      break;
+    }
 
-    size_t sz = pg_flags_to_size(curr->flags);
-    ptr += sz;
-    curr->mapping = vm;
+    if (!(curr->flags & PG_PRESENT)) {
+      // the page is owned by the mapping
+      ASSERT(curr->mapping == NULL);
+      curr->flags &= PG_SZ_MASK;
+      curr->flags |= pg_flags | PG_PRESENT;
+      curr->mapping = vm;
+    }
+
+    page_t *table_pages = NULL;
+    recursive_map_entry(ptr, curr->address, pg_flags, &table_pages);
+    ptr += stride;
     curr = curr->next;
+    count--;
 
     if (table_pages != NULL) {
       page_t *last_page = SLIST_GET_LAST(table_pages, next);
@@ -200,20 +191,29 @@ static void vm_map_pages_internal(vm_mapping_t *vm, size_t off, page_t *pages, u
     }
   }
 
+  if (count > 0) {
+    DPRINTF("not enough pages to map region {:str}\n", &vm->name);
+  }
+
   cpu_flush_tlb();
 }
 
-static void vm_unmap_pages_internal(vm_mapping_t *vm, size_t off, size_t size) {
-  ASSERT(vm->type == VM_TYPE_PAGE);
-  ASSERT(off + size < vm->size);
+static void vm_page_unmap_internal(vm_mapping_t *vm, page_t *pages, size_t off, size_t size) {
+  uint32_t pg_flags = vm->pg_flags;
+  size_t stride = pg_flags_to_size(pg_flags);
+  ASSERT(off % stride == 0);
+  ASSERT(off + size <= vm->size);
 
   uintptr_t ptr = vm->address;
-  page_t *curr = vm->vm_pages;
+  page_t *curr = pages;
   while (off > 0) {
+    if (curr == NULL) {
+      panic("vm_page_unmap_internal: something went wrong");
+    }
     // get to page at offset
     ptr += pg_flags_to_size(curr->flags);
     curr = curr->next;
-    off--;
+    off -= stride;
   }
 
   uintptr_t max_ptr = ptr + size;
@@ -229,29 +229,94 @@ static void vm_unmap_pages_internal(vm_mapping_t *vm, size_t off, size_t size) {
   cpu_flush_tlb();
 }
 
-static void vm_resize_pages_internal(vm_mapping_t *vm, uintptr_t oldaddr, size_t oldsize, size_t newsize) {
+static void vm_page_resize_internal(vm_mapping_t *vm, uintptr_t oldaddr, size_t oldsize, size_t newsize) {
   ASSERT(vm->type == VM_TYPE_PAGE);
+  ASSERT(newsize < oldsize); // dont support growing pages
 
-  if (newsize < oldsize) {
-    // unmap the pages that are not used anymore
-    vm_unmap_pages_internal(vm, newsize, oldsize - newsize);
-  } else if (newsize > oldsize) {
-    // leave the new pages unmapped, they will be mapped later
+  // find the first page that is not used anymore
+  page_t *curr = vm->vm_pages;
+  uintptr_t ptr = oldaddr;
+  while (ptr < oldaddr + newsize) {
+    if (!curr) {
+      panic("vm_page_resize_internal: something went wrong");
+    }
+    ptr += pg_flags_to_size(curr->flags);
+    curr = curr->next;
   }
+
+  vm_page_unmap_internal(vm, curr, ptr - oldaddr, oldsize - newsize);
 }
 
-static void vm_map_file_internal(vm_mapping_t *vm, size_t off, page_t *pages, uint32_t pg_flags) {
-  ASSERT(vm->type == VM_TYPE_FILE);
-  ASSERT(off < vm->size);
-  struct vm_file *file = vm->vm_file;
-  address_space_t *space = vm->space;
+static page_t *vm_page_getpage_internal(vm_mapping_t *vm, size_t off) {
+  page_t *curr = vm->vm_pages;
+  while (off > 0) {
+    if (!curr) {
+      return NULL;
+    }
 
+    size_t size = pg_flags_to_size(curr->flags);
+    if (off < size) {
+      break;
+    }
+    curr = curr->next;
+  }
+  return curr;
+}
+
+// file type
+
+static void vm_file_map_internal(vm_mapping_t *vm, struct vm_file *file, size_t off, size_t size) {
+  uint32_t pg_flags = vm->pg_flags;
+  address_space_t *space = vm->space;
   size_t stride = pg_flags_to_size(pg_flags);
+  ASSERT(off % stride == 0);
+  ASSERT(off + size <= vm->size);
+
   if (file->pages == NULL) {
+    panic("vm_file_map_internal: file pages not initialized");
+  }
+
+  size_t count = size / stride;
+  uintptr_t ptr = vm->address + off;
+  for (size_t i = 0; i < count; i++) {
+    page_t *page = file->pages[i];
+    if (page == NULL) {
+      continue; // ignore holes
+    }
+
+    if (!(page->flags & PG_PRESENT)) {
+      // the page is owned by the mapping
+      ASSERT(page->mapping == NULL);
+      page->flags &= PG_SZ_MASK;
+      page->flags |= pg_flags | PG_PRESENT;
+      page->mapping = vm;
+    }
+
+    page_t *table_pages = NULL;
+    recursive_map_entry(ptr, page->address, pg_flags, &table_pages);
+    ptr += stride;
+
+    if (table_pages != NULL) {
+      page_t *last_page = SLIST_GET_LAST(table_pages, next);
+      SLIST_ADD_SLIST(&space->table_pages, table_pages, last_page, next);
+    }
+  }
+
+  cpu_flush_tlb();
+}
+
+static void vm_file_map_pages_internal(vm_mapping_t *vm, struct vm_file *file, size_t off, size_t size, page_t *pages) {
+  uint32_t pg_flags = vm->pg_flags;
+  address_space_t *space = vm->space;
+  size_t stride = pg_flags_to_size(pg_flags);
+  ASSERT(off % stride == 0);
+  ASSERT(off + size <= vm->size);
+
+  if (file->pages == NULL) {
+    // first time, allocate the pages array
     size_t num_pages = vm->size / stride;
     size_t arrsz = num_pages * sizeof(page_t *);
 
-    // first time, allocate array to hold mapped pages
     if (arrsz >= PAGE_SIZE) {
       file->pages = vmalloc(arrsz, PG_WRITE);
     } else {
@@ -261,24 +326,24 @@ static void vm_map_file_internal(vm_mapping_t *vm, size_t off, page_t *pages, ui
   }
 
   if (pages == NULL) {
-    // no pages to map, just return
     return;
+  }
+
+  // pages may only be provided if the virtual mapping owns the file
+  if (vm->type != VM_TYPE_FILE || vm->vm_file != file) {
+    panic("vm_file_map_internal: pages provided but mapping does not own file");
   }
 
   uintptr_t ptr = vm->address + off;
   size_t index = off / stride;
   while (pages != NULL) {
     if (file->pages[index] != NULL) {
-      panic("vm_map_file_internal: page already mapped at offset %d [vm={:str}]\n", index * stride, &vm->name);
+      panic("vm_file_map_internal: page already mapped at offset %zu [vm={:str}]", index * stride, &vm->name);
     }
 
-    // separate page from the list
-    page_t *curr = pages;
-    pages = pages->next;
-    curr->next = NULL;
-
+    page_t *curr = page_list_remove_head(&pages);
     page_t *table_pages = NULL;
-    recursive_map_entry(ptr, curr->address, curr->flags, &table_pages);
+    recursive_map_entry(ptr, curr->address, pg_flags, &table_pages);
 
     file->pages[index] = curr;
     curr->mapping = vm;
@@ -295,11 +360,11 @@ static void vm_map_file_internal(vm_mapping_t *vm, size_t off, page_t *pages, ui
   cpu_flush_tlb();
 }
 
-static void vm_unmap_file_internal(vm_mapping_t *vm, size_t off, size_t size) {
+static void vm_file_unmap_internal(vm_mapping_t *vm, size_t off, size_t size) {
   ASSERT(vm->type == VM_TYPE_FILE);
-  ASSERT(off + size < vm->size);
   struct vm_file *file = vm->vm_file;
   size_t stride = pg_flags_to_size(vm->pg_flags);
+  ASSERT(off + size <= vm->size);
 
   uintptr_t ptr = vm->address;
   size_t start_index = off / stride;
@@ -320,16 +385,27 @@ static void vm_unmap_file_internal(vm_mapping_t *vm, size_t off, size_t size) {
   cpu_flush_tlb();
 }
 
-static void vm_resize_file_internal(vm_mapping_t *vm, uintptr_t oldaddr, size_t oldsize, size_t newsize) {
+static void vm_file_resize_internal(vm_mapping_t *vm, uintptr_t oldaddr, size_t oldsize, size_t newsize) {
   ASSERT(vm->type == VM_TYPE_FILE);
   size_t stride = pg_flags_to_size(vm->pg_flags);
 
   if (newsize < oldsize) {
     // unmap the pages that outside of the new size
-    vm_unmap_file_internal(vm, newsize, oldsize - newsize);
+    vm_file_unmap_internal(vm, newsize, oldsize - newsize);
   } else if (newsize > oldsize) {
     // leave the new pages unmapped, they will be filled on demand
   }
+}
+
+static page_t *vm_file_getpage_internal(vm_mapping_t *vm, size_t off) {
+  ASSERT(vm->type == VM_TYPE_FILE);
+  struct vm_file *file = vm->vm_file;
+  size_t stride = pg_flags_to_size(vm->pg_flags);
+  size_t index = off / stride;
+  if (index >= vm->size / stride) {
+    return NULL;
+  }
+  return file->pages[index];
 }
 
 //
@@ -503,6 +579,10 @@ static bool move_mapping(vm_mapping_t *vm, size_t newsize) {
 
 //
 
+static always_inline bool can_handle_fault(vm_mapping_t *vm, uintptr_t fault_addr, uint32_t error) {
+  return vm->type == VM_TYPE_FILE;
+}
+
 void page_fault_handler(uint8_t vector, uint32_t error_code, cpu_irq_stack_t *frame, cpu_registers_t *regs) {
   per_cpu_t *percpu = __percpu_struct_ptr();
   uint32_t id = PERCPU_ID;
@@ -515,11 +595,13 @@ void page_fault_handler(uint8_t vector, uint32_t error_code, cpu_irq_stack_t *fr
     // fault was due to a non-present page this might be recoverable
     // check if this fault is related to a vm mapping
     vm_mapping_t *vm = vm_get_mapping(fault_addr);
-    if (vm == NULL || vm->type != VM_TYPE_FILE) {
+    if (vm == NULL || !can_handle_fault(vm, fault_addr, error_code)) {
       // TODO: support extending stacks automatically if the fault happens
       //       in the guard page
       goto exception;
     }
+
+    panic("TODO: revisit this"); // TODO: revisit this
 
     DPRINTF("non-present page fault in vm_file [vm={:str},addr=%p]\n", &vm->name, fault_addr);
     struct vm_file *file = vm->vm_file;
@@ -531,7 +613,8 @@ void page_fault_handler(uint8_t vector, uint32_t error_code, cpu_irq_stack_t *fr
     }
 
     // map the new page into the file
-    vm_map_file_internal(vm, off, page, vm->pg_flags);
+    size_t size = pg_flags_to_size(vm->pg_flags);
+    vm_file_map_pages_internal(vm, vm->vm_file, off, size, page);
     return; // recover
   }
 
@@ -555,7 +638,7 @@ LABEL(exception);
   }
 }
 
-//
+// MARK: Public API
 
 void init_address_space() {
   kernel_space = kmallocz(sizeof(address_space_t));
@@ -840,26 +923,27 @@ void vm_free(vm_mapping_t *vm) {
 
 void *vm_map(vm_mapping_t *vm, uint32_t pg_flags) {
   ASSERT(vm->type != VM_TYPE_RSVD);
-  size_t off;
+  if (vm->flags & VM_MAPPED) {
+    return (void *) vm->address;
+  }
 
   SPIN_LOCK(&vm->lock);
   ASSERT(!(vm->flags & VM_MAPPED));
+  vm->pg_flags = pg_flags;
   switch (vm->type) {
     case VM_TYPE_PHYS:
-      vm_map_phys_internal(vm, pg_flags);
+      vm_phys_map_internal(vm, vm->vm_phys, 0, vm->size);
       break;
     case VM_TYPE_PAGE:
-      vm_map_pages_internal(vm, 0, vm->vm_pages, pg_flags);
+      vm_page_map_internal(vm, vm->vm_pages, 0, vm->size);
       break;
     case VM_TYPE_FILE:
-      vm_map_file_internal(vm, 0, NULL, pg_flags);
+      vm_file_map_pages_internal(vm, vm->vm_file, 0, vm->size, NULL);
       break;
     default:
       unreachable;
   }
-
   vm->flags |= VM_MAPPED;
-  vm->pg_flags = pg_flags;
   SPIN_UNLOCK(&vm->lock);
   return (void *) vm->address;
 }
@@ -869,13 +953,13 @@ void vm_unmap(vm_mapping_t *vm) {
   ASSERT(vm->flags & VM_MAPPED);
   switch (vm->type) {
     case VM_TYPE_PHYS:
-      vm_unmap_phys_internal(vm);
+      vm_phys_unmap_internal(vm, 0, vm->size);
       break;
     case VM_TYPE_PAGE:
-      vm_unmap_pages_internal(vm, 0, vm->size);
+      vm_page_unmap_internal(vm, vm->vm_pages, 0, vm->size);
       break;
     case VM_TYPE_FILE:
-      vm_unmap_file_internal(vm, 0, vm->size);
+      vm_file_unmap_internal(vm, 0, vm->size);
       break;
     default:
       unreachable;
@@ -891,6 +975,7 @@ int vm_resize(vm_mapping_t *vm, size_t new_size, bool allow_move) {
   if (!(vm->flags & VM_GROWS)) {
     panic("vm_resize: mapping \"%s\" cannot be resized", vm->name);
   }
+  ASSERT(vm->type == VM_TYPE_PAGE || vm->type == VM_TYPE_FILE);
 
   SPIN_LOCK(&vm->lock);
   if (vm->size == new_size) {
@@ -923,11 +1008,11 @@ int vm_resize(vm_mapping_t *vm, size_t new_size, bool allow_move) {
   // finally call the appropriate resize function to update the underlying mappings
 LABEL(update_memory);
   switch (vm->type) {
-    case VM_TYPE_PHYS:
-      vm_resize_phys_internal(vm, old_addr, old_size, new_size);
-      break;
     case VM_TYPE_PAGE:
-      vm_resize_pages_internal(vm, old_addr, old_size, new_size);
+      vm_page_resize_internal(vm, old_addr, old_size, new_size);
+      break;
+    case VM_TYPE_FILE:
+      vm_file_resize_internal(vm, old_addr, old_size, new_size);
       break;
     default:
       unreachable;
@@ -935,15 +1020,48 @@ LABEL(update_memory);
   return 0;
 }
 
+//
 
-page_t *vm_getpage(vm_mapping_t *vm, size_t off) {
-  unimplemented("vm_getpage");
-  return NULL;
+page_t *vm_getpage(vm_mapping_t *vm, size_t off, bool cow) {
+  page_t *page = NULL;
+  switch (vm->type) {
+    case VM_TYPE_RSVD:
+      return NULL;
+    case VM_TYPE_PHYS:
+      if (!cow)
+        return NULL;
+      // only cow pages can be obtained from physical mappings
+      return vm_phys_getpage_internal(vm, off);
+    case VM_TYPE_PAGE:
+      page = vm_page_getpage_internal(vm, off);
+      break;
+    case VM_TYPE_FILE:
+      page = vm_file_getpage_internal(vm, off);
+      break;
+    default:
+      unreachable;
+  }
+
+  if (cow)
+    return alloc_cow_page(page);
+  return page;
 }
 
-int vm_putpage(vm_mapping_t *vm, size_t off, page_t *page) {
-  ASSERT(vm->type == VM_TYPE_PAGE);
-  unimplemented("vm_putpage");
+int vm_putpages(vm_mapping_t *vm, size_t off, page_t *pages) {
+  ASSERT(vm->type == VM_TYPE_PAGE || vm->type == VM_TYPE_FILE);
+  ASSERT(pages->flags & PG_HEAD);
+  size_t pgsize = pg_flags_to_size(pages->flags);
+  size_t size = pages->head.count * pgsize;
+  if (off + size > vm->size) {
+    DPRINTF("vm_putpages: out of bounds [vm={:str}, off=%zu, size=%zu]\n", &vm->name, off, size);
+    return -1;
+  }
+
+  if (vm->type == VM_TYPE_PAGE) {
+    vm_page_map_internal(vm, pages, off, size);
+  } else if (vm->type == VM_TYPE_FILE) {
+    vm_file_map_pages_internal(vm, vm->vm_file, off, size, pages);
+  }
   return 0;
 }
 

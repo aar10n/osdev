@@ -2,12 +2,14 @@
 # This script bootstraps a new filesystem type by generating the files and stub functions.
 use warnings FATAL => 'all';
 use strict;
-use Tie::File;
+use Getopt::Long;
 use Data::Dumper;
 use POSIX qw(strftime);
 
+my $readonly = "";
+GetOptions ("read-only" => \$readonly);
 
-my $name = shift or die "usage: $0 <name>";
+my $name = shift or die "usage: $0 [--read-only] <name>";
 my $dir = "fs/$name";
 die "error: please run from the project root\n" unless ( -e ".config");
 die "error: filesystem with same name already exists\n" if ( -e $dir );
@@ -43,7 +45,7 @@ static void ${name}_static_init() {
 STATIC_INIT(${name}_static_init);
 EOF
 
-
+# START OF MAIN
 my @vfs_ops = ops_from_struct("vfs_ops");
 my @vnode_ops = ops_from_struct("vnode_ops");
 
@@ -55,11 +57,8 @@ write_vnops_file(\@vnode_ops);             # name_vnops.c
 
 print "# fs/$name\n";
 print "fs += $name/$name.c $name/${name}_vfsops.c $name/${name}_vnops.c\n";
+# END OF MAIN
 
-
-#
-# File Generation
-#
 
 sub write_header_file {
     my ($vfs_ops, $vnode_ops) = @_;
@@ -70,10 +69,10 @@ sub write_header_file {
     print $file "#define $guard\n";
     print $file "\n";
     print $file "#include <kernel/vfs_types.h>\n";
+    print $file "#include <kernel/device.h>\n";
     print $file "\n";
     print $file "// vfs operations\n";
     write_format_ops($file, $vfs_ops, "{ret}{function}({params});");
-    print $file "\n";
     print $file "void ${name}_vfs_cleanup(vfs_t *vfs);\n";
     print $file "\n";
     print $file "// vnode operations\n";
@@ -95,10 +94,12 @@ sub write_source_file {
     print $file "$preamble\n";
     print $file "struct vfs_ops ${name}_vfs_ops = {\n";
     write_format_ops($file, $vfs_ops, "  .{field} = {function},");
+    print $file "  .v_cleanup = ${name}_vfs_cleanup,\n";
     print $file "};\n";
     print $file "\n";
     print $file "struct vnode_ops ${name}_vnode_ops = {\n";
     write_format_ops($file, $vnode_ops, "  .{field} = {function},");
+    print $file "  .v_cleanup = ${name}_vn_cleanup,\n";
     print $file "};\n";
     print $file "\n";
     print $file "struct ventry_ops ${name}_ventry_ops = {\n";
@@ -107,6 +108,9 @@ sub write_source_file {
     print $file "\n";
     print $file "static fs_type_t ${name}_type = {\n";
     print $file "  .name = \"${name}\",\n";
+    if ($readonly eq 1) {
+        print $file "  .flags = VFS_RDONLY,\n";
+    }
     print $file "  .vfs_ops = &${name}_vfs_ops,\n";
     print $file "  .vnode_ops = &${name}_vnode_ops,\n";
     print $file "  .ventry_ops = &${name}_ventry_ops,\n";
@@ -124,7 +128,6 @@ sub write_vfsops_file {
     print $file "$preamble\n";
     print $file "//\n\n";
     write_format_ops($file, $ops, "{ret}{function}({params}) {\n  unimplemented(\"{name}\");\n};\n", "//\n");
-    print $file "//\n\n";
     print $file "void ${name}_vfs_cleanup(vfs_t *vfs) {\n  unimplemented(\"vfs_cleanup\");\n};\n";
     close($file);
 }
@@ -170,18 +173,22 @@ sub ops_from_struct {
             # the below regex matches a c function pointer type like
             #   int (*v_load)(struct vnode *vn);
             if (/(?<ret>[a-z_]+ \*?)\(\*(?<name>\w+)\)\((?<params>[^)]+)\);$/) {
-                if ($+{name} eq "v_cleanup") {
-                    # handle this as special case
-                    pop @ops; # remove previous empty sep
-                    goto end;
-                } elsif ($+{name} eq "v_rename") {
-                    goto end;
-                }
-
                 my $field = $+{name};
                 my $name = substr $field, 2;
                 my $ret = subst_with_typedefs($+{ret});
                 my $params = subst_with_typedefs(trim($+{params}));
+                if ($field eq "v_cleanup") {
+                    # handle this as special case
+                    pop @ops; # remove previous empty sep
+                    goto end;
+                } elsif ($field eq "v_rename") {
+                    goto end; # ignore
+                } elsif (! ($field =~ /v_(mount|unmount|stat|open|close|read|map|load|readlink|readdir|lookup)/)) {
+                    if ($readonly eq 1) {
+                        print "skipping $field\n";
+                    }
+                    goto end if $readonly eq 1;
+                }
 
                 push @ops, {
                     group => $group,
@@ -235,9 +242,12 @@ sub subst_with_typedefs {
     $s =~ s/struct ventry\b/ventry_t/g;
     $s =~ s/struct vfs\b/vfs_t/g;
     $s =~ s/struct vm_mapping\b/vm_mapping_t/g;
+    $s =~ s/struct device\b/device_t/g;
     $s =~ s/struct kio\b/kio_t/g;
     return $s;
 }
 
-sub trim { (my $s = shift) =~ s/^\s+|\s+$//; return $s; }
-sub rtrim { (my $s = shift) =~ s/\s+$//; return $s; }
+sub trim {
+    (my $s = shift) =~ s/^\s+|\s+$//;
+    return $s;
+}

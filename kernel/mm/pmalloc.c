@@ -36,7 +36,6 @@ static zone_type_t zone_alloc_order[MAX_ZONE_TYPE] = {
   [ZONE_TYPE_LOW]     = MAX_ZONE_TYPE, // out of zones
 };
 
-
 zone_type_t get_mem_zone_type(uintptr_t addr) {
   if (addr < ZONE_LOW_MAX) {
     return ZONE_TYPE_LOW;
@@ -60,8 +59,13 @@ frame_allocator_t *locate_owning_allocator(uintptr_t addr) {
   return NULL;
 }
 
-static page_t *alloc_page_structs(frame_allocator_t *fa, uintptr_t frame, size_t count, size_t pagesize) {
-  uint32_t pg_flags = 0;
+static page_t *alloc_page_structs(frame_allocator_t *fa, uintptr_t frame, size_t count, size_t pagesize, uint32_t pg_flags) {
+  if (count == 0) {
+    return NULL;
+  }
+
+  // mask out user flags and size flags (which we'll set later)
+  pg_flags &= ~(PG_FLAGS_MASK|PG_BIGPAGE|PG_HUGEPAGE);
   if (pagesize == BIGPAGE_SIZE) {
     pg_flags |= PG_BIGPAGE;
   } else if (pagesize == HUGEPAGE_SIZE) {
@@ -81,7 +85,10 @@ static page_t *alloc_page_structs(frame_allocator_t *fa, uintptr_t frame, size_t
     count--;
   }
 
-  return LIST_FIRST(&pages);
+  page_t *head = LIST_FIRST(&pages);
+  head->flags |= PG_HEAD;
+  head->head.count = count;
+  return head;
 }
 
 //
@@ -234,13 +241,14 @@ page_t *fa_alloc_pages(frame_allocator_t *fa, size_t count, size_t pagesize) {
     return NULL;
   }
 
+  // alloc the backing frames
   uintptr_t frame = fa->impl->fa_alloc(fa, count, pagesize);
   if (frame == 0) {
     return NULL;
   }
 
   ASSERT(is_aligned(frame, pagesize));
-  return alloc_page_structs(fa, frame, count, pagesize);
+  return alloc_page_structs(fa, frame, count, pagesize, 0);
 }
 
 int fa_reserve_pages(frame_allocator_t *fa, uintptr_t frame, size_t count, size_t pagesize) {
@@ -257,13 +265,6 @@ int fa_reserve_pages(frame_allocator_t *fa, uintptr_t frame, size_t count, size_
   return 0;
 }
 
-page_t *fa_alloc_pages_at(frame_allocator_t *fa, uintptr_t frame, size_t count, size_t pagesize) {
-  if (fa_reserve_pages(fa, frame, count, pagesize) < 0) {
-    return NULL;
-  }
-  return alloc_page_structs(fa, frame, count, pagesize);
-}
-
 void fa_free_pages(page_t *pages) {
   if (pages == NULL) {
     return;
@@ -276,12 +277,15 @@ void fa_free_pages(page_t *pages) {
   uintptr_t start_frame = pages->address;
   uintptr_t last_address;
   size_t last_pagesize;
-  frame_allocator_t *last_fa;
+  frame_allocator_t *last_fa = NULL;
   while (pages != NULL) {
-    page_t *page = pages;
-    pages = page->next;
-    page->next = NULL;
-    ASSERT(page->mapping == NULL); // must be unmapped
+    page_t *page = page_list_remove_head(&pages);
+    ASSERT(page->mapping == NULL); // must be unmapped prior
+    if (page->fa == NULL) {
+      // unmanaged page just free the struct
+      kfree(page);
+      continue;
+    }
 
     uintptr_t address = page->address;
     size_t pagesize = pg_flags_to_size(page->flags);
@@ -296,7 +300,8 @@ void fa_free_pages(page_t *pages) {
       count++;
     } else {
       // free the range of pages up to the current and start new range
-      last_fa->impl->fa_free(last_fa, start_frame, count, last_pagesize);
+      if (last_fa)
+        last_fa->impl->fa_free(last_fa, start_frame, count, last_pagesize);
       start_frame = page->address;
       count = 1;
     }
@@ -309,19 +314,12 @@ void fa_free_pages(page_t *pages) {
   }
 
   // free the last range of pages
-  last_fa->impl->fa_free(last_fa, start_frame, count, last_pagesize);
+  if (last_fa)
+    last_fa->impl->fa_free(last_fa, start_frame, count, last_pagesize);
 }
 
 //
 //
-
-static void remap_initrd_image(void *_arg) {
-  kassert(is_aligned(boot_info_v2->initrd_addr, PAGE_SIZE));
-  kassert(is_aligned(boot_info_v2->initrd_size, PAGE_SIZE));
-
-  vm_mapping_t *vm = vm_alloc_phys(boot_info_v2->initrd_addr, 0, boot_info_v2->initrd_size, 0, "initrd");
-  boot_info_v2->initrd_addr = (uintptr_t) vm_map(vm, 0);
-}
 
 void init_mem_zones() {
   // reserve pages in zone entry
@@ -337,9 +335,9 @@ void init_mem_zones() {
 
     uintptr_t base = entry->base;
     size_t size = entry->size;
-
     zone_type_t type = get_mem_zone_type(base);
     zone_type_t end_type = get_mem_zone_type(base + size - 1);
+    // kprintf("  [%018p-%018p] % 8zu %s\n", base, base+size, SIZE_TO_PAGES(size), zone_names[type]);
     if (type != end_type) {
       // an entry should never cross more than two zones
       kassert(end_type - type == 1);
@@ -372,14 +370,6 @@ void init_mem_zones() {
     pad[pad_len] = '\0';
 
     kprintf("  %s zone:%s [%018p-%018p] %d pages\n", zone_names[i], pad, zone_start, zone_end, zone_page_count[i]);
-  }
-
-  if (boot_info_v2->initrd_addr != 0) {
-    size_t num_pages = SIZE_TO_PAGES(boot_info_v2->initrd_size);
-    if (reserve_pages(boot_info_v2->initrd_addr, num_pages, PAGE_SIZE) < 0) {
-      panic("failed to reserve pages for initrd");
-    }
-    register_init_address_space_callback(remap_initrd_image, NULL);
   }
 }
 
@@ -436,15 +426,6 @@ page_t *alloc_pages_zone(zone_type_t zone_type, size_t count, size_t pagesize) {
   return pages;
 }
 
-page_t *alloc_pages_at(uintptr_t address, size_t count, size_t pagesize) {
-  if (reserve_pages(address, count, pagesize) < 0) {
-    return NULL;
-  }
-
-  frame_allocator_t *fa = locate_owning_allocator(address);
-  return alloc_page_structs(fa, address, count, pagesize);
-}
-
 page_t *alloc_pages_size(size_t count, size_t pagesize) {
   zone_type_t zone_type = ZONE_ALLOC_DEFAULT;
 
@@ -468,11 +449,74 @@ page_t *alloc_pages(size_t count) {
   return alloc_pages_size(count, PAGE_SIZE);
 }
 
+page_t *alloc_pages_at(uintptr_t address, size_t count, size_t pagesize) {
+  if (reserve_pages(address, count, pagesize) < 0) {
+    return NULL;
+  }
+
+  frame_allocator_t *fa = locate_owning_allocator(address);
+  return alloc_page_structs(fa, address, count, pagesize, 0);
+}
+
 void free_pages(page_t *pages) {
   fa_free_pages(pages);
 }
 
+page_t *alloc_cow_page(page_t *page) {
+  if (page == NULL) {
+    return NULL;
+  }
+  return alloc_page_structs(NULL, page->address, 1, pg_flags_to_size(page->flags), PG_COW);
+}
+
+page_t *alloc_cow_pages_at(uintptr_t address, size_t count, size_t pagesize) {
+  ASSERT(is_aligned(address, pagesize) && "address must be page-aligned");
+  ASSERT(pagesize == PAGE_SIZE || pagesize == BIGPAGE_SIZE || pagesize == HUGEPAGE_SIZE);
+  frame_allocator_t *fa = locate_owning_allocator(address);
+  frame_allocator_t *fa_end = locate_owning_allocator(address+(count*pagesize)-1);
+  if (fa != NULL || fa_end != NULL) {
+    panic("alloc_cow_pages_at: part or all of requested range is managed by a frame allocator");
+  }
+  return alloc_page_structs(NULL, address, count, pagesize, PG_COW);
+}
+
 //
+
+page_t *page_list_remove_head(page_t **list) {
+  if (*list == NULL) {
+    return NULL;
+  }
+
+  page_t *head = *list;
+  page_t *next = head->next;
+  ASSERT(head->flags & PG_HEAD);
+  if (next) {
+    next->flags |= PG_HEAD;
+    next->head.count = head->head.count - 1;
+  }
+  // it stays a head, but with count 1
+  head->head.count = 1;
+  *list = next;
+  return head;
+}
+
+page_t *page_list_add_tail(page_t *head, page_t *tail, page_t *page) {
+  ASSERT(page->flags & PG_HEAD);
+  if (head == NULL) {
+    ASSERT(tail == NULL);
+    return page;
+  }
+
+  ASSERT(head->flags & PG_HEAD);
+  if (tail != head)
+    ASSERT(!(tail->flags & PG_HEAD));
+
+  tail->next = page;
+  head->head.count += page->head.count;
+  page->head.count = 0;
+  page->flags &= ~PG_HEAD;
+  return page;
+}
 
 bool mm_is_kernel_code_ptr(uintptr_t ptr) {
   return ptr >= kernel_code_start && ptr < kernel_code_end;

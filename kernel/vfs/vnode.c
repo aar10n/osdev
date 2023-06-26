@@ -20,8 +20,6 @@
 #define CHECK_NAMELEN(name) if (cstr_len(name) > NAME_MAX) return -ENAMETOOLONG;
 #define CHECK_SUPPORTED(vn, op) if (!(vn)->ops->op) return -ENOTSUP;
 
-#define make_vattr(t) ({ struct vattr __attr = {0}; __attr.type = t; __attr; })
-
 static inline mode_t vn_to_mode(vnode_t *vnode) {
   mode_t mode = 0;
   switch (vnode->type) {
@@ -71,10 +69,6 @@ void vn_release(__move vnode_t **vnref) {
     vn_cleanup(*vnref);
   }
   *vnref = NULL;
-}
-
-void vn_setdirty(vnode_t *vn) {
-  vn->flags |= VN_DIRTY;
 }
 
 void vn_stat(vnode_t *vn, struct stat *statbuf) {
@@ -233,7 +227,6 @@ int vn_lookup(ventry_t *dve, vnode_t *dvn, cstr_t name, __move ventry_t **result
     vfs_end_read_op(vfs);
     return res;
   }
-
   assert_new_ventry_valid(ve);
   vfs_add_vnode(vfs, VN(ve));
   vfs_end_read_op(vfs);
@@ -253,7 +246,7 @@ int vn_create(ventry_t *dve, vnode_t *dvn, cstr_t name, mode_t mode, __move vent
   CHECK_DIR(dvn);
   CHECK_NAMELEN(name);
   CHECK_SUPPORTED(dvn, v_create);
-  struct vattr attr = make_vattr(V_REG);
+  struct vattr attr = make_vattr(V_REG, mode);
   vfs_t *vfs = dvn->vfs;
   ventry_t *ve;
   int res;
@@ -267,8 +260,8 @@ int vn_create(ventry_t *dve, vnode_t *dvn, cstr_t name, mode_t mode, __move vent
     vfs_end_write_op(vfs);
     return res;
   }
-
   assert_new_ventry_valid(ve);
+
   vfs_add_vnode(vfs, VN(ve));
   vfs_end_write_op(vfs);
   // WRITE END
@@ -293,9 +286,9 @@ int vn_mknod(ventry_t *dve, vnode_t *dvn, cstr_t name, mode_t mode, dev_t dev, _
 
   struct vattr attr;
   if (mode & S_IFBLK) {
-    attr = make_vattr(V_BLK);
+    attr = make_vattr(V_BLK, mode);
   } else if (mode & S_IFCHR) {
-    attr = make_vattr(V_CHR);
+    attr = make_vattr(V_CHR, mode);
   } else {
     return -EINVAL;
   }
@@ -309,9 +302,11 @@ int vn_mknod(ventry_t *dve, vnode_t *dvn, cstr_t name, mode_t mode, dev_t dev, _
     vfs_end_write_op(vfs);
     return res;
   }
-
   assert_new_ventry_valid(ve);
-  vfs_add_vnode(vfs, VN(ve));
+
+  vnode_t *vn = VN(ve);
+  vn->v_dev = dev;
+  vfs_add_vnode(vfs, vn);
   vfs_end_write_op(vfs);
   // WRITE END
 
@@ -330,7 +325,7 @@ int vn_symlink(ventry_t *dve, vnode_t *dvn, cstr_t name, cstr_t target, __move v
   CHECK_NAMELEN(name);
   CHECK_NAMELEN(target);
   CHECK_SUPPORTED(dvn, v_symlink);
-  struct vattr attr = make_vattr(V_LNK);
+  struct vattr attr = make_vattr(V_LNK, S_IFLNK);
   vfs_t *vfs = dvn->vfs;
   ventry_t *ve;
   int res;
@@ -344,9 +339,12 @@ int vn_symlink(ventry_t *dve, vnode_t *dvn, cstr_t name, cstr_t target, __move v
     vfs_end_write_op(vfs);
     return res;
   }
-
   assert_new_ventry_valid(ve);
-  vfs_add_vnode(vfs, VN(ve));
+
+  vnode_t *vn = VN(ve);
+  if (str_isnull(vn->v_link))
+    vn->v_link = str_copy_cstr(target);
+  vfs_add_vnode(vfs, vn);
   vfs_end_write_op(vfs);
   // WRITE END
 
@@ -377,8 +375,8 @@ int vn_hardlink(ventry_t *dve, vnode_t *dvn, cstr_t name, vnode_t *target, __mov
     vfs_end_write_op(vfs);
     return res;
   }
-
   assert_new_ventry_valid(ve);
+
   vfs_end_write_op(vfs);
   // WRITE END
 
@@ -436,7 +434,7 @@ int vn_mkdir(ventry_t *dve, vnode_t *dvn, cstr_t name, mode_t mode, __move ventr
     return -EIO; // vfs is unmounted
 
   // filesystem mkdir
-  struct vattr attr = make_vattr(V_DIR);
+  struct vattr attr = make_vattr(V_DIR, mode);
   if ((res = VN_OPS(dvn)->v_mkdir(dvn, name, &attr, &ve)) < 0) {
     vfs_end_write_op(vfs);
     return res;

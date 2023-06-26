@@ -11,12 +11,8 @@
 #include <hash_map.h>
 #include <rb_tree.h>
 
-#define ASSERT(x) kassert(x)
-#define DPRINTF(fmt, ...) kprintf("device: %s: " fmt, __func__, ##__VA_ARGS__)
-
-#define DEFINE_DEV_TYPE(name, major, type) [major] = { name, major, type }
-
 MAP_TYPE_DECLARE(void *);
+#define DECLARE_DEV_TYPE(_name, _maj, _typ) [_maj] = { .name = (_name), .major = (_maj), .type = (_typ) }
 
 struct bus_type {
   const char *name;
@@ -32,12 +28,15 @@ struct dev_type {
   const char *name;
   uint8_t major;
   enum dtype type;
+  struct device_ops *ops; // single-driver device types
 
   uint8_t last_minor;
-  LIST_HEAD(struct device) devices;
   spinlock_t lock;
+  LIST_HEAD(struct device) devices;
 };
 
+#define ASSERT(x) kassert(x)
+#define DPRINTF(fmt, ...) kprintf("device: %s: " fmt, __func__, ##__VA_ARGS__)
 
 struct bus_type bus_types[] = {
   { "pci" },
@@ -46,8 +45,8 @@ struct bus_type bus_types[] = {
 
 struct dev_type dev_types[] = {
   { /* reserved */ },
-  DEFINE_DEV_TYPE("mem", 1, DTYPE_BLOCK),
-  DEFINE_DEV_TYPE("serial", 2, DTYPE_CHAR),
+  DECLARE_DEV_TYPE("ramdisk", 1, D_BLK),
+  DECLARE_DEV_TYPE("serial" , 2, D_CHR),
 };
 
 static rb_tree_t *device_tree;
@@ -77,12 +76,9 @@ STATIC_INIT(device_static_init);
 // MARK: Device API
 //
 
-device_t *alloc_device(void *data, const struct device_ops *ops) {
-  // data can be NULL
-  ASSERT(ops != NULL);
-  device_t *dev = kmalloc(sizeof(device_t));
-  memset(dev, 0, sizeof(device_t));
-
+device_t *alloc_device(void *data, struct device_ops *ops) {
+  ASSERT(ops != NULL); // data can be NULL
+  device_t *dev = kmallocz(sizeof(device_t));
   dev->data = data;
   dev->ops = ops;
   return dev;
@@ -191,7 +187,7 @@ int register_bus_device(device_bus_t *bus, void *bus_device) {
   // look for a driver that can handle this device
   device_driver_t *driver = NULL;
   LIST_FOR_IN(drv, &type->drivers, list) {
-    if (drv->check_device(drv, dev) == 1) {
+    if (drv->check_device(drv, dev) == 0) {
       // found a driver!
       driver = drv;
       break;
@@ -212,6 +208,19 @@ int register_bus_device(device_bus_t *bus, void *bus_device) {
   return 0;
 }
 
+int register_device_ops(const char *dev_type, struct device_ops *ops) {
+  struct dev_type *type = hash_map_get(dev_type_by_name, dev_type);
+  if (type == NULL) {
+    DPRINTF("device type '%s' not found\n", dev_type);
+    return -1;
+  }
+
+  SPIN_LOCK(&type->lock);
+  type->ops = ops;
+  SPIN_UNLOCK(&type->lock);
+  return 0;
+}
+
 int register_dev(const char *dev_type, device_t *dev) {
   struct dev_type *type = hash_map_get(dev_type_by_name, dev_type);
   if (type == NULL) {
@@ -219,13 +228,19 @@ int register_dev(const char *dev_type, device_t *dev) {
     return -1;
   }
 
-  ASSERT(dev->data != NULL);
+  if (dev->ops == NULL)
+    dev->ops = type->ops;
+
+  if (dev->data == NULL) {
+    panic("register_dev: dev->data is NULL. did you forget to set it?");
+  } else if (dev->ops == NULL) {
+    panic("register_dev: dev->ops is NULL.");
+  }
 
   SPIN_LOCK(&type->lock);
   dev->dtype = type->type;
   dev->major = type->major;
   dev->minor = type->last_minor++;
-  dev->unit = 0;
   dev->bus_list = NULL;
   dev->dev_list = NULL;
   SLIST_ADD(&type->devices, dev, dev_list);

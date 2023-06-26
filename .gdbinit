@@ -99,7 +99,6 @@ add-symbol-file build/kernel.elf
 b kmain
 commands
   set variable is_debug_enabled = 0
-  print is_debug_enabled
 end
 
 b process.c:254

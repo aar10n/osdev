@@ -110,7 +110,7 @@ struct vfs_stat {
 };
 
 struct vfs_ops {
-  int (*v_mount)(struct vfs *vfs, struct device *device, struct ventry **root);
+  int (*v_mount)(struct vfs *vfs, struct device *device, __move struct ventry **root);
   int (*v_unmount)(struct vfs *vfs);
   int (*v_sync)(struct vfs *vfs);
   int (*v_stat)(struct vfs *vfs, struct vfs_stat *stat);
@@ -205,6 +205,7 @@ struct vattr {
   enum vtype type;
   mode_t mode;
 };
+#define make_vattr(t, m) ((struct vattr){.type = (t), .mode = (m)})
 
 struct vnode_ops {
   // file operations

@@ -118,7 +118,12 @@ noreturn void root() {
 
   //////////////////////////////////////////
 
-
+  // mkdir("/dev");
+  // mknod("/dev/rd0", 0777|S_IFBLK, makedev(1, 0));
+  //
+  // ls("/dev");
+  // mkdir("/mnt");
+  // mount("/dev/rd0", "/mnt", "initrd", 0);
 
   kprintf("it worked!\n");
 

@@ -75,7 +75,7 @@ CXXFLAGS += -std=gnu++17 -Wall -MMD -ffreestanding -nostdlib -fno-rtti -fno-exce
 LDFLAGS +=
 ASFLAGS +=
 NASMFLAGS +=
-INCLUDE += -Iinclude/
+INCLUDE += -I$(PROJECT_DIR)/ -Iinclude/
 
 # arch-specific flags
 ifeq ($(ARCH),x86_64)
@@ -102,7 +102,7 @@ endif
 
 # kernel + bootloader sources
 MODULES = BOOT KERNEL
-TARGETS = boot fs kernel lib # drivers
+TARGETS = boot fs kernel lib drivers
 include $(foreach target,$(TARGETS),$(target)/Makefile)
 $(call init-modules,$(MODULES))
 
@@ -156,7 +156,7 @@ $(BUILD_DIR)/osdev.img: config.ini $(BUILD_DIR)/boot$(WINARCH).efi $(BUILD_DIR)/
 # initrd filesystem image
 initrd: $(BUILD_DIR)/initrd.img
 $(BUILD_DIR)/initrd.img: .initrdrc $(BUILD_DIR)/initrdrc
-	scripts/mkinitrd.py -o $@ $(foreach file,$^,-f $(file)) > /dev/null
+	scripts/mkinitrd.py -o $@ $(foreach file,$^,-f $(file))
 
 #
 # bootloader
@@ -225,7 +225,7 @@ clean-userspace: $(USERSPACE_DIRS:%=userspace-dir-clean-%)
 userspace-dir-%:
 	$(MAKE) -C $*
 
-userspace-dir-install-%: sysroot
+userspace-dir-install-%:
 	$(MAKE) -C $* install
 	@touch $(BUILD_DIR)/sysroot_sha1
 
@@ -240,8 +240,15 @@ userspace-dir-clean-%:
 sysroot: $(SYS_ROOT)
 
 .PHONY: $(SYS_ROOT)
-$(SYS_ROOT): | install-userspace
+$(SYS_ROOT): install-userspace
+	mkdir -p $(SYS_ROOT)/lib
+	mkdir -p $(SYS_ROOT)/usr/lib
+	mkdir -p $(SYS_ROOT)/usr/include
+
 	$(MAKE) -C toolchain musl-headers DESTDIR=$(SYS_ROOT)/usr
+	cp $(TOOL_ROOT)/usr/lib/libc.so $(SYS_ROOT)/usr/lib/libc.so
+	ln -sf $(SYS_ROOT)/usr/lib/libc.so $(SYS_ROOT)/lib/ld-musl-$(ARCH).so.1
+
 	@touch $(BUILD_DIR)/sysroot_sha1
 
 # sysroot sha1sum
@@ -294,20 +301,22 @@ endif
 	cp $(BUILD_DIR)/kernel.elf $(USB_DEVICE)/EFI/BOOT/kernel.elf
 	cp config.ini $(USB_DEVICE)/EFI/BOOT/config.ini
 
-print-debug-var:
+print-make-var:
 ifndef VAR
 	$(error VAR is undefined)
 endif
+	@printf "$($(VAR))"
+
+print-module-var:
+ifndef VAR
+	$(error VAR is undefined)
+endif
+ifndef MODULE
+	$(error MODULE is undefined)
+endif
 	@echo "VAR: $(VAR)"
-ifdef MODULE
 	@echo "MODULE: $(MODULE)"
 	@echo "value: $(call module-var,$(VAR),$(MODULE))"
-else ifdef FILE
-	@echo "FILE: $(FILE)"
-	@echo "value: $(call var,$(VAR),$(FILE))"
-else
-	$(error "MODULE or FILE must be defined")
-endif
 
 # ------------------- #
 #  Compilation Rules  #

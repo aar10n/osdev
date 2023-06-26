@@ -106,7 +106,7 @@ int vfs_mount(vfs_t *vfs, device_t *device, ventry_t *mount_ve) {
     DPRINTF("mount point is not empty\n");
     return -ENOTEMPTY;
   }
-  if (device && device->dtype != DTYPE_BLOCK) {
+  if (device && device->dtype != D_BLK) {
     DPRINTF("device is not a block device\n");
     return -ENOTBLK;
   }

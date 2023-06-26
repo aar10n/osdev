@@ -8,7 +8,7 @@
 use strict;
 use warnings;
 
-exit(1) if $#ARGV == -1;
+exit(1) if $#ARGV == 0;
 if ($ARGV[0] eq 'gen') {
     # given a variable 'VAR' and path foo/bar/baz.c we need to
     # print the following variable names (ordered by priority):
@@ -17,8 +17,7 @@ if ($ARGV[0] eq 'gen') {
     shift;
     my $var = shift or exit(1);
     my $path = shift or exit(1);
-    exit(1) if $path =~ /^\//;
-
+    die("path must be relative to project root") if $path =~ /^\//;
     $path =~ s/^\.\.?\///;
     my @overrides = ($var);
     for my $part (split(/\//, $path)) {

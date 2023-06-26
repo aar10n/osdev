@@ -13,8 +13,8 @@ void *early_map_entries(uintptr_t virt_addr, uintptr_t phys_addr, size_t count, 
 
 void init_recursive_pgtable(uint64_t *table_virt, uintptr_t table_phys);
 void pgtable_unmap_user_mappings();
-uint64_t *recursive_map_entry(uintptr_t virt_addr, uintptr_t phys_addr, uint32_t flags, page_t **out_pages);
-void recursive_unmap_entry(uintptr_t virt_addr, uint32_t flags);
+uint64_t *recursive_map_entry(uintptr_t virt_addr, uintptr_t phys_addr, uint32_t pg_flags, page_t **out_pages);
+void recursive_unmap_entry(uintptr_t virt_addr, uint32_t pg_flags);
 
 uintptr_t get_current_pgtable();
 void set_current_pgtable(uintptr_t table_phys);

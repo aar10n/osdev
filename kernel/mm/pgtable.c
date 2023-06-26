@@ -203,21 +203,23 @@ void pgtable_unmap_user_mappings() {
   }
 }
 
-uint64_t *recursive_map_entry(uintptr_t virt_addr, uintptr_t phys_addr, uint32_t flags, page_t **out_pages) {
+uint64_t *recursive_map_entry(uintptr_t virt_addr, uintptr_t phys_addr, uint32_t pg_flags, page_t **out_pages) {
   LIST_HEAD(page_t) table_pages = LIST_HEAD_INITR;
   pg_level_t level = PG_LEVEL_PT;
-  if (flags & PG_BIGPAGE) {
+  if (pg_flags & PG_BIGPAGE) {
     level = PG_LEVEL_PD;
-  } else if (flags & PG_HUGEPAGE) {
+    kassert(is_aligned(virt_addr, SIZE_2MB) && "bigpage must be aligned");
+  } else if (pg_flags & PG_HUGEPAGE) {
     level = PG_LEVEL_PDP;
+    kassert(is_aligned(virt_addr, SIZE_1GB) && "hugepage must be aligned");
   }
 
-  uint16_t meta_flags = PE_WRITE | PE_PRESENT;
+  uint16_t table_pg_flags = PE_WRITE | PE_PRESENT;
   if (virt_addr < USER_SPACE_END) {
-    meta_flags |= PE_USER;
+    table_pg_flags |= PE_USER;
   }
 
-  uint16_t entry_flags = page_to_entry_flags(flags);
+  uint16_t entry_flags = page_to_entry_flags(pg_flags);
   for (pg_level_t i = PG_LEVEL_PML4; i > level; i--) {
     uint64_t *table = get_pgtable_address(virt_addr, i);
     int index = index_for_pg_level(virt_addr, i);
@@ -226,11 +228,11 @@ uint64_t *recursive_map_entry(uintptr_t virt_addr, uintptr_t phys_addr, uint32_t
       // create new table
       page_t *table_page = alloc_pages(1);
       SLIST_ADD(&table_pages, table_page, next);
-      table[index] = table_page->address | meta_flags;
+      table[index] = table_page->address | table_pg_flags;
       uint64_t *new_table = get_pgtable_address(virt_addr, i - 1);
       memset(new_table, 0, PAGE_SIZE);
     } else if (!(table[index] & PE_PRESENT)) {
-      table[index] = next_table | meta_flags;
+      table[index] = next_table | table_pg_flags;
     }
   }
 
@@ -243,12 +245,12 @@ uint64_t *recursive_map_entry(uintptr_t virt_addr, uintptr_t phys_addr, uint32_t
   return table + index;
 }
 
-void recursive_unmap_entry(uintptr_t virt_addr, uint32_t flags) {
-  flags &= PAGE_FLAGS_MASK;
+void recursive_unmap_entry(uintptr_t virt_addr, uint32_t pg_flags) {
+  pg_flags &= PAGE_FLAGS_MASK;
   pg_level_t level = PG_LEVEL_PT;
-  if (flags & PG_BIGPAGE) {
+  if (pg_flags & PG_BIGPAGE) {
     level = PG_LEVEL_PD;
-  } else if (flags & PG_HUGEPAGE) {
+  } else if (pg_flags & PG_HUGEPAGE) {
     level = PG_LEVEL_PDP;
   }
 

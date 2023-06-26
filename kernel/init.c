@@ -16,7 +16,7 @@ typedef struct callback_obj {
 
 LOAD_SECTION(__static_init_array, ".init_array.static");
 LOAD_SECTION(__module_init_array, ".init_array.module");
-LIST_HEAD(callback_obj_t) init_address_space_cb_list = LIST_HEAD_INITR;
+LIST_HEAD(callback_obj_t) init_address_space_cb_list;
 
 void register_init_address_space_callback(init_callback_t callback, void *data) {
   callback_obj_t *obj = kmalloc(sizeof(callback_obj_t));

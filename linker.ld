@@ -5,7 +5,6 @@ SECTIONS {
   __kernel_virtual_offset = 0xFFFF800000000000;
   . = __kernel_address + __kernel_virtual_offset;
 
-
   /* Kernel Code */
   __kernel_code_start = .;
   .text : AT(ADDR(.text)) {
@@ -32,5 +31,4 @@ SECTIONS {
   }
   . = ALIGN(4K);
   __kernel_data_end = .;
-
 }

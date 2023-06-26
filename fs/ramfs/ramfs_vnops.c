@@ -10,38 +10,11 @@
 #include <kernel/printf.h>
 
 #include "ramfs.h"
-#include "ramfs_file.h"
+#include "memfile.h"
 
 #define ASSERT(x) kassert(x)
 #define DPRINTF(fmt, ...) kprintf("ramfs_vnops: %s: " fmt, __func__, ##__VA_ARGS__)
 #define TRACE(str, ...) kprintf("ramfs_vnops: " str, ##__VA_ARGS__)
-
-struct vnode_ops ramfs_vnode_ops = {
-  .v_read = ramfs_vn_read,
-  .v_write = ramfs_vn_write,
-  .v_map = ramfs_vn_map,
-
-  .v_load = ramfs_vn_load,
-  .v_save = ramfs_vn_save,
-  .v_readlink = ramfs_vn_readlink,
-  .v_readdir = ramfs_vn_readdir,
-
-  .v_lookup = ramfs_vn_lookup,
-  .v_create = ramfs_vn_create,
-  .v_mknod = ramfs_vn_mknod,
-  .v_symlink = ramfs_vn_symlink,
-  .v_hardlink = ramfs_vn_hardlink,
-  .v_unlink = ramfs_vn_unlink,
-  .v_mkdir = ramfs_vn_mkdir,
-  .v_rmdir = ramfs_vn_rmdir,
-
-  .v_cleanup = ramfs_vn_cleanup,
-};
-
-struct ventry_ops ramfs_ventry_ops = {
-  .v_cleanup = ramfs_ve_cleanup,
-};
-
 
 static inline unsigned char vtype_to_dtype(enum vtype type) {
   switch (type) {
@@ -81,23 +54,22 @@ static inline size_t kio_write_dirent(ino_t ino, enum vtype type, cstr_t name, k
   return dirent.d_reclen;
 }
 
-
 ssize_t ramfs_vn_read(vnode_t *vn, off_t off, kio_t *kio) {
   ramfs_node_t *node = vn->data;
-  ramfs_file_t *file = node->n_file;
-  return ramfs_file_read(file, off, kio);
+  memfile_t *memf = node->n_file;
+  return memfile_read(memf, off, kio);
 }
 
 ssize_t ramfs_vn_write(vnode_t *vn, off_t off, kio_t *kio) {
   ramfs_node_t *node = vn->data;
-  ramfs_file_t *file = node->n_file;
-  return ramfs_file_write(file, off, kio);
+  memfile_t *memf = node->n_file;
+  return memfile_write(memf, off, kio);
 }
 
 int ramfs_vn_map(vnode_t *vn, off_t off, vm_mapping_t *mapping) {
   ramfs_node_t *node = vn->data;
-  ramfs_file_t *file = node->n_file;
-  return ramfs_file_map(file, mapping);
+  memfile_t *memf = node->n_file;
+  return memfile_map(memf, off, mapping);
 }
 
 //
@@ -140,7 +112,7 @@ ssize_t ramfs_vn_readdir(vnode_t *vn, off_t off, kio_t *dirbuf) {
     i++;
   }
 
-  ramfs_dirent_t *dent = LIST_FIRST(&node->n_dir);
+  ramfs_dentry_t *dent = LIST_FIRST(&node->n_dir);
   while (dent) {
     // get to the right offset
     if (i < off) {
@@ -173,10 +145,10 @@ int ramfs_vn_create(vnode_t *dir, cstr_t name, struct vattr *vattr, __move ventr
   ramfs_mount_t *mount = dnode->mount;
 
   // create the file node and entry
-  ramfs_node_t *node = ramfs_node_alloc(mount, vattr->type, vattr->mode);
-  ramfs_dirent_t *dent = ramfs_dirent_alloc(node, name);
-  node->n_file = ramfs_file_alloc(0);
-  ramfs_dir_add(dnode, dent);
+  ramfs_node_t *node = ramfs_alloc_node(mount, vattr);
+  ramfs_dentry_t *dent = ramfs_alloc_dentry(node, name);
+  node->n_file = memfile_alloc(0);
+  ramfs_add_dentry(dnode, dent);
 
   // create the vnode and ventry
   vnode_t *vn = vn_alloc(node->id, vattr);
@@ -195,17 +167,15 @@ int ramfs_vn_mknod(vnode_t *dir, cstr_t name, struct vattr *vattr, dev_t dev, __
   ramfs_node_t *dnode = dir->data;
   ramfs_mount_t *mount = dnode->mount;
 
-  mode_t mode = vattr->mode;
-  if (!(mode & S_IFCHR) && !(mode & S_IFBLK)) {
+  if (!(vattr->mode & S_IFCHR) && !(vattr->mode & S_IFBLK)) {
     DPRINTF("only character and block devices are supported\n");
     return -EINVAL;
   }
 
   // create the device node and entry
-  ramfs_node_t *node = ramfs_node_alloc(mount, vattr->type, mode);
-  ramfs_dirent_t *dent = ramfs_dirent_alloc(node, name);
-  node->n_dev = dev;
-  ramfs_dir_add(dnode, dent);
+  ramfs_node_t *node = ramfs_alloc_node(mount, vattr);
+  ramfs_dentry_t *dent = ramfs_alloc_dentry(node, name);
+  ramfs_add_dentry(dnode, dent);
 
   // create the vnode and ventry
   vnode_t *vn = vn_alloc(node->id, vattr);
@@ -225,10 +195,10 @@ int ramfs_vn_symlink(vnode_t *dir, cstr_t name, struct vattr *vattr, cstr_t targ
   ramfs_mount_t *mount = dnode->mount;
 
   // create the symlink node and entry
-  ramfs_node_t *node = ramfs_node_alloc(mount, vattr->type, vattr->mode);
-  ramfs_dirent_t *dent = ramfs_dirent_alloc(node, name);
+  ramfs_node_t *node = ramfs_alloc_node(mount, vattr);
+  ramfs_dentry_t *dent = ramfs_alloc_dentry(node, name);
   node->n_link = str_copy_cstr(target);
-  ramfs_dir_add(dnode, dent);
+  ramfs_add_dentry(dnode, dent);
 
   // create the vnode and ventry
   vnode_t *vn = vn_alloc(node->id, vattr);
@@ -248,8 +218,8 @@ int ramfs_vn_hardlink(vnode_t *dir, cstr_t name, vnode_t *target, __move ventry_
   ramfs_mount_t *mount = dnode->mount;
 
   // create the new entry
-  ramfs_dirent_t *dent = ramfs_dirent_alloc(tnode, name);
-  ramfs_dir_add(dnode, dent);
+  ramfs_dentry_t *dent = ramfs_alloc_dentry(tnode, name);
+  ramfs_add_dentry(dnode, dent);
   ventry_t *ve = ve_alloc_linked(name, target);
   ve->data = dent;
 
@@ -258,11 +228,11 @@ int ramfs_vn_hardlink(vnode_t *dir, cstr_t name, vnode_t *target, __move ventry_
 }
 
 int ramfs_vn_unlink(vnode_t *dir, vnode_t *vn, ventry_t *ve) {
-  TRACE("unlink id=%u \"{:cstr}\"\n", dir->id, &ve->name);
+  TRACE("unlink id=%u \"{:str}\"\n", dir->id, &ve->name);
   ramfs_node_t *dnode = dir->data;
   ramfs_node_t *node = vn->data;
-  ramfs_dirent_t *dent = ve->data;
-  ramfs_dir_remove(dnode, dent);
+  ramfs_dentry_t *dent = ve->data;
+  ramfs_remove_dentry(dnode, dent);
   return 0;
 }
 
@@ -273,9 +243,9 @@ int ramfs_vn_mkdir(vnode_t *dir, cstr_t name, struct vattr *vattr, __move ventry
   ramfs_mount_t *mount = dnode->mount;
 
   // create the directory node and entry
-  ramfs_node_t *node = ramfs_node_alloc(mount, vattr->type, vattr->mode);
-  ramfs_dirent_t *dent = ramfs_dirent_alloc(node, name);
-  ramfs_dir_add(dnode, dent);
+  ramfs_node_t *node = ramfs_alloc_node(mount, vattr);
+  ramfs_dentry_t *dent = ramfs_alloc_dentry(node, name);
+  ramfs_add_dentry(dnode, dent);
 
   // create the vnode and ventry
   vnode_t *vn = vn_alloc(node->id, vattr);
@@ -290,11 +260,11 @@ int ramfs_vn_mkdir(vnode_t *dir, cstr_t name, struct vattr *vattr, __move ventry
 }
 
 int ramfs_vn_rmdir(vnode_t *dir, vnode_t *vn, ventry_t *ve) {
-  TRACE("rmdir id=%u \"{:cstr}\"\n", dir->id, &ve->name);
+  TRACE("rmdir id=%u \"{:str}\"\n", dir->id, &ve->name);
   ramfs_node_t *dnode = dir->data;
   ramfs_node_t *node = vn->data;
-  ramfs_dirent_t *dent = ve->data;
-  ramfs_dir_remove(dnode, dent);
+  ramfs_dentry_t *dent = ve->data;
+  ramfs_remove_dentry(dnode, dent);
   return 0;
 }
 
@@ -308,22 +278,22 @@ void ramfs_vn_cleanup(vnode_t *vn) {
 
   if (node->type == V_REG) {
     // release file resources now
-    ramfs_file_t *file = node->n_file;
-    ramfs_file_free(file);
+    memfile_t *memf = node->n_file;
+    memfile_free(memf);
     node->n_file = NULL;
   } else if (node->type == V_LNK) {
     str_free(&node->n_link);
   }
 
-  ramfs_node_free(node);
+  ramfs_free_node(node);
 }
 
 void ramfs_ve_cleanup(ventry_t *ve) {
   // DPRINTF("cleanup\n");
-  ramfs_dirent_t *dent = ve->data;
+  ramfs_dentry_t *dent = ve->data;
   if (!dent)
     return;
 
   str_free(&dent->name);
-  ramfs_dirent_free(dent);
+  ramfs_free_dentry(dent);
 }

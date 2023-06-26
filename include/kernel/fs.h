@@ -14,7 +14,7 @@ fs_type_t *fs_get_type(const char *type);
 void fs_init();
 __move ventry_t *fs_root_getref();
 
-int fs_mount(const char *path, const char *device, const char *type, int flags);
+int fs_mount(const char *source, const char *mount, const char *fs_type, int flags);
 int fs_unmount(const char *path);
 
 int fs_open(const char *path, int flags, mode_t mode);

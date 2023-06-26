@@ -1,9 +1,11 @@
 #!/usr/bin/env python
-from typing import Optional, Dict, List, Set
+from typing import Optional, Dict, List, Set, Iterable, Tuple
 from struct import calcsize, pack
-import os
+from collections import defaultdict
 import posixpath
 import argparse
+import os
+import sys
 
 
 # Initial Ramdisk Format
@@ -228,6 +230,25 @@ def get_intermediate_paths(path: str) -> List[str]:
     return list(reversed(_parts))
 
 
+def sort_order_paths(_paths: Iterable[str]) -> List[str]:
+    paths_by_depth = defaultdict(list)  # type: Dict[int, List[Tuple[bool, str]]]
+
+    # find the depth of each path and sort files before directories
+    for _path in _paths:
+        depth = _path.count(os.sep)
+        is_file = os.path.isfile(_path)
+        paths_by_depth[depth].append((is_file, _path))
+
+    # for each depth level, sort paths such that files come first
+    for depth_level in paths_by_depth:
+        paths_by_depth[depth_level].sort(key=lambda x: (not x[0], x[1].lower()))
+
+    # get sorted keys and use them to create a final sorted list of paths
+    sorted_keys = sorted(paths_by_depth.keys())
+    sorted_paths = [p for key in sorted_keys for _, p in paths_by_depth[key]]
+    return sorted_paths
+
+
 #
 # Main
 #
@@ -275,28 +296,26 @@ if __name__ == "__main__":
     # put these at the end
     directives += [parse_directive(s) for s in args.directives]
 
-    paths = dict()  # type: Dict[str, (Directive, int)] # image path -> (directive, data_offset)
-    files = dict()  # type: Dict[str, int] # source file -> data_offset
-    dir_set = set()  # type: Set[str] # all intermediate directories
+    paths = dict()   # type: Dict[str, (Directive, int)] # image path -> (directive, data_offset)
+    files = dict()   # type: Dict[str, int] # source file -> data_offset
+    alldirs = set()  # type: Set[str] # all directories in the image
     metadata_size = 0
     curr_data_offset = 0
 
-    # first pass: collect all paths and files
+    ##
+    # first pass: collect information
     for d in directives:
-        print(f'adding {d.kind} {d.path}')
         if d.path in paths:
-            raise argparse.ArgumentTypeError(f'path already exists: {d.path}')
-        elif d.path in dir_set:
-            raise argparse.ArgumentTypeError(f'path is already a directory: {d.path}')
+            sys.stderr.write(f'warning: skipping duplicate path: {d.path}\n')
+            continue
 
-        parts = get_intermediate_paths(d.path)
-        for p in parts:
-            if p in paths:
-                raise argparse.ArgumentTypeError(f'path is already a file: {p}')
-            dir_set.add(p)
-
-        # calculate offsets
-        metadata_size += ENTRY_SIZE + len(d.path) + 1
+        # add intermediate directories
+        dir_set = set()
+        for p in get_intermediate_paths(d.path):
+            if p not in paths:
+                dir_set.add(p)
+                paths[p] = (Directive('d', p, None), 0)
+                alldirs.add(p)
 
         offset = 0
         if d.isfile():
@@ -312,15 +331,19 @@ if __name__ == "__main__":
 
         paths[d.path] = (d, offset)
 
-    # order intermediate directories by depth
-    path_list = list(sorted(paths.keys()))
-    dir_list = list(sorted(dir_set, key=lambda path: path.count('/')))
-    for d in dir_list:
-        name = os.path.basename(d)
-        metadata_size += ENTRY_SIZE + len(d) + 1
+    # sort paths
+    path_list = sort_order_paths(paths.keys())
+    # for p in path_list:
+    #     print(f'path: {p}')
+    # exit(1)
 
+    # calculate metadata size
+    for p in path_list:
+        metadata_size += ENTRY_SIZE + len(p) + 1
+
+    ##
     # second pass: write the image
-    entry_count = len(path_list) + len(dir_list)
+    entry_count = len(path_list)
     data_size = curr_data_offset
     data_start_offset = HEADER_SIZE + metadata_size
     total_size = data_start_offset + data_size
@@ -329,14 +352,11 @@ if __name__ == "__main__":
         # write header
         f.write(format_header(MAGIC, 0, total_size, data_start_offset, entry_count))
 
-        # write dependency directories
-        for path in dir_list:
-            d = Directive('d', path, None)
-            f.write(format_entry(d.kind, 0, 0, d.path))
-        # write rest of the entries
-        for d in directives:
-            offset = paths[d.path][1] + data_start_offset
-            f.write(format_entry(d.kind, offset, d.size, d.path))
+        # write metadata
+        for p in path_list:
+            d, offset = paths[p]
+            print(f'adding {d.kind} {d.path}')
+            f.write(format_entry(d.kind, offset, d.size, p))
 
         # write data
         for d in directives:

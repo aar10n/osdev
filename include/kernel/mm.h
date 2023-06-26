@@ -12,7 +12,6 @@
 #include <kernel/mm/vmalloc.h>
 #include <kernel/mm/init.h>
 
-
-
+size_t pg_flags_to_size(uint32_t flags);
 
 #endif

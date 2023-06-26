@@ -24,7 +24,7 @@ def directives_from_folder(destbase: str, srcdir: str, recursive: bool = True, s
         if os.path.isdir(childsrc):
             _directives += [f':{childdest}/']
             if recursive:
-                _directives += directives_from_folder(childdest, childsrc, recursive=recursive)
+                _directives += directives_from_folder(childdest, childsrc, recursive=recursive, sysroot=sysroot)
         elif os.path.islink(childsrc):
             target = os.readlink(childsrc)
             # only create the symlink if it points to a file in the sysroot

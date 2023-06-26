@@ -9,6 +9,13 @@
 
 #define FAIL(x, ...) panic("%s: " x, __func__, ##__VA_ARGS__)
 
+void mount(const char *source, const char *mount, const char *fs_type, int flags) {
+  int fd = fs_mount(source, mount, fs_type, flags);
+  if (fd < 0) {
+    FAIL(" {:err} [source=%s, mount=%s]\n", fd, source, mount);
+  }
+}
+
 void touch(const char *path) {
   int fd = fs_open(path, O_CREAT | O_WRONLY, 0777);
   if (fd < 0) {

@@ -38,6 +38,7 @@ void mm_early_init() {
 
   uintptr_t initrd_phys = boot_info_v2->initrd_addr;
   size_t initrd_size = boot_info_v2->initrd_size;
+  bool initrd_reserved = false;
 
   kprintf("boot memory map:\n");
   memory_map_t *memory_map = &boot_info_v2->mem_map;
@@ -78,6 +79,7 @@ void mm_early_init() {
         if (initrd_phys != 0 && start == initrd_phys) {
           kernel_reserved_start += initrd_size;
           kernel_reserved_ptr += initrd_size;
+          initrd_reserved = true;
         }
       }
     }
@@ -99,6 +101,9 @@ void mm_early_init() {
   kernel_entry->base = kernel_end_phys;
   kernel_entry->size -= boot_info_v2->kernel_size;
   reserved_map_entry = kernel_reserved_entry;
+
+  if (!initrd_reserved)
+    panic("initrd not reserved");
 
   kprintf("initrd: %p, %M\n", initrd_phys, initrd_size);
   kprintf("kernel_reserved_start: %p\n", kernel_reserved_start);

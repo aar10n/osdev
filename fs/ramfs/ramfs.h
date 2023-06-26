@@ -10,15 +10,18 @@
 #include <kernel/device.h>
 #include <kernel/queue.h>
 
-struct ramfs_file;
+struct memfile;
 struct ramfs_node;
-struct ramfs_dirent;
+struct ramfs_dentry;
 
 typedef struct ramfs_mount {
-  id_t next_id;
+  vfs_t *vfs; // no ref held
+  void *data; // embedded data
+
+  struct ramfs_node *root;
   size_t num_nodes;
   spinlock_t lock;
-  vfs_t *vfs; // no ref held
+  id_t next_id;
 } ramfs_mount_t;
 
 typedef struct ramfs_node {
@@ -26,34 +29,42 @@ typedef struct ramfs_node {
   enum vtype type;
   mode_t mode;
   vnode_t *vnode; // no ref held
+  void *data; // embedded fs data
 
   mutex_t lock;
-  ramfs_mount_t *mount;
+  struct ramfs_mount *mount;
 
   union {
-    dev_t n_dev;
     str_t n_link;
-    struct ramfs_file *n_file;
-    LIST_HEAD(struct ramfs_dirent) n_dir;
+    struct memfile *n_file;
+    LIST_HEAD(struct ramfs_dentry) n_dir;
   };
 } ramfs_node_t;
 
-typedef struct ramfs_dirent {
+typedef struct ramfs_dentry {
   str_t name;
-  ramfs_node_t *node;
-  ramfs_node_t *parent;
-  LIST_ENTRY(struct ramfs_dirent) list; // sibling list
   ventry_t *ventry; // no ref held
-} ramfs_dirent_t;
+  void *data; // embedded fs data
 
-ramfs_node_t *ramfs_node_alloc(ramfs_mount_t *mount, enum vtype type, mode_t mode);
-void ramfs_node_free(ramfs_node_t *node);
-void ramfs_dir_add(ramfs_node_t *dir, ramfs_dirent_t *dirent);
-void ramfs_dir_remove(ramfs_node_t *dir, ramfs_dirent_t *dirent);
+  struct ramfs_node *node;
+  struct ramfs_node *parent;
+  LIST_ENTRY(struct ramfs_dentry) list;
+} ramfs_dentry_t;
 
-ramfs_dirent_t *ramfs_dirent_alloc(ramfs_node_t *node, cstr_t name);
-void ramfs_dirent_free(ramfs_dirent_t *dirent);
-ramfs_dirent_t *ramfs_dirent_lookup(ramfs_node_t *dir, cstr_t name);
+// MARK: ramfs api for embedding filesystems
+
+// mount
+ramfs_mount_t *ramfs_alloc_mount(vfs_t *vfs); // allocates root node too
+void ramfs_free_mount(ramfs_mount_t *mount);
+// dentry
+ramfs_dentry_t *ramfs_alloc_dentry(ramfs_node_t *node, cstr_t name);
+void ramfs_free_dentry(ramfs_dentry_t *dentry);
+// node
+ramfs_node_t *ramfs_alloc_node(ramfs_mount_t *mount, struct vattr *vattr);
+void ramfs_free_node(ramfs_node_t *node);
+void ramfs_add_dentry(ramfs_node_t *dir, ramfs_dentry_t *dentry);
+void ramfs_remove_dentry(ramfs_node_t *dir, ramfs_dentry_t *dentry);
+ramfs_dentry_t *ramfs_lookup_dentry(ramfs_node_t *dir, cstr_t name);
 
 // MARK: implementation
 

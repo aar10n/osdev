@@ -109,7 +109,7 @@ static void serial_module_init() {
 
     kprintf("serial: found serial device on port COM%d\n", i+1);
 
-    struct serial_device *serial_dev = kmalloc(sizeof(struct serial_device));
+    struct serial_device *serial_dev = kmallocz(sizeof(struct serial_device));
     serial_dev->port = ports[i];
 
     device_t *dev = alloc_device(serial_dev, &serial_ops);

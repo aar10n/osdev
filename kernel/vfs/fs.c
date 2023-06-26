@@ -106,11 +106,11 @@ int fs_mount(const char *source, const char *mount, const char *fs_type, int fla
     DPRINTF("failed to resolve source path\n");
     goto ret;
   }
-  dev_t rdev = VN(source_ve)->v_dev; // hold lock only long enough to get device number
+  dev_t dev = VN(source_ve)->v_dev; // hold lock only long enough to get device number
   ve_unlock_release(&source_ve);
 
   // lookup device
-  device_t *device = device_get(rdev);
+  device_t *device = device_get(dev);
   if (device == NULL)
     goto_error(ret, -ENODEV);
 

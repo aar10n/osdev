@@ -12,10 +12,13 @@
 #include <kernel/string.h>
 #include <kernel/mm.h>
 #include <kernel/cpu/io.h>
-
-#include <drivers/serial.h>
 #include <kernel/gui/screen.h>
+
 #include <format.h>
+
+// for early console
+#define COM1 0x3F8
+#define COM2 0x2F8
 
 #define CMD_BUFFER_SIZE 256
 

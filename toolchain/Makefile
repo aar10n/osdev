@@ -144,6 +144,7 @@ $(MUSL_DIR)/.build: $(MUSL_DIR)/.configure
 $(MUSL_DIR)/.install: export DESTDIR = $(MUSL_PREFIX)
 $(MUSL_DIR)/.install: $(MUSL_DIR)/.build
 	cd $(@D) && $(MAKE) install $(MUSL_VARS)
+	ln -s $(MUSL_PREFIX)/include/bits $(TOOL_ROOT)/include/bits
 	ln -s $(MUSL_PREFIX)/include/sys $(TOOL_ROOT)/include/sys
 
 .PHONY: $(MUSL_DIR)/.install-headers

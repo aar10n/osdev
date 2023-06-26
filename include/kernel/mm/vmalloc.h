@@ -52,8 +52,8 @@ void *vm_map(vm_mapping_t *vm, uint32_t pg_flags);
 void vm_unmap(vm_mapping_t *vm);
 int vm_resize(vm_mapping_t *vm, size_t new_size, bool allow_move);
 
-page_t *vm_getpage(vm_mapping_t *vm, size_t off);
-int vm_putpage(vm_mapping_t *vm, size_t off, page_t *page);
+page_t *vm_getpage(vm_mapping_t *vm, size_t off, bool cow);
+int vm_putpages(vm_mapping_t *vm, size_t off, page_t *pages);
 
 vm_mapping_t *vm_get_mapping(uintptr_t virt_addr);
 uintptr_t vm_virt_to_phys(uintptr_t virt_addr);

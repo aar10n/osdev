@@ -5,7 +5,7 @@
 #ifndef KERNEL_DEVICE_H
 #define KERNEL_DEVICE_H
 
-#include <kernel/base.h>
+#include <kernel/mm_types.h>
 #include <kernel/queue.h>
 #include <kernel/spinlock.h>
 #include <kernel/mutex.h>
@@ -17,15 +17,14 @@ struct device_bus;
 
 struct ventry;
 
-#define D_OPS(d) __type_checked(struct device_ops *, d, (d)->ops)
+#define D_OPS(d) __type_checked(struct device *, d, (d)->ops)
 
 #define DEVICE_DATA(d) __type_checked(struct device *, d, (d)->data)
 #define DEVFILE_DATA(f) __type_checked(struct file *, f, (f)->inode->i_device->data)
 
 enum dtype {
-  DTYPE_NONE,
-  DTYPE_BLOCK,
-  DTYPE_CHAR,
+  D_BLK = 1,
+  D_CHR,
 };
 
 /**
@@ -48,7 +47,7 @@ typedef struct device {
 
   struct device_bus *bus;
   struct device_driver *driver;
-  const struct device_ops *ops;
+  struct device_ops *ops;
 
   LIST_HEAD(struct device) children;
   LIST_HEAD(struct ventry) entries;
@@ -62,6 +61,9 @@ struct device_ops {
   int (*d_close)(struct device *device);
   ssize_t (*d_read)(struct device *device, size_t off, struct kio *kio);
   ssize_t (*d_write)(struct device *device, size_t off, struct kio *kio);
+  // int (*d_ioctl)(struct device *device, int cmd, void *arg);
+  page_t *(*d_getpage)(struct device *device, size_t off);
+  int (*d_putpage)(struct device *device, size_t off, page_t *page);
 };
 
 /**
@@ -72,9 +74,9 @@ struct device_ops {
  * native type for the bus.
  */
 typedef struct device_driver {
-  const char *name;                  // the driver identifier
-  void *data;                        // private data
-  const struct device_ops *ops;      // device interface
+  const char *name;             // the driver identifier
+  void *data;                   // private data
+  struct device_ops *ops;       // device interface
 
   /**
    * Checks whether the driver supports a device.
@@ -84,10 +86,7 @@ typedef struct device_driver {
    * and it will contain the native device type used for the bus. For example,
    * if the driver is a PCI driver then the bus data will be a pci_device_t
    * structure.
-   *
-   * @param drv The device driver.
-   * @param dev The device to check.
-   * @return 1 if the device is supported, 0 otherwise
+   * @return 0 if the device is supported, -1 otherwise
    */
   int (*check_device)(struct device_driver *drv, struct device *dev);
 
@@ -118,6 +117,7 @@ typedef struct device_bus {
   LIST_ENTRY(struct device_bus) list;
 } device_bus_t;
 
+
 static inline dev_t makedev(uint8_t major, uint8_t minor) {
   return ((dev_t)major) | ((dev_t)minor << 8);
 }
@@ -134,7 +134,7 @@ static inline uint16_t dev_unit(dev_t dev) {
   return (dev >> 16) & 0xFF;
 }
 
-device_t *alloc_device(void *data, const struct device_ops *ops);
+device_t *alloc_device(void *data, struct device_ops *ops);
 device_t *free_device(device_t *dev);
 
 void probe_all_buses();
@@ -180,6 +180,15 @@ int register_driver(const char *bus_type, device_driver_t *driver);
 int register_bus_device(device_bus_t *bus, void *bus_device);
 
 /**
+ * Registers device_ops for a device type.
+ *
+ * This function is for single-driver device types that do not have a bus. It
+ * associates the device operations with the specific type. When registering
+ * devices of this type, the devices should be allocated with NULL ops.
+ */
+int register_device_ops(const char *dev_type, struct device_ops *ops);
+
+/**
  * Registers a new device on the system.
  *
  * This function registers devices that are bound to a driver. The device may or
@@ -190,5 +199,21 @@ int register_bus_device(device_bus_t *bus, void *bus_device);
  * On failure, the device will remain anonymous.
  */
 int register_dev(const char *dev_type, device_t *dev);
+
+
+static inline int d_open(struct device *device, int flags) { return device->ops->d_open(device, flags); }
+static inline int d_close(struct device *device) { return device->ops->d_close(device); }
+static inline ssize_t d_read(struct device *device, size_t off, struct kio *kio) { return device->ops->d_read(device, off, kio); }
+static inline ssize_t d_write(struct device *device, size_t off, struct kio *kio) { return device->ops->d_write(device, off, kio); }
+
+static inline ssize_t __d_read(device_t *device, size_t off, void *buf, size_t len) {
+  kio_t tmp = kio_new_writeonly(buf, len);
+  return d_read(device, off, &tmp);
+}
+
+static inline ssize_t __d_write(device_t *device, size_t off, const void *buf, size_t len) {
+  kio_t tmp = kio_new_readonly(buf, len);
+  return d_write(device, off, &tmp);
+}
 
 #endif

@@ -2,4 +2,4 @@
 $(call register,drivers,KERNEL)
 
 # drivers/
-drivers += rawmem.c serial.c
+drivers +=  ramdisk.c serial.c

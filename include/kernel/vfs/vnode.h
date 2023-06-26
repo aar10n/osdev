@@ -37,7 +37,6 @@ static inline vnode_t *vn_moveref(__move vnode_t **vnref) __move {
 vnode_t *vn_alloc_empty(enum vtype type) __move;
 vnode_t *vn_alloc(id_t id, struct vattr *vattr) __move;
 void vn_release(__move vnode_t **vnref);
-void vn_setdirty(vnode_t *vn);
 void vn_stat(vnode_t *vn, struct stat *statbuf); // vn = l
 
 int vn_open(vnode_t *vn, int flags); // vn = _

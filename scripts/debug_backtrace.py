@@ -6,7 +6,7 @@ import os
 PROJECT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
 
 STACK_FRAME_PATTERN = re.compile(r"\?\? (?P<addr>0x[0-9a-f]+)")
-ADDR2LINE = os.environ.get('ADDR2LINE', os.path.join(PROJECT_DIR, 'build/sysroot/usr/bin/x86_64-osdev-addr2line'))
+ADDR2LINE = os.environ.get('ADDR2LINE', os.path.join(PROJECT_DIR, 'build/toolchain/bin/x86_64-linux-musl-addr2line'))
 
 
 def main():
