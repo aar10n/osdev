@@ -34,22 +34,32 @@ import sys
 #   - link        a symlink to another path
 #   - directory   an empty directory
 #
-# All intermedate paths should each have a directory entry in the
-# metadata section, even if they are not explicitly specified. Also,
-# entries must be ordered by dependency, such that all parent paths
-# appear before their children. Beyond that, the order of entries is
-# not important. The root directory '/' is implied.
+# Entries are ordered by increasing path depth meaning parent
+# directories will appear before their children. Additionally,
+# entries are arranged such that all children of a given directory
+# will appear immediately after their parent, with regular files
+# appearing before symlinks followed by directories last. The root
+# directory '/' is implied.
 #
-# For example, if the following files are to be added to the initrd:
-#   - /etc/passwd
-#   - /usr/bin/ls
+# For example, if the following paths are added to the initrd:
+#   - /home/user/.bashrc
+#   - /home/user/.config/
+#   - /usr/include/stdio.h
+#   - /usr/include/sys/types.h
+#   - /usr/bin/sed
 #
-# This implies following entries will be created:
-#   - /etc
-#   - /etc/passwd
+# This results in the following path order:
+#   - /home
+#   - /home/user
+#   - /home/user/.bashrc
+#   - /home/user/.config/
 #   - /usr
 #   - /usr/bin
-#   - /usr/bin/ls
+#   - /usr/bin/sed
+#   - /usr/include
+#   - /usr/include/stdio.h
+#   - /usr/include/sys
+#   - /usr/include/sys/types.h
 #
 # The limitations of the initrd format are as follows:
 #   - max total image size of 4GB
@@ -99,6 +109,7 @@ import sys
 
 U16_MAX = 0xFFFF
 U32_MAX = 0xFFFFFFFF
+PAGE_SIZE = 0x1000
 
 HEADER_FORMAT = '<6cHLLH14x'
 HEADER_SIZE = calcsize(HEADER_FORMAT)
@@ -109,8 +120,8 @@ ENTRY_SIZE = calcsize(ENTRY_FORMAT)
 assert ENTRY_SIZE == 12
 
 
-def align_up(n: int, alignment: int) -> int:
-    return (n + alignment - 1) & ~(alignment - 1)
+def align_up(_n: int, _align: int) -> int:
+    return (_n + _align - 1) & ~(_align - 1)
 
 
 def format_cstring(s: str) -> bytes:
@@ -182,6 +193,9 @@ class Directive:
     def isdir(self) -> bool:
         return self.kind == 'd'
 
+    def aligned_size(self) -> int:
+        return align_up(self.size, PAGE_SIZE)
+
     def __repr__(self) -> str:
         return f'Directive(kind=\'{self.kind}\', path={self.path}, operand={self.operand}, size={self.size})'
 
@@ -223,7 +237,7 @@ def get_intermediate_paths(path: str) -> List[str]:
     while True:
         dirname, _ = posixpath.split(path)
         if dirname != '.' and dirname != '/':
-            _parts.append(dirname)
+            _parts += [dirname + '/']
         else:
             break
         path = dirname
@@ -309,11 +323,9 @@ if __name__ == "__main__":
             sys.stderr.write(f'warning: skipping duplicate path: {d.path}\n')
             continue
 
-        # add intermediate directories
-        dir_set = set()
+        # add missing intermediate directories
         for p in get_intermediate_paths(d.path):
             if p not in paths:
-                dir_set.add(p)
                 paths[p] = (Directive('d', p, None), 0)
                 alldirs.add(p)
 
@@ -324,18 +336,16 @@ if __name__ == "__main__":
             else:
                 offset = curr_data_offset
                 files[d.operand] = offset
-                curr_data_offset += d.size
+                curr_data_offset += d.aligned_size()
         elif d.islink():
+            # TODO: pack symlink data
             offset = curr_data_offset
-            curr_data_offset += d.size
+            curr_data_offset += d.aligned_size()
 
         paths[d.path] = (d, offset)
 
     # sort paths
     path_list = sort_order_paths(paths.keys())
-    # for p in path_list:
-    #     print(f'path: {p}')
-    # exit(1)
 
     # calculate metadata size
     for p in path_list:
@@ -345,7 +355,7 @@ if __name__ == "__main__":
     # second pass: write the image
     entry_count = len(path_list)
     data_size = curr_data_offset
-    data_start_offset = HEADER_SIZE + metadata_size
+    data_start_offset = align_up(HEADER_SIZE + metadata_size, PAGE_SIZE)
     total_size = data_start_offset + data_size
 
     with open(output_file, 'wb') as f:
@@ -363,8 +373,10 @@ if __name__ == "__main__":
             if d.isfile():
                 with open(d.operand, 'rb') as src:
                     f.write(src.read())
+                    f.write(b'\0' * (d.aligned_size() - d.size))
             elif d.islink():
                 f.write(format_cstring(d.operand))
+                f.write(b'\0' * (d.aligned_size() - d.size))
 
         print(f'wrote {total_size} bytes to {output_file}')
         print(f'  entry count: {entry_count}')
