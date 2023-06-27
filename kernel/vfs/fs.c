@@ -15,7 +15,6 @@
 #include <kernel/process.h>
 #include <kernel/panic.h>
 #include <kernel/printf.h>
-#include <hash_map.h>
 #include <kernel/str.h>
 #include <kernel/kio.h>
 
@@ -25,7 +24,8 @@
 
 #define FTABLE (PERCPU_PROCESS->files)
 
-MAP_TYPE_DECLARE(fs_type_t *);
+#define MAP_TYPE fs_type_t *
+#include <hash_map.h>
 
 hash_map_t *fs_types;
 spinlock_t fs_types_lock;
@@ -49,7 +49,7 @@ int fs_register_type(fs_type_t *fs_type) {
 
   DPRINTF("registering fs type '%s'\n", fs_type->name);
   SPIN_LOCK(&fs_types_lock);
-  hash_map_set_c(fs_types, fs_type->name, fs_type);
+  hash_map_set(fs_types, fs_type->name, fs_type);
   SPIN_UNLOCK(&fs_types_lock);
   return 0;
 }

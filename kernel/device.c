@@ -8,11 +8,12 @@
 #include <kernel/printf.h>
 
 #include <kernel/string.h>
-#include <hash_map.h>
 #include <rb_tree.h>
 
-MAP_TYPE_DECLARE(void *);
 #define DECLARE_DEV_TYPE(_name, _maj, _typ) [_maj] = { .name = (_name), .major = (_maj), .type = (_typ) }
+
+#define MAP_TYPE void *
+#include <hash_map.h>
 
 struct bus_type {
   const char *name;
@@ -62,12 +63,12 @@ static void device_static_init() {
   for (int i = 0; i < ARRAY_SIZE(bus_types); i++) {
     bus_types[i].driver_by_name = hash_map_new();
     spin_init(&bus_types[i].lock);
-    hash_map_set_c(bus_type_by_name, bus_types[i].name, (void *)&bus_types[i]);
+    hash_map_set(bus_type_by_name, bus_types[i].name, (void *) &bus_types[i]);
   }
 
   dev_type_by_name = hash_map_new();
   for (int i = 1; i < ARRAY_SIZE(dev_types); i++) {
-    hash_map_set_c(dev_type_by_name, dev_types[i].name, (void *)&dev_types[i]);
+    hash_map_set(dev_type_by_name, dev_types[i].name, (void *) &dev_types[i]);
   }
 }
 STATIC_INIT(device_static_init);
@@ -161,7 +162,7 @@ int register_driver(const char *bus_type, device_driver_t *driver) {
   LIST_ENTRY_INIT(&driver->list);
   SPIN_LOCK(&type->lock);
   LIST_ADD(&type->drivers, driver, list);
-  hash_map_set_c(type->driver_by_name, driver->name, driver);
+  hash_map_set(type->driver_by_name, driver->name, driver);
   SPIN_UNLOCK(&type->lock);
 
   kprintf("device: registered driver '%s' for bus type '%s'\n", driver->name, bus_type);
