@@ -31,14 +31,6 @@ typedef struct initrd_entry {
 static_assert(sizeof(struct initrd_entry) == 12);
 // stride = sizeof(struct initrd_entry) + entry.path_len + 1
 
-typedef struct initrd_mount {
-  uint32_t total_size;
-  uint32_t data_offset;
-  uint32_t entry_count;
-  device_t *ramdisk;  // backing ramdisk
-  void *entry_map;    // private hash map
-} initrd_mount_t;
-
 typedef struct initrd_node {
   uint32_t entry_offset;
   uint32_t data_offset;

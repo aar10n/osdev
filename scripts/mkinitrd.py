@@ -366,7 +366,7 @@ if __name__ == "__main__":
         for p in path_list:
             d, offset = paths[p]
             print(f'adding {d.kind} {d.path}')
-            f.write(format_entry(d.kind, offset, d.size, p))
+            f.write(format_entry(d.kind, data_start_offset+offset, d.size, p))
 
         # pad to page size
         f.write(b'\0' * (data_start_offset - f.tell()))

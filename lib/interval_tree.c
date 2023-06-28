@@ -73,9 +73,9 @@ void post_insert_callback(rb_tree_t *tree, rb_node_t *z) {
 }
 
 void post_delete_callback(rb_tree_t *tree, rb_node_t *z, rb_node_t *x) {
-  if (z != tree->nil) {
-    _free(((intvl_node_t *) z->data)->data);
-  }
+  // if (z != tree->nil) {
+  //   _free(((intvl_node_t *) z->data)->data);
+  // }
 }
 
 void replace_node_callback(rb_tree_t *tree, rb_node_t *u, rb_node_t *v) {
