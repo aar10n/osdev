@@ -33,6 +33,7 @@ struct vm_file;
 struct intvl_tree;
 
 // page flags
+#define PG_PRESENT    (1 << 0)
 #define PG_WRITE      (1 << 1)
 #define PG_EXEC       (1 << 2)
 #define PG_USER       (1 << 3)
@@ -42,11 +43,10 @@ struct intvl_tree;
 /* internal use only */
 #define PG_BIGPAGE    (1 << 8)
 #define PG_HUGEPAGE   (1 << 9)
-#define PG_PRESENT    (1 << 10)
 #define PG_HEAD       (1 << 10)
 #define PG_COW        (1 << 11)
 
-#define PG_FLAGS_MASK 0x3F
+#define PG_FLAGS_MASK   0x03F
 
 typedef struct page {
   uint64_t address;           // physical address
@@ -81,6 +81,7 @@ enum vm_type {
   VM_TYPE_PHYS, // direct physical mapping
   VM_TYPE_PAGE, // mapped pages
   VM_TYPE_FILE, // on-demand mapped file
+  VM_MAX_TYPE,
 };
 
 // vm flags

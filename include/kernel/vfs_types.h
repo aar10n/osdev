@@ -67,6 +67,7 @@ enum vstate {
  * A virtual filesystem.
  */
 typedef struct vfs {
+  id_t id;                        // unique vfs id
   enum vstate state : 8;          // lifecycle state
   uint16_t : 8;                   // reserved
   uint16_t flags;                 // flags
@@ -95,6 +96,7 @@ typedef struct vfs {
 
   LIST_HEAD(struct vnode) vnodes; // list of vnodes
   LIST_HEAD(struct vfs) submounts;// list of submounts
+
   LIST_ENTRY(struct vfs) list;    // entry in parent's submounts list
 } vfs_t;
 
@@ -165,8 +167,8 @@ typedef struct vnode {
   cond_t waiters;                 // waiters for nopen == 0
 
   id_t parent_id;                 // parent vnode id
+  struct vfs *vfs;                // owning vfs reference
   struct device *device;          // owning device
-  struct vfs *vfs;                // owning vfs
   struct vnode_ops *ops;          // vnode operations
 
   /* attributes */
@@ -179,7 +181,6 @@ typedef struct vnode {
 
   /* associated data */
   union {
-    struct vm_mapping *v_reg;     // file mapping (V_REG)
     dev_t v_dev;                  // device number (V_BLK, V_CHR)
     str_t v_link;                 // symlink (V_LNK)
     struct vnode *v_shadow;       // shadowed vnode (VN_MOUNT)
@@ -193,8 +194,6 @@ typedef struct vnode {
 #define   VN_ISLOADED(vn) __type_checked(struct vnode *, vn, ((vn)->flags & VN_LOADED))
 #define VN_DIRTY  0x02 // vnode has been modified
 #define   VN_ISDIRTY(vn) __type_checked(struct vnode *, vn, ((vn)->flags & VN_DIRTY))
-#define VN_MOUNT  0x04 // vnode is a mount point
-#define   VN_ISMOUNT(vn) __type_checked(struct vnode *, vn, ((vn)->flags & VN_MOUNT))
 #define VN_ROOT   0x08 // vnode is the root of a filesystem
 #define   VN_ISROOT(vn) __type_checked(struct vnode *, vn, ((vn)->flags & VN_ROOT))
 #define VN_OPEN   0x10 // vnode is open (has open file descriptors)
@@ -244,12 +243,14 @@ struct vnode_ops {
 
 /**
  * A virtual filesystem reference to a vnode.
+ *
+ * @ = updated during ve_syncvn()
  */
 typedef struct ventry {
   id_t id;                            // vnode id
   enum vtype type : 8;                // vnode type
-  enum vstate state : 8;              // lifecycle state
-  uint16_t flags;                     // vnode flags
+  enum vstate state : 8;              // lifecycle state @
+  uint16_t flags;                     // ventry flags
 
   str_t name;                         // entry name
   hash_t hash;                        // entry name hash
@@ -257,10 +258,11 @@ typedef struct ventry {
 
   mutex_t lock;                       // ventry lock
   refcount_t refcount;                // reference count
+  id_t vfs_id;                        // vfs id @
 
   struct vnode *vn;                   // vnode reference
   struct ventry *parent;              // parent ventry reference
-  struct ventry_ops *ops;             // ventry operations
+  struct ventry_ops *ops;             // ventry operations @
 
   size_t chld_count;                  // child count (V_DIR)
   LIST_HEAD(struct ventry) children;  // child ventry references (V_DIR)
@@ -271,6 +273,8 @@ typedef struct ventry {
 // ventry flags
 #define VE_LINKED 0x01  // ventry has been linked to a vnode
 #define   VE_ISLINKED(ve) __type_checked(struct ventry *, ve, ((ve)->flags & VE_LINKED))
+#define VE_MOUNT  0x02 // ventry is a mount point
+#define   VE_ISMOUNT(ve) __type_checked(struct ventry *, ve, ((ve)->flags & VE_MOUNT))
 
 
 struct ventry_ops {

@@ -76,7 +76,20 @@ static inline str_t str_alloc(size_t len) {
   };
 }
 
-static inline str_t str_new(const char *str) {
+static inline str_t str_new(const char *str, size_t len) {
+  if (!str)
+    return str_null;
+
+  char *buf = kmalloc(len + 1);
+  memcpy(buf, str, len);
+  buf[len] = '\0';
+  return (str_t) {
+    .str = buf,
+    .len = len,
+  };
+}
+
+static inline str_t str_make(const char *str) {
   if (!str)
     return str_null;
 
@@ -90,21 +103,19 @@ static inline str_t str_new(const char *str) {
   };
 }
 
-static inline str_t str_make(const char *str, size_t len) {
+static inline str_t str_from_charp(char *str) {
   if (!str)
     return str_null;
 
-  char *buf = kmalloc(len + 1);
-  memcpy(buf, str, len);
-  buf[len] = '\0';
+  size_t len = strlen(str);
   return (str_t) {
-    .str = buf,
+    .str = str,
     .len = len,
   };
 }
 
 static inline str_t str_copy_cstr(cstr_t str) {
-  return str_make(str.str, str.len);
+  return str_new(str.str, str.len);
 }
 
 static inline void str_free(str_t *str) {
@@ -121,6 +132,10 @@ static inline const char *str_cptr(str_t str) {
   return str.str;
 }
 
+static inline char *str_mut_ptr(str_t str) {
+  return str.str;
+}
+
 static inline size_t str_len(str_t str) {
   return str.len;
 }
@@ -129,8 +144,12 @@ static inline char str_get(str_t str, size_t index) {
   return str.str[index];
 }
 
+static inline bool str_eq(str_t str1, str_t str2) {
+  return str1.len == str2.len && strncmp(str1.str, str2.str, str1.len) == 0;
+}
+
 static inline bool str_eq_c(str_t str1, cstr_t str2) {
-  return strcmp(str1.str, str2.str) == 0;
+  return str1.len == str2.len && strncmp(str1.str, str2.str, str1.len) == 0;
 }
 
 // TODO: rest of string functions
@@ -165,7 +184,7 @@ static inline path_t path_from_str(str_t str) {
 }
 
 static inline str_t str_from_path(path_t path) {
-  return str_make(path_start(path), path_len(path));
+  return str_new(path_start(path), path_len(path));
 }
 #endif
 #endif

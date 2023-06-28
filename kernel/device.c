@@ -254,3 +254,29 @@ int register_dev(const char *dev_type, device_t *dev) {
   kprintf("device: registered %s device %d\n", dev_type, dev->minor);
   return 0;
 }
+
+// MARK: Device Operations
+
+int d_open(device_t *device, int flags) {
+  if (device->ops->d_open == NULL)
+    return 0;
+  return device->ops->d_open(device, flags);
+}
+
+int d_close(device_t *device) {
+  if (device->ops->d_close == NULL)
+    return 0;
+  return device->ops->d_close(device);
+}
+
+ssize_t d_nread(device_t *device, size_t off, size_t nmax, kio_t *kio) {
+  if (device->ops->d_read == NULL)
+    return -ENOTSUP;
+  return device->ops->d_read(device, off, nmax, kio);
+}
+
+ssize_t d_nwrite(device_t *device, size_t off, size_t nmax, kio_t *kio) {
+  if (device->ops->d_write == NULL)
+    return -ENOTSUP;
+  return device->ops->d_write(device, off, nmax, kio);
+}

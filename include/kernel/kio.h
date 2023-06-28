@@ -71,12 +71,14 @@ size_t kio_transfered(const kio_t *kio);
 size_t kio_remaining(const kio_t *kio);
 
 size_t kio_copy(kio_t *dst, kio_t *src);
-size_t kio_read(kio_t *kio, void *buf, size_t len, size_t off);
-size_t kio_write(kio_t *kio, const void *buf, size_t len, size_t off);
+size_t kio_nread_out(void *buf, size_t len, size_t off, size_t n, kio_t *kio);
+size_t kio_nwrite_in(kio_t *kio, const void *buf, size_t len, size_t off, size_t n);
 size_t kio_fill(kio_t *kio, uint8_t byte, size_t len);
 
-static inline size_t kio_readb(kio_t *kio, uint8_t *byte) { return kio_read(kio, byte, 1, 0); }
-static inline size_t kio_writeb(kio_t *kio, uint8_t byte) { return kio_write(kio, &byte, 1, 0); }
+static inline size_t kio_read_out(void *buf, size_t len, size_t off, kio_t *kio) { return kio_nread_out(buf, len, off, 0, kio); }
+static inline size_t kio_write_in(kio_t *kio, const void *buf, size_t len, size_t off) { return kio_nwrite_in(kio, buf, len, off, 0); }
+static inline size_t kio_read_ch(char *ch, kio_t *kio) { return kio_read_out(ch, 1, 0, kio); }
+static inline size_t kio_write_ch(kio_t *kio, char ch) { return kio_write_in(kio, &ch, 1, 0); }
 static inline size_t kio_remfill(kio_t *kio, uint8_t byte) { return kio_fill(kio, byte, kio_remaining(kio)); }
 
 #endif

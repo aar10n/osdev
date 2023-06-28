@@ -3,12 +3,11 @@
 //
 
 #include "ramfs.h"
-#include "ramfs_file.h"
 
+#include <kernel/fs.h>
 #include <kernel/mm.h>
 #include <kernel/panic.h>
 #include <kernel/printf.h>
-#include <kernel/fs.h>
 
 #define ASSERT(x) kassert(x)
 #define DPRINTF(fmt, ...) kprintf("ramfs: " fmt, ##__VA_ARGS__)
@@ -79,15 +78,16 @@ void ramfs_free_node(ramfs_node_t *node) {
 void ramfs_add_dentry(ramfs_node_t *dir, ramfs_dentry_t *dentry) {
   ASSERT(dir->type == V_DIR);
   LOCK_NODE(dir);
-  dentry->parent = dir;
+  dentry->node->parent = dir;
   LIST_ADD(&dir->n_dir, dentry, list);
   UNLOCK_NODE(dir);
 }
 
 void ramfs_remove_dentry(ramfs_node_t *dir, ramfs_dentry_t *dentry) {
   ASSERT(dir->type == V_DIR);
-  ASSERT(dentry->parent == dir);
   LOCK_NODE(dir);
+  ASSERT(dentry->node->parent == dir);
+  dentry->node->parent = NULL;
   LIST_REMOVE(&dir->n_dir, dentry, list);
   UNLOCK_NODE(dir);
 }
@@ -108,6 +108,7 @@ struct vfs_ops ramfs_vfs_ops = {
   .v_unmount = ramfs_vfs_unmount,
   .v_sync = ramfs_vfs_sync,
   .v_stat = ramfs_vfs_stat,
+  .v_cleanup = ramfs_vfs_cleanup,
 };
 
 struct vnode_ops ramfs_vnode_ops = {
@@ -115,8 +116,6 @@ struct vnode_ops ramfs_vnode_ops = {
   .v_write = ramfs_vn_write,
   .v_map = ramfs_vn_map,
 
-  .v_load = ramfs_vn_load,
-  .v_save = ramfs_vn_save,
   .v_readlink = ramfs_vn_readlink,
   .v_readdir = ramfs_vn_readdir,
 

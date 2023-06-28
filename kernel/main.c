@@ -26,25 +26,19 @@
 #include <kernel/panic.h>
 #include <kernel/fs_utils.h>
 
-// This relates to custom qemu patch that ive written to make debugging easier.
+// custom qemu patch
 #define QEMU_DEBUG_INIT() ({ outb(0x801, 1); })
+
+noreturn void root();
 
 bool is_smp_enabled = false;
 bool is_debug_enabled = true;
 boot_info_v2_t __boot_data *boot_info_v2;
 
-noreturn void root();
-
-#include <kernel/vfs/vcache.h>
-#include <kernel/vfs/ventry.h>
-#include <kernel/vfs/vnode.h>
-#include <kernel/vfs/vfs.h>
 
 //
 // Kernel entry
 //
-
-void page_fault_handler(uint8_t vector, uint32_t error_code, cpu_irq_stack_t *frame, cpu_registers_t *regs);
 
 __used void kmain() {
   QEMU_DEBUG_INIT();
@@ -118,12 +112,19 @@ noreturn void root() {
 
   //////////////////////////////////////////
 
-  // mkdir("/dev");
-  // mknod("/dev/rd0", 0777|S_IFBLK, makedev(1, 0));
-  //
-  // ls("/dev");
-  // mkdir("/mnt");
-  // mount("/dev/rd0", "/mnt", "initrd", 0);
+  mkdir("/dev");
+  mknod("/dev/rd0", 0777|S_IFBLK, makedev(1, 0));
+
+  ls("/dev");
+  mkdir("/initrd");
+  mount("/dev/rd0", "/initrd", "initrd", 0);
+  ls("/initrd");
+  ls("/initrd/sbin");
+  ls("/initrd/usr");
+  ls("/initrd/usr/lib");
+  ls("/initrd/usr/include");
+
+  cat("/initrd/usr/include/sys/uio.h");
 
   kprintf("it worked!\n");
 

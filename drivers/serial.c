@@ -68,27 +68,32 @@ static int serial_d_close(device_t *device) {
   return 0;
 }
 
-static ssize_t serial_d_read(device_t *device, size_t off, kio_t *kio) {
+static ssize_t serial_d_read(device_t *device, size_t off, size_t nmax, kio_t *kio) {
   struct serial_device *dev = device->data;
   if (off != 0) {
     return -EINVAL;
   }
 
-  while (kio_writeb(kio, serial_read_char(dev->port)) > 0) {
-    // do nothing
+  size_t n = 0;
+  size_t res;
+  while (n < nmax && (res = kio_write_ch(kio, serial_read_char(dev->port))) > 0) {
+    n++;
   }
-  return (ssize_t) kio_transfered(kio);
+  return (ssize_t) n;
 }
 
-static ssize_t serial_d_write(device_t *device, size_t off, kio_t *kio) {
+static ssize_t serial_d_write(device_t *device, size_t off, size_t nmax, kio_t *kio) {
   struct serial_device *dev = device->data;
   if (off != 0) {
     return -EINVAL;
   }
 
-  uint8_t byte;
-  while (kio_readb(kio, &byte) > 0) {
-    serial_write_char(dev->port, (char) byte);
+  size_t n = 0;
+  char ch;
+  size_t res;
+  while (n < nmax && (res = kio_read_ch(&ch, kio)) > 0) {
+    serial_write_char(dev->port, ch);
+    n++;
   }
   return (ssize_t) kio_transfered(kio);
 }

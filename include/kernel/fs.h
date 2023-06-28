@@ -9,9 +9,9 @@
 
 void fs_early_init();
 int fs_register_type(fs_type_t *fs_type);
-fs_type_t *fs_get_type(const char *type);
 
 void fs_init();
+fs_type_t *fs_get_type(const char *type);
 __move ventry_t *fs_root_getref();
 
 int fs_mount(const char *source, const char *mount, const char *fs_type, int flags);
@@ -44,5 +44,6 @@ int fs_rmdir(const char *path);
 int fs_rename(const char *oldpath, const char *newpath);
 ssize_t fs_readlink(const char *path, char *buf, size_t bufsiz);
 
+void fs_print_debug_vcache();
 
 #endif

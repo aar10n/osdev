@@ -5,7 +5,6 @@
 #include <kernel/kio.h>
 #include <kernel/panic.h>
 #include <kernel/string.h>
-#include <kernel/mm.h>
 
 #define ASSERT(x) kassert(x)
 
@@ -38,16 +37,20 @@ size_t kio_copy(kio_t *dst, kio_t *src) {
   return to_copy;
 }
 
-size_t kio_read(kio_t *kio, void *buf, size_t len, size_t off) {
+size_t kio_nread_out(void *buf, size_t len, size_t off, size_t n, kio_t *kio) {
   ASSERT(kio->dir == KIO_OUT);
   size_t remain = kio_remaining(kio);
-  if (off > len) {
+  if (off >= len) {
     return 0;
   }
 
   size_t to_copy = len - off;
   if (to_copy > remain) {
     to_copy = remain;
+  }
+
+  if (n > 0 && to_copy > n) {
+    to_copy = n;
   }
 
   if (to_copy > 0) {
@@ -57,16 +60,20 @@ size_t kio_read(kio_t *kio, void *buf, size_t len, size_t off) {
   return to_copy;
 }
 
-size_t kio_write(kio_t *kio, const void *buf, size_t len, size_t off) {
+size_t kio_nwrite_in(kio_t *kio, const void *buf, size_t len, size_t off, size_t n) {
   ASSERT(kio->dir == KIO_IN);
   size_t remain = kio_remaining(kio);
-  if (off > len) {
+  if (off >= len) {
     return 0;
   }
 
   size_t to_copy = len - off;
   if (to_copy > remain) {
     to_copy = remain;
+  }
+
+  if (n > 0 && to_copy > n) {
+    to_copy = n;
   }
 
   if (to_copy > 0) {

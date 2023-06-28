@@ -33,8 +33,9 @@ static bool ve_cmp_default(ventry_t *ve, cstr_t str) {
 
 static void ve_cleanup(ventry_t *ve) {
   // called when last reference is released
+  DPRINTF("cleanup [id=%u, name={:str}]\n", ve->id, &ve->name);
   ASSERT(ve->state == V_DEAD);
-  DPRINTF("cleanup [id=%u]\n", ve->id);
+  ASSERT(ve->chld_count == 0);
   if (VE_OPS(ve)->v_cleanup)
     VE_OPS(ve)->v_cleanup(ve);
 
@@ -102,13 +103,18 @@ void ve_unlink_vnode(ventry_t *ve, vnode_t *vn) {
 }
 
 void ve_shadow_mount(ventry_t *mount_ve, ventry_t *root_ve) {
+  ASSERT(V_ISALIVE(mount_ve));
   ASSERT(VE_ISLINKED(mount_ve));
   vnode_t *root_vn = VN(root_ve);
+  ASSERT(V_ISALIVE(root_vn));
 
-  mount_ve->flags |= VN_MOUNT;
   // move the old vnode reference to the new vnode
   root_vn->v_shadow = vn_moveref(&mount_ve->vn);
+  root_vn->flags |= VN_ROOT;
+
   mount_ve->vn = vn_getref(root_vn);
+  mount_ve->flags |= VE_MOUNT;
+  ve_syncvn(mount_ve);
 }
 
 void ve_unshadow_mount(ventry_t *mount_ve) {
@@ -119,10 +125,11 @@ void ve_unshadow_mount(ventry_t *mount_ve) {
   }
 
   vnode_t *root_vn = vn_moveref(&mount_ve->vn);
-  ASSERT(VN_ISMOUNT(root_vn));
+  ASSERT(VN_ISROOT(root_vn));
+  root_vn->flags &= ~VN_ROOT;
 
-  root_vn->flags &= ~VN_MOUNT;
   mount_ve->vn = vn_moveref(&root_vn->v_shadow);
+  mount_ve->flags &= ~VE_MOUNT;
   vn_release(&root_vn);
 }
 
@@ -148,15 +155,24 @@ void ve_remove_child(ventry_t *parent, ventry_t *child) {
 }
 
 bool ve_syncvn(ventry_t *ve) {
+  vnode_t *vn = ve->vn; // ordering problem? figure all that out :P
   if (!VE_ISLINKED(ve))
     return false;
 
-  vnode_t *vn = ve->vn;
-  ASSERT(ve->id == vn->id);
   ASSERT(ve->type == vn->type);
-  ve->state = vn->state;
-  if (vn->vfs)
-    ve->ops = vn->vfs->type->ventry_ops;
+  if (!VE_ISMOUNT(ve)) {
+    ASSERT(ve->id == vn->id);
+    ve->state = vn->state;
+    vfs_t *vfs = vn->vfs;
+    if (vfs) {
+      ve->vfs_id = vfs->id;
+      ve->ops = vfs->type->ventry_ops;
+    }
+  } else {
+    // mount points do not get synced to the shadowing vnode
+    // and they must be alive to be mounted
+    ASSERT(ve->id == vn->v_shadow->id);
+  }
   return true;
 }
 

@@ -2,19 +2,17 @@
 // Created by Aaron Gill-Braun on 2023-05-25.
 //
 
-#include <kernel/vfs/vfs.h>
+#include "ramfs.h"
+#include "memfile.h"
+
 #include <kernel/vfs/vnode.h>
 #include <kernel/vfs/ventry.h>
 
 #include <kernel/panic.h>
 #include <kernel/printf.h>
 
-#include "ramfs.h"
-#include "memfile.h"
-
 #define ASSERT(x) kassert(x)
-#define DPRINTF(fmt, ...) kprintf("ramfs_vnops: %s: " fmt, __func__, ##__VA_ARGS__)
-#define TRACE(str, ...) kprintf("ramfs_vnops: " str, ##__VA_ARGS__)
+#define DPRINTF(fmt, ...) kprintf("ramfs_vnops: " fmt, ##__VA_ARGS__)
 
 static inline unsigned char vtype_to_dtype(enum vtype type) {
   switch (type) {
@@ -49,10 +47,12 @@ static inline size_t kio_write_dirent(ino_t ino, enum vtype type, cstr_t name, k
   }
 
   // write the entry
-  kio_write(kio, &dirent, sizeof(struct dirent), 0); // write dirent
-  kio_write(kio, cstr_ptr(name), dirent.d_namlen+1, 0); // write name
+  kio_write_in(kio, &dirent, sizeof(struct dirent), 0); // write dirent
+  kio_write_in(kio, cstr_ptr(name), dirent.d_namlen + 1, 0); // write name
   return dirent.d_reclen;
 }
+
+//
 
 ssize_t ramfs_vn_read(vnode_t *vn, off_t off, kio_t *kio) {
   ramfs_node_t *node = vn->data;
@@ -74,16 +74,8 @@ int ramfs_vn_map(vnode_t *vn, off_t off, vm_mapping_t *mapping) {
 
 //
 
-int ramfs_vn_load(vnode_t *vn) {
-  return 0;
-}
-
-int ramfs_vn_save(vnode_t *vn) {
-  return 0;
-}
-
 int ramfs_vn_readlink(vnode_t *vn, struct kio *kio) {
-  TRACE("readlink id=%u\n", vn->id);
+  DPRINTF("readlink id=%u\n", vn->id);
   ramfs_node_t *node = vn->data;
 
   kio_t tmp = kio_readonly_from_str(node->n_link);
@@ -95,7 +87,7 @@ int ramfs_vn_readlink(vnode_t *vn, struct kio *kio) {
 }
 
 ssize_t ramfs_vn_readdir(vnode_t *vn, off_t off, kio_t *dirbuf) {
-  TRACE("readdir id=%u\n", vn->id);
+  DPRINTF("readdir id=%u\n", vn->id);
   ramfs_node_t *node = vn->data;
   size_t i = 0;
 
@@ -135,11 +127,30 @@ ssize_t ramfs_vn_readdir(vnode_t *vn, off_t off, kio_t *dirbuf) {
 //
 
 int ramfs_vn_lookup(vnode_t *dir, cstr_t name, __move ventry_t **result) {
-  return -ENOENT;
+  DPRINTF("lookup id=%u \"{:cstr}\"\n", dir->id, &name);
+  ramfs_node_t *dnode = dir->data;
+  ramfs_dentry_t *dent = ramfs_lookup_dentry(dnode, name);
+  if (!dent) {
+    return -ENOENT;
+  }
+
+  ramfs_node_t *node = dent->node;
+
+  // create the vnode and ventry
+  vnode_t *vn = vn_alloc(node->id, &make_vattr(node->type, node->mode));
+  vn->data = node;
+  vn->size = node->size;
+
+  ventry_t *ve = ve_alloc_linked(name, vn);
+  ve->data = dent;
+
+  *result = ve_moveref(&ve);
+  vn_release(&vn);
+  return 0;
 }
 
 int ramfs_vn_create(vnode_t *dir, cstr_t name, struct vattr *vattr, __move ventry_t **result) {
-  TRACE("create id=%u \"{:cstr}\"\n", dir->id, &name);
+  DPRINTF("create id=%u \"{:cstr}\"\n", dir->id, &name);
   vfs_t *vfs = dir->vfs;
   ramfs_node_t *dnode = dir->data;
   ramfs_mount_t *mount = dnode->mount;
@@ -162,7 +173,7 @@ int ramfs_vn_create(vnode_t *dir, cstr_t name, struct vattr *vattr, __move ventr
 }
 
 int ramfs_vn_mknod(vnode_t *dir, cstr_t name, struct vattr *vattr, dev_t dev, __move ventry_t **result) {
-  TRACE("mknod id=%u \"{:cstr}\"\n", dir->id, &name);
+  DPRINTF("mknod id=%u \"{:cstr}\"\n", dir->id, &name);
   vfs_t *vfs = dir->vfs;
   ramfs_node_t *dnode = dir->data;
   ramfs_mount_t *mount = dnode->mount;
@@ -189,7 +200,7 @@ int ramfs_vn_mknod(vnode_t *dir, cstr_t name, struct vattr *vattr, dev_t dev, __
 }
 
 int ramfs_vn_symlink(vnode_t *dir, cstr_t name, struct vattr *vattr, cstr_t target, __move ventry_t **result) {
-  TRACE("symlink id=%u \"{:cstr}\" -> \"{:cstr}\"\n", dir->id, &name, &target);
+  DPRINTF("symlink id=%u \"{:cstr}\" -> \"{:cstr}\"\n", dir->id, &name, &target);
   vfs_t *vfs = dir->vfs;
   ramfs_node_t *dnode = dir->data;
   ramfs_mount_t *mount = dnode->mount;
@@ -212,7 +223,7 @@ int ramfs_vn_symlink(vnode_t *dir, cstr_t name, struct vattr *vattr, cstr_t targ
 }
 
 int ramfs_vn_hardlink(vnode_t *dir, cstr_t name, vnode_t *target, __move ventry_t **result) {
-  TRACE("hardlink id=%u \"{:cstr}\" -> id=%u\n", dir->id, &name, target->id);
+  DPRINTF("hardlink id=%u \"{:cstr}\" -> id=%u\n", dir->id, &name, target->id);
   ramfs_node_t *dnode = dir->data;
   ramfs_node_t *tnode = target->data;
   ramfs_mount_t *mount = dnode->mount;
@@ -228,7 +239,7 @@ int ramfs_vn_hardlink(vnode_t *dir, cstr_t name, vnode_t *target, __move ventry_
 }
 
 int ramfs_vn_unlink(vnode_t *dir, vnode_t *vn, ventry_t *ve) {
-  TRACE("unlink id=%u \"{:str}\"\n", dir->id, &ve->name);
+  DPRINTF("unlink id=%u \"{:str}\"\n", dir->id, &ve->name);
   ramfs_node_t *dnode = dir->data;
   ramfs_node_t *node = vn->data;
   ramfs_dentry_t *dent = ve->data;
@@ -237,7 +248,7 @@ int ramfs_vn_unlink(vnode_t *dir, vnode_t *vn, ventry_t *ve) {
 }
 
 int ramfs_vn_mkdir(vnode_t *dir, cstr_t name, struct vattr *vattr, __move ventry_t **result) {
-  TRACE("mkdir id=%u \"{:cstr}\"\n", dir->id, &name);
+  DPRINTF("mkdir id=%u \"{:cstr}\"\n", dir->id, &name);
   vfs_t *vfs = dir->vfs;
   ramfs_node_t *dnode = dir->data;
   ramfs_mount_t *mount = dnode->mount;
@@ -252,7 +263,6 @@ int ramfs_vn_mkdir(vnode_t *dir, cstr_t name, struct vattr *vattr, __move ventry
   vn->data = node;
   ventry_t *ve = ve_alloc_linked(name, vn);
   ve->data = dent;
-  vfs_add_vnode(vfs, vn);
 
   *result = ve_moveref(&ve);
   vn_release(&vn);
@@ -260,7 +270,7 @@ int ramfs_vn_mkdir(vnode_t *dir, cstr_t name, struct vattr *vattr, __move ventry
 }
 
 int ramfs_vn_rmdir(vnode_t *dir, vnode_t *vn, ventry_t *ve) {
-  TRACE("rmdir id=%u \"{:str}\"\n", dir->id, &ve->name);
+  DPRINTF("rmdir id=%u \"{:str}\"\n", dir->id, &ve->name);
   ramfs_node_t *dnode = dir->data;
   ramfs_node_t *node = vn->data;
   ramfs_dentry_t *dent = ve->data;

@@ -31,10 +31,10 @@ static inline vfs_t *vfs_moveref(__move vfs_t **ref) __move {
 //
 // comments after the function indicate the expected lock state of the parameters.
 //
-vfs_t *vfs_alloc(struct fs_type *type, int flags) __move;
+vfs_t *vfs_alloc(struct fs_type *type, int mount_flags) __move;
 void vfs_release(__move vfs_t **ref);
-void vfs_add_vnode(vfs_t *vfs, vnode_t *vnode); // vfs = l, vnode = _
-void vfs_remove_vnode(vfs_t *vfs, vnode_t *vnode); // vfs = l, vnode = l
+void vfs_add_node(vfs_t *vfs, ventry_t *ve); // vfs = l, ve = _
+void vfs_remove_node(vfs_t *vfs, vnode_t *vn); // vfs = l, vnode = l
 
 int vfs_mount(vfs_t *vfs, device_t *device, ventry_t *mount_ve); // vfs = _, mount_ve = l
 int vfs_unmount(vfs_t *vfs, ventry_t *mount); // vfs = l, mount = l

@@ -28,10 +28,11 @@ typedef struct ramfs_node {
   id_t id;
   enum vtype type;
   mode_t mode;
-  vnode_t *vnode; // no ref held
   void *data; // embedded fs data
+  size_t size;
 
   mutex_t lock;
+  struct ramfs_node *parent;
   struct ramfs_mount *mount;
 
   union {
@@ -44,22 +45,16 @@ typedef struct ramfs_node {
 typedef struct ramfs_dentry {
   str_t name;
   ventry_t *ventry; // no ref held
-  void *data; // embedded fs data
-
   struct ramfs_node *node;
-  struct ramfs_node *parent;
   LIST_ENTRY(struct ramfs_dentry) list;
 } ramfs_dentry_t;
 
 // MARK: ramfs api for embedding filesystems
 
-// mount
 ramfs_mount_t *ramfs_alloc_mount(vfs_t *vfs); // allocates root node too
 void ramfs_free_mount(ramfs_mount_t *mount);
-// dentry
 ramfs_dentry_t *ramfs_alloc_dentry(ramfs_node_t *node, cstr_t name);
 void ramfs_free_dentry(ramfs_dentry_t *dentry);
-// node
 ramfs_node_t *ramfs_alloc_node(ramfs_mount_t *mount, struct vattr *vattr);
 void ramfs_free_node(ramfs_node_t *node);
 void ramfs_add_dentry(ramfs_node_t *dir, ramfs_dentry_t *dentry);
@@ -73,14 +68,13 @@ int ramfs_vfs_mount(vfs_t *vfs, device_t *device, __move ventry_t **rootve);
 int ramfs_vfs_unmount(vfs_t *vfs);
 int ramfs_vfs_sync(vfs_t *vfs);
 int ramfs_vfs_stat(vfs_t *vm, struct vfs_stat *stat);
+void ramfs_vfs_cleanup(vfs_t *vfs);
 
 // vnode operations
 ssize_t ramfs_vn_read(vnode_t *vn, off_t off, kio_t *kio);
 ssize_t ramfs_vn_write(vnode_t *vn, off_t off, kio_t *kio);
 int ramfs_vn_map(vnode_t *vn, off_t off, vm_mapping_t *vm);
 
-int ramfs_vn_load(vnode_t *vn);
-int ramfs_vn_save(vnode_t *vn);
 int ramfs_vn_readlink(vnode_t *vn, kio_t *kio);
 ssize_t ramfs_vn_readdir(vnode_t *vn, off_t off, kio_t *kio);
 

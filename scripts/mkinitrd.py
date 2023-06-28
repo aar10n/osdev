@@ -368,6 +368,9 @@ if __name__ == "__main__":
             print(f'adding {d.kind} {d.path}')
             f.write(format_entry(d.kind, offset, d.size, p))
 
+        # pad to page size
+        f.write(b'\0' * (data_start_offset - f.tell()))
+
         # write data
         for d in directives:
             if d.isfile():
@@ -376,7 +379,7 @@ if __name__ == "__main__":
                     f.write(b'\0' * (d.aligned_size() - d.size))
             elif d.islink():
                 f.write(format_cstring(d.operand))
-                f.write(b'\0' * (d.aligned_size() - d.size))
+                f.write(b'\0' * (d.aligned_size() - d.size - 1))
 
         print(f'wrote {total_size} bytes to {output_file}')
         print(f'  entry count: {entry_count}')

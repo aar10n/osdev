@@ -50,6 +50,10 @@ bool ve_cmp_cstr(ventry_t *ve, cstr_t str);
 //
 //
 
+static inline uint64_t ve_unique_id(ventry_t *ve) {
+  return (uint64_t) ve->vfs_id | ((uint64_t) ve->id << 32);
+}
+
 static inline bool ve_lock(ventry_t *ve) {
   if (V_ISDEAD(ve)) return false;
   mutex_lock(&ve->lock);
@@ -75,7 +79,7 @@ static inline void assert_new_ventry_valid(ventry_t *ve) {
     panic("ventry not linked - allocate with vn_alloc() or link an unlinked one with ve_link_vnode()");
   }
   if (!V_ISEMPTY(ve)) {
-    panic("vnode is not empty - did you accidentally call vfs_add_vnode()?");
+    panic("vnode is not empty - did you accidentally call vfs_add_node()?");
   }
 }
 

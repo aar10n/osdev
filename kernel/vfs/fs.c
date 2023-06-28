@@ -31,8 +31,6 @@ hash_map_t *fs_types;
 spinlock_t fs_types_lock;
 vcache_t *vcache;
 ventry_t *root_ve;
-vnode_t *root_vn;
-vfs_t *root_vfs;
 
 //
 
@@ -69,18 +67,23 @@ void fs_init() {
     panic("ramfs not registered");
   }
 
-  // create root filesystem
-  root_vn = vn_alloc_empty(V_DIR);
+  // create root ventry and root vnode (will be shadowed)
+  vnode_t *root_vn = vn_alloc(0, &make_vattr(V_DIR, 0755 | S_IFDIR));
   root_vn->state = V_ALIVE;
   root_ve = ve_alloc_linked(cstr_make("/"), root_vn);
+  root_ve->state = V_ALIVE;
 
+  // create root filesystem and mount it
   vfs_t *vfs = vfs_alloc(ramfs_type, 0);
   if ((res = vfs_mount(vfs, NULL, root_ve)) < 0) {
     panic("failed to mount root fs");
   }
 
-  root_vfs = vfs;
+  root_ve->vfs_id = vfs->id;
+  root_ve->parent = ve_getref(root_ve);
+
   vcache = vcache_alloc(root_ve);
+  vcache_put(vcache, cstr_new("/", 1), root_ve);
 }
 
 __move ventry_t *fs_root_getref() {
@@ -115,7 +118,8 @@ int fs_mount(const char *source, const char *mount, const char *fs_type, int fla
     goto_error(ret, -ENODEV);
 
   // resolve and lock mount point
-  if ((res = vresolve(vcache, at_ve, cstr_make(mount), VR_NOFOLLOW|VR_DIR, &mount_ve)) < 0) {
+  cstr_t mount_str = cstr_make(mount);
+  if ((res = vresolve(vcache, at_ve, mount_str, VR_NOFOLLOW|VR_DIR, &mount_ve)) < 0) {
     DPRINTF("failed to resolve mount path\n");
     goto ret;
   }
@@ -213,7 +217,7 @@ int fs_open(const char *path, int flags, mode_t mode) {
 
   if (flags & VR_NOFOLLOW) {
     // check if the file is a symlink or mount
-    if (V_ISLNK(ve) || VN_ISMOUNT(VN(ve))) {
+    if (V_ISLNK(ve) || VE_ISMOUNT(ve)) {
       goto_error(ret_unlock, -ELOOP);
     }
   }
@@ -341,7 +345,7 @@ ssize_t fs_read(int fd, void *buf, size_t len) {
 
     // device read
     kio_t kio = kio_new_writeonly(buf, len);
-    res = device->ops->d_read(device, file->offset, &kio);
+    res = d_read(device, file->offset, &kio);
     if (res < 0) {
       DPRINTF("failed to read device\n");
       goto ret_unlock;
@@ -397,7 +401,7 @@ ssize_t fs_write(int fd, const void *buf, size_t len) {
 
     // device write
     kio_t kio = kio_new_readonly(buf, len);
-    res = device->ops->d_write(device, file->offset, &kio);
+    res = d_write(device, file->offset, &kio);
     if (res < 0) {
       DPRINTF("failed to write device\n");
       goto ret_unlock;
@@ -923,3 +927,7 @@ LABEL(ret);
 }
 
 //
+
+void fs_print_debug_vcache() {
+  vcache_dump(vcache);
+}

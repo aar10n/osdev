@@ -23,12 +23,12 @@
 #define DPRINTF(x, ...) kprintf(x, ##__VA_ARGS__)
 #define PANIC_IF(x, msg, ...) { if (x) panic(msg, ##__VA_ARGS__); }
 
+#define INTERNAL_PG_FLAGS 0xF00
+
 // internal vm flags
 #define VM_MAPPED 0x1000 // mapping is currently active
 #define VM_MALLOC 0x2000 // mapping is a vmalloc allocation
 #define VM_CONTIG 0x4000 // mapping is physically contiguous
-
-#define PG_SZ_MASK 0x300
 
 // these are the default hints for different combinations of vm flags
 // they are used as a starting point for the kernel when searching for
@@ -174,7 +174,7 @@ static void vm_page_map_internal(vm_mapping_t *vm, page_t *pages, size_t off, si
     if (!(curr->flags & PG_PRESENT)) {
       // the page is owned by the mapping
       ASSERT(curr->mapping == NULL);
-      curr->flags &= PG_SZ_MASK;
+      curr->flags &= INTERNAL_PG_FLAGS;
       curr->flags |= pg_flags | PG_PRESENT;
       curr->mapping = vm;
     }
@@ -221,7 +221,7 @@ static void vm_page_unmap_internal(vm_mapping_t *vm, page_t *pages, size_t off, 
     recursive_unmap_entry(ptr, curr->flags);
     ptr += pg_flags_to_size(curr->flags);
     curr->mapping = NULL;
-    curr->flags &= PG_BIGPAGE|PG_HUGEPAGE;
+    curr->flags &= INTERNAL_PG_FLAGS;
     // dont free the pages until the mapping is destroyed
     curr = curr->next;
   }
@@ -287,7 +287,7 @@ static void vm_file_map_internal(vm_mapping_t *vm, struct vm_file *file, size_t 
     if (!(page->flags & PG_PRESENT)) {
       // the page is owned by the mapping
       ASSERT(page->mapping == NULL);
-      page->flags &= PG_SZ_MASK;
+      page->flags &= INTERNAL_PG_FLAGS;
       page->flags |= pg_flags | PG_PRESENT;
       page->mapping = vm;
     }
@@ -744,6 +744,10 @@ address_space_t *fork_address_space() {
 //
 
 vm_mapping_t *vm_alloc(enum vm_type type, uintptr_t hint, size_t size, uint32_t vm_flags, const char *name) {
+  ASSERT(type < VM_MAX_TYPE);
+  ASSERT(size > 0);
+  ASSERT(is_aligned(size, PAGE_SIZE) && "size must be page aligned");
+
   vm_mapping_t *vm = kmallocz(sizeof(vm_mapping_t));
   vm->type = type;
   vm->flags = vm_flags;
@@ -816,7 +820,7 @@ vm_mapping_t *vm_alloc(enum vm_type type, uintptr_t hint, size_t size, uint32_t 
   }
 
   vm->address = virt_addr + off;
-  vm->name = str_new(name);
+  vm->name = str_make(name);
   vm->space = space;
 
   // add it to the mappings list
@@ -908,6 +912,7 @@ void vm_free(vm_mapping_t *vm) {
     free_pages(vm->vm_pages);
     vm->vm_pages = NULL;
   }
+  // TODO: handle deletion of file mappings
 
   address_space_t *space = vm->space;
   SPIN_LOCK(&space->lock);
@@ -1136,6 +1141,7 @@ static inline bool is_vmalloc_mapping(vm_mapping_t *vm) {
 void *vmalloc(size_t size, uint32_t pg_flags) {
   if (size == 0)
     return NULL;
+  size = align(size, PAGE_SIZE);
 
   // TODO: the pages dont have to be contiguous so we can improve
   //       the allocation strategy here. for now this is the same
@@ -1161,6 +1167,7 @@ void *vmalloc(size_t size, uint32_t pg_flags) {
 void *vmalloc_phys(size_t size, uint32_t pg_flags) {
   if (size == 0)
     return NULL;
+  size = align(size, PAGE_SIZE);
 
   // allocate pages
   page_t *pages = alloc_pages(SIZE_TO_PAGES(size));

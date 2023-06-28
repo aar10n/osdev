@@ -38,10 +38,12 @@ static inline mode_t vn_to_mode(vnode_t *vnode) {
 static void vn_cleanup(vnode_t *vn) {
   // called when last reference is released
   ASSERT(ref_count(&vn->refcount) == 0);
-  DPRINTF("cleanup [id=%u]\n", vn->id);
+  DPRINTF("cleanup [id=%u,%u]\n", vn->vfs->id, vn->id);
 
   if (VN_OPS(vn)->v_cleanup)
     VN_OPS(vn)->v_cleanup(vn);
+
+  vfs_release(&vn->vfs);
   kfree(vn);
 }
 
@@ -115,8 +117,9 @@ int vn_close(vnode_t *vn) {
 
 ssize_t vn_read(vnode_t *vn, off_t off, kio_t *kio) {
   if (!VN_OPS(vn)->v_read) return -ENOTSUP;
-  if (off > vn->size) return -EOVERFLOW;
   if (off < 0) return -EINVAL;
+  if (off >= vn->size)
+    return 0;
 
   // filesystem read
   return VN_OPS(vn)->v_read(vn, off, kio);
@@ -125,8 +128,9 @@ ssize_t vn_read(vnode_t *vn, off_t off, kio_t *kio) {
 ssize_t vn_write(vnode_t *vn, off_t off, kio_t *kio) {
   if (VFS_ISRDONLY(vn->vfs)) return -EROFS;
   if (!VN_OPS(vn)->v_write) return -ENOTSUP;
-  if (off > vn->size) return -EOVERFLOW;
   if (off < 0) return -EINVAL;
+  if (off >= vn->size)
+    return 0;
 
   // filesystem write
   return VN_OPS(vn)->v_write(vn, off, kio);
@@ -134,8 +138,9 @@ ssize_t vn_write(vnode_t *vn, off_t off, kio_t *kio) {
 
 int vn_map(vnode_t *vn, off_t off, struct vm_mapping *mapping) {
   if (!VN_OPS(vn)->v_map) return -ENOTSUP;
-  if (off > vn->size) return -EOVERFLOW;
   if (off < 0) return -EINVAL;
+  if (off >= vn->size)
+    return 0;
 
   // filesystem map
   return VN_OPS(vn)->v_map(vn, off, mapping);
@@ -227,12 +232,12 @@ int vn_lookup(ventry_t *dve, vnode_t *dvn, cstr_t name, __move ventry_t **result
     vfs_end_read_op(vfs);
     return res;
   }
+
   assert_new_ventry_valid(ve);
-  vfs_add_vnode(vfs, VN(ve));
+  vfs_add_node(vfs, ve);
   vfs_end_read_op(vfs);
   // READ END
 
-  ve_syncvn(ve);
   ve_add_child(dve, ve);
   if (result)
     *result = ve_moveref(&ve);
@@ -260,13 +265,12 @@ int vn_create(ventry_t *dve, vnode_t *dvn, cstr_t name, mode_t mode, __move vent
     vfs_end_write_op(vfs);
     return res;
   }
-  assert_new_ventry_valid(ve);
 
-  vfs_add_vnode(vfs, VN(ve));
+  assert_new_ventry_valid(ve);
+  vfs_add_node(vfs, ve);
   vfs_end_write_op(vfs);
   // WRITE END
 
-  ve_syncvn(ve);
   ve_add_child(dve, ve);
   if (result)
     *result = ve_moveref(&ve);
@@ -302,15 +306,14 @@ int vn_mknod(ventry_t *dve, vnode_t *dvn, cstr_t name, mode_t mode, dev_t dev, _
     vfs_end_write_op(vfs);
     return res;
   }
-  assert_new_ventry_valid(ve);
 
+  assert_new_ventry_valid(ve);
   vnode_t *vn = VN(ve);
   vn->v_dev = dev;
-  vfs_add_vnode(vfs, vn);
+  vfs_add_node(vfs, ve);
   vfs_end_write_op(vfs);
   // WRITE END
 
-  ve_syncvn(ve);
   ve_add_child(dve, ve);
   if (result)
     *result = ve_moveref(&ve);
@@ -339,16 +342,12 @@ int vn_symlink(ventry_t *dve, vnode_t *dvn, cstr_t name, cstr_t target, __move v
     vfs_end_write_op(vfs);
     return res;
   }
-  assert_new_ventry_valid(ve);
 
-  vnode_t *vn = VN(ve);
-  if (str_isnull(vn->v_link))
-    vn->v_link = str_copy_cstr(target);
-  vfs_add_vnode(vfs, vn);
+  assert_new_ventry_valid(ve);
+  vfs_add_node(vfs, ve);
   vfs_end_write_op(vfs);
   // WRITE END
 
-  ve_syncvn(ve);
   ve_add_child(dve, ve);
   if (result)
     *result = ve_moveref(&ve);
@@ -375,12 +374,11 @@ int vn_hardlink(ventry_t *dve, vnode_t *dvn, cstr_t name, vnode_t *target, __mov
     vfs_end_write_op(vfs);
     return res;
   }
-  assert_new_ventry_valid(ve);
 
+  assert_new_ventry_valid(ve);
   vfs_end_write_op(vfs);
   // WRITE END
 
-  ve_syncvn(ve);
   ve_add_child(dve, ve);
   if (result)
     *result = ve_moveref(&ve);
@@ -440,10 +438,11 @@ int vn_mkdir(ventry_t *dve, vnode_t *dvn, cstr_t name, mode_t mode, __move ventr
     return res;
   }
 
+  assert_new_ventry_valid(ve);
+  vfs_add_node(vfs, ve);
   vfs_end_write_op(vfs);
   // WRITE END
 
-  ve_syncvn(ve);
   ve_add_child(dve, ve);
   if (result)
     *result = ve_moveref(&ve);
@@ -465,8 +464,12 @@ int vn_rmdir(ventry_t *dve, vnode_t *dvn, ventry_t *ve, vnode_t *vn) {
 
   // filesystem rmdir
   if ((res = VN_OPS(dvn)->v_rmdir(dvn, vn, ve)) < 0) {
+    vfs_end_write_op(vfs);
     return res;
   }
+
+  vfs_end_write_op(vfs);
+  // WRITE END
 
   ve_remove_child(dve, ve);
   ve_unlink_vnode(ve, vn);

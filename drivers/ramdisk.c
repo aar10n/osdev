@@ -30,25 +30,31 @@ int ramdisk_d_close(device_t *device) {
   return 0;
 }
 
-ssize_t ramdisk_d_read(device_t *device, size_t off, kio_t *kio) {
+ssize_t ramdisk_d_read(device_t *device, size_t off, size_t nmax, kio_t *kio) {
   struct ramdisk *rd = device->data;
-  if (off > rd->size) {
-    return -ERANGE;
+  if (off >= rd->size) {
+    return 0;
   }
-  return (ssize_t) kio_write(kio, rd->base, rd->size, off);
+
+  size_t len = kio_remaining(kio);
+  if (nmax > 0 && len > nmax)
+    len = nmax;
+  return (ssize_t) kio_nwrite_in(kio, rd->base, rd->size, off, nmax);
 }
 
-ssize_t ramdisk_d_write(device_t *device, size_t off, kio_t *kio) {
+ssize_t ramdisk_d_write(device_t *device, size_t off, size_t nmax, kio_t *kio) {
   struct ramdisk *rd = device->data;
-  if (off > rd->size) {
-    return -ERANGE;
+  if (off >= rd->size) {
+    return 0;
   }
-  return (ssize_t) kio_read(kio, rd->base, rd->size, off);
+
+  size_t len = kio_remaining(kio);
+  return (ssize_t) kio_nread_out(rd->base, len, off, nmax, kio);
 }
 
 page_t *ramdisk_d_getpage(device_t *device, size_t off) {
   struct ramdisk *rd = device->data;
-  if (off > rd->size) {
+  if (off >= rd->size) {
     return NULL;
   }
   return vm_getpage(rd->vm, off, true/* cow */);

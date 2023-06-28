@@ -2,10 +2,10 @@
 // Created by Aaron Gill-Braun on 2023-06-24.
 //
 
+#include "memfile.h"
+
 #include <kernel/mm.h>
 #include <kernel/printf.h>
-
-#include "memfile.h"
 
 #define ASSERT(x) kassert(x)
 #define DPRINTF(fmt, ...) kprintf("memfile: %s: " fmt, __func__, ##__VA_ARGS__)
@@ -13,10 +13,8 @@
 // called when a fault occurs in an unmapped part of a memfile
 static page_t *memfile_get_page(vm_mapping_t *vm, size_t off, uint32_t pg_flags, void *data) {
   memfile_t *memf = data;
-  size_t pg_off = off % PAGE_SIZE;
-  size_t pg_size = PAGE_SIZE - pg_off;
-  if (pg_size > memf->size) {
-    pg_size = memf->size;
+  if (off >= memf->size) {
+    return NULL;
   }
 
   // allocate a new page
@@ -92,14 +90,14 @@ int memfile_fallocate(memfile_t *memf, size_t newsize) {
 
 ssize_t memfile_read(memfile_t *memf, size_t off, kio_t *kio) {
   vm_mapping_t *vm = memf->vm;
-  return (ssize_t) kio_write(kio, (void *) vm->address, memf->size, off);
+  return (ssize_t) kio_write_in(kio, (void *) vm->address, memf->size, off);
 }
 
 ssize_t memfile_write(memfile_t *memf, size_t off, kio_t *kio) {
   vm_mapping_t *vm = memf->vm;
-  return (ssize_t) kio_read(kio, (void *) vm->address, memf->size, off);
+  return (ssize_t) kio_read_out((void *) vm->address, memf->size, off, kio);
 }
 
 int memfile_map(memfile_t *memf, size_t off, vm_mapping_t *vm) {
-  unimplemented("mmfile_map");
+  unimplemented("memfile_map");
 }

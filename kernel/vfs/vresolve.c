@@ -102,7 +102,7 @@ static int vresolve_follow(vcache_t *vc, __move ventry_t **veref, int flags, boo
     // unlock the symlink ventry and swap refs with the target
     ve_unlock(ve);
     ve_release_swap(&ve, &next_ve);
-  } else if (VN_ISMOUNT(VN(ve))) { // handle mount points
+  } else if (VE_ISMOUNT(ve)) { // handle mount points
     ASSERT(V_ISDIR(ve));
     if (islast && (flags & VR_NOFOLLOW)) {
       // return the mount ventry reference
@@ -247,7 +247,7 @@ int vresolve_fullwalk(vcache_t *vc, ventry_t *at, cstr_t path, int flags, int de
     // write the resolved path part
     sbuf_write_char(&curpath, '/');
     sbuf_write(&curpath, path_start(part), path_len(part));
-    // cache the intermediate path
+    // cache the current path
     vcache_put(vc, cstr_from_sbuf(&curpath), ve);
 
     // follow the symlink or mount point if needed

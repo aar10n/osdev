@@ -73,8 +73,9 @@ static page_t *alloc_page_structs(frame_allocator_t *fa, uintptr_t frame, size_t
   }
 
   uintptr_t address = frame;
+  size_t remaining = count;
   LIST_HEAD(page_t) pages = {0};
-  while (count > 0) {
+  while (remaining > 0) {
     page_t *page = kmallocz(sizeof(page_t));
     page->address = address;
     page->flags = pg_flags;
@@ -82,7 +83,7 @@ static page_t *alloc_page_structs(frame_allocator_t *fa, uintptr_t frame, size_t
     SLIST_ADD(&pages, page, next);
 
     address += pagesize;
-    count--;
+    remaining--;
   }
 
   page_t *head = LIST_FIRST(&pages);
@@ -437,9 +438,7 @@ page_t *alloc_pages_size(size_t count, size_t pagesize) {
 
     // try all of the zones
     pages = alloc_pages_zone(zone_type, count, pagesize);
-    if (pages == NULL) {
-      zone_type = zone_alloc_order[zone_type];
-    }
+    zone_type = zone_alloc_order[zone_type];
   }
 
   return pages;

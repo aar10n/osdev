@@ -59,8 +59,8 @@ typedef struct device {
 struct device_ops {
   int (*d_open)(struct device *device, int flags);
   int (*d_close)(struct device *device);
-  ssize_t (*d_read)(struct device *device, size_t off, struct kio *kio);
-  ssize_t (*d_write)(struct device *device, size_t off, struct kio *kio);
+  ssize_t (*d_read)(struct device *device, size_t off, size_t nmax, struct kio *kio);
+  ssize_t (*d_write)(struct device *device, size_t off, size_t nmax, struct kio *kio);
   // int (*d_ioctl)(struct device *device, int cmd, void *arg);
   page_t *(*d_getpage)(struct device *device, size_t off);
   int (*d_putpage)(struct device *device, size_t off, page_t *page);
@@ -200,11 +200,20 @@ int register_device_ops(const char *dev_type, struct device_ops *ops);
  */
 int register_dev(const char *dev_type, device_t *dev);
 
+// MARK: Device Operations
 
-static inline int d_open(struct device *device, int flags) { return device->ops->d_open(device, flags); }
-static inline int d_close(struct device *device) { return device->ops->d_close(device); }
-static inline ssize_t d_read(struct device *device, size_t off, struct kio *kio) { return device->ops->d_read(device, off, kio); }
-static inline ssize_t d_write(struct device *device, size_t off, struct kio *kio) { return device->ops->d_write(device, off, kio); }
+int d_open(device_t *device, int flags);
+int d_close(device_t *device);
+ssize_t d_nread(device_t *device, size_t off, size_t nmax, kio_t *kio);
+ssize_t d_nwrite(device_t *device, size_t off, size_t nmax, kio_t *kio);
+
+static inline ssize_t d_read(device_t *device, size_t off, kio_t *kio) {
+  return d_nread(device, off, kio_remaining(kio), kio);
+}
+
+static inline ssize_t d_write(device_t *device, size_t off, kio_t *kio) {
+  return d_nwrite(device, off, kio_remaining(kio), kio);
+}
 
 static inline ssize_t __d_read(device_t *device, size_t off, void *buf, size_t len) {
   kio_t tmp = kio_new_writeonly(buf, len);

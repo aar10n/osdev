@@ -10,6 +10,8 @@
 #include <kernel/device.h>
 #include <kernel/printf.h>
 #include <kernel/panic.h>
+
+#include <atomic.h>
 #include <rb_tree.h>
 
 struct vtable {
@@ -20,6 +22,8 @@ struct vtable {
 
 #define ASSERT(x) kassert(x)
 #define DPRINTF(fmt, ...) kprintf("vfs: %s: " fmt, __func__, ##__VA_ARGS__)
+
+static id_t unique_vfs_id = 1;
 
 static inline struct vtable *vtable_alloc() {
   struct vtable *table = kmallocz(sizeof(struct vtable));
@@ -42,10 +46,11 @@ static void vfs_cleanup(vfs_t *vfs) {
 
 //
 
-vfs_t *vfs_alloc(struct fs_type *type, int flags) __move {
+vfs_t *vfs_alloc(struct fs_type *type, int mount_flags) __move {
   vfs_t *vfs = kmallocz(sizeof(vfs_t));
+  vfs->id = atomic_fetch_add(&unique_vfs_id, 1);
   vfs->state = V_EMPTY;
-  vfs->mount_flags = type->flags | flags; // inherit flags from fs type
+  vfs->mount_flags = type->flags | mount_flags; // inherit flags from fs type
   vfs->type = type;
   vfs->ops = type->vfs_ops;
   vfs->vtable = vtable_alloc();
@@ -63,31 +68,36 @@ void vfs_release(__move vfs_t **ref) {
   }
 }
 
-void vfs_add_vnode(vfs_t *vfs, vnode_t *vnode) {
-  ASSERT(vnode->state == V_EMPTY);
-  // DPRINTF("adding vnode %d\n", vnode->id);
-  vnode->state = V_ALIVE;
-  vnode->vfs = vfs_getref(vfs);
-  vnode->ops = vfs->type->vnode_ops;
+void vfs_add_node(vfs_t *vfs, ventry_t *ve) {
+  ASSERT(VE_ISLINKED(ve));
+  vnode_t *vn = VN(ve);
+  ASSERT(vn->state == V_EMPTY);
+  vn->state = V_ALIVE;
+  vn->vfs = vfs_getref(vfs);
+  vn->ops = vfs->type->vnode_ops;
+  vn->device = vfs->device;
 
   struct vtable *table = vfs->vtable;
-  if (rb_tree_find(table->tree, vnode->id) != NULL)
-    panic("vnode already exists in table [id={:d}]", vnode->id);
-  rb_tree_insert(table->tree, vnode->id, vn_getref(vnode));
+  if (rb_tree_find(table->tree, vn->id) != NULL)
+    panic("vnode already exists in table [id=%u]", vn->id);
+
+  rb_tree_insert(table->tree, vn->id, vn_getref(vn));
   table->count++;
-  LIST_ADD(&vfs->vnodes, vnode, list);
+  LIST_ADD(&vfs->vnodes, vn, list);
+  ve_syncvn(ve);
 }
 
-void vfs_remove_vnode(vfs_t *vfs, vnode_t *vnode) {
-  ASSERT(vnode->state == V_ALIVE);
-  vnode->state = V_DEAD;
+void vfs_remove_node(vfs_t *vfs, vnode_t *vn) {
+  ASSERT(vn->state == V_ALIVE);
+  vn->state = V_DEAD;
 
   struct vtable *table = vfs->vtable;
-  vnode_t *found = rb_tree_delete(table->tree, vnode->id);
-  ASSERT(found == vnode);
+  vnode_t *found = rb_tree_delete(table->tree, vn->id);
+  ASSERT(found == vn);
   vn_release(&found);
+  // release vnode vfs reference on cleanup
   table->count--;
-  LIST_REMOVE(&vfs->vnodes, vnode, list);
+  LIST_REMOVE(&vfs->vnodes, vn, list);
 }
 
 //
@@ -98,7 +108,7 @@ int vfs_mount(vfs_t *vfs, device_t *device, ventry_t *mount_ve) {
     DPRINTF("mount point is not a directory\n");
     return -ENOTDIR;
   }
-  if (VN_ISMOUNT(VN(mount_ve))) {
+  if (VE_ISMOUNT(mount_ve)) {
     DPRINTF("mount point is already mounted\n");
     return -EBUSY;
   }
@@ -112,28 +122,28 @@ int vfs_mount(vfs_t *vfs, device_t *device, ventry_t *mount_ve) {
   }
 
   vfs_t *host_vfs = VN(mount_ve)->vfs;
-  if (host_vfs && !vfs_lock(host_vfs)) {
+  if (host_vfs && !vfs_lock(host_vfs))
     return -EINVAL; // vfs is dead
-  }
 
   // mount filesystem
   ventry_t *root_ve = NULL;
   if ((res = VFS_OPS(vfs)->v_mount(vfs, device, &root_ve)) < 0) {
     DPRINTF("failed to mount filesystem\n");
+    // if host_vfs
     vfs_unlock(host_vfs);
     return res;
   }
-
   assert_new_ventry_valid(root_ve);
   root_ve->parent = ve_getref(mount_ve); // allow us to traverse back to the mount point
+
   vnode_t *root_vn = VN(root_ve);
   root_vn->flags |= VN_ROOT;
   root_vn->parent_id = mount_ve->id;
-  vfs_add_vnode(vfs, root_vn);
 
   vfs->state = V_ALIVE;
   vfs->root_ve = ve_moveref(&root_ve);
   vfs->device = device;
+  vfs_add_node(vfs, vfs->root_ve);
 
   ve_shadow_mount(mount_ve, vfs->root_ve);
   if (host_vfs)
@@ -147,7 +157,7 @@ int vfs_unmount(vfs_t *vfs, ventry_t *mount) {
     DPRINTF("mount point is not a directory\n");
     return -ENOTDIR;
   }
-  if (!VN_ISMOUNT(VN(mount))) {
+  if (!VE_ISMOUNT(mount)) {
     DPRINTF("mount point is not mounted\n");
     return -EINVAL;
   }
@@ -199,7 +209,7 @@ int vfs_unmount(vfs_t *vfs, ventry_t *mount) {
     }
 
     vn_save(vn);
-    vfs_remove_vnode(vfs, vn);
+    vfs_remove_node(vfs, vn);
 
     vn_end_data_write(vn);
     vn_unlock(vn);
