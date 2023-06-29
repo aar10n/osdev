@@ -181,7 +181,7 @@ pid_t process_fork() {
 int process_execve(const char *path, char *const argv[], char *const envp[]) {
   elf_program_t prog;
   memset(&prog, 0, sizeof(elf_program_t));
-  if (load_elf_file(path, &prog) < 0) {
+  if (elf_load_file(path, &prog) < 0) {
     kprintf("error: %s\n", strerror(ERRNO));
     return -1;
   }

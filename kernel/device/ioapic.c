@@ -147,7 +147,7 @@ static struct ioapic_device *get_ioapic_for_interrupt(uint8_t irq) {
 
 void remap_ioapic_registers(void *data) {
   struct ioapic_device *ioapic = data;
-  ioapic->address = (uintptr_t) vm_alloc_map_phys(ioapic->phys_addr, 0, PAGE_SIZE, 0, PG_WRITE | PG_NOCACHE, "ioapic");
+  ioapic->address = vm_alloc_map_phys(ioapic->phys_addr, 0, PAGE_SIZE, 0, PG_WRITE | PG_NOCACHE, "ioapic")->address;
 }
 
 //
@@ -157,7 +157,7 @@ int ioapic_get_max_remappable_irq() {
 
   struct ioapic_device *ioapic;
   LIST_FOREACH(ioapic, &ioapics, list) {
-    int irq_max = ioapic->gsi_base + ioapic->max_rentry;
+    int irq_max = (int) ioapic->gsi_base + ioapic->max_rentry;
     if (irq_max > max_irq) {
       max_irq = irq_max;
     }

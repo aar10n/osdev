@@ -104,13 +104,14 @@ void cat(const char *path) {
   }
 
   ssize_t nread;
-  char buf[512];
+  char buf[512] = {0};
   while ((nread = fs_read(fd, buf, sizeof(buf))) > 0) {
-    kprintf("{:s}", buf);
+    kprintf("{:.*s}", buf, nread);
   }
   if (nread < 0) {
     FAIL("{:s}: read failed: {:err}\n", path, nread);
   }
+  kprintf("\n");
 
   int res = fs_close(fd);
   if (res < 0) {

@@ -246,7 +246,7 @@ EFI_STATUS EFIAPI LoadElf(IN VOID *Buffer, IN UINT64 PhysAddr, OUT PAGE_DESCRIPT
       goto NEXT;
     }
 
-    UINTN FileSize = ALIGN_VALUE(ProgramHdr->p_filesz, ProgramHdr->p_align);
+    UINTN FileSize = ProgramHdr->p_filesz;
     UINTN MemSize = ALIGN_VALUE(ProgramHdr->p_memsz, ProgramHdr->p_align);
     UINT32 Flags = 0;
     if (ProgramHdr->p_flags & PF_W) {

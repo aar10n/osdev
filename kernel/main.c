@@ -25,6 +25,7 @@
 #include <kernel/printf.h>
 #include <kernel/panic.h>
 #include <kernel/fs_utils.h>
+#include <kernel/loader.h>
 
 // custom qemu patch
 #define QEMU_DEBUG_INIT() ({ outb(0x801, 1); })
@@ -118,13 +119,18 @@ noreturn void root() {
   ls("/dev");
   mkdir("/initrd");
   mount("/dev/rd0", "/initrd", "initrd", 0);
-  ls("/initrd");
-  ls("/initrd/sbin");
-  ls("/initrd/usr");
-  ls("/initrd/usr/lib");
-  ls("/initrd/usr/include");
+  // ls("/initrd");
+  // ls("/initrd/sbin");
+  // ls("/initrd/usr");
+  // ls("/initrd/usr/lib");
+  // ls("/initrd/usr/include");
 
+  stat("/initrd/usr/include/sys/uio.h");
   cat("/initrd/usr/include/sys/uio.h");
+
+  // vm_print_address_space();
+
+  process_execve("/initrd/sbin/init", NULL, NULL);
 
   kprintf("it worked!\n");
 

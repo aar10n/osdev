@@ -402,7 +402,7 @@ void register_xhci_controller(pcie_device_t *device) {
   }
 
   // map the xhci into the virtual memory space
-  bar->virt_addr = (uintptr_t) vm_alloc_map_phys(bar->phys_addr, 0, align(bar->size, PAGE_SIZE), 0, PG_NOCACHE | PG_WRITE, "xhci");
+  bar->virt_addr = vm_alloc_map_phys(bar->phys_addr, 0, align(bar->size, PAGE_SIZE), 0, PG_NOCACHE | PG_WRITE, "xhci")->address;
 
   if (!HCCPARAMS1_AC64(read32(bar->virt_addr, XHCI_CAP_HCCPARAMS1))) {
     // we dont support 32-bit controllers right now

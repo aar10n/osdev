@@ -43,17 +43,18 @@ vm_mapping_t *vm_alloc_rsvd(uintptr_t hint, size_t size, uint32_t vm_flags, cons
 vm_mapping_t *vm_alloc_phys(uintptr_t phys_addr, uintptr_t hint, size_t size, uint32_t vm_flags, const char *name);
 vm_mapping_t *vm_alloc_pages(page_t *pages, uintptr_t hint, size_t size, uint32_t vm_flags, const char *name);
 vm_mapping_t *vm_alloc_file(vm_getpage_t get_page_fn, void *data, uintptr_t hint, size_t size, uint32_t vm_flags, const char *name);
-void *vm_alloc_map_phys(uintptr_t phys_addr, uintptr_t hint, size_t size, uint32_t vm_flags, uint32_t pg_flags, const char *name);
-void *vm_alloc_map_pages(page_t *pages, uintptr_t hint, size_t size, uint32_t vm_flags, uint32_t pg_flags, const char *name);
-void *vm_alloc_map_file(vm_getpage_t get_page_fn, void *data, uintptr_t hint, size_t size, uint32_t vm_flags, uint32_t pg_flags, const char *name);
+vm_mapping_t *vm_alloc_map_phys(uintptr_t phys_addr, uintptr_t hint, size_t size, uint32_t vm_flags, uint32_t pg_flags, const char *name);
+vm_mapping_t *vm_alloc_map_pages(page_t *pages, uintptr_t hint, size_t size, uint32_t vm_flags, uint32_t pg_flags, const char *name);
+vm_mapping_t *vm_alloc_map_file(vm_getpage_t get_page_fn, void *data, uintptr_t hint, size_t size, uint32_t vm_flags, uint32_t pg_flags, const char *name);
 void vm_free(vm_mapping_t *vm);
 
 void *vm_map(vm_mapping_t *vm, uint32_t pg_flags);
 void vm_unmap(vm_mapping_t *vm);
 int vm_resize(vm_mapping_t *vm, size_t new_size, bool allow_move);
+// int vm_update(vm_mapping_t *vm, size_t off, size_t len, uint32_t pg_flags);
 
 page_t *vm_getpage(vm_mapping_t *vm, size_t off, bool cow);
-int vm_putpages(vm_mapping_t *vm, size_t off, page_t *pages);
+int vm_putpages(vm_mapping_t *vm, size_t off, page_t *pages, uint32_t pg_flags);
 
 vm_mapping_t *vm_get_mapping(uintptr_t virt_addr);
 uintptr_t vm_virt_to_phys(uintptr_t virt_addr);

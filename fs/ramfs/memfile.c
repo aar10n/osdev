@@ -49,7 +49,7 @@ memfile_t *memfile_alloc_pages(size_t size, page_t *pages) {
   }
 
   vm_mapping_t *vm = memf->vm;
-  if (vm_putpages(vm, 0, pages) < 0) {
+  if (vm_putpages(vm, 0, pages, 0) < 0) {
     DPRINTF("failed to map pages into memfile\n");
     memfile_free(memf);
     return NULL;

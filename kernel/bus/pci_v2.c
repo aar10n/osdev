@@ -41,7 +41,7 @@ static LIST_HEAD(struct pci_segment_group) segment_groups;
 
 static void remap_pcie_address_space(void *data) {
   struct pci_segment_group *seg = data;
-  seg->address = (uintptr_t) vm_alloc_map_phys(seg->phys_addr, 0, PCIE_MMIO_SIZE, 0, PG_BIGPAGE|PG_WRITE|PG_NOCACHE, "pcie");
+  seg->address = vm_alloc_map_phys(seg->phys_addr, 0, PCIE_MMIO_SIZE, 0, PG_BIGPAGE|PG_WRITE|PG_NOCACHE, "pcie")->address;
 }
 
 static struct pci_segment_group *get_segment_group_for_bus_number(uint8_t bus) {

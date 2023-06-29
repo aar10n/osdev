@@ -104,9 +104,8 @@ static inline uintptr_t choose_best_hint(address_space_t *space, uintptr_t hint,
 
 // phys type
 
-static void vm_phys_map_internal(vm_mapping_t *vm, uintptr_t phys, size_t off, size_t size) {
+static void vm_phys_map_internal(vm_mapping_t *vm, uintptr_t phys, size_t off, size_t size, uint32_t pg_flags) {
   address_space_t *space = vm->space;
-  uint32_t pg_flags = vm->pg_flags;
   size_t stride = pg_flags_to_size(pg_flags);
   ASSERT(off % stride == 0);
   ASSERT(off + size <= vm->size);
@@ -154,8 +153,7 @@ static page_t *vm_phys_getpage_internal(vm_mapping_t *vm, size_t off) {
 
 // pages type
 
-static void vm_page_map_internal(vm_mapping_t *vm, page_t *pages, size_t off, size_t size) {
-  uint32_t pg_flags = vm->pg_flags;
+static void vm_page_map_internal(vm_mapping_t *vm, page_t *pages, size_t off, size_t size, uint32_t pg_flags) {
   address_space_t *space = vm->space;
   size_t stride = pg_flags_to_size(pg_flags);
   ASSERT(off % stride == 0);
@@ -305,8 +303,7 @@ static void vm_file_map_internal(vm_mapping_t *vm, struct vm_file *file, size_t 
   cpu_flush_tlb();
 }
 
-static void vm_file_map_pages_internal(vm_mapping_t *vm, struct vm_file *file, size_t off, size_t size, page_t *pages) {
-  uint32_t pg_flags = vm->pg_flags;
+static void vm_file_map_pages_internal(vm_mapping_t *vm, struct vm_file *file, size_t off, size_t size, page_t *pages, uint32_t pg_flags) {
   address_space_t *space = vm->space;
   size_t stride = pg_flags_to_size(pg_flags);
   ASSERT(off % stride == 0);
@@ -614,7 +611,7 @@ void page_fault_handler(uint8_t vector, uint32_t error_code, cpu_irq_stack_t *fr
 
     // map the new page into the file
     size_t size = pg_flags_to_size(vm->pg_flags);
-    vm_file_map_pages_internal(vm, vm->vm_file, off, size, page);
+    vm_file_map_pages_internal(vm, vm->vm_file, off, size, page, vm->pg_flags);
     return; // recover
   }
 
@@ -686,7 +683,7 @@ void init_address_space() {
 
   // relocate boot info struct
   static_assert(sizeof(boot_info_v2_t) <= PAGE_SIZE);
-  boot_info_v2 = vm_alloc_map_phys((uintptr_t) boot_info_v2, 0, PAGE_SIZE, 0, 0, "boot info");
+  boot_info_v2 = (void *) vm_alloc_map_phys((uintptr_t) boot_info_v2, 0, PAGE_SIZE, 0, 0, "boot info")->address;
 
   vm_print_address_space();
 
@@ -879,31 +876,32 @@ vm_mapping_t *vm_alloc_file(vm_getpage_t get_page_fn, void *data, uintptr_t hint
   return vm;
 }
 
-void *vm_alloc_map_phys(uintptr_t phys_addr, uintptr_t hint, size_t size, uint32_t vm_flags, uint32_t pg_flags, const char *name) {
+vm_mapping_t *vm_alloc_map_phys(uintptr_t phys_addr, uintptr_t hint, size_t size, uint32_t vm_flags, uint32_t pg_flags, const char *name) {
   vm_mapping_t *vm = vm_alloc_phys(phys_addr, hint, size, vm_flags, name);
   PANIC_IF(!vm, "vm_alloc_map_phys: failed to allocate mapping \"%s\"", name);
   void *ptr = vm_map(vm, pg_flags);
   PANIC_IF(!ptr, "vm_alloc_map_phys: failed to map mapping \"%s\"", name);
-  return ptr;
+  return vm;
 }
 
-void *vm_alloc_map_pages(page_t *pages, uintptr_t hint, size_t size, uint32_t vm_flags, uint32_t pg_flags, const char *name) {
+vm_mapping_t *vm_alloc_map_pages(page_t *pages, uintptr_t hint, size_t size, uint32_t vm_flags, uint32_t pg_flags, const char *name) {
   vm_mapping_t *vm = vm_alloc_pages(pages, hint, size, vm_flags, name);
   PANIC_IF(!vm, "vm_alloc_map_pages: failed to allocate mapping \"%s\"", name);
   void *ptr = vm_map(vm, pg_flags);
   PANIC_IF(!ptr, "vm_alloc_map_pages: failed to map mapping \"%s\"", name);
-  return ptr;
+  return vm;
 }
 
-void *vm_alloc_map_file(vm_getpage_t get_page_fn, void *data, uintptr_t hint, size_t size, uint32_t vm_flags, uint32_t pg_flags, const char *name) {
+vm_mapping_t *vm_alloc_map_file(vm_getpage_t get_page_fn, void *data, uintptr_t hint, size_t size, uint32_t vm_flags, uint32_t pg_flags, const char *name) {
   vm_mapping_t *vm = vm_alloc_file(get_page_fn, data, hint, size, vm_flags, name);
   PANIC_IF(!vm, "vm_alloc_map_file: failed to allocate mapping \"%s\"", name);
   void *ptr = vm_map(vm, pg_flags);
   PANIC_IF(!ptr, "vm_alloc_map_file: failed to map mapping \"%s\"", name);
-  return ptr;
+  return vm;
 }
 
 void vm_free(vm_mapping_t *vm) {
+  ASSERT(vm->type != VM_TYPE_RSVD);
   if (vm->flags & VM_MAPPED) {
     vm_unmap(vm);
   }
@@ -911,8 +909,10 @@ void vm_free(vm_mapping_t *vm) {
   if (vm->type == VM_TYPE_PAGE && vm->vm_pages != NULL) {
     free_pages(vm->vm_pages);
     vm->vm_pages = NULL;
+  } else if (vm->type == VM_TYPE_FILE) {
+    // TODO: handle deletion of file mappings
+    unimplemented("vm_free for file mappings");
   }
-  // TODO: handle deletion of file mappings
 
   address_space_t *space = vm->space;
   SPIN_LOCK(&space->lock);
@@ -929,7 +929,9 @@ void vm_free(vm_mapping_t *vm) {
 void *vm_map(vm_mapping_t *vm, uint32_t pg_flags) {
   ASSERT(vm->type != VM_TYPE_RSVD);
   if (vm->flags & VM_MAPPED) {
-    return (void *) vm->address;
+    if (vm->pg_flags == pg_flags) {
+      return (void *) vm->address;
+    }
   }
 
   SPIN_LOCK(&vm->lock);
@@ -937,13 +939,13 @@ void *vm_map(vm_mapping_t *vm, uint32_t pg_flags) {
   vm->pg_flags = pg_flags;
   switch (vm->type) {
     case VM_TYPE_PHYS:
-      vm_phys_map_internal(vm, vm->vm_phys, 0, vm->size);
+      vm_phys_map_internal(vm, vm->vm_phys, 0, vm->size, vm->pg_flags);
       break;
     case VM_TYPE_PAGE:
-      vm_page_map_internal(vm, vm->vm_pages, 0, vm->size);
+      vm_page_map_internal(vm, vm->vm_pages, 0, vm->size, vm->pg_flags);
       break;
     case VM_TYPE_FILE:
-      vm_file_map_pages_internal(vm, vm->vm_file, 0, vm->size, NULL);
+      vm_file_map_pages_internal(vm, vm->vm_file, 0, vm->size, NULL, vm->pg_flags);
       break;
     default:
       unreachable;
@@ -954,6 +956,10 @@ void *vm_map(vm_mapping_t *vm, uint32_t pg_flags) {
 }
 
 void vm_unmap(vm_mapping_t *vm) {
+  if (!(vm->flags & VM_MAPPED)) {
+    return;
+  }
+
   SPIN_LOCK(&vm->lock);
   ASSERT(vm->flags & VM_MAPPED);
   switch (vm->type) {
@@ -1025,6 +1031,10 @@ LABEL(update_memory);
   return 0;
 }
 
+// int vm_update(vm_mapping_t *vm, size_t off, size_t len, uint32_t pg_flags) {
+//   address_space_t *space = vm->space;
+// }
+
 //
 
 page_t *vm_getpage(vm_mapping_t *vm, size_t off, bool cow) {
@@ -1052,8 +1062,7 @@ page_t *vm_getpage(vm_mapping_t *vm, size_t off, bool cow) {
   return page;
 }
 
-int vm_putpages(vm_mapping_t *vm, size_t off, page_t *pages) {
-  ASSERT(vm->type == VM_TYPE_PAGE || vm->type == VM_TYPE_FILE);
+int vm_putpages(vm_mapping_t *vm, size_t off, page_t *pages, uint32_t pg_flags) {
   ASSERT(pages->flags & PG_HEAD);
   size_t pgsize = pg_flags_to_size(pages->flags);
   size_t size = pages->head.count * pgsize;
@@ -1063,9 +1072,11 @@ int vm_putpages(vm_mapping_t *vm, size_t off, page_t *pages) {
   }
 
   if (vm->type == VM_TYPE_PAGE) {
-    vm_page_map_internal(vm, pages, off, size);
+    vm_page_map_internal(vm, pages, off, size, pg_flags);
   } else if (vm->type == VM_TYPE_FILE) {
-    vm_file_map_pages_internal(vm, vm->vm_file, off, size, pages);
+    vm_file_map_pages_internal(vm, vm->vm_file, off, size, pages, pg_flags);
+  } else {
+    panic("vm_putpages: invalid mapping type");
   }
   return 0;
 }

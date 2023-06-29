@@ -22,13 +22,11 @@ typedef struct elf_program {
   uint64_t phent;
   uint64_t phnum;
 
-  const char *interp;
-  page_t *file_pages;
-  page_t *prog_pages;
+  char *interp;
   struct elf_program *linker;
 } elf_program_t;
 
-int load_elf(void *buf, elf_program_t *prog);
-int load_elf_file(const char *path, elf_program_t *prog);
+int elf_load(elf_program_t *prog, void *buf, size_t len);
+int elf_load_file(const char *path, elf_program_t *prog);
 
 #endif
