@@ -49,12 +49,11 @@ static inline const char *get_status_str(thread_status_t status) {
 static inline vm_mapping_t *create_stack(uintptr_t *sp, bool user) {
   kassert(sp != NULL);
   size_t size = user ? USER_STACK_SIZE : KERNEL_STACK_SIZE;
-  uint32_t pg_flags = PG_WRITE | (user ? PG_USER : 0);
-  uint32_t vm_flags = VM_STACK | VM_GUARD | (user ? VM_USER : 0);
+  uint32_t vm_flags = VM_WRITE | VM_STACK | (user ? VM_USER : 0);
 
   page_t *stack_pages = alloc_pages(SIZE_TO_PAGES(size));
-  vm_mapping_t *vm = vm_alloc_pages(stack_pages, 0, size, vm_flags, "thread stack");
-  uintptr_t base = (uintptr_t) vm_map(vm, pg_flags);
+  vm_mapping_t *vm = vmap_pages(stack_pages, 0, size, vm_flags, "thread stack");
+  uintptr_t base = vm->address;
   uintptr_t rsp = vm->address + size;
   *sp = rsp;
   return vm;
@@ -162,10 +161,10 @@ thread_t *thread_copy(thread_t *other) {
 
 void thread_free(thread_t *thread) {
   if (thread->kernel_stack) {
-    vm_free(thread->kernel_stack);
+    vmap_free(thread->kernel_stack);
   }
   if (thread->user_stack) {
-    vm_free(thread->user_stack);
+    vmap_free(thread->user_stack);
   }
 
   kfree(thread->name);

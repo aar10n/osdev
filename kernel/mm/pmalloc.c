@@ -11,7 +11,6 @@
 #include <kernel/printf.h>
 #include <kernel/panic.h>
 #include <bitmap.h>
-#include <kernel/init.h>
 
 #define ASSERT(x) kassert(x)
 
@@ -64,7 +63,7 @@ static page_t *alloc_page_structs(frame_allocator_t *fa, uintptr_t frame, size_t
     return NULL;
   }
 
-  // mask out user flags and size flags (which we'll set later)
+  // mask out all but the internal flags
   pg_flags &= ~(PG_FLAGS_MASK|PG_BIGPAGE|PG_HUGEPAGE);
   if (pagesize == BIGPAGE_SIZE) {
     pg_flags |= PG_BIGPAGE;

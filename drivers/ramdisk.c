@@ -12,8 +12,8 @@
 #define ASSERT(x) kassert(x)
 
 struct ramdisk {
-  size_t size;      // size of the memory region
   void *base;       // virtual base address
+  size_t size;      // size of the memory region
   vm_mapping_t *vm; // virtual mapping
 };
 
@@ -79,14 +79,14 @@ static void ramdisk_initrd_module_init() {
     panic("initrd not found");
   }
 
-  vm_mapping_t *vm = vm_alloc_phys(boot_info_v2->initrd_addr, 0, boot_info_v2->initrd_size, 0, "initrd");
+  vm_mapping_t *vm = vmap_phys(boot_info_v2->initrd_addr, 0, boot_info_v2->initrd_size, VM_READ, "initrd");
   if (vm == NULL) {
     panic("failed to map initrd");
   }
 
   struct ramdisk *initrd = kmallocz(sizeof(struct ramdisk));
+  initrd->base = (void *) vm->address;
   initrd->size = vm->size;
-  initrd->base = vm_map(vm, PG_WRITE);
   initrd->vm = vm;
 
   kprintf("ramdisk: registering initrd\n");

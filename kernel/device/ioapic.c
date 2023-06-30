@@ -147,7 +147,8 @@ static struct ioapic_device *get_ioapic_for_interrupt(uint8_t irq) {
 
 void remap_ioapic_registers(void *data) {
   struct ioapic_device *ioapic = data;
-  ioapic->address = vm_alloc_map_phys(ioapic->phys_addr, 0, PAGE_SIZE, 0, PG_WRITE | PG_NOCACHE, "ioapic")->address;
+  vm_mapping_t *vm = vmap_phys(ioapic->phys_addr, 0, PAGE_SIZE, VM_WRITE | VM_NOCACHE, "ioapic");
+  ioapic->address = vm->address;
 }
 
 //

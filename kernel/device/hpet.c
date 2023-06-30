@@ -153,7 +153,8 @@ void hpet_interrupt_handler(uint8_t vector, void *data) {
 
 void remap_hpet_registers(void *data) {
   struct hpet_device *hpet = data;
-  hpet->address = vm_alloc_map_phys(hpet->phys_addr, 0, PAGE_SIZE, 0, PG_WRITE | PG_NOCACHE, "hpet")->address;
+  vm_mapping_t *vm = vmap_phys(hpet->phys_addr, 0, PAGE_SIZE, VM_WRITE | VM_NOCACHE, "hpet");
+  hpet->address = vm->address;
 }
 
 //

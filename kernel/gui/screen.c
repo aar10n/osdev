@@ -19,8 +19,8 @@ __used uint32_t *framebuf_base;
 
 
 void remap_framebuffer_mmio(void *data) {
-  framebuf_base = (void *) vm_alloc_map_phys(boot_info_v2->fb_addr, FRAMEBUFFER_VA, boot_info_v2->fb_size,
-                                             VM_FIXED, PG_WRITE, "framebuffer")->address;
+  vm_mapping_t *vm = vmap_phys(boot_info_v2->fb_addr, FRAMEBUFFER_VA, boot_info_v2->fb_size, VM_WRITE | VM_FIXED, "framebuffer");
+  framebuf_base = (void *) vm->address;
 }
 
 //

@@ -32,9 +32,11 @@ memfile_t *memfile_alloc(size_t size) {
   memfile_t *memf = kmallocz(sizeof(memfile_t));
   memf->size = size;
 
-  vm_mapping_t *vm = vm_alloc_map_file(memfile_get_page, memf, 0, size, VM_GROWS, PG_WRITE, "memfile");
+  vm_file_t *file = vm_file_alloc(size, memfile_get_page, memf);
+  vm_mapping_t *vm = vmap_file(file, 0, size, VM_WRITE, "memfile");
   if (vm == NULL) {
     DPRINTF("failed to allocate vm mapping\n");
+    vm_file_free(file);
     kfree(memf);
     return NULL;
   }
@@ -49,7 +51,7 @@ memfile_t *memfile_alloc_pages(size_t size, page_t *pages) {
   }
 
   vm_mapping_t *vm = memf->vm;
-  if (vm_putpages(vm, 0, pages, 0) < 0) {
+  if (vm_putpages(vm, pages, 0) < 0) {
     DPRINTF("failed to map pages into memfile\n");
     memfile_free(memf);
     return NULL;
@@ -61,7 +63,8 @@ memfile_t *memfile_alloc_custom(size_t size, vm_getpage_t getpage) {
   memfile_t *memf = kmallocz(sizeof(memfile_t));
   memf->size = size;
 
-  vm_mapping_t *vm = vm_alloc_file(getpage, memf, 0, size, VM_GROWS, "memfile");
+  vm_file_t *file = vm_file_alloc(size, getpage, memf);
+  vm_mapping_t *vm = vmap_file(file, 0, size, VM_WRITE, "memfile");
   if (vm == NULL) {
     DPRINTF("failed to allocate vm mapping\n");
     kfree(memf);
@@ -73,7 +76,7 @@ memfile_t *memfile_alloc_custom(size_t size, vm_getpage_t getpage) {
 
 void memfile_free(memfile_t *memf) {
   vm_mapping_t *vm = memf->vm;
-  vm_free(vm);
+  vmap_free(vm);
   kfree(memf);
 }
 

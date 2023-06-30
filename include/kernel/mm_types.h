@@ -32,22 +32,14 @@ struct vm_file;
 
 struct intvl_tree;
 
-// page flags
-#define PG_PRESENT    (1 << 0)
-#define PG_WRITE      (1 << 1)
-#define PG_EXEC       (1 << 2)
-#define PG_USER       (1 << 3)
-#define PG_NOCACHE    (1 << 4)
-#define PG_WRITETHRU  (1 << 5)
-#define PG_GLOBAL     (1 << 6)
-/* internal use only */
-#define PG_BIGPAGE    (1 << 8)
-#define PG_HUGEPAGE   (1 << 9)
-#define PG_HEAD       (1 << 10)
-#define PG_COW        (1 << 11)
-
-#define PG_FLAGS_MASK   0x03F
-
+/**
+ * A page of physical memory.
+ *
+ * The page struct represents a frame of physical memory. A given frame may have
+ * more than one page struct allocated for it, but all references to a frame beyond
+ * the original must be copy-on-write pages. If a page does not have the `fa` field
+ * set it means the frame is not owned by the struct.
+ */
 typedef struct page {
   uint64_t address;           // physical address
   uint32_t flags;             // page flags
@@ -59,8 +51,30 @@ typedef struct page {
   SLIST_ENTRY(struct page) next;
 } page_t;
 
-//
+// page flags
+#define PG_PRESENT    (1 << 0)
+#define PG_WRITE      (1 << 1)
+#define PG_EXEC       (1 << 2)
+#define PG_USER       (1 << 3)
+#define PG_NOCACHE    (1 << 4)
+#define PG_WRITETHRU  (1 << 5)
+#define PG_GLOBAL     (1 << 6)
+/* internal use only */
+#define PG_BIGPAGE    (1 << 7)
+#define PG_HUGEPAGE   (1 << 8)
+#define PG_HEAD       (1 << 9)
+#define PG_COW        (1 << 10)
 
+#define PG_FLAGS_MASK 0x03F
+
+/**
+ * A virtual address space.
+ *
+ * The address_space space struct represents a section of virtual address space
+ * and the mappings contained within it. There is one shared address space for
+ * the kernel covering KERNEL_SPACE_START to KERNEL_SPACE_END and each process
+ * has its own individual address space covering userspace.
+ */
 typedef struct address_space {
   struct intvl_tree *tree;
   uintptr_t min_addr;
@@ -84,17 +98,11 @@ enum vm_type {
   VM_MAX_TYPE,
 };
 
-// vm flags
-#define VM_USER   0x01  // mapping lives in user space
-#define VM_FIXED  0x02  // mapping has fixed address (hint used for address)
-#define VM_GUARD  0x04  // leave a null guard page at the end of the allocation (only for VM_TYPE_PAGE)
-#define VM_STACK  0x08  // mapping grows downwards (only for VM_TYPE_PAGE)
-#define VM_GROWS  0x10  // mapping can grow or shrink (conflicts with VM_FIXED)
-
 typedef struct vm_mapping {
   enum vm_type type : 8;    // vm type
+  uint8_t : 8;              // padding
+  uint16_t : 16;            // padding
   uint32_t flags;           // vm flags
-  uint32_t pg_flags;        // page flags (when mapped)
 
   spinlock_t lock;          // mapping lock
   str_t name;               // name of the mapping
@@ -108,14 +116,27 @@ typedef struct vm_mapping {
     uintptr_t vm_phys;
     struct page *vm_pages;
     struct vm_file *vm_file;
-    struct {
-      size_t offset;
-      struct vm_mapping *vm;
-    } vm_view;
   };
 
   LIST_ENTRY(struct vm_mapping) list;
 } vm_mapping_t;
+
+// vm flags
+#define VM_READ     (1 << 0)  // mapping is readable
+#define VM_WRITE    (1 << 1)  // mapping is writable
+#define VM_EXEC     (1 << 2)  // mapping is executable
+#define VM_USER     (1 << 3)  // mapping lives in user space
+#define VM_FIXED    (1 << 4)  // mapping has fixed address (hint used for address)
+#define VM_STACK    (1 << 5)  // mapping grows downwards and has a guard page (only for VM_TYPE_PAGE)
+#define VM_HUGE_2MB (1 << 6)  // mapping uses 2MB pages
+#define VM_HUGE_1GB (1 << 7)  // mapping uses 1GB pages
+#define VM_NOCACHE  (1 << 8)  // mapping is non-cacheable
+// internal vm flags
+#define VM_MAPPED   (1 << 9)  // mapping is currently active
+#define VM_MALLOC   (1 << 10) // mapping is a vmalloc allocation
+
+#define VM_PROT_MASK  0x007
+#define VM_FLAGS_MASK 0x0FF
 
 // address space layout
 

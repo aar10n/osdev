@@ -32,12 +32,12 @@ int smp_boot_ap(uint16_t id, smp_data_t *smpdata) {
   kprintf("smp: booting CPU#%d\n", apic_id);
 
   // allocate stack and per-cpu area for ap
-  void *ap_percpu_ptr = vmalloc(PER_CPU_SIZE, PG_WRITE);
+  void *ap_percpu_ptr = vmalloc(PER_CPU_SIZE, 0);
   ASSERT(ap_percpu_ptr != NULL);
 
   page_t *stack_pages = alloc_pages(SIZE_TO_PAGES(KERNEL_STACK_SIZE));
-  void *ap_stack_ptr = (void *) vm_alloc_map_pages(stack_pages, 0, KERNEL_STACK_SIZE, VM_STACK | VM_GUARD,
-                                                   PG_WRITE, "ap stack")->address;
+  vm_mapping_t *stack_vm = vmap_pages(stack_pages, 0, KERNEL_STACK_SIZE, VM_WRITE | VM_STACK, "ap stack");
+  void *ap_stack_ptr = (void *) stack_vm->address;
 
   memset(ap_percpu_ptr, 0, PER_CPU_SIZE);
   ((per_cpu_t *)(ap_percpu_ptr))->self = (uintptr_t) ap_percpu_ptr;
@@ -70,8 +70,8 @@ void smp_init() {
     return;
   }
 
-  void *code_ptr = vmalloc_at_phys(SMPBOOT_START, PAGE_SIZE, PG_WRITE|PG_EXEC);
-  void *data_ptr = vmalloc_at_phys(SMPDATA_START, PAGE_SIZE, PG_NOCACHE|PG_WRITE);
+  void *code_ptr = vmalloc_at_phys(SMPBOOT_START, PAGE_SIZE, VM_WRITE | VM_EXEC);
+  void *data_ptr = vmalloc_at_phys(SMPDATA_START, PAGE_SIZE, VM_WRITE | VM_NOCACHE);
   uintptr_t eip = vm_virt_to_phys((uintptr_t) code_ptr);
 
   size_t smpboot_size = smpboot_end - smpboot_start;

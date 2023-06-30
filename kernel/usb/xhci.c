@@ -402,7 +402,11 @@ void register_xhci_controller(pcie_device_t *device) {
   }
 
   // map the xhci into the virtual memory space
-  bar->virt_addr = vm_alloc_map_phys(bar->phys_addr, 0, align(bar->size, PAGE_SIZE), 0, PG_NOCACHE | PG_WRITE, "xhci")->address;
+  vm_mapping_t *xhci_vm = vmap_phys(
+    bar->phys_addr, 0, align(bar->size, PAGE_SIZE),
+    VM_READ | VM_WRITE | VM_NOCACHE, "xhci"
+  );
+  bar->virt_addr = xhci_vm->address;
 
   if (!HCCPARAMS1_AC64(read32(bar->virt_addr, XHCI_CAP_HCCPARAMS1))) {
     // we dont support 32-bit controllers right now
@@ -1410,7 +1414,7 @@ xhci_ictx_t *_xhci_alloc_input_ctx(_xhci_device_t *device) {
   size_t ctxsz = is_64_byte_context(hc) ? 64 : 32;
 
   // input context
-  void *ptr = vmalloc(PAGE_SIZE, PG_WRITE | PG_NOCACHE);
+  void *ptr = vmalloc(PAGE_SIZE, VM_NOCACHE);
 
   xhci_ictx_t *ictx = kmallocz(sizeof(xhci_ictx_t));
   ictx->buffer = ptr;
@@ -1443,7 +1447,7 @@ xhci_dctx_t *_xhci_alloc_device_ctx(_xhci_device_t *device) {
 
   // input context
   xhci_dctx_t *dctx = kmallocz(sizeof(xhci_dctx_t));
-  dctx->buffer = vmalloc(PAGE_SIZE, PG_WRITE | PG_NOCACHE);
+  dctx->buffer = vmalloc(PAGE_SIZE, VM_NOCACHE);
   dctx->slot = dctx->buffer;
   for (int i = 0; i < 31; i++) {
     dctx->endpoint[i] = offset_ptr(dctx->buffer, ctxsz * (i + 2));
@@ -1466,7 +1470,7 @@ _xhci_ring_t *_xhci_alloc_ring(size_t capacity) {
   size_t size = capacity * sizeof(xhci_trb_t);
 
   _xhci_ring_t *ring = kmallocz(sizeof(_xhci_ring_t));
-  ring->base = vmalloc(capacity * sizeof(xhci_trb_t), PG_WRITE);
+  ring->base = vmalloc(capacity * sizeof(xhci_trb_t), 0);
   ring->index = 0;
   ring->max_index = capacity;
   ring->cycle = 1;

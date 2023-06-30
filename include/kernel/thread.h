@@ -56,49 +56,49 @@ typedef struct thread_ctx {
 } thread_ctx_t;
 
 typedef struct thread_meta_ctx {
-  thread_ctx_t ctx;            // thread contex
-  uintptr_t kernel_sp;         // kernel stack pointer
-  uintptr_t user_sp;           // user stack pointer
-  thread_status_t status;      // thread status
-  int errno;                   // thread local errno
+  thread_ctx_t ctx;             // thread contex
+  uintptr_t kernel_sp;          // kernel stack pointer
+  uintptr_t user_sp;            // user stack pointer
+  thread_status_t status;       // thread status
+  int errno;                    // thread local errno
 } thread_meta_ctx_t;
 
 typedef struct thread {
-  id_t tid;                    // thread id
-  uint32_t reserved;           // reserved
-  thread_ctx_t *ctx;           // thread context
-  thread_meta_ctx_t *mctx;     // thread meta context
-  process_t *process;          // owning process
-  uintptr_t fs_base;           // fs base address
-  uintptr_t kernel_sp;         // kernel stack pointer
-  uintptr_t user_sp;           // user stack pointer
+  id_t tid;                     // thread id
+  uint32_t reserved;            // reserved
+  thread_ctx_t *ctx;            // thread context
+  thread_meta_ctx_t *mctx;      // thread meta context
+  process_t *process;           // owning process
+  uintptr_t fs_base;            // fs base address
+  uintptr_t kernel_sp;          // kernel stack pointer
+  uintptr_t user_sp;            // user stack pointer
   // !!! DO NOT CHANGE ABOVE HERE !!!
   // assembly code in thread.asm accesses these fields using known offsets
 
-  uint8_t cpu_id;              // current/last cpu used
-  uint8_t policy;              // thread scheduling policy
-  uint16_t priority;           // thread priority
-  thread_status_t status;      // thread status
-  sched_stats_t *stats;        // scheduling stats
-  int affinity;                // thread cpu affinity
-  clockid_t alarm_id;          // wakeup alarm id if sleeping
+  uint8_t cpu_id;               // current/last cpu used
+  uint8_t policy;               // thread scheduling policy
+  uint16_t priority;            // thread priority
+  thread_status_t status;       // thread status
+  sched_stats_t *stats;         // scheduling stats
+  int affinity;                 // thread cpu affinity
+  clockid_t alarm_id;           // wakeup alarm id if sleeping
 
-  spinlock_t lock;             // thread spinlock
-  mutex_t mutex;               // thread mutex
-  cond_t data_ready;           // thread data ready condition
-  sigset_t signal;             // signal mask
-  uint32_t flags;              // thread flags
+  spinlock_t lock;              // thread spinlock
+  mutex_t mutex;                // thread mutex
+  cond_t data_ready;            // thread data ready condition
+  sigset_t signal;              // signal mask
+  uint32_t flags;               // thread flags
 
-  char *name;                  // thread name or description (owning)
-  int errno;                   // thread local errno
-  int preempt_count;           // preempt disable counter
-  void *data;                  // thread data pointer
+  char *name;                   // thread name or description (owning)
+  int errno;                    // thread local errno
+  int preempt_count;            // preempt disable counter
+  void *data;                   // thread data pointer
 
-  vm_mapping_t *kernel_stack; // kernel stack mapping
-  vm_mapping_t *user_stack; // user stack mapping
+  vm_mapping_t *kernel_stack;   // kernel stack mapping
+  vm_mapping_t *user_stack;     // user stack mapping
 
-  LIST_ENTRY(thread_t) group;  // thread group (threads from same process)
-  LIST_ENTRY(thread_t) list;   // generic thread list (used by scheduler, mutex, cond, etc)
+  LIST_ENTRY(thread_t) group;   // thread group (threads from same process)
+  LIST_ENTRY(thread_t) list;    // generic thread list (used by scheduler, mutex, cond, etc)
 } thread_t;
 static_assert(offsetof(thread_t, tid) == 0x00);
 static_assert(offsetof(thread_t, process) == 0x18);
