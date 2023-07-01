@@ -330,7 +330,9 @@ void remap_dwarf_sections(void *data) {
     return;
   }
 
-  vm_mapping_t *vm = vmap_phys(section->phys_addr, 0, size, VM_READ, section->name);
+  char name[64] = {0};
+  ksnprintf(name, 63, "elf .%s", section->name);
+  vm_mapping_t *vm = vmap_phys(section->phys_addr, 0, size, VM_READ, name);
   section->virt_addr = vm->address;
 }
 

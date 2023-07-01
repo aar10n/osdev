@@ -11,14 +11,14 @@
 #define DPRINTF(fmt, ...) kprintf("memfile: %s: " fmt, __func__, ##__VA_ARGS__)
 
 // called when a fault occurs in an unmapped part of a memfile
-static page_t *memfile_get_page(vm_mapping_t *vm, size_t off, uint32_t pg_flags, void *data) {
+static page_t *memfile_get_page(vm_mapping_t *vm, size_t off, uint32_t vm_flags, void *data) {
   memfile_t *memf = data;
   if (off >= memf->size) {
     return NULL;
   }
 
   // allocate a new page
-  page_t *page = alloc_pages_size(1, pg_flags_to_size(pg_flags));
+  page_t *page = alloc_pages_size(1, vm_flags_to_size(vm_flags));
   if (page == NULL) {
     DPRINTF("failed to allocate page\n");
     return NULL;

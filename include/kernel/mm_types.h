@@ -134,9 +134,11 @@ typedef struct vm_mapping {
 // internal vm flags
 #define VM_MAPPED   (1 << 9)  // mapping is currently active
 #define VM_MALLOC   (1 << 10) // mapping is a vmalloc allocation
+#define VM_LINKED   (1 << 11) // mapping was split and is linked to the following mapping
+#define VM_SPLIT    (1 << 12) // mapping was split and is the second half of the split
 
-#define VM_PROT_MASK  0x007
-#define VM_FLAGS_MASK 0x0FF
+#define VM_PROT_MASK  0x07
+#define VM_FLAGS_MASK 0xFF
 
 // address space layout
 

@@ -113,24 +113,29 @@ noreturn void root() {
 
   //////////////////////////////////////////
 
-  mkdir("/dev");
-  mknod("/dev/rd0", 0777|S_IFBLK, makedev(1, 0));
+  page_t *pages = alloc_pages(SIZE_TO_PAGES(SIZE_16KB));
+  vm_mapping_t *vm = vmap_pages(pages, 0, SIZE_16KB, VM_READ | VM_WRITE, "test");
+  vm_print_address_space();
 
-  ls("/dev");
-  mkdir("/initrd");
-  mount("/dev/rd0", "/initrd", "initrd", 0);
-  // ls("/initrd");
-  // ls("/initrd/sbin");
-  // ls("/initrd/usr");
-  // ls("/initrd/usr/lib");
-  // ls("/initrd/usr/include");
+  kprintf("updating mapping\n");
+  vm_update(vm, SIZE_4KB, SIZE_4KB, VM_READ | VM_EXEC);
+  vm_print_address_space();
+  vm_update(vm, 0, SIZE_4KB, 0);
+  vm_print_address_space();
 
-  stat("/initrd/usr/include/sys/uio.h");
-  cat("/initrd/usr/include/sys/uio.h");
+  // mkdir("/dev");
+  // mknod("/dev/rd0", 0777|S_IFBLK, makedev(1, 0));
+  //
+  // ls("/dev");
+  // mkdir("/initrd");
+  // mount("/dev/rd0", "/initrd", "initrd", 0);
+  //
+  // stat("/initrd/usr/include/sys/uio.h");
+  // cat("/initrd/usr/include/sys/uio.h");
 
   // vm_print_address_space();
 
-  process_execve("/initrd/sbin/init", NULL, NULL);
+  // process_execve("/initrd/sbin/init", NULL, NULL);
 
   kprintf("it worked!\n");
 

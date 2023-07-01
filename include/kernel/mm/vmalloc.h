@@ -49,15 +49,23 @@ vm_mapping_t *vmap_file(vm_file_t *file, uintptr_t hint, size_t size, uint32_t v
 
 int vm_resize(vm_mapping_t *vm, size_t new_size, bool allow_move);
 int vm_update(vm_mapping_t *vm, size_t off, size_t len, uint32_t prot_flags);
-
 page_t *vm_getpage(vm_mapping_t *vm, size_t off, bool cow);
 int vm_putpages(vm_mapping_t *vm, page_t *pages, size_t off);
+uintptr_t vm_mapping_to_phys(vm_mapping_t *vm, uintptr_t virt_addr);
 
 vm_mapping_t *vm_get_mapping(uintptr_t virt_addr);
 uintptr_t vm_virt_to_phys(uintptr_t virt_addr);
-uintptr_t vm_mapping_to_phys(vm_mapping_t *vm, uintptr_t virt_addr);
 
 #define virt_to_phys(virt_addr) vm_virt_to_phys((uintptr_t)(virt_addr))
+
+static always_inline size_t vm_flags_to_size(uint32_t vm_flags) {
+  if (vm_flags & VM_HUGE_2MB) {
+    return PAGE_SIZE_2MB;
+  } else if (vm_flags & VM_HUGE_1GB) {
+    return PAGE_SIZE_1GB;
+  }
+  return PAGE_SIZE;
+}
 
 // vmalloc api
 //
