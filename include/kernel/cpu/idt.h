@@ -36,5 +36,6 @@ static_assert(sizeof(idt_gate_t) == 16);
 typedef void (*idt_function_t)(uint8_t, void *);
 
 void setup_idt();
+void set_gate_ist(uint8_t num, uint8_t ist);
 
 #endif // KERNEL_CPU_IDT_H

@@ -5,6 +5,7 @@
 #include <kernel/smpboot.h>
 
 #include <kernel/acpi/acpi.h>
+#include <kernel/cpu/per_cpu.h>
 #include <kernel/device/apic.h>
 
 #include <kernel/mm.h>
@@ -32,22 +33,16 @@ int smp_boot_ap(uint16_t id, smp_data_t *smpdata) {
   kprintf("smp: booting CPU#%d\n", apic_id);
 
   // allocate stack and per-cpu area for ap
-  void *ap_percpu_ptr = vmalloc(PER_CPU_SIZE, 0);
-  ASSERT(ap_percpu_ptr != NULL);
+  per_cpu_t *percpu = percpu_alloc_area(id, apic_id);
 
   page_t *stack_pages = alloc_pages(SIZE_TO_PAGES(KERNEL_STACK_SIZE));
   vm_mapping_t *stack_vm = vmap_pages(stack_pages, 0, KERNEL_STACK_SIZE, VM_WRITE | VM_STACK, "ap stack");
   void *ap_stack_ptr = (void *) stack_vm->address;
 
-  memset(ap_percpu_ptr, 0, PER_CPU_SIZE);
-  ((per_cpu_t *)(ap_percpu_ptr))->self = (uintptr_t) ap_percpu_ptr;
-  ((per_cpu_t *)(ap_percpu_ptr))->id = id;
-  ((per_cpu_t *)(ap_percpu_ptr))->apic_id = apic_id;
-
   // setup ap page tables
   uintptr_t ap_pml4 = make_ap_page_tables();
   smpdata->pml4_addr = (uint32_t) ap_pml4;
-  smpdata->percpu_ptr = (uintptr_t) ap_percpu_ptr;
+  smpdata->percpu_ptr = (uintptr_t) percpu;
   smpdata->stack_addr = (uintptr_t) ap_stack_ptr;
 
   // release gate

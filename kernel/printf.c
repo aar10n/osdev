@@ -3,12 +3,12 @@
 //
 
 #include <kernel/printf.h>
-#include <fmt/fmt.h>
 #include <kernel/console.h>
 #include <kernel/panic.h>
+#include <kernel/string.h>
 #include <kernel/mm.h>
 
-#include <kernel/string.h>
+#include <fmt/fmt.h>
 
 #define BUFFER_SIZE 512
 

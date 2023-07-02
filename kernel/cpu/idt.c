@@ -20,12 +20,10 @@ idt_gate_t idt[IDT_GATES];
 idt_desc_t idt_desc;
 
 extern uintptr_t idt_stubs;
-extern void page_fault_handler();
-// extern void sched_irq_hook(uint8_t vector);
 
 void setup_idt() {
   if (PERCPU_IS_BSP) {
-    memset((void *) idt, 0, sizeof(idt));
+    // setup the shared IDT
     uintptr_t asm_handler = (uintptr_t) &idt_stubs;
     for (int i = 0; i < IDT_GATES; i++) {;
       idt[i] = gate(asm_handler, KERNEL_CS, 0, INTERRUPT_GATE, 0, 1);
@@ -35,6 +33,9 @@ void setup_idt() {
     idt_desc.base = (uintptr_t) idt;
     idt_desc.limit = sizeof(idt) - 1;
   }
-
   cpu_load_idt(&idt_desc);
+}
+
+void set_gate_ist(uint8_t num, uint8_t ist) {
+  idt[num].ist = ist;
 }

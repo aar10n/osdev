@@ -9,11 +9,11 @@
 #include <kernel/device/apic.h>
 #include <kernel/device/pit.h>
 
-#include <kernel/mm.h>
-// #include <kernel/cpuid.h>
 #include <kernel/string.h>
 #include <kernel/panic.h>
 #include <kernel/printf.h>
+#include <kernel/syscall.h>
+#include <kernel/mm.h>
 
 #define PERCPU_CPUID (PERCPU_CPU_INFO->cpuid_bits)
 
@@ -97,15 +97,13 @@ static inline void bsp_log_message(const char *message) {
 
 //
 
-void cpu_init() {
+void cpu_early_init() {
   setup_gdt();
   setup_idt();
   apic_init();
 
   per_cpu_t *percpu_struct = (void *) cpu_read_gsbase();
   percpu_structs[PERCPU_ID] = percpu_struct;
-  // num_percpu_structs++;
-
   uint32_t apic_id = cpu_get_apic_id();
   kassert(apic_id <= UINT8_MAX);
 
@@ -225,6 +223,18 @@ void cpu_init() {
     uint64_t cpu_clock_khz = cpu_ticks_per_sec / 1000;
     kprintf("detected %.2f MHz processor\n", (double)(cpu_clock_khz / 1000));
   }
+}
+
+void cpu_late_init() {
+  // setup the syscall handler
+  cpu_write_msr(IA32_LSTAR_MSR, (uintptr_t) syscall_handler);
+  cpu_write_msr(IA32_SFMASK_MSR, 0);
+  cpu_write_msr(IA32_STAR_MSR, 0x10LL << 48 | KERNEL_CS << 32);
+
+  // setup the clean stack that is used for double fault handling
+  uintptr_t df_stack = (uintptr_t) vmalloc_n(IST_STACK_SIZE, VM_WRITE | VM_STACK, "df stack");
+  tss_set_ist(1, df_stack + IST_STACK_SIZE);
+  set_gate_ist(CPU_EXCEPTION_DF, 1);
 }
 
 void cpu_map_topology() {

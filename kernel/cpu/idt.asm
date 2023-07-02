@@ -4,8 +4,8 @@
 
 ;%include "kernel/base.inc"
 
-extern irq_handler
 extern exception_handler
+extern irq_handler
 
 %define NULL 0
 %define KERNEL_OFFSET 0xFFFFFF8000000000
@@ -104,7 +104,6 @@ extern exception_handler
       push qword 0
     %endif
     push qword %1
-;    jmp exception_handler
     jmp __exception_handler
   %else
     push qword %1

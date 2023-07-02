@@ -2,8 +2,8 @@
 // Created by Aaron Gill-Braun on 2022-06-25.
 //
 
-#ifndef KERNEL_CPU_PER_CPU_H
-#define KERNEL_CPU_PER_CPU_H
+#ifndef KERNEL_CPU_PER_CPU_H_BASE
+#define KERNEL_CPU_PER_CPU_H_BASE
 
 #ifndef __PER_CPU_BASE__
 #include <abi/types.h>
@@ -15,7 +15,7 @@ struct address_space;
 struct sched;
 struct cpu_info;
 
-#define PER_CPU_SIZE 0x1000
+#define PERCPU_SIZE 0x1000
 typedef struct __attribute__((aligned(128))) per_cpu {
   uint64_t self;
   uint16_t id;
@@ -34,9 +34,9 @@ typedef struct __attribute__((aligned(128))) per_cpu {
   struct sched *sched;
   struct cpu_info *cpu_info;
   void *cpu_gdt;
-  void *cpu_idt;
+  void *cpu_tss;
 } per_cpu_t;
-_Static_assert(sizeof(per_cpu_t) <= PER_CPU_SIZE, "");
+_Static_assert(sizeof(per_cpu_t) <= PERCPU_SIZE, "");
 _Static_assert(offsetof(per_cpu_t, thread) == 0x10, "");
 _Static_assert(offsetof(per_cpu_t, process) == 0x18, "");
 
@@ -59,16 +59,17 @@ _Static_assert(offsetof(per_cpu_t, process) == 0x18, "");
 #define __percpu_get_address_space() ((struct address_space *) __percpu_get_u64(offsetof(per_cpu_t, address_space)))
 #define __percpu_get_sched() ((struct sched *) __percpu_get_u64(offsetof(per_cpu_t, sched)))
 #define __percpu_get_cpu_info() ((struct cpu_info *) __percpu_get_u64(offsetof(per_cpu_t, cpu_info)))
+#define __percpu_get_cpu_tss() ((void *) __percpu_get_u64(offsetof(per_cpu_t, cpu_tss)))
 
 #define __percpu_set_errno(value) __percpu_set_u32(offsetof(per_cpu_t, errno), value)
-#define __percpu_set_thread(value) __percpu_set_u64(offsetof(per_cpu_t, thread), (uintptr_t) value)
-#define __percpu_set_process(value) __percpu_set_u64(offsetof(per_cpu_t, process), (uintptr_t) value)
+#define __percpu_set_thread(value) __percpu_set_u64(offsetof(per_cpu_t, thread), (uintptr_t)(value))
+#define __percpu_set_process(value) __percpu_set_u64(offsetof(per_cpu_t, process), (uintptr_t)(value))
 #define __percpu_set_rflags(value) __percpu_set_u64(offsetof(per_cpu_t, rflags), value)
-#define __percpu_set_address_space(value) __percpu_set_u64(offsetof(per_cpu_t, address_space), (uintptr_t) value)
-#define __percpu_set_sched(value) __percpu_set_u64(offsetof(per_cpu_t, sched), (uintptr_t) value)
-#define __percpu_set_cpu_info(value) __percpu_set_u64(offsetof(per_cpu_t, cpu_info), (uintptr_t) value)
-#define __percpu_set_cpu_gdt(value) __percpu_set_u64(offsetof(per_cpu_t, cpu_gdt), (void *) value)
-#define __percpu_set_cpu_idt(value) __percpu_set_u64(offsetof(per_cpu_t, cpu_idt), (void *) value)
+#define __percpu_set_address_space(value) __percpu_set_u64(offsetof(per_cpu_t, address_space), (uintptr_t)(value))
+#define __percpu_set_sched(value) __percpu_set_u64(offsetof(per_cpu_t, sched), (uintptr_t)(value))
+#define __percpu_set_cpu_info(value) __percpu_set_u64(offsetof(per_cpu_t, cpu_info), (uintptr_t)(value))
+#define __percpu_set_cpu_gdt(value) __percpu_set_u64(offsetof(per_cpu_t, cpu_gdt), (void *)(value))
+#define __percpu_set_cpu_tss(value) __percpu_set_u64(offsetof(per_cpu_t, cpu_tss), (void *)(value))
 
 #define __percpu_inc_irq_level() \
   ({                             \
@@ -104,10 +105,17 @@ _Static_assert(offsetof(per_cpu_t, process) == 0x18, "");
 #define PERCPU_SET_SCHED(value) __percpu_set_sched(value)
 #define PERCPU_SET_CPU_INFO(value) __percpu_set_cpu_info(value)
 #define PERCPU_SET_CPU_GDT(value) __percpu_set_cpu_gdt(value)
-#define PERCPU_SET_CPU_IDT(value) __percpu_set_cpu_idt(value)
-
-#ifndef __PER_CPU_BASE__
+#define PERCPU_SET_CPU_TSS(value) __percpu_set_cpu_tss(value)
 
 #endif
 
+//
+
+#ifndef __PER_CPU_BASE__
+#ifndef KERNEL_CPU_PER_CPU_H_PROTO
+#define KERNEL_CPU_PER_CPU_H_PROTO
+
+per_cpu_t *percpu_alloc_area(uint16_t id, uint8_t apic_id);
+
+#endif
 #endif

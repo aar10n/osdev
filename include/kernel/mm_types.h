@@ -44,7 +44,8 @@ typedef struct page {
   uint64_t address;           // physical address
   uint32_t flags;             // page flags
   struct {
-    uint32_t count;           // number of pages in the list
+    uint64_t count : 63;      //   number of pages in the list
+    uint64_t contiguous : 1;  //   whether the list is physically contiguous
   } head;                     // (only valid if PG_HEAD)
   struct vm_mapping *mapping; // owning virtual mapping (if mapped)
   struct frame_allocator *fa; // owning frame allocator
@@ -153,5 +154,6 @@ typedef struct vm_mapping {
 
 #define KERNEL_HEAP_SIZE   (SIZE_4MB + SIZE_2MB)
 #define KERNEL_STACK_SIZE  SIZE_16KB
+#define IST_STACK_SIZE     SIZE_16KB
 
 #endif

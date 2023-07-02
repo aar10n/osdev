@@ -47,7 +47,7 @@ __used void ipi_handler(cpu_irq_stack_t *frame, cpu_registers_t *regs) {
   switch (type) {
     case IPI_PANIC:
       if (data != 0) {
-        if (!mm_is_kernel_code_ptr(data)) {
+        if (!is_kernel_code_ptr(data)) {
           kprintf("CPU#%d IPI panic - bad handler!\n", PERCPU_ID);
           while (true) cpu_pause();
         }

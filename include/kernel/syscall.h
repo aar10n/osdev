@@ -13,9 +13,6 @@
 #define IA32_CSTAR_MSR  0xC0000083 // rip syscall entry for compatibility mode
 #define IA32_SFMASK_MSR 0xC0000084 // syscall flag mask
 
-
-
-
-void syscalls_init();
+extern void syscall_handler();
 
 #endif

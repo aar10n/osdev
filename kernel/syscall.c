@@ -14,7 +14,6 @@
 #include <kernel/panic.h>
 #include <kernel/printf.h>
 
-extern void syscall_handler();
 typedef uint64_t (*syscall_t)(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
 
 #define to_syscall(func) ((syscall_t) func)
@@ -262,12 +261,6 @@ static syscall_t syscalls[] = {
 static int num_syscalls = sizeof(syscalls) / sizeof(void *);
 
 
-void syscalls_init() {
-  cpu_write_msr(IA32_LSTAR_MSR, (uintptr_t) syscall_handler);
-  cpu_write_msr(IA32_SFMASK_MSR, 0);
-  cpu_write_msr(IA32_STAR_MSR, 0x10LL << 48 | KERNEL_CS << 32);
-}
-
 __used int handle_syscall(
   int syscall,
   uint64_t arg0,
@@ -298,5 +291,5 @@ __used int handle_syscall(
   }
 
   // kprintf("result: %d\n", result);
-  return result;
+  return (int) result;
 }

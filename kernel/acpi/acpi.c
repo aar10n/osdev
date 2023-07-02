@@ -21,7 +21,6 @@
 #include <kernel/panic.h>
 
 #define ISA_NUM_IRQS 16
-#define MAX_NUM_APICS 128
 
 void acpi_parse_fadt();
 void acpi_parse_madt();
@@ -37,7 +36,7 @@ acpi_fadt_t *acpi_global_fadt = NULL;
 uint16_t enabled_apic_count = 0;
 uint16_t online_capable_apic_count = 0;
 uint16_t total_apic_count = 0;
-uint8_t apic_id_map[MAX_NUM_APICS];
+uint8_t apic_id_map[MAX_NUM_CPUS];
 
 //
 
@@ -141,7 +140,7 @@ void acpi_parse_madt() {
         online_capable_apic_count++;
       }
 
-      kassert(total_apic_count < MAX_NUM_APICS);
+      kassert(total_apic_count < MAX_NUM_CPUS);
       apic_id_map[total_apic_count++] = local_apic->apic_id;
       register_apic(local_apic->apic_id);
     } else if (entry->type == ACPI_MADT_TYPE_IO_APIC) {

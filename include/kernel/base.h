@@ -4,8 +4,6 @@
 
 #ifndef INCLUDE_BASE_H
 #define INCLUDE_BASE_H
-#pragma clang diagnostic push
-#pragma ide diagnostic ignored "bugprone-macro-parentheses"
 
 #include <abi/types.h>
 #include <kernel/errno.h>
@@ -21,6 +19,7 @@
 //
 
 #define KERNEL_CS 0x08ULL
+#define KERNEL_DS 0x10ULL
 #define USER_DS   0x18ULL
 #define USER_CS   0x20ULL
 
@@ -64,6 +63,9 @@
 #define align(v, a) ((v) + (((a) - (v)) & ((a) - 1)))
 #define align_down(v, a) ((v) & ~((a) - 1))
 #define is_aligned(v, a) (((v) & ((a) - 1)) == 0)
+#define is_pow2(v) (((v) & ((v) - 1)) == 0)
+#define prev_pow2(v) (1 << ((sizeof(v)*8 - 1) - __builtin_clz(v)))
+#define next_pow2(v) (1 << ((sizeof(v)*8 - __builtin_clz((v) - 1))))
 #define align_ptr(p, a) ((void *) (align((uintptr_t)(p), (a))))
 #define ptr_after(s) ((void *)(((uintptr_t)(s)) + (sizeof(*s))))
 
@@ -183,6 +185,8 @@
 // Global Symbols
 //
 
+#define MAX_NUM_CPUS 64
+
 extern boot_info_v2_t *boot_info_v2;
 extern uint32_t system_num_cpus;
 extern bool is_smp_enabled;
@@ -195,6 +199,4 @@ extern uintptr_t __kernel_code_start;
 extern uintptr_t __kernel_code_end;
 extern uintptr_t __kernel_data_end;
 
-
-#pragma clang diagnostic pop
 #endif

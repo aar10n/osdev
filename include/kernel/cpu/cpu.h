@@ -150,7 +150,8 @@ typedef struct cpu_irq_stack {
 
 extern uint8_t cpu_bsp_id;
 
-void cpu_init();
+void cpu_early_init();
+void cpu_late_init();
 void cpu_map_topology();
 
 uint32_t cpu_get_apic_id();
