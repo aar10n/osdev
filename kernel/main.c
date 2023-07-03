@@ -33,7 +33,7 @@
 noreturn void root();
 
 bool is_smp_enabled = false;
-bool is_debug_enabled = true;
+bool is_debug_enabled = false;
 boot_info_v2_t __boot_data *boot_info_v2;
 
 
@@ -105,6 +105,54 @@ __used void ap_main() {
 //
 
 #include <kernel/vfs/path.h>
+#include <bitmap.h>
+
+uintptr_t base = 0x1d57000;
+
+static void print_bitmap(bitmap_t *bmp) {
+  uint64_t v0 = bmp->map[0];
+  for (int i = 0; i < 64; i++) {
+    debug_kputs((v0 & 1) ? "!" : ".");
+    v0 >>= 1;
+    if (i % 8 == 7) {
+      debug_kputs(" ");
+    }
+  }
+  debug_kputs("\n");
+}
+
+static inline void test_alloc_bitmap(bitmap_t *bmp, size_t n) {
+  index_t i;
+  if (n == 1) {
+    i = bitmap_get_set_free(bmp);
+  } else {
+    i = bitmap_get_set_nfree(bmp, n, 0);
+  }
+
+  if (n < 0) {
+    kprintf("failed to allocate %d pages\n", n);
+  } else {
+    uintptr_t first = base + i * PAGE_SIZE;
+    uintptr_t last = first + ((n-1) * PAGE_SIZE);
+    kprintf("allocated %-2d page(s) (first=%p, last=%p) | ", n, first, last);
+    print_bitmap(bmp);
+  }
+}
+
+static inline void test_free_bitmap(bitmap_t *bmp, index_t i, size_t n) {
+  if (n == 1) {
+    bitmap_clear(bmp, i);
+  } else {
+    bitmap_clear_n(bmp, i, n);
+  }
+
+  uintptr_t first = base + i * PAGE_SIZE;
+  uintptr_t last = first + ((n-1) * PAGE_SIZE);
+  // kprintf("freed %d page(s) (first=%p, last=%p)\n", n, first, last);
+  // kprintf("  %064llb\n", bmp->map[0]);
+  kprintf("    freed %-2d page(s) (first=%p, last=%p) | ", n, first, last);
+  print_bitmap(bmp);
+}
 
 noreturn void root() {
   kprintf("starting root process\n");
@@ -114,20 +162,41 @@ noreturn void root() {
 
   //////////////////////////////////////////
 
-  vm_print_address_space();
+  bitmap_t *bmp = create_bitmap(128);
+  kprintf("%-54s | ", "before");
+  print_bitmap(bmp);
+  test_alloc_bitmap(bmp, 25);
+  test_alloc_bitmap(bmp, 4);
+  test_alloc_bitmap(bmp, 3);
+  test_alloc_bitmap(bmp, 1);
+  test_alloc_bitmap(bmp, 1);
+  test_free_bitmap(bmp, 29, 3);
+  test_alloc_bitmap(bmp, 4);
+  test_alloc_bitmap(bmp, 5);
 
-  mkdir("/dev");
-  mknod("/dev/rd0", 0777|S_IFBLK, makedev(1, 0));
-
-  ls("/dev");
-  mkdir("/initrd");
-  mount("/dev/rd0", "/initrd", "initrd", 0);
-
-  stat("/initrd/usr/include/sys/uio.h");
-  cat("/initrd/usr/include/sys/uio.h");
-
-  // stat("/initrd/usr/lib/libc.so");
-  process_execve("/initrd/sbin/init", NULL, NULL);
+  // vm_print_address_space();
+  //
+  // if (!is_debug_enabled) {
+  //   page_t *extra_page = alloc_pages(1);
+  // }
+  //
+  // mkdir("/dev");
+  // mknod("/dev/rd0", 0777|S_IFBLK, makedev(1, 0));
+  //
+  // ls("/dev");
+  // mkdir("/initrd");
+  //
+  // page_t *p1 = alloc_pages(SIZE_TO_PAGES(IST_STACK_SIZE));
+  // vm_mapping_t *vm1 = vmap_pages(p1, 0, IST_STACK_SIZE, VM_WRITE, "test");
+  // kprintf(">>>>> test = %p\n", vm1->address);
+  // // kprintf(">>>>> test = %p\n", 0);
+  //
+  // mount("/dev/rd0", "/initrd", "initrd", 0);
+  //
+  // // stat("/initrd/usr/include/sys/uio.h");
+  // // cat("/initrd/usr/include/sys/uio.h");
+  //
+  // process_execve("/initrd/sbin/init", NULL, NULL);
 
   kprintf("it worked!\n");
 

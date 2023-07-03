@@ -1316,8 +1316,8 @@ static vm_mapping_t *vmalloc_internal(size_t size, uint32_t vm_flags, const char
   page_t *pages;
   size_t pagesize = vm_flags_to_size(vm_flags);
   if (pagesize == PAGE_SIZE) {
-    // pages = alloc_pages(SIZE_TO_PAGES(size));
-    pages = alloc_pages_mixed(SIZE_TO_PAGES(size));
+    pages = alloc_pages(SIZE_TO_PAGES(size));
+    // pages = alloc_pages_mixed(SIZE_TO_PAGES(size));
   } else {
     pages = alloc_pages_size(SIZE_TO_PAGES(size), pagesize);
   }

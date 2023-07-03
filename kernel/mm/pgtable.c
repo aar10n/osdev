@@ -226,6 +226,7 @@ uint64_t *recursive_map_entry(uintptr_t virt_addr, uintptr_t phys_addr, uint32_t
     uintptr_t next_table = table[index] & PAGE_FRAME_MASK;
     if (next_table == 0) {
       // create new table
+      kprintf("allocating new table\n");
       page_t *table_page = alloc_pages(1);
       SLIST_ADD(&table_pages, table_page, next);
       table[index] = table_page->address | table_pg_flags;

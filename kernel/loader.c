@@ -46,18 +46,17 @@ static bool elf_is_valid(void *buf, size_t len) {
   }
 
   if (elf->e_ident[EI_CLASS] != ELFCLASS64 ||
-    elf->e_ident[EI_DATA] != ELFDATA2LSB ||
+      elf->e_ident[EI_DATA] != ELFDATA2LSB ||
       elf->e_ident[EI_VERSION] != EV_CURRENT ||
       elf->e_ident[EI_OSABI] != ELFOSABI_SYSV ||
       elf->e_ident[EI_ABIVERSION] != 0) {
     DPRINTF("invalid header\n");
     return false;
   }
-
-  if (elf->e_type != ET_EXEC) {
-    DPRINTF("program is not an executable\n");
-    return false;
-  }
+  // if (elf->e_type != ET_EXEC) {
+  //   DPRINTF("program is not an executable\n");
+  //   return false;
+  // }
   return true;
 }
 
