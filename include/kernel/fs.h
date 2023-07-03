@@ -8,9 +8,8 @@
 #include <kernel/vfs_types.h>
 
 void fs_early_init();
-int fs_register_type(fs_type_t *fs_type);
-
 void fs_init();
+int fs_register_type(fs_type_t *fs_type);
 fs_type_t *fs_get_type(const char *type);
 __move ventry_t *fs_root_getref();
 

@@ -10,10 +10,13 @@
 #include <kernel/panic.h>
 #include <kernel/sbuf.h>
 #include <kernel/str.h>
+#include <kernel/printf.h>
 
 #define MAX_LOOP 32 // resolve depth limit
 
 #define ASSERT(x) kassert(x)
+#define DPRINTF(fmt, ...) kprintf("vresolve: %s: " fmt, __func__, ##__VA_ARGS__)
+
 #define goto_error(err) do { res = err; goto error; } while (0)
 
 
@@ -66,6 +69,7 @@ static int vresolve_validate_result(ventry_t *ve, int flags) {
 static int vresolve_follow(vcache_t *vc, __move ventry_t **veref, int flags, bool islast, int depth, __move ventry_t **realve) {
   // ve must have lock held prior to calling this function
   ventry_t *ve = ve_moveref(veref);
+  ventry_t *at_ve = ve_getref(ve->parent);
   ventry_t *next_ve = NULL; // ref
   int res;
 
@@ -95,7 +99,8 @@ static int vresolve_follow(vcache_t *vc, __move ventry_t **veref, int flags, boo
     // READ END
 
     // follow the symlink (and get locked result)
-    if ((res = vresolve_internal(vc, ve, cstr_new(linkbuf, vn->size), 0, depth++, &next_ve)) < 0) {
+    if ((res = vresolve_internal(vc, at_ve, cstr_new(linkbuf, vn->size), 0, depth++, &next_ve)) < 0) {
+      DPRINTF("failed to follow symlink: %s {:err}\n", linkbuf, res);
       goto error;
     }
 
@@ -122,11 +127,13 @@ static int vresolve_follow(vcache_t *vc, __move ventry_t **veref, int flags, boo
   }
 
   // return locked reference
+  ve_release(&at_ve);
   *realve = ve_moveref(&ve);
   return 0;
 LABEL(error);
   ve_unlock(ve);
   ve_release(&ve);
+  ve_release(&at_ve);
   ve_release(&next_ve);
   return res;
 }
@@ -199,7 +206,7 @@ int vresolve_fullwalk(vcache_t *vc, ventry_t *at, cstr_t path, int flags, int de
   // we should start and end each iteration with a locked ventry
   while (!path_is_null(part = path_next_part(part))) {
     vnode_t *vn = VN(ve); // non-ref
-    if (!V_ISDIR(at))
+    if (!V_ISDIR(ve))
       goto_error(-ENOTDIR);
     if (path_len(part) > NAME_MAX)
       goto_error(-ENAMETOOLONG);
@@ -281,7 +288,8 @@ LABEL(success);
   return 0;
 
 LABEL(error);
-  ve_unlock(ve);
+  if (ve)
+    ve_unlock(ve);
   ve_release(&ve);
   return res;
 }

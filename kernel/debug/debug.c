@@ -169,7 +169,7 @@ const char *debug_function_name(uintptr_t addr) {
 char *debug_addr2line(uintptr_t addr) {
   if (addr == 0) {
     return kasprintf("<null>");
-  } if (!mm_is_kernel_code_ptr(addr)) {
+  } if (!is_kernel_code_ptr(addr)) {
     return kasprintf("<invalid>");
   } else if (!has_debug_info) {
     goto INVALID;
@@ -194,7 +194,7 @@ int debug_unwind(uintptr_t rip, uintptr_t rbp) {
   kprintf("backtrace\n");
 
   stackframe_t *frame = (void *) rbp;
-  while (mm_is_kernel_code_ptr((uintptr_t) frame->rip)) {
+  while (is_kernel_code_ptr((uintptr_t) frame->rip)) {
     dwarf_function_t *func = locate_or_load_dwarf_function(rip);
     if (func == NULL) {
       kprintf("    ?? %018p\n", rip);

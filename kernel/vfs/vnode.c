@@ -193,8 +193,8 @@ int vn_readlink(vnode_t *vn, kio_t *kio) {
   }
 
   // copy link to kio
-  kio_t lnkio = kio_writeonly_from_str(vn->v_link);
-  kio_copy(&lnkio, kio);
+  kio_t lnkio = kio_readonly_from_str(vn->v_link);
+  kio_transfer(kio, &lnkio);
   return 0;
 }
 

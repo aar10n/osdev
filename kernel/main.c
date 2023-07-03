@@ -9,7 +9,6 @@
 #include <kernel/mm.h>
 #include <kernel/fs.h>
 #include <kernel/device.h>
-#include <kernel/syscall.h>
 #include <kernel/process.h>
 #include <kernel/thread.h>
 #include <kernel/smpboot.h>
@@ -19,6 +18,7 @@
 #include <kernel/acpi/acpi.h>
 #include <kernel/cpu/cpu.h>
 #include <kernel/cpu/io.h>
+#include <kernel/cpu/per_cpu.h>
 #include <kernel/debug/debug.h>
 #include <kernel/gui/screen.h>
 
@@ -44,7 +44,7 @@ boot_info_v2_t __boot_data *boot_info_v2;
 __used void kmain() {
   QEMU_DEBUG_INIT();
   console_early_init();
-  cpu_init();
+  cpu_early_init();
 
   // We now have primitive debugging via the serial port. In order to initialize
   // the real kernel memory allocators we need basic physical memory allocation
@@ -55,15 +55,14 @@ __used void kmain() {
   acpi_early_init();
   screen_early_init();
   debug_early_init();
+  fs_early_init();
 
   // The next step is to set up our irq abstraction layer and the physical and
   // virtual memory managers. Then we switch to a new kernel address space.
   irq_init();
   init_mem_zones();
   init_address_space();
-
-  syscalls_init();
-  fs_early_init();
+  // cpu_late_init();
 
   do_static_initializers();
 
@@ -88,11 +87,11 @@ __used void kmain() {
 }
 
 __used void ap_main() {
-  cpu_init();
+  cpu_early_init();
   kprintf("[CPU#%d] initializing\n", PERCPU_ID);
 
   init_ap_address_space();
-  syscalls_init();
+  cpu_late_init();
 
   kprintf("[CPU#%d] done!\n", PERCPU_ID);
 
@@ -105,6 +104,8 @@ __used void ap_main() {
 // Launch process
 //
 
+#include <kernel/vfs/path.h>
+
 noreturn void root() {
   kprintf("starting root process\n");
   alarms_init();
@@ -113,29 +114,20 @@ noreturn void root() {
 
   //////////////////////////////////////////
 
-  page_t *pages = alloc_pages(SIZE_TO_PAGES(SIZE_16KB));
-  vm_mapping_t *vm = vmap_pages(pages, 0, SIZE_16KB, VM_READ | VM_WRITE, "test");
   vm_print_address_space();
 
-  kprintf("updating mapping\n");
-  vm_update(vm, SIZE_4KB, SIZE_4KB, VM_READ | VM_EXEC);
-  vm_print_address_space();
-  vm_update(vm, 0, SIZE_4KB, 0);
-  vm_print_address_space();
+  mkdir("/dev");
+  mknod("/dev/rd0", 0777|S_IFBLK, makedev(1, 0));
 
-  // mkdir("/dev");
-  // mknod("/dev/rd0", 0777|S_IFBLK, makedev(1, 0));
-  //
-  // ls("/dev");
-  // mkdir("/initrd");
-  // mount("/dev/rd0", "/initrd", "initrd", 0);
-  //
-  // stat("/initrd/usr/include/sys/uio.h");
-  // cat("/initrd/usr/include/sys/uio.h");
+  ls("/dev");
+  mkdir("/initrd");
+  mount("/dev/rd0", "/initrd", "initrd", 0);
 
-  // vm_print_address_space();
+  stat("/initrd/usr/include/sys/uio.h");
+  cat("/initrd/usr/include/sys/uio.h");
 
-  // process_execve("/initrd/sbin/init", NULL, NULL);
+  // stat("/initrd/usr/lib/libc.so");
+  process_execve("/initrd/sbin/init", NULL, NULL);
 
   kprintf("it worked!\n");
 

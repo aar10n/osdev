@@ -3,6 +3,11 @@
 //
 
 #include <kernel/irq.h>
+#include <kernel/process.h>
+#include <kernel/thread.h>
+#include <kernel/spinlock.h>
+#include <kernel/printf.h>
+#include <kernel/panic.h>
 
 #include <kernel/cpu/idt.h>
 
@@ -11,12 +16,7 @@
 
 #include <kernel/bus/pcie.h>
 
-#include <kernel/process.h>
-#include <kernel/thread.h>
-#include <kernel/spinlock.h>
 #include <bitmap.h>
-#include <kernel/printf.h>
-#include <kernel/panic.h>
 
 #define IRQ_NUM_VECTORS 256
 #define IRQ_NUM_ISA     16
@@ -52,9 +52,29 @@ static bitmap_t *irqnum_software_map;
 struct irq_handler irq_handlers[IRQ_NUM_VECTORS];
 struct isa_irq_override irq_isa_overrides[IRQ_NUM_ISA];
 
-
 extern void ipi_handler(cpu_irq_stack_t *frame, cpu_registers_t *regs);
 
+//
+
+__used void exception_handler(uint8_t vector, uint32_t error, cpu_irq_stack_t *frame, cpu_registers_t *regs) {
+  apic_send_eoi();
+  exception_handler_t handler = (void *) irq_handlers[vector].handler;
+  if (handler) {
+    handler(vector, error, frame, regs);
+    return;
+  }
+
+  kprintf("!!! EXCEPTION %d !!!\n", vector);
+  if (vector != CPU_EXCEPTION_DF) {
+    kprintf("  CPU#%d - %#b\n", PERCPU_ID, error);
+    kprintf("  RIP = %018p  RSP = %018p\n", frame->rip, frame->rsp);
+    kprintf("  CR2 = %018p\n", __read_cr2());
+  }
+
+  while (true) {
+    cpu_pause();
+  }
+}
 
 __used void irq_handler(uint8_t vector, cpu_irq_stack_t *frame, cpu_registers_t *regs) {
   // kprintf("CPU#%d --> IRQ%d [vector = %d]\n", PERCPU_ID, vector - IRQ_VECTOR_BASE, vector);
@@ -90,26 +110,6 @@ __used void irq_handler(uint8_t vector, cpu_irq_stack_t *frame, cpu_registers_t 
 LABEL(done);
   __percpu_dec_irq_level();
   cpu_restore_interrupts(rflags);
-}
-
-__used void exception_handler(uint8_t vector, uint32_t error, cpu_irq_stack_t *frame, cpu_registers_t *regs) {
-  apic_send_eoi();
-  exception_handler_t handler = (void *) irq_handlers[vector].handler;
-  if (handler) {
-    handler(vector, error, frame, regs);
-    return;
-  }
-
-  kprintf("!!! EXCEPTION %d !!!\n", vector);
-  if (vector != CPU_EXCEPTION_DF) {
-    kprintf("  CPU#%d - %#b\n", PERCPU_ID, error);
-    kprintf("  RIP = %018p  RSP = %018p\n", frame->rip, frame->rsp);
-    kprintf("  CR2 = %018p\n", __read_cr2());
-  }
-
-  while (true) {
-    cpu_pause();
-  }
 }
 
 uint8_t irq_internal_map_to_vector(uint8_t irq) {

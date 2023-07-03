@@ -58,6 +58,7 @@ int reserve_pages(uintptr_t address, size_t count, size_t pagesize);
 page_t *alloc_pages_zone(zone_type_t zone_type, size_t count, size_t pagesize);
 page_t *alloc_pages_size(size_t count, size_t pagesize);
 page_t *alloc_pages(size_t count);
+page_t *alloc_pages_mixed(size_t count);
 page_t *alloc_pages_at(uintptr_t address, size_t count, size_t pagesize);
 void free_pages(page_t *pages);
 page_t *alloc_cow_page(page_t *page);
@@ -65,7 +66,9 @@ page_t *alloc_cow_pages_at(uintptr_t address, size_t count, size_t pagesize);
 
 page_t *page_list_remove_head(page_t **list);
 page_t *page_list_add_tail(page_t *head, page_t *tail, page_t *page);
-bool mm_is_kernel_code_ptr(uintptr_t ptr);
-bool mm_is_kernel_data_ptr(uintptr_t ptr);
+
+static inline bool is_user_ptr(uintptr_t ptr) { return ptr < USER_SPACE_END; }
+bool is_kernel_code_ptr(uintptr_t ptr);
+bool is_kernel_data_ptr(uintptr_t ptr);
 
 #endif

@@ -21,20 +21,20 @@
 
 
 static inline uint64_t elf_align_up(uint64_t value, uint64_t align) {
-  if (align == 0 || align == 1) {
+  if (align == 0 || align == 1 || is_aligned(value, align)) {
     return value;
   }
   return align(value, align);
 }
 
 static inline uint64_t elf_align_down(uint64_t value, uint64_t align) {
-  if (align == 0 || align == 1) {
+  if (align == 0 || align == 1 || is_aligned(value, align)) {
     return value;
   }
   return align_down(value, align);
 }
 
-static bool elf_is_valid_executable(void *buf, size_t len) {
+static bool elf_is_valid(void *buf, size_t len) {
   if (len < sizeof(Elf64_Ehdr)) {
     return false;
   }
@@ -61,115 +61,114 @@ static bool elf_is_valid_executable(void *buf, size_t len) {
   return true;
 }
 
-//
-
-int elf_pt_load(elf_program_t *prog, Elf64_Phdr *pheader, void *buf, size_t len) {
-  if (pheader->p_memsz == 0) {
-    return 0;
-  }
-
-  uint64_t offset = pheader->p_offset;
-  uint64_t filesz = pheader->p_filesz;
-  uint64_t memsz = elf_align_up(pheader->p_memsz, pheader->p_align);
-  uint64_t vaddr = prog->base + pheader->p_vaddr;
-
-  uint32_t vm_flags = VM_READ | VM_USER;
-  if (pheader->p_flags & PF_X)
-    vm_flags |= VM_EXEC;
-  if (pheader->p_flags & PF_W)
-    vm_flags |= VM_WRITE;
-
-  uintptr_t boundary = prog->base + elf_align_down(pheader->p_vaddr, pheader->p_align);
-  vm_mapping_t *vm = vm_get_mapping(boundary);
-  if (vm == NULL) {
-    DPRINTF("allocating memory for loadable segment\n");
-
-    // allocate memory for the segment
-    page_t *pages = alloc_pages(SIZE_TO_PAGES(memsz));
-    if (pages == NULL) {
-      DPRINTF("failed to allocate pages for loadable segment\n");
-      return -ENOMEM;
-    }
-
-    vm = vmap_pages(pages, boundary, memsz, vm_flags | VM_FIXED, "elf.segment");
-    if (vm == NULL) {
-      DPRINTF("failed to allocate or map loadable segment\n");
-      free_pages(pages);
-      return -ENOMEM;
-    }
-
-    // zero out the newly allocated pages
-    cpu_disable_write_protection();
-    memset((void *) boundary, 0, memsz);
-    cpu_enable_write_protection();
-  }
-
-  kprintf("elf load [virt=%p, filesz=%zu, memsz=%zu, offset=%zu]\n",
-          vaddr, filesz, memsz, offset);
-
-  cpu_disable_write_protection();
-  memcpy((void *) vaddr, buf + offset, filesz);
-  cpu_enable_write_protection();
-  return 0;
-}
-
-int elf_pt_interp(elf_program_t *prog, Elf64_Phdr *pheader, void *buf, size_t len) {
-  char *interp = kmalloc(pheader->p_filesz + 1);
-  memcpy(interp, buf + pheader->p_offset, pheader->p_filesz);
-  interp[pheader->p_filesz] = '\0';
-  prog->interp = interp;
-  return 0;
-}
-
-//
-
-int elf_load(elf_program_t *prog, void *buf, size_t len) {
-  Elf64_Ehdr *elf = buf;
-  if (!(elf_is_valid_executable(buf, len))) {
-    DPRINTF("invalid elf executuable\n");
-    return -ENOEXEC;
-  }
-
-  prog->entry = prog->base + elf->e_entry;
-  prog->phent = elf->e_phentsize;
-  prog->phnum = elf->e_phnum;
-
+static size_t elf_get_loaded_size(Elf64_Ehdr *ehdr, uint64_t *out_min_vaddr) {
+  // determine the size of the loaded image
   uint64_t min_vaddr = UINT64_MAX;
   uint64_t max_vaddr = 0;
-  Elf64_Phdr *phead = buf + elf->e_phoff;
-  for (uint32_t i = 0; i < elf->e_phnum; i++) {
-    if (phead[i].p_type != PT_LOAD || phead[i].p_memsz == 0)
+  Elf64_Phdr *phdr = offset_ptr(ehdr, ehdr->e_phoff);
+  for (uint32_t i = 0; i < ehdr->e_phnum; i++) {
+    if (phdr[i].p_type != PT_LOAD || phdr[i].p_memsz == 0)
       continue;
 
-    uint64_t vaddr = phead[i].p_vaddr;
-    uint64_t memsz = phead[i].p_memsz;
+    uint64_t vaddr = phdr[i].p_vaddr;
+    uint64_t memsz = phdr[i].p_memsz;
     if (vaddr < min_vaddr)
       min_vaddr = vaddr;
     if (vaddr + memsz > max_vaddr)
       max_vaddr = vaddr + memsz;
   }
 
-  size_t image_size = max_vaddr - min_vaddr;
-  if (image_size == 0) {
+  min_vaddr = elf_align_down(min_vaddr, PAGE_SIZE);
+  max_vaddr = elf_align_up(max_vaddr, PAGE_SIZE);
+  if (out_min_vaddr != NULL) {
+    *out_min_vaddr = min_vaddr;
+  }
+  return max_vaddr - min_vaddr;
+}
+
+//
+
+int elf_load(elf_program_t *prog, void *buf, size_t len) {
+  Elf64_Ehdr *ehdr = buf;
+  if (!(elf_is_valid(buf, len))) {
+    DPRINTF("invalid elf file\n");
     return -ENOEXEC;
   }
 
-  // page_t *pages = alloc_pages();
-  // vm_mapping_t *vm = vm_all
+  uint64_t min_vaddr = 0;
+  size_t image_size = elf_get_loaded_size(ehdr, &min_vaddr);
+  if (image_size == 0) {
+    DPRINTF("no loadable segments\n");
+    return -ENOEXEC;
+  }
 
-  kprintf("elf load [min_vaddr=%p, max_vaddr=%p]\n", min_vaddr, max_vaddr);
+  min_vaddr += prog->base;
+  prog->entry = prog->base + ehdr->e_entry;
+  prog->phent = ehdr->e_phentsize;
+  prog->phnum = ehdr->e_phnum;
 
-  ASSERT(false);
+  uint32_t vm_flags = VM_WRITE | (is_user_ptr(min_vaddr) ? VM_USER : 0);
+  if (ehdr->e_type == ET_EXEC)
+    vm_flags |= VM_FIXED;
 
-  // for (uint32_t i = 0; i < elf->e_phnum; i++) {
-  //   if (phead[i].p_type == PT_LOAD || phead[i].p_type == PT_DYNAMIC) {
-  //     elf_pt_load(prog, &phead[i], buf, 0);
-  //   } else if (phead[i].p_type == PT_INTERP) {
-  //     elf_pt_interp(prog, &phead[i], buf, 0);
-  //   } else if (phead[i].p_type == PT_PHDR) {
-  //     prog->phdr = phead[i].p_vaddr + prog->base;
-  //   }
-  // }
+  // allocate and map memory for the image
+  page_t *pages = alloc_pages(SIZE_TO_PAGES(image_size));
+  if (pages == NULL)
+    return -ENOMEM;
+
+  kprintf("ehdr = %018p [phoff = %d]\n", ehdr, ehdr->e_phoff);
+  vm_mapping_t *vm = vmap_pages(pages, min_vaddr, image_size, vm_flags, prog->path);
+  if (vm == NULL) {
+    free_pages(pages);
+    return -ENOMEM;
+  }
+
+  // load each loadable segment
+  kprintf("ehdr = %018p [phoff = %d]\n", ehdr, ehdr->e_phoff);
+  Elf64_Phdr *phdr = offset_ptr(ehdr, ehdr->e_phoff);
+  for (uint32_t i = 0; i < ehdr->e_phnum; i++) {
+    if (phdr[i].p_type == PT_INTERP) {
+      char *interp = kmalloc(phdr[i].p_filesz + 1);
+      memcpy(interp, buf + phdr[i].p_offset, phdr[i].p_filesz);
+      interp[phdr[i].p_filesz] = '\0';
+      prog->interp = interp;
+    }
+    if (phdr[i].p_type != PT_LOAD || phdr[i].p_memsz == 0) {
+      continue;
+    }
+
+    uint64_t offset = phdr[i].p_offset;
+    uint64_t filesz = phdr[i].p_filesz;
+    uint64_t memsz = elf_align_up(phdr[i].p_memsz, phdr[i].p_align);
+    uint64_t vaddr = prog->base + phdr[i].p_vaddr;
+
+    uint32_t prot_flags = VM_READ;
+    if (phdr[i].p_flags & PF_X)
+      prot_flags |= VM_EXEC;
+    if (phdr[i].p_flags & PF_W)
+      prot_flags |= VM_WRITE;
+
+    kprintf("elf load [virt=%p, filesz=%zu, memsz=%zu, offset=%zu, prot=%03b]\n",
+            vaddr, filesz, memsz, offset, prot_flags);
+
+    vm = vm_get_mapping(vaddr);
+    ASSERT(vm != NULL);
+
+    // copy the segment into memory and update the mapping permissions
+    memcpy((void *) vaddr, buf + offset, filesz);
+
+    size_t vmoff = elf_align_down(vaddr - vm->address, phdr[i].p_align);
+    if (is_aligned(memsz, PAGE_SIZE)) {
+      memset((void *) (vaddr + filesz), 0, memsz - filesz);
+      if (vm_update(vm, vmoff, memsz, prot_flags) < 0) {
+        DPRINTF("failed to update vm mapping\n");
+        vm_mapping_t *first = vm_get_mapping(min_vaddr);
+        vmap_free(first);
+        return -EINVAL;
+      }
+    }
+  }
+
   return 0;
 }
 
@@ -177,8 +176,10 @@ int elf_load(elf_program_t *prog, void *buf, size_t len) {
 
 int elf_load_file(const char *path, elf_program_t *prog) {
   int res;
+  DPRINTF("loading elf file '%s'\n", path);
   int fd = fs_open(path, O_RDONLY, 0);
   if (fd < 0) {
+    DPRINTF("failed to open file '%s' {:err}\n", path, fd);
     return fd;
   }
 
@@ -188,35 +189,39 @@ int elf_load_file(const char *path, elf_program_t *prog) {
     return res;
   }
 
-  void *program = vmalloc(stat.st_size, 0);
-  ssize_t nread = fs_read(fd, program, stat.st_size);
+  // TODO: replace with mmap once implemented
+  void *buffer = vmalloc(stat.st_size, 0);
+  ssize_t nread = fs_read(fd, buffer, stat.st_size);
   if (nread < 0) {
-    vfree(program);
+    vfree(buffer);
     fs_close(fd);
     return (int) nread;
   }
 
-  if ((res = elf_load(prog, program, 0)) < 0) {
-    vfree(program);
+  prog->path = strdup(path);
+  if ((res = elf_load(prog, buffer, stat.st_size)) < 0) {
+    DPRINTF("failed to load elf file\n");
+    vfree(buffer);
     fs_close(fd);
     return res;
   }
 
-  kprintf("loaded %s at %018p [entry = %018p]\n", path, prog->base, prog->entry);
+  DPRINTF("interp = %s\n", prog->interp);
+  DPRINTF("loaded %s at %018p [entry = %018p]\n", path, prog->base, prog->entry);
   if (prog->interp != NULL) {
-    kprintf("interp = %s\n", prog->interp);
-    // elf_program_t *linker = kmalloc(sizeof(elf_program_t));
-    // memset(linker, 0, sizeof(elf_program_t));
-    //
-    // linker->base = 0x7FC0000000;
-    // if (elf_load_file("/lib/ld.so", linker) < 0) {
-    //   vfree(program);
-    //   fs_close(fd);
-    //   panic("failed to load ld.so\n");
-    // }
-    //
-    // prog->linker = linker;
+    elf_program_t *linker = kmalloc(sizeof(elf_program_t));
+    memset(linker, 0, sizeof(elf_program_t));
+    linker->base = 0x7FC0000000;
+    if (elf_load_file("/initrd/lib/ld-musl-x86_64.so.1", linker) < 0) {
+      vfree(buffer);
+      fs_close(fd);
+      panic("failed to load /lib/ld-musl-x86_64.so.1");
+    }
+
+    prog->linker = linker;
   }
-  kprintf("done\n");
+  vfree(buffer);
+
+  panic("done loading elf file");
   return 0;
 }

@@ -70,7 +70,7 @@ static inline kio_t kio_new_readonly(const void *base, size_t len) {
 size_t kio_transfered(const kio_t *kio);
 size_t kio_remaining(const kio_t *kio);
 
-size_t kio_copy(kio_t *dst, kio_t *src);
+size_t kio_transfer(kio_t *dst, kio_t *src);
 size_t kio_nread_out(void *buf, size_t len, size_t off, size_t n, kio_t *kio);
 size_t kio_nwrite_in(kio_t *kio, const void *buf, size_t len, size_t off, size_t n);
 size_t kio_fill(kio_t *kio, uint8_t byte, size_t len);

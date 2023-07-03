@@ -79,7 +79,7 @@ int ramfs_vn_readlink(vnode_t *vn, struct kio *kio) {
   ramfs_node_t *node = vn->data;
 
   kio_t tmp = kio_readonly_from_str(node->n_link);
-  size_t res = kio_copy(kio, &tmp);
+  size_t res = kio_transfer(kio, &tmp);
   if (res != str_len(node->n_link)) {
     return -EIO;
   }

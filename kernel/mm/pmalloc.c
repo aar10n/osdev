@@ -88,6 +88,7 @@ static page_t *alloc_page_structs(frame_allocator_t *fa, uintptr_t frame, size_t
   page_t *head = LIST_FIRST(&pages);
   head->flags |= PG_HEAD;
   head->head.count = count;
+  head->head.contiguous = true;
   return head;
 }
 
@@ -447,6 +448,56 @@ page_t *alloc_pages(size_t count) {
   return alloc_pages_size(count, PAGE_SIZE);
 }
 
+page_t *alloc_pages_mixed(size_t count) {
+  if (count == 0) {
+    return NULL;
+  }
+
+  LIST_HEAD(page_t) pages = {0};
+  size_t remaining = count;
+  bool contiguous = true;
+
+  // group allocations in chunks of n pages
+  size_t n = min(1, is_pow2(count) ? count : prev_pow2(count));
+  while (remaining > 0) {
+    if (n > remaining && n > 1) {
+      n = next_pow2(remaining);
+    }
+
+    page_t *p = alloc_pages(n);
+    if (p == NULL) {
+      if (n > 1) {
+        // failed to allocate a chunk of n pages, try again with n/2
+        n /= 2;
+        continue;
+      }
+      // out of memory
+      kprintf("alloc_pages_mixed: failed to allocate %zu pages\n", remaining);
+      free_pages(LIST_FIRST(&pages));
+      return NULL;
+    }
+
+    if (LIST_LAST(&pages) != NULL) {
+      page_t *last = LIST_LAST(&pages);
+      if (p->address != LIST_LAST(&pages)->address + PAGE_SIZE) {
+        contiguous = false;
+      }
+    }
+
+    p->flags &= ~PG_HEAD;
+    p->head.count = 0;
+    p->head.contiguous = false;
+    remaining -= n;
+    SLIST_ADD(&pages, p, next);
+  }
+
+  page_t *first = LIST_FIRST(&pages);
+  first->flags |= PG_HEAD;
+  first->head.count = count;
+  first->head.contiguous = contiguous;
+  return first;
+}
+
 page_t *alloc_pages_at(uintptr_t address, size_t count, size_t pagesize) {
   if (reserve_pages(address, count, pagesize) < 0) {
     return NULL;
@@ -516,10 +567,12 @@ page_t *page_list_add_tail(page_t *head, page_t *tail, page_t *page) {
   return page;
 }
 
-bool mm_is_kernel_code_ptr(uintptr_t ptr) {
+//
+
+bool is_kernel_code_ptr(uintptr_t ptr) {
   return ptr >= kernel_code_start && ptr < kernel_code_end;
 }
 
-bool mm_is_kernel_data_ptr(uintptr_t ptr) {
+bool is_kernel_data_ptr(uintptr_t ptr) {
   return ptr >= kernel_code_end && ptr < kernel_data_end;
 }

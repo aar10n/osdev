@@ -77,6 +77,7 @@ static always_inline size_t vm_flags_to_size(uint32_t vm_flags) {
 // one returned by the vmalloc functions.
 
 void *vmalloc(size_t size, uint32_t vm_flags);
+void *vmalloc_n(size_t size, uint32_t vm_flags, const char *name);
 void *vmalloc_at_phys(uintptr_t phys_addr, size_t size, uint32_t vm_flags);
 void vfree(void *ptr);
 

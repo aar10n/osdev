@@ -39,24 +39,6 @@ void fs_early_init() {
   spin_init(&fs_types_lock);
 }
 
-int fs_register_type(fs_type_t *fs_type) {
-  if (hash_map_get(fs_types, fs_type->name) != NULL) {
-    DPRINTF("fs type '%s' already registered\n", fs_type->name);
-    return -1;
-  }
-
-  DPRINTF("registering fs type '%s'\n", fs_type->name);
-  SPIN_LOCK(&fs_types_lock);
-  hash_map_set(fs_types, fs_type->name, fs_type);
-  SPIN_UNLOCK(&fs_types_lock);
-  return 0;
-}
-
-fs_type_t *fs_get_type(const char *type) {
-  return hash_map_get(fs_types, type);
-}
-
-
 void fs_init() {
   DPRINTF("initializing\n");
   int res;
@@ -84,6 +66,23 @@ void fs_init() {
 
   vcache = vcache_alloc(root_ve);
   vcache_put(vcache, cstr_new("/", 1), root_ve);
+}
+
+int fs_register_type(fs_type_t *fs_type) {
+  if (hash_map_get(fs_types, fs_type->name) != NULL) {
+    DPRINTF("fs type '%s' already registered\n", fs_type->name);
+    return -1;
+  }
+
+  DPRINTF("registering fs type '%s'\n", fs_type->name);
+  SPIN_LOCK(&fs_types_lock);
+  hash_map_set(fs_types, fs_type->name, fs_type);
+  SPIN_UNLOCK(&fs_types_lock);
+  return 0;
+}
+
+fs_type_t *fs_get_type(const char *type) {
+  return hash_map_get(fs_types, type);
 }
 
 __move ventry_t *fs_root_getref() {

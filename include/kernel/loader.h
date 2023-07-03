@@ -22,6 +22,7 @@ typedef struct elf_program {
   uint64_t phent;
   uint64_t phnum;
 
+  char *path;
   char *interp;
   struct elf_program *linker;
 } elf_program_t;

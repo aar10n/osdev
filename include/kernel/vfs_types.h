@@ -18,7 +18,7 @@
 #include <abi/stat.h>
 #include <abi/vm-flags.h>
 
-#define PATH_MAX 4096
+#define PATH_MAX 1024
 
 
 struct device;

@@ -68,8 +68,7 @@ static inline cstr_t cstr_from_str(str_t str) {
 }
 
 static inline str_t str_alloc(size_t len) {
-  char *buf = kmalloc(len + 1);
-  buf[len] = '\0';
+  char *buf = kmallocz(len + 1);
   return (str_t) {
     .str = buf,
     .len = len,

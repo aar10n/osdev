@@ -99,7 +99,6 @@ int initrd_vfs_mount(vfs_t *vfs, device_t *device, __move ventry_t **root) {
 
     // allocate ramfs node
     ramfs_node_t *node = ramfs_alloc_node(mount, &make_vattr(type, mode));
-    node->size = entry->data_size;
     // allocate entry and add it to parent directory
     ramfs_dentry_t *dent = ramfs_alloc_dentry(node, cstr_from_path(basename));
     ramfs_add_dentry(dir_node, dent);
@@ -108,6 +107,7 @@ int initrd_vfs_mount(vfs_t *vfs, device_t *device, __move ventry_t **root) {
       // kprintf("initrd:   file  {:path} (%u bytes)\n", &path, entry->data_size);
       initrd_node_t *rd_node = kmallocz(sizeof(initrd_node_t));
       node->data = rd_node;
+      node->size = entry->data_size;
       rd_node->entry_offset = (size_t) entry - (size_t) metadata;
       rd_node->data_offset = entry->data_offset;
     } else if (entry->entry_type == 'd') {
@@ -118,16 +118,18 @@ int initrd_vfs_mount(vfs_t *vfs, device_t *device, __move ventry_t **root) {
       dirpath = path;
     } else if (entry->entry_type == 'l') {
       // kprintf("initrd:   link  {:path}\n", &path);
-      str_t link = str_alloc(entry->data_size);
+      size_t len = entry->data_size - 1;
+      str_t link = str_alloc(len); // data_size includes null terminator
       tmp = kio_writeonly_from_str(link);
-      if (d_read(device, entry->data_offset, &tmp) < 0 || tmp.size != entry->data_size) {
-        if (tmp.size >= 0)
-          tmp.size = -EIO;
+      if (d_nread(device, entry->data_offset, len, &tmp) < 0 || tmp.size != len) {
+        DPRINTF("mount: failed to read link data\n");
         hash_map_free(node_map);
         // TODO: free all allocated nodes
-        DPRINTF("mount: failed to read link data\n");
+        if (tmp.size >= 0)
+          return -EIO;
         return (int) tmp.size;
       }
+      node->size = len;
       node->n_link = link;
     }
 

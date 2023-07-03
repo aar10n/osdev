@@ -247,8 +247,7 @@ $(SYS_ROOT): install-userspace
 
 	$(MAKE) -C toolchain musl-headers DESTDIR=$(SYS_ROOT)/usr
 	cp $(TOOL_ROOT)/usr/lib/libc.so $(SYS_ROOT)/usr/lib/libc.so
-	ln -sf $(SYS_ROOT)/usr/lib/libc.so $(SYS_ROOT)/lib/ld-musl-$(ARCH).so.1
-
+	ln -sf /initrd/usr/lib/libc.so $(SYS_ROOT)/lib/ld-musl-$(ARCH).so.1
 	@touch $(BUILD_DIR)/sysroot_sha1
 
 # sysroot sha1sum

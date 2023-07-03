@@ -7,7 +7,6 @@
 #include <kernel/process.h>
 #include <kernel/timer.h>
 #include <kernel/printf.h>
-#include <kernel/console.h>
 #include <kernel/ipi.h>
 #include <kernel/mm.h>
 
@@ -20,7 +19,6 @@
 static volatile uint32_t lock = 0;
 static bool panic_flags[MAX_NUM_CPUS] = {};
 
-// static noreturn void panic_full_debug()
 
 noreturn void panic_other_cpus(cpu_irq_stack_t *frame, cpu_registers_t *regs) {
   cpu_disable_interrupts();
@@ -52,14 +50,13 @@ noreturn void panic(const char *fmt, ...) {
   }
   panic_flags[PERCPU_ID] = true;
 
-  kprintf(">>>> PANIC <<<<\n");
-  kprintf(">>>> PANIC CPU#%d [irq level = %d] <<<<\n", PERCPU_ID, __percpu_get_irq_level());
-  kprintf("!!!!!! ");
+  kprintf("!!!!! PANIC CPU#%d [irq level = %d] <<<<\n", PERCPU_ID, __percpu_get_irq_level());
+  kprintf(">>>>> ");
   va_list valist;
   va_start(valist, fmt);
   kvfprintf(fmt, valist);
   va_end(valist);
-  kprintf(" !!!!!!\n");
+  kprintf(" <<<<<\n");
   while (atomic_lock_test_and_set(&lock) != 0) {
     cpu_pause();
   }

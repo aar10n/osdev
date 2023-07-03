@@ -110,16 +110,16 @@ static inline uintptr_t choose_best_hint(address_space_t *space, uintptr_t hint,
   }
 
   if (vm_flags & VM_USER) {
-    if (vm_flags & VM_MALLOC)
-      return HINT_USER_MALLOC;
     if (vm_flags & VM_STACK)
       return HINT_USER_STACK;
+    if (vm_flags & VM_MALLOC)
+      return HINT_USER_MALLOC;
     return HINT_USER_DEFAULT;
   } else {
-    if (vm_flags & VM_MALLOC)
-      return HINT_KERNEL_MALLOC;
     if (vm_flags & VM_STACK)
       return HINT_KERNEL_STACK;
+    if (vm_flags & VM_MALLOC)
+      return HINT_KERNEL_MALLOC;
     return HINT_KERNEL_DEFAULT;
   }
 }
@@ -185,6 +185,7 @@ static void page_map_internal(vm_mapping_t *vm, page_t *pages, size_t size, size
   size_t stride = vm_flags_to_size(vm->flags);
   ASSERT(off % stride == 0);
   ASSERT(off + size <= vm->size);
+  // kprintf("mapping pages at %p-%p\n", vm->address + off, vm->address + off + size);
 
   size_t count = size / stride;
   uintptr_t ptr = vm->address + off;
@@ -212,6 +213,7 @@ static void page_map_internal(vm_mapping_t *vm, page_t *pages, size_t size, size
 
     page_t *table_pages = NULL;
     recursive_map_entry(ptr, curr->address, pg_flags, &table_pages);
+    // kprintf("mapped: %p [phys = %p, flags = %#08b]\n", ptr, curr->address, pg_flags | PG_PRESENT);
     ptr += stride;
     curr = curr->next;
     count--;
@@ -747,6 +749,7 @@ void init_address_space() {
   vmap_phys(kernel_reserved_start, KERNEL_RESERVED_VA, reserved_size, VM_FIXED, "kernel reserved")->flags
     |= VM_READ | VM_WRITE;
 
+  // bsp kernel stack
   page_t *stack_pages = alloc_pages(SIZE_TO_PAGES(KERNEL_STACK_SIZE));
   vm_mapping_t *stack_vm = vmap_pages(stack_pages, 0, KERNEL_STACK_SIZE, VM_WRITE | VM_STACK, "kernel stack");
 
@@ -764,7 +767,7 @@ void init_address_space() {
   uint64_t rsp = cpu_read_stack_pointer();
   uint64_t stack_offset = ((uint64_t) &entry_initial_stack_top) - rsp;
 
-  uint64_t new_rsp = stack_vm->address + stack_vm->size - stack_offset;
+  uint64_t new_rsp = stack_vm->address + KERNEL_STACK_SIZE - stack_offset;
   memcpy((void *) new_rsp, (void *) rsp, stack_offset);
   cpu_write_stack_pointer(new_rsp);
   pgtable_unmap_user_mappings();
@@ -1298,7 +1301,7 @@ uintptr_t vm_virt_to_phys(uintptr_t virt_addr) {
 // MARK: vmalloc api
 //
 
-void *vmalloc(size_t size, uint32_t vm_flags) {
+static vm_mapping_t *vmalloc_internal(size_t size, uint32_t vm_flags, const char *name) {
   if (size == 0)
     return NULL;
   size = align(size, PAGE_SIZE);
@@ -1310,11 +1313,30 @@ void *vmalloc(size_t size, uint32_t vm_flags) {
   }
 
   // allocate pages
-  page_t *pages = alloc_pages_size(SIZE_TO_PAGES(size), vm_flags_to_size(vm_flags));
+  page_t *pages;
+  size_t pagesize = vm_flags_to_size(vm_flags);
+  if (pagesize == PAGE_SIZE) {
+    // pages = alloc_pages(SIZE_TO_PAGES(size));
+    pages = alloc_pages_mixed(SIZE_TO_PAGES(size));
+  } else {
+    pages = alloc_pages_size(SIZE_TO_PAGES(size), pagesize);
+  }
   PANIC_IF(!pages, "vmalloc: alloc_pages failed");
   // allocate and map the virtual memory
-  vm_mapping_t *vm = vmap_pages(pages, 0, size, vm_flags, "vmalloc");
+  vm_mapping_t *vm = vmap_pages(pages, 0, size, vm_flags, name);
   PANIC_IF(!vm, "vmalloc: vmap_pages failed");
+  return vm;
+}
+
+void *vmalloc(size_t size, uint32_t vm_flags) {
+  vm_mapping_t *vm = vmalloc_internal(size, vm_flags, "vmalloc");
+  return (void *) vm->address;
+}
+
+void *vmalloc_n(size_t size, uint32_t vm_flags, const char *name) {
+  vm_mapping_t *vm = vmalloc_internal(size, vm_flags, name);
+  str_free(&vm->name);
+  vm->name = str_make(name);
   return (void *) vm->address;
 }
 

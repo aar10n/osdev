@@ -20,9 +20,9 @@ size_t kio_remaining(const kio_t *kio) {
 
 //
 
-size_t kio_copy(kio_t *dst, kio_t *src) {
-  ASSERT(dst->dir == KIO_OUT);
-  ASSERT(src->dir == KIO_IN);
+size_t kio_transfer(kio_t *dst, kio_t *src) {
+  ASSERT(dst->dir == KIO_IN);
+  ASSERT(src->dir == KIO_OUT);
   size_t remain = kio_remaining(dst);
   size_t to_copy = kio_remaining(src);
   if (to_copy > remain) {
