@@ -116,9 +116,9 @@ size_t bitmap_get_n(bitmap_t *bmp, index_t index, size_t n) {
     size_t m = min(n, BIT_SIZE);
     uint64_t mask;
     if (i == 0) {
-      mask = ((1 << m) - 1) << start_bit;
+      mask = ((1ULL << m) - 1) << start_bit;
     } else if (i == chunk_count - 1 && n < BIT_SIZE) {
-      mask = (1 << m) - 1;
+      mask = (1ULL << m) - 1;
     } else {
       mask = MAX_NUM;
     }
@@ -145,9 +145,9 @@ size_t bitmap_set_n(bitmap_t *bmp, index_t index, size_t n) {
     size_t m = min(n, BIT_SIZE);
     uint64_t mask;
     if (i == 0) {
-      mask = ((1 << m) - 1) << start_bit;
+      mask = ((1ULL << m) - 1) << start_bit;
     } else if (i == chunk_count - 1 && n < BIT_SIZE) {
-      mask = (1 << m) - 1;
+      mask = (1ULL << m) - 1;
     } else {
       mask = MAX_NUM;
     }
@@ -409,12 +409,12 @@ ssize_t bitmap_clear_n(bitmap_t *bmp, index_t index, size_t n) {
   size_t start_index = index / BIT_SIZE;
   size_t start_bit = index % BIT_SIZE;
   for (size_t i = 0; i < chunk_count; i++) {
-    size_t m = min(n, BIT_SIZE);
+    size_t m = min(n, BIT_SIZE - (i == 0 ? start_bit : 0));
     uint64_t mask;
     if (i == 0) {
-      mask = ((1 << m) - 1) << start_bit;
+      mask = ((1ULL << m) - 1) << start_bit;
     } else if (i == chunk_count - 1 && n < BIT_SIZE) {
-      mask = (1 << m) - 1;
+      mask = (1ULL << m) - 1;
     } else {
       mask = MAX_NUM;
     }
