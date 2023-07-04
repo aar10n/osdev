@@ -25,7 +25,6 @@
 #include <kernel/printf.h>
 #include <kernel/panic.h>
 #include <kernel/fs_utils.h>
-#include <kernel/loader.h>
 
 // custom qemu patch
 #define QEMU_DEBUG_INIT() ({ outb(0x801, 1); })
@@ -62,7 +61,7 @@ __used void kmain() {
   irq_init();
   init_mem_zones();
   init_address_space();
-  // cpu_late_init();
+  cpu_late_init();
 
   do_static_initializers();
 
@@ -120,10 +119,10 @@ noreturn void root() {
   ls("/initrd");
 
   process_execve("/initrd/sbin/init", NULL, NULL);
-  kprintf("it worked!\n");
 
   //////////////////////////////////////////
 
+  kprintf("it worked!\n");
   kprintf("haulting...\n");
   thread_block();
   unreachable;

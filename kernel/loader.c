@@ -4,8 +4,6 @@
 
 #include <kernel/loader.h>
 
-#include <kernel/cpu/cpu.h>
-
 #include <kernel/mm.h>
 #include <kernel/fs.h>
 #include <kernel/thread.h>
@@ -115,7 +113,6 @@ int elf_load(elf_program_t *prog, void *buf, size_t len) {
   if (pages == NULL)
     return -ENOMEM;
 
-  kprintf("ehdr = %018p [phoff = %d]\n", ehdr, ehdr->e_phoff);
   vm_mapping_t *vm = vmap_pages(pages, min_vaddr, image_size, vm_flags, prog->path);
   if (vm == NULL) {
     free_pages(pages);
@@ -205,9 +202,9 @@ int elf_load_file(const char *path, elf_program_t *prog) {
     return res;
   }
 
-  DPRINTF("interp = %s\n", prog->interp);
   DPRINTF("loaded %s at %018p [entry = %018p]\n", path, prog->base, prog->entry);
   if (prog->interp != NULL) {
+    DPRINTF("interp = %s\n", prog->interp);
     elf_program_t *linker = kmalloc(sizeof(elf_program_t));
     memset(linker, 0, sizeof(elf_program_t));
     linker->base = 0x7FC0000000;
@@ -221,6 +218,6 @@ int elf_load_file(const char *path, elf_program_t *prog) {
   }
   vfree(buffer);
 
-  panic("done loading elf file");
+  // panic("done loading elf file");
   return 0;
 }

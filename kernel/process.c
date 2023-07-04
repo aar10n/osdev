@@ -201,9 +201,6 @@ int process_execve(const char *path, char *const argv[], char *const envp[]) {
   int argc = ptr_list_len((void *) argv);
   int envc = ptr_list_len((void *) envp);
 
-  // copy all the strings into the stack so that they're
-  // accessible from userspace
-
   uint64_t *argv_remap = kmalloc(argc * sizeof(uint64_t));
   for (int i = 0; i < argc; i++) {
     size_t len = strlen(argv[i]);
@@ -220,21 +217,22 @@ int process_execve(const char *path, char *const argv[], char *const envp[]) {
     envp_remap[i] = (uint64_t) rsp;
   }
 
-  // AT_NULL
-  rsp -= 1;
-  *rsp = AT_NULL;
-  // AT_ENTRY
-  rsp -= 2;
-  *((auxv_t *) rsp) = (auxv_t){ AT_ENTRY, prog.entry };
-  // AT_PHENT
-  rsp -= 2;
-  *((auxv_t *) rsp) = (auxv_t){ AT_PHENT, prog.phent };
-  // AT_PHNUM
-  rsp -= 2;
-  *((auxv_t *) rsp) = (auxv_t){ AT_PHNUM, prog.phnum };
-  // AT_PHDR
-  rsp -= 2;
-  *((auxv_t *) rsp) = (auxv_t){ AT_PHDR, prog.phdr };
+  // // AT_NULL
+  // rsp -= 1;
+  // *rsp = AT_NULL;
+  // // AT_ENTRY
+  // rsp -= 2;
+  // *((auxv_t *) rsp) = (auxv_t){ AT_ENTRY, prog.entry };
+  // // AT_PHENT
+  // rsp -= 2;
+  // *((auxv_t *) rsp) = (auxv_t){ AT_PHENT, prog.phent };
+  // // AT_PHNUM
+  // rsp -= 2;
+  // *((auxv_t *) rsp) = (auxv_t){ AT_PHNUM, prog.phnum };
+  // // AT_PHDR
+  // rsp -= 2;
+  // *((auxv_t *) rsp) = (auxv_t){ AT_PHDR, prog.phdr };
+
   // zero
   rsp -= 1;
   *rsp = 0;
@@ -264,6 +262,7 @@ int process_execve(const char *path, char *const argv[], char *const envp[]) {
   thread->user_sp = (uintptr_t) rsp;
   // vm_print_debug_address_space();
 
+  // panic("ready for userspace!");
   sysret((uintptr_t) prog.linker->entry, (uintptr_t) rsp);
 }
 

@@ -9,7 +9,7 @@ import subprocess
 import re
 
 def relocatesections(filename, addr):
-    p = subprocess.Popen(["build/sysroot/usr/bin/x86_64-osdev-readelf", "-SW", filename], stdout = subprocess.PIPE)
+    p = subprocess.Popen(["build/toolchain/bin/x86_64-linux-musl-readelf", "-SW", filename], stdout = subprocess.PIPE)
 
     sections = []
     textaddr = '0'
@@ -101,10 +101,9 @@ commands
   set variable is_debug_enabled = 0
 end
 
-b process.c:254
+b process.c:266
 commands
-  add-symbol-file-all build/sysroot/usr/lib/ld.so 0x7fc0000000
-  add-symbol-file-all build/sysroot/usr/lib/libc.so 0x41000000
+  add-symbol-file-all build/musl/x86_64-linux-musl/lib/libc.so
 
   #b entry.S:9
   #commands
