@@ -100,7 +100,7 @@ static int vresolve_follow(vcache_t *vc, __move ventry_t **veref, int flags, boo
 
     // follow the symlink (and get locked result)
     if ((res = vresolve_internal(vc, at_ve, cstr_new(linkbuf, vn->size), 0, depth++, &next_ve)) < 0) {
-      DPRINTF("failed to follow symlink: %s {:err}\n", linkbuf, res);
+      DPRINTF("failed to follow symlink: %s\n", linkbuf, res);
       goto error;
     }
 

@@ -185,7 +185,6 @@ static void page_map_internal(vm_mapping_t *vm, page_t *pages, size_t size, size
   size_t stride = vm_flags_to_size(vm->flags);
   ASSERT(off % stride == 0);
   ASSERT(off + size <= vm->size);
-  // kprintf("mapping pages at %p-%p\n", vm->address + off, vm->address + off + size);
 
   size_t count = size / stride;
   uintptr_t ptr = vm->address + off;

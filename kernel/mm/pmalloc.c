@@ -271,11 +271,6 @@ void fa_free_pages(page_t *pages) {
     return;
   }
 
-  if (pages->flags & PG_HEAD && pages->head.contiguous) {
-    page_t *last = SLIST_GET_LAST(pages, next);
-    kprintf("free_pages: freeing %llu pages (first = %p, last = %p)\n", pages->head.count, pages->address, last->address);
-  }
-
   // since the list of pages doesnt have to be contiguous or homogenous we
   // need to make a separate call to the frame allocator for each contiguous
   // range of uniform pages.
@@ -447,9 +442,6 @@ page_t *alloc_pages_size(size_t count, size_t pagesize) {
       zone_type = zone_alloc_order[zone_type];
   }
 
-  page_t *last = SLIST_GET_LAST(pages, next);
-  kprintf("alloc_pages_size: %zu pages from zone %s (first=%p, last=%p)\n",
-          count, zone_names[zone_type], pages->address, last->address);
   return pages;
 }
 
