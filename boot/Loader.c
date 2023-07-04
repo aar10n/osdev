@@ -6,7 +6,6 @@
 #include <File.h>
 
 #include <elf.h>
-#include <elf64.h>
 
 #define EHDR_OFFSET(ehdr, offset) ((VOID *)((UINTN)(ehdr) + (offset)))
 #define NEXT_PHDR(ehdr, phdr) ((Elf64_Phdr *)((UINTN)(phdr) + (ehdr)->e_phentsize))

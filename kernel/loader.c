@@ -12,11 +12,16 @@
 #include <kernel/string.h>
 
 #include <elf.h>
-#include <elf64.h>
 
 #define ASSERT(x) kassert(x)
 #define DPRINTF(fmt, ...) kprintf("loader: " fmt, ##__VA_ARGS__)
 
+static inline bool elf_is_magic_ok(Elf64_Ehdr *elf) {
+  return elf->e_ident[EI_MAG0] == ELFMAG0 &&
+         elf->e_ident[EI_MAG1] == ELFMAG1 &&
+         elf->e_ident[EI_MAG2] == ELFMAG2 &&
+         elf->e_ident[EI_MAG3] == ELFMAG3;
+}
 
 static inline uint64_t elf_align_up(uint64_t value, uint64_t align) {
   if (align == 0 || align == 1 || is_aligned(value, align)) {
@@ -38,7 +43,7 @@ static bool elf_is_valid(void *buf, size_t len) {
   }
 
   Elf64_Ehdr *elf = buf;
-  if (!IS_ELF(*elf)) {
+  if (!elf_is_magic_ok(elf)) {
     DPRINTF("invalid magic number\n");
     return false;
   }
