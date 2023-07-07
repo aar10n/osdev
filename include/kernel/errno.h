@@ -5,7 +5,9 @@
 #ifndef LIBC_ERRNO_H
 #define LIBC_ERRNO_H
 
-#include <abi/errno.h>
+#include <bits/errno.h>
+
+#define ERRNO_MAX EHWPOISON
 
 const char *strerror(int errnum);
 

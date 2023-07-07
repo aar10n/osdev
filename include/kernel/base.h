@@ -5,7 +5,7 @@
 #ifndef INCLUDE_BASE_H
 #define INCLUDE_BASE_H
 
-#include <abi/types.h>
+#include <kernel/types.h>
 #include <kernel/errno.h>
 #include <boot.h>
 
@@ -128,8 +128,7 @@
 #define deprecated __attribute((deprecated))
 #define warn_unused_result __attribute((warn_unused_result))
 
-#define __weak __attribute((weak))
-#define __unused __attribute((unused))
+#define weak __attribute((weak))
 #define unused __attribute((unused))
 #define __used __attribute((used))
 #define __likely(expr) __builtin_expect((expr), 1)

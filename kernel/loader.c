@@ -248,7 +248,7 @@ int elf_load_file(elf_program_t *prog, const char *path, uint32_t e_type) {
     return fd;
   }
 
-  stat_t stat;
+  struct stat stat;
   if ((res = fs_fstat(fd, &stat)) < 0) {
     fs_close(fd);
     return res;

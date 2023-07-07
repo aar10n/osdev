@@ -40,7 +40,6 @@ static inline size_t kio_write_dirent(ino_t ino, enum vtype type, cstr_t name, k
   dirent.d_ino = ino;
   dirent.d_type = vtype_to_dtype(type);
   dirent.d_reclen = sizeof(struct dirent) + cstr_len(name) + 1;
-  dirent.d_namlen = cstr_len(name);
 
   if (kio_remaining(kio) < dirent.d_reclen) {
     return 0;
@@ -48,7 +47,7 @@ static inline size_t kio_write_dirent(ino_t ino, enum vtype type, cstr_t name, k
 
   // write the entry
   kio_write_in(kio, &dirent, sizeof(struct dirent), 0); // write dirent
-  kio_write_in(kio, cstr_ptr(name), dirent.d_namlen + 1, 0); // write name
+  kio_write_in(kio, cstr_ptr(name),cstr_len(name) + 1, 0); // write name
   return dirent.d_reclen;
 }
 

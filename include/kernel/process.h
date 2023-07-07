@@ -60,7 +60,7 @@ uid_t getuid();
 gid_t getgid();
 
 process_t *process_get(pid_t pid);
-thread_t *process_get_sigthread(process_t *process, int sig);
+// thread_t *process_get_sigthread(process_t *process, int sig);
 
 void proc_print_thread_stats(process_t *proc);
 

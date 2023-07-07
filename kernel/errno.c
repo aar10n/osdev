@@ -64,13 +64,12 @@ const char *errno_str[] = {
   [ENOTCONN] = "The socket is not connected",
   [ENOTDIR] = "Not a directory or a symbolic link to a directory",
   [ENOTEMPTY] = "Directory not empty",
-  [ENOTMNT] = "Not a filesystem mount.",
+  // [ENOTMNT] = "Not a filesystem mount.",
   [ENOTRECOVERABLE] = "State not recoverable",
   [ENOTSOCK] = "Not a socket",
   [ENOTSUP] = "Not supported",
   [ENOTTY] = "Inappropriate I/O control operation",
   [ENXIO] = "No such device or address",
-  [EOPNOTSUPP] = "Operation not supported on socket",
   [EOVERFLOW] = "Value too large to be stored in data type",
   [EOWNERDEAD] = "Previous owner died",
   [EPERM] = "Operation not permitted",
@@ -86,9 +85,8 @@ const char *errno_str[] = {
   [ETIME] = "Stream ioctl() timeout",
   [ETIMEDOUT] = "Connection timed out",
   [ETXTBSY] = "Text file busy",
-  [EWOULDBLOCK] = "Operation would block",
   [EXDEV] = "Cross-device link",
-  [EFAILED] = "Failed"
+  // [EFAILED] = "Failed"
 };
 
 const char *strerror(int errnum) {

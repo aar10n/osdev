@@ -148,7 +148,7 @@ LABEL(FAIL);
   kfree(cbw);
   kfree(csw);
   kprintf("scsi: read failed\n");
-  return -EFAILED;
+  return -EIO;
 }
 
 ssize_t scsi_write_internal(usb_device_t *device, uint64_t lba, uint32_t count, void *buf) {
@@ -198,7 +198,7 @@ LABEL(FAIL);
   kfree(cbw);
   kfree(csw);
   // kprintf("[scsi] write failed\n");
-  return -EFAILED;
+  return -EIO;
 }
 
 // disk api

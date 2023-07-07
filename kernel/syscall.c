@@ -18,9 +18,9 @@
 
 typedef uint64_t (*syscall_t)(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
 
-#define SYSCALL(name, n_args, ret_type, ...) static ret_type sys_ ##name(MACRO_JOIN(__VA_ARGS__)) {};
+#define SYSCALL(name, n_args, ret_type, ...) static noreturn void sys_ ##name(MACRO_JOIN(__VA_ARGS__)) { unimplemented(#name); };
 #define PARAM(type, name) type name
-#include <kernel/syscalls.def>
+// #include <kernel/syscalls.def>
 
 
 __used int handle_syscall(

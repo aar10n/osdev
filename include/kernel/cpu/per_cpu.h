@@ -6,7 +6,7 @@
 #define KERNEL_CPU_PER_CPU_H_BASE
 
 #ifndef __PER_CPU_BASE__
-#include <abi/types.h>
+#include <kernel/types.h>
 #endif
 
 struct thread;

@@ -229,28 +229,6 @@ process_t *process_get(pid_t pid) {
   return ptable[pid];
 }
 
-thread_t *process_get_sigthread(process_t *process, int sig) {
-  kassert(sig > 0 && sig < NSIG);
-
-  thread_t *handler = process->sig_threads[sig];
-  if (handler) {
-    if (!sig_masked(handler, sig)) {
-      return handler;
-    }
-    process->sig_threads[sig] = NULL;
-  }
-
-  handler = LIST_FIRST(&process->threads);
-  while (handler != NULL) {
-    if (!sig_masked(handler, sig)) {
-      process->sig_threads[sig] = handler;
-      return handler;
-    }
-    handler = LIST_NEXT(handler, group);
-  }
-  return NULL;
-}
-
 //
 
 void print_debug_process(process_t *process) {
