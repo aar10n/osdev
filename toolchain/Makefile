@@ -122,6 +122,7 @@ MUSL_CONFIG = \
 	--target=$(TOOLCHAIN) \
 	--prefix= \
 	--srcdir=$(MUSL_SRC_DIR) \
+	--enable-debug \
 	\
 	CC="$(GCC_DIR)/gcc/xgcc -B $(GCC_DIR)/gcc" \
 	LIBCC="$(GCC_DIR)/$(TOOLCHAIN)/libgcc/libgcc.a"
@@ -146,8 +147,8 @@ $(MUSL_DIR)/.install: $(MUSL_DIR)/.build
 	cd $(@D) && $(MAKE) install $(MUSL_VARS)
 #   link the important abi/type headers to a directory in the
 #	kernel include path separate from the userspace headers
-	ln -s $(MUSL_PREFIX)/include/bits $(TOOL_ROOT)/include/bits
-	ln -s $(MUSL_PREFIX)/include/sys $(TOOL_ROOT)/include/sys
+	ln -sf $(MUSL_PREFIX)/include/bits $(TOOL_ROOT)/include/
+	ln -sf $(MUSL_PREFIX)/include/sys $(TOOL_ROOT)/include/
 
 .PHONY: $(MUSL_DIR)/.install-headers
 $(MUSL_DIR)/.install-headers: export DESTDIR = $(MUSL_PREFIX)

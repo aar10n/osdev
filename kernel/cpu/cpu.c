@@ -5,9 +5,7 @@
 #include <kernel/cpu/cpu.h>
 #include <kernel/cpu/gdt.h>
 #include <kernel/cpu/idt.h>
-
 #include <kernel/device/apic.h>
-#include <kernel/device/pit.h>
 
 #include <kernel/string.h>
 #include <kernel/panic.h>
@@ -231,9 +229,13 @@ void cpu_late_init() {
   cpu_write_msr(IA32_SFMASK_MSR, 0);
   cpu_write_msr(IA32_STAR_MSR, 0x10LL << 48 | KERNEL_CS << 32);
 
+  // setup the stack that is used when handling interrupts
+  uintptr_t irq_stack = (uintptr_t) vmalloc_n(SIZE_16KB, VM_WRITE | VM_STACK, "irq stack");
+  tss_set_rsp(0, irq_stack + SIZE_16KB);
+
   // setup the clean stack that is used for double fault handling
-  uintptr_t df_stack = (uintptr_t) vmalloc_n(IST_STACK_SIZE, VM_WRITE | VM_STACK, "df stack");
-  tss_set_ist(1, df_stack + IST_STACK_SIZE);
+  uintptr_t df_stack = (uintptr_t) vmalloc_n(SIZE_4KB, VM_WRITE | VM_STACK, "df stack");
+  tss_set_ist(1, df_stack + SIZE_4KB);
   set_gate_ist(CPU_EXCEPTION_DF, 1);
 }
 

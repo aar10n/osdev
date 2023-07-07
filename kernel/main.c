@@ -118,7 +118,8 @@ noreturn void root() {
   mount("/dev/rd0", "/initrd", "initrd", 0);
   ls("/initrd");
 
-  process_execve("/initrd/sbin/init", NULL, NULL);
+  char *const args[] = {"/initrd/sbin/init", "hello", "world"};
+  process_execve("/initrd/sbin/init", args, NULL);
 
   //////////////////////////////////////////
 

@@ -99,16 +99,16 @@ add-symbol-file build/kernel.elf
 b kmain
 commands
   set variable is_debug_enabled = 0
+  add-symbol-file-all build/toolchain/usr/lib/libc.so 0x7fc0000000
 end
 
-b process.c:266
-commands
-  add-symbol-file-all build/musl/x86_64-linux-musl/lib/libc.so
+#b process_execve
+#commands
 
   #b entry.S:9
   #commands
   #  add-symbol-file build/apps/hello
   #  break main
   #end
-end
+#end
 

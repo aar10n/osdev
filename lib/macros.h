@@ -37,6 +37,10 @@
 #define __macro_MAP_LIST0_S(f, sep, x, peek, ...) f(x) __macro_MAP_LIST_NEXT_S(sep, peek, __macro_MAP_LIST1_S)(f, sep, peek, __VA_ARGS__)
 #define __macro_MAP_LIST1_S(f, sep, x, peek, ...) f(x) __macro_MAP_LIST_NEXT_S(sep, peek, __macro_MAP_LIST0_S)(f, sep, peek, __VA_ARGS__)
 
+#define __macro_ident(x) x
+
+#define MACRO_JOIN(...) MACRO_MAP_LIST(__macro_ident, __VA_ARGS__)
+
 /**
  * Applies the function macro `f` to each of the remaining parameters.
  */

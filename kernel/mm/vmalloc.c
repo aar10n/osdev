@@ -686,17 +686,22 @@ void page_fault_handler(uint8_t vector, uint32_t error_code, cpu_irq_stack_t *fr
 
 LABEL(exception);
   kprintf("================== !!! Exception !!! ==================\n");
-  kprintf("  Page Fault  - Data: %#b\n", error_code);
-  kprintf("  CPU#%d  -  RIP: %p  -  CR2: %018p\n", id, frame->rip, fault_addr);
+  kprintf("  Page Fault  - Error: %#b\n", error_code);
+  kprintf("  CPU#%d  -  RIP: %018p    CR2: %018p\n", id, frame->rip, fault_addr);
 
   uintptr_t rip = frame->rip - 8;
   uintptr_t rbp = regs->rbp;
 
-  char *line_str = debug_addr2line(rip);
-  kprintf("  %s\n", line_str);
-  kfree(line_str);
+  if (!(error_code & CPU_PF_U)) {
+    char *line_str = debug_addr2line(rip);
+    kprintf("  %s\n", line_str);
+    kfree(line_str);
 
-  debug_unwind(rip, rbp);
+    debug_unwind(rip, rbp);
+  } else {
+    kprintf("  User mode fault\n");
+  }
+
   while (true) {
     cpu_pause();
   }

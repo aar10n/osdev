@@ -179,91 +179,21 @@ pid_t process_fork() {
 }
 
 int process_execve(const char *path, char *const argv[], char *const envp[]) {
-  elf_program_t prog;
-  memset(&prog, 0, sizeof(elf_program_t));
-  if (elf_load_file(path, &prog) < 0) {
-    kprintf("error: %s\n", strerror(ERRNO));
-    return -1;
-  }
-
-  if (prog.linker == NULL) {
-    panic("exec: program is not linked with libc");
+  int res;
+  program_t prog = {0};
+  if ((res = load_executable(path, argv, envp, &prog)) < 0) {
+    kprintf("error: failed to load executable {:err}\n", res);
+    return res;
   }
 
   thread_t *thread = PERCPU_THREAD;
-  if (thread->user_stack == NULL) {
-    thread_alloc_stack(thread, true); // allocate user stack
-    memset((void *) thread->user_stack->address, 0, USER_STACK_SIZE);
-  }
-  uintptr_t stack_top = thread->user_stack->address + USER_STACK_SIZE;
-  uint64_t *rsp = (void *) stack_top;
-
-  int argc = ptr_list_len((void *) argv);
-  int envc = ptr_list_len((void *) envp);
-
-  uint64_t *argv_remap = kmalloc(argc * sizeof(uint64_t));
-  for (int i = 0; i < argc; i++) {
-    size_t len = strlen(argv[i]);
-    rsp -= len + 1;
-    memcpy((void *) rsp, argv[i], len + 1);
-    argv_remap[i] = (uint64_t) rsp;
+  if (thread->user_stack != NULL) {
+    vmap_free(thread->user_stack);
   }
 
-  uint64_t *envp_remap = kmalloc(envc * sizeof(uint64_t));
-  for (int i = 0; i < envc; i++) {
-    size_t len = strlen(envp[i]);
-    rsp -= len + 1;
-    memcpy((void *) rsp, envp[i], len + 1);
-    envp_remap[i] = (uint64_t) rsp;
-  }
-
-  // // AT_NULL
-  // rsp -= 1;
-  // *rsp = AT_NULL;
-  // // AT_ENTRY
-  // rsp -= 2;
-  // *((auxv_t *) rsp) = (auxv_t){ AT_ENTRY, prog.entry };
-  // // AT_PHENT
-  // rsp -= 2;
-  // *((auxv_t *) rsp) = (auxv_t){ AT_PHENT, prog.phent };
-  // // AT_PHNUM
-  // rsp -= 2;
-  // *((auxv_t *) rsp) = (auxv_t){ AT_PHNUM, prog.phnum };
-  // // AT_PHDR
-  // rsp -= 2;
-  // *((auxv_t *) rsp) = (auxv_t){ AT_PHDR, prog.phdr };
-
-  // zero
-  rsp -= 1;
-  *rsp = 0;
-  // environment pointers
-  if (envp) {
-    for (int i = envc; i > 0; i--) {
-      rsp -= 1;
-      *rsp = (uint64_t) envp_remap[i - 1];
-    }
-    kfree(envp_remap);
-  }
-  // zero
-  rsp -= 1;
-  *rsp = 0;
-  // argument pointers
-  if (argv) {
-    for (int i = argc; i > 0; i--) {
-      rsp -= 1;
-      *rsp = (uint64_t) argv_remap[i - 1];
-    }
-    kfree(argv_remap);
-  }
-  // argument count
-  rsp -= 1;
-  *rsp = argc;
-
-  thread->user_sp = (uintptr_t) rsp;
-  // vm_print_debug_address_space();
-
-  // panic("ready for userspace!");
-  sysret((uintptr_t) prog.linker->entry, (uintptr_t) rsp);
+  thread->user_stack = prog.stack;
+  thread->user_sp = prog.sp;
+  sysret((uintptr_t) prog.entry, (uintptr_t) prog.sp);
 }
 
 pid_t getpid() {

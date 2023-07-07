@@ -8,6 +8,7 @@
 #include <kernel/spinlock.h>
 #include <kernel/printf.h>
 #include <kernel/panic.h>
+#include <kernel/console.h>
 
 #include <kernel/cpu/idt.h>
 
@@ -64,16 +65,17 @@ __used void exception_handler(uint8_t vector, uint32_t error, cpu_irq_stack_t *f
     return;
   }
 
-  kprintf("!!! EXCEPTION %d !!!\n", vector);
-  if (vector != CPU_EXCEPTION_DF) {
+  if (vector == CPU_EXCEPTION_DF) {
+    debug_kputs("!!! DOUBLE FAULT !!!\n");
+  } else {
+    kprintf("!!! EXCEPTION %d !!!\n", vector);
     kprintf("  CPU#%d - %#b\n", PERCPU_ID, error);
     kprintf("  RIP = %018p  RSP = %018p\n", frame->rip, frame->rsp);
     kprintf("  CR2 = %018p\n", __read_cr2());
   }
 
-  while (true) {
+  while (true)
     cpu_pause();
-  }
 }
 
 __used void irq_handler(uint8_t vector, cpu_irq_stack_t *frame, cpu_registers_t *regs) {

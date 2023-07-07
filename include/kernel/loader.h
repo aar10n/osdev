@@ -6,28 +6,23 @@
 #define KERNEL_LOADER_H
 
 #include <kernel/base.h>
-#include <abi/auxv.h>
 #include <kernel/mm.h>
 
-typedef struct{
-  uint64_t a_type;
-  uint64_t a_val;
+#define MAX_ARGV  32
+#define MAX_ENVP  64
+#define LIBC_BASE_ADDR 0x7FC0000000
+
+typedef struct auxv {
+  size_t type;
+  size_t value;
 } auxv_t;
 
-typedef struct elf_program {
-  uintptr_t base;
-  uint64_t entry;
+typedef struct program {
+  vm_mapping_t *stack;
+  uintptr_t entry;
+  uintptr_t sp;
+} program_t;
 
-  uint64_t phdr;
-  uint64_t phent;
-  uint64_t phnum;
-
-  char *path;
-  char *interp;
-  struct elf_program *linker;
-} elf_program_t;
-
-int elf_load(elf_program_t *prog, void *buf, size_t len);
-int elf_load_file(const char *path, elf_program_t *prog);
+int load_executable(const char *path, char *const argp[], char *const envp[], program_t *program);
 
 #endif

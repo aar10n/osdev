@@ -120,7 +120,7 @@ debug: $(BUILD_DIR)/osdev.img
 	$(QEMU) -s -S $(QEMU_OPTIONS) &
 	$(GDB) -w \
 		-ex "target remote localhost:1234" \
-		-ex "add-symbol $(BUILD_DIR)/kernel.elf"
+		-ex "add-symbol-file $(BUILD_DIR)/kernel.elf"
 
 run-debug: $(BUILD_DIR)/osdev.img
 	$(QEMU) -s -S $(QEMU_OPTIONS) -monitor telnet:127.0.0.1:55544,server,nowait &> $(BUILD_DIR)/output &
@@ -247,7 +247,8 @@ $(SYS_ROOT): install-userspace
 
 	$(MAKE) -C toolchain musl-headers DESTDIR=$(SYS_ROOT)/usr
 	cp $(TOOL_ROOT)/usr/lib/libc.so $(SYS_ROOT)/usr/lib/libc.so
-	ln -sf /initrd/usr/lib/libc.so $(SYS_ROOT)/lib/ld-musl-$(ARCH).so.1
+	$(STRIP) $(SYS_ROOT)/usr/lib/libc.so
+	ln -sf /initrd/usr/lib/libc.so $(SYS_ROOT)/lib/ld-musl-$(ARCH).so.1 || true
 	@touch $(BUILD_DIR)/sysroot_sha1
 
 # sysroot sha1sum
@@ -257,6 +258,12 @@ $(BUILD_DIR)/sysroot_sha1:
 #
 # external dependencies
 #
+
+musl:
+	$(MAKE) -C third-party/musl
+
+clean-musl:
+	$(MAKE) -C third-party/musl clean
 
 ovmf: $(BUILD_DIR)/OVMF_$(WINARCH).fd
 ext2_img: $(BUILD_DIR)/ext2.img

@@ -154,6 +154,5 @@ typedef struct vm_mapping {
 
 #define KERNEL_HEAP_SIZE   (SIZE_4MB + SIZE_2MB)
 #define KERNEL_STACK_SIZE  SIZE_16KB
-#define IST_STACK_SIZE     SIZE_16KB
 
 #endif
