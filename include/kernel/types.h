@@ -33,6 +33,8 @@
 #define __NEED_dev_t
 #define __NEED_blksize_t
 #define __NEED_blkcnt_t
+#define __NEED_fsblkcnt_t
+#define __NEED_fsfilcnt_t
 
 #define __NEED_wint_t
 #define __NEED_wctype_t
@@ -56,6 +58,9 @@
 
 #define __NEED_sigset_t
 #define __NEED_struct_iovec
+#define __NEED_socklen_t
+#define __NEED_sa_family_t
+#define __NEED_pthread_attr_t
 
 #include <bits/alltypes.h>
 

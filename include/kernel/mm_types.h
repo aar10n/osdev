@@ -10,7 +10,9 @@
 #include <kernel/queue.h>
 #include <kernel/spinlock.h>
 
+#ifndef PAGE_SIZE
 #define PAGE_SIZE 0x1000
+#endif
 #define PAGE_SIZE_2MB 0x200000ULL
 #define PAGE_SIZE_1GB 0x40000000ULL
 

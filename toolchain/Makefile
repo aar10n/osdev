@@ -130,7 +130,7 @@ MUSL_CONFIG = \
 MUSL_VARS = \
 	AR=$(CROSS_PREFIX)ar \
 	RANLIB=$(CROSS_PREFIX)ranlib \
-	LDSO_PATHNAME=$(TOOL_ROOT)/lib/ld-musl-$(ARCH).so.1
+	LDSO_PATHNAME=/lib/ld-musl-$(ARCH).so.1
 
 $(MUSL_DIR)/.configure: | $(MUSL_SRC_DIR)
 	mkdir -p $(@D)
@@ -145,10 +145,12 @@ $(MUSL_DIR)/.build: $(MUSL_DIR)/.configure
 $(MUSL_DIR)/.install: export DESTDIR = $(MUSL_PREFIX)
 $(MUSL_DIR)/.install: $(MUSL_DIR)/.build
 	cd $(@D) && $(MAKE) install $(MUSL_VARS)
-#   link the important abi/type headers to a directory in the
-#	kernel include path separate from the userspace headers
-	ln -sfn $(MUSL_PREFIX)/include/bits $(TOOL_ROOT)/include/
-	ln -sfn $(MUSL_PREFIX)/include/sys $(TOOL_ROOT)/include/
+    # make the important abi/bits headers available to
+    # the kernel by linking them into the include path
+	ln -sfn $(MUSL_PREFIX)/include/bits $(TOOL_ROOT)/include/bits
+	ln -sf $(MUSL_PREFIX)/include/features.h $(TOOL_ROOT)/include/features.h
+	ln -sf $(MUSL_PREFIX)/include/limits.h $(TOOL_ROOT)/include/limits.h
+
 
 .PHONY: $(MUSL_DIR)/.install-headers
 $(MUSL_DIR)/.install-headers: export DESTDIR = $(MUSL_PREFIX)

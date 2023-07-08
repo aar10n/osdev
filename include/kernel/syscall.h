@@ -7,8 +7,6 @@
 
 #include <kernel/base.h>
 
-#define SYS_MAX 446
-
 extern void syscall_handler();
 
 #endif
