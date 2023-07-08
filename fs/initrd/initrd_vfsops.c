@@ -17,7 +17,7 @@
 #define ASSERT(x) kassert(x)
 #define DPRINTF(fmt, ...) kprintf("initrd: " fmt, ##__VA_ARGS__)
 
-#define MAP_TYPE ramfs_node_t *
+#define HMAP_TYPE ramfs_node_t *
 #include <hash_map.h>
 
 //

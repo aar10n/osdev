@@ -24,7 +24,7 @@
 
 #define FTABLE (PERCPU_PROCESS->files)
 
-#define MAP_TYPE fs_type_t *
+#define HMAP_TYPE fs_type_t *
 #include <hash_map.h>
 
 hash_map_t *fs_types;

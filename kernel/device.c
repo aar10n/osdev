@@ -12,7 +12,7 @@
 
 #define DECLARE_DEV_TYPE(_name, _maj, _typ) [_maj] = { .name = (_name), .major = (_maj), .type = (_typ) }
 
-#define MAP_TYPE void *
+#define HMAP_TYPE void *
 #include <hash_map.h>
 
 struct bus_type {

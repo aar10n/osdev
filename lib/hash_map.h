@@ -14,29 +14,29 @@
 /// type embeded within other types. You can only have one unique map
 /// type per compilation unit.
 
-#ifndef MAP_TYPE
-#error "MAP_TYPE must be defined"
+#ifndef HMAP_TYPE
+#error "HMAP_TYPE must be defined"
 #endif
 
-#define T MAP_TYPE
+#define T HMAP_TYPE
 
 // Configuration Options
 
 /// Specifies the default value returned for an error (e.g. key not found).
-#ifndef MAP_ERRVAL
-#define MAP_ERRVAL {0}
+#ifndef HMAP_ERRVAL
+#define HMAP_ERRVAL {0}
 #endif
 
 /// Specifies the function called when a map value is evicted.
-#ifndef MAP_EVICT_CALLBACK
-#define MAP_EVICT_CALLBACK(v) // do nothing
+#ifndef HMAP_EVICT_CALLBACK
+#define HMAP_EVICT_CALLBACK(v) // do nothing
 #endif
 
 /// Specifies the hash function to use. The underlying function
 /// should have the prototype:
 ///     uint32_t (*hash)(const char *key, size_t len);
-#ifndef MAP_HASH
-#define MAP_HASH __hash_map_default_hash
+#ifndef HMAP_HASH
+#define HMAP_HASH __hash_map_default_hash
 #include <murmur3.h>
 static inline uint32_t __hash_map_default_hash(const char *key, size_t len) {
   return murmur_hash32(key, (int) len, 0x74747474);
@@ -44,21 +44,21 @@ static inline uint32_t __hash_map_default_hash(const char *key, size_t len) {
 #endif
 
 /// Specifies the load threshold at which the map is resized.
-#ifndef MAP_LOAD_FACTOR
-#define MAP_LOAD_FACTOR 0.75
+#ifndef HMAP_LOAD_FACTOR
+#define HMAP_LOAD_FACTOR 0.75
 #endif
 
 /// Specifies the default initial size of a map created with the `hash_map_new()` function.
-#ifndef MAP_DEFAULT_SIZE
-#define MAP_DEFAULT_SIZE 128
+#ifndef HMAP_DEFAULT_SIZE
+#define HMAP_DEFAULT_SIZE 128
 #endif
 
-#ifndef MAP_ALLOC
+#ifndef HMAP_ALLOC
 #include <kernel/mm/heap.h>
-#define MAP_ALLOC(s) kmalloc(s)
+#define HMAP_ALLOC(s) kmalloc(s)
 #endif
-#ifndef MAP_FREE
-#define MAP_FREE(p) kfree(p)
+#ifndef HMAP_FREE
+#define HMAP_FREE(p) kfree(p)
 #endif
 
 /**
@@ -79,7 +79,7 @@ static inline uint32_t __hash_map_default_hash(const char *key, size_t len) {
  *     void hash_map_free(hash_map_t *map);
  *
  *     /// Looks up the value for the given key. If no value is found, it
- *     /// returns MAP_ERRVAL.
+ *     /// returns HMAP_ERRVAL.
  *     T hash_map_get(hash_map_t *map, const char *key);
  *
  *     /// Looks up the value for the given key. If no value is found, it
@@ -95,7 +95,7 @@ static inline uint32_t __hash_map_default_hash(const char *key, size_t len) {
  *     void hash_map_set(hash_map_t *map, const char *key, T value);
  *
  *     /// Deletes the entry associated with the given string key and
- *     /// returns the value. If no value is found, it returns MAP_ERRVAL.
+ *     /// returns the value. If no value is found, it returns HMAP_ERRVAL.
  *     T map_delete(hash_map_t *map, const char *key);
  */
 
@@ -117,13 +117,13 @@ static inline hash_map_t *hash_map_new_s(size_t size) {
   hash_map_t *map = kmalloc(sizeof(hash_map_t));
   map->size = 0;
   map->capacity = size;
-  map->items = MAP_ALLOC(nbytes);
+  map->items = HMAP_ALLOC(nbytes);
   memset(map->items, 0, nbytes);
   return map;
 }
 
 static inline hash_map_t *hash_map_new() {
-  return hash_map_new_s(MAP_DEFAULT_SIZE);
+  return hash_map_new_s(HMAP_DEFAULT_SIZE);
 }
 
 static inline void hash_map_free(hash_map_t *map) {
@@ -131,19 +131,19 @@ static inline void hash_map_free(hash_map_t *map) {
     struct __map_item *item = map->items[i];
     while (item != NULL) {
       struct __map_item *next = item->next;
-      MAP_EVICT_CALLBACK(item->value);
-      MAP_FREE(item->key);
-      MAP_FREE(item);
+      HMAP_EVICT_CALLBACK(item->value);
+      HMAP_FREE(item->key);
+      HMAP_FREE(item);
       item = next;
     }
   }
 
-  MAP_FREE(map->items);
-  MAP_FREE(map);
+  HMAP_FREE(map->items);
+  HMAP_FREE(map);
 }
 
 static inline T __hash_map_get(hash_map_t *map, const char *key, size_t len) {
-  uint32_t hash = MAP_HASH(key, len);
+  uint32_t hash = HMAP_HASH(key, len);
   size_t index = hash % map->capacity;
 
   struct __map_item *item = map->items[index];
@@ -154,7 +154,7 @@ static inline T __hash_map_get(hash_map_t *map, const char *key, size_t len) {
     item = item->next;
   }
 
-  return (T)MAP_ERRVAL;
+  return (T)HMAP_ERRVAL;
 }
 
 static inline T hash_map_get(hash_map_t *map, const char *key) {
@@ -166,21 +166,21 @@ static inline T hash_map_get_cstr(hash_map_t *map, cstr_t key) {
 }
 
 static inline void __hash_map_set(hash_map_t *map, char *key, size_t len, T value) {
-  uint32_t hash = MAP_HASH(key, len);
+  uint32_t hash = HMAP_HASH(key, len);
   size_t index = hash % map->capacity;
 
   struct __map_item *item = map->items[index];
   while (item != NULL) {
     if (len == item->key_len && strncmp(key, item->key, len) == 0) {
-      MAP_EVICT_CALLBACK(item->value);
+      HMAP_EVICT_CALLBACK(item->value);
       item->value = value;
-      MAP_FREE(key);
+      HMAP_FREE(key);
       return;
     }
     item = item->next;
   }
 
-  item = MAP_ALLOC(sizeof(struct __map_item));
+  item = HMAP_ALLOC(sizeof(struct __map_item));
   item->key = key;
   item->key_len = len;
   item->value = value;
@@ -195,14 +195,14 @@ static inline void hash_map_set_str(hash_map_t *map, str_t key, T value) {
 
 static inline void hash_map_set(hash_map_t *map, const char *key, T value) {
   size_t len = strlen(key);
-  char *key_copy = MAP_ALLOC(len + 1);
+  char *key_copy = HMAP_ALLOC(len + 1);
   memcpy(key_copy, key, len);
   key_copy[len] = '\0';
   __hash_map_set(map, key_copy, len, value);
 }
 
 static inline T __hash_map_delete(hash_map_t *map, const char *key, size_t len) {
-  uint32_t hash = MAP_HASH(key, len);
+  uint32_t hash = HMAP_HASH(key, len);
   size_t index = hash % map->capacity;
 
   struct __map_item *item = map->items[index];
@@ -216,8 +216,8 @@ static inline T __hash_map_delete(hash_map_t *map, const char *key, size_t len) 
       }
 
       T value = item->value;
-      MAP_FREE(item->key);
-      MAP_FREE(item);
+      HMAP_FREE(item->key);
+      HMAP_FREE(item);
       map->size--;
       return value;
     }
@@ -225,7 +225,7 @@ static inline T __hash_map_delete(hash_map_t *map, const char *key, size_t len) 
     item = item->next;
   }
 
-  return (T)MAP_ERRVAL;
+  return (T)HMAP_ERRVAL;
 }
 
 static inline T hash_map_delete(hash_map_t *map, const char *key) {
@@ -237,9 +237,9 @@ static inline T hash_map_delete_cstr(hash_map_t *map, cstr_t key) {
 }
 
 #undef T
-#undef MAP_ALLOC
-#undef MAP_FREE
-#undef MAP_LOAD_FACTOR
-#undef MAP_DEFAULT_SIZE
+#undef HMAP_ALLOC
+#undef HMAP_FREE
+#undef HMAP_LOAD_FACTOR
+#undef HMAP_DEFAULT_SIZE
 
 #endif
