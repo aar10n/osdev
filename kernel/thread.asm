@@ -26,11 +26,10 @@
 ; thread offsets
 %define THREAD_ID        0x00
 %define THREAD_CTX       0x08
-%define THREAD_META_CTX  0x10
-%define THREAD_PROCESS   0x18
-%define THREAD_FS_BASE   0x20
-%define THREAD_KERNEL_SP 0x28
-%define THREAD_USER_SP   0x30
+%define THREAD_PROCESS   0x10
+%define THREAD_FS_BASE   0x18
+%define THREAD_KERNEL_SP 0x20
+%define THREAD_USER_SP   0x28
 
 ; tls offsets
 %define TLS_BASE_ADDR    0x00
@@ -105,6 +104,8 @@ thread_switch:
   mov [rdx + CTX_R13], r13
   mov [rdx + CTX_R14], r14
   mov [rdx + CTX_R15], r15
+
+  ; TODO: save extended registers and floating point state
 
   pop qword [rdx + CTX_RFLAGS] ; rflags
   pop qword [rdx + CTX_RIP]    ; rip

@@ -5,22 +5,22 @@
 #include <kernel/process.h>
 
 #include <kernel/mm.h>
+#include <kernel/fs.h>
 #include <kernel/sched.h>
 #include <kernel/mutex.h>
 #include <kernel/thread.h>
-#include <kernel/signal.h>
 #include <kernel/loader.h>
-#include <kernel/fs.h>
-
+#include <kernel/signal.h>
 #include <kernel/string.h>
 #include <kernel/printf.h>
 #include <kernel/panic.h>
-#include <bitmap.h>
-#include <atomic.h>
 
 #include <kernel/cpu/cpu.h>
 #include <kernel/debug/debug.h>
 #include <kernel/vfs/file.h>
+
+#include <bitmap.h>
+#include <atomic.h>
 
 // #define PROCESS_DEBUG
 #ifdef PROCESS_DEBUG
@@ -33,19 +33,6 @@ static bitmap_t *pid_nums = NULL;
 static spinlock_t pid_nums_lock;
 static process_t **ptable = NULL;
 static size_t ptable_size = 0;
-
-static inline int ptr_list_len(const uintptr_t *list) {
-  if (list == NULL) {
-    return 0;
-  }
-
-  int count = 0;
-  while (*list) {
-    list++;
-    count++;
-  }
-  return count;
-}
 
 pid_t alloc_pid() {
   if (pid_nums == NULL) {
@@ -70,16 +57,16 @@ noreturn void *root_process_wrapper(void *root_fn) {
 //
 
 process_t *process_alloc(pid_t pid, pid_t ppid, void *(start_routine)(void *), void *arg) {
-  process_t *process = kmalloc(sizeof(process_t));
-  memset(process, 0, sizeof(process_t));
-
+  process_t *process = kmallocz(sizeof(process_t));
   process->pid = pid;
   process->ppid = ppid;
   process->address_space = PERCPU_ADDRESS_SPACE;
-
-  process->num_threads = 1;
-  process->uid = -1;
-  process->gid = -1;
+  if (PERCPU_PROCESS != NULL) {
+    process->uid = PERCPU_PROCESS->uid;
+    process->gid = PERCPU_PROCESS->gid;
+    process->euid = process->uid;
+    process->egid = process->gid;
+  }
   process->pwd = fs_root_getref();
   process->files = ftable_alloc();
   spin_init(&process->lock);
@@ -91,7 +78,6 @@ process_t *process_alloc(pid_t pid, pid_t ppid, void *(start_routine)(void *), v
     // duplicate it because debug_function_name returns a non-owning string
     main->name = strdup(func_name);
   }
-
   process->main = main;
 
   LIST_INIT(&process->threads);
@@ -187,12 +173,22 @@ int process_execve(const char *path, char *const argv[], char *const envp[]) {
   }
 
   thread_t *thread = PERCPU_THREAD;
-  if (thread->user_stack != NULL) {
-    vmap_free(thread->user_stack);
-  }
+  kassert(thread->user_stack == NULL);
 
   thread->user_stack = prog.stack;
   thread->user_sp = prog.sp;
+
+  vm_print_address_space();
+
+  // allocate a virtual region for the processes data segment.
+  // the size of this region (0 initially) determines the brk.
+  size_t rsvd = SIZE_16GB; // this is the max brk
+  vm_mapping_t *data_vm = vmap_anon(rsvd, prog.end, 0, VM_WRITE|VM_USER|VM_FIXED, "data");
+  if (data_vm == NULL) {
+    panic("error: failed to allocate data segment");
+  }
+  PERCPU_PROCESS->data_seg = data_vm;
+
   sysret((uintptr_t) prog.entry, (uintptr_t) prog.sp);
 }
 
@@ -254,4 +250,60 @@ void proc_print_thread_stats(process_t *proc) {
     kprintf("\t\ttotal_time=%llu, sched_count=%zu, preempt_count=%zu, sleep_count=%zu, yield_count=%zu\n",
             stats->total_time, stats->sched_count, stats->preempt_count, stats->sleep_count, stats->yield_count);
   }
+}
+
+// MARK: Syscalls
+
+DEFINE_SYSCALL(brk, void *, void *addr) {
+  vm_mapping_t *vm = PERCPU_PROCESS->data_seg;
+  uintptr_t orig_brk = vm->address + vm->size;
+  uintptr_t new_brk = align((uintptr_t)addr, PAGE_SIZE);
+  if (!vm_mapping_contains(vm, new_brk)) {
+    return (void *) orig_brk;
+  }
+
+  size_t new_size = new_brk - vm->address;
+  if (vm_resize(vm, new_size, false) < 0) {
+    return (void *) orig_brk;
+  }
+
+  return (void *) new_brk;
+}
+
+DEFINE_SYSCALL(getpid, pid_t) {
+  return PERCPU_PROCESS->pid;
+}
+
+DEFINE_SYSCALL(getuid, uid_t) {
+  return PERCPU_PROCESS->uid;
+}
+
+DEFINE_SYSCALL(getgid, gid_t) {
+  return PERCPU_PROCESS->gid;
+}
+
+DEFINE_SYSCALL(setuid, int, uid_t uid) {
+  PERCPU_PROCESS->euid = uid;
+  return 0;
+}
+
+DEFINE_SYSCALL(setgid, int, gid_t gid) {
+  PERCPU_PROCESS->egid = gid;
+  return 0;
+}
+
+DEFINE_SYSCALL(geteuid, uid_t) {
+  return PERCPU_PROCESS->euid;
+}
+
+DEFINE_SYSCALL(getegid, gid_t) {
+  return PERCPU_PROCESS->egid;
+}
+
+DEFINE_SYSCALL(getppid, pid_t) {
+  return PERCPU_PROCESS->ppid;
+}
+
+DEFINE_SYSCALL(set_tid_address, pid_t, int *tidptr) {
+  return PERCPU_THREAD->tid;
 }

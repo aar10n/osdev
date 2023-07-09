@@ -7,11 +7,17 @@
 #include <kernel/cpu/idt.h>
 #include <kernel/device/apic.h>
 
+#include <kernel/mm.h>
+#include <kernel/syscall.h>
 #include <kernel/string.h>
 #include <kernel/panic.h>
 #include <kernel/printf.h>
-#include <kernel/syscall.h>
-#include <kernel/mm.h>
+
+// prctl.h bits
+#define ARCH_SET_GS			0x1001
+#define ARCH_SET_FS			0x1002
+#define ARCH_GET_FS			0x1003
+#define ARCH_GET_GS			0x1004
 
 #define PERCPU_CPUID (PERCPU_CPU_INFO->cpuid_bits)
 
@@ -379,8 +385,6 @@ void cpu_print_cpuid() {
   kprintf("  nx: %d\n", cpuid_query_bit(CPUID_BIT_NX));
 }
 
-//
-
 void cpu_disable_write_protection() {
   uint64_t cr0 = __read_cr0();
   __write_cr0(cr0 & ~CPU_CR0_WP);
@@ -389,4 +393,27 @@ void cpu_disable_write_protection() {
 void cpu_enable_write_protection() {
   uint64_t cr0 = __read_cr0();
   __write_cr0(cr0 | CPU_CR0_WP);
+}
+
+//
+
+DEFINE_SYSCALL(arch_prctl, int, int code, unsigned long arg) {
+  kprintf("arch_prctl(code = %d, addr = %p)\n", code, arg);
+  switch (code) {
+    case ARCH_SET_GS:
+      cpu_write_kernel_gsbase(arg);
+      break;
+    case ARCH_SET_FS:
+      cpu_write_fsbase(arg);
+      break;
+    case ARCH_GET_FS:
+      *(unsigned long *)(arg) = cpu_read_fsbase();
+      break;
+    case ARCH_GET_GS:
+      *(unsigned long *)(arg) = cpu_read_kernel_gsbase();
+      break;
+    default:
+      return -EINVAL;
+  }
+  return 0;
 }

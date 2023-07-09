@@ -15,6 +15,7 @@
 #define PROCESS_LOCK(proc) (spin_lock(&(proc)->lock))
 #define PROCESS_UNLOCK(proc) (spin_unlock(&(proc)->lock))
 
+struct vm_mapping;
 typedef struct thread thread_t;
 typedef struct address_space address_space_t;
 typedef struct ventry ventry_t;
@@ -29,17 +30,16 @@ typedef struct process {
   address_space_t *address_space; // address space
   // !!! DO NOT CHANGE ABOVE HERE !!!
   // assembly code in thread.asm accesses these fields using known offsets
-
   uid_t uid;                      // user id
   gid_t gid;                      // group id
+  uid_t euid;                     // effective user id
+  gid_t egid;                     // effective group id
   ventry_t *pwd;                  // working directory reference
   ftable_t *files;                // open file table
   size_t num_threads;             // number of threads
   spinlock_t lock;                // process lock
 
-  mutex_t sig_mutex;              // signal mutex
-  sig_handler_t **sig_handlers;   // signal handlers
-  thread_t **sig_threads;         // signal handling threads
+  struct vm_mapping *data_seg;    // data segment
 
   thread_t *main;                 // main thread
   LIST_HEAD(thread_t) threads;    // process threads (group)

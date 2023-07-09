@@ -111,37 +111,15 @@ noreturn void root() {
 
   //////////////////////////////////////////
 
-  vm_mapping_t *vm = vmap_anon(SIZE_1GB, 0, 0, VM_WRITE|VM_USER, "data");
-  vm_print_address_space();
-  if (vm_resize(vm, SIZE_16KB, false) != 0) {
-    panic("failed to resize mapping");
-  }
-  vm_print_address_space();
+  mkdir("/dev");
+  mknod("/dev/rd0", 0777|S_IFBLK, makedev(1, 0));
 
-  char *ptr = (void *) vm->address;
-  kprintf("write 1\n");
-  ptr[PAGES_TO_SIZE(0)] = 'a';
-  kprintf("write 2\n");
-  ptr[PAGES_TO_SIZE(1)] = 'b';
-  kprintf("write 3\n");
-  ptr[PAGES_TO_SIZE(3)] = 'c';
+  mkdir("/initrd");
+  mount("/dev/rd0", "/initrd", "initrd", 0);
+  ls("/initrd");
 
-  if (vm_resize(vm, SIZE_1MB, false) != 0) {
-    panic("failed to resize mapping");
-  }
-
-  kprintf("write 4\n");
-  ptr[PAGES_TO_SIZE(17)] = 'd';
-
-  // mkdir("/dev");
-  // mknod("/dev/rd0", 0777|S_IFBLK, makedev(1, 0));
-  //
-  // mkdir("/initrd");
-  // mount("/dev/rd0", "/initrd", "initrd", 0);
-  // ls("/initrd");
-  //
-  // char *const args[] = {"/initrd/sbin/init", "hello", "world"};
-  // process_execve("/initrd/sbin/init", args, NULL);
+  char *const args[] = {"/initrd/sbin/init", "hello", "world"};
+  process_execve("/initrd/sbin/init", args, NULL);
 
   //////////////////////////////////////////
 

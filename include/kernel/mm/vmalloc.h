@@ -43,6 +43,7 @@ int vm_update(vm_mapping_t *vm, size_t off, size_t len, uint32_t prot_flags);
 page_t *vm_getpage(vm_mapping_t *vm, size_t off, bool cow);
 int vm_putpages(vm_mapping_t *vm, page_t *pages, size_t off);
 uintptr_t vm_mapping_to_phys(vm_mapping_t *vm, uintptr_t virt_addr);
+bool vm_mapping_contains(vm_mapping_t *vm, uintptr_t virt_addr);
 
 vm_mapping_t *vm_get_mapping(uintptr_t virt_addr);
 uintptr_t vm_virt_to_phys(uintptr_t virt_addr);

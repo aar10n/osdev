@@ -7,13 +7,15 @@
 
 #include <kernel/types.h>
 #include <kernel/errno.h>
-#include <boot.h>
+#include <bits/syscall.h>
 
 #define __PER_CPU_BASE__
 #include <kernel/cpu/per_cpu.h>
 #undef __PER_CPU_BASE__
 
+#include <boot.h>
 #include <limits.h>
+#include <macros.h>
 
 //
 // General Definitions
@@ -178,6 +180,13 @@
  * kernel or spawn additional processes.
  */
 #define MODULE_INIT(fn) static __attribute__((section(".init_array.module"))) void (*__do_module_init_ ## fn)() = fn
+
+/**
+ * Defines a system call function. This has the effect of overriding the default stub.
+ */
+#define DEFINE_SYSCALL(name, ret_type, ...) \
+  static_assert(SYS_ ##name >= 0); \
+  ret_type sys_ ##name(MACRO_JOIN(__VA_ARGS__))
 
 //
 // Global Symbols

@@ -992,7 +992,7 @@ address_space_t *fork_address_space() {
 }
 
 //
-// MARK: vmap api
+// MARK: Vmap API
 //
 
 vm_mapping_t *vmap(enum vm_type type, uintptr_t hint, size_t size, size_t vm_size, uint32_t vm_flags, const char *name, void *arg) {
@@ -1411,6 +1411,11 @@ uintptr_t vm_mapping_to_phys(vm_mapping_t *vm, uintptr_t virt_addr) {
   unreachable;
 }
 
+bool vm_mapping_contains(vm_mapping_t *vm, uintptr_t virt_addr) {
+  interval_t j = intvl(virt_addr, virt_addr + 1);
+  return contains(mapping_interval(vm), j);
+}
+
 //
 
 vm_mapping_t *vm_get_mapping(uintptr_t virt_addr) {
@@ -1439,7 +1444,7 @@ uintptr_t vm_virt_to_phys(uintptr_t virt_addr) {
 }
 
 //
-// MARK: vmalloc api
+// MARK: Vmalloc API
 //
 
 static vm_mapping_t *vmalloc_internal(size_t size, uint32_t vm_flags, const char *name) {

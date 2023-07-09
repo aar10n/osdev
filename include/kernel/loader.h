@@ -18,8 +18,11 @@ typedef struct auxv {
 } auxv_t;
 
 typedef struct program {
-  vm_mapping_t *stack;
+  uintptr_t base;
   uintptr_t entry;
+  size_t end;
+
+  vm_mapping_t *stack;
   uintptr_t sp;
 } program_t;
 

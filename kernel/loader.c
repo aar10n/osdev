@@ -18,6 +18,7 @@ typedef struct elf_program {
   void *file;
   uintptr_t base;
   uintptr_t entry;
+  uintptr_t end;
 
   uintptr_t phdr;
   size_t phnum;
@@ -61,21 +62,6 @@ static inline uint64_t elf_align_down(uint64_t value, uint64_t align) {
     return value;
   }
   return align_down(value, align);
-}
-
-static inline const char *elf_get_aux_type_str(size_t typ) {
-  switch (typ) {
-    case AT_NULL: return "AT_NULL";
-    case AT_PHDR: return "AT_PHDR";
-    case AT_PHENT: return "AT_PHENT";
-    case AT_PHNUM: return "AT_PHNUM";
-    case AT_PAGESZ: return "AT_PAGESZ";
-    case AT_BASE: return "AT_BASE";
-    case AT_ENTRY: return "AT_ENTRY";
-    case AT_UID: return "AT_UID";
-    case AT_GID: return "AT_GID";
-    default: return "other";
-  }
 }
 
 static inline bool is_elf_magic(Elf64_Ehdr *elf) {
@@ -195,6 +181,7 @@ int elf_load_image(elf_program_t *prog, void *buf, size_t len, uint32_t e_type) 
     free_pages(pages);
     return -ENOMEM;
   }
+  prog->end = vm->address + image_size;
 
   // load each loadable segment
   Elf64_Phdr *phdr = offset_ptr(ehdr, ehdr->e_phoff);
@@ -256,7 +243,7 @@ int elf_load_file(elf_program_t *prog, const char *path, uint32_t e_type) {
 
   // TODO: we should load the shared libc into kernel space and then
   //       mmap it into user space
-  void *buffer = vmalloc_n(stat.st_size, VM_USER, path);
+  void *buffer = vmalloc(stat.st_size, VM_USER);
   // read the file into memory
   ssize_t nread = fs_read(fd, buffer, stat.st_size);
   if (nread < 0) {
@@ -340,7 +327,7 @@ int load_executable(const char *path, char *const argp[], char *const envp[], pr
 
   // allocate and setup the stack
   size_t stack_size = USER_STACK_SIZE + (info_size > 0 ? align(info_size, PAGE_SIZE) : 0);
-  uintptr_t stack_base = (uintptr_t) vmalloc(stack_size, VM_WRITE | VM_STACK | VM_USER);
+  uintptr_t stack_base = (uintptr_t) vmalloc_n(stack_size, VM_WRITE | VM_STACK | VM_USER, "stack");
   if (stack_base == 0) {
     return -ENOMEM;
   }
@@ -361,8 +348,10 @@ int load_executable(const char *path, char *const argp[], char *const envp[], pr
   // aux vectors
   uintptr_t sp = stack_base + USER_STACK_SIZE;
   PUSH_STACK(sp, AUX(AT_NULL, 0));
-  PUSH_STACK(sp, AUX(AT_GID, getgid()));
-  PUSH_STACK(sp, AUX(AT_UID, getuid()));
+  PUSH_STACK(sp, AUX(AT_UID, PERCPU_PROCESS->uid));
+  PUSH_STACK(sp, AUX(AT_GID, PERCPU_PROCESS->gid));
+  PUSH_STACK(sp, AUX(AT_EUID, PERCPU_PROCESS->euid));
+  PUSH_STACK(sp, AUX(AT_EGID, PERCPU_PROCESS->egid));
   PUSH_STACK(sp, AUX(AT_ENTRY, elf_prog.entry));
   if (elf_prog.interp) {
     PUSH_STACK(sp, AUX(AT_BASE, elf_prog.interp->base));
@@ -388,19 +377,8 @@ int load_executable(const char *path, char *const argp[], char *const envp[], pr
   // argument count
   PUSH_STACK(sp, argc);
 
-  // {
-  //   size_t *p = (void *) sp;
-  //
-  //   int c = (int) *p;
-  //   char **argv = (void *)(p+1);
-  //
-  //   int i = 0;
-  //   for (i=c+1; argv[i]; i++);
-  //   auxv_t *auxv = (void *)(argv+i+1);
-  // }
-
-  program->stack = vm_get_mapping(stack_base);
-  program->sp = sp;
+  program->base = elf_prog.base;
+  program->end = elf_prog.end;
   if (elf_prog.interp) {
     program->entry = elf_prog.interp->entry;
     kfree(elf_prog.interp->path);
@@ -408,5 +386,7 @@ int load_executable(const char *path, char *const argp[], char *const envp[], pr
   } else {
     program->entry = elf_prog.entry;
   }
+  program->stack = vm_get_mapping(stack_base);
+  program->sp = sp;
   return 0;
 }

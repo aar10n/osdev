@@ -55,19 +55,10 @@ typedef struct thread_ctx {
   uint64_t ss;     // 0x50
 } thread_ctx_t;
 
-typedef struct thread_meta_ctx {
-  thread_ctx_t ctx;             // thread contex
-  uintptr_t kernel_sp;          // kernel stack pointer
-  uintptr_t user_sp;            // user stack pointer
-  thread_status_t status;       // thread status
-  int errno;                    // thread local errno
-} thread_meta_ctx_t;
-
 typedef struct thread {
   id_t tid;                     // thread id
   uint32_t reserved;            // reserved
   thread_ctx_t *ctx;            // thread context
-  thread_meta_ctx_t *mctx;      // thread meta context
   process_t *process;           // owning process
   uintptr_t fs_base;            // fs base address
   uintptr_t kernel_sp;          // kernel stack pointer
@@ -101,8 +92,8 @@ typedef struct thread {
   LIST_ENTRY(thread_t) list;    // generic thread list (used by scheduler, mutex, cond, etc)
 } thread_t;
 static_assert(offsetof(thread_t, tid) == 0x00);
-static_assert(offsetof(thread_t, process) == 0x18);
-static_assert(offsetof(thread_t, user_sp) == 0x30);
+static_assert(offsetof(thread_t, process) == 0x10);
+static_assert(offsetof(thread_t, user_sp) == 0x28);
 
 thread_t *thread_alloc(id_t tid, void *(start_routine)(void *), void *arg, bool user);
 thread_t *thread_copy(thread_t *other);

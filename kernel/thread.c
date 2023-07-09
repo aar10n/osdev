@@ -96,15 +96,10 @@ thread_t *thread_alloc(id_t tid, void *(start_routine)(void *), void *arg, bool 
   ctx->rflags = DEFAULT_RFLAGS;
   ctx->rsp = kernel_sp;
 
-  // create thread meta context
-  thread_meta_ctx_t *mctx = kmallocz(sizeof(thread_meta_ctx_t));
-  memset(mctx, 0, sizeof(thread_meta_ctx_t));
-
   sched_stats_t *stats = kmallocz(sizeof(sched_stats_t));
 
   thread->tid = tid;
   thread->ctx = ctx;
-  thread->mctx = mctx;
   thread->fs_base = 0;
   thread->flags = F_THREAD_CREATED;
   thread->kernel_sp = kernel_sp;
@@ -121,7 +116,6 @@ thread_t *thread_alloc(id_t tid, void *(start_routine)(void *), void *arg, bool 
 
   spin_init(&thread->lock);
   mutex_init(&thread->mutex, MUTEX_LOCKED);
-  cond_init(&thread->data_ready, 0);
   return thread;
 }
 
@@ -336,8 +330,7 @@ int thread_alloc_stack(thread_t *thread, bool user) {
   kassert(thread->user_stack == NULL);
 
   uintptr_t user_sp = 0;
-  page_t *stack = create_stack(&user_sp, user);
-  thread->user_stack = stack;
+  thread->user_stack = create_stack(&user_sp, user);
   thread->user_sp = user_sp;
   return 0;
 }
