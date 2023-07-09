@@ -12,40 +12,31 @@
 
 typedef page_t *(*vm_getpage_t)(struct vm_mapping *vm, size_t off, uint32_t vm_flags, void *data);
 
-/**
- * vm_file represents a dynamically loaded region of data.
- * File mappings initially start empty and are populated on demand by the
- * get_page function when accesses within the region cause a page fault.
- * vm_files can also be accessed and populated through the vm_getpage and
- * vm_putpage functions.
- */
-typedef struct vm_file {
-  size_t full_size;   // size of the whole file
-  size_t mapped_size; // size of the mapped part of the file
-  page_t **pages;     // array of pointers to pages
+typedef struct vm_anon {
+  page_t **pages;         // array of pointers to backing pages
+  size_t capacity;        // capacity of the pages array
+  size_t length;          // length of the pages array
 
-  vm_getpage_t get_page;
-  void *data;
-} vm_file_t;
-
+  size_t mapped;          // number of pages mapped
+  size_t pg_size;         // size of each page
+  vm_getpage_t get_page;  // function to get a page
+  void *data;             // get_page data
+} vm_anon_t;
 
 void init_address_space();
 void init_ap_address_space();
 uintptr_t make_ap_page_tables();
 address_space_t *fork_address_space();
 
-vm_file_t *vm_file_alloc(size_t size, vm_getpage_t fn, void *data);
-void vm_file_free(vm_file_t *file);
-
 // virtual memory api
 //
 
-vm_mapping_t *vmap(enum vm_type type, uintptr_t hint, size_t size, uint32_t vm_flags, const char *name, void *arg);
+vm_mapping_t *vmap(enum vm_type type, uintptr_t hint, size_t size, size_t vm_size, uint32_t vm_flags, const char *name, void *arg);
 void vmap_free(vm_mapping_t *vm);
 vm_mapping_t *vmap_rsvd(uintptr_t hint, size_t size, uint32_t vm_flags, const char *name);
 vm_mapping_t *vmap_phys(uintptr_t phys_addr, uintptr_t hint, size_t size, uint32_t vm_flags, const char *name);
 vm_mapping_t *vmap_pages(page_t *pages, uintptr_t hint, size_t size, uint32_t vm_flags, const char *name);
-vm_mapping_t *vmap_file(vm_file_t *file, uintptr_t hint, size_t size, uint32_t vm_flags, const char *name);
+vm_mapping_t *vmap_anon(size_t vm_size, uintptr_t hint, size_t size, uint32_t vm_flags, const char *name);
 
 int vm_resize(vm_mapping_t *vm, size_t new_size, bool allow_move);
 int vm_update(vm_mapping_t *vm, size_t off, size_t len, uint32_t prot_flags);

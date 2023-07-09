@@ -10,61 +10,13 @@
 #define ASSERT(x) kassert(x)
 #define DPRINTF(fmt, ...) kprintf("memfile: %s: " fmt, __func__, ##__VA_ARGS__)
 
-// called when a fault occurs in an unmapped part of a memfile
-static page_t *memfile_get_page(vm_mapping_t *vm, size_t off, uint32_t vm_flags, void *data) {
-  memfile_t *memf = data;
-  if (off >= memf->size) {
-    return NULL;
-  }
-
-  // allocate a new page
-  page_t *page = alloc_pages_size(1, vm_flags_to_size(vm_flags));
-  if (page == NULL) {
-    DPRINTF("failed to allocate page\n");
-    return NULL;
-  }
-  return page;
-}
-
 //
 
 memfile_t *memfile_alloc(size_t size) {
   memfile_t *memf = kmallocz(sizeof(memfile_t));
   memf->size = size;
 
-  vm_file_t *file = vm_file_alloc(size, memfile_get_page, memf);
-  vm_mapping_t *vm = vmap_file(file, 0, size, VM_WRITE, "memfile");
-  if (vm == NULL) {
-    DPRINTF("failed to allocate vm mapping\n");
-    vm_file_free(file);
-    kfree(memf);
-    return NULL;
-  }
-  memf->vm = vm;
-  return memf;
-}
-
-memfile_t *memfile_alloc_pages(size_t size, page_t *pages) {
-  memfile_t *memf = memfile_alloc(size);
-  if (memf == NULL) {
-    return NULL;
-  }
-
-  vm_mapping_t *vm = memf->vm;
-  if (vm_putpages(vm, pages, 0) < 0) {
-    DPRINTF("failed to map pages into memfile\n");
-    memfile_free(memf);
-    return NULL;
-  }
-  return memf;
-}
-
-memfile_t *memfile_alloc_custom(size_t size, vm_getpage_t getpage) {
-  memfile_t *memf = kmallocz(sizeof(memfile_t));
-  memf->size = size;
-
-  vm_file_t *file = vm_file_alloc(size, getpage, memf);
-  vm_mapping_t *vm = vmap_file(file, 0, size, VM_WRITE, "memfile");
+  vm_mapping_t *vm = vmap_anon(SIZE_1GB, 0, size, VM_WRITE, "memfile");
   if (vm == NULL) {
     DPRINTF("failed to allocate vm mapping\n");
     kfree(memf);

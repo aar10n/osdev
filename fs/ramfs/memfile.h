@@ -19,8 +19,6 @@ typedef struct memfile {
 
 // memfile api
 memfile_t *memfile_alloc(size_t size);
-memfile_t *memfile_alloc_pages(size_t size, page_t *pages);
-memfile_t *memfile_alloc_custom(size_t size, vm_getpage_t getpage);
 void memfile_free(memfile_t *memf);
 int memfile_fallocate(memfile_t *memf, size_t newsize);
 ssize_t memfile_read(memfile_t *memf, size_t off, kio_t *kio);

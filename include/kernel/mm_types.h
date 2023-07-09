@@ -30,7 +30,7 @@ struct frame_allocator;
 struct page;
 struct address_space;
 struct vm_mapping;
-struct vm_file;
+struct vm_anon;
 
 struct intvl_tree;
 
@@ -97,7 +97,7 @@ enum vm_type {
   VM_TYPE_RSVD, // reserved memory
   VM_TYPE_PHYS, // direct physical mapping
   VM_TYPE_PAGE, // mapped pages
-  VM_TYPE_FILE, // on-demand mapped file
+  VM_TYPE_ANON, // on-demand page mapping
   VM_MAX_TYPE,
 };
 
@@ -118,7 +118,7 @@ typedef struct vm_mapping {
   union {
     uintptr_t vm_phys;
     struct page *vm_pages;
-    struct vm_file *vm_file;
+    struct vm_anon *vm_anon;
   };
 
   LIST_ENTRY(struct vm_mapping) list;

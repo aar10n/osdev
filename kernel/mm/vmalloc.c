@@ -29,7 +29,7 @@
 // they are used as a starting point for the kernel when searching for
 // a free region
 #define HINT_USER_DEFAULT   0x0000000040000000ULL // for VM_USER
-#define HINT_USER_MALLOC    0x0000010000000000ULL // for VM_USER|VM_MALLOC
+#define HINT_USER_MALLOC    0x0000040000000000ULL // for VM_USER|VM_MALLOC
 #define HINT_USER_STACK     0x0000800000000000ULL // for VM_USER|VM_STACK
 #define HINT_KERNEL_DEFAULT 0xFFFFC00000000000ULL // for no flags
 #define HINT_KERNEL_MALLOC  0xFFFFC01000000000ULL // for VM_MALLOC
@@ -47,6 +47,23 @@ __used void swap_address_space(address_space_t *new_space) {
   set_current_pgtable(new_space->page_table);
   PERCPU_SET_ADDRESS_SPACE(new_space);
 }
+
+// generic fault handler that allocates and returns a new page
+static page_t *vm_fault_alloc_page(vm_mapping_t *vm, size_t off, uint32_t vm_flags, void *data) {
+  vm_anon_t *anon = data;
+  if (off >= vm->size) {
+    return NULL;
+  }
+
+  DPRINTF("vm_fault_alloc_page: vm={:str} off=%zu vm_flags=%x\n", &vm->name, off, vm_flags);
+  page_t *page = alloc_pages_size(1, vm_flags_to_size(vm_flags));
+  if (page == NULL) {
+    DPRINTF("failed to allocate page\n");
+    return NULL;
+  }
+  return page;
+}
+
 
 static inline const char *prot_to_debug_str(uint32_t vm_flags) {
   if ((vm_flags & VM_PROT_MASK) == 0)
@@ -122,6 +139,148 @@ static inline uintptr_t choose_best_hint(address_space_t *space, uintptr_t hint,
       return HINT_KERNEL_MALLOC;
     return HINT_KERNEL_DEFAULT;
   }
+}
+
+static inline void *array_alloc(size_t count, size_t size) {
+  size_t total = count * size;
+  void *ptr;
+  if (total >= PAGE_SIZE) {
+    ptr = vmalloc(total, VM_WRITE);
+    memset(ptr, 0, align(total, PAGE_SIZE));
+  } else {
+    ptr = kmallocz(total);
+  }
+  if (ptr == NULL)
+    panic("array_alloc: failed to allocate %zu bytes\n", total);
+
+
+  return ptr;
+}
+
+static inline void *array_realloc(void *ptr, size_t old_count, size_t new_count, size_t size) {
+  size_t old_total = old_count * size;
+  size_t new_total = new_count * size;
+  if (old_total >= PAGE_SIZE && new_total >= PAGE_SIZE &&
+      SIZE_TO_PAGES(old_total) == SIZE_TO_PAGES(new_total)) {
+    // no need to reallocate
+    return ptr;
+  }
+
+  void *new_ptr;
+  if (new_total >= PAGE_SIZE) {
+    new_ptr = vmalloc(new_total, VM_WRITE);
+    memset(new_ptr + old_total, 0, align(new_total, PAGE_SIZE) - old_total);
+  } else {
+    new_ptr = kmalloc(new_total);
+    memset(new_ptr + old_total, 0, new_total - old_total);
+  }
+  if (new_ptr == NULL)
+    panic("array_realloc: failed to allocate %zu bytes\n", new_total);
+
+  memcpy(new_ptr, ptr, old_total);
+  if (old_total >= PAGE_SIZE) {
+    vfree(ptr);
+  } else {
+    kfree(ptr);
+  }
+  return new_ptr;
+}
+
+static inline void array_free(void *ptr, size_t count, size_t size) {
+  size_t total = count * size;
+  if (total >= PAGE_SIZE) {
+    vfree(ptr);
+  } else {
+    kfree(ptr);
+  }
+}
+
+static vm_anon_t *anon_struct_alloc(vm_anon_t *anon, size_t size, size_t pgsize) {
+  if (anon == NULL) {
+    anon = kmallocz(sizeof(vm_anon_t));
+    anon->pg_size = pgsize;
+    anon->get_page = vm_fault_alloc_page;
+    anon->data = anon;
+  }
+
+  if (anon->pg_size != pgsize) {
+    panic("anon_struct_alloc: page size mismatch");
+  }
+
+  if (anon->pages == NULL && size == 0) {
+    return anon;
+  }
+
+  size_t new_length = size / pgsize;
+  size_t new_capacity = next_pow2(new_length);
+  DPRINTF("anon_struct_alloc: size=%zu pgsize=%zu new_length=%zu new_capacity=%zu\n", size, pgsize, new_length,
+          new_capacity);
+
+  if (anon->pages == NULL) {
+    anon->pages = array_alloc(new_capacity, sizeof(page_t *));
+    anon->capacity = new_capacity;
+    anon->length = new_length;
+  } else if (new_length > anon->capacity) {
+    anon->pages = array_realloc(anon->pages, anon->capacity, new_capacity, sizeof(page_t *));
+    anon->capacity = new_capacity;
+    anon->length = new_length;
+  } else if (new_length < anon->length) {
+    // only reallocate if the difference is > 1/4 of the current length
+    if (anon->length - new_length > anon->length / 4) {
+      // free any pages in the range that will be removed
+      for (size_t i = new_length; i < anon->length; i++) {
+        if (anon->pages[i] != NULL) {
+          free_pages(anon->pages[i]);
+        }
+      }
+
+      anon->pages = array_realloc(anon->pages, anon->capacity, new_capacity, sizeof(page_t *));
+      anon->capacity = new_capacity;
+      anon->length = new_length;
+    }
+  } else {
+    // no need to reallocate, just update the length
+    anon->length = new_length;
+  }
+  return anon;
+}
+
+static void anon_struct_free(vm_anon_t *anon) {
+  if (anon->pages != NULL) {
+    // free the pages and array
+    for (size_t i = 0; i < anon->length; i++) {
+      if (anon->pages[i] != NULL) {
+        free_pages(anon->pages[i]);
+      }
+    }
+
+    array_free(anon->pages, anon->capacity, sizeof(page_t *));
+    anon->pages = NULL;
+  }
+  kfree(anon);
+}
+
+static int anon_struct_addpage(vm_anon_t *anon, size_t index, page_t *page) {
+  ASSERT(page->flags & PG_HEAD && page->head.count == 1);
+  ASSERT(pg_flags_to_size(page->flags) == anon->pg_size);
+
+  size_t max_size = (index + 1) * anon->pg_size;
+  if (max_size > anon->length * anon->pg_size) {
+    anon_struct_alloc(anon, max_size, anon->pg_size);
+  }
+
+  if (anon->pages[index] != NULL) {
+    panic("anon_struct_addpages: page already mapped at offset %zu", index * anon->pg_size);
+  }
+  anon->pages[index] = page;
+  return 0;
+}
+
+static inline page_t *anon_struct_getpage(vm_anon_t *anon, size_t index) {
+  if (index >= anon->length) {
+    return NULL;
+  }
+  return anon->pages[index];
 }
 
 //
@@ -317,37 +476,44 @@ static page_t *page_split_internal(page_t *pages, size_t off) {
   return curr;
 }
 
-// file type
+// anon type
 
-static void file_map_internal(vm_mapping_t *vm, vm_file_t *file, size_t size, size_t off) {
+static void anon_map_internal(vm_mapping_t *vm, vm_anon_t *anon, size_t size, size_t off) {
   uint32_t pg_flags = vm_flags_to_pg_flags(vm->flags);
   size_t stride = vm_flags_to_size(vm->flags);
   ASSERT(off % stride == 0);
   ASSERT(off + size <= vm->size);
 
-  if (file->pages == NULL) {
-    panic("file_map_internal: file pages not initialized");
+  if (anon->pages == NULL) {
+    return;
   }
 
   size_t count = size / stride;
+  size_t ioff = off / stride;
   uintptr_t ptr = vm->address + off;
   for (size_t i = 0; i < count; i++) {
-    page_t *page = file->pages[i];
-    if (page == NULL) {
-      continue; // ignore holes
-    }
+    if (ioff+i >= anon->length)
+      break;
 
-    if (!(page->flags & PG_PRESENT)) {
-      // the page is owned by the mapping
-      ASSERT(page->mapping == NULL);
-      page->flags &= INTERNAL_PG_FLAGS;
-      page->flags |= pg_flags | PG_PRESENT;
-      page->mapping = vm;
-    }
+    page_t *page = anon->pages[ioff + i];
+    if (page == NULL)
+      continue; // ignore holes
 
     page_t *table_pages = NULL;
     recursive_map_entry(ptr, page->address, pg_flags, &table_pages);
     ptr += stride;
+
+    // the page must be owned by the mapping if updating
+    if (page->mapping == NULL) {
+      // mapping for the first time
+      page->flags &= INTERNAL_PG_FLAGS;
+      page->flags |= pg_flags | PG_PRESENT;
+      page->mapping = vm;
+    } else if (page->mapping == vm) {
+      // updating existing mappings
+      page->flags &= INTERNAL_PG_FLAGS;
+      page->flags |= pg_flags | PG_PRESENT;
+    }
 
     if (table_pages != NULL) {
       page_t *last_page = SLIST_GET_LAST(table_pages, next);
@@ -358,9 +524,9 @@ static void file_map_internal(vm_mapping_t *vm, vm_file_t *file, size_t size, si
   cpu_flush_tlb();
 }
 
-static void file_unmap_internal(vm_mapping_t *vm, size_t size, size_t off) {
-  ASSERT(vm->type == VM_TYPE_FILE);
-  vm_file_t *file = vm->vm_file;
+static void anon_unmap_internal(vm_mapping_t *vm, size_t size, size_t off) {
+  ASSERT(vm->type == VM_TYPE_ANON);
+  vm_anon_t *anon = vm->vm_anon;
   uint32_t pg_flags = vm_flags_to_pg_flags(vm->flags);
   size_t stride = vm_flags_to_size(vm->flags);
   ASSERT(off + size <= vm->size);
@@ -369,14 +535,18 @@ static void file_unmap_internal(vm_mapping_t *vm, size_t size, size_t off) {
   size_t start_index = off / stride;
   size_t max_index = (off + size) / stride;
   for (size_t i = start_index; i < max_index; i++) {
-    page_t *page = file->pages[i];
+    if (i >= anon->length)
+      break;
+
+    page_t *page = anon->pages[i];
     if (page != NULL) {
       recursive_unmap_entry(ptr, page->flags);
-      page->mapping = NULL;
-      file->pages[i] = NULL;
-      free_pages(page);
-
-      file->mapped_size -= stride;
+      if (page->mapping == vm) {
+        page->flags &= INTERNAL_PG_FLAGS;
+        page->flags |= pg_flags;
+        page->mapping = NULL;
+        anon->mapped--;
+      }
     }
     ptr += stride;
   }
@@ -384,16 +554,19 @@ static void file_unmap_internal(vm_mapping_t *vm, size_t size, size_t off) {
   cpu_flush_tlb();
 }
 
-static page_t *file_getpage_internal(vm_mapping_t *vm, size_t off) {
-  ASSERT(vm->type == VM_TYPE_FILE);
-  vm_file_t *file = vm->vm_file;
+static page_t *anon_getpage_internal(vm_mapping_t *vm, size_t off) {
+  ASSERT(vm->type == VM_TYPE_ANON);
+  vm_anon_t *anon = vm->vm_anon;
   uint32_t pg_flags = vm_flags_to_pg_flags(vm->flags);
   size_t stride = vm_flags_to_size(vm->flags);
   ASSERT(off <= vm->size);
-  return file->pages[off / stride];
+
+  size_t index = off / stride;
+  ASSERT(index < anon->length);
+  return anon->pages[index];
 }
 
-static void file_putpages_internal(vm_mapping_t *vm, vm_file_t *file, size_t size, size_t off, page_t *pages) {
+static void anon_putpages_internal(vm_mapping_t *vm, vm_anon_t *anon, size_t size, size_t off, page_t *pages) {
   uint32_t pg_flags = vm_flags_to_pg_flags(vm->flags);
   size_t stride = vm_flags_to_size(vm->flags);
   ASSERT(off % stride == 0);
@@ -402,24 +575,26 @@ static void file_putpages_internal(vm_mapping_t *vm, vm_file_t *file, size_t siz
     return;
   }
 
-  uintptr_t ptr = vm->address + off;
   size_t index = off / stride;
+  uintptr_t ptr = vm->address + off;
   while (pages != NULL) {
-    if (file->pages[index] != NULL) {
-      panic("file_putpage_internal: page already mapped at offset %zu [vm={:str}]", index * stride, &vm->name);
+    if (anon_struct_getpage(anon, index) != NULL) {
+      panic("anon_putpage_internal: page already mapped at offset %zu [vm={:str}]", index * stride, &vm->name);
     }
 
     page_t *curr = page_list_remove_head(&pages);
     page_t *table_pages = NULL;
     if (pg_flags_to_size(curr->flags) != stride) {
-      panic("file_putpage_internal: page size does not match vm page size");
+      panic("anon_putpage_internal: page size does not match vm page size");
     }
     recursive_map_entry(ptr, curr->address, pg_flags, &table_pages);
-
-    file->pages[index] = curr;
+    curr->flags &= INTERNAL_PG_FLAGS;
+    curr->flags |= pg_flags | PG_PRESENT;
     curr->mapping = vm;
     ptr += stride;
-    file->mapped_size += stride;
+
+    anon_struct_addpage(anon, index, curr);
+    anon->mapped++;
     index++;
 
     if (table_pages != NULL) {
@@ -646,7 +821,7 @@ static bool move_mapping(vm_mapping_t *vm, size_t newsize) {
 //
 
 static always_inline bool can_handle_fault(vm_mapping_t *vm, uintptr_t fault_addr, uint32_t error) {
-  return vm->type == VM_TYPE_FILE;
+  return vm->type == VM_TYPE_ANON;
 }
 
 void page_fault_handler(uint8_t vector, uint32_t error_code, cpu_irq_stack_t *frame, cpu_registers_t *regs) {
@@ -667,10 +842,10 @@ void page_fault_handler(uint8_t vector, uint32_t error_code, cpu_irq_stack_t *fr
       goto exception;
     }
 
-    DPRINTF("non-present page fault in vm_file [vm={:str},addr=%p]\n", &vm->name, fault_addr);
-    vm_file_t *file = vm->vm_file;
+    DPRINTF("non-present page fault in vm_anon [vm={:str},addr=%p]\n", &vm->name, fault_addr);
     size_t off = fault_addr - vm->address;
-    page_t *page = file->get_page(vm, off, vm->flags, file->data);
+    vm_anon_t *anon = vm->vm_anon;
+    page_t *page = anon->get_page(vm, off, vm->flags, anon->data);
     if (!page) {
       DPRINTF("failed to get non-present page in vm_file [vm={:str},off=%zu]\n", &vm->name, off);
       goto exception;
@@ -678,7 +853,7 @@ void page_fault_handler(uint8_t vector, uint32_t error_code, cpu_irq_stack_t *fr
 
     // map the new page into the file
     size_t size = vm_flags_to_size(vm->flags);
-    file_putpages_internal(vm, vm->vm_file, size, off, page);
+    anon_putpages_internal(vm, anon, size, off, page);
     return; // recover
   }
 
@@ -686,7 +861,7 @@ void page_fault_handler(uint8_t vector, uint32_t error_code, cpu_irq_stack_t *fr
 
 LABEL(exception);
   kprintf("================== !!! Exception !!! ==================\n");
-  kprintf("  Page Fault  - Error: %#b\n", error_code);
+  kprintf("  Page Fault  - Error: %#b (CPU#%d)\n", error_code, PERCPU_ID);
   kprintf("  CPU#%d  -  RIP: %018p    CR2: %018p\n", id, frame->rip, fault_addr);
 
   uintptr_t rip = frame->rip - 8;
@@ -817,52 +992,13 @@ address_space_t *fork_address_space() {
 }
 
 //
-
-vm_file_t *vm_file_alloc(size_t size, vm_getpage_t fn, void *data) {
-  vm_file_t *file = kmalloc(sizeof(vm_file_t));
-  file->full_size = size;
-  file->get_page = fn;
-  file->data = data;
-
-  size_t num_pages = size / PAGE_SIZE;
-  size_t arrsz = num_pages * sizeof(page_t *);
-  if (arrsz >= PAGE_SIZE) {
-    file->pages = vmalloc(arrsz, 0);
-  } else {
-    file->pages = kmalloc(arrsz);
-  }
-  memset(file->pages, 0, arrsz);
-  return file;
-}
-
-void vm_file_free(vm_file_t *file) {
-  size_t num_pages = file->full_size / PAGE_SIZE;
-  size_t arrsz = num_pages * sizeof(page_t *);
-  if (file->pages != NULL) {
-    // free the pages and array
-    for (size_t i = 0; i < num_pages; i++) {
-      if (file->pages[i] != NULL) {
-        free_pages(file->pages[i]);
-      }
-    }
-
-    if (arrsz >= PAGE_SIZE) {
-      vfree(file->pages);
-    } else {
-      kfree(file->pages);
-    }
-    file->pages = NULL;
-  }
-  kfree(file);
-}
-
-//
 // MARK: vmap api
 //
 
-vm_mapping_t *vmap(enum vm_type type, uintptr_t hint, size_t size, uint32_t vm_flags, const char *name, void *arg) {
+vm_mapping_t *vmap(enum vm_type type, uintptr_t hint, size_t size, size_t vm_size, uint32_t vm_flags, const char *name, void *arg) {
   ASSERT(type < VM_MAX_TYPE);
-  if (size == 0) {
+  vm_size = max(vm_size, size);
+  if (vm_size == 0) {
     return NULL;
   }
 
@@ -887,7 +1023,7 @@ vm_mapping_t *vmap(enum vm_type type, uintptr_t hint, size_t size, uint32_t vm_f
   vm_mapping_t *vm = kmallocz(sizeof(vm_mapping_t));
   vm->type = type;
   vm->flags = vm_flags;
-  vm->virt_size = size;
+  vm->virt_size = vm_size;
   vm->size = size;
   spin_init(&vm->lock);
 
@@ -954,7 +1090,7 @@ vm_mapping_t *vmap(enum vm_type type, uintptr_t hint, size_t size, uint32_t vm_f
     case VM_TYPE_RSVD: vm->flags &= ~VM_PROT_MASK; break;
     case VM_TYPE_PHYS: vm->vm_phys = (uintptr_t) arg; break;
     case VM_TYPE_PAGE: vm->vm_pages = (page_t *) arg; break;
-    case VM_TYPE_FILE: vm->vm_file = (vm_file_t *) arg; break;
+    case VM_TYPE_ANON: vm->vm_anon = (vm_anon_t *) arg; break;
     default:
       unreachable;
   }
@@ -989,8 +1125,8 @@ vm_mapping_t *vmap(enum vm_type type, uintptr_t hint, size_t size, uint32_t vm_f
       case VM_TYPE_PAGE:
         page_map_internal(vm, vm->vm_pages, vm->size, 0);
         break;
-      case VM_TYPE_FILE:
-        file_map_internal(vm, vm->vm_file, vm->size,  0);
+      case VM_TYPE_ANON:
+        anon_map_internal(vm, vm->vm_anon, vm->size, 0);
         break;
       default:
         unreachable;
@@ -1018,9 +1154,9 @@ void vmap_free(vm_mapping_t *vm) {
         if (vm->flags & VM_LINKED)
           LIST_NEXT(vm, list);
         break;
-      case VM_TYPE_FILE:
-        file_unmap_internal(vm, vm->size, 0);
-        vm_file_free(vm->vm_file);
+      case VM_TYPE_ANON:
+        anon_unmap_internal(vm, vm->size, 0);
+        anon_struct_free(vm->vm_anon);
         break;
       default:
         unreachable;
@@ -1046,33 +1182,34 @@ void vmap_free(vm_mapping_t *vm) {
 }
 
 vm_mapping_t *vmap_rsvd(uintptr_t hint, size_t size, uint32_t vm_flags, const char *name) {
-  vm_mapping_t *vm = vmap(VM_TYPE_RSVD, hint, size, vm_flags, name, NULL);
+  vm_mapping_t *vm = vmap(VM_TYPE_RSVD, hint, size, size, vm_flags, name, NULL);
   PANIC_IF(!vm, "vmap: failed to make reserved mapping %s\n", name);
   return vm;
 }
 
 vm_mapping_t *vmap_phys(uintptr_t phys_addr, uintptr_t hint, size_t size, uint32_t vm_flags, const char *name) {
-  vm_mapping_t *vm = vmap(VM_TYPE_PHYS, hint, size, vm_flags, name, (void *) phys_addr);
+  vm_mapping_t *vm = vmap(VM_TYPE_PHYS, hint, size, size, vm_flags, name, (void *) phys_addr);
   PANIC_IF(!vm, "vmap: failed to make physical address mapping %s [phys=%p]\n", name, phys_addr);
   return vm;
 }
 
 vm_mapping_t *vmap_pages(page_t *pages, uintptr_t hint, size_t size, uint32_t vm_flags, const char *name) {
-  vm_mapping_t *vm = vmap(VM_TYPE_PAGE, hint, size, vm_flags, name, pages);
+  vm_mapping_t *vm = vmap(VM_TYPE_PAGE, hint, size, size, vm_flags, name, pages);
   PANIC_IF(!vm, "vmap: failed to make pages mapping %s [page=%p]\n", name, pages);
   return vm;
 }
 
-vm_mapping_t *vmap_file(vm_file_t *file, uintptr_t hint, size_t size, uint32_t vm_flags, const char *name) {
-  vm_mapping_t *vm = vmap(VM_TYPE_FILE, hint, size, vm_flags, name, file);
-  PANIC_IF(!vm, "vmap: failed to make file mapping %s [file=%p]\n", name, file);
+vm_mapping_t *vmap_anon(size_t vm_size, uintptr_t hint, size_t size, uint32_t vm_flags, const char *name) {
+  vm_anon_t *anon = anon_struct_alloc(NULL, size, vm_flags_to_size(vm_flags));
+  vm_mapping_t *vm = vmap(VM_TYPE_ANON, hint, size, vm_size, vm_flags, name, anon);
+  PANIC_IF(!vm, "vmap: failed to make anonymous mapping %s\n", name);
   return vm;
 }
 
 //
 
 int vm_resize(vm_mapping_t *vm, size_t new_size, bool allow_move) {
-  if (vm->type != VM_TYPE_PAGE && vm->type != VM_TYPE_FILE) {
+  if (vm->type != VM_TYPE_PAGE && vm->type != VM_TYPE_ANON) {
     kprintf("vm_resize: invalid mapping type %d [name={:str}]\n", vm->type, &vm->name);
     return -1;
   } else if (vm->flags & VM_LINKED || vm->flags & VM_SPLIT) {
@@ -1116,8 +1253,8 @@ LABEL(update_memory);
     size_t off = new_size;
     if (vm->type == VM_TYPE_PAGE) {
       page_unmap_internal(vm, len, off);
-    } else if (vm->type == VM_TYPE_FILE) {
-      file_unmap_internal(vm, len, off);
+    } else if (vm->type == VM_TYPE_ANON) {
+      anon_unmap_internal(vm, len, off);
     }
   }
   return 0;
@@ -1215,8 +1352,8 @@ page_t *vm_getpage(vm_mapping_t *vm, size_t off, bool cow) {
     case VM_TYPE_PAGE:
       page = page_getpage_internal(vm, off);
       break;
-    case VM_TYPE_FILE:
-      page = file_getpage_internal(vm, off);
+    case VM_TYPE_ANON:
+      page = anon_getpage_internal(vm, off);
       break;
     default:
       unreachable;
@@ -1239,8 +1376,8 @@ int vm_putpages(vm_mapping_t *vm, page_t *pages, size_t off) {
 
   if (vm->type == VM_TYPE_PAGE) {
     page_map_internal(vm, pages, size, off);
-  } else if (vm->type == VM_TYPE_FILE) {
-    file_putpages_internal(vm, vm->vm_file, off, size, pages);
+  } else if (vm->type == VM_TYPE_ANON) {
+    anon_putpages_internal(vm, vm->vm_anon, off, size, pages);
   } else {
     panic("vm_putpages: invalid mapping type");
   }
