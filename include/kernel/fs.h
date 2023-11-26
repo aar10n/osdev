@@ -22,8 +22,12 @@ int fs_unmount(const char *path);
 
 int fs_open(const char *path, int flags, mode_t mode);
 int fs_close(int fd);
+ssize_t fs_read_kio(int fd, kio_t *kio);
+ssize_t fs_write_kio(int fd, kio_t *kio);
 ssize_t fs_read(int fd, void *buf, size_t len);
 ssize_t fs_write(int fd, const void *buf, size_t len);
+ssize_t fs_readv(int fd, const struct iovec *iov, int iovcnt);
+ssize_t fs_writev(int fd, const struct iovec *iov, int iovcnt);
 off_t fs_lseek(int fd, off_t offset, int whence);
 
 int fs_opendir(const char *path);

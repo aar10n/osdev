@@ -216,12 +216,12 @@ static inline ssize_t d_write(device_t *device, size_t off, kio_t *kio) {
 }
 
 static inline ssize_t __d_read(device_t *device, size_t off, void *buf, size_t len) {
-  kio_t tmp = kio_new_writeonly(buf, len);
+  kio_t tmp = kio_new_write(buf, len);
   return d_read(device, off, &tmp);
 }
 
 static inline ssize_t __d_write(device_t *device, size_t off, const void *buf, size_t len) {
-  kio_t tmp = kio_new_readonly(buf, len);
+  kio_t tmp = kio_new_read(buf, len);
   return d_write(device, off, &tmp);
 }
 

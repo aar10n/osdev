@@ -90,7 +90,7 @@ static int vresolve_follow(vcache_t *vc, __move ventry_t **veref, int flags, boo
     char linkbuf[PATH_MAX+1] = {0};
     // READ BEGIN
     vn_begin_data_read(vn);
-    kio_t kio = kio_new_writeonly(linkbuf, vn->size);
+    kio_t kio = kio_new_write(linkbuf, vn->size);
     if ((res = vn_readlink(vn, &kio)) < 0) {
       vn_end_data_read(vn);
       goto error;

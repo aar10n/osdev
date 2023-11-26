@@ -320,7 +320,7 @@ LABEL(ret);
   return res;
 }
 
-ssize_t fs_read(int fd, void *buf, size_t len) {
+ssize_t fs_read_kio(int fd, kio_t *kio) {
   ssize_t res;
   file_t *file = ftable_get_file(FTABLE, fd);
   if (file == NULL)
@@ -343,8 +343,7 @@ ssize_t fs_read(int fd, void *buf, size_t len) {
       goto_error(ret_unlock, -ENOTSUP);
 
     // device read
-    kio_t kio = kio_new_writeonly(buf, len);
-    res = d_read(device, file->offset, &kio);
+    res = d_read(device, file->offset, kio);
     if (res < 0) {
       DPRINTF("failed to read device\n");
       goto ret_unlock;
@@ -353,9 +352,8 @@ ssize_t fs_read(int fd, void *buf, size_t len) {
   }
 
   // read the file
-  kio_t kio = kio_new_writeonly(buf, len);
   vn_begin_data_read(vn);
-  res = vn_read(vn, file->offset, &kio);
+  res = vn_read(vn, file->offset, kio);
   vn_end_data_read(vn);
   if (res < 0) {
     DPRINTF("failed to read file\n");
@@ -373,7 +371,7 @@ LABEL(ret);
   return res;
 }
 
-ssize_t fs_write(int fd, const void *buf, size_t len) {
+ssize_t fs_write_kio(int fd, kio_t *kio) {
   ssize_t res;
   file_t *file = ftable_get_file(FTABLE, fd);
   if (file == NULL)
@@ -399,8 +397,7 @@ ssize_t fs_write(int fd, const void *buf, size_t len) {
       goto_error(ret_unlock, -ENOTSUP);
 
     // device write
-    kio_t kio = kio_new_readonly(buf, len);
-    res = d_write(device, file->offset, &kio);
+    res = d_write(device, file->offset, kio);
     if (res < 0) {
       DPRINTF("failed to write device\n");
       goto ret_unlock;
@@ -409,9 +406,8 @@ ssize_t fs_write(int fd, const void *buf, size_t len) {
   }
 
   // write the file
-  kio_t kio = kio_new_readonly(buf, len);
   vn_begin_data_write(vn);
-  res = vn_write(vn, file->offset, &kio);
+  res = vn_write(vn, file->offset, kio);
   vn_end_data_write(vn);
   if (res < 0) {
     DPRINTF("failed to write file\n");
@@ -427,6 +423,34 @@ LABEL(ret_unlock);
 LABEL(ret);
   f_release(&file);
   return res;
+}
+
+ssize_t fs_read(int fd, void *buf, size_t len) {
+  kio_t kio = kio_new_write(buf, len);
+  return fs_read_kio(fd, &kio);
+}
+
+ssize_t fs_write(int fd, const void *buf, size_t len) {
+  kio_t kio = kio_new_read(buf, len);
+  return fs_write_kio(fd, &kio);
+}
+
+ssize_t fs_readv(int fd, const struct iovec *iov, int iovcnt) {
+  if (iovcnt <= 0)
+    return -EINVAL;
+
+  DPRINTF("readv: %d\n", iovcnt);
+  kio_t kio = kio_new_writev(iov, (uint32_t) iovcnt);
+  return fs_read_kio(fd, &kio);
+}
+
+ssize_t fs_writev(int fd, const struct iovec *iov, int iovcnt) {
+  if (iovcnt <= 0)
+    return -EINVAL;
+
+  DPRINTF("writev: %d\n", iovcnt);
+  kio_t kio = kio_new_readv(iov, (uint32_t) iovcnt);
+  return fs_read_kio(fd, &kio);
 }
 
 off_t fs_lseek(int fd, off_t offset, int whence) {
@@ -548,7 +572,7 @@ ssize_t fs_readdir(int fd, void *dirp, size_t len) {
     goto_error(ret, -EBADF); // file is closed
 
   // read the directory
-  kio_t kio = kio_new_writeonly(dirp, len);
+  kio_t kio = kio_new_write(dirp, len);
   vn_begin_data_read(vn);
   res = vn_readdir(vn, file->offset, &kio);
   vn_end_data_read(vn);
@@ -926,7 +950,7 @@ ssize_t fs_readlink(const char *path, char *buf, size_t bufsiz) {
   if ((res = vresolve(vcache, at_ve, cstr_make(path), VR_LNK, &ve)) < 0)
     goto ret;
 
-  kio_t kio = kio_new_writeonly(buf, bufsiz);
+  kio_t kio = kio_new_write(buf, bufsiz);
   vnode_t *vn = VN(ve);
   vn_begin_data_read(vn);
   res = vn_readlink(vn, &kio); // read the link
@@ -959,6 +983,8 @@ DEFINE_SYSCALL(open, int, const char *, int, mode_t) alias("fs_open");
 DEFINE_SYSCALL(close, int, int) alias("fs_close");
 DEFINE_SYSCALL(read, ssize_t, int, void *, size_t) alias("fs_read");
 DEFINE_SYSCALL(write, ssize_t, int, const void *, size_t) alias("fs_write");
+DEFINE_SYSCALL(readv, ssize_t, int, const struct iovec *, int) alias("fs_readv");
+DEFINE_SYSCALL(writev, ssize_t, int, const struct iovec *, int) alias("fs_writev");
 DEFINE_SYSCALL(lseek, off_t, int, off_t, int) alias("fs_lseek");
 DEFINE_SYSCALL(fstat, int, int, struct stat *) alias("fs_fstat");
 DEFINE_SYSCALL(stat, int, const char *, struct stat *) alias("fs_stat");

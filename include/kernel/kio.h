@@ -9,6 +9,13 @@
 #include <kernel/base.h>
 #include <kernel/panic.h>
 
+struct iovec;
+
+typedef enum kio_kind {
+  KIO_BUF,
+  KIO_IOV,
+} kio_kind_t;
+
 typedef enum kio_dir {
   KIO_IN,
   KIO_OUT,
@@ -19,49 +26,84 @@ typedef enum kio_dir {
 /// The kio structure is used to represent a data transfer. It does not
 /// own the underlying buffers.
 typedef struct kio {
-  kio_dir_t dir;     // transfer direction
-  size_t size;       // total size of the transfer
+  kio_kind_t kind;              // the kind of transfer
+  kio_dir_t dir;                // transfer direction
+  size_t size;                  // total size of the transfer
   union {
     struct {
-      void *base;    // buffer base address
-      size_t len;    // buffer length
-      size_t off;    // current buffer offset
+      void *base;               // buffer base address
+      size_t off;               // current buffer offset
     } buf;
+    struct {
+      const struct iovec *arr;  // array of iovecs
+      uint32_t cnt;             // number of iovecs
+      uint32_t idx;             // current iovec index
+      size_t off;               // current iovec offset
+      size_t t_off;             // transfer offset
+    } iov;
   };
 } kio_t;
 
-static inline kio_t kio_new(kio_dir_t dir, void *base, size_t len) {
+static inline kio_t kio_new_write(void *base, size_t len) {
   return (kio_t) {
-    .dir = dir,
-    .size = len,
-    .buf = {
-      .base = base,
-      .len = len,
-      .off = 0,
-    },
-  };
-}
-
-static inline kio_t kio_new_writeonly(void *base, size_t len) {
-  return (kio_t) {
+    .kind = KIO_BUF,
     .dir = KIO_IN,
     .size = len,
     .buf = {
       .base = (void *) base,
-      .len = len,
       .off = 0,
     },
   };
 }
 
-static inline kio_t kio_new_readonly(const void *base, size_t len) {
+static inline kio_t kio_new_read(const void *base, size_t len) {
   return (kio_t) {
+    .kind = KIO_BUF,
     .dir = KIO_OUT,
     .size = len,
     .buf = {
       .base = (void *) base,
-      .len = len,
       .off = 0,
+    },
+  };
+}
+
+static inline kio_t kio_new_writev(const struct iovec *iov, uint32_t iovcnt) {
+  size_t size = 0;
+  for (uint32_t i = 0; i < iovcnt; i++) {
+    size += iov[i].iov_len;
+  }
+
+  return (kio_t) {
+    .kind = KIO_IOV,
+    .dir = KIO_IN,
+    .size = size,
+    .iov = {
+      .arr = iov,
+      .cnt = iovcnt,
+      .idx = 0,
+      .off = 0,
+      .t_off = 0,
+    },
+  };
+}
+
+static inline kio_t kio_new_readv(const struct iovec *iov, uint32_t iovcnt) {
+  size_t size = 0;
+  for (uint32_t i = 0; i < iovcnt; i++) {
+    size += iov[i].iov_len;
+  }
+
+  return (kio_t) {
+    .kind = KIO_IOV,
+    .dir = KIO_OUT,
+    .size = size,
+    .iov = {
+      .arr = iov,
+      .cnt = iovcnt,
+      .idx = 0,
+      .off = 0,
+      .t_off = 0,
     },
   };
 }
