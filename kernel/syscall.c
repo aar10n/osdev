@@ -24,20 +24,20 @@ typedef uint64_t (*syscall_t)(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, 
 #define DPRINTF(x, ...) kprintf(x, ##__VA_ARGS__)
 
 
-#define PARAM(type, name) type name
+#define PARAM(type, name, fmt) type name
 #define SYSCALL(name, n_args, ret_type, ...) \
   ret_type weak sys_ ##name(MACRO_JOIN(__VA_ARGS__)) { \
     panic("syscall not implemented: " #name " (%d)", SYS_ ##name); \
   };
 #include <kernel/syscalls.def>
 
-#define PARAM(type, name)
+#define PARAM(type, name, fmt)
 #define SYSCALL(name, n_args, ret_type, ...) [SYS_ ##name] = (void *) sys_ ##name,
 static syscall_t syscall_handlers[] = {
 #include <kernel/syscalls.def>
 };
 
-#define PARAM(type, name)
+#define PARAM(type, name, fmt)
 #define SYSCALL(name, n_args, ret_type, ...) [SYS_ ##name] = #name,
 static const char *syscall_names[] = {
 #include <kernel/syscalls.def>
