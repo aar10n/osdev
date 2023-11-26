@@ -3,13 +3,6 @@
 //
 
 #include <kernel/fs.h>
-#include <kernel/vfs/file.h>
-#include <kernel/vfs/vcache.h>
-#include <kernel/vfs/ventry.h>
-#include <kernel/vfs/vfs.h>
-#include <kernel/vfs/vnode.h>
-#include <kernel/vfs/vresolve.h>
-
 #include <kernel/mm.h>
 #include <kernel/device.h>
 #include <kernel/process.h>
@@ -17,6 +10,13 @@
 #include <kernel/printf.h>
 #include <kernel/str.h>
 #include <kernel/kio.h>
+
+#include <kernel/vfs/file.h>
+#include <kernel/vfs/vcache.h>
+#include <kernel/vfs/ventry.h>
+#include <kernel/vfs/vfs.h>
+#include <kernel/vfs/vnode.h>
+#include <kernel/vfs/vresolve.h>
 
 #define ASSERT(x) kassert(x)
 #define DPRINTF(fmt, ...) kprintf("fs: %s: " fmt, __func__, ##__VA_ARGS__)
@@ -319,6 +319,29 @@ LABEL(ret);
   f_release(&file);
   return res;
 }
+
+void *fs_mmap(void *addr, size_t len, int prot, int flags, int fd, off_t offset) {
+  if (flags & MAP_ANONYMOUS) {
+    fd = -1;
+    offset = 0;
+
+    uint32_t vm_flags = VM_USER;
+    vm_flags |= prot & PROT_READ ? VM_READ : 0;
+    vm_flags |= prot & PROT_WRITE ? VM_WRITE : 0;
+    vm_flags |= prot & PROT_EXEC ? VM_EXEC : 0;
+
+    vm_mapping_t *vm = vmap_anon(max(len, SIZE_16GB), (uintptr_t)addr, len, vm_flags, "mmap");
+    if (vm == NULL)
+      return MAP_FAILED;
+    return (void *) vm->address;
+  }
+
+  unimplemented("mmap file");
+}
+
+// int fs_munmap(void *addr, size_t len) {
+//   vm_mapping_t *vm
+// }
 
 ssize_t fs_read(int fd, void *buf, size_t len) {
   ssize_t res;
@@ -673,6 +696,26 @@ LABEL(ret);
   return 0;
 }
 
+int fs_lstat(const char *path, struct stat *stat) {
+  ventry_t *at_ve = ve_getref(PERCPU_PROCESS->pwd);
+  ventry_t *ve = NULL;
+  int res;
+
+  if ((res = vresolve(vcache, at_ve, cstr_make(path), VR_NOFOLLOW, &ve)) < 0)
+    goto ret;
+
+  vnode_t *vn = VN(ve);
+  vn_lock(vn);
+  vn_stat(vn, stat);
+  vn_unlock(vn);
+
+  res = 0; // success
+LABEL(ret);
+  ve_release(&ve);
+  ve_release(&at_ve);
+  return 0;
+}
+
 int fs_create(const char *path, mode_t mode) {
   return fs_open(path, O_CREAT | O_WRONLY | O_TRUNC, mode);
 }
@@ -930,3 +973,17 @@ LABEL(ret);
 void fs_print_debug_vcache() {
   vcache_dump(vcache);
 }
+
+//
+// MARK: Syscalls
+//
+
+DEFINE_SYSCALL(open, int, const char *, int, mode_t) alias("fs_open");
+DEFINE_SYSCALL(close, int, int) alias("fs_close");
+DEFINE_SYSCALL(mmap, void *, size_t, int, int, int, off_t) alias("fs_mmap");
+DEFINE_SYSCALL(read, ssize_t, int, void *, size_t) alias("fs_read");
+DEFINE_SYSCALL(write, ssize_t, int, const void *, size_t) alias("fs_write");
+DEFINE_SYSCALL(lseek, off_t, int, off_t, int) alias("fs_lseek");
+DEFINE_SYSCALL(fstat, int, int, struct stat *) alias("fs_fstat");
+DEFINE_SYSCALL(stat, int, const char *, struct stat *) alias("fs_stat");
+DEFINE_SYSCALL(lstat, int, const char *, struct stat *) alias("fs_lstat");

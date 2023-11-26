@@ -39,7 +39,7 @@ typedef struct process {
   size_t num_threads;             // number of threads
   spinlock_t lock;                // process lock
 
-  struct vm_mapping *data_seg;    // data segment
+  struct vm_mapping *brk_vm;      // process brk mapping
 
   thread_t *main;                 // main thread
   LIST_HEAD(thread_t) threads;    // process threads (group)
@@ -53,11 +53,11 @@ pid_t process_create_1(void (start_routine)(), void *arg);
 pid_t process_fork();
 int process_execve(const char *path, char *const argv[], char *const envp[]);
 
-pid_t getpid();
-pid_t getppid();
-id_t gettid();
-uid_t getuid();
-gid_t getgid();
+pid_t process_getpid();
+pid_t process_getppid();
+id_t process_gettid();
+uid_t process_getuid();
+gid_t process_getgid();
 
 process_t *process_get(pid_t pid);
 // thread_t *process_get_sigthread(process_t *process, int sig);

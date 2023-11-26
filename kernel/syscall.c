@@ -43,19 +43,17 @@ static const char *syscall_names[] = {
 #include <kernel/syscalls.def>
 };
 
-__used int handle_syscall(int n, uint64_t a0, uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4, uint64_t a5) {
+__used uint64_t handle_syscall(int n, uint64_t a0, uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4, uint64_t a5) {
   if (n < 0 || n > SYS_MAX) {
-    DPRINTF("!!! bad syscall %d !!!\n", n);
-    // TODO: exit?
-    return -1;
+    DPRINTF("!!! invalid syscall: %d !!!\n", n);
+    return -ENOSYS;
   }
 
   syscall_t fn = syscall_handlers[n];
   if (!fn) {
-    DPRINTF("syscall not implemented: %d\n", n);
-    return -ESYSNOTIMPLM;
+    DPRINTF("!!! syscall not implemented: %d!!! \n", n);
+    return -ENOSYS;
   }
-
   DPRINTF("syscall: %s\n", syscall_names[n]);
-  return (int) fn(a0, a1, a2, a3, a4, a5);
+  return fn(a0, a1, a2, a3, a4, a5);
 }

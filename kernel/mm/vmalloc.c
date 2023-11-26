@@ -662,7 +662,29 @@ static uintptr_t get_free_region(address_space_t *space, uintptr_t base, size_t 
   return addr;
 }
 
-static bool check_range_free(address_space_t *space, uintptr_t base, size_t size, uint32_t vm_flags, vm_mapping_t **prev_vm) {
+static bool unmap_all_non_rsvd_in_range(address_space_t *space, uintptr_t base, size_t size, uint32_t vm_flags,
+                                        vm_mapping_t **closest_vm) {
+  interval_t interval = intvl(base, base + size);
+  intvl_node_t *closest = intvl_tree_find_closest(space->new_tree, interval);
+  if (closest == NULL) {
+    // no existing mappings
+    *closest_vm = NULL;
+    return true;
+  } else if (!overlaps(interval, closest->interval)) {
+    // the entire range is free
+    *closest_vm = closest->data;
+    return true;
+  }
+
+  vm_mapping_t *cur_vm = closest->data;
+  while (cur_vm && size > 0) {
+    // if (cur_vm)
+  }
+
+}
+
+static bool check_range_free(address_space_t *space, uintptr_t base, size_t size, uint32_t vm_flags,
+                             vm_mapping_t **closest_vm) {
   interval_t interval = intvl(base, base + size);
   intvl_node_t *closest = intvl_tree_find_closest(space->new_tree, interval);
   if (closest == NULL) {
@@ -670,7 +692,7 @@ static bool check_range_free(address_space_t *space, uintptr_t base, size_t size
   }
 
   if (!overlaps(interval, closest->interval)) {
-    *prev_vm = closest->data;
+    *closest_vm = closest->data;
     return true;
   }
   return false;
@@ -868,13 +890,14 @@ LABEL(exception);
   uintptr_t rbp = regs->rbp;
 
   if (!(error_code & CPU_PF_U)) {
+    kprintf("  User mode fault\n");
+  } else {
+    kprintf("  Kernel mode fault\n");
+
     char *line_str = debug_addr2line(rip);
     kprintf("  %s\n", line_str);
     kfree(line_str);
-
     debug_unwind(rip, rbp);
-  } else {
-    kprintf("  User mode fault\n");
   }
 
   while (true) {
@@ -1016,7 +1039,8 @@ vm_mapping_t *vmap(enum vm_type type, uintptr_t hint, size_t size, size_t vm_siz
   }
 
   if (vm_flags & VM_FIXED && !is_aligned(hint, pgsize)) {
-    kprintf("vmap: hint %p is not aligned to page size %zu [name=%s]\n", hint, pgsize, name);
+    if (!(vm_flags & VM_USER))
+      DPRINTF("hint %p is not aligned to page size %zu [name=%s]\n", hint, pgsize, name);
     return NULL;
   }
 
@@ -1046,14 +1070,18 @@ vm_mapping_t *vmap(enum vm_type type, uintptr_t hint, size_t size, size_t vm_siz
   vm_mapping_t *closest = NULL;
   if (vm_flags & VM_FIXED) {
     if (!space_contains(space, hint)) {
-      panic("vmap: hint address not in address space: %p [name=%s]\n", hint, name);
+      if (!(vm_flags & VM_USER)) { // panic for kernel requests
+        panic("vmap: hint address not in address space: %p [name=%s]\n", hint, name);
+      }
+      goto error;
     }
 
     if (vm_flags & VM_STACK) {
       if (hint < vm->virt_size) {
-        SPIN_UNLOCK(&space->lock);
-        kfree(vm);
-        panic("vmap: hint address is too low for requested stack size [name=%s]\n", name);
+        if (!(vm_flags & VM_USER)) {
+          panic("vmap: hint address is too low for requested stack size [name=%s]\n", name);
+        }
+        goto error;
       }
       hint -= vm->virt_size;
     }
@@ -1061,10 +1089,9 @@ vm_mapping_t *vmap(enum vm_type type, uintptr_t hint, size_t size, size_t vm_siz
 
     // make sure the requested range is free
     if (!check_range_free(space, hint, vm->virt_size, vm_flags, &closest)) {
-      SPIN_UNLOCK(&space->lock);
-      kfree(vm);
-      kprintf("vmap: requested fixed address range is not free %p-%p [name=%s]\n", hint, hint + vm->virt_size, name);
-      return NULL;
+      if (!(vm_flags & VM_USER))
+        DPRINTF("vmap: requested fixed address range is not free %p-%p [name=%s]\n", hint, hint + vm->virt_size, name);
+      goto error;
     }
   } else {
     // dynamically allocated
@@ -1135,6 +1162,11 @@ vm_mapping_t *vmap(enum vm_type type, uintptr_t hint, size_t size, size_t vm_siz
   }
   SPIN_UNLOCK(&space->lock);
   return vm;
+
+LABEL(error);
+  SPIN_UNLOCK(&space->lock);
+  kfree(vm);
+  return NULL;
 }
 
 void vmap_free(vm_mapping_t *vm) {
@@ -1203,6 +1235,7 @@ vm_mapping_t *vmap_anon(size_t vm_size, uintptr_t hint, size_t size, uint32_t vm
   vm_anon_t *anon = anon_struct_alloc(NULL, size, vm_flags_to_size(vm_flags));
   vm_mapping_t *vm = vmap(VM_TYPE_ANON, hint, size, vm_size, vm_flags, name, anon);
   PANIC_IF(!vm, "vmap: failed to make anonymous mapping %s\n", name);
+  DPRINTF("vmap: anonymous mapping: %p [%zu]\n", vm->address, vm->size);
   return vm;
 }
 

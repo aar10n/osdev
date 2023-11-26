@@ -396,9 +396,10 @@ void cpu_enable_write_protection() {
 }
 
 //
+// MARK: Syscalls
+//
 
 DEFINE_SYSCALL(arch_prctl, int, int code, unsigned long arg) {
-  kprintf("arch_prctl(code = %d, addr = %p)\n", code, arg);
   switch (code) {
     case ARCH_SET_GS:
       cpu_write_kernel_gsbase(arg);

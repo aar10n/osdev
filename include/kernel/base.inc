@@ -115,11 +115,9 @@
   push rdi
   push rdx
   push rcx
-  push rax
 %endmacro
 
 %macro popcaller 0
-  pop rax
   pop rcx
   pop rdx
   pop rdi

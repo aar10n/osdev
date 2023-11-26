@@ -94,7 +94,7 @@ int mutex_lock(mutex_t *mutex) {
     panic("mutex belongs to another process");
   }
 
-  mutex_trace_debug("locking mutex (%d:%d)", getpid(), gettid());
+  mutex_trace_debug("locking mutex (%d:%d)", process_getpid(), process_gettid());
   // thread->preempt_count++;
   if (atomic_bit_test_and_set(&mutex->flags, B_LOCKED)) {
     if (mutex->flags & MUTEX_REENTRANT && mutex->aquired_by == thread) {
@@ -105,7 +105,7 @@ int mutex_lock(mutex_t *mutex) {
     }
 
     // mutex is already locked
-    mutex_trace_debug("failed to aquire mutex (%d:%d)", getpid(), gettid());
+    mutex_trace_debug("failed to aquire mutex (%d:%d)", process_getpid(), process_gettid());
     mutex_trace_debug("blocking");
 
     thread->flags |= F_THREAD_OWN_BLOCKQ;
@@ -116,7 +116,7 @@ done:;
   mutex->aquired_by = thread;
   mutex->aquire_count++;
   // thread->preempt_count--;
-  mutex_trace_debug("mutex aquired (%d:%d)", getpid(), gettid());
+  mutex_trace_debug("mutex aquired (%d:%d)", process_getpid(), process_gettid());
   return 0;
 }
 
@@ -127,7 +127,7 @@ int mutex_unlock(mutex_t *mutex) {
   }
   kassert(mutex->aquired_by == PERCPU_THREAD);
 
-  mutex_trace_debug("unlocking mutex (%d:%d)", getpid(), gettid());
+  mutex_trace_debug("unlocking mutex (%d:%d)", process_getpid(), process_gettid());
   thread->preempt_count++;
   if (mutex->flags & MUTEX_REENTRANT) {
     kassert(mutex->aquire_count > 0);
@@ -149,7 +149,7 @@ int mutex_unlock(mutex_t *mutex) {
     sched_unblock(next);
   }
   thread->preempt_count--;
-  mutex_trace_debug("mutex unlocked (%d:%d)", getpid(), gettid());
+  mutex_trace_debug("mutex unlocked (%d:%d)", process_getpid(), process_gettid());
   return 0;
 }
 
@@ -159,7 +159,7 @@ int mutex_trylock(mutex_t *mutex) {
     panic("mutex belongs to another process");
   }
 
-  mutex_trace_debug("trying to lock mutex (%d:%d)", getpid(), gettid());
+  mutex_trace_debug("trying to lock mutex (%d:%d)", process_getpid(), process_gettid());
   // thread->preempt_count++;
   if (atomic_bit_test_and_set(&mutex->flags, B_LOCKED)) {
     if (mutex->flags & MUTEX_REENTRANT && mutex->aquired_by == thread) {
@@ -176,7 +176,7 @@ done:;
   mutex->aquired_by = thread;
   mutex->aquire_count++;
   // thread->preempt_count--;
-  mutex_trace_debug("mutex aquired (%d:%d)", getpid(), gettid());
+  mutex_trace_debug("mutex aquired (%d:%d)", process_getpid(), process_gettid());
   return 0;
 }
 

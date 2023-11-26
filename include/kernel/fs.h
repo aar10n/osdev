@@ -7,8 +7,12 @@
 
 #include <kernel/vfs_types.h>
 
+#include <abi/mman.h>
+
+
 void fs_early_init();
 void fs_init();
+
 int fs_register_type(fs_type_t *fs_type);
 fs_type_t *fs_get_type(const char *type);
 __move ventry_t *fs_root_getref();
@@ -18,6 +22,7 @@ int fs_unmount(const char *path);
 
 int fs_open(const char *path, int flags, mode_t mode);
 int fs_close(int fd);
+void *fs_mmap(void *addr, size_t len, int prot, int flags, int fd, off_t offset);
 ssize_t fs_read(int fd, void *buf, size_t len);
 ssize_t fs_write(int fd, const void *buf, size_t len);
 off_t fs_lseek(int fd, off_t offset, int whence);
@@ -33,6 +38,7 @@ int fs_dup2(int fd, int newfd);
 int fs_fstat(int fd, struct stat *stat);
 
 int fs_stat(const char *path, struct stat *stat);
+int fs_lstat(const char *path, struct stat *stat);
 int fs_create(const char *path, mode_t mode);
 int fs_mknod(const char *path, mode_t mode, dev_t dev);
 int fs_symlink(const char *target, const char *linkpath);

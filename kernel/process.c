@@ -183,32 +183,32 @@ int process_execve(const char *path, char *const argv[], char *const envp[]) {
   // allocate a virtual region for the processes data segment.
   // the size of this region (0 initially) determines the brk.
   size_t rsvd = SIZE_16GB; // this is the max brk
-  vm_mapping_t *data_vm = vmap_anon(rsvd, prog.end, 0, VM_WRITE|VM_USER|VM_FIXED, "data");
-  if (data_vm == NULL) {
+  vm_mapping_t *brk_vm = vmap_anon(rsvd, prog.end, 0, VM_WRITE | VM_USER | VM_FIXED, "data");
+  if (brk_vm == NULL) {
     panic("error: failed to allocate data segment");
   }
-  PERCPU_PROCESS->data_seg = data_vm;
+  PERCPU_PROCESS->brk_vm = brk_vm;
 
   sysret((uintptr_t) prog.entry, (uintptr_t) prog.sp);
 }
 
-pid_t getpid() {
+pid_t process_getpid() {
   return PERCPU_PROCESS->pid;
 }
 
-pid_t getppid() {
+pid_t process_getppid() {
   return PERCPU_PROCESS->ppid;
 }
 
-id_t gettid() {
+id_t process_gettid() {
   return PERCPU_THREAD->tid;
 }
 
-uid_t getuid() {
+uid_t process_getuid() {
   return PERCPU_PROCESS->uid;
 }
 
-gid_t getgid() {
+gid_t process_getgid() {
   return PERCPU_PROCESS->gid;
 }
 
@@ -255,7 +255,7 @@ void proc_print_thread_stats(process_t *proc) {
 // MARK: Syscalls
 
 DEFINE_SYSCALL(brk, void *, void *addr) {
-  vm_mapping_t *vm = PERCPU_PROCESS->data_seg;
+  vm_mapping_t *vm = PERCPU_PROCESS->brk_vm;
   uintptr_t orig_brk = vm->address + vm->size;
   uintptr_t new_brk = align((uintptr_t)addr, PAGE_SIZE);
   if (!vm_mapping_contains(vm, new_brk)) {
@@ -302,8 +302,4 @@ DEFINE_SYSCALL(getegid, gid_t) {
 
 DEFINE_SYSCALL(getppid, pid_t) {
   return PERCPU_PROCESS->ppid;
-}
-
-DEFINE_SYSCALL(set_tid_address, pid_t, int *tidptr) {
-  return PERCPU_THREAD->tid;
 }

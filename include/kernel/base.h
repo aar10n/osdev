@@ -131,6 +131,7 @@
 
 #define weak __attribute((weak))
 #define unused __attribute((unused))
+#define alias(name) __attribute((alias(name)))
 #define __used __attribute((used))
 #define __likely(expr) __builtin_expect((expr), 1)
 #define __unlikely(expr) __builtin_expect((expr), 0)

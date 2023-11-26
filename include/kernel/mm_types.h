@@ -134,14 +134,15 @@ typedef struct vm_mapping {
 #define VM_HUGE_2MB (1 << 6)  // mapping uses 2MB pages
 #define VM_HUGE_1GB (1 << 7)  // mapping uses 1GB pages
 #define VM_NOCACHE  (1 << 8)  // mapping is non-cacheable
+#define VM_REPLACE  (1 << 9)  // mapping should replace any non-reserved mappings in the range (used with VM_FIXED)
 // internal vm flags
-#define VM_MAPPED   (1 << 9)  // mapping is currently active
-#define VM_MALLOC   (1 << 10) // mapping is a vmalloc allocation
-#define VM_LINKED   (1 << 11) // mapping was split and is linked to the following mapping
-#define VM_SPLIT    (1 << 12) // mapping was split and is the second half of the split
+#define VM_MAPPED   (1 << 10) // mapping is currently active
+#define VM_MALLOC   (1 << 11) // mapping is a vmalloc allocation
+#define VM_LINKED   (1 << 12) // mapping was split and is linked to the following mapping
+#define VM_SPLIT    (1 << 13) // mapping was split and is the second half of the split
 
-#define VM_PROT_MASK  0x07
-#define VM_FLAGS_MASK 0xFF
+#define VM_PROT_MASK  (VM_READ | VM_WRITE | VM_EXEC)
+#define VM_FLAGS_MASK 0x1FF
 
 // address space layout
 

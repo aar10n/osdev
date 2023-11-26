@@ -631,7 +631,7 @@ int sched_sleep(uint64_t ns) {
   sched_assert(thread->status == THREAD_RUNNING);
 
   DPRINTF("[CPU#%d] sched: sleeping thread %d.%d [%s]\n",
-          PERCPU_ID, getpid(), gettid(), thread->name, thread->cpu_id);
+          PERCPU_ID, process_getpid(), process_gettid(), thread->name, thread->cpu_id);
 
   clock_t now = clock_now();
   thread->alarm_id = timer_create_alarm(now + ns, (void *) sched_wakeup, thread);
@@ -646,7 +646,7 @@ int sched_yield() {
   sched_assert(thread->status == THREAD_RUNNING);
 
   DPRINTF("[CPU#%d] sched: yielding thread %d.%d [%s]\n",
-          PERCPU_ID, getpid(), gettid(), thread->name, thread->cpu_id);
+          PERCPU_ID, process_getpid(), process_gettid(), thread->name, thread->cpu_id);
 
   return sched_reschedule(SCHED_YIELDED);
 }

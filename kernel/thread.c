@@ -262,18 +262,19 @@ int thread_receive(thread_t *thread, void **data) {
 }
 
 void thread_sleep(uint64_t us) {
-  thread_trace_debug("thread %d process %d sleeping for %lf seconds", gettid(), getpid(), (double)(us) / 1e6);
+  thread_trace_debug("thread %d process %d sleeping for %lf seconds", process_gettid(),
+                     process_getpid(), (double)(us) / 1e6);
   sched_sleep(US_TO_NS(us));
-  thread_trace_debug("thread %d process %d wakeup", gettid(), getpid());
+  thread_trace_debug("thread %d process %d wakeup", process_gettid(), process_getpid());
 }
 
 void thread_yield() {
-  thread_trace_debug("thread %d process %d yielded", gettid(), getpid());
+  thread_trace_debug("thread %d process %d yielded", process_gettid(), process_getpid());
   sched_yield();
 }
 
 void thread_block() {
-  thread_trace_debug("thread %d process %d blocked", gettid(), getpid());
+  thread_trace_debug("thread %d process %d blocked", process_gettid(), process_getpid());
   sched_block(PERCPU_THREAD);
 }
 
@@ -323,8 +324,6 @@ void preempt_enable() {
   PERCPU_THREAD->preempt_count--;
 }
 
-//
-
 int thread_alloc_stack(thread_t *thread, bool user) {
   kassert(user == true);
   kassert(thread->user_stack == NULL);
@@ -334,8 +333,6 @@ int thread_alloc_stack(thread_t *thread, bool user) {
   thread->user_sp = user_sp;
   return 0;
 }
-
-//
 
 void print_debug_thread(thread_t *thread) {
   // uint8_t cpu_id;         // current/last cpu used
@@ -360,3 +357,10 @@ void print_debug_thread(thread_t *thread) {
           thread->tid, thread->cpu_id, thread->policy, thread->priority,
           get_status_str(thread->status), thread->signal, thread->flags, thread->errno);
 }
+
+// MARK: Syscalls
+
+DEFINE_SYSCALL(set_tid_address, pid_t, int *tidptr) {
+  return PERCPU_THREAD->tid;
+}
+

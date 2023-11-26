@@ -14,7 +14,6 @@
 
 #include <abi/dirent.h>
 #include <abi/fcntl.h>
-#include <abi/mman.h>
 #include <abi/stat.h>
 
 struct device;
