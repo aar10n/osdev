@@ -22,7 +22,6 @@ int fs_unmount(const char *path);
 
 int fs_open(const char *path, int flags, mode_t mode);
 int fs_close(int fd);
-void *fs_mmap(void *addr, size_t len, int prot, int flags, int fd, off_t offset);
 ssize_t fs_read(int fd, void *buf, size_t len);
 ssize_t fs_write(int fd, const void *buf, size_t len);
 off_t fs_lseek(int fd, off_t offset, int whence);

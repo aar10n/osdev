@@ -19,6 +19,8 @@
 
 #include <interval_tree.h>
 
+#include <abi/mman.h>
+
 #define ASSERT(x) kassert(x)
 #define DPRINTF(x, ...) kprintf(x, ##__VA_ARGS__)
 #define PANIC_IF(x, msg, ...) { if (x) panic(msg, ##__VA_ARGS__); }
@@ -1614,4 +1616,75 @@ void vm_print_address_space() {
   kprintf("{:$=^80s}\n", " kernel space ");
   vm_print_mappings(kernel_space);
   kprintf("{:$=^80}\n");
+}
+
+//
+// MARK: Syscalls
+//
+
+DEFINE_SYSCALL(mmap, void *, void *addr, size_t len, int prot, int flags, int fd, off_t off) {
+  if (flags & MAP_ANONYMOUS) {
+    fd = -1;
+    off = 0;
+
+    uint32_t vm_flags = VM_USER;
+    vm_flags |= prot & PROT_READ ? VM_READ : 0;
+    vm_flags |= prot & PROT_WRITE ? VM_WRITE : 0;
+    vm_flags |= prot & PROT_EXEC ? VM_EXEC : 0;
+
+    vm_mapping_t *vm = vmap_anon(max(len, SIZE_16GB), (uintptr_t)addr, len, vm_flags, "mmap");
+    if (vm == NULL)
+      return MAP_FAILED;
+    return (void *) vm->address;
+  }
+  return 0;
+}
+
+
+DEFINE_SYSCALL(mprotect, int, void *addr, size_t len, int prot) {
+  vm_mapping_t *vm = vm_get_mapping((uintptr_t) addr);
+  if (vm == NULL || vm->type == VM_TYPE_RSVD || !(vm->flags & VM_USER)) {
+    return -EINVAL;
+  }
+
+  if ((uintptr_t) addr + len > vm->size) {
+    return -EINVAL;
+  }
+
+  uint32_t vm_flags = VM_USER;
+  vm_flags |= prot & PROT_READ ? VM_READ : 0;
+  vm_flags |= prot & PROT_WRITE ? VM_WRITE : 0;
+  vm_flags |= prot & PROT_EXEC ? VM_EXEC : 0;
+
+  size_t off = (uintptr_t) addr - vm->address;
+  if (vm_update(vm, off, len, vm_flags) < 0) {
+    panic("uh oh - failed to update memory range {:str} [addr=%p, len=%zu, prot=%d]\n",
+          &vm->name, addr, len, prot);
+    return -ENOMEM;
+  }
+
+  return 0;
+}
+
+
+DEFINE_SYSCALL(munmap, int, void *addr, size_t len) {
+  vm_mapping_t *vm = vm_get_mapping((uintptr_t) addr);
+  if (vm == NULL || vm->type == VM_TYPE_RSVD || !(vm->flags & VM_USER)) {
+    return -EINVAL;
+  }
+
+  if (vm->type == VM_TYPE_PHYS) {
+    phys_unmap_internal(vm, vm->size, 0);
+  } else if (vm->type == VM_TYPE_PAGE) {
+    page_unmap_internal(vm, vm->size, 0);
+    free_pages(vm->vm_pages);
+  } else if (vm->type == VM_TYPE_ANON) {
+    anon_unmap_internal(vm, vm->size, 0);
+    anon_struct_free(vm->vm_anon);
+  } else {
+    unreachable;
+  }
+
+  vmap_free(vm);
+  return 0;
 }
