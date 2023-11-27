@@ -33,8 +33,8 @@ size_t kio_remaining(const kio_t *kio) {
 //
 
 size_t kio_transfer(kio_t *dst, kio_t *src) {
-  ASSERT(dst->dir == KIO_IN);
-  ASSERT(src->dir == KIO_OUT);
+  ASSERT(dst->dir == KIO_WRITE);
+  ASSERT(src->dir == KIO_READ);
   size_t remain = kio_remaining(dst);
   size_t to_copy = kio_remaining(src);
   if (to_copy > remain) {
@@ -70,7 +70,7 @@ size_t kio_transfer(kio_t *dst, kio_t *src) {
 }
 
 size_t kio_nread_out(void *buf, size_t len, size_t off, size_t n, kio_t *kio) {
-  ASSERT(kio->dir == KIO_OUT);
+  ASSERT(kio->dir == KIO_READ);
   size_t remain = kio_remaining(kio);
   if (off >= len) {
     return 0;
@@ -118,7 +118,7 @@ size_t kio_nread_out(void *buf, size_t len, size_t off, size_t n, kio_t *kio) {
 }
 
 size_t kio_nwrite_in(kio_t *kio, const void *buf, size_t len, size_t off, size_t n) {
-  ASSERT(kio->dir == KIO_IN);
+  ASSERT(kio->dir == KIO_WRITE);
   size_t remain = kio_remaining(kio);
   if (off >= len) {
     return 0;
@@ -166,7 +166,7 @@ size_t kio_nwrite_in(kio_t *kio, const void *buf, size_t len, size_t off, size_t
 }
 
 size_t kio_fill(kio_t *kio, uint8_t byte, size_t len) {
-  ASSERT(kio->dir == KIO_IN);
+  ASSERT(kio->dir == KIO_WRITE);
   size_t remain = kio_remaining(kio);
   if (len > remain) {
     len = remain;
@@ -192,6 +192,42 @@ size_t kio_fill(kio_t *kio, uint8_t byte, size_t len) {
         break;
       } else {
         memset(iov[kio->iov.idx].iov_base + kio->iov.off, byte, iov_remain);
+        kio->iov.off += iov_remain;
+        kio->iov.t_off += iov_remain;
+        len -= iov_remain;
+        kio->iov.idx++;
+      }
+    }
+  } else {
+    panic("invalid kio type");
+  }
+  return len;
+}
+
+size_t kio_drain(kio_t *kio, size_t len) {
+  ASSERT(kio->dir == KIO_READ);
+  size_t remain = kio_remaining(kio);
+  if (len > remain) {
+    len = remain;
+  }
+  if (len == 0)
+    return 0;
+
+  if (kio->kind == KIO_BUF) {
+    kio->buf.off += len;
+  } else if (kio->kind == KIO_IOV) {
+    const struct iovec *iov = kio->iov.arr;
+    while (len > 0) {
+      size_t iov_remain = iov[kio->iov.idx].iov_len - kio->iov.off;
+      if (len <= iov_remain) {
+        kio->iov.off += len;
+        kio->iov.t_off += len;
+        if (len == iov_remain) {
+          kio->iov.idx++;
+          kio->iov.off = 0;
+        }
+        break;
+      } else {
         kio->iov.off += iov_remain;
         kio->iov.t_off += iov_remain;
         len -= iov_remain;

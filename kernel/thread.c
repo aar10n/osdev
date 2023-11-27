@@ -197,23 +197,6 @@ thread_t *thread_create(void *(start_routine)(void *), void *arg) {
   return thread;
 }
 
-thread_t *thread_create_named(char *name, void *(start_routine)(void *), void *arg) {
-  process_t *process = PERCPU_PROCESS;
-  id_t tid = atomic_fetch_add(&process->num_threads, 1);
-  thread_trace_debug("creating thread %d | process %d", tid, process->pid);
-
-  thread_t *thread = thread_alloc(tid, start_routine, arg, false);
-  thread->process = process;
-  thread->affinity = process->main->affinity;
-  thread->name = name;
-
-  PROCESS_LOCK(process);
-  LIST_ADD(&process->threads, thread, group);
-  PROCESS_UNLOCK(process);
-  sched_add(thread);
-  return thread;
-}
-
 noreturn void thread_exit(int retval) {
   kprintf("[thread] thread_exit(%d)\n", retval);
   thread_t *thread = PERCPU_THREAD;
@@ -221,48 +204,6 @@ noreturn void thread_exit(int retval) {
   thread->errno = retval;
   sched_terminate(thread);
   unreachable;
-}
-
-int thread_join(thread_t *thread, void **retval) {
-  thread_t *curr = PERCPU_THREAD;
-  if (thread->process != curr->process || thread == curr || thread->flags & F_THREAD_JOINING) {
-    return EINVAL;
-  }
-
-  thread->flags |= F_THREAD_JOINING;
-  int result = mutex_lock(&thread->mutex);
-  if (result != 0) {
-    return result;
-  }
-
-  if (retval != NULL) {
-    *retval = thread->data;
-  }
-  // free thread
-  panic("not implemented");
-  return 0;
-}
-
-int thread_send(void *data) {
-  // send data to awaiting thread
-  thread_t *curr = PERCPU_THREAD;
-  curr->data = data;
-  cond_signal(&curr->data_ready);
-  return 0;
-}
-
-int thread_receive(thread_t *thread, void **data) {
-  // wait for data to be sent from thread
-  thread_t *curr = PERCPU_THREAD;
-  if (thread->process != curr->process || thread == curr) {
-    return EINVAL;
-  }
-
-  cond_wait(&thread->data_ready);
-  if (data != NULL) {
-    *data = thread->data;
-  }
-  return 0;
 }
 
 void thread_sleep(uint64_t us) {

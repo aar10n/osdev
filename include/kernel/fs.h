@@ -22,8 +22,8 @@ int fs_unmount(const char *path);
 
 int fs_open(const char *path, int flags, mode_t mode);
 int fs_close(int fd);
-ssize_t fs_read_kio(int fd, kio_t *kio);
-ssize_t fs_write_kio(int fd, kio_t *kio);
+ssize_t fs_kread(int fd, kio_t *kio);
+ssize_t fs_kwrite(int fd, kio_t *kio);
 ssize_t fs_read(int fd, void *buf, size_t len);
 ssize_t fs_write(int fd, const void *buf, size_t len);
 ssize_t fs_readv(int fd, const struct iovec *iov, int iovcnt);

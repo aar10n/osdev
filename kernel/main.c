@@ -112,12 +112,21 @@ noreturn void root() {
   //////////////////////////////////////////
 
   mkdir("/dev");
-  mknod("/dev/rd0", 0777|S_IFBLK, makedev(1, 0));
+  mknod("/dev/rd0", S_IFBLK, makedev(1, 0));
+  mknod("/dev/tty0", S_IFCHR, makedev(2, 0));
+  mknod("/dev/tty1", S_IFCHR, makedev(2, 1));
+  mknod("/dev/tty2", S_IFCHR, makedev(2, 2));
+  mknod("/dev/tty3", S_IFCHR, makedev(2, 3));
+  mknod("/dev/null", S_IFCHR, makedev(3, 0));
+  mknod("/dev/debug", S_IFCHR, makedev(3, 1));
 
   mkdir("/initrd");
   mount("/dev/rd0", "/initrd", "initrd", 0);
   ls("/initrd");
 
+  open("/dev/null", O_RDONLY|O_SYNC); // stdin
+  open("/dev/tty2", O_WRONLY|O_SYNC); // stdout
+  open("/dev/tty2", O_WRONLY|O_SYNC); // stderr
   char *const args[] = {"/initrd/sbin/init", "hello", "world"};
   process_execve("/initrd/sbin/init", args, NULL);
 

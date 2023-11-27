@@ -184,6 +184,7 @@ void alarms_init() {
   cond_init(&alarm_cond, 0);
   spin_init(&alarm_cond_lock);
   thread_create(alarm_event_loop, NULL);
+  thread_yield();
 }
 
 void alarm_reschedule() {
@@ -201,7 +202,7 @@ clockid_t timer_create_alarm(clock_t expires, timer_cb_t callback, void *data) {
 
   uint32_t id = atomic_fetch_add(&next_alarm_id, 1);
   timer_alarm_t *alarm = kmalloc(sizeof(timer_alarm_t));
-  alarm->id = id;
+  alarm->id = (clockid_t) id;
   alarm->expires = expires;
   alarm->callback = callback;
   alarm->data = data;

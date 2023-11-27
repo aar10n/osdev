@@ -299,7 +299,7 @@ void vcache_dump(vcache_t *vcache) {
         char entrystr[256] = {0};
         ksnprintf(entrystr, sizeof(entrystr)-1, "",
                   i, ve->vfs_id, ve->id, type, str_cptr(entry->path));
-        kio_t kio = kio_new_write(entrystr, sizeof(entrystr) - 1);
+        kio_t kio = kio_new_writable(entrystr, sizeof(entrystr) - 1);
         kio_sprintf(&kio, " {:>5zu} | {:>8s} | {:4s} | {:29s} ", i, unique_id, type, str_cptr(entry->path));
 
         if (V_ISDIR(ve)) {

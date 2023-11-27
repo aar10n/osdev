@@ -48,6 +48,7 @@ struct dev_type dev_types[] = {
   { /* reserved */ },
   DECLARE_DEV_TYPE("ramdisk", 1, D_BLK),
   DECLARE_DEV_TYPE("serial" , 2, D_CHR),
+  DECLARE_DEV_TYPE("memory" , 3, D_CHR),
 };
 
 static rb_tree_t *device_tree;
@@ -232,9 +233,10 @@ int register_dev(const char *dev_type, device_t *dev) {
   if (dev->ops == NULL)
     dev->ops = type->ops;
 
-  if (dev->data == NULL) {
-    panic("register_dev: dev->data is NULL. did you forget to set it?");
-  } else if (dev->ops == NULL) {
+  // if (dev->data == NULL) {
+  //   panic("register_dev: dev->data is NULL. did you forget to set it?");
+  // } else
+  if (dev->ops == NULL) {
     panic("register_dev: dev->ops is NULL.");
   }
 

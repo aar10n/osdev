@@ -192,16 +192,16 @@ static inline str_t str_from_path(path_t path) {
 // is available if path.h is included
 #ifndef STR_KIO
 #define STR_KIO
-static inline kio_t kio_read_from_cstr(cstr_t str) {
-  return kio_new_read(cstr_ptr(str), cstr_len(str));
+static inline kio_t kio_readable_from_cstr(cstr_t str) {
+  return kio_new_readable(cstr_ptr(str), cstr_len(str));
 }
 
 static inline kio_t kio_readonly_from_str(str_t str) {
-  return kio_new_read(str.str, str.len);
+  return kio_new_readable(str.str, str.len);
 }
 
 static inline kio_t kio_writeonly_from_str(str_t str) {
-  return kio_new_write(str.str, str.len);
+  return kio_new_writable(str.str, str.len);
 }
 #endif
 #endif

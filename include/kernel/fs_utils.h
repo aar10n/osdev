@@ -7,6 +7,9 @@
 
 #include <kernel/fs.h>
 
+int open(const char *path, mode_t mode);
+int dup(int fd);
+void close(int fd);
 void mount(const char *path, const char *device, const char *type, int flags);
 void touch(const char *path);
 void mknod(const char *path, mode_t mode, dev_t dev);

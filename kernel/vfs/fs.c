@@ -320,7 +320,8 @@ LABEL(ret);
   return res;
 }
 
-ssize_t fs_read_kio(int fd, kio_t *kio) {
+ssize_t fs_kread(int fd, kio_t *kio) {
+  ASSERT(kio->dir == KIO_WRITE);
   ssize_t res;
   file_t *file = ftable_get_file(FTABLE, fd);
   if (file == NULL)
@@ -371,7 +372,8 @@ LABEL(ret);
   return res;
 }
 
-ssize_t fs_write_kio(int fd, kio_t *kio) {
+ssize_t fs_kwrite(int fd, kio_t *kio) {
+  ASSERT(kio->dir == KIO_READ);
   ssize_t res;
   file_t *file = ftable_get_file(FTABLE, fd);
   if (file == NULL)
@@ -426,29 +428,29 @@ LABEL(ret);
 }
 
 ssize_t fs_read(int fd, void *buf, size_t len) {
-  kio_t kio = kio_new_write(buf, len);
-  return fs_read_kio(fd, &kio);
+  kio_t kio = kio_new_writable(buf, len);
+  return fs_kread(fd, &kio);
 }
 
 ssize_t fs_write(int fd, const void *buf, size_t len) {
-  kio_t kio = kio_new_read(buf, len);
-  return fs_write_kio(fd, &kio);
+  kio_t kio = kio_new_readable(buf, len);
+  return fs_kwrite(fd, &kio);
 }
 
 ssize_t fs_readv(int fd, const struct iovec *iov, int iovcnt) {
   if (iovcnt <= 0)
     return -EINVAL;
 
-  kio_t kio = kio_new_writev(iov, (uint32_t) iovcnt);
-  return fs_read_kio(fd, &kio);
+  kio_t kio = kio_new_writablev(iov, (uint32_t) iovcnt);
+  return fs_kread(fd, &kio);
 }
 
 ssize_t fs_writev(int fd, const struct iovec *iov, int iovcnt) {
   if (iovcnt <= 0)
     return -EINVAL;
 
-  kio_t kio = kio_new_readv(iov, (uint32_t) iovcnt);
-  return fs_read_kio(fd, &kio);
+  kio_t kio = kio_new_readablev(iov, (uint32_t) iovcnt);
+  return fs_kwrite(fd, &kio);
 }
 
 off_t fs_lseek(int fd, off_t offset, int whence) {
@@ -570,7 +572,7 @@ ssize_t fs_readdir(int fd, void *dirp, size_t len) {
     goto_error(ret, -EBADF); // file is closed
 
   // read the directory
-  kio_t kio = kio_new_write(dirp, len);
+  kio_t kio = kio_new_writable(dirp, len);
   vn_begin_data_read(vn);
   res = vn_readdir(vn, file->offset, &kio);
   vn_end_data_read(vn);
@@ -948,7 +950,7 @@ ssize_t fs_readlink(const char *path, char *buf, size_t bufsiz) {
   if ((res = vresolve(vcache, at_ve, cstr_make(path), VR_LNK, &ve)) < 0)
     goto ret;
 
-  kio_t kio = kio_new_write(buf, bufsiz);
+  kio_t kio = kio_new_writable(buf, bufsiz);
   vnode_t *vn = VN(ve);
   vn_begin_data_read(vn);
   res = vn_readlink(vn, &kio); // read the link

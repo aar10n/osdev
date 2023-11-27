@@ -42,6 +42,10 @@ EDK2_BUILD ?= RELEASE
 #  QEMU Options  #
 # -------------- #
 
+ifeq ($(ARCH),x86_64)
+QEMU_CPU ?= Nehalem
+endif
+
 DEBUG_DIR ?= $(BUILD_DIR)
 
 QEMU_NCORES ?= 1
@@ -52,16 +56,20 @@ QEMU_MACHINE ?= q35
 
 QEMU_DEVICES ?= -device ahci,id=ahci -device qemu-xhci,id=xhci
 
+QEMU_COM_PORTS ?= \
+	-serial file:$(BUILD_DIR)/kernel.log \
+	-serial file:$(BUILD_DIR)/loader.log \
+	-serial file:$(BUILD_DIR)/com3.log \
+	-serial file:$(BUILD_DIR)/com4.log
+
 ifeq ($(QEMU_DEBUG),1)
-QEMU_DEBUG_OPTIONS += \
-	-serial file:$(DEBUG_DIR)/kernel.log \
+QEMU_DEBUG_OPTIONS ?= \
 	-global isa-debugcon.iobase=0x402 \
 	-debugcon file:$(DEBUG_DIR)/uefi_debug.log
-endif
 
 ifdef QEMU_TRACE_FILE
-QEMU_DEBUG_OPTIONS += \
-	-trace events=$(QEMU_TRACE_FILE),file=$(BUILD_DIR)/events.out
+QEMU_DEBUG_OPTIONS += -trace events=$(QEMU_TRACE_FILE),file=$(BUILD_DIR)/events.out
+endif
 endif
 
 QEMU_OPTIONS ?= \
@@ -72,9 +80,6 @@ QEMU_OPTIONS ?= \
 	-bios $(BUILD_DIR)/OVMF_$(WINARCH).fd \
 	-drive file=$(BUILD_DIR)/osdev.img,id=boot,format=raw,if=none \
 	$(QEMU_DEVICES) \
-	$(QEMU_EXTRA_OPTIONS) \
-	$(QEMU_DEBUG_OPTIONS)
-
-ifeq ($(ARCH),x86_64)
-QEMU_CPU ?= Nehalem
-endif
+	$(QEMU_COM_PORTS) \
+	$(QEMU_DEBUG_OPTIONS) \
+	$(QEMU_EXTRA_OPTIONS)

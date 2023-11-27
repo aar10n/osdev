@@ -16,6 +16,29 @@ void mount(const char *source, const char *mount, const char *fs_type, int flags
   }
 }
 
+int open(const char *path, mode_t mode) {
+  int fd = fs_open(path, O_CREAT | O_WRONLY, 0777);
+  if (fd < 0) {
+    FAIL("{:s}: {:err}\n", path, fd);
+  }
+  return fd;
+}
+
+int dup(int fd) {
+  int newfd = fs_dup(fd);
+  if (newfd < 0) {
+    FAIL("{:d}: {:err}\n", fd, newfd);
+  }
+  return newfd;
+}
+
+void close(int fd) {
+  int res = fs_close(fd);
+  if (res < 0) {
+    FAIL("{:d}: close failed: {:err}\n", fd, res);
+  }
+}
+
 void touch(const char *path) {
   int fd = fs_open(path, O_CREAT | O_WRONLY, 0777);
   if (fd < 0) {

@@ -17,8 +17,8 @@ typedef enum kio_kind {
 } kio_kind_t;
 
 typedef enum kio_dir {
-  KIO_IN,
-  KIO_OUT,
+  KIO_WRITE,
+  KIO_READ,
 } kio_dir_t;
 
 /// Kernel I/O transfer structure.
@@ -44,10 +44,10 @@ typedef struct kio {
   };
 } kio_t;
 
-static inline kio_t kio_new_write(void *base, size_t len) {
+static inline kio_t kio_new_writable(void *base, size_t len) {
   return (kio_t) {
     .kind = KIO_BUF,
-    .dir = KIO_IN,
+    .dir = KIO_WRITE,
     .size = len,
     .buf = {
       .base = (void *) base,
@@ -56,10 +56,10 @@ static inline kio_t kio_new_write(void *base, size_t len) {
   };
 }
 
-static inline kio_t kio_new_read(const void *base, size_t len) {
+static inline kio_t kio_new_readable(const void *base, size_t len) {
   return (kio_t) {
     .kind = KIO_BUF,
-    .dir = KIO_OUT,
+    .dir = KIO_READ,
     .size = len,
     .buf = {
       .base = (void *) base,
@@ -68,7 +68,7 @@ static inline kio_t kio_new_read(const void *base, size_t len) {
   };
 }
 
-static inline kio_t kio_new_writev(const struct iovec *iov, uint32_t iovcnt) {
+static inline kio_t kio_new_writablev(const struct iovec *iov, uint32_t iovcnt) {
   size_t size = 0;
   for (uint32_t i = 0; i < iovcnt; i++) {
     size += iov[i].iov_len;
@@ -76,7 +76,7 @@ static inline kio_t kio_new_writev(const struct iovec *iov, uint32_t iovcnt) {
 
   return (kio_t) {
     .kind = KIO_IOV,
-    .dir = KIO_IN,
+    .dir = KIO_WRITE,
     .size = size,
     .iov = {
       .arr = iov,
@@ -88,7 +88,7 @@ static inline kio_t kio_new_writev(const struct iovec *iov, uint32_t iovcnt) {
   };
 }
 
-static inline kio_t kio_new_readv(const struct iovec *iov, uint32_t iovcnt) {
+static inline kio_t kio_new_readablev(const struct iovec *iov, uint32_t iovcnt) {
   size_t size = 0;
   for (uint32_t i = 0; i < iovcnt; i++) {
     size += iov[i].iov_len;
@@ -96,7 +96,7 @@ static inline kio_t kio_new_readv(const struct iovec *iov, uint32_t iovcnt) {
 
   return (kio_t) {
     .kind = KIO_IOV,
-    .dir = KIO_OUT,
+    .dir = KIO_READ,
     .size = size,
     .iov = {
       .arr = iov,
@@ -115,6 +115,7 @@ size_t kio_transfer(kio_t *dst, kio_t *src);
 size_t kio_nread_out(void *buf, size_t len, size_t off, size_t n, kio_t *kio);
 size_t kio_nwrite_in(kio_t *kio, const void *buf, size_t len, size_t off, size_t n);
 size_t kio_fill(kio_t *kio, uint8_t byte, size_t len);
+size_t kio_drain(kio_t *kio, size_t len);
 
 static inline size_t kio_read_out(void *buf, size_t len, size_t off, kio_t *kio) { return kio_nread_out(buf, len, off, 0, kio); }
 static inline size_t kio_write_in(kio_t *kio, const void *buf, size_t len, size_t off) { return kio_nwrite_in(kio, buf, len, off, 0); }

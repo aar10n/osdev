@@ -2,4 +2,4 @@
 $(call register,drivers,KERNEL)
 
 # drivers/
-drivers +=  ramdisk.c serial.c
+drivers += memory.c ramdisk.c serial.c

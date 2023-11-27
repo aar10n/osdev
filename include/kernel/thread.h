@@ -100,11 +100,7 @@ thread_t *thread_copy(thread_t *other);
 void thread_free(thread_t *thread);
 
 thread_t *thread_create(void *(start_routine)(void *), void *arg);
-thread_t *thread_create_named(char *name, void *(start_routine)(void *), void *arg);
 noreturn void thread_exit(int retval);
-int thread_join(thread_t *thread, void **retval);
-int thread_send(void *data);
-int thread_receive(thread_t *thread, void **data);
 void thread_sleep(uint64_t us);
 void thread_yield();
 void thread_block();
