@@ -189,6 +189,14 @@
   static_assert(SYS_ ##name >= 0); \
   ret_type sys_ ##name(MACRO_JOIN(__VA_ARGS__))
 
+/**
+ * Defines a system call as an alias to an existing function.
+ */
+#define SYSCALL_ALIAS(name, symbol_name) \
+  static_assert(SYS_ ##name >= 0);            \
+  __typeof(symbol_name) sys_ ##name __attribute__((__alias__(#symbol_name)))
+
+
 //
 // Global Symbols
 //

@@ -238,7 +238,7 @@ SYSCALL(clock_settime, 2, int, PARAM(clockid_t, which_clock, "<?>%p"), PARAM(con
 SYSCALL(clock_gettime, 2, int, PARAM(clockid_t, which_clock, "<?>%p"), PARAM(struct timespec *, tp, "%p"))
 SYSCALL(clock_getres, 2, int, PARAM(clockid_t, which_clock, "<?>%p"), PARAM(struct timespec *, tp, "%p"))
 SYSCALL(clock_nanosleep, 4, int, PARAM(clockid_t, which_clock, "<?>%p"), PARAM(int, flags, "%d"), PARAM(const struct timespec *, rqtp, "%p"), PARAM(struct timespec *, rmtp, "%p"))
-// /* unused */ SYSCALL(exit_group, 1, void, PARAM(int, error_code, "%d")) 
+SYSCALL(exit_group, 1, void, PARAM(int, error_code, "%d"))
 // /* unused */ SYSCALL(epoll_wait, 4, int, PARAM(int, epfd, "%d"), PARAM(struct epoll_event *, events, "%p"), PARAM(int, maxevents, "%d"), PARAM(int, timeout, "%d")) 
 // /* unused */ SYSCALL(epoll_ctl, 4, int, PARAM(int, epfd, "%d"), PARAM(int, op, "%d"), PARAM(int, fd, "%d"), PARAM(struct epoll_event *, event, "%p")) 
 // /* unused */ SYSCALL(tgkill, 3, int, PARAM(pid_t, tgid, "<?>%p"), PARAM(pid_t, pid, "<?>%p"), PARAM(int, sig, "%d")) 

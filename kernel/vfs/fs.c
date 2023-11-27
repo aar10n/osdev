@@ -439,7 +439,6 @@ ssize_t fs_readv(int fd, const struct iovec *iov, int iovcnt) {
   if (iovcnt <= 0)
     return -EINVAL;
 
-  DPRINTF("readv: %d\n", iovcnt);
   kio_t kio = kio_new_writev(iov, (uint32_t) iovcnt);
   return fs_read_kio(fd, &kio);
 }
@@ -448,7 +447,6 @@ ssize_t fs_writev(int fd, const struct iovec *iov, int iovcnt) {
   if (iovcnt <= 0)
     return -EINVAL;
 
-  DPRINTF("writev: %d\n", iovcnt);
   kio_t kio = kio_new_readv(iov, (uint32_t) iovcnt);
   return fs_read_kio(fd, &kio);
 }
@@ -969,23 +967,20 @@ LABEL(ret);
   return res;
 }
 
-//
 
 void fs_print_debug_vcache() {
   vcache_dump(vcache);
 }
 
-//
 // MARK: Syscalls
-//
 
-DEFINE_SYSCALL(open, int, const char *, int, mode_t) alias("fs_open");
-DEFINE_SYSCALL(close, int, int) alias("fs_close");
-DEFINE_SYSCALL(read, ssize_t, int, void *, size_t) alias("fs_read");
-DEFINE_SYSCALL(write, ssize_t, int, const void *, size_t) alias("fs_write");
-DEFINE_SYSCALL(readv, ssize_t, int, const struct iovec *, int) alias("fs_readv");
-DEFINE_SYSCALL(writev, ssize_t, int, const struct iovec *, int) alias("fs_writev");
-DEFINE_SYSCALL(lseek, off_t, int, off_t, int) alias("fs_lseek");
-DEFINE_SYSCALL(fstat, int, int, struct stat *) alias("fs_fstat");
-DEFINE_SYSCALL(stat, int, const char *, struct stat *) alias("fs_stat");
-DEFINE_SYSCALL(lstat, int, const char *, struct stat *) alias("fs_lstat");
+SYSCALL_ALIAS(open, fs_open);
+SYSCALL_ALIAS(close, fs_close);
+SYSCALL_ALIAS(read, fs_read);
+SYSCALL_ALIAS(write, fs_write);
+SYSCALL_ALIAS(readv, fs_readv);
+SYSCALL_ALIAS(writev, fs_writev);
+SYSCALL_ALIAS(lseek, fs_lseek);
+SYSCALL_ALIAS(fstat, fs_fstat);
+SYSCALL_ALIAS(stat, fs_stat);
+SYSCALL_ALIAS(lstat, fs_lstat);

@@ -17,6 +17,9 @@
 
 #include <kernel/debug/debug.h>
 
+#define ASSERT(x) kassert(x)
+#define DPRINTF(x, ...) kprintf(x, ##__VA_ARGS__)
+
 // #define THREAD_DEBUG
 #ifdef THREAD_DEBUG
 #define thread_trace_debug(str, args...) kprintf("[thread] " str "\n", ##args)
@@ -63,7 +66,7 @@ static inline vm_mapping_t *create_stack(uintptr_t *sp, bool user) {
 
 __used void *thread_entry(void *(start_routine)(void *), void *arg) {
   void *result = start_routine(arg);
-  thread_exit(result);
+  thread_exit((int)(uintptr_t) result);
   return NULL;
 }
 
@@ -194,7 +197,7 @@ thread_t *thread_create(void *(start_routine)(void *), void *arg) {
   return thread;
 }
 
-thread_t *thread_create_n(char *name, void *(start_routine)(void *), void *arg) {
+thread_t *thread_create_named(char *name, void *(start_routine)(void *), void *arg) {
   process_t *process = PERCPU_PROCESS;
   id_t tid = atomic_fetch_add(&process->num_threads, 1);
   thread_trace_debug("creating thread %d | process %d", tid, process->pid);
@@ -211,12 +214,13 @@ thread_t *thread_create_n(char *name, void *(start_routine)(void *), void *arg) 
   return thread;
 }
 
-void thread_exit(void *retval) {
+noreturn void thread_exit(int retval) {
+  kprintf("[thread] thread_exit(%d)\n", retval);
   thread_t *thread = PERCPU_THREAD;
   thread_trace_debug("thread %d process %d exiting", thread->tid, thread->process->pid);
-  thread->data = retval;
-  mutex_unlock(&thread->mutex);
+  thread->errno = retval;
   sched_terminate(thread);
+  unreachable;
 }
 
 int thread_join(thread_t *thread, void **retval) {
@@ -324,16 +328,6 @@ void preempt_enable() {
   PERCPU_THREAD->preempt_count--;
 }
 
-int thread_alloc_stack(thread_t *thread, bool user) {
-  kassert(user == true);
-  kassert(thread->user_stack == NULL);
-
-  uintptr_t user_sp = 0;
-  thread->user_stack = create_stack(&user_sp, user);
-  thread->user_sp = user_sp;
-  return 0;
-}
-
 void print_debug_thread(thread_t *thread) {
   // uint8_t cpu_id;         // current/last cpu used
   // uint8_t policy;         // thread scheduling policy
@@ -359,6 +353,13 @@ void print_debug_thread(thread_t *thread) {
 }
 
 // MARK: Syscalls
+
+SYSCALL_ALIAS(exit, thread_exit);
+
+DEFINE_SYSCALL(exit_group, noreturn void, int status) {
+  DPRINTF("exit_group(%d)\n", status);
+  thread_exit(status);
+}
 
 DEFINE_SYSCALL(set_tid_address, pid_t, int *tidptr) {
   return PERCPU_THREAD->tid;

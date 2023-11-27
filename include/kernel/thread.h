@@ -81,7 +81,7 @@ typedef struct thread {
   uint32_t flags;               // thread flags
 
   char *name;                   // thread name or description (owning)
-  int errno;                    // thread local errno
+  int errno;                    // thread local errno (or exit status)
   int preempt_count;            // preempt disable counter
   void *data;                   // thread data pointer
 
@@ -100,8 +100,8 @@ thread_t *thread_copy(thread_t *other);
 void thread_free(thread_t *thread);
 
 thread_t *thread_create(void *(start_routine)(void *), void *arg);
-thread_t *thread_create_n(char *name, void *(start_routine)(void *), void *arg);
-void thread_exit(void *retval);
+thread_t *thread_create_named(char *name, void *(start_routine)(void *), void *arg);
+noreturn void thread_exit(int retval);
 int thread_join(thread_t *thread, void **retval);
 int thread_send(void *data);
 int thread_receive(thread_t *thread, void **data);
@@ -116,8 +116,6 @@ int thread_setsched(uint8_t policy, uint16_t priority);
 
 void preempt_disable();
 void preempt_enable();
-
-int thread_alloc_stack(thread_t *thread, bool user);
 
 void print_debug_thread(thread_t *thread);
 

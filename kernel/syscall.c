@@ -51,7 +51,7 @@ __used uint64_t handle_syscall(int n, uint64_t a0, uint64_t a1, uint64_t a2, uin
 
   syscall_t fn = syscall_handlers[n];
   if (!fn) {
-    DPRINTF("!!! syscall not implemented: %d!!! \n", n);
+    panic("!!! syscall not implemented: %d !!! \n", n);
     return -ENOSYS;
   }
   DPRINTF("syscall: %s\n", syscall_names[n]);
