@@ -27,7 +27,7 @@
 #define PTE_FLAGS_MASK 0x7FFULL
 #define PTE_ADDR(Addr) ((UINT64)(Addr) & ~(PTE_FLAGS_MASK))
 
-#define TABLE_MAX_ENTRIES 512
+#define TABLE_MAX_ENTRIES 512ULL
 
 extern UINT64 KernelPhysAddr;
 
@@ -336,7 +336,7 @@ VOID EFIAPI FillTableWithEntries(
 ) {
   ASSERT(Table != NULL);
   ASSERT(StartIndex < TABLE_MAX_ENTRIES);
-  ASSERT(NumEntries < TABLE_MAX_ENTRIES - StartIndex);
+  ASSERT(StartIndex + NumEntries <= TABLE_MAX_ENTRIES);
 
   UINT64 PhysAddr = StartPhysAddr;
   for (UINTN Index = StartIndex; Index < StartIndex + NumEntries; Index++) {
@@ -350,7 +350,7 @@ EFI_STATUS EFIAPI SetupKernelPageTables(IN PAGE_DESCRIPTOR *Descriptors, OUT UIN
   ASSERT(Descriptors != NULL);
   UINTN KernelVirt = Descriptors->VirtAddr;
 
-  CONST UINTN NumPageTables = 7;
+  CONST UINTN NumPageTables = 8;
   VOID *PageTablePages = AllocateReservedPages(NumPageTables);
   if (PageTablePages == NULL) {
     PRINT_ERROR("Failed to allocate pages for page tables");
@@ -364,7 +364,10 @@ EFI_STATUS EFIAPI SetupKernelPageTables(IN PAGE_DESCRIPTOR *Descriptors, OUT UIN
   UINT64 *LowerPT = TABLE_PTR(PageTablePages, 3);
   UINT64 *UpperPDPT = TABLE_PTR(PageTablePages, 4);
   UINT64 *UpperPDT = TABLE_PTR(PageTablePages, 5);
-  UINT64 *UpperPT = TABLE_PTR(PageTablePages, 6);
+  UINT64 *UpperPTs[] = {
+    TABLE_PTR(PageTablePages, 6),
+    TABLE_PTR(PageTablePages, 7),
+  };
 
   PML4[0] = PTE_ADDR(LowerPDPT) | PE_RW | PE_P;                       // -> LowerPDPT
   PML4[PML4_OFFSET(KernelVirt)] = PTE_ADDR(UpperPDPT) | PE_RW |PE_P;  // -> UpperPDPT
@@ -380,26 +383,36 @@ EFI_STATUS EFIAPI SetupKernelPageTables(IN PAGE_DESCRIPTOR *Descriptors, OUT UIN
   FillTableWithEntries(LowerPDT, 1, TABLE_MAX_ENTRIES - 1, 0x200000, SIZE_2MB, PE_S | PE_RW | PE_P);
 
   UpperPDPT[PDPT_OFFSET(KernelVirt)] = PTE_ADDR(UpperPDT) | PE_RW | PE_P; // -> UpperPDT
-  UpperPDT[PDT_OFFSET(KernelVirt)] = PTE_ADDR(UpperPT) | PE_RW | PE_P;    // -> UpperPT
+  for (int i = 0; i < ARRAY_SIZE(UpperPTs); i++) {
+    UpperPDT[PDT_OFFSET(KernelVirt)+i] = PTE_ADDR(UpperPTs[i]) | PE_RW | PE_P;
+  }
 
-  UINTN Index = PT_OFFSET(KernelPhysAddr);
-  UINT64 PhysAddr = KernelPhysAddr;
+  UINTN Index = 0;
+  UINTN PTOffset = PT_OFFSET(KernelVirt);
   PAGE_DESCRIPTOR *KernelDescriptor = Descriptors;
   while (KernelDescriptor != NULL) {
     ASSERT(!(KernelDescriptor->Flags & PD_SIZE_2MB));
     ASSERT(!(KernelDescriptor->Flags & PD_SIZE_1GB));
+    ASSERT((Index * TABLE_MAX_ENTRIES + PTOffset) < (TABLE_MAX_ENTRIES * ARRAY_SIZE(UpperPTs)) && "kernel page tables overflow");
 
+    UINT64 PhysAddr = KernelDescriptor->PhysAddr;
     UINTN NumPages = KernelDescriptor->NumPages;
     UINT16 Flags = PageDescriptorFlagsToEntryFlags(KernelDescriptor->Flags) | PE_P;
-    FillTableWithEntries(UpperPT, Index, NumPages, KernelDescriptor->PhysAddr, EFI_PAGE_SIZE, Flags);
 
-    Index += NumPages;
-    PhysAddr += EFI_PAGES_TO_SIZE(NumPages);
+  FILL:
+    UINTN N = MIN(NumPages, TABLE_MAX_ENTRIES - PTOffset);
+    FillTableWithEntries(UpperPTs[Index], PTOffset, N, PhysAddr, SIZE_4KB, Flags);
+    NumPages -= N;
+    PTOffset += N;
+    PhysAddr += N * SIZE_4KB;
+    if (NumPages > 0) {
+      Index++;
+      PTOffset = 0;
+      goto FILL;
+    }
+
     KernelDescriptor = KernelDescriptor->Next;
   }
-
-  // FillTableWithEntries(UpperPT, 0, PT_OFFSET(KernelPhysAddr) - 1, 0, EFI_PAGE_SIZE, PE_RW | PE_P);
-  // FillTableWithEntries(UpperPT, Index, TABLE_MAX_ENTRIES - Index, PhysAddr, EFI_PAGE_SIZE, PE_RW | PE_P);
 
   *PML4Address = (UINT64)PML4;
   return EFI_SUCCESS;

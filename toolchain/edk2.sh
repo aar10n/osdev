@@ -21,7 +21,7 @@ toolchain::edk2::copy_boot_sources() {
   cp ${PROJECT_DIR}/boot/{LoaderPkg.dsc,Loader.inf} ${pkg_dir}
   cp ${PROJECT_DIR}/boot/{*.c,*.h} ${pkg_dir}
   cp ${PROJECT_DIR}/include/boot/*.h ${pkg_dir}
-  cp ${PROJECT_DIR}/include/{boot,elf,elf64}.h ${pkg_dir}
+  cp ${PROJECT_DIR}/include/{boot,elf}.h ${pkg_dir}
 }
 
 # download and setup edk2

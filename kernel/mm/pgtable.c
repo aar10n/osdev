@@ -350,7 +350,7 @@ uintptr_t create_new_ap_page_tables(page_t **out_pages) {
   SLIST_ADD(&table_pages, new_low_pde, next);
   low_pdpt[0] = new_low_pde->address | PE_WRITE | PE_PRESENT; // pdpe -> pde
 
-  uint64_t* low_pde = (void *) get_virt_addr(R_ENTRY, T_ENTRY, 0, 0);
+  uint64_t *low_pde = (void *) get_virt_addr(R_ENTRY, T_ENTRY, 0, 0);
   memset(low_pde, 0, PAGE_SIZE);
   low_pde[0] = 0 | PE_SIZE | PE_WRITE | PE_PRESENT; // pde -> 2mb identity mapping
 
@@ -404,13 +404,15 @@ uintptr_t deepcopy_fork_page_tables(page_t **out_pages) {
 //
 
 void _print_pgtable_indexes(uintptr_t addr) {
-  kprintf("[pgtable] %018p -> pml4[%d][%d][%d][%d]\n",
-          addr,
-          PML4_INDEX(addr), PDPT_INDEX(addr),
-          PDT_INDEX(addr), PT_INDEX(addr));
+  kprintf(
+    "[pgtable] %018p -> pml4[%d][%d][%d][%d]\n",
+    addr,
+    PML4_INDEX(addr), PDPT_INDEX(addr),
+    PDT_INDEX(addr), PT_INDEX(addr));
 }
 
 void _print_pgtable_address(uint16_t l4, uint16_t l3, uint16_t l2, uint16_t l1) {
-  kprintf("[pgtable] pml4[%d][%d][%d][%d] -> %018p\n",
-          l4, l3, l2, l1, get_virt_addr(l4, l3, l2, l1));
+  kprintf(
+    "[pgtable] pml4[%d][%d][%d][%d] -> %018p\n",
+    l4, l3, l2, l1, get_virt_addr(l4, l3, l2, l1));
 }

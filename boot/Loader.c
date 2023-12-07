@@ -248,21 +248,23 @@ EFI_STATUS EFIAPI LoadElf(IN VOID *Buffer, IN UINT64 PhysAddr, OUT PAGE_DESCRIPT
     UINTN FileSize = ProgramHdr->p_filesz;
     UINTN MemSize = ALIGN_VALUE(ProgramHdr->p_memsz, ProgramHdr->p_align);
     UINT32 Flags = 0;
-    if (ProgramHdr->p_flags & PF_W) {
+    Flags |= ProgramHdr->p_flags & PF_W ? PD_WRITE : 0;
+    Flags |= ProgramHdr->p_flags & PF_X ? PD_EXECUTE : 0;
+
+    if (ProgramHdr->p_flags & PF_W && ProgramHdr->p_flags & PF_X) {
+      PRINT_INFO("Loading executable data segment");
+    } else if (ProgramHdr->p_flags & PF_W) {
       PRINT_INFO("Loading data segment");
-      PRINT_INFO("  start: 0x%p", ProgramHdr->p_vaddr);
-      PRINT_INFO("  size: 0x%llx (aligned 0x%llx)", ProgramHdr->p_memsz, MemSize);
-      Flags |= PD_WRITE;
-    }
-    if (ProgramHdr->p_flags & PF_X) {
+    } else if (ProgramHdr->p_flags & PF_X) {
       PRINT_INFO("Loading code segment");
-      PRINT_INFO("  start: 0x%p", ProgramHdr->p_vaddr);
-      PRINT_INFO("  size: 0x%llx (aligned 0x%llx)", ProgramHdr->p_memsz, MemSize);
-      Flags |= PD_EXECUTE;
+    } else {
+      PRINT_INFO("Loading rodata segment");
     }
+    PRINT_INFO("  base: 0x%p", ProgramHdr->p_vaddr);
+    PRINT_INFO("  size: 0x%llx (%llu pages)", ProgramHdr->p_memsz, EFI_SIZE_TO_PAGES(MemSize));
 
     // PT_LOAD segment
-    BOOLEAN First = Desc == NULL;
+    PAGE_DESCRIPTOR *OldDesc = Desc;
     Desc = NewDescriptor(
       Desc,
       PhysAddr,
@@ -270,8 +272,8 @@ EFI_STATUS EFIAPI LoadElf(IN VOID *Buffer, IN UINT64 PhysAddr, OUT PAGE_DESCRIPT
       EFI_SIZE_TO_PAGES(MemSize),
       Flags
     );
-    if (First) {
-      *Pages = Desc;
+    if (OldDesc == NULL) {
+      *Pages = Desc; // first kernel descriptor
     }
 
     CopyMem((VOID *) PhysAddr, EHDR_OFFSET(ElfHdr, ProgramHdr->p_offset), FileSize);
