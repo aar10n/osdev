@@ -10,7 +10,6 @@
 #include <kernel/mutex.h>
 #include <kernel/thread.h>
 #include <kernel/loader.h>
-#include <kernel/signal.h>
 #include <kernel/string.h>
 #include <kernel/printf.h>
 #include <kernel/panic.h>
@@ -56,7 +55,7 @@ noreturn void *root_process_wrapper(void *root_fn) {
 
 //
 
-process_t *process_alloc(pid_t pid, pid_t ppid, void *(start_routine)(void *), void *arg) {
+process_t *process_alloc(pid_t pid, pid_t ppid, void *(start_routine)(void *), void *arg, str_t name) {
   process_t *process = kmallocz(sizeof(process_t));
   process->pid = pid;
   process->ppid = ppid;
@@ -71,13 +70,8 @@ process_t *process_alloc(pid_t pid, pid_t ppid, void *(start_routine)(void *), v
   process->files = ftable_alloc();
   spin_init(&process->lock);
 
-  thread_t *main = thread_alloc(0, start_routine, arg, false);
+  thread_t *main = thread_alloc(0, start_routine, arg, name, false);
   main->process = process;
-  const char *func_name = debug_function_name((uintptr_t) start_routine);
-  if (func_name != NULL) {
-    // duplicate it because debug_function_name returns a non-owning string
-    main->name = strdup(func_name);
-  }
   process->main = main;
 
   LIST_INIT(&process->threads);
@@ -87,23 +81,14 @@ process_t *process_alloc(pid_t pid, pid_t ppid, void *(start_routine)(void *), v
 }
 
 void process_free(process_t *process) {
-  thread_t *thread = process->main;
-  while (thread) {
-    thread_t *next = LIST_NEXT(thread, group);
-    thread_free(thread);
-    thread = next;
-  }
-
-  // free file table
-  // free vm
-  kfree(process);
+  unimplemented("process_free");
 }
 
 //
 
 void process_create_root(void (function)()) {
   pid_t pid = alloc_pid();
-  process_t *process = process_alloc(pid, -1, root_process_wrapper, function);
+  process_t *process = process_alloc(pid, -1, root_process_wrapper, function, str_make("root"));
 
   // allocate process table
   ptable = kmallocz(sizeof(process_t *) * MAX_PROCS);
@@ -111,15 +96,15 @@ void process_create_root(void (function)()) {
   ptable_size = 1;
 }
 
-pid_t process_create(void (start_routine)()) {
-  return process_create_1(start_routine, NULL);
+pid_t process_create(void (start_routine)(), str_t name) {
+  return process_create_1(start_routine, NULL, name);
 }
 
-pid_t process_create_1(void (start_routine)(), void *arg) {
+pid_t process_create_1(void (start_routine)(), void *arg, str_t name) {
   process_t *parent = PERCPU_PROCESS;
   pid_t pid = alloc_pid();
   proc_trace_debug("creating process %d | parent %d", pid, parent->pid);
-  process_t *process = process_alloc(pid, parent->pid, (void *) start_routine, arg);
+  process_t *process = process_alloc(pid, parent->pid, (void *) start_routine, arg, name);
   ptable[process->pid] = process;
   atomic_fetch_add(&ptable_size, 1);
 
@@ -200,7 +185,7 @@ pid_t process_getppid() {
   return PERCPU_PROCESS->ppid;
 }
 
-id_t process_gettid() {
+pid_t process_gettid() {
   return PERCPU_THREAD->tid;
 }
 
@@ -211,8 +196,6 @@ uid_t process_getuid() {
 gid_t process_getgid() {
   return PERCPU_PROCESS->gid;
 }
-
-//
 
 process_t *process_get(pid_t pid) {
   if (ptable == NULL) {
@@ -225,6 +208,7 @@ process_t *process_get(pid_t pid) {
   return ptable[pid];
 }
 
+//
 //
 
 void print_debug_process(process_t *process) {
@@ -270,17 +254,11 @@ DEFINE_SYSCALL(brk, void *, void *addr) {
   return (void *) new_brk;
 }
 
-DEFINE_SYSCALL(getpid, pid_t) {
-  return PERCPU_PROCESS->pid;
-}
-
-DEFINE_SYSCALL(getuid, uid_t) {
-  return PERCPU_PROCESS->uid;
-}
-
-DEFINE_SYSCALL(getgid, gid_t) {
-  return PERCPU_PROCESS->gid;
-}
+SYSCALL_ALIAS(getpid, process_getpid);
+SYSCALL_ALIAS(getuid, process_getuid);
+SYSCALL_ALIAS(getgid, process_getgid);
+SYSCALL_ALIAS(gettid, process_gettid);
+SYSCALL_ALIAS(getppid, process_getppid);
 
 DEFINE_SYSCALL(setuid, int, uid_t uid) {
   PERCPU_PROCESS->euid = uid;
@@ -298,8 +276,4 @@ DEFINE_SYSCALL(geteuid, uid_t) {
 
 DEFINE_SYSCALL(getegid, gid_t) {
   return PERCPU_PROCESS->egid;
-}
-
-DEFINE_SYSCALL(getppid, pid_t) {
-  return PERCPU_PROCESS->ppid;
 }

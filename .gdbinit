@@ -101,14 +101,3 @@ commands
   set variable is_debug_enabled = 0
   add-symbol-file-all build/toolchain/usr/lib/libc.so 0x7fc0000000
 end
-
-#b process_execve
-#commands
-
-  #b entry.S:9
-  #commands
-  #  add-symbol-file build/apps/hello
-  #  break main
-  #end
-#end
-

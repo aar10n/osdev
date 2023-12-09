@@ -7,6 +7,7 @@
 #include <kernel/panic.h>
 #include <kernel/string.h>
 #include <kernel/mm.h>
+#include <kernel/fs.h>
 
 #include <fmt/fmt.h>
 
@@ -29,13 +30,6 @@ void kvfprintf(const char *format, va_list valist) {
   debug_kputs(str);
 }
 
-/*
- * ksprintf - write formatted data to a buffer
- * ===========================================
- *
- * ksprintf(char *str, const char *format, ...);
- *
- */
 size_t ksprintf(char *str, const char *format, ...) {
   va_list valist;
   va_start(valist, format);
@@ -49,13 +43,6 @@ size_t kvsprintf(char *str, const char *format, va_list valist) {
   return fmt_format(format, str, INT32_MAX, FMT_MAX_ARGS, valist);
 }
 
-/*
- * ksnprintf - write formatted data to a sized buffer
- * =================================================
- *
- * ksnprintf(char *str, size_t n, const char *format, ...);
- *
- */
 size_t ksnprintf(char *str, size_t n, const char *format, ...) {
   va_list valist;
   va_start(valist, format);
@@ -68,16 +55,6 @@ size_t kvsnprintf(char *str, size_t n, const char *format, va_list valist) {
   return fmt_format(format, str, n, FMT_MAX_ARGS, valist);
 }
 
-/*
- * kasprintf - write formatted data to an allocated string
- * =======================================================
- *
- * kasprintf(const char *format, ...);
- *
- * This does not support strings longer than 512 characters.
- * It is the callers responsibility to free the allocated
- * buffer.
- */
 char *kasprintf(const char *format, ...) {
   char buffer[BUFFER_SIZE];
 
@@ -89,4 +66,40 @@ char *kasprintf(const char *format, ...) {
   char *str = kmalloc(n + 1);
   strcpy(str, buffer);
   return str;
+}
+
+int kfprintf(const char *path, const char *format, ...) {
+  int fd = fs_open(path, O_WRONLY, 0);
+  if (fd < 0) {
+    return fd;
+  }
+
+  char buffer[BUFFER_SIZE];
+  va_list valist;
+  va_start(valist, format);
+  size_t n = fmt_format(format, buffer, BUFFER_SIZE, FMT_MAX_ARGS, valist);
+  va_end(valist);
+
+  kio_t kio = kio_new_readable(buffer, n);
+  ssize_t res = fs_kwrite(fd, &kio);
+  fs_close(fd);
+  if (res < 0) {
+    return (int)res;
+  }
+  return 0;
+}
+
+int kfdprintf(int fd, const char *format, ...) {
+  char buffer[BUFFER_SIZE];
+  va_list valist;
+  va_start(valist, format);
+  size_t n = fmt_format(format, buffer, BUFFER_SIZE, FMT_MAX_ARGS, valist);
+  va_end(valist);
+
+  kio_t kio = kio_new_readable(buffer, n);
+  ssize_t res = fs_kwrite(fd, &kio);
+  if (res < 0) {
+    return (int)res;
+  }
+  return 0;
 }

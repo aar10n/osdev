@@ -73,7 +73,7 @@ typedef struct page {
 /**
  * A virtual address space.
  *
- * The address_space space struct represents a section of virtual address space
+ * The address_space struct represents a section of virtual address space
  * and the mappings contained within it. There is one shared address space for
  * the kernel covering KERNEL_SPACE_START to KERNEL_SPACE_END and each process
  * has its own individual address space covering userspace.
@@ -101,6 +101,18 @@ enum vm_type {
   VM_MAX_TYPE,
 };
 
+/**
+ * A virtual memory mapping.
+ *
+ * The vm_mapping struct represents a mapping in a virtual address space. There are
+ * different kinds of mappings but generally mappings are backed by some memory. Each
+ * vm mapping tracks two sizes: a mapped size and a virtual size. The mapped size is
+ * the size of the region that is in use whereas the virtual size can be though of as
+ * contiguous virtual space reserved for the mapping to grow into. A mapping represents
+ * a region of memory with homogenous protection flags. If a sub-range of address space
+ * has its protection updated, it results in the splitting of the mapping into two or
+ * more adjacent mappings connected by the `sibling` field.
+ */
 typedef struct vm_mapping {
   enum vm_type type : 8;    // vm type
   uint8_t : 8;              // padding
@@ -111,7 +123,7 @@ typedef struct vm_mapping {
   str_t name;               // name of the mapping
   address_space_t *space;   // owning address space
 
-  uint64_t address;         // virtual address
+  uint64_t address;         // virtual address (start of the mapped region)
   size_t size;              // mapping size
   size_t virt_size;         // mapping size in the address space
 
@@ -121,6 +133,7 @@ typedef struct vm_mapping {
     struct vm_anon *vm_anon;
   };
 
+  SLIST_ENTRY(struct vm_mapping) sibling;
   LIST_ENTRY(struct vm_mapping) list;
 } vm_mapping_t;
 
@@ -142,7 +155,7 @@ typedef struct vm_mapping {
 #define VM_SPLIT    (1 << 13) // mapping was split and is the second half of the split
 
 #define VM_PROT_MASK  (VM_READ | VM_WRITE | VM_EXEC)
-#define VM_FLAGS_MASK 0x1FF
+#define VM_FLAGS_MASK 0x3FF
 
 // address space layout
 

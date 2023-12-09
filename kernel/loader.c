@@ -15,7 +15,6 @@
 #include <elf.h>
 
 typedef struct elf_program {
-  void *file;
   uintptr_t base;
   uintptr_t entry;
   uintptr_t end;
@@ -25,6 +24,7 @@ typedef struct elf_program {
   size_t phentsize;
 
   char *path;
+  str_t interp_path;
   struct elf_program *interp;
 } elf_program_t;
 
@@ -110,7 +110,7 @@ static size_t elf_get_loaded_memsz(Elf64_Ehdr *ehdr, uint64_t *out_min_vaddr) {
   uint64_t max_vaddr = 0;
   Elf64_Phdr *phdr = offset_ptr(ehdr, ehdr->e_phoff);
   for (uint32_t i = 0; i < ehdr->e_phnum; i++) {
-    if (phdr[i].p_type != PT_LOAD || phdr[i].p_memsz == 0)
+    if (phdr[i].p_type == PT_NULL || phdr[i].p_memsz == 0)
       continue;
 
     uint64_t vaddr = phdr[i].p_vaddr;
@@ -129,16 +129,6 @@ static size_t elf_get_loaded_memsz(Elf64_Ehdr *ehdr, uint64_t *out_min_vaddr) {
   return max_vaddr - min_vaddr;
 }
 
-static const char *elf_get_interp(Elf64_Ehdr *ehdr) {
-  Elf64_Phdr *phdr = offset_ptr(ehdr, ehdr->e_phoff);
-  for (uint32_t i = 0; i < ehdr->e_phnum; i++) {
-    if (phdr[i].p_type == PT_INTERP) {
-      return offset_ptr(ehdr, phdr[i].p_offset);
-    }
-  }
-  return NULL;
-}
-
 //
 
 int elf_load_image(elf_program_t *prog, void *buf, size_t len, uint32_t e_type) {
@@ -152,8 +142,8 @@ int elf_load_image(elf_program_t *prog, void *buf, size_t len, uint32_t e_type) 
   }
 
   uint64_t min_vaddr = 0;
-  size_t image_size = elf_get_loaded_memsz(ehdr, &min_vaddr);
-  if (image_size == 0) {
+  size_t loaded_size = elf_get_loaded_memsz(ehdr, &min_vaddr);
+  if (loaded_size == 0) {
     DPRINTF("no loadable segments\n");
     return -ENOEXEC;
   } else if (len < elf_get_image_filesz(ehdr)) {
@@ -163,66 +153,67 @@ int elf_load_image(elf_program_t *prog, void *buf, size_t len, uint32_t e_type) 
 
   min_vaddr += prog->base;
   prog->entry = prog->base + ehdr->e_entry;
-  prog->phdr = offset_addr(ehdr, ehdr->e_phoff);
   prog->phentsize = ehdr->e_phentsize;
   prog->phnum = ehdr->e_phnum;
+  prog->interp_path = str_null;
 
   uint32_t vm_flags = VM_WRITE | (is_user_ptr(min_vaddr) ? VM_USER : 0);
   if (ehdr->e_type == ET_EXEC)
     vm_flags |= VM_FIXED;
 
-  // allocate and map memory for the image
-  page_t *pages = alloc_pages(SIZE_TO_PAGES(image_size));
-  if (pages == NULL)
-    return -ENOMEM;
-
-  vm_mapping_t *vm = vmap_pages(pages, min_vaddr, image_size, vm_flags, prog->path);
-  if (vm == NULL) {
-    free_pages(pages);
+  // allocate a mapping for the loaded image
+  uintptr_t base = vm_map_anon(0, min_vaddr, loaded_size, vm_flags, prog->path);
+  if (base == 0) {
     return -ENOMEM;
   }
-  prog->end = vm->address + image_size;
+  prog->end = offset_addr(base, loaded_size);
 
-  // load each loadable segment
   Elf64_Phdr *phdr = offset_ptr(ehdr, ehdr->e_phoff);
   for (uint32_t i = 0; i < ehdr->e_phnum; i++) {
-    uint32_t typ = phdr[i].p_type;
-    // if (typ == PT_DYNAMIC && e_type != ET_DYN)
-    //   continue;
-    // if (!(typ == PT_LOAD || typ == PT_DYNAMIC) || phdr[i].p_memsz == 0)
-    //   continue;
-    if (typ != PT_LOAD || phdr[i].p_memsz == 0)
-      continue;
+    switch (phdr[i].p_type) {
+      case PT_LOAD:
+        if (phdr[i].p_memsz == 0)
+          continue;
+        else
+          break;
+      case PT_PHDR:
+        prog->phdr = prog->base + phdr[i].p_vaddr;
+        continue;
+      case PT_INTERP:
+        prog->interp_path = str_make(offset_ptr(ehdr, phdr[i].p_offset));
+        continue;
+      default:
+        continue;
+    }
 
+    // load the segment into memory
+    uint64_t vaddr = prog->base + phdr[i].p_vaddr;
+    uint64_t loadbase = elf_align_down(vaddr, phdr[i].p_align);
     uint64_t offset = phdr[i].p_offset;
     uint64_t filesz = phdr[i].p_filesz;
     uint64_t memsz = elf_align_up(phdr[i].p_memsz, phdr[i].p_align);
-    uint64_t vaddr = prog->base + phdr[i].p_vaddr;
 
-    uint32_t prot_flags = VM_READ;
+    uint32_t prot = VM_READ;
     if (phdr[i].p_flags & PF_X)
-      prot_flags |= VM_EXEC;
+      prot |= VM_EXEC;
     if (phdr[i].p_flags & PF_W)
-      prot_flags |= VM_WRITE;
+      prot |= VM_WRITE;
 
-    vm = vm_get_mapping(vaddr);
-    ASSERT(vm != NULL);
-
-    // copy the segment into memory and update the mapping permissions
+    // copy the data
     memcpy((void *) vaddr, buf + offset, filesz);
+    // zero out any extra memory following the loaded data
+    memset((void *) (vaddr + filesz), 0, memsz - filesz);
+    if ((vaddr - loadbase) > 0) {
+      memset((void *) loadbase, 0, vaddr - loadbase);
+    }
 
-    size_t vmoff = elf_align_down(vaddr - vm->address, phdr[i].p_align);
-    if (is_aligned(memsz, PAGE_SIZE)) {
-      memset((void *) (vaddr + filesz), 0, memsz - filesz);
-      if (vm_update(vm, vmoff, memsz, prot_flags) < 0) {
-        DPRINTF("failed to update vm mapping\n");
-        vm_mapping_t *first = vm_get_mapping(min_vaddr);
-        vmap_free(first);
-        return -EINVAL;
-      }
+    // update the page protection
+    if (vm_protect(loadbase, memsz, prot) < 0) {
+      DPRINTF("elf_load_image: failed to update memory protection\n");
+      vm_free(base, loaded_size);
+      return -EINVAL;
     }
   }
-
   return 0;
 }
 
@@ -257,30 +248,19 @@ int elf_load_file(elf_program_t *prog, const char *path, uint32_t e_type) {
     goto ret;
   }
 
-  elf_program_t *interp = NULL;
-  const char *interp_path = elf_get_interp(buffer);
-  if (interp_path != NULL) {
+  prog->interp = NULL;
+  if (!str_isnull(prog->interp_path)) {
     // load the interpreter
     ASSERT(e_type == ET_EXEC);
-    DPRINTF("interp = %s\n", interp_path);
-
-    interp = kmallocz(sizeof(elf_program_t));
-    interp->base = LIBC_BASE_ADDR;
-    if ((res = elf_load_file(interp, "/initrd/lib/ld-musl-x86_64.so.1", ET_DYN)) < 0) {
-      DPRINTF("failed to load interpreter '%s' {:err}\n", interp_path, res);
-      kfree(interp);
+    DPRINTF("interp = {:str}\n", &prog->interp_path);
+    prog->interp = kmallocz(sizeof(elf_program_t));
+    prog->interp->base = LIBC_BASE_ADDR;
+    if ((res = elf_load_file(prog->interp, "/initrd/lib/ld-musl-x86_64.so.1", ET_DYN)) < 0) {
+      DPRINTF("failed to load interpreter '{:str}' {:err}\n", &prog->interp_path, res);
+      kfree(prog->interp);
+      prog->interp = NULL;
       goto ret;
     }
-    prog->interp = interp;
-  }
-
-  if (e_type == ET_EXEC) {
-    // the interpreter needs to finish linking the executable so we need
-    // to keep the file in memory and tell the interpreter where it is
-    prog->file = buffer;
-  } else {
-    vfree(buffer);
-    prog->file = NULL;
   }
 
   DPRINTF("loaded elf file %s [base = %p, entry = %p]\n", path, prog->base, prog->entry);

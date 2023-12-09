@@ -12,7 +12,6 @@
 #include <kernel/string.h>
 #include <kernel/panic.h>
 #include <kernel/process.h>
-#include <kernel/signal.h>
 #include <atomic.h>
 
 #include <kernel/debug/debug.h>
@@ -74,7 +73,7 @@ __used void *thread_entry(void *(start_routine)(void *), void *arg) {
 // Thread Allocation
 //
 
-thread_t *thread_alloc(id_t tid, void *(start_routine)(void *), void *arg, bool user) {
+thread_t *thread_alloc(id_t tid, void *(start_routine)(void *), void *arg, str_t name, bool user) {
   thread_t *thread = kmalloc(sizeof(thread_t));
   memset(thread, 0, sizeof(thread_t));
 
@@ -112,7 +111,7 @@ thread_t *thread_alloc(id_t tid, void *(start_routine)(void *), void *arg, bool 
   thread->policy = POLICY_SYSTEM;
   thread->stats = stats;
   thread->affinity = -1;
-  thread->name = NULL;
+  thread->name = name;
 
   thread->kernel_stack = kernel_stack;
   thread->user_stack = user_stack;
@@ -123,10 +122,8 @@ thread_t *thread_alloc(id_t tid, void *(start_routine)(void *), void *arg, bool 
 }
 
 thread_t *thread_copy(thread_t *other) {
-  char *name = other->name ? kasprintf("%s (copy)", other->name) : NULL;
   bool user = other->user_stack != NULL;
-  thread_t *thread = thread_alloc(0, NULL, NULL, user);
-  thread->name = name;
+  thread_t *thread = thread_alloc(0, NULL, NULL, str_dup(other->name), user);
 
   // copy the stacks
   memcpy((void *) thread->kernel_stack->address, (void *) other->kernel_stack->address, KERNEL_STACK_SIZE);
@@ -148,46 +145,39 @@ thread_t *thread_copy(thread_t *other) {
   thread->cpu_id = PERCPU_ID;
   thread->policy = other->policy;
   thread->priority = other->priority;
-  thread->status = other->status;
-
+  thread->affinity = other->affinity;
   thread->errno = other->errno;
+  thread->status = other->status;
   thread->preempt_count = 0; // what do we do here?
 
   return thread;
 }
 
 void thread_free(thread_t *thread) {
-  if (thread->kernel_stack) {
-    vmap_free(thread->kernel_stack);
-  }
-  if (thread->user_stack) {
-    vmap_free(thread->user_stack);
-  }
-
-  kfree(thread->name);
-  kfree(thread->ctx);
-  kfree(thread);
+  unimplemented("thread free");
 }
 
 //
 // Thread API
 //
 
-thread_t *thread_create(void *(start_routine)(void *), void *arg) {
+thread_t *thread_create(void *(start_routine)(void *), void *arg, str_t name) {
   process_t *process = PERCPU_PROCESS;
   id_t tid = atomic_fetch_add(&process->num_threads, 1);
   thread_trace_debug("creating thread %d | process %d", tid, process->pid);
 
-  thread_t *thread = thread_alloc(tid, start_routine, arg, false);
+  thread_t *thread = thread_alloc(tid, start_routine, arg, name, false);
   thread->process = process;
   thread->affinity = process->main->affinity;
 
-  // in lieu of an explicit thread name we can try and get the name of
-  // the start routine and use that instead
-  const char *func_name = debug_function_name((uintptr_t) start_routine);
-  if (func_name != NULL) {
-    // duplicate it because debug_function_name returns a non-owning string
-    thread->name = strdup(func_name);
+  if (str_isnull(name)) {
+    // in lieu of an explicit thread name we can try and get the name of
+    // the start routine and use that instead
+    const char *func_name = debug_function_name((uintptr_t) start_routine);
+    if (func_name != NULL) {
+      // duplicate it because debug_function_name returns a non-owning string
+      thread->name = str_make(func_name);
+    }
   }
 
   PROCESS_LOCK(process);
@@ -285,12 +275,11 @@ void print_debug_thread(thread_t *thread) {
           "  priority: %d\n"
           "  status: %s\n"
           "  \n"
-          "  signal: %b\n"
           "  flags: %b\n"
           "  \n"
           "  errno: %d\n",
           thread->tid, thread->cpu_id, thread->policy, thread->priority,
-          get_status_str(thread->status), thread->signal, thread->flags, thread->errno);
+          get_status_str(thread->status), thread->flags, thread->errno);
 }
 
 // MARK: Syscalls

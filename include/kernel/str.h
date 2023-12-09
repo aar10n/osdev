@@ -40,6 +40,10 @@ static inline const char *cstr_ptr(cstr_t str) {
   return str.str;
 }
 
+static inline bool cstr_isnull(cstr_t str) {
+  return str.str == NULL;
+}
+
 static inline size_t cstr_len(cstr_t str) {
   return str.len;
 }
@@ -62,6 +66,10 @@ typedef struct str {
 } str_t;
 
 #define str_null ((str_t) { NULL, 0 })
+
+static inline bool str_isnull(str_t str) {
+  return str.str == NULL;
+}
 
 static inline cstr_t cstr_from_str(str_t str) {
   return cstr_new(str.str, str.len);
@@ -117,15 +125,26 @@ static inline str_t str_copy_cstr(cstr_t str) {
   return str_new(str.str, str.len);
 }
 
+static inline str_t str_dup(str_t str) {
+  if (str_isnull(str))
+    return str_null;
+
+  char *buf = kmalloc(str.len + 1);
+  memcpy(buf, str.str, str.len);
+  buf[str.len] = '\0';
+  return (str_t) {
+    .str = buf,
+    .len = str.len,
+  };
+}
+
 static inline void str_free(str_t *str) {
   kfree(str->str);
   str->str = NULL;
   str->len = 0;
 }
 
-static inline bool str_isnull(str_t str) {
-  return str.str == NULL;
-}
+
 
 static inline const char *str_cptr(str_t str) {
   return str.str;

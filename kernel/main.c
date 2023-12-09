@@ -124,9 +124,9 @@ noreturn void root() {
   mount("/dev/rd0", "/initrd", "initrd", 0);
   ls("/initrd");
 
-  open("/dev/null", O_RDONLY|O_SYNC); // stdin
-  open("/dev/tty2", O_WRONLY|O_SYNC); // stdout
-  open("/dev/tty2", O_WRONLY|O_SYNC); // stderr
+  open("/dev/null", O_RDONLY|O_SYNC); // fd0=stdin
+  open("/dev/tty2", O_WRONLY|O_SYNC); // fd1=stdout
+  open("/dev/tty2", O_WRONLY|O_SYNC); // fd2=stderr
   char *const args[] = {"/initrd/sbin/init", "hello", "world"};
   process_execve("/initrd/sbin/init", args, NULL);
 

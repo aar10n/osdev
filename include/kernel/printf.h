@@ -115,12 +115,42 @@
 void kprintf(const char *format, ...);
 void kvfprintf(const char *format, va_list args);
 
+/**
+ * Write formatted data to a buffer.
+ */
 size_t ksprintf(char *str, const char *format, ...);
 size_t kvsprintf(char *str, const char *format, va_list args);
 
+/**
+ * Write formatted data to a sized buffer.
+ */
 size_t ksnprintf(char *str, size_t n, const char *format, ...);
 size_t kvsnprintf(char *str, size_t n, const char *format, va_list args);
 
+/**
+ * Write formatted data to an allocated string.
+ *
+ * This does not support strings longer than 512 characters.
+ * It is the callers responsibility to free the allocated
+ * buffer.
+ */
 char *kasprintf(const char *format, ...);
+
+/**
+ * Writes formatted data to a file (by path).
+ *
+ * If an error occurs while opening or writing to the write, the error is returned.
+ * Otherwise 0 is returned on success.
+ */
+int kfprintf(const char *path, const char *format, ...);
+
+/**
+ * Writes formatted data to a file descriptor.
+ *
+ * If an error occurs during the write, the error is returned.
+ * Otherwise 0 is returned on success. The file descriptor is
+ * not closed on return.
+ */
+int kfdprintf(int fd, const char *format, ...);
 
 #endif

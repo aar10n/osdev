@@ -57,15 +57,14 @@ static page_t *vm_fault_alloc_page(vm_mapping_t *vm, size_t off, uint32_t vm_fla
     return NULL;
   }
 
-  DPRINTF("vm_fault_alloc_page: vm={:str} off=%zu vm_flags=%x\n", &vm->name, off, vm_flags);
+  // DPRINTF("vm_fault_alloc_page: vm={:str} off=%zu vm_flags=%x\n", &vm->name, off, vm_flags);
   page_t *page = alloc_pages_size(1, vm_flags_to_size(vm_flags));
   if (page == NULL) {
-    DPRINTF("failed to allocate page\n");
+    DPRINTF("vm_fault_alloc_page: failed to allocate page\n");
     return NULL;
   }
   return page;
 }
-
 
 static inline const char *prot_to_debug_str(uint32_t vm_flags) {
   if ((vm_flags & VM_PROT_MASK) == 0)
@@ -82,7 +81,7 @@ static inline const char *prot_to_debug_str(uint32_t vm_flags) {
     }
     return "r--";
   }
-  return "bad";
+  return "???";
 }
 
 static always_inline uint32_t vm_flags_to_pg_flags(uint32_t vm_flags) {
@@ -103,20 +102,57 @@ static always_inline bool space_contains(address_space_t *space, uintptr_t addr)
   return addr >= space->min_addr && addr < space->max_addr;
 }
 
-static always_inline interval_t mapping_interval(vm_mapping_t *vm) {
-  // if the mapping is a stack mapping the interval base address is one page below
-  //  the vm address to account for the added guard page
-  if (vm->flags & VM_STACK)
-    return intvl(vm->address - PAGE_SIZE, vm->address + vm->virt_size - PAGE_SIZE);
-
-  return intvl(vm->address, vm->address + vm->virt_size);
+static always_inline bool is_valid_pointer(uintptr_t ptr) {
+  return space_contains(PERCPU_ADDRESS_SPACE, ptr) || space_contains(kernel_space, ptr);
 }
 
-static always_inline size_t empty_space_size(vm_mapping_t *vm) {
+static always_inline uintptr_t vm_virtual_start(vm_mapping_t *vm) {
+  // if the mapping is a stack mapping, vm->address might be above the real start address
+  if (vm->flags & VM_STACK) {
+    // account for the empty space + the guard page
+    size_t empty = vm->virt_size - vm->size;
+    return vm->address - empty;
+  } else {
+    // otherwise the start address is the same as the vm address
+    return vm->address;
+  }
+}
+
+static always_inline interval_t vm_virt_interval(vm_mapping_t *vm) {
+  uintptr_t start = vm_virtual_start(vm);
+  return intvl(start, start + vm->virt_size);
+}
+
+static always_inline interval_t vm_real_interval(vm_mapping_t *vm) {
+  uintptr_t start = vm->address;
+  return intvl(start, start + vm->size);
+}
+
+static always_inline size_t vm_empty_space(vm_mapping_t *vm) {
   size_t size = vm->virt_size - vm->size;
   if (vm->flags & VM_STACK)
     size -= PAGE_SIZE;
   return size;
+}
+
+static inline bool vm_are_siblings(vm_mapping_t *a, vm_mapping_t *b) {
+  if (a->address > b->address) {
+    vm_mapping_t *tmp = a;
+    a = b;
+    b = tmp;
+  }
+  if (a == b || a->type != b->type || !(b->flags & VM_SPLIT)) {
+    return false;
+  }
+
+  vm_mapping_t *curr = a->sibling;
+  while (curr != NULL) {
+    if (curr == b) {
+      return true;
+    }
+    curr = curr->sibling;
+  }
+  return false;
 }
 
 static inline uintptr_t choose_best_hint(address_space_t *space, uintptr_t hint, uint32_t vm_flags) {
@@ -215,10 +251,11 @@ static vm_anon_t *anon_struct_alloc(vm_anon_t *anon, size_t size, size_t pgsize)
 
   size_t new_length = size / pgsize;
   size_t new_capacity = next_pow2(new_length);
-  DPRINTF("anon_struct_alloc: size=%zu pgsize=%zu new_length=%zu new_capacity=%zu\n", size, pgsize, new_length,
-          new_capacity);
+  // DPRINTF("anon_struct_alloc: size=%zu pgsize=%zu new_length=%zu new_capacity=%zu\n",
+  //         size, pgsize, new_length, new_capacity);
 
   if (anon->pages == NULL) {
+    // allocate new
     anon->pages = array_alloc(new_capacity, sizeof(page_t *));
     anon->capacity = new_capacity;
     anon->length = new_length;
@@ -245,6 +282,10 @@ static vm_anon_t *anon_struct_alloc(vm_anon_t *anon, size_t size, size_t pgsize)
     anon->length = new_length;
   }
   return anon;
+}
+
+static vm_anon_t *anon_struct_alloc_len(vm_anon_t *anon, size_t length, size_t pgsize) {
+  return anon_struct_alloc(anon, length * pgsize, pgsize);
 }
 
 static void anon_struct_free(vm_anon_t *anon) {
@@ -478,6 +519,18 @@ static page_t *page_split_internal(page_t *pages, size_t off) {
   return curr;
 }
 
+static void page_join_internal(page_t *pages, page_t *other) {
+  ASSERT(pages->flags & PG_HEAD);
+  ASSERT(other->flags & PG_HEAD);
+  ASSERT(pages->head.contiguous && other->head.contiguous);
+  ASSERT(pages->head.count + other->head.count == pages->head.count);
+
+  page_t *curr = SLIST_GET_LAST(pages, next);
+  curr->next = other;
+  other->flags &= ~PG_HEAD;
+  pages->head.count += other->head.count;
+}
+
 // anon type
 
 static void anon_map_internal(vm_mapping_t *vm, vm_anon_t *anon, size_t size, size_t off) {
@@ -608,6 +661,147 @@ static void anon_putpages_internal(vm_mapping_t *vm, vm_anon_t *anon, size_t siz
   cpu_flush_tlb();
 }
 
+static vm_anon_t *anon_split_internal(vm_anon_t *anon, size_t off, vm_mapping_t *other_vm) {
+  size_t stride = anon->pg_size;
+  ASSERT(off % stride == 0);
+
+  size_t index = off / stride;
+  size_t new_length = anon->length - index;
+
+  vm_anon_t *new_anon = anon_struct_alloc_len(NULL, new_length, stride);
+  for (size_t i = index; i < anon->length; i++) {
+    page_t *page = anon->pages[i];
+    if (page == NULL) {
+      continue;
+    }
+
+    // move from old to new
+    anon->pages[i] = NULL;
+    new_anon->pages[i-index] = page;
+    if (page->mapping != NULL) {
+      // only update the mapped counts if it actually had been
+      page->mapping = other_vm;
+      anon->mapped--;
+      new_anon->mapped++;
+    }
+  }
+  return new_anon;
+}
+
+static void anon_join_internal(vm_anon_t *anon, vm_anon_t *other, vm_mapping_t *original_vm) {
+  size_t stride = anon->pg_size;
+  size_t old_length = anon->length;
+  // make sure anon array is big enough for the joined size
+  anon = anon_struct_alloc_len(anon, old_length+other->length, anon->pg_size);
+  // move over the pages
+  size_t base_index = original_vm->size/stride;
+  for (size_t i = 0; i < other->length; i++) {
+    page_t *page = other->pages[i];
+    if (page == NULL) {
+      continue;
+    }
+
+    other->pages[i] = NULL;
+    anon->pages[base_index+i] = page;
+    if (page->mapping != NULL) {
+      page->mapping = original_vm;
+      other->mapped--;
+      anon->mapped++;
+    }
+  }
+
+  anon_struct_free(other);
+}
+
+//
+
+static void vm_update_internal(vm_mapping_t *vm, uint32_t prot) {
+  vm->flags &= ~VM_PROT_MASK;
+  vm->flags |= (prot & VM_PROT_MASK);
+  if (prot != 0) {
+    vm->flags |= VM_MAPPED;
+    switch (vm->type) {
+      case VM_TYPE_PHYS:
+        phys_map_internal(vm, vm->vm_phys, vm->size, 0);
+        break;
+      case VM_TYPE_PAGE:
+        page_map_internal(vm, vm->vm_pages, vm->size, 0);
+        break;
+      case VM_TYPE_ANON:
+        anon_map_internal(vm, vm->vm_anon, vm->size, 0);
+        break;
+      default:
+        panic("vm_update_internal: invalid mapping type");
+    }
+  } else {
+    vm->flags &= ~VM_MAPPED;
+    switch (vm->type) {
+      case VM_TYPE_PHYS:
+        phys_unmap_internal(vm, vm->size, 0);
+        break;
+      case VM_TYPE_PAGE:
+        page_unmap_internal(vm, vm->size, 0);
+        break;
+      case VM_TYPE_ANON:
+        anon_unmap_internal(vm, vm->size, 0);
+        break;
+      default:
+        panic("vm_update_internal: invalid mapping type");
+    }
+  }
+}
+
+static void vm_split_internal(vm_mapping_t *vm, size_t off, vm_mapping_t *sibling) {
+  switch (vm->type) {
+    case VM_TYPE_PHYS:
+      break;
+    case VM_TYPE_PAGE:
+      sibling->vm_pages = page_split_internal(vm->vm_pages, off);
+      break;
+    case VM_TYPE_ANON:
+      sibling->vm_anon = anon_split_internal(vm->vm_anon, off, sibling);
+      break;
+    default:
+      panic("vm_split_internal: invalid mapping type");
+  }
+}
+
+static void vm_join_internal(vm_mapping_t *vm, vm_mapping_t *other) {
+  switch (vm->type) {
+    case VM_TYPE_PHYS:
+      break;
+    case VM_TYPE_PAGE:
+      page_join_internal(vm->vm_pages, other->vm_pages);
+      break;
+    case VM_TYPE_ANON:
+      anon_join_internal(vm->vm_anon, other->vm_anon, vm);
+      break;
+    default:
+      panic("vm_join_internal: invalid mapping type");
+  }
+}
+
+static void vm_free_internal(vm_mapping_t *vm) {
+  switch (vm->type) {
+    case VM_TYPE_PHYS:
+      phys_unmap_internal(vm, vm->size, 0);
+      vm->vm_phys = 0;
+      break;
+    case VM_TYPE_PAGE:
+      page_unmap_internal(vm, vm->size, 0);
+      free_pages(vm->vm_pages);
+      vm->vm_pages = NULL;
+      break;
+    case VM_TYPE_ANON:
+      anon_unmap_internal(vm, vm->size, 0);
+      anon_struct_free(vm->vm_anon);
+      vm->vm_anon = NULL;
+      break;
+    default:
+      panic("vm_free_internal: invalid mapping type");
+  }
+}
+
 // MARK: Virtual space allocation
 
 static uintptr_t get_free_region(address_space_t *space, uintptr_t base, size_t size, uintptr_t align,
@@ -625,8 +819,8 @@ static uintptr_t get_free_region(address_space_t *space, uintptr_t base, size_t 
   vm_mapping_t *curr = closest->data;
   vm_mapping_t *prev = NULL;
   while (curr != NULL) {
-    interval_t i = mapping_interval(curr);
-    interval_t j = prev ? mapping_interval(prev) : i;
+    interval_t i = vm_virt_interval(curr);
+    interval_t j = prev ? vm_virt_interval(prev) : i;
 
     // if two consequtive nodes are not contiguous in memory
     // check that there is enough space between the them to
@@ -664,26 +858,26 @@ static uintptr_t get_free_region(address_space_t *space, uintptr_t base, size_t 
   return addr;
 }
 
-static bool unmap_all_non_rsvd_in_range(address_space_t *space, uintptr_t base, size_t size, uint32_t vm_flags,
-                                        vm_mapping_t **closest_vm) {
-  interval_t interval = intvl(base, base + size);
-  intvl_node_t *closest = intvl_tree_find_closest(space->new_tree, interval);
-  if (closest == NULL) {
-    // no existing mappings
-    *closest_vm = NULL;
-    return true;
-  } else if (!overlaps(interval, closest->interval)) {
-    // the entire range is free
-    *closest_vm = closest->data;
-    return true;
-  }
-
-  vm_mapping_t *cur_vm = closest->data;
-  while (cur_vm && size > 0) {
-    // if (cur_vm)
-  }
-
-}
+// static bool unmap_all_non_rsvd_in_range(address_space_t *space, uintptr_t base, size_t size, uint32_t vm_flags,
+//                                         vm_mapping_t **closest_vm) {
+//   interval_t interval = intvl(base, base + size);
+//   intvl_node_t *closest = intvl_tree_find_closest(space->new_tree, interval);
+//   if (closest == NULL) {
+//     // no existing mappings
+//     *closest_vm = NULL;
+//     return true;
+//   } else if (!overlaps(interval, closest->interval)) {
+//     // the entire range is free
+//     *closest_vm = closest->data;
+//     return true;
+//   }
+//
+//   vm_mapping_t *cur_vm = closest->data;
+//   while (cur_vm && size > 0) {
+//     // if (cur_vm)
+//   }
+//
+// }
 
 static bool check_range_free(address_space_t *space, uintptr_t base, size_t size, uint32_t vm_flags,
                              vm_mapping_t **closest_vm) {
@@ -703,22 +897,24 @@ static bool check_range_free(address_space_t *space, uintptr_t base, size_t size
 static bool resize_mapping_inplace(vm_mapping_t *vm, size_t new_size) {
   // vm should be locked while calling this
   address_space_t *space = vm->space;
-  interval_t interval = mapping_interval(vm);
+  interval_t interval = vm_virt_interval(vm);
   intvl_node_t *node = intvl_tree_find(space->new_tree, interval);
   ASSERT(node && node->data == vm);
 
   // if we are shrinking or growing within the existing empty node virtual space
-  // we dont need to update the tree just the mapping size and address
-  off_t delta = (off_t)(new_size - vm->size);
+  // we dont need to update the tree just the mapping size and address. for normal
+  // mappings this means just updating vm->size, for stack mappings, we need to bump
+  // vm->address up to account for the change.
+  off_t delta = diff(new_size, vm->size);
   if (new_size < vm->size) {
     vm->size = new_size;
     if (vm->flags & VM_STACK)
       vm->address += delta;
     return true;
-  } else if (new_size > vm->size && new_size <= empty_space_size(vm)) {
+  } else if (new_size > vm->size && new_size <= vm_empty_space(vm)) {
     vm->size = new_size;
     if (vm->flags & VM_STACK)
-      vm->address -= delta;
+      vm->address -= delta; // grow down
     return true;
   }
 
@@ -727,10 +923,10 @@ static bool resize_mapping_inplace(vm_mapping_t *vm, size_t new_size) {
   SPIN_LOCK(&space->lock);
   if (vm->flags & VM_STACK) {
     vm_mapping_t *prev = LIST_PREV(vm, list);
-    intvl_node_t *prev_node = intvl_tree_find(space->new_tree, mapping_interval(prev));
+    intvl_node_t *prev_node = intvl_tree_find(space->new_tree, vm_virt_interval(prev));
 
     // |--prev--| empty space |---vm---|
-    size_t empty_space = interval.start - prev_node->interval.end + empty_space_size(vm);
+    size_t empty_space = interval.start - prev_node->interval.end + vm_empty_space(vm);
     if (empty_space < delta) {
       SPIN_UNLOCK(&space->lock);
       return false;
@@ -741,10 +937,10 @@ static bool resize_mapping_inplace(vm_mapping_t *vm, size_t new_size) {
     vm->size = new_size;
   } else {
     vm_mapping_t *next = LIST_NEXT(vm, list);
-    intvl_node_t *next_node = intvl_tree_find(space->new_tree, mapping_interval(next));
+    intvl_node_t *next_node = intvl_tree_find(space->new_tree, vm_virt_interval(next));
 
     // |---vm---| empty space |--next--|
-    size_t empty_space = next_node->interval.start - interval.end + empty_space_size(vm);
+    size_t empty_space = next_node->interval.start - interval.end + vm_empty_space(vm);
     if (empty_space < delta) {
       SPIN_UNLOCK(&space->lock);
       return false;
@@ -757,13 +953,14 @@ static bool resize_mapping_inplace(vm_mapping_t *vm, size_t new_size) {
   return true;
 }
 
+// Splits the vm at the given offset producing a new linked mapping covering
+// the range from vm->address+off to the end of the mapping. The new mapping
+// is inserted into the space list after the current mapping and returned.
 static vm_mapping_t *split_mapping(vm_mapping_t *vm, size_t off) {
-  ASSERT(off % vm_flags_to_size(vm->flags) == 0);
   // vm should be locked while calling this
+  ASSERT(off % vm_flags_to_size(vm->flags) == 0);
+  interval_t intvl = vm_virt_interval(vm);
   address_space_t *space = vm->space;
-  intvl_node_t *node = intvl_tree_find(space->new_tree, mapping_interval(vm));
-  ASSERT(node && node->data == vm);
-  ASSERT(off < vm->size);
 
   // create new mapping
   vm_mapping_t *new_vm = kmallocz(sizeof(vm_mapping_t));
@@ -775,6 +972,8 @@ static vm_mapping_t *split_mapping(vm_mapping_t *vm, size_t off) {
   new_vm->name = str_copy_cstr(cstr_from_str(vm->name));
   spin_init(&new_vm->lock);
 
+  vm_split_internal(vm, off, new_vm);
+  vm->sibling = new_vm;
   vm->flags |= VM_LINKED;
   vm->size = off;
   if (vm->flags & VM_STACK) {
@@ -787,18 +986,59 @@ static vm_mapping_t *split_mapping(vm_mapping_t *vm, size_t off) {
   }
 
   SPIN_LOCK(&space->lock);
-  // resize current interval down and insert new node
-  interval_t intvl = mapping_interval(vm);
-  off_t delta_end = (off_t)(node->interval.end - intvl.end);
-  intvl_tree_update_interval(space->new_tree, node, 0, -delta_end);
-  intvl_tree_insert(space->new_tree, mapping_interval(new_vm), new_vm);
-  space->num_mappings++;
-  ASSERT(contiguous(mapping_interval(vm), mapping_interval(new_vm)));
+  {
+    intvl_node_t *node = intvl_tree_find(space->new_tree, intvl);
 
-  // insert new node into the list
-  LIST_INSERT(&space->mappings, new_vm, list, vm);
+    // resize current interval down and insert new node
+    off_t delta_end = magnitude(intvl) - off;
+    intvl_tree_update_interval(space->new_tree, node, 0, -delta_end);
+    intvl_tree_insert(space->new_tree, vm_virt_interval(new_vm), new_vm);
+    space->num_mappings++;
+    ASSERT(contiguous(vm_virt_interval(vm), vm_virt_interval(new_vm)));
+
+    // insert new node into the list
+    LIST_INSERT(&space->mappings, new_vm, list, vm);
+  }
   SPIN_UNLOCK(&space->lock);
   return new_vm;
+}
+
+// Joins two formerly split sibling mappings back into a single contiguous one.
+// The sibling mapping is removed from the space list and tree and freed, and the
+// first (now joined) mapping is returned.
+static vm_mapping_t *join_mappings(vm_mapping_t *vm_a, vm_mapping_t *vm_b) {
+  // vm_a and vm_b should both be locked while calling this
+  ASSERT(vm_a->sibling == vm_b);
+  ASSERT((vm_a->flags & VM_LINKED) != 0);
+  ASSERT((vm_b->flags & VM_SPLIT) != 0);
+  interval_t intvl_a = vm_virt_interval(vm_a);
+  interval_t intvl_b = vm_virt_interval(vm_b);
+  address_space_t *space = vm_a->space;
+
+  SPIN_LOCK(&space->lock);
+  {
+    intvl_node_t *node = intvl_tree_find(space->new_tree, intvl_a);
+
+    // remove node_b and update node_a to fill its space
+    intvl_tree_delete(space->new_tree, intvl_b);
+    off_t delta_end = (off_t) magnitude(intvl_b);
+    intvl_tree_update_interval(space->new_tree, node, 0, delta_end);
+
+    // remove vm_b from the space list
+    LIST_REMOVE(&space->mappings, vm_b, list);
+    space->num_mappings--;
+
+    vm_join_internal(vm_a, vm_b);
+    vm_a->flags &= ~VM_LINKED;
+    vm_a->size = vm_a->size + vm_b->size;
+    vm_a->virt_size = vm_a->virt_size + vm_b->virt_size;
+    vm_a->sibling = vm_b->sibling;
+
+    str_free(&vm_b->name);
+    kfree(vm_b);
+  }
+  SPIN_UNLOCK(&space->lock);
+  return vm_a;
 }
 
 static bool move_mapping(vm_mapping_t *vm, size_t newsize) {
@@ -822,7 +1062,7 @@ static bool move_mapping(vm_mapping_t *vm, size_t newsize) {
   }
 
   // remove from the old node tree and insert the new one
-  intvl_tree_delete(space->new_tree, mapping_interval(vm));
+  intvl_tree_delete(space->new_tree, vm_virt_interval(vm));
   intvl_tree_insert(space->new_tree, intvl(virt_addr, virt_addr + virt_size), vm);
 
   // switch place of the mapping in the space list
@@ -840,12 +1080,34 @@ static bool move_mapping(vm_mapping_t *vm, size_t newsize) {
   return true;
 }
 
+static void free_mapping(vm_mapping_t *vm) {
+  // space should be locked while calling this
+  address_space_t *space = vm->space;
+  SPIN_LOCK(&space->lock);
+  LIST_REMOVE(&space->mappings, vm, list);
+  intvl_tree_delete(space->new_tree, vm_virt_interval(vm));
+  space->num_mappings--;
+  SPIN_LOCK(&space->lock);
+
+  str_free(&vm->name);
+  memset(vm, 0, sizeof(vm_mapping_t));
+  kfree(vm);
+}
+
 //
 // MARK: Public API
 //
 
-static always_inline bool can_handle_fault(vm_mapping_t *vm, uintptr_t fault_addr, uint32_t error) {
-  return vm->type == VM_TYPE_ANON;
+static always_inline bool can_handle_fault(vm_mapping_t *vm, uintptr_t fault_addr, uint32_t error_code) {
+  if (vm->type != VM_TYPE_ANON || !(vm->flags & VM_MAPPED)) {
+    return false;
+  }
+
+  uint32_t prot = vm->flags & VM_PROT_MASK;
+  if (error_code & CPU_PF_W) {
+    return prot != 0 && vm->flags & VM_WRITE;
+  }
+  return prot != 0;
 }
 
 void page_fault_handler(uint8_t vector, uint32_t error_code, cpu_irq_stack_t *frame, cpu_registers_t *regs) {
@@ -860,14 +1122,14 @@ void page_fault_handler(uint8_t vector, uint32_t error_code, cpu_irq_stack_t *fr
     // fault was due to a non-present page this might be recoverable
     // check if this fault is related to a vm mapping
     vm_mapping_t *vm = vm_get_mapping(fault_addr);
-    if (vm == NULL || !can_handle_fault(vm, fault_addr, error_code)) {
+    if (vm == NULL || !vm_mapping_contains(vm, fault_addr) || !can_handle_fault(vm, fault_addr, error_code)) {
       // TODO: support extending stacks automatically if the fault happens
       //       in the guard page
       goto exception;
     }
 
-    DPRINTF("non-present page fault in vm_anon [vm={:str},addr=%p]\n", &vm->name, fault_addr);
-    size_t off = fault_addr - vm->address;
+    // DPRINTF("non-present page fault in vm_anon [vm={:str},addr=%p]\n", &vm->name, fault_addr);
+    size_t off = align_down(fault_addr - vm->address, PAGE_SIZE);
     vm_anon_t *anon = vm->vm_anon;
     page_t *page = anon->get_page(vm, off, vm->flags, anon->data);
     if (!page) {
@@ -891,7 +1153,7 @@ LABEL(exception);
   uintptr_t rip = frame->rip - 8;
   uintptr_t rbp = regs->rbp;
 
-  if (!(error_code & CPU_PF_U)) {
+  if (error_code & CPU_PF_U) {
     kprintf("  User mode fault\n");
   } else {
     kprintf("  Kernel mode fault\n");
@@ -1055,8 +1317,28 @@ vm_mapping_t *vmap(enum vm_type type, uintptr_t hint, size_t size, size_t vm_siz
 
   size_t off = 0;
   if (vm_flags & VM_STACK) {
+    // stack mappings grow down and have a guard page below the stack. we also
+    // positition the mapping such that the empty virtual space is below it so
+    // it can grow down into the free space if needed. note that vm->address
+    // will point to the bottom of the stack.
+    //     ...
+    //   ======= < mapping end
+    //    stack
+    //   ------- < vm->address
+    //    guard
+    //   -------
+    //    empty
+    //   ======= < mapping start
     vm->virt_size += PAGE_SIZE;
-    off = PAGE_SIZE;
+    off = (vm->virt_size - vm->size); // offset vm->address
+  } else {
+    // non-stack mappings are not offset at all and the empty space comes after
+    //     ...
+    //   ======= < mapping end
+    //    empty
+    //   -------
+    //    pages
+    //   ======= < vm->address (mapping start)
   }
 
   address_space_t *space;
@@ -1066,7 +1348,7 @@ vm_mapping_t *vmap(enum vm_type type, uintptr_t hint, size_t size, size_t vm_siz
     space = kernel_space;
   }
 
-  // allocate the virtual address space for the mapping
+  // allocate the virtual address range for the mapping
   SPIN_LOCK(&space->lock);
   uintptr_t virt_addr = 0;
   vm_mapping_t *closest = NULL;
@@ -1140,7 +1422,7 @@ vm_mapping_t *vmap(enum vm_type type, uintptr_t hint, size_t size, size_t vm_siz
   }
 
   // insert mapping to address space tree
-  intvl_tree_insert(space->new_tree, mapping_interval(vm), vm);
+  intvl_tree_insert(space->new_tree, vm_virt_interval(vm), vm);
   space->num_mappings++;
 
   // map the region if any protection flags are given
@@ -1169,6 +1451,32 @@ LABEL(error);
   SPIN_UNLOCK(&space->lock);
   kfree(vm);
   return NULL;
+}
+
+vm_mapping_t *vmap_rsvd(uintptr_t hint, size_t size, uint32_t vm_flags, const char *name) {
+  vm_mapping_t *vm = vmap(VM_TYPE_RSVD, hint, size, size, vm_flags, name, NULL);
+  PANIC_IF(!vm, "vmap: failed to make reserved mapping %s\n", name);
+  return vm;
+}
+
+vm_mapping_t *vmap_phys(uintptr_t phys_addr, uintptr_t hint, size_t size, uint32_t vm_flags, const char *name) {
+  vm_mapping_t *vm = vmap(VM_TYPE_PHYS, hint, size, size, vm_flags, name, (void *) phys_addr);
+  PANIC_IF(!vm, "vmap: failed to make physical address mapping %s [phys=%p]\n", name, phys_addr);
+  return vm;
+}
+
+vm_mapping_t *vmap_pages(page_t *pages, uintptr_t hint, size_t size, uint32_t vm_flags, const char *name) {
+  vm_mapping_t *vm = vmap(VM_TYPE_PAGE, hint, size, size, vm_flags, name, pages);
+  PANIC_IF(!vm, "vmap: failed to make pages mapping %s [page=%p]\n", name, pages);
+  return vm;
+}
+
+vm_mapping_t *vmap_anon(size_t vm_size, uintptr_t hint, size_t size, uint32_t vm_flags, const char *name) {
+  vm_anon_t *anon = anon_struct_alloc(NULL, size, vm_flags_to_size(vm_flags));
+  vm_mapping_t *vm = vmap(VM_TYPE_ANON, hint, size, vm_size, vm_flags, name, anon);
+  PANIC_IF(!vm, "vmap: failed to make anonymous mapping %s\n", name);
+  DPRINTF("vmap: anonymous mapping: %p [%zu]\n", vm->address, vm->size);
+  return vm;
 }
 
 void vmap_free(vm_mapping_t *vm) {
@@ -1201,7 +1509,7 @@ void vmap_free(vm_mapping_t *vm) {
   address_space_t *space = vm->space;
   SPIN_LOCK(&space->lock);
   LIST_REMOVE(&space->mappings, vm, list);
-  intvl_tree_delete(space->new_tree, mapping_interval(vm));
+  intvl_tree_delete(space->new_tree, vm_virt_interval(vm));
   space->num_mappings--;
   SPIN_LOCK(&space->lock);
 
@@ -1215,30 +1523,172 @@ void vmap_free(vm_mapping_t *vm) {
   }
 }
 
-vm_mapping_t *vmap_rsvd(uintptr_t hint, size_t size, uint32_t vm_flags, const char *name) {
-  vm_mapping_t *vm = vmap(VM_TYPE_RSVD, hint, size, size, vm_flags, name, NULL);
-  PANIC_IF(!vm, "vmap: failed to make reserved mapping %s\n", name);
-  return vm;
-}
 
-vm_mapping_t *vmap_phys(uintptr_t phys_addr, uintptr_t hint, size_t size, uint32_t vm_flags, const char *name) {
-  vm_mapping_t *vm = vmap(VM_TYPE_PHYS, hint, size, size, vm_flags, name, (void *) phys_addr);
-  PANIC_IF(!vm, "vmap: failed to make physical address mapping %s [phys=%p]\n", name, phys_addr);
-  return vm;
-}
-
-vm_mapping_t *vmap_pages(page_t *pages, uintptr_t hint, size_t size, uint32_t vm_flags, const char *name) {
-  vm_mapping_t *vm = vmap(VM_TYPE_PAGE, hint, size, size, vm_flags, name, pages);
-  PANIC_IF(!vm, "vmap: failed to make pages mapping %s [page=%p]\n", name, pages);
-  return vm;
-}
-
-vm_mapping_t *vmap_anon(size_t vm_size, uintptr_t hint, size_t size, uint32_t vm_flags, const char *name) {
+uintptr_t vm_map_anon(size_t vm_size, uintptr_t hint, size_t size, uint32_t vm_flags, const char *name) {
   vm_anon_t *anon = anon_struct_alloc(NULL, size, vm_flags_to_size(vm_flags));
   vm_mapping_t *vm = vmap(VM_TYPE_ANON, hint, size, vm_size, vm_flags, name, anon);
-  PANIC_IF(!vm, "vmap: failed to make anonymous mapping %s\n", name);
-  DPRINTF("vmap: anonymous mapping: %p [%zu]\n", vm->address, vm->size);
-  return vm;
+  if (vm == NULL) {
+    DPRINTF("vm_map_anon: failed to make anonymous mapping [vm_size=%zu, hint=%p, size=%zu, flags=%d, name=%s]\n",
+            vm_size, hint, size, vm_flags, name);
+    return 0;
+  }
+  return vm->address;
+}
+
+int vm_free(uintptr_t vaddr, size_t len) {
+  // The range [vaddr, vaddr+len-1] may contain one or more non-reserved mappings,
+  // but the range must end at a mapping boundary.
+  if (!is_valid_pointer(vaddr) || !is_aligned(len, PAGE_SIZE)) {
+    return -EINVAL;
+  }
+
+  vm_mapping_t *vm = vm_get_mapping(vaddr);
+  vm_mapping_t *vm_end = vm_get_mapping(vaddr + len - 1);
+  if (vm == NULL || vm_end == NULL) {
+    return -ENOMEM;
+  }
+
+  interval_t i = intvl(vaddr, vaddr+len);
+  interval_t i_start = vm_real_interval(vm);
+  interval_t i_end = vm_real_interval(vm_end);
+  if (i.start < i_start.start || i.end > i_end.end) {
+    // the range falls in the virtual mapping range, but some or all of it may
+    // be outside the actually mapped region of the vm
+    DPRINTF("vm_free: invalid request: references outside of active region [vaddr=%p, len=%zu]\n", vaddr, len);
+    return -ENOMEM;
+  }
+
+  // make sure that the range starts and ends exactly on the mapping boundaries
+  interval_t full = intvl(i_start.start, i_end.end);
+  if (!intvl_eq(i, full)) {
+    DPRINTF("vm_free: invalid request: not aligned to mapping boundary [vaddr=%p, len=%zu]\n", vaddr, len);
+    return -EINVAL;
+  }
+
+  // check that none of the mappings in the range are reserved
+  for (vm_mapping_t *curr = vm; curr != LIST_NEXT(vm_end, list); curr = LIST_NEXT(curr, list)) {
+    if (curr->type == VM_TYPE_RSVD) {
+      DPRINTF("vm_free: invalid request: attempting to free reserved region [vaddr=%p, len=%zu, start=%p, size=%zu]\n",
+              vaddr, len, curr->address, curr->address + curr->size);
+      return -EINVAL;
+    }
+  }
+
+  // free all the mappings
+LABEL(free_vm);
+  if (vm->flags & VM_MAPPED) {
+    vm_free_internal(vm);
+  }
+  vm_mapping_t *next = LIST_NEXT(vm, list);
+  free_mapping(vm);
+  if (vm != vm_end) {
+    vm = next;
+    goto free_vm;
+  }
+
+  return 0;
+}
+
+int vm_protect(uintptr_t vaddr, size_t len, uint32_t prot) {
+  // Cases for the range [vaddr, vaddr+len-1]
+  //   1. part or all of the range is unmapped (or reserved)
+  //        - error
+  //
+  //   2. single mapping with that exact range
+  //          |-- mapping --|
+  //          ^~~~~prot~~~~~^
+  //
+  //        - update mapping flags
+  //        - call internal functions for mapping to update flags
+  //
+  //   3. single mapping with a larger range (at start or end of mapping)
+  //          |--- mapping ---|  or  |--- mapping ---|
+  //          ^~~prot~~^                    ^~~prot~~^
+  //
+  //        - split the mapping so as to create a linked sibling mapping for the requested range
+  //        - update the mapping flags of the new sibling mapping
+  //        - call internal functions for sibling mapping to update flags
+  //
+  //   4. single mapping with a larger range (in middle of mapping)
+  //          |--- mapping ---|
+  //             ^~~prot~~^
+  //
+  //        - *same as 3*
+  //
+  //   5. two or more linked sibling mappings (aligned to the mapping boundaries)
+  //          |- rx -|-- ro --|--- rw ---|  or  |-- rw --|-- ro --|
+  //          ^~~~~~~~~~~~~~~~~~~~~~~~~~~^      ^~~~~~~~~~~~~~~~~~^
+  //
+  //        - rejoin the sibling mappings into the first
+  //        - update the combined mapping flags
+  //        - call internal functions for combined mapping to update flags
+  //
+  //   6. two or more linked sibling mappings (not aligned to the mapping boundaries)
+  //        - error (not supported right now)
+  //
+  //   7. two or more mixed non-linked mappings
+  //        - error
+  //
+  prot &= VM_PROT_MASK;
+  if (!is_valid_pointer(vaddr) || !is_aligned(len, PAGE_SIZE)) {
+    return -EINVAL;
+  }
+
+  vm_mapping_t *vm = vm_get_mapping(vaddr);
+  vm_mapping_t *vm_end = vm_get_mapping(vaddr + len - 1);
+  if (vm == NULL || vm_end == NULL) {
+    return -ENOMEM;
+  }
+
+  interval_t i = intvl(vaddr, vaddr+len);
+  interval_t i_start = vm_real_interval(vm);
+  interval_t i_end = vm_real_interval(vm_end);
+  bool is_single = vm == vm_end;
+  bool are_siblings = vm_are_siblings(vm, vm_end);
+  if (!contains_point(i_start, i.start) || !contains_point(i_end, i.end-1)) {
+    // case 1
+    return -ENOMEM;
+  } else if (is_single && intvl_eq(i, i_start)) {
+    // case 2
+    vm_update_internal(vm, prot);
+  } else if (is_single && i.start == i_start.start) {
+    // case 3
+    //   |---vm---|---new_vm---|
+    //   ^~update~^
+    vm_mapping_t *new_vm = split_mapping(vm, len);
+    vm_update_internal(vm, prot);
+  } else if (is_single && i.end == i_end.end) {
+    // case 3
+    //   |---vm---|---new_vm---|
+    //            ^~~~update~~~^
+    vm_mapping_t *new_vm = split_mapping(vm, i.start - i_start.start);
+    vm_update_internal(new_vm, prot);
+  } else if (is_single) {
+    // case 4
+    //   |--vm--|--vm_a--|--vm_b--|
+    //          ^~update~^
+    vm_mapping_t *vm_a = split_mapping(vm, i.start - i_start.start);
+    vm_mapping_t *vm_b = split_mapping(vm_a, len);
+    vm_update_internal(vm_a, prot);
+  } else if (are_siblings && i.start == i_start.start && i.end == i_end.end) {
+    // case 5
+    vm_mapping_t *sibling = vm->sibling;
+    while (sibling) {
+      vm_mapping_t *next = sibling->sibling;
+      join_mappings(vm, sibling);
+      sibling = next;
+    }
+    vm_update_internal(vm, prot);
+  } else if (are_siblings) {
+    // case 6
+    DPRINTF("vm_protect: error: cannot handle non-aligned sibling mappings [name={:str}]\n", &vm->name);
+    return -ENOMEM;
+  } else {
+    // case 7
+    DPRINTF("vm_protect: error: cannot update protection of region containing multiple mappings\n");
+    return -ENOMEM;
+  }
+  return 0;
 }
 
 //
@@ -1295,85 +1745,86 @@ LABEL(update_memory);
   return 0;
 }
 
-int vm_update(vm_mapping_t *vm, size_t off, size_t len, uint32_t prot_flags) {
-  if (vm->type != VM_TYPE_PAGE) {
-    DPRINTF("vm_update: error: invalid mapping type [type=%d, name={:str}]\n", vm->type, &vm->name);
-    return -1;
-  } else if (off + len > vm->size) {
-    DPRINTF("vm_update: error: offset is out of bounds [off=%#zx, name={:str}]\n", off, &vm->name);
-    return -1;
-  } else if (off % vm_flags_to_size(vm->flags) != 0) {
-    DPRINTF("vm_update: error: offset must be page aligned [off=%#zx, name={:str}]\n", off, &vm->name);
-    return -1;
-  } else if (len % vm_flags_to_size(prot_flags) != 0) {
-    DPRINTF("vm_update: error: length must be page aligned [len=%#zx, name={:str}]\n", len, &vm->name);
-    return -1;
-  } else if (len == 0) {
-    return 0;
-  }
-
-  prot_flags &= VM_PROT_MASK;
-  if (prot_flags == (vm->flags & VM_PROT_MASK)) {
-    return 0; // nothing to change
-  }
-
-  if (off == 0 && len == vm->size) {
-    // update the whole mapping
-    SPIN_LOCK(&vm->lock);
-    vm->flags &= ~VM_PROT_MASK;
-    if (prot_flags == 0) {
-      // unmap the whole mapping
-      page_unmap_internal(vm, len, off);
-      vm->flags &= ~VM_MAPPED;
-      vm->flags |= prot_flags;
-    } else {
-      // update the protection flags
-      vm->flags |= prot_flags | VM_MAPPED;
-      page_map_internal(vm, vm->vm_pages, len, off);
-    }
-    SPIN_UNLOCK(&vm->lock);
-    return 0;
-  }
-
-  // split the mapping at the offset where the protection flags change
-  SPIN_LOCK(&vm->lock);
-  vm_mapping_t *new_vm;
-  vm_mapping_t *target_vm;
-  if (off == 0) {
-    // we are splitting and changing vm
-    //   |-----------vm-----------|
-    //   |---vm---|-----new_vm----|
-    //   ^ 0
-    new_vm = split_mapping(vm, len);
-    new_vm->vm_pages = page_split_internal(vm->vm_pages, len);
-    target_vm = vm;
-  } else {
-    new_vm = split_mapping(vm, off);
-    new_vm->vm_pages = page_split_internal(vm->vm_pages, off);
-    target_vm = new_vm;
-    off = 0;
-    if (new_vm->size > len) {
-      // if the updated region does not cover the entire mapping, split it again
-      // at the end of the updated region and set the flags to be the same as the
-      // original mapping.
-      //     |-----------vm-----------|
-      //     |---vm---|-----new_vm----|
-      //     |--vm--|--new_vm--|--vm--|
-      vm_mapping_t *new_vm2 = split_mapping(new_vm, len);
-      new_vm2->vm_pages = page_split_internal(new_vm->vm_pages, len);
-    }
-  }
-
-  target_vm->flags &= ~VM_PROT_MASK;
-  target_vm->flags |= prot_flags;
-
-  // TODO: if the mapping has been split from another mapping check the
-  //       other mapping to see if it can be merged with the new mapping
-  page_t *page = page_getpage_internal(target_vm, off);
-  page_map_internal(target_vm, page, len, off);
-  SPIN_UNLOCK(&vm->lock);
-  return 0;
-}
+// int vm_update(vm_mapping_t *vm, size_t off, size_t len, uint32_t prot_flags) {
+//   if (vm->type != VM_TYPE_PAGE) {
+//     DPRINTF("vm_update: error: invalid mapping type [type=%d, name={:str}]\n", vm->type, &vm->name);
+//     return -1;
+//   } else if (off + len > vm->size) {
+//     DPRINTF("vm_update: error: offset is out of bounds [off=%#zx, len=%zu, name={:str}]\n", off, len, &vm->name);
+//     vm_print_address_space_v2();
+//     return -1;
+//   } else if (off % vm_flags_to_size(vm->flags) != 0) {
+//     DPRINTF("vm_update: error: offset must be page aligned [off=%#zx, name={:str}]\n", off, &vm->name);
+//     return -1;
+//   } else if (len % vm_flags_to_size(prot_flags) != 0) {
+//     DPRINTF("vm_update: error: length must be page aligned [len=%#zx, name={:str}]\n", len, &vm->name);
+//     return -1;
+//   } else if (len == 0) {
+//     return 0;
+//   }
+//
+//   prot_flags &= VM_PROT_MASK;
+//   if (prot_flags == (vm->flags & VM_PROT_MASK)) {
+//     return 0; // nothing to change
+//   }
+//
+//   if (off == 0 && len == vm->size) {
+//     // update the whole mapping
+//     SPIN_LOCK(&vm->lock);
+//     vm->flags &= ~VM_PROT_MASK;
+//     if (prot_flags == 0) {
+//       // unmap the whole mapping
+//       page_unmap_internal(vm, len, off);
+//       vm->flags &= ~VM_MAPPED;
+//       vm->flags |= prot_flags;
+//     } else {
+//       // update the protection flags
+//       vm->flags |= prot_flags | VM_MAPPED;
+//       page_map_internal(vm, vm->vm_pages, len, off);
+//     }
+//     SPIN_UNLOCK(&vm->lock);
+//     return 0;
+//   }
+//
+//   // split the mapping at the offset where the protection flags change
+//   SPIN_LOCK(&vm->lock);
+//   vm_mapping_t *new_vm;
+//   vm_mapping_t *target_vm;
+//   if (off == 0) {
+//     // we are splitting and changing vm
+//     //   |-----------vm-----------|
+//     //   |---vm---|-----new_vm----|
+//     //   ^ 0
+//     new_vm = split_mapping(vm, len);
+//     new_vm->vm_pages = page_split_internal(vm->vm_pages, len);
+//     target_vm = vm;
+//   } else {
+//     new_vm = split_mapping(vm, off);
+//     new_vm->vm_pages = page_split_internal(vm->vm_pages, off);
+//     target_vm = new_vm;
+//     off = 0;
+//     if (new_vm->size > len) {
+//       // if the updated region does not cover the entire mapping, split it again
+//       // at the end of the updated region and set the flags to be the same as the
+//       // original mapping.
+//       //     |-----------vm-----------|
+//       //     |---vm---|-----new_vm----|
+//       //     |--vm--|--new_vm--|--vm--|
+//       vm_mapping_t *new_vm2 = split_mapping(new_vm, len);
+//       new_vm2->vm_pages = page_split_internal(new_vm->vm_pages, len);
+//     }
+//   }
+//
+//   target_vm->flags &= ~VM_PROT_MASK;
+//   target_vm->flags |= prot_flags;
+//
+//   // TODO: if the mapping has been split from another mapping check the
+//   //       other mapping to see if it can be merged with the new mapping
+//   page_t *page = page_getpage_internal(target_vm, off);
+//   page_map_internal(target_vm, page, len, off);
+//   SPIN_UNLOCK(&vm->lock);
+//   return 0;
+// }
 
 page_t *vm_getpage(vm_mapping_t *vm, size_t off, bool cow) {
   page_t *page = NULL;
@@ -1448,7 +1899,7 @@ uintptr_t vm_mapping_to_phys(vm_mapping_t *vm, uintptr_t virt_addr) {
 
 bool vm_mapping_contains(vm_mapping_t *vm, uintptr_t virt_addr) {
   interval_t j = intvl(virt_addr, virt_addr + 1);
-  return contains(mapping_interval(vm), j);
+  return contains(vm_real_interval(vm), j);
 }
 
 //
@@ -1555,6 +2006,15 @@ void vfree(void *ptr) {
 //
 // debug functions
 
+void vm_print_address_space() {
+  kprintf("vm: address space mappings\n");
+  kprintf("{:$=^80s}\n", " user space ");
+  vm_print_mappings(PERCPU_ADDRESS_SPACE);
+  kprintf("{:$=^80s}\n", " kernel space ");
+  vm_print_mappings(kernel_space);
+  kprintf("{:$=^80}\n");
+}
+
 void vm_print_mappings(address_space_t *space) {
   vm_mapping_t *prev = NULL;
   vm_mapping_t *vm = LIST_FIRST(&space->mappings);
@@ -1573,56 +2033,146 @@ void vm_print_mappings(address_space_t *space) {
   }
 }
 
-void vm_print_space_tree_graphiz(address_space_t *space) {
+void vm_print_address_space_v2() {
+  kprintf("vm: address space mappings\n");
+  kprintf("{:$=^80s}\n", " user space ");
+  vm_print_format_address_space(PERCPU_ADDRESS_SPACE);
+  kprintf("{:$=^80s}\n", " kernel space ");
+  vm_print_format_address_space(kernel_space);
+  kprintf("{:$=^80}\n");
+}
+
+void vm_print_format_address_space(address_space_t *space) {
+  vm_mapping_t *prev = NULL;
+  vm_mapping_t *vm = LIST_FIRST(&space->mappings);
+  uintptr_t prev_end = space->min_addr;
+  while (vm) {
+    interval_t intvl = vm_virt_interval(vm);
+    size_t empty_size = vm_empty_space(vm);
+    const char *prot_str = prot_to_debug_str(vm->flags);
+
+    size_t gap_size = intvl.start - prev_end;
+    if (gap_size > 0) {
+      kprintf("{:^37s} {:$ >10M}\n", "unmapped", gap_size);
+    }
+
+    if (vm->flags & VM_STACK) {
+      uintptr_t empty_start = intvl.start;
+      uintptr_t guard_start = intvl.start+empty_size;
+
+      // in stack mappings the empty space and guard page come first
+      if (empty_size > 0) {
+        kprintf("{:018p}-{:018p} {:$ >10M}  ---  empty\n", empty_start, empty_start+empty_size, empty_size);
+      }
+
+      kprintf("{:018p}-{:018p} {:$ >10M}  ---  guard\n", guard_start, guard_start+PAGE_SIZE, PAGE_SIZE);
+      kprintf("{:018p}-{:018p} {:$ >10M}  {:.3s}  {:str}\n",
+              vm->address, vm->address+vm->size, vm->size, prot_str, &vm->name);
+    } else {
+      kprintf("{:018p}-{:018p} {:$ >10M}  {:.3s}  {:str}\n",
+                vm->address, vm->address+vm->size, vm->size, prot_str, &vm->name);
+
+      if (empty_size > 0) {
+        uintptr_t empty_start = vm->address+vm->size;
+        kprintf("{:018p}-{:018p} {:$ >10M}  ---  empty\n", empty_start, empty_start+empty_size, empty_size);
+      }
+    }
+
+    prev_end = intvl.end;
+    vm = LIST_NEXT(vm, list);
+  }
+}
+
+void vm_write_format_address_space(int fd, address_space_t *space) {
+  vm_mapping_t *prev = NULL;
+  vm_mapping_t *vm = LIST_FIRST(&space->mappings);
+  uintptr_t prev_end = space->min_addr;
+  while (vm) {
+    interval_t intvl = vm_virt_interval(vm);
+    size_t empty_size = vm_empty_space(vm);
+    const char *prot_str = prot_to_debug_str(vm->flags);
+
+    size_t gap_size = intvl.start - prev_end;
+    if (gap_size > 0) {
+      kfdprintf(fd, "{:^37s} {:$ >10M}\n", "unmapped", gap_size);
+    }
+
+    if (vm->flags & VM_STACK) {
+      uintptr_t empty_start = intvl.start;
+      uintptr_t guard_start = intvl.start+empty_size;
+
+      // in stack mappings the empty space and guard page come first
+      if (empty_size > 0) {
+        kfdprintf(fd, "{:018p}-{:018p} {:$ >10M}  ---  empty\n", empty_start, empty_start+empty_size, empty_size);
+      }
+
+      kfdprintf(fd, "{:018p}-{:018p} {:$ >10M}  ---  guard\n", guard_start, guard_start+PAGE_SIZE, PAGE_SIZE);
+      kfdprintf(fd, "{:018p}-{:018p} {:$ >10M}  {:.3s}  {:str}\n",
+              vm->address, vm->address+vm->size, vm->size, prot_str, &vm->name);
+    } else {
+      kfdprintf(fd, "{:018p}-{:018p} {:$ >10M}  {:.3s}  {:str}\n",
+              vm->address, vm->address+vm->size, vm->size, prot_str, &vm->name);
+
+      if (empty_size > 0) {
+        uintptr_t empty_start = vm->address+vm->size;
+        kfdprintf(fd, "{:018p}-{:018p} {:$ >10M}  ---  empty\n", empty_start, empty_start+empty_size, empty_size);
+      }
+    }
+
+    prev_end = intvl.end;
+    vm = LIST_NEXT(vm, list);
+  }
+  kprintf("{:$=^64}\n");
+}
+
+void vm_write_format_address_space_graphiz(int fd, address_space_t *space) {
   intvl_iter_t *iter = intvl_iter_tree(space->new_tree);
   intvl_node_t *node;
   rb_node_t *nil = space->new_tree->tree->nil;
   int null_count = 0;
 
-  kprintf("digraph BST {\n");
-  kprintf("  node [fontname=\"Arial\"];\n");
+  kfdprintf(fd, "digraph BST {{\n");
+  kfdprintf(fd, "  node [fontname=\"Arial\"];\n");
   while ((node = intvl_iter_next(iter))) {
     interval_t i = node->interval;
     rb_node_t *rbnode = node->node;
 
     vm_mapping_t *vm = node->data;
-    kprintf("  %llu [label=\"{:str}\\n%p-%p\"];\n",
+    kfdprintf(fd, "  %llu [label=\"{:str}\\n%p-%p\"];\n",
             rbnode->key, &vm->name, i.start, i.end);
 
     if (rbnode->left != nil) {
-      kprintf("  %llu -> %llu\n", rbnode->key, rbnode->left->key);
+      kfdprintf(fd, "  %llu -> %llu\n", rbnode->key, rbnode->left->key);
     } else {
-      kprintf("  null%d [shape=point];\n", null_count);
-      kprintf("  %llu -> null%d;\n", rbnode->key, null_count);
+      kfdprintf(fd, "  null%d [shape=point];\n", null_count);
+      kfdprintf(fd, "  %llu -> null%d;\n", rbnode->key, null_count);
       null_count++;
     }
 
     if (rbnode->right != nil) {
-      kprintf("  %llu -> %llu\n", rbnode->key, rbnode->right->key);
+      kfdprintf(fd, "  %llu -> %llu\n", rbnode->key, rbnode->right->key);
     } else {
-      kprintf("  null%d [shape=point];\n", null_count);
-      kprintf("  %llu -> null%d;\n", rbnode->key, null_count);
+      kfdprintf(fd, "  null%d [shape=point];\n", null_count);
+      kfdprintf(fd, "  %llu -> null%d;\n", rbnode->key, null_count);
       null_count++;
     }
   }
-  kprintf("}\n");
+  kfdprintf(fd, "}}\n");
   kfree(iter);
-}
-
-void vm_print_address_space() {
-  kprintf("vm: address space mappings\n");
-  kprintf("{:$=^80s}\n", " user space ");
-  vm_print_mappings(PERCPU_ADDRESS_SPACE);
-  kprintf("{:$=^80s}\n", " kernel space ");
-  vm_print_mappings(kernel_space);
-  kprintf("{:$=^80}\n");
 }
 
 //
 // MARK: Syscalls
 //
 
+#include <kernel/fs_utils.h>
+
 DEFINE_SYSCALL(mmap, void *, void *addr, size_t len, int prot, int flags, int fd, off_t off) {
+  DPRINTF("mmap: addr=%p, len=%zu, prot=%#b, flags=%#x, fd=%d, off=%zu\n", addr, len, prot, flags, fd, off);
+  if (flags & MAP_FIXED) {
+    unimplemented("mmap fixed");
+  }
+
   if (flags & MAP_ANONYMOUS) {
     fd = -1;
     off = 0;
@@ -1632,59 +2182,20 @@ DEFINE_SYSCALL(mmap, void *, void *addr, size_t len, int prot, int flags, int fd
     vm_flags |= prot & PROT_WRITE ? VM_WRITE : 0;
     vm_flags |= prot & PROT_EXEC ? VM_EXEC : 0;
 
-    vm_mapping_t *vm = vmap_anon(max(len, SIZE_16GB), (uintptr_t)addr, len, vm_flags, "mmap");
-    if (vm == NULL)
+    uintptr_t res = vm_map_anon(max(len, SIZE_16GB), (uintptr_t)addr, len, vm_flags, "mmap");
+    if (res == 0)
       return MAP_FAILED;
-    return (void *) vm->address;
+    return (void *) res;
   }
   return 0;
 }
-
 
 DEFINE_SYSCALL(mprotect, int, void *addr, size_t len, int prot) {
-  vm_mapping_t *vm = vm_get_mapping((uintptr_t) addr);
-  if (vm == NULL || vm->type == VM_TYPE_RSVD || !(vm->flags & VM_USER)) {
-    return -EINVAL;
-  }
-
-  if ((uintptr_t) addr + len > vm->size) {
-    return -EINVAL;
-  }
-
-  uint32_t vm_flags = VM_USER;
-  vm_flags |= prot & PROT_READ ? VM_READ : 0;
-  vm_flags |= prot & PROT_WRITE ? VM_WRITE : 0;
-  vm_flags |= prot & PROT_EXEC ? VM_EXEC : 0;
-
-  size_t off = (uintptr_t) addr - vm->address;
-  if (vm_update(vm, off, len, vm_flags) < 0) {
-    panic("uh oh - failed to update memory range {:str} [addr=%p, len=%zu, prot=%d]\n",
-          &vm->name, addr, len, prot);
-    return -ENOMEM;
-  }
-
-  return 0;
+  DPRINTF("mprotect: addr=%p, len=%zu, prot=%d\n", addr, len, prot);
+  return vm_protect((uintptr_t) addr, len, prot);
 }
 
-
 DEFINE_SYSCALL(munmap, int, void *addr, size_t len) {
-  vm_mapping_t *vm = vm_get_mapping((uintptr_t) addr);
-  if (vm == NULL || vm->type == VM_TYPE_RSVD || !(vm->flags & VM_USER)) {
-    return -EINVAL;
-  }
-
-  if (vm->type == VM_TYPE_PHYS) {
-    phys_unmap_internal(vm, vm->size, 0);
-  } else if (vm->type == VM_TYPE_PAGE) {
-    page_unmap_internal(vm, vm->size, 0);
-    free_pages(vm->vm_pages);
-  } else if (vm->type == VM_TYPE_ANON) {
-    anon_unmap_internal(vm, vm->size, 0);
-    anon_struct_free(vm->vm_anon);
-  } else {
-    unreachable;
-  }
-
-  vmap_free(vm);
-  return 0;
+  DPRINTF("munmap: addr=%p, len=%zu\n", addr, len);
+  return vm_free((uintptr_t) addr, len);
 }

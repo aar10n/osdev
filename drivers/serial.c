@@ -70,9 +70,6 @@ static int serial_d_close(device_t *device) {
 
 static ssize_t serial_d_read(device_t *device, size_t off, size_t nmax, kio_t *kio) {
   struct serial_device *dev = device->data;
-  if (off != 0) {
-    return -EINVAL;
-  }
 
   size_t n = 0;
   size_t res;
@@ -84,9 +81,6 @@ static ssize_t serial_d_read(device_t *device, size_t off, size_t nmax, kio_t *k
 
 static ssize_t serial_d_write(device_t *device, size_t off, size_t nmax, kio_t *kio) {
   struct serial_device *dev = device->data;
-  if (off != 0) {
-    return -EINVAL;
-  }
 
   size_t n = 0;
   char ch;
@@ -95,7 +89,7 @@ static ssize_t serial_d_write(device_t *device, size_t off, size_t nmax, kio_t *
     serial_write_char(dev->port, ch);
     n++;
   }
-  return (ssize_t) kio_transfered(kio);
+  return (ssize_t) n;
 }
 
 static struct device_ops serial_ops = {

@@ -56,11 +56,11 @@ QEMU_MACHINE ?= q35
 
 QEMU_DEVICES ?= -device ahci,id=ahci -device qemu-xhci,id=xhci
 
-QEMU_COM_PORTS ?= \
+QEMU_SERIAL_DEVICES ?= \
 	-serial file:$(BUILD_DIR)/kernel.log \
 	-serial file:$(BUILD_DIR)/loader.log \
-	-serial file:$(BUILD_DIR)/com3.log \
-	-serial file:$(BUILD_DIR)/com4.log
+	-serial file:$(BUILD_DIR)/tty2.log \
+	-serial file:$(BUILD_DIR)/tty3.log
 
 ifeq ($(QEMU_DEBUG),1)
 QEMU_DEBUG_OPTIONS ?= \
@@ -80,6 +80,6 @@ QEMU_OPTIONS ?= \
 	-bios $(BUILD_DIR)/OVMF_$(WINARCH).fd \
 	-drive file=$(BUILD_DIR)/osdev.img,id=boot,format=raw,if=none \
 	$(QEMU_DEVICES) \
-	$(QEMU_COM_PORTS) \
+	$(QEMU_SERIAL_DEVICES) \
 	$(QEMU_DEBUG_OPTIONS) \
 	$(QEMU_EXTRA_OPTIONS)

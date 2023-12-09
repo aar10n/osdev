@@ -25,6 +25,7 @@
 
 ; thread offsets
 %define THREAD_ID        0x00
+%define THREAD_FLAGS     0x04
 %define THREAD_CTX       0x08
 %define THREAD_PROCESS   0x10
 %define THREAD_FS_BASE   0x18

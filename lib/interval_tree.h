@@ -41,6 +41,9 @@
 #define contains(i, j) \
   (intvl_eq(intersection(i, j), j))
 
+#define contains_point(i, p) \
+  ((p) >= (i).start && (p) < (i).end)
+
 // i and j overlap
 #define overlaps(i, j) \
   (!is_null_set(intersection(i, j)))
@@ -53,11 +56,11 @@ typedef struct interval {
 
 //
 
-typedef struct {
+typedef struct intvl_tree_events {
   void *(*copy_data)(void *data);
 } intvl_tree_events_t;
 
-typedef struct {
+typedef struct intvl_node {
   intvl_tree_events_t *events;
   rb_node_t *node;
   interval_t interval;

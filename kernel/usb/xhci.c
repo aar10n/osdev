@@ -522,7 +522,7 @@ int xhci_device_init(usb_device_t *device) {
   _xhci_device_t *dev = _xhci_alloc_device(hc, port, slot_id);
   kassert(dev != NULL);
   dev->usb_device = device;
-  dev->thread = thread_create(_xhci_device_event_loop, dev);
+  dev->thread = thread_create(_xhci_device_event_loop, dev, str_make("xhci_event_loop"));
   thread_yield();
 
   dev->endpoints[0] = _xhci_alloc_endpoint(dev, 0, XHCI_CTRL_BI_EP);
@@ -1253,7 +1253,7 @@ xhci_controller_t *_xhci_alloc_controller(pcie_device_t *device, pcie_bar_t *bar
 
   // event thread
   mutex_init(&hc->lock, 0);
-  hc->thread = thread_create(_xhci_controller_event_loop, hc);
+  hc->thread = thread_create(_xhci_controller_event_loop, hc, str_make("xhci_controller_event_loop"));
   thread_yield();
 
   return hc;

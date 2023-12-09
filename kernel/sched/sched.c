@@ -342,11 +342,11 @@ noreturn void sched_init() {
   }
 
   id_t tid = atomic_fetch_add(&root->num_threads, 1);
-  thread_t *idle = thread_alloc(tid, sched_idle_thread, NULL, false);
+  str_t idle_name = str_from_charp(kasprintf("idle.%d", PERCPU_ID));
+  thread_t *idle = thread_alloc(tid, sched_idle_thread, NULL, idle_name, false);
   idle->process = root;
   idle->priority = 255;
   idle->policy = 255;
-  idle->name = kasprintf("idle.%d", PERCPU_ID);
   LOCK(root);
   LIST_ADD(&root->threads, idle, group);
   UNLOCK(root);
@@ -735,22 +735,22 @@ LABEL(next_thread_first);
 
   if (next != curr) {
     if (curr != NULL) {
-      DPRINTF("[CPU#%d] sched: switching from thread %d.%d [%s] to %d.%d [%s]\n",
+      DPRINTF("[CPU#%d] sched: switching from thread %d.%d [{:str}] to %d.%d [{:str}]\n",
               PERCPU_ID,
-              curr->process->pid, curr->tid, curr->name,
-              next->process->pid, next->tid, next->name);
+              curr->process->pid, curr->tid, &curr->name,
+              next->process->pid, next->tid, &next->name);
     }
 
     temp_irq_restore(flags);
     thread_switch(next);
-    DPRINTF("[CPU#%d] sched: now in thread %d.%d [%s]\n",
-            PERCPU_ID, PERCPU_THREAD->process->pid, PERCPU_THREAD->tid, PERCPU_THREAD->name);
+    DPRINTF("[CPU#%d] sched: now in thread %d.%d [{:str}]\n",
+            PERCPU_ID, PERCPU_THREAD->process->pid, PERCPU_THREAD->tid, &PERCPU_THREAD->name);
     return 0;
   }
 
 LABEL(end);
   temp_irq_restore(flags);
-  DPRINTF("[CPU#%d] sched: continuing in thread %d.%d [%s]\n",
-          PERCPU_ID, PERCPU_THREAD->process->pid, PERCPU_THREAD->tid, PERCPU_THREAD->name);
+  DPRINTF("[CPU#%d] sched: continuing in thread %d.%d [{:str}]\n",
+          PERCPU_ID, PERCPU_THREAD->process->pid, PERCPU_THREAD->tid, &PERCPU_THREAD->name);
   return 0;
 }

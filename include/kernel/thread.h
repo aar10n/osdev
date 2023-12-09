@@ -57,7 +57,7 @@ typedef struct thread_ctx {
 
 typedef struct thread {
   id_t tid;                     // thread id
-  uint32_t reserved;            // reserved
+  uint32_t flags;               // thread flags
   thread_ctx_t *ctx;            // thread context
   process_t *process;           // owning process
   uintptr_t fs_base;            // fs base address
@@ -65,41 +65,38 @@ typedef struct thread {
   uintptr_t user_sp;            // user stack pointer
   // !!! DO NOT CHANGE ABOVE HERE !!!
   // assembly code in thread.asm accesses these fields using known offsets
-
   uint8_t cpu_id;               // current/last cpu used
   uint8_t policy;               // thread scheduling policy
   uint16_t priority;            // thread priority
+  clockid_t alarm_id;           // wakeup alarm id if sleeping
+  int affinity;                 // thread cpu affinity
+  int errno;                    // thread local errno (or exit status)
+
+  str_t name;                   // thread name
   thread_status_t status;       // thread status
   sched_stats_t *stats;         // scheduling stats
-  int affinity;                 // thread cpu affinity
-  clockid_t alarm_id;           // wakeup alarm id if sleeping
 
   spinlock_t lock;              // thread spinlock
   mutex_t mutex;                // thread mutex
-  cond_t data_ready;            // thread data ready condition
-  sigset_t signal;              // signal mask
-  uint32_t flags;               // thread flags
 
-  char *name;                   // thread name or description (owning)
-  int errno;                    // thread local errno (or exit status)
   int preempt_count;            // preempt disable counter
   void *data;                   // thread data pointer
 
-  vm_mapping_t *kernel_stack;   // kernel stack mapping
-  vm_mapping_t *user_stack;     // user stack mapping
+  vm_mapping_t *kernel_stack;   // kernel stack vm
+  vm_mapping_t *user_stack;     // user stack vm
 
-  LIST_ENTRY(thread_t) group;   // thread group (threads from same process)
+  LIST_ENTRY(thread_t) group;   // thread group
   LIST_ENTRY(thread_t) list;    // generic thread list (used by scheduler, mutex, cond, etc)
 } thread_t;
 static_assert(offsetof(thread_t, tid) == 0x00);
 static_assert(offsetof(thread_t, process) == 0x10);
 static_assert(offsetof(thread_t, user_sp) == 0x28);
 
-thread_t *thread_alloc(id_t tid, void *(start_routine)(void *), void *arg, bool user);
+thread_t *thread_alloc(id_t tid, void *(start_routine)(void *), void *arg, str_t name, bool user);
 thread_t *thread_copy(thread_t *other);
 void thread_free(thread_t *thread);
 
-thread_t *thread_create(void *(start_routine)(void *), void *arg);
+thread_t *thread_create(void *(start_routine)(void *), void *arg, str_t name);
 noreturn void thread_exit(int retval);
 void thread_sleep(uint64_t us);
 void thread_yield();

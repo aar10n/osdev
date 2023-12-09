@@ -183,7 +183,7 @@ void alarms_init() {
 
   cond_init(&alarm_cond, 0);
   spin_init(&alarm_cond_lock);
-  thread_create(alarm_event_loop, NULL);
+  thread_create(alarm_event_loop, NULL, str_make("alarm_event_loop"));
   thread_yield();
 }
 

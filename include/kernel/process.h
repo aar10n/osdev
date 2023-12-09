@@ -8,6 +8,7 @@
 #include <kernel/base.h>
 #include <kernel/queue.h>
 #include <kernel/mutex.h>
+#include <kernel/mm_types.h>
 
 #define MAX_PROCS       1024
 #define DEFAULT_RFLAGS  0x246
@@ -15,14 +16,10 @@
 #define PROCESS_LOCK(proc) (spin_lock(&(proc)->lock))
 #define PROCESS_UNLOCK(proc) (spin_unlock(&(proc)->lock))
 
-struct vm_mapping;
 typedef struct thread thread_t;
 typedef struct address_space address_space_t;
 typedef struct ventry ventry_t;
 typedef struct ftable ftable_t;
-typedef struct signal signal_t;
-typedef struct sig_handler sig_handler_t;
-typedef struct message message_t;
 
 typedef struct process {
   pid_t pid;                      // process id
@@ -36,10 +33,10 @@ typedef struct process {
   gid_t egid;                     // effective group id
   ventry_t *pwd;                  // working directory reference
   ftable_t *files;                // open file table
-  size_t num_threads;             // number of threads
-  spinlock_t lock;                // process lock
+  vm_mapping_t *brk_vm;           // process brk mapping
 
-  struct vm_mapping *brk_vm;      // process brk mapping
+  spinlock_t lock;                // process lock
+  size_t num_threads;             // number of threads
 
   thread_t *main;                 // main thread
   LIST_HEAD(thread_t) threads;    // process threads (group)
@@ -48,14 +45,14 @@ typedef struct process {
 
 void process_create_root(void (function)());
 
-pid_t process_create(void (start_routine)());
-pid_t process_create_1(void (start_routine)(), void *arg);
+pid_t process_create(void (start_routine)(), str_t name);
+pid_t process_create_1(void (start_routine)(), void *arg, str_t name);
 pid_t process_fork();
 int process_execve(const char *path, char *const argv[], char *const envp[]);
 
 pid_t process_getpid();
 pid_t process_getppid();
-id_t process_gettid();
+pid_t process_gettid();
 uid_t process_getuid();
 gid_t process_getgid();
 

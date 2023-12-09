@@ -230,7 +230,7 @@ int hid_device_init(usb_device_t *device) {
   hid->handle_input = fn_ptr;
 
   device->driver_data = hid;
-  hid->thread = thread_create(hid_device_event_loop, device);
+  hid->thread = thread_create(hid_device_event_loop, device, str_make("hid_device_event_loop"));
 
   kprintf("hid: done\n");
   return 0;
