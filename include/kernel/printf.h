@@ -9,6 +9,8 @@
 #include <kernel/base.h>
 #include <stdarg.h>
 
+void kprintf_early_init();
+void kprintf_kputs(const char *str);
 
 /*
  * Format Strings

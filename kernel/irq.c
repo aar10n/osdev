@@ -8,9 +8,6 @@
 #include <kernel/spinlock.h>
 #include <kernel/printf.h>
 #include <kernel/panic.h>
-#include <kernel/console.h>
-
-#include <kernel/cpu/idt.h>
 
 #include <kernel/device/apic.h>
 #include <kernel/device/ioapic.h>
@@ -66,7 +63,7 @@ __used void exception_handler(uint8_t vector, uint32_t error, cpu_irq_stack_t *f
   }
 
   if (vector == CPU_EXCEPTION_DF) {
-    debug_kputs("!!! DOUBLE FAULT !!!\n");
+    kprintf_kputs("!!! DOUBLE FAULT !!!\n");
   } else {
     kprintf("!!! EXCEPTION %d !!!\n", vector);
     kprintf("  CPU#%d - %#b\n", PERCPU_ID, error);

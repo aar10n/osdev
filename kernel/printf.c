@@ -3,15 +3,49 @@
 //
 
 #include <kernel/printf.h>
-#include <kernel/console.h>
 #include <kernel/panic.h>
 #include <kernel/string.h>
 #include <kernel/mm.h>
 #include <kernel/fs.h>
 
+#include <kernel/device/8250.h>
+
 #include <fmt/fmt.h>
 
 #define BUFFER_SIZE 512
+
+static void *impl_arg;
+static int (*kprintf_puts_impl)(void *, const char *);
+
+static struct early_kprintf {
+  spinlock_t lock;
+  uint16_t port;
+} early_kprintf = {
+  .port = COM1_PORT,
+};
+
+static int early_kprintf_puts(void *arg, const char *s) {
+  struct early_kprintf *p = arg;
+  SPIN_LOCK(&p->lock);
+  while (*s) {
+    serial_port_write_char(p->port, *s);
+    s++;
+  }
+  SPIN_UNLOCK(&p->lock);
+  return 0;
+}
+
+//
+
+void kprintf_early_init() {
+  serial_port_init(early_kprintf.port);
+  impl_arg = &early_kprintf;
+  kprintf_puts_impl = early_kprintf_puts;
+}
+
+void kprintf_kputs(const char *str) {
+  kprintf_puts_impl(impl_arg, str);
+}
 
 // MARK: Public API
 
@@ -21,13 +55,13 @@ void kprintf(const char *format, ...) {
   va_start(valist, format);
   fmt_format(format, str, BUFFER_SIZE, FMT_MAX_ARGS, valist);
   va_end(valist);
-  debug_kputs(str);
+  kprintf_puts_impl(impl_arg, str);
 }
 
 void kvfprintf(const char *format, va_list valist) {
   char str[BUFFER_SIZE];
   fmt_format(format, str, BUFFER_SIZE, FMT_MAX_ARGS, valist);
-  debug_kputs(str);
+  kprintf_puts_impl(impl_arg, str);
 }
 
 size_t ksprintf(char *str, const char *format, ...) {

@@ -14,8 +14,8 @@ KERNEL_DEFINES = $(DEFINES) -D__KERNEL__
 
 # kernel/
 kernel += entry.asm memory.asm smpboot.asm syscall.asm thread.asm \
-	chan.c clock.c console.c errno.c  init.c irq.c loader.c main.c \
-	mutex.c panic.c printf.c process.c semaphore.c signal.c smpboot.c \
+	chan.c clock.c errno.c  init.c irq.c loader.c main.c mutex.c \
+	panic.c printf.c process.c semaphore.c signal.c smpboot.c \
 	spinlock.c string.c syscall.c thread.c timer.c ipi.c input.c  \
 	device.c kio.c fs_utils.c
 
@@ -33,7 +33,7 @@ kernel += cpu/cpu.asm cpu/idt.asm cpu/io.asm cpu/cpu.c \
 kernel += debug/debug.c debug/dwarf.c
 
 # kernel/device
-kernel += device/apic.c device/hpet.c \
+kernel += device/8250.c device/apic.c device/hpet.c \
 	device/ioapic.c device/pit.c
 
 # kernel/gui

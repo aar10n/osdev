@@ -3,7 +3,6 @@
 //
 
 #include <kernel/base.h>
-#include <kernel/console.h>
 #include <kernel/irq.h>
 #include <kernel/init.h>
 #include <kernel/mm.h>
@@ -42,7 +41,7 @@ boot_info_v2_t __boot_data *boot_info_v2;
 
 __used void kmain() {
   QEMU_DEBUG_INIT();
-  console_early_init();
+  kprintf_early_init();
   cpu_early_init();
 
   // We now have primitive debugging via the serial port. In order to initialize
@@ -127,8 +126,8 @@ noreturn void root() {
   open("/dev/null", O_RDONLY|O_SYNC); // fd0=stdin
   open("/dev/tty2", O_WRONLY|O_SYNC); // fd1=stdout
   open("/dev/tty2", O_WRONLY|O_SYNC); // fd2=stderr
-  char *const args[] = {"/initrd/sbin/init", "hello", "world"};
-  process_execve("/initrd/sbin/init", args, NULL);
+  // char *const args[] = {"/initrd/sbin/init", "hello", "world"};
+  // process_execve("/initrd/sbin/init", args, NULL);
 
   //////////////////////////////////////////
 
