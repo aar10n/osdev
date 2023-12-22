@@ -259,6 +259,40 @@ void recursive_unmap_entry(uintptr_t virt_addr, uint32_t pg_flags) {
   cpu_flush_tlb();
 }
 
+void recursive_update_entry(uintptr_t virt_addr, uint32_t pg_flags) {
+  pg_flags &= PAGE_FLAGS_MASK;
+  pg_level_t level = PG_LEVEL_PT;
+  if (pg_flags & PG_BIGPAGE) {
+    level = PG_LEVEL_PD;
+  } else if (pg_flags & PG_HUGEPAGE) {
+    level = PG_LEVEL_PDP;
+  }
+
+  int index = index_for_pg_level(virt_addr, level);
+  uint64_t *pt = get_pgtable_address(virt_addr, level);
+  pt[index] = (pt[index] & PAGE_FRAME_MASK) | page_to_entry_flags(pg_flags);
+  cpu_flush_tlb();
+}
+
+void recursive_update_range(uintptr_t virt_addr, size_t size, uint32_t pg_flags) {
+  pg_flags &= PAGE_FLAGS_MASK;
+  pg_level_t level = PG_LEVEL_PT;
+  if (pg_flags & PG_BIGPAGE) {
+    level = PG_LEVEL_PD;
+  } else if (pg_flags & PG_HUGEPAGE) {
+    level = PG_LEVEL_PDP;
+  }
+
+  uintptr_t end_addr = virt_addr + size;
+  while (virt_addr < end_addr) {
+    int index = index_for_pg_level(virt_addr, level);
+    uint64_t *pt = get_pgtable_address(virt_addr, level);
+    pt[index] = (pt[index] & PAGE_FRAME_MASK) | page_to_entry_flags(pg_flags);
+    virt_addr += pg_flags_to_size(pg_flags);
+  }
+  cpu_flush_tlb();
+}
+
 uint64_t recursive_duplicate_pgtable(
   pg_level_t level,
   uint64_t *dest_parent_table,
@@ -399,6 +433,10 @@ uintptr_t deepcopy_fork_page_tables(page_t **out_pages) {
     *out_pages = LIST_FIRST(&table_pages);
   }
   return new_pml4->address;
+}
+
+uintptr_t cow_fork_page_tables(page_t **out_pages) {
+
 }
 
 //

@@ -24,7 +24,6 @@
 %define PROCESS_VM       0x08
 
 ; thread offsets
-%define THREAD_ID        0x00
 %define THREAD_FLAGS     0x04
 %define THREAD_CTX       0x08
 %define THREAD_PROCESS   0x10

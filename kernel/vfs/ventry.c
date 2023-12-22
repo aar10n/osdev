@@ -67,7 +67,7 @@ ventry_t *ve_alloc_linked(cstr_t name, vnode_t *vnode) __move {
 
 void ve_release(__move ventry_t **entryref) {
   if (*entryref) {
-    if (ref_put(&(*entryref)->refcount, NULL)) {
+    if (ref_put(&(*entryref)->refcount)) {
       ve_cleanup(*entryref);
       *entryref = NULL;
     }

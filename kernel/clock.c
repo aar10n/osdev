@@ -26,9 +26,7 @@ void register_clock_source(clock_source_t *source) {
   LIST_ENTRY_INIT(&source->list);
   LIST_ADD(&clock_sources, source, list);
 
-  if (current_clock_source == NULL) {
-    current_clock_source = source;
-  } else if (source->scale_ns < current_clock_source->scale_ns) {
+  if (!current_clock_source || source->scale_ns < current_clock_source->scale_ns) {
     current_clock_source = source;
   }
 
@@ -61,11 +59,10 @@ clock_t clock_now() {
     uint64_t current = source->read(source);
     source->last_tick = current;
     clock_ticks += current - last;
-    kernel_time_ns += (current - last) * source->scale_ns;
-
+    kernel_time_ns += (clock_t)(current - last) * source->scale_ns;
     atomic_lock_test_and_reset(smp_lock);
   } else {
-    // wait for the time to be updated
+    // wait for the time to be updated by another cpu
     register uint64_t timeout asm ("r15") = 10000000 + (PERCPU_ID * 100000);
     while (*smp_lock) {
       cpu_pause();

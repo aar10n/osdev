@@ -55,17 +55,15 @@ int reserve_pages(uintptr_t address, size_t count, size_t pagesize);
 // physical memory api
 //
 
-page_t *alloc_pages_zone(zone_type_t zone_type, size_t count, size_t pagesize);
-page_t *alloc_pages_size(size_t count, size_t pagesize);
-page_t *alloc_pages(size_t count);
-page_t *alloc_pages_mixed(size_t count);
-page_t *alloc_pages_at(uintptr_t address, size_t count, size_t pagesize);
-void free_pages(page_t *pages);
-page_t *alloc_cow_page(page_t *page);
-page_t *alloc_cow_pages_at(uintptr_t address, size_t count, size_t pagesize);
+__move page_t *alloc_pages_zone(zone_type_t zone_type, size_t count, size_t pagesize);
+__move page_t *alloc_pages_size(size_t count, size_t pagesize);
+__move page_t *alloc_pages(size_t count);
+__move page_t *alloc_pages_at(uintptr_t address, size_t count, size_t pagesize);
+__move page_t *alloc_cow_pages(page_t *pages);
+__move page_t *clone_pages(page_t *pages, bool cow);
+void release_pages(__move page_t **pagesref);
 
-page_t *page_list_remove_head(page_t **list);
-page_t *page_list_add_tail(page_t *head, page_t *tail, page_t *page);
+__move page_t *page_list_split(__move page_t **pagesref, size_t count);
 
 static inline bool is_user_ptr(uintptr_t ptr) { return ptr < USER_SPACE_END; }
 bool is_kernel_code_ptr(uintptr_t ptr);

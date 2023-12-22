@@ -15,6 +15,8 @@ void init_recursive_pgtable(uint64_t *table_virt, uintptr_t table_phys);
 void pgtable_unmap_user_mappings();
 uint64_t *recursive_map_entry(uintptr_t virt_addr, uintptr_t phys_addr, uint32_t pg_flags, page_t **out_pages);
 void recursive_unmap_entry(uintptr_t virt_addr, uint32_t pg_flags);
+void recursive_update_entry(uintptr_t virt_addr, uint32_t pg_flags);
+void recursive_update_range(uintptr_t virt_addr, size_t size, uint32_t pg_flags);
 
 uintptr_t get_current_pgtable();
 void set_current_pgtable(uintptr_t table_phys);
@@ -22,5 +24,7 @@ size_t pg_flags_to_size(uint32_t flags);
 
 uintptr_t create_new_ap_page_tables(page_t **out_pages);
 uintptr_t deepcopy_fork_page_tables(page_t **out_pages);
+uintptr_t cow_fork_page_tables(page_t **out_pages);
+// void clone_page_to_unmapped
 
 #endif

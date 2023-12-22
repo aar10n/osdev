@@ -50,7 +50,7 @@ void f_release(__move file_t **ref) {
 
   file_t *file = f_moveref(ref);
   if (*ref) {
-    if (ref_put(&(*ref)->refcount, NULL)) {
+    if (ref_put(&(*ref)->refcount)) {
       f_cleanup(*ref);
       *ref = NULL;
     }

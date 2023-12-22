@@ -16,13 +16,13 @@ memfile_t *memfile_alloc(size_t size) {
   memfile_t *memf = kmallocz(sizeof(memfile_t));
   memf->size = size;
 
-  vm_mapping_t *vm = vmap_anon(SIZE_1GB, 0, size, VM_WRITE, "memfile");
-  if (vm == NULL) {
+  uintptr_t vaddr = vmap_anon(SIZE_1GB, 0, size, VM_WRITE, "memfile");
+  if (vaddr == 0) {
     DPRINTF("failed to allocate vm mapping\n");
     kfree(memf);
     return NULL;
   }
-  memf->vm = vm;
+  memf->vm = vm_get_mapping(vaddr);
   return memf;
 }
 

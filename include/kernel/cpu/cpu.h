@@ -99,6 +99,7 @@ typedef union cpuid_bits {
 
 #define CPUID_BIT_ARAT          _CPUID_BIT(eax_0_6, 2)
 
+#define CPUID_BIT_FSGSBASE      _CPUID_BIT(ebx_0_7, 0)
 #define CPUID_BIT_TSC_ADJUST    _CPUID_BIT(ebx_0_7, 1)
 #define CPUID_BIT_BMI1          _CPUID_BIT(ebx_0_7, 3)
 #define CPUID_BIT_HLE           _CPUID_BIT(ebx_0_7, 4)
@@ -155,7 +156,7 @@ typedef struct cpu_irq_stack {
 extern uint8_t cpu_bsp_id;
 
 void cpu_early_init();
-void cpu_late_init();
+void cpu_stage2_init();
 void cpu_map_topology();
 
 uint32_t cpu_get_apic_id();

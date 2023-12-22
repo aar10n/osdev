@@ -67,7 +67,7 @@ vnode_t *vn_alloc(id_t id, struct vattr *vattr) __move {
 }
 
 void vn_release(__move vnode_t **vnref) {
-  if (ref_put(&(*vnref)->refcount, NULL)) {
+  if (ref_put(&(*vnref)->refcount)) {
     vn_cleanup(*vnref);
   }
   *vnref = NULL;

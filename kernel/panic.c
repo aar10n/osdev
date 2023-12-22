@@ -17,7 +17,7 @@
 #include <atomic.h>
 
 static volatile uint32_t lock = 0;
-static bool panic_flags[MAX_NUM_CPUS] = {};
+static bool panic_flags[MAX_CPUS] = {};
 
 
 noreturn void panic_other_cpus(cpu_irq_stack_t *frame, cpu_registers_t *regs) {

@@ -13,7 +13,7 @@
 // implementation taken from Linux kernel
 // https://www.open-std.org/JTC1/SC22/WG21/docs/papers/2007/n2167.pdf
 
-#define __move // identifies a pointer as moved reference (ownership transferred)
+#define __move // identifies a pointer as a moved reference (ownership transferred)
 #define __ref  // marks a pointer as a reference (ownership not transferred)
 
 typedef atomic_t refcount_t;
@@ -26,9 +26,8 @@ static inline void ref_get(refcount_t *ref) {
   atomic_inc(ref);
 }
 
-static inline int ref_put(refcount_t *ref, void (*release)(refcount_t *)) {
+static inline int ref_put(refcount_t *ref) {
   if (atomic_dec_and_test(ref)) {
-    if (release) release(ref);
     return 1;
   }
   return 0;
@@ -40,9 +39,26 @@ static inline int ref_count(refcount_t *ref) {
 
 
 #define _refname refcount
-#define REFCOUNT refcount_t _refname
+#define _refcount refcount_t _refname
+#define read_refcount(objptr) (ref_count(&(objptr)->_refname))
 
-#define getref(obj) ({ ref_get(&(obj)->_refname); obj; })
-#define moveref(objref) ({ typeof(*(obj)) _obj = *(obj); *(obj) = NULL; _obj; })
+#define initref(objptr) (ref_init(&(objptr)->_refname))
+#define newref(objptr) ({ ref_init(&(objptr)->_refname); objptr; })
+#define getref(objptr) ({ ref_get(&(objptr)->_refname); objptr; })
+#define moveref(objref) ({ typeof(objref) tmp = (objref); (objref) = NULL; tmp; })
+// putref(obj **objpptr, void(*objdtor)(obj*))
+#define putref(objpptr, objdtor) ({ \
+  if (*(objpptr)) { \
+    if (ref_put(&((*(objpptr)))->_refname)) { \
+      objdtor(*(objpptr)); \
+    } \
+    *(objpptr) = NULL; \
+  } \
+})
+#define try_putref(objptr) ({ \
+  int res = ref_put(&((objptr))->_refname); \
+  (objptr) = NULL; \
+  res; \
+})
 
 #endif

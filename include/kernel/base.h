@@ -29,6 +29,7 @@
 #define MS_PER_SEC 1000
 #define US_PER_SEC 1000000
 #define NS_PER_SEC 1000000000
+#define NS_PER_USEC 1000
 #define FS_PER_SEC 1000000000000000
 
 #define MS_TO_NS(ms) ((clock_t)(ms) * (NS_PER_SEC / MS_PER_SEC))
@@ -200,8 +201,6 @@
 //
 // Global Symbols
 //
-
-#define MAX_NUM_CPUS 64
 
 extern boot_info_v2_t *boot_info_v2;
 extern uint32_t system_num_cpus;

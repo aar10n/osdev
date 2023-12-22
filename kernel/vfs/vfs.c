@@ -61,7 +61,7 @@ vfs_t *vfs_alloc(struct fs_type *type, int mount_flags) __move {
 
 void vfs_release(__move vfs_t **ref) {
   if (*ref) {
-    if (ref_put(&(*ref)->refcount, NULL)) {
+    if (ref_put(&(*ref)->refcount)) {
       vfs_cleanup(*ref);
       *ref = NULL;
     }

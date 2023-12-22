@@ -3,6 +3,7 @@
 //
 
 #include <kernel/cpu/cpu.h>
+#include <kernel/cpu/fpu.h>
 #include <kernel/cpu/gdt.h>
 #include <kernel/cpu/idt.h>
 #include <kernel/device/apic.h>
@@ -229,7 +230,7 @@ void cpu_early_init() {
   }
 }
 
-void cpu_late_init() {
+void cpu_stage2_init() {
   // setup the syscall handler
   cpu_write_msr(IA32_LSTAR_MSR, (uintptr_t) syscall_handler);
   cpu_write_msr(IA32_SFMASK_MSR, 0);
@@ -361,6 +362,7 @@ void cpu_print_cpuid() {
   kprintf("  tsc-adjust: %d\n", cpuid_query_bit(CPUID_BIT_TSC_ADJUST));
   kprintf("  tsc-invariant: %d\n", cpuid_query_bit(CPUID_BIT_INVARIANT_TSC));
   kprintf("  perf-tsc: %d\n", cpuid_query_bit(CPUID_BIT_PERFTSC));
+  kprintf("  fsgsbase: %d\n", cpuid_query_bit(CPUID_BIT_FSGSBASE));
   kprintf("  arat: %d\n", cpuid_query_bit(CPUID_BIT_ARAT));
   kprintf("  wdt: %d\n", cpuid_query_bit(CPUID_BIT_WDT));
   kprintf("  topoext: %d\n", cpuid_query_bit(CPUID_BIT_TOPOEXT));
@@ -393,6 +395,21 @@ void cpu_disable_write_protection() {
 void cpu_enable_write_protection() {
   uint64_t cr0 = __read_cr0();
   __write_cr0(cr0 | CPU_CR0_WP);
+}
+
+//
+// MARK: FPU
+//
+
+struct fpu_area *fpu_state_alloc() {
+  return kmallocz(sizeof(struct fpu_area));
+}
+
+void fpu_state_free(struct fpu_area **fp) {
+  if (fp != NULL) {
+    kfree(*fp);
+    *fp = NULL;
+  }
 }
 
 //

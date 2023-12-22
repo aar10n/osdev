@@ -62,8 +62,8 @@ struct device_ops {
   ssize_t (*d_read)(struct device *device, size_t off, size_t nmax, struct kio *kio);
   ssize_t (*d_write)(struct device *device, size_t off, size_t nmax, struct kio *kio);
   // int (*d_ioctl)(struct device *device, int cmd, void *arg);
-  page_t *(*d_getpage)(struct device *device, size_t off);
-  int (*d_putpage)(struct device *device, size_t off, page_t *page);
+  __move page_t *(*d_getpage)(struct device *device, size_t off);
+  int (*d_putpage)(struct device *device, size_t off, __move page_t *page);
 };
 
 /**

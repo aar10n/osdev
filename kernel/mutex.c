@@ -80,11 +80,7 @@ thread_t *safe_dequeue(volatile uint32_t *flags, tqueue_t *queue) {
 void mutex_init(mutex_t *mutex, uint32_t flags) {
   mutex->flags = flags;
   LIST_INIT(&mutex->queue);
-  if (flags & MUTEX_SHARED) {
-    mutex->aquired_by = NULL;
-  } else if (PERCPU_PROCESS) {
-    mutex->aquired_by = PERCPU_PROCESS->main;
-  }
+  mutex->aquired_by = NULL;
   mutex->aquire_count = 0;
 }
 
@@ -108,7 +104,6 @@ int mutex_lock(mutex_t *mutex) {
     mutex_trace_debug("failed to aquire mutex (%d:%d)", process_getpid(), process_gettid());
     mutex_trace_debug("blocking");
 
-    thread->flags |= F_THREAD_OWN_BLOCKQ;
     safe_enqeue(&mutex->flags, &mutex->queue, thread);
     sched_block(thread);
   }

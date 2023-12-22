@@ -18,13 +18,10 @@ struct cpu_info;
 #define PERCPU_SIZE 0x1000
 typedef struct __attribute__((aligned(128))) per_cpu {
   uint64_t self;
-  uint16_t id;
-  uint16_t apic_id;
-  uint32_t errno;
+  uint32_t id;
+  uint32_t apic_id;
   struct thread *thread;
   struct process *process;
-  uint64_t kernel_sp;
-  uint64_t user_sp;
   uint64_t rflags;
 
   uint32_t irq_level;
@@ -39,21 +36,19 @@ typedef struct __attribute__((aligned(128))) per_cpu {
 _Static_assert(sizeof(per_cpu_t) <= PERCPU_SIZE, "");
 _Static_assert(offsetof(per_cpu_t, thread) == 0x10, "");
 _Static_assert(offsetof(per_cpu_t, process) == 0x18, "");
+_Static_assert(offsetof(per_cpu_t, address_space) == 0x30, "");
 
-#define __percpu_get_u16(offset) ({ register uint16_t v; __asm("mov %0, gs:%1" : "=r" (v) : "i" (offset)); v; })
+
 #define __percpu_get_u32(offset) ({ register uint32_t v; __asm("mov %0, gs:%1" : "=r" (v) : "i" (offset)); v; })
 #define __percpu_get_u64(offset) ({ register uint64_t v; __asm("mov %0, gs:%1" : "=r" (v) : "i" (offset)); v; })
 #define __percpu_set_u32(offset, val) ({ register uint32_t v = (uint32_t)(val); __asm("mov gs:%0, %1" : : "i" (offset), "r" (v)); })
 #define __percpu_set_u64(offset, val) ({ register uint64_t v = (uint64_t)(val); __asm("mov gs:%0, %1" : : "i" (offset), "r" (v)); })
 
 #define __percpu_get_self() ((uintptr_t) __percpu_get_u64(offsetof(per_cpu_t, self)))
-#define __percpu_get_id() ((uint8_t) __percpu_get_u16(offsetof(per_cpu_t, id)))
-#define __percpu_get_apic_id() ((uint8_t) __percpu_get_u16(offsetof(per_cpu_t, apic_id)))
-#define __percpu_get_errno() ((int) __percpu_get_u32(offsetof(per_cpu_t, errno)))
+#define __percpu_get_id() ((uint8_t) __percpu_get_u32(offsetof(per_cpu_t, id)))
+#define __percpu_get_apic_id() ((uint8_t) __percpu_get_u32(offsetof(per_cpu_t, apic_id)))
 #define __percpu_get_thread() ((struct thread *) __percpu_get_u64(offsetof(per_cpu_t, thread)))
 #define __percpu_get_process() ((struct process *) __percpu_get_u64(offsetof(per_cpu_t, process)))
-#define __percpu_get_kernel_sp() ((uintptr_t) __percpu_get_u64(offsetof(per_cpu_t, kernel_sp)))
-#define __percpu_get_user_sp() ((uintptr_t) __percpu_get_u64(offsetof(per_cpu_t, user_sp)))
 #define __percpu_get_rflags() __percpu_get_u64(offsetof(per_cpu_t, rflags))
 #define __percpu_get_irq_level() __percpu_get_u32(offsetof(per_cpu_t, irq_level))
 #define __percpu_get_address_space() ((struct address_space *) __percpu_get_u64(offsetof(per_cpu_t, address_space)))
@@ -61,7 +56,6 @@ _Static_assert(offsetof(per_cpu_t, process) == 0x18, "");
 #define __percpu_get_cpu_info() ((struct cpu_info *) __percpu_get_u64(offsetof(per_cpu_t, cpu_info)))
 #define __percpu_get_cpu_tss() ((void *) __percpu_get_u64(offsetof(per_cpu_t, cpu_tss)))
 
-#define __percpu_set_errno(value) __percpu_set_u32(offsetof(per_cpu_t, errno), value)
 #define __percpu_set_thread(value) __percpu_set_u64(offsetof(per_cpu_t, thread), (uintptr_t)(value))
 #define __percpu_set_process(value) __percpu_set_u64(offsetof(per_cpu_t, process), (uintptr_t)(value))
 #define __percpu_set_rflags(value) __percpu_set_u64(offsetof(per_cpu_t, rflags), value)

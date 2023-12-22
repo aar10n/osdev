@@ -60,7 +60,7 @@ __used void ipi_handler(cpu_irq_stack_t *frame, cpu_registers_t *regs) {
       kassert(false && "not implemented");
       unreachable;
     case IPI_SCHEDULE:
-      sched_reschedule((sched_cause_t) data);
+      reschedule((sched_reason_t) data);
       break;
     case IPI_NOOP:
       break;

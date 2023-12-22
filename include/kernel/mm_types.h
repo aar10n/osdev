@@ -7,6 +7,7 @@
 
 #include <kernel/base.h>
 #include <kernel/str.h>
+#include <kernel/ref.h>
 #include <kernel/queue.h>
 #include <kernel/spinlock.h>
 
@@ -37,21 +38,21 @@ struct intvl_tree;
 /**
  * A page of physical memory.
  *
- * The page struct represents a frame of physical memory. A given frame may have
- * more than one page struct allocated for it, but all references to a frame beyond
- * the original must be copy-on-write pages. If a page does not have the `fa` field
- * set it means the frame is not owned by the struct.
+ * The page struct represents a reference to a frame of physical memory.
+ * Any standalone page, or the first page in a list of many is known as the
+ * head page.
  */
 typedef struct page {
-  uint64_t address;           // physical address
+  uint64_t address;           // physical frame
   uint32_t flags;             // page flags
-  struct {
+  struct {                    // *** valid if PG_HEAD ***
     uint64_t count : 63;      //   number of pages in the list
     uint64_t contiguous : 1;  //   whether the list is physically contiguous
-  } head;                     // (only valid if PG_HEAD)
+  } head;
   struct vm_mapping *mapping; // owning virtual mapping (if mapped)
   struct frame_allocator *fa; // owning frame allocator
-  SLIST_ENTRY(struct page) next;
+  struct page *next;          // next page (ref)
+  _refcount;
 } page_t;
 
 // page flags
@@ -79,10 +80,9 @@ typedef struct page {
  * has its own individual address space covering userspace.
  */
 typedef struct address_space {
-  struct intvl_tree *tree;
   uintptr_t min_addr;
   uintptr_t max_addr;
-  spinlock_t lock;
+  mutex_t lock;
 
   size_t num_mappings;
   LIST_HEAD(struct vm_mapping) mappings;
@@ -92,6 +92,8 @@ typedef struct address_space {
   LIST_HEAD(struct page) table_pages;
 } address_space_t;
 
+#define SPACE_LOCK(space) __type_checked(struct address_space *, space, mutex_lock(&(space)->lock))
+#define SPACE_UNLOCK(space) __type_checked(struct address_space *, space, mutex_unlock(&(space)->lock))
 
 enum vm_type {
   VM_TYPE_RSVD, // reserved memory
@@ -137,25 +139,32 @@ typedef struct vm_mapping {
   LIST_ENTRY(struct vm_mapping) list;
 } vm_mapping_t;
 
+/////////////
 // vm flags
 #define VM_READ     (1 << 0)  // mapping is readable
 #define VM_WRITE    (1 << 1)  // mapping is writable
 #define VM_EXEC     (1 << 2)  // mapping is executable
 #define VM_USER     (1 << 3)  // mapping lives in user space
-#define VM_FIXED    (1 << 4)  // mapping has fixed address (hint used for address)
-#define VM_STACK    (1 << 5)  // mapping grows downwards and has a guard page (only for VM_TYPE_PAGE)
+#define VM_GLOBAL   (1 << 4)  // mapping is global in the TLB
+#define VM_NOCACHE  (1 << 5)  // mapping is non-cacheable
 #define VM_HUGE_2MB (1 << 6)  // mapping uses 2MB pages
 #define VM_HUGE_1GB (1 << 7)  // mapping uses 1GB pages
-#define VM_NOCACHE  (1 << 8)  // mapping is non-cacheable
-#define VM_REPLACE  (1 << 9)  // mapping should replace any non-reserved mappings in the range (used with VM_FIXED)
-// internal vm flags
-#define VM_MAPPED   (1 << 10) // mapping is currently active
-#define VM_MALLOC   (1 << 11) // mapping is a vmalloc allocation
-#define VM_LINKED   (1 << 12) // mapping was split and is linked to the following mapping
-#define VM_SPLIT    (1 << 13) // mapping was split and is the second half of the split
+/* allocation flags */
+#define VM_FIXED    (1 << 8)  // mapping has fixed address (hint used for address)
+#define VM_STACK    (1 << 9)  // mapping grows downwards and has a guard page (only for VM_TYPE_PAGE)
+#define VM_REPLACE  (1 << 10) // mapping should replace any non-reserved mappings in the range (used with VM_FIXED)
+/* internal flags */
+#define VM_MAPPED   (1 << 11) // mapping is currently active
+#define VM_MALLOC   (1 << 12) // mapping is a vmalloc allocation
+#define VM_LINKED   (1 << 13) // mapping was split and is linked to the following mapping
+#define VM_SPLIT    (1 << 14) // mapping was split and is the second half of the split
+#define VM_COW      (1 << 15) // mapping is a copy-on-write mapping
 
 #define VM_PROT_MASK  (VM_READ | VM_WRITE | VM_EXEC)
-#define VM_FLAGS_MASK 0x3FF
+#define VM_FLAGS_MASK 0x7FF
+
+#define VM_LOCK(vm) __type_checked(struct vm_mapping *, vm, SPIN_LOCK(&(vm)->lock))
+#define VM_UNLOCK(vm) __type_checked(struct vm_mapping *, vm, SPIN_UNLOCK(&(vm)->lock))
 
 // address space layout
 

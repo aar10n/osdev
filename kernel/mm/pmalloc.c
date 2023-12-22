@@ -7,6 +7,8 @@
 #include <kernel/mm/pgtable.h>
 #include <kernel/mm/init.h>
 
+#include <kernel/cpu/cpu.h>
+
 #include <kernel/string.h>
 #include <kernel/printf.h>
 #include <kernel/panic.h>
@@ -35,6 +37,17 @@ static zone_type_t zone_alloc_order[MAX_ZONE_TYPE] = {
   [ZONE_TYPE_LOW]     = MAX_ZONE_TYPE, // out of zones
 };
 
+static inline uint32_t vm_flags_to_pg_flags(uint32_t vm_flags) {
+  uint32_t pg_flags = 0;
+  pg_flags |= vm_flags & VM_MAPPED ? PG_PRESENT : 0;
+  if (!(vm_flags & VM_COW))
+    pg_flags |= vm_flags & VM_WRITE ? PG_WRITE : 0;
+  pg_flags |= vm_flags & VM_EXEC ? PG_EXEC : 0;
+  pg_flags |= vm_flags & VM_USER ? PG_USER : 0;
+  pg_flags |= vm_flags & VM_NOCACHE ? PG_NOCACHE : 0;
+  return pg_flags;
+}
+
 zone_type_t get_mem_zone_type(uintptr_t addr) {
   if (addr < ZONE_LOW_MAX) {
     return ZONE_TYPE_LOW;
@@ -58,7 +71,7 @@ frame_allocator_t *locate_owning_allocator(uintptr_t addr) {
   return NULL;
 }
 
-static page_t *alloc_page_structs(frame_allocator_t *fa, uintptr_t frame, size_t count, size_t pagesize, uint32_t pg_flags) {
+static page_t *alloc_page_structs(frame_allocator_t *fa, uintptr_t frame, size_t count, size_t pagesize, uint32_t pg_flags) __move {
   if (count == 0) {
     return NULL;
   }
@@ -73,23 +86,30 @@ static page_t *alloc_page_structs(frame_allocator_t *fa, uintptr_t frame, size_t
 
   uintptr_t address = frame;
   size_t remaining = count;
-  LIST_HEAD(page_t) pages = {0};
+
+  page_t *first = NULL;
+  page_t *last = NULL;
   while (remaining > 0) {
     page_t *page = kmallocz(sizeof(page_t));
     page->address = address;
     page->flags = pg_flags;
     page->fa = fa;
-    SLIST_ADD(&pages, page, next);
+    initref(page);
+    if (first == NULL) {
+      first = moveref(page);
+      last = first;
+    } else {
+      last->next = moveref(page);
+    }
 
     address += pagesize;
     remaining--;
   }
 
-  page_t *head = LIST_FIRST(&pages);
-  head->flags |= PG_HEAD;
-  head->head.count = count;
-  head->head.contiguous = true;
-  return head;
+  first->flags |= PG_HEAD;
+  first->head.count = count;
+  first->head.contiguous = true;
+  return first;
 }
 
 //
@@ -236,7 +256,7 @@ frame_allocator_t *new_frame_allocator(uintptr_t base, size_t size, struct frame
   return fa;
 }
 
-page_t *fa_alloc_pages(frame_allocator_t *fa, size_t count, size_t pagesize) {
+page_t *fa_alloc_pages(frame_allocator_t *fa, size_t count, size_t pagesize) __move {
   ASSERT(pagesize == PAGE_SIZE || pagesize == PAGE_SIZE_2MB || pagesize == PAGE_SIZE_1GB);
   if (fa->free == 0 || count == 0) {
     return NULL;
@@ -266,57 +286,26 @@ int fa_reserve_pages(frame_allocator_t *fa, uintptr_t frame, size_t count, size_
   return 0;
 }
 
-void fa_free_pages(page_t *pages) {
-  if (pages == NULL) {
-    return;
+void fa_free_page(__move page_t *page) {
+  ASSERT(page->flags & PG_HEAD);
+  ASSERT(page->head.count == 1);
+  frame_allocator_t *fa = page->fa;
+  if (fa != NULL)
+    fa->impl->fa_free(fa, page->address, 1, pg_flags_to_size(page->flags));
+
+  putref(&page->next, fa_free_page);
+  kfree(page);
+}
+
+void fa_free_pages(__move page_t *pages) {
+  ASSERT(pages->flags & PG_HEAD);
+  ASSERT(pages->head.count > 0);
+
+  while (pages) {
+    page_t *next = pages->next;
+    fa_free_page(moveref(pages));
+    pages = next;
   }
-
-  // since the list of pages doesnt have to be contiguous or homogenous we
-  // need to make a separate call to the frame allocator for each contiguous
-  // range of uniform pages.
-  size_t count = 0;
-  uintptr_t start_frame = pages->address;
-  uintptr_t last_address;
-  size_t last_pagesize;
-  frame_allocator_t *last_fa = NULL;
-  while (pages != NULL) {
-    page_t *page = page_list_remove_head(&pages);
-    ASSERT(page->mapping == NULL); // must be unmapped prior
-    if (page->fa == NULL) {
-      // unmanaged page just free the struct
-      kfree(page);
-      continue;
-    }
-
-    uintptr_t address = page->address;
-    size_t pagesize = pg_flags_to_size(page->flags);
-    if (count == 0) {
-      // first page
-      count++;
-      goto free_struct;
-    }
-
-    if (address == last_address + last_pagesize && pagesize == last_pagesize) {
-      // is contiguous and homogenous
-      count++;
-    } else {
-      // free the range of pages up to the current and start new range
-      if (last_fa)
-        last_fa->impl->fa_free(last_fa, start_frame, count, last_pagesize);
-      start_frame = page->address;
-      count = 1;
-    }
-
-  LABEL(free_struct);
-    last_address = address;
-    last_pagesize = pagesize;
-    last_fa = page->fa;
-    kfree(page);
-  }
-
-  // free the last range of pages
-  if (last_fa)
-    last_fa->impl->fa_free(last_fa, start_frame, count, last_pagesize);
 }
 
 //
@@ -403,7 +392,7 @@ int reserve_pages(uintptr_t address, size_t count, size_t pagesize) {
 
 //
 
-page_t *alloc_pages_zone(zone_type_t zone_type, size_t count, size_t pagesize) {
+__move page_t *alloc_pages_zone(zone_type_t zone_type, size_t count, size_t pagesize) {
   kassert(zone_type < MAX_ZONE_TYPE);
   if (count == 0) {
     return NULL;
@@ -427,7 +416,7 @@ page_t *alloc_pages_zone(zone_type_t zone_type, size_t count, size_t pagesize) {
   return pages;
 }
 
-page_t *alloc_pages_size(size_t count, size_t pagesize) {
+__move page_t *alloc_pages_size(size_t count, size_t pagesize) {
   zone_type_t zone_type = ZONE_ALLOC_DEFAULT;
 
   page_t *pages = NULL;
@@ -445,61 +434,11 @@ page_t *alloc_pages_size(size_t count, size_t pagesize) {
   return pages;
 }
 
-page_t *alloc_pages(size_t count) {
+__move page_t *alloc_pages(size_t count) {
   return alloc_pages_size(count, PAGE_SIZE);
 }
 
-page_t *alloc_pages_mixed(size_t count) {
-  if (count == 0) {
-    return NULL;
-  }
-
-  LIST_HEAD(page_t) pages = {0};
-  size_t remaining = count;
-  bool contiguous = true;
-
-  // group allocations in chunks of n pages
-  size_t n = min(1, is_pow2(count) ? count : prev_pow2(count));
-  while (remaining > 0) {
-    if (n > remaining && n > 1) {
-      n = next_pow2(remaining);
-    }
-
-    page_t *p = alloc_pages(n);
-    if (p == NULL) {
-      if (n > 1) {
-        // failed to allocate a chunk of n pages, try again with n/2
-        n /= 2;
-        continue;
-      }
-      // out of memory
-      kprintf("alloc_pages_mixed: failed to allocate %zu pages\n", remaining);
-      free_pages(LIST_FIRST(&pages));
-      return NULL;
-    }
-
-    if (LIST_LAST(&pages) != NULL) {
-      page_t *last = LIST_LAST(&pages);
-      if (p->address != LIST_LAST(&pages)->address + PAGE_SIZE) {
-        contiguous = false;
-      }
-    }
-
-    p->flags &= ~PG_HEAD;
-    p->head.count = 0;
-    p->head.contiguous = false;
-    remaining -= n;
-    SLIST_ADD(&pages, p, next);
-  }
-
-  page_t *first = LIST_FIRST(&pages);
-  first->flags |= PG_HEAD;
-  first->head.count = count;
-  first->head.contiguous = contiguous;
-  return first;
-}
-
-page_t *alloc_pages_at(uintptr_t address, size_t count, size_t pagesize) {
+__move page_t *alloc_pages_at(uintptr_t address, size_t count, size_t pagesize) {
   if (reserve_pages(address, count, pagesize) < 0) {
     return NULL;
   }
@@ -508,67 +447,99 @@ page_t *alloc_pages_at(uintptr_t address, size_t count, size_t pagesize) {
   return alloc_page_structs(fa, address, count, pagesize, 0);
 }
 
-void free_pages(page_t *pages) {
-  fa_free_pages(pages);
+__move page_t *alloc_cow_pages(page_t *pages) {
+  ASSERT(pages->flags & PG_HEAD);
+  // this doesn't allocate anything new, it just bumps the refcounts and updates
+  // the original pages to be COW
+  bool updated = false;
+  page_t *ptr = getref(pages);
+  while (ptr) {
+    ptr->flags |= PG_COW;
+
+    vm_mapping_t *vm = ptr->mapping;
+    if (vm && !updated) {
+      vm->flags |= VM_COW;
+      uint32_t pg_flags = vm_flags_to_pg_flags(vm->flags);
+      recursive_update_range(vm->address, vm->size, pg_flags);
+      updated = true;
+    }
+
+    ptr = getref(ptr->next);
+  }
+
+  if (updated)
+    cpu_flush_tlb();
+  return pages;
 }
 
-page_t *alloc_cow_page(page_t *page) {
-  if (page == NULL) {
-    return NULL;
+__move page_t *clone_pages(page_t *pages, bool cow) {
+  ASSERT(pages->flags & PG_HEAD);
+  if (cow) {
+    return alloc_cow_pages(pages);
   }
-  return alloc_page_structs(NULL, page->address, 1, pg_flags_to_size(page->flags), PG_COW);
+
+  // copy full
+  page_t *new_pages = alloc_pages_size(pages->head.count, pg_flags_to_size(pages->flags));
+
+  // TODO: this can be much better
+  uint64_t flags;
+  temp_irq_save(flags);
+  cpu_disable_write_protection();
+  memcpy(new_pages, pages, sizeof(page_t) * pages->head.count);
+  cpu_enable_write_protection();
+  temp_irq_restore(flags);
+
+  return new_pages;
 }
 
-page_t *alloc_cow_pages_at(uintptr_t address, size_t count, size_t pagesize) {
-  ASSERT(is_aligned(address, pagesize) && "address must be page-aligned");
-  ASSERT(pagesize == PAGE_SIZE || pagesize == BIGPAGE_SIZE || pagesize == HUGEPAGE_SIZE);
-  frame_allocator_t *fa = locate_owning_allocator(address);
-  frame_allocator_t *fa_end = locate_owning_allocator(address+(count*pagesize)-1);
-  if (fa != NULL || fa_end != NULL) {
-    panic("alloc_cow_pages_at: part or all of requested range is managed by a frame allocator");
+void release_pages(__move page_t **pagesref) {
+  if (pagesref == NULL || *pagesref == NULL) {
+    return;
   }
-  return alloc_page_structs(NULL, address, count, pagesize, PG_COW);
+
+  page_t *head = moveref(*pagesref);
+  ASSERT(head->flags & PG_HEAD);
+  ASSERT(head->fa != NULL);
+  fa_free_pages(moveref(head));
+  *pagesref = NULL;
 }
 
 //
+//
 
-page_t *page_list_remove_head(page_t **list) {
-  if (*list == NULL) {
+// It updates the page list through the pointer with a reference to the tail, and
+// returns a moved reference to the original head of the split pages.
+__move page_t *page_list_split(__move page_t **pagesref, size_t count) {
+  if (*pagesref == NULL || count == 0) {
     return NULL;
   }
 
-  page_t *head = *list;
-  page_t *next = head->next;
+  page_t *head = moveref(*pagesref);
   ASSERT(head->flags & PG_HEAD);
-  if (next) {
-    next->flags |= PG_HEAD;
-    next->head.count = head->head.count - 1;
+  ASSERT(head->head.count >= count);
+
+  page_t *pptr = NULL;
+  page_t *ptr = head;
+  size_t ccount = count;
+  while (ccount > 1) {
+    ASSERT(ptr != NULL);
+    pptr = ptr;
+    ptr = ptr->next;
+    ccount--;
   }
-  // it stays a head, but with count 1
-  head->head.count = 1;
-  *list = next;
+
+  // grab reference to tail
+  page_t *newhead = getref(ptr);
+  newhead->flags |= PG_HEAD;
+  newhead->head.count = head->head.count - count;
+
+  head->head.count = count;
+  if (pptr) // before releasing it from head
+    putref(&pptr->next, fa_free_page);
+
+  *pagesref = moveref(newhead);
   return head;
 }
-
-page_t *page_list_add_tail(page_t *head, page_t *tail, page_t *page) {
-  ASSERT(page->flags & PG_HEAD);
-  if (head == NULL) {
-    ASSERT(tail == NULL);
-    return page;
-  }
-
-  ASSERT(head->flags & PG_HEAD);
-  if (tail != head)
-    ASSERT(!(tail->flags & PG_HEAD));
-
-  tail->next = page;
-  head->head.count += page->head.count;
-  page->head.count = 0;
-  page->flags &= ~PG_HEAD;
-  return page;
-}
-
-//
 
 bool is_kernel_code_ptr(uintptr_t ptr) {
   return ptr >= kernel_code_start && ptr < kernel_code_end;

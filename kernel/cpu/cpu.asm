@@ -204,6 +204,16 @@ __xsetbv:
   xsetbv
   ret
 
+global __fxsave
+__fxsave:
+  fxsave [rdi]
+  ret
+
+global __fxrstor
+__fxrstor:
+  fxrstor [rdi]
+  ret
+
 ; Paging/TLB
 
 global cpu_flush_tlb

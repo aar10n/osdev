@@ -10,7 +10,7 @@
 #include <kernel/spinlock.h>
 #include <kernel/mm_types.h>
 
-typedef page_t *(*vm_getpage_t)(struct vm_mapping *vm, size_t off, uint32_t vm_flags, void *data);
+typedef __move page_t *(*vm_getpage_t)(struct vm_mapping *vm, size_t off, uint32_t vm_flags, void *data);
 
 typedef struct vm_anon {
   page_t **pages;         // array of pointers to backing pages
@@ -26,7 +26,9 @@ typedef struct vm_anon {
 void init_address_space();
 void init_ap_address_space();
 uintptr_t make_ap_page_tables();
-address_space_t *fork_address_space();
+
+address_space_t *vm_new_space(uintptr_t min_addr, uintptr_t max_addr, uintptr_t page_table);
+address_space_t *vm_fork_space(address_space_t *space);
 
 // virtual memory api
 //
@@ -34,8 +36,8 @@ address_space_t *fork_address_space();
 vm_mapping_t *vmap(enum vm_type type, uintptr_t hint, size_t size, size_t vm_size, uint32_t vm_flags, const char *name, void *arg);
 vm_mapping_t *vmap_rsvd(uintptr_t hint, size_t size, uint32_t vm_flags, const char *name);
 vm_mapping_t *vmap_phys(uintptr_t phys_addr, uintptr_t hint, size_t size, uint32_t vm_flags, const char *name);
-vm_mapping_t *vmap_pages(page_t *pages, uintptr_t hint, size_t size, uint32_t vm_flags, const char *name);
-vm_mapping_t *vmap_anon(size_t vm_size, uintptr_t hint, size_t size, uint32_t vm_flags, const char *name);
+uintptr_t vmap_pages(page_t *pages, uintptr_t hint, size_t size, uint32_t vm_flags, const char *name);
+uintptr_t vmap_anon(size_t vm_size, uintptr_t hint, size_t size, uint32_t vm_flags, const char *name);
 void vmap_free(vm_mapping_t *vm);
 
 uintptr_t vm_map_anon(size_t vm_size, uintptr_t hint, size_t size, uint32_t vm_flags, const char *name);
@@ -43,9 +45,8 @@ int vm_free(uintptr_t vaddr, size_t len);
 int vm_protect(uintptr_t vaddr, size_t len, uint32_t prot);
 
 int vm_resize(vm_mapping_t *vm, size_t new_size, bool allow_move);
-int vm_update(vm_mapping_t *vm, size_t off, size_t len, uint32_t prot_flags);
-page_t *vm_getpage(vm_mapping_t *vm, size_t off, bool cow);
-int vm_putpages(vm_mapping_t *vm, page_t *pages, size_t off);
+page_t *vm_getpage(vm_mapping_t *vm, size_t off, bool cowref) __move;
+int vm_putpages(vm_mapping_t *vm, __move page_t *pages, size_t off);
 uintptr_t vm_mapping_to_phys(vm_mapping_t *vm, uintptr_t virt_addr);
 bool vm_mapping_contains(vm_mapping_t *vm, uintptr_t virt_addr);
 

@@ -11,11 +11,6 @@
 
 // -------- Channels --------
 
-// Inspired by the Go construct of the same name, channels provide a
-// simplified way to pass data between producer and consumer threads.
-// A channel can have exactly one reader and one writer at any given
-// time.
-//
 // By default, sending data to a channel does not block unless the
 // channel's buffer is full. Inversely, reading does block as long
 // as the buffer is empty. This behaviour can be changed via flags.
