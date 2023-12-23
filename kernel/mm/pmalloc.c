@@ -71,7 +71,7 @@ frame_allocator_t *locate_owning_allocator(uintptr_t addr) {
   return NULL;
 }
 
-static page_t *alloc_page_structs(frame_allocator_t *fa, uintptr_t frame, size_t count, size_t pagesize, uint32_t pg_flags) __move {
+__move static page_t *alloc_page_structs(frame_allocator_t *fa, uintptr_t frame, size_t count, size_t pagesize, uint32_t pg_flags) {
   if (count == 0) {
     return NULL;
   }
@@ -100,6 +100,7 @@ static page_t *alloc_page_structs(frame_allocator_t *fa, uintptr_t frame, size_t
       last = first;
     } else {
       last->next = moveref(page);
+      last = last->next;
     }
 
     address += pagesize;
@@ -330,7 +331,7 @@ void init_mem_zones() {
     // kprintf("  [%018p-%018p] % 8zu %s\n", base, base+size, SIZE_TO_PAGES(size), zone_names[type]);
     if (type != end_type) {
       // an entry should never cross more than two zones
-      kassert(end_type - type == 1);
+      ASSERT(end_type - type == 1);
       uintptr_t end_base = zone_limits[type];
       size_t end_size = base + size - end_base;
 
@@ -364,7 +365,7 @@ void init_mem_zones() {
 }
 
 int reserve_pages(uintptr_t address, size_t count, size_t pagesize) {
-  kassert(is_aligned(address, pagesize));
+  ASSERT(is_aligned(address, pagesize));
   if (count == 0) {
     return -1;
   }
@@ -393,7 +394,7 @@ int reserve_pages(uintptr_t address, size_t count, size_t pagesize) {
 //
 
 __move page_t *alloc_pages_zone(zone_type_t zone_type, size_t count, size_t pagesize) {
-  kassert(zone_type < MAX_ZONE_TYPE);
+  ASSERT(zone_type < MAX_ZONE_TYPE);
   if (count == 0) {
     return NULL;
   }
@@ -417,6 +418,7 @@ __move page_t *alloc_pages_zone(zone_type_t zone_type, size_t count, size_t page
 }
 
 __move page_t *alloc_pages_size(size_t count, size_t pagesize) {
+  ASSERT(pagesize == PAGE_SIZE || pagesize == PAGE_SIZE_2MB || pagesize == PAGE_SIZE_1GB);
   zone_type_t zone_type = ZONE_ALLOC_DEFAULT;
 
   page_t *pages = NULL;
@@ -449,22 +451,27 @@ __move page_t *alloc_pages_at(uintptr_t address, size_t count, size_t pagesize) 
 
 __move page_t *alloc_cow_pages(page_t *pages) {
   ASSERT(pages->flags & PG_HEAD);
-  // this doesn't allocate anything new, it just bumps the refcounts and updates
-  // the original pages to be COW
+  // this doesn't allocate anything new, it just bumps the refcount of the head,
+  // updates the original page entries to be non-writable and returns a new ref
+  // to the pages. the relevant address space lock should be held for this.
   bool updated = false;
-  page_t *ptr = getref(pages);
-  while (ptr) {
-    ptr->flags |= PG_COW;
+  page_t *curr = pages;
+  while (curr) {
+    if (curr->flags & PG_COW) {
+      // page is already cow
+      curr = curr->next;
+      continue;
+    }
 
-    vm_mapping_t *vm = ptr->mapping;
-    if (vm && !updated) {
+    curr->flags |= PG_COW;
+    vm_mapping_t *vm = curr->mapping;
+    if (vm != NULL && !updated) {
       vm->flags |= VM_COW;
       uint32_t pg_flags = vm_flags_to_pg_flags(vm->flags);
       recursive_update_range(vm->address, vm->size, pg_flags);
       updated = true;
     }
-
-    ptr = getref(ptr->next);
+    curr = curr->next;
   }
 
   if (updated)
@@ -472,13 +479,8 @@ __move page_t *alloc_cow_pages(page_t *pages) {
   return pages;
 }
 
-__move page_t *clone_pages(page_t *pages, bool cow) {
+__move page_t *alloc_cloned_pages(page_t *pages) {
   ASSERT(pages->flags & PG_HEAD);
-  if (cow) {
-    return alloc_cow_pages(pages);
-  }
-
-  // copy full
   page_t *new_pages = alloc_pages_size(pages->head.count, pg_flags_to_size(pages->flags));
 
   // TODO: this can be much better

@@ -135,7 +135,9 @@ typedef struct thread {
   clockid_t alarm_id;           // alarm id (if sleeping)
   clock_t sleep_until;          // wakeup time (if sleeping)
 
+  str_t name;                   // thread name
   struct timeval start_time;    // thread start time
+  struct rusage usage;          // resource usage
   struct thread_stats {
     uint64_t runtime;           // total runtime (ns)
     uint64_t last_active;       // last time active (ns)
@@ -148,7 +150,6 @@ typedef struct thread {
     uint64_t yields;            // number of yields
     void *data;                 // policy private data
   } stats;
-  struct rusage usage;          // resource usage
 
   uintptr_t stack_base;         // kernel stack base vaddr
   size_t stack_size;            // kernel stack size
@@ -169,8 +170,8 @@ typedef struct thread {
 #define TD_IDLE       0x2 // per-cpu idle thread
 #define TD_EXITING    0x4 // thread is exiting
 
-#define td_critical_begin(td) (atomic_fetch_add(&(td)->critical_level, 1))
-#define td_critical_end(td) (atomic_fetch_sub(&(td)->critical_level, 1))
+#define td_begin_critical(td) (atomic_fetch_add(&(td)->critical_level, 1))
+#define td_end_critical(td) (atomic_fetch_sub(&(td)->critical_level, 1))
 
 
 #define LOCK_TD(td) (mutex_lock(&(td)->lock))

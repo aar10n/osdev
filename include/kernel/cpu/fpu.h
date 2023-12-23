@@ -24,13 +24,10 @@ struct fpu_area {
   } st[8];                 // 8 80-bit fpu register
   uint8_t xmm[16][16];     // 16 128-bit xmm registers
   uint8_t pad[96];
-} __aligned(16);
-static_assert(sizeof(struct fpu_area) == 512);
+};
+_Static_assert(sizeof(struct fpu_area) == 512);
 
 struct fpu_area *fpu_area_alloc();
 void fpu_area_free(struct fpu_area **fpa);
-
-void fpu_save(struct fpu_area *fpa) alias("__fxsave");
-void fpu_restore(struct fpu_area *fpa) alias("__fxrstor");
 
 #endif

@@ -34,6 +34,8 @@ typedef struct elf_program {
 #define AUX(t, v) ((auxv_t){ .type = (t), .value = (v) })
 #define PUSH_STACK(sp, val) ((sp) -= sizeof(val), *(typeof(val) *)(sp) = (val))
 
+#define USER_STACK_SIZE  0x20000  // 128 KiB
+
 //
 // MARK: ELF Loading
 //
@@ -327,11 +329,12 @@ int load_executable(const char *path, char *const argp[], char *const envp[], pr
   // setup the stack according to the linux x86_64 ABI
   // aux vectors
   uintptr_t sp = stack_base + USER_STACK_SIZE;
+  // TODO: fix when process api is done
   PUSH_STACK(sp, AUX(AT_NULL, 0));
-  PUSH_STACK(sp, AUX(AT_UID, PERCPU_PROCESS->uid));
-  PUSH_STACK(sp, AUX(AT_GID, PERCPU_PROCESS->gid));
-  PUSH_STACK(sp, AUX(AT_EUID, PERCPU_PROCESS->euid));
-  PUSH_STACK(sp, AUX(AT_EGID, PERCPU_PROCESS->egid));
+  PUSH_STACK(sp, AUX(AT_UID, 0));
+  PUSH_STACK(sp, AUX(AT_GID, 0));
+  PUSH_STACK(sp, AUX(AT_EUID, 0));
+  PUSH_STACK(sp, AUX(AT_EGID, 0));
   PUSH_STACK(sp, AUX(AT_ENTRY, elf_prog.entry));
   if (elf_prog.interp) {
     PUSH_STACK(sp, AUX(AT_BASE, elf_prog.interp->base));

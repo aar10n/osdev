@@ -43,8 +43,7 @@ static pcie_list_head_t *devices[16] = {};
 
 void remap_pcie_address_space(void *data) {
   struct pcie_segment_group *seg = data;
-  vm_mapping_t *vm = vmap_phys(seg->phys_addr, 0, PCIE_MMIO_SIZE, VM_WRITE | VM_HUGE_2MB | VM_NOCACHE, "pcie");
-  seg->address = vm->address;
+  seg->address = vmap_phys(seg->phys_addr, 0, PCIE_MMIO_SIZE, VM_WRITE | VM_HUGE_2MB | VM_NOCACHE, "pcie");
 }
 
 //

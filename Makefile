@@ -70,7 +70,7 @@ NAME := osdev
 OBJ_DIR = $(BUILD_DIR)/$(NAME)
 EDK_DIR = $(BUILD_DIR)/edk2
 
-CFLAGS += -std=gnu17 -Wall -MMD -ffreestanding -nostdlib
+CFLAGS += -std=gnu17 -Wall -MMD -ffreestanding -nostdlib -Werror=int-conversion
 CXXFLAGS += -std=gnu++17 -Wall -MMD -ffreestanding -nostdlib -fno-rtti -fno-exceptions
 LDFLAGS +=
 ASFLAGS +=

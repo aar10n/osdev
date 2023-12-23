@@ -98,8 +98,7 @@ static inline void apic_write_timer(apic_reg_lvt_timer_t timer) {
 //
 
 void remap_apic_registers(void *data) {
-  vm_mapping_t *vm = vmap_phys(APIC_BASE_PA, 0, PAGE_SIZE, VM_WRITE | VM_NOCACHE, "apic");
-  apic_base = vm->address;
+  apic_base = vmap_phys(APIC_BASE_PA, 0, PAGE_SIZE, VM_WRITE | VM_NOCACHE, "apic");
 
   struct apic_device *apic;
   LIST_FOREACH(apic, &apics, list) {
@@ -164,7 +163,7 @@ void get_cpu_clock() {
   cpu_clock = min * (MS_PER_SEC / ms);
   kprintf("[apic] cpu clock ticks per second: %u\n", cpu_clock);
 
-  double freq = cpu_clock / 1e6;
+  double freq = (double)cpu_clock / 1e6;
   kprintf("[apic] detected %.1f MHz cpu clock\n", freq);
 }
 

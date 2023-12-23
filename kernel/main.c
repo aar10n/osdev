@@ -42,14 +42,13 @@ __used void kmain() {
   // Early initialization
   cpu_early_init();
   mm_early_init();
-  irq_early_init();
   acpi_early_init();
   screen_early_init();
   debug_early_init();
   fs_early_init();
+  irq_init();
 
   // Memory initialization
-  irq_init();
   init_mem_zones();
   init_address_space();
   cpu_stage2_init();
@@ -61,8 +60,6 @@ __used void kmain() {
   proc_init();
   sched_init();
   // smp_init();
-
-
 
   unreachable;
 }
@@ -115,6 +112,5 @@ noreturn void root() {
 
   kprintf("it worked!\n");
   kprintf("haulting...\n");
-  thread_block();
-  unreachable;
+  WHILE_TRUE;
 }

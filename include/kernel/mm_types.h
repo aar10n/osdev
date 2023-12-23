@@ -51,7 +51,7 @@ typedef struct page {
   } head;
   struct vm_mapping *mapping; // owning virtual mapping (if mapped)
   struct frame_allocator *fa; // owning frame allocator
-  struct page *next;          // next page (ref)
+  struct page *next;           // next page (ref)
   _refcount;
 } page_t;
 
@@ -116,9 +116,7 @@ enum vm_type {
  * more adjacent mappings connected by the `sibling` field.
  */
 typedef struct vm_mapping {
-  enum vm_type type : 8;    // vm type
-  uint8_t : 8;              // padding
-  uint16_t : 16;            // padding
+  enum vm_type type;        // vm type
   uint32_t flags;           // vm flags
 
   spinlock_t lock;          // mapping lock
@@ -135,8 +133,7 @@ typedef struct vm_mapping {
     struct vm_anon *vm_anon;
   };
 
-  SLIST_ENTRY(struct vm_mapping) sibling;
-  LIST_ENTRY(struct vm_mapping) list;
+  LIST_ENTRY(struct vm_mapping) list; // entry in list of vm mappings
 } vm_mapping_t;
 
 /////////////
@@ -144,6 +141,8 @@ typedef struct vm_mapping {
 #define VM_READ     (1 << 0)  // mapping is readable
 #define VM_WRITE    (1 << 1)  // mapping is writable
 #define VM_EXEC     (1 << 2)  // mapping is executable
+#define   VM_RDWR     (VM_READ | VM_WRITE)
+#define   VM_RDEXC    (VM_READ | VM_EXEC)
 #define VM_USER     (1 << 3)  // mapping lives in user space
 #define VM_GLOBAL   (1 << 4)  // mapping is global in the TLB
 #define VM_NOCACHE  (1 << 5)  // mapping is non-cacheable
@@ -153,15 +152,16 @@ typedef struct vm_mapping {
 #define VM_FIXED    (1 << 8)  // mapping has fixed address (hint used for address)
 #define VM_STACK    (1 << 9)  // mapping grows downwards and has a guard page (only for VM_TYPE_PAGE)
 #define VM_REPLACE  (1 << 10) // mapping should replace any non-reserved mappings in the range (used with VM_FIXED)
+#define VM_NOMAP    (1 << 11) // do not make the mapping active after allocation (cleared after)
 /* internal flags */
-#define VM_MAPPED   (1 << 11) // mapping is currently active
-#define VM_MALLOC   (1 << 12) // mapping is a vmalloc allocation
-#define VM_LINKED   (1 << 13) // mapping was split and is linked to the following mapping
-#define VM_SPLIT    (1 << 14) // mapping was split and is the second half of the split
-#define VM_COW      (1 << 15) // mapping is a copy-on-write mapping
+#define VM_MAPPED   (1 << 16) // mapping is currently active
+#define VM_MALLOC   (1 << 17) // mapping is a vmalloc allocation
+#define VM_LINKED   (1 << 18) // mapping was split and is linked to the following mapping
+#define VM_SPLIT    (1 << 19) // mapping was split and is the second half of the split
+#define VM_COW      (1 << 20) // mapping is a copy-on-write mapping
 
 #define VM_PROT_MASK  (VM_READ | VM_WRITE | VM_EXEC)
-#define VM_FLAGS_MASK 0x7FF
+#define VM_FLAGS_MASK 0xFFF
 
 #define VM_LOCK(vm) __type_checked(struct vm_mapping *, vm, SPIN_LOCK(&(vm)->lock))
 #define VM_UNLOCK(vm) __type_checked(struct vm_mapping *, vm, SPIN_UNLOCK(&(vm)->lock))
@@ -177,7 +177,7 @@ typedef struct vm_mapping {
 #define KERNEL_HEAP_VA      0xFFFFFF8000400000ULL
 #define KERNEL_RESERVED_VA  0xFFFFFF8000C00000ULL
 
-#define KERNEL_HEAP_SIZE   (SIZE_4MB + SIZE_2MB)
+#define KERNEL_HEAP_SIZE   (6 * SIZE_1MB)
 #define KERNEL_STACK_SIZE  SIZE_16KB
 
 #endif

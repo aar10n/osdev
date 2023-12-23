@@ -21,6 +21,7 @@
 extern void smpboot_start();
 extern void smpboot_end();
 
+// incremented non-atomically by the bsp _only_
 uint32_t system_num_cpus = 1;
 
 int smp_boot_ap(uint16_t id, smp_data_t *smpdata) {
@@ -36,12 +37,11 @@ int smp_boot_ap(uint16_t id, smp_data_t *smpdata) {
   per_cpu_t *percpu = percpu_alloc_area(id, apic_id);
 
   page_t *stack_pages = alloc_pages(SIZE_TO_PAGES(KERNEL_STACK_SIZE));
-  vm_mapping_t *stack_vm = vmap_pages(stack_pages, 0, KERNEL_STACK_SIZE, VM_WRITE | VM_STACK, "ap stack");
-  void *ap_stack_ptr = (void *) stack_vm->address;
+  void *ap_stack_ptr = (void *) vmap_pages(moveref(stack_pages), 0, KERNEL_STACK_SIZE, VM_WRITE | VM_STACK, "ap stack");
 
-  // setup ap page tables
-  uintptr_t ap_pml4 = make_ap_page_tables();
-  smpdata->pml4_addr = (uint32_t) ap_pml4;
+  // we can do this cast "safely" because the pml4 pointer is a physical address
+  // guarenteed to have been allocated from below 4GB
+  smpdata->pml4_addr = (uint32_t) get_default_ap_pml4();
   smpdata->percpu_ptr = (uintptr_t) percpu;
   smpdata->stack_addr = (uintptr_t) ap_stack_ptr;
 

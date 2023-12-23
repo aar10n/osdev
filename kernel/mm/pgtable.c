@@ -13,23 +13,28 @@
 #include <kernel/printf.h>
 #include <kernel/panic.h>
 
-#define get_virt_addr(l4, l3, l2, l1) ((0xFFFFULL << 48) | ((uint64_t)(l4) << 39) | \
-  ((uint64_t)(l3) << 30) | ((uint64_t)(l2) << 21) | ((uint64_t)(l1) << 12))
-#define index_for_pg_level(addr, level) (((addr) >> (12 + ((level) * 9))) & 0x1FF)
-#define pg_level_to_shift(level) (12 + ((level) * 9))
+#define ASSERT(x) kassert(x)
+
+#define T_ENTRY 509ULL // temp pdpt entry index
+#define R_ENTRY 510ULL // recursive entry index
 
 #define PT_INDEX(a) (((a) >> 12) & 0x1FF)
 #define PDT_INDEX(a) (((a) >> 21) & 0x1FF)
 #define PDPT_INDEX(a) (((a) >> 30) & 0x1FF)
 #define PML4_INDEX(a) (((a) >> 39) & 0x1FF)
 
-#define U_ENTRY 0ULL
-#define R_ENTRY 510ULL
-#define K_ENTRY 511ULL
-#define T_ENTRY 509ULL
+#define index_for_pg_level(addr, level) (((addr) >> (12 + ((level) * 9))) & 0x1FF)
+#define pg_level_to_shift(level) (12 + ((level) * 9))
 
-#define PML4_PTR ((uint64_t *) get_virt_addr(R_ENTRY, R_ENTRY, R_ENTRY, R_ENTRY))
-#define TEMP_PTR ((uint64_t *) get_virt_addr(R_ENTRY, R_ENTRY, R_ENTRY, T_ENTRY))
+#define get_virt_addr(l4, l3, l2, l1) \
+  ((0xFFFFULL << 48) | ((uint64_t)(l4) << 39) | ((uint64_t)(l3) << 30) | \
+  ((uint64_t)(l2) << 21) | ((uint64_t)(l1) << 12))
+
+#define PML4_PTR    ((uint64_t *) get_virt_addr(R_ENTRY, R_ENTRY, R_ENTRY, R_ENTRY))
+#define TEMP_PDPT   ((uint64_t *) get_virt_addr(R_ENTRY, R_ENTRY, R_ENTRY, T_ENTRY))
+#define TEMP_PDPTE  (&TEMP_PDPT[PERCPU_ID])
+#define TEMP_PTR    ((uint64_t *) get_virt_addr(R_ENTRY, R_ENTRY, T_ENTRY, PERCPU_ID))
+
 
 // page entry flags
 #define PE_PRESENT        (1ULL << 0)
@@ -53,7 +58,10 @@ void _print_pgtable_indexes(uintptr_t addr);
 void _print_pgtable_address(uint16_t l4, uint16_t l3, uint16_t l2, uint16_t l1);
 
 // kernel page table
-uint64_t *early_kernel_pgtable;
+uint64_t *startup_kernel_pml4;
+// pdpe page for the temp entry
+page_t *temp_pdpt_page;
+
 
 uint64_t *get_child_pgtable_address(const uint64_t *parent, pg_level_t level, uint16_t index) {
   uintptr_t addr = (uintptr_t) parent;
@@ -95,22 +103,18 @@ uint16_t page_to_entry_flags(uint32_t flags) {
 
 //
 
-void early_init_pgtable() {
-  early_kernel_pgtable = (void *) get_current_pgtable();
-}
-
 uint64_t *early_map_entry(uintptr_t virt_addr, uintptr_t phys_addr, uint32_t flags) {
-  kassert(virt_addr % PAGE_SIZE == 0);
-  kassert(phys_addr % PAGE_SIZE == 0);
+  ASSERT(virt_addr % PAGE_SIZE == 0);
+  ASSERT(phys_addr % PAGE_SIZE == 0);
 
   pg_level_t level = PG_LEVEL_PT;
   if (flags & PG_BIGPAGE) {
-    kassert(is_aligned(virt_addr, SIZE_2MB));
-    kassert(is_aligned(phys_addr, SIZE_2MB));
+    ASSERT(is_aligned(virt_addr, SIZE_2MB));
+    ASSERT(is_aligned(phys_addr, SIZE_2MB));
     level = PG_LEVEL_PD;
   } else if (flags & PG_HUGEPAGE) {
-    kassert(is_aligned(virt_addr, SIZE_1GB));
-    kassert(is_aligned(phys_addr, SIZE_1GB));
+    ASSERT(is_aligned(virt_addr, SIZE_1GB));
+    ASSERT(is_aligned(phys_addr, SIZE_1GB));
     level = PG_LEVEL_PDP;
   }
 
@@ -139,20 +143,20 @@ uint64_t *early_map_entry(uintptr_t virt_addr, uintptr_t phys_addr, uint32_t fla
 }
 
 void *early_map_entries(uintptr_t virt_addr, uintptr_t phys_addr, size_t count, uint32_t flags) {
-  kassert(virt_addr % PAGE_SIZE == 0);
-  kassert(phys_addr % PAGE_SIZE == 0);
-  kassert(count > 0);
+  ASSERT(virt_addr % PAGE_SIZE == 0);
+  ASSERT(phys_addr % PAGE_SIZE == 0);
+  ASSERT(count > 0);
 
   pg_level_t level = PG_LEVEL_PT;
   size_t stride = PAGE_SIZE;
   if (flags & PG_BIGPAGE) {
-    kassert(is_aligned(virt_addr, SIZE_2MB));
-    kassert(is_aligned(phys_addr, SIZE_2MB));
+    ASSERT(is_aligned(virt_addr, SIZE_2MB));
+    ASSERT(is_aligned(phys_addr, SIZE_2MB));
     level = PG_LEVEL_PD;
     stride = SIZE_2MB;
   } else if (flags & PG_HUGEPAGE) {
-    kassert(is_aligned(virt_addr, SIZE_1GB));
-    kassert(is_aligned(phys_addr, SIZE_1GB));
+    ASSERT(is_aligned(virt_addr, SIZE_1GB));
+    ASSERT(is_aligned(phys_addr, SIZE_1GB));
     level = PG_LEVEL_PDP;
     stride = SIZE_1GB;
   }
@@ -186,15 +190,29 @@ void *early_map_entries(uintptr_t virt_addr, uintptr_t phys_addr, size_t count, 
 
 //
 
-void init_recursive_pgtable(uint64_t *table_virt, uintptr_t table_phys) {
-  for (int i = PML4_INDEX(KERNEL_SPACE_START); i < PML4_INDEX(KERNEL_SPACE_END); i++) {
-    if (i == R_ENTRY) {
-      table_virt[i] = (uint64_t) table_phys | PE_WRITE | PE_PRESENT;
-    } else {
-      table_virt[i] = early_kernel_pgtable[i];
-    }
-  }
-  cpu_flush_tlb();
+void init_recursive_pgtable() {
+  uintptr_t pgtable = get_current_pgtable();
+  // identity mappings are still in effect
+  uint64_t *table_virt = (void *) pgtable;
+
+  // here we setup recursive paging which enables us to access the containing
+  // page for any entry at any level of the hierarchy at an accessible known address.
+  table_virt[R_ENTRY] = (uint64_t) pgtable | PE_WRITE | PE_PRESENT;
+
+  // we also setup a fixed page directory pointer table to enable the temporary mapping
+  // of pages. each cpu has its own entry in this table which can be accessed with TEMP_PDPTE
+  temp_pdpt_page = alloc_pages(1);
+  table_virt[T_ENTRY] = temp_pdpt_page->address | PE_WRITE | PE_PRESENT;
+  memset(TEMP_PDPT, 0, PAGE_SIZE);
+}
+
+uintptr_t clone_init_pgtable() {
+  page_t *newtable_page = alloc_pages(1);
+  *TEMP_PDPTE = newtable_page->address | PE_WRITE | PE_PRESENT;
+  uint64_t *newtable_virt = TEMP_PTR;
+  memcpy(newtable_virt, startup_kernel_pml4, PAGE_SIZE);
+  *TEMP_PDPTE = 0;
+  return newtable_page->address;
 }
 
 void pgtable_unmap_user_mappings() {
@@ -203,15 +221,15 @@ void pgtable_unmap_user_mappings() {
   }
 }
 
-uint64_t *recursive_map_entry(uintptr_t virt_addr, uintptr_t phys_addr, uint32_t pg_flags, page_t **out_pages) {
+uint64_t *recursive_map_entry(uintptr_t virt_addr, uintptr_t phys_addr, uint32_t pg_flags, __move page_t **out_pages) {
   LIST_HEAD(page_t) table_pages = LIST_HEAD_INITR;
   pg_level_t level = PG_LEVEL_PT;
   if (pg_flags & PG_BIGPAGE) {
     level = PG_LEVEL_PD;
-    kassert(is_aligned(virt_addr, SIZE_2MB) && "bigpage must be aligned");
+    ASSERT(is_aligned(virt_addr, SIZE_2MB) && "bigpage must be aligned");
   } else if (pg_flags & PG_HUGEPAGE) {
     level = PG_LEVEL_PDP;
-    kassert(is_aligned(virt_addr, SIZE_1GB) && "hugepage must be aligned");
+    ASSERT(is_aligned(virt_addr, SIZE_1GB) && "hugepage must be aligned");
   }
 
   uint16_t table_pg_flags = PE_WRITE | PE_PRESENT;
@@ -256,7 +274,6 @@ void recursive_unmap_entry(uintptr_t virt_addr, uint32_t pg_flags) {
 
   int index = index_for_pg_level(virt_addr, level);
   get_pgtable_address(virt_addr, level)[index] = 0;
-  cpu_flush_tlb();
 }
 
 void recursive_update_entry(uintptr_t virt_addr, uint32_t pg_flags) {
@@ -271,7 +288,6 @@ void recursive_update_entry(uintptr_t virt_addr, uint32_t pg_flags) {
   int index = index_for_pg_level(virt_addr, level);
   uint64_t *pt = get_pgtable_address(virt_addr, level);
   pt[index] = (pt[index] & PAGE_FRAME_MASK) | page_to_entry_flags(pg_flags);
-  cpu_flush_tlb();
 }
 
 void recursive_update_range(uintptr_t virt_addr, size_t size, uint32_t pg_flags) {
@@ -290,7 +306,6 @@ void recursive_update_range(uintptr_t virt_addr, size_t size, uint32_t pg_flags)
     pt[index] = (pt[index] & PAGE_FRAME_MASK) | page_to_entry_flags(pg_flags);
     virt_addr += pg_flags_to_size(pg_flags);
   }
-  cpu_flush_tlb();
 }
 
 uint64_t recursive_duplicate_pgtable(
@@ -306,7 +321,7 @@ uint64_t recursive_duplicate_pgtable(
     return 0;
   }
 
-  LIST_HEAD(page_t) table_pages = LIST_HEAD_INITR;
+  LIST_HEAD(page_t) table_pages = {0};
   page_t *dest_page = alloc_pages(1);
   dest_parent_table[index] = dest_page->address | PE_WRITE | PE_PRESENT;
   SLIST_ADD(&table_pages, dest_page, next);
@@ -350,25 +365,35 @@ size_t pg_flags_to_size(uint32_t flags) {
   return SIZE_4KB;
 }
 
+void zero_unmapped_page(page_t *page) {
+  uint64_t flags;
+  temp_irq_save(flags);
+  // ---------------------
+  uint64_t entry = *TEMP_PDPTE;
+  *TEMP_PDPTE = page->address | PE_WRITE | PE_PRESENT;
+  memset(TEMP_PTR, 0, pg_flags_to_size(page->flags));
+  *TEMP_PDPTE = entry;
+  // ---------------------
+  temp_irq_restore(flags);
+}
+
 //
 
-uintptr_t create_new_ap_page_tables(page_t **out_pages) {
-  LIST_HEAD(page_t) table_pages = LIST_HEAD_INITR;
-  page_t *new_pml4 = alloc_pages_zone(ZONE_TYPE_NORMAL, 1, PG_WRITE);
+uintptr_t create_new_ap_page_tables(__move page_t **out_pages) {
+  LIST_HEAD(page_t) table_pages = {0};
+  page_t *new_pml4 = alloc_pages(1);
   SLIST_ADD(&table_pages, new_pml4, next);
 
-  uint64_t *pml4 = PML4_PTR;
-  pml4[T_ENTRY] = new_pml4->address | PE_WRITE | PE_PRESENT;
-
+  *TEMP_PDPTE = new_pml4->address | PE_WRITE | PE_PRESENT;
   uint64_t *table_virt = TEMP_PTR;
   memset(table_virt, 0, PAGE_SIZE);
 
   // shallow copy kernel entries
-  for (int i = PML4_INDEX(KERNEL_SPACE_START); i < PML4_INDEX(KERNEL_SPACE_END) + 1; i++) {
+  for (int i = PML4_INDEX(KERNEL_SPACE_START); i <= PML4_INDEX(KERNEL_SPACE_END); i++) {
     if (i == R_ENTRY) {
       table_virt[i] = (uint64_t) new_pml4->address | PE_WRITE | PE_PRESENT;
-    } else if (i != T_ENTRY) {
-      table_virt[i] = pml4[i];
+    } else {
+      table_virt[i] = PML4_PTR[i];
     }
   }
 
@@ -377,66 +402,63 @@ uintptr_t create_new_ap_page_tables(page_t **out_pages) {
   SLIST_ADD(&table_pages, new_low_pdpt, next);
   table_virt[0] = new_low_pdpt->address | PE_WRITE | PE_PRESENT; // pml4 -> pdpe
 
-  uint64_t *low_pdpt = (void *) get_virt_addr(R_ENTRY, R_ENTRY, T_ENTRY, 0);
+  *TEMP_PDPTE = new_low_pdpt->address | PE_WRITE | PE_PRESENT;
+  uint64_t *low_pdpt = TEMP_PTR;
   memset(low_pdpt, 0, PAGE_SIZE);
 
   page_t *new_low_pde = alloc_pages(1);
   SLIST_ADD(&table_pages, new_low_pde, next);
   low_pdpt[0] = new_low_pde->address | PE_WRITE | PE_PRESENT; // pdpe -> pde
 
-  uint64_t *low_pde = (void *) get_virt_addr(R_ENTRY, T_ENTRY, 0, 0);
+  *TEMP_PDPTE = new_low_pde->address | PE_WRITE | PE_PRESENT;
+  uint64_t *low_pde = TEMP_PTR;
   memset(low_pde, 0, PAGE_SIZE);
   low_pde[0] = 0 | PE_SIZE | PE_WRITE | PE_PRESENT; // pde -> 2mb identity mapping
 
-  pml4[T_ENTRY] = 0;
+  *TEMP_PDPTE = 0;
   if (out_pages != NULL) {
     *out_pages = LIST_FIRST(&table_pages);
   }
   return new_pml4->address;
 }
 
-uintptr_t deepcopy_fork_page_tables(page_t **out_pages) {
-  LIST_HEAD(page_t) table_pages = LIST_HEAD_INITR;
+
+uintptr_t fork_page_tables(page_t **out_pages, bool deepcopy_user) {
+  LIST_HEAD(page_t) table_pages = {0};
   page_t *new_pml4 = alloc_pages(1);
   SLIST_ADD(&table_pages, new_pml4, next);
 
-  PML4_PTR[T_ENTRY] = new_pml4->address | PE_WRITE | PE_PRESENT;
-
+  *TEMP_PDPTE = new_pml4->address | PE_WRITE | PE_PRESENT;
   uint64_t *table_virt = TEMP_PTR;
   memset(table_virt, 0, PAGE_SIZE);
 
   // shallow copy kernel entries
-  for (int i = PML4_INDEX(KERNEL_SPACE_START); i < PML4_INDEX(KERNEL_SPACE_END); i++) {
-    if (i == T_ENTRY)
-      continue;
-
+  for (int i = PML4_INDEX(KERNEL_SPACE_START); i <= PML4_INDEX(KERNEL_SPACE_END); i++) {
     if (i == R_ENTRY) {
       table_virt[i] = (uint64_t) new_pml4->address | PE_WRITE | PE_PRESENT;
     } else {
-      table_virt[i] = early_kernel_pgtable[i];
+      table_virt[i] = PML4_PTR[i];
     }
   }
 
-  // deep copy user entries
-  for (int i = PML4_INDEX(USER_SPACE_START); i < PML4_INDEX(USER_SPACE_END); i++) {
-    page_t *page_ptr = NULL;
-    uint64_t *src_table = (void *) get_virt_addr(R_ENTRY, R_ENTRY, R_ENTRY, i);
-    uint64_t *dest_table = TEMP_PTR;
-    TEMP_PTR[i] = recursive_duplicate_pgtable(PG_LEVEL_PDP, src_table, dest_table, i, &page_ptr);
-    if (page_ptr != NULL) {
-      SLIST_ADD_SLIST(&table_pages, page_ptr, SLIST_GET_LAST(page_ptr, next), next);
+  // deep copy user entries if requested
+  if (deepcopy_user) {
+    for (int i = PML4_INDEX(USER_SPACE_START); i <= PML4_INDEX(USER_SPACE_END); i++) {
+      page_t *page_ptr = NULL;
+      uint64_t *src_table = (void *) get_virt_addr(R_ENTRY, R_ENTRY, R_ENTRY, i);
+      uint64_t *dest_table = TEMP_PTR;
+      TEMP_PTR[i] = recursive_duplicate_pgtable(PG_LEVEL_PDP, src_table, dest_table, i, &page_ptr);
+      if (page_ptr != NULL) {
+        SLIST_ADD_SLIST(&table_pages, page_ptr, SLIST_GET_LAST(page_ptr, next), next);
+      }
     }
   }
 
-  PML4_PTR[T_ENTRY] = 0;
+  *TEMP_PDPTE = 0;
   if (out_pages != NULL) {
     *out_pages = LIST_FIRST(&table_pages);
   }
   return new_pml4->address;
-}
-
-uintptr_t cow_fork_page_tables(page_t **out_pages) {
-
 }
 
 //

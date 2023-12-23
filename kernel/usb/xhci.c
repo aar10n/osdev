@@ -299,7 +299,8 @@ noreturn void *_xhci_controller_event_loop(void *arg) {
       } else if (_xhci_handle_controller_event(hc, trb) < 0) {
         kprintf("xhci: failed to handle event\n");
         _xhci_halt_controller(hc);
-        thread_block();
+        // thread_block();
+        todo();
         unreachable;
       }
     }
@@ -402,11 +403,7 @@ void register_xhci_controller(pcie_device_t *device) {
   }
 
   // map the xhci into the virtual memory space
-  vm_mapping_t *xhci_vm = vmap_phys(
-    bar->phys_addr, 0, align(bar->size, PAGE_SIZE),
-    VM_READ | VM_WRITE | VM_NOCACHE, "xhci"
-  );
-  bar->virt_addr = xhci_vm->address;
+  bar->virt_addr = vmap_phys(bar->phys_addr, 0, align(bar->size, PAGE_SIZE), VM_READ | VM_WRITE | VM_NOCACHE, "xhci");
 
   if (!HCCPARAMS1_AC64(read32(bar->virt_addr, XHCI_CAP_HCCPARAMS1))) {
     // we dont support 32-bit controllers right now
@@ -522,8 +519,9 @@ int xhci_device_init(usb_device_t *device) {
   _xhci_device_t *dev = _xhci_alloc_device(hc, port, slot_id);
   kassert(dev != NULL);
   dev->usb_device = device;
-  dev->thread = thread_create(_xhci_device_event_loop, dev, str_make("xhci_event_loop"));
-  thread_yield();
+  // dev->thread = thread_create(_xhci_device_event_loop, dev, str_make("xhci_event_loop"));
+  // thread_yield();
+  todo();
 
   dev->endpoints[0] = _xhci_alloc_endpoint(dev, 0, XHCI_CTRL_BI_EP);
   dev->endpoints[0]->ctx->max_packt_sz = get_default_ep0_packet_size(dev->port);
@@ -807,7 +805,8 @@ int _xhci_reset_controller(xhci_controller_t *hc) {
     }
 
     cpu_pause();
-    thread_yield();
+    // thread_yield();
+    todo();
   }
 
   kprintf("xhci: controller reset\n");
@@ -834,7 +833,8 @@ int _xhci_run_controller(xhci_controller_t *hc) {
     }
 
     cpu_pause();
-    thread_yield();
+    // thread_yield();
+    todo();
   }
 
   // test out the command ring
@@ -1253,8 +1253,9 @@ xhci_controller_t *_xhci_alloc_controller(pcie_device_t *device, pcie_bar_t *bar
 
   // event thread
   mutex_init(&hc->lock, 0);
-  hc->thread = thread_create(_xhci_controller_event_loop, hc, str_make("xhci_controller_event_loop"));
-  thread_yield();
+  // hc->thread = thread_create(_xhci_controller_event_loop, hc, str_make("xhci_controller_event_loop"));
+  // thread_yield();
+  todo();
 
   return hc;
 }

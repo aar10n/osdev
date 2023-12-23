@@ -17,7 +17,6 @@ typedef void (*exception_handler_t)(uint8_t, uint32_t, cpu_irq_stack_t *, cpu_re
 extern uint8_t ipi_vectornum;
 
 
-void irq_early_init();
 void irq_init();
 
 int irq_alloc_hardware_irqnum();

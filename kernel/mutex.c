@@ -86,6 +86,9 @@ void mutex_init(mutex_t *mutex, uint32_t flags) {
 
 int mutex_lock(mutex_t *mutex) {
   thread_t *thread = PERCPU_THREAD;
+  if (thread == NULL)
+    return 0; // early boot
+
   if (!(mutex->flags & MUTEX_SHARED) && (mutex->aquired_by && thread->process != mutex->aquired_by->process)) {
     panic("mutex belongs to another process");
   }
@@ -105,7 +108,8 @@ int mutex_lock(mutex_t *mutex) {
     mutex_trace_debug("blocking");
 
     safe_enqeue(&mutex->flags, &mutex->queue, thread);
-    sched_block(thread);
+    // sched_block(thread);
+    todo();
   }
 done:;
   mutex->aquired_by = thread;
@@ -117,18 +121,21 @@ done:;
 
 int mutex_unlock(mutex_t *mutex) {
   thread_t *thread = PERCPU_THREAD;
+  if (thread == NULL)
+    return 0; // early boot
+
   if (!(mutex->flags & MUTEX_LOCKED)) {
     return -EINVAL;
   }
   kassert(mutex->aquired_by == PERCPU_THREAD);
 
   mutex_trace_debug("unlocking mutex (%d:%d)", process_getpid(), process_gettid());
-  thread->preempt_count++;
+  td_begin_critical(thread);
   if (mutex->flags & MUTEX_REENTRANT) {
     kassert(mutex->aquire_count > 0);
     mutex->aquire_count--;
     if (mutex->aquire_count > 0) {
-      thread->preempt_count--;
+      td_end_critical(thread);
       return 0;
     }
   }
@@ -141,15 +148,18 @@ int mutex_unlock(mutex_t *mutex) {
     mutex->aquired_by = thread->process->main;
   }
   if (next != NULL) {
-    sched_unblock(next);
+    todo(); // sched_unblock
   }
-  thread->preempt_count--;
+  td_end_critical(thread);
   mutex_trace_debug("mutex unlocked (%d:%d)", process_getpid(), process_gettid());
   return 0;
 }
 
 int mutex_trylock(mutex_t *mutex) {
   thread_t *thread = PERCPU_THREAD;
+  if (thread == NULL)
+    return 0; // early boot
+
   if (!(mutex->flags & MUTEX_SHARED) && thread->process != mutex->aquired_by->process) {
     panic("mutex belongs to another process");
   }
@@ -201,9 +211,9 @@ int cond_wait(cond_t *cond) {
   cond_trace_debug("thread %d:%d [%s] blocked by condition %p",
                    thread->process->pid, thread->tid, thread->name, cond);
 
-  thread->flags |= F_THREAD_OWN_BLOCKQ;
   safe_enqeue(&cond->flags, &cond->queue, thread);
-  sched_block(thread);
+  // sched_block(thread);
+  todo();
   return 0;
 }
 
@@ -214,7 +224,7 @@ int cond_wait_timeout(cond_t *cond, uint64_t us) {
   }
 
   uint64_t timeout_ns = us * (NS_PER_SEC / US_PER_SEC);
-  clockid_t id = timer_create_alarm(timer_now() + timeout_ns, cond_timeout_cb, cond);
+  clockid_t id = timer_create_alarm(timer_now() + (clock_t)timeout_ns, cond_timeout_cb, cond);
   if (id < 0) {
     return id;
   }
@@ -242,7 +252,8 @@ int cond_signal(cond_t *cond) {
                    signaled->process->pid, signaled->tid, signaled->name,
                    thread->process->pid, thread->tid, thread->name, cond);
 
-  sched_unblock(signaled);
+  // sched_unblock(signaled);
+  todo();
   return 0;
 }
 
@@ -255,13 +266,14 @@ int cond_broadcast(cond_t *cond) {
 
   thread_t *signaled;
   while ((signaled = safe_dequeue(&cond->flags, &cond->queue))) {
-    sched_unblock(signaled);
+    // sched_unblock(signaled);
+    todo();
   }
   return 0;
 }
 
 int cond_signaled(cond_t *cond) {
-  return cond->flags & M_LOCKED;
+  return cond->flags & M_LOCKED ? 1 : 0;
 }
 
 int cond_clear_signal(cond_t *cond) {

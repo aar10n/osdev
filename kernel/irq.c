@@ -129,9 +129,11 @@ uint8_t irq_internal_map_to_vector(uint8_t irq) {
 
 //
 
-void irq_early_init() {
+void irq_init() {
   irqnum_hardware_map = create_bitmap(IRQ_NUM_VECTORS);
   irqnum_software_map = create_bitmap(IRQ_NUM_VECTORS);
+  spin_init(&irqnum_hardware_lock);
+  spin_init(&irqnum_software_lock);
 
   // mark all over the max number of interrupts as reserved
   bitmap_set_n(irqnum_hardware_map, IRQ_NUM_VECTORS - IRQ_VECTOR_BASE, IRQ_VECTOR_BASE);
@@ -140,14 +142,8 @@ void irq_early_init() {
   // mark ISA interrupt numbers as reserved
   bitmap_set_n(irqnum_hardware_map, 0, IRQ_NUM_ISA);
 
-  spin_init(&irqnum_hardware_lock);
-  spin_init(&irqnum_software_lock);
-}
-
-void irq_init() {
-  irq_external_max = ioapic_get_max_remappable_irq();
-
   // mask out all but the max number of hardware irqs
+  irq_external_max = ioapic_get_max_remappable_irq();
   bitmap_set_n(irqnum_hardware_map, irq_external_max + 1, IRQ_NUM_VECTORS - IRQ_VECTOR_BASE - irq_external_max);
 
   // set up the isa ioapic entries

@@ -126,7 +126,7 @@
 #define packed __attribute((packed))
 #define noinline __attribute((noinline))
 #define always_inline inline __attribute((always_inline))
-#define __aligned(val) __attribute((aligned(val)))
+#define __aligned(val) __attribute((aligned((val))))
 #define deprecated __attribute((deprecated))
 #define warn_unused_result __attribute((warn_unused_result))
 

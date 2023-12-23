@@ -157,14 +157,16 @@ void usb_main() {
   kprintf("usb: initializing usb\n");
 
   kprintf("usb: haulting\n");
-  thread_block();
+  todo();
+  // thread_block();
   unreachable;
 }
 
 void usb_init() {
   pending_usb_devices = chan_alloc(64, 0);
-  thread_create(usb_device_connect_event_loop, NULL, str_make("usb_device_connect_event_loop"));
+  // thread_create(usb_device_connect_event_loop, NULL, str_make("usb_device_connect_event_loop"));
   // process_create(usb_main);
+  todo();
 }
 
 // MARK: Host Driver API

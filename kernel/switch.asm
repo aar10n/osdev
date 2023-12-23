@@ -119,7 +119,8 @@ sched_switch:
 .done_save_fpu:
 
   ; ==== switch address space
-  test qword PERCPU_PROCESS, THREAD_PROCESS(r12)
+  mov rax, PERCPU_PROCESS
+  test rax, THREAD_PROCESS(rsi)
   ; if the next thread is from the same process
   ; we dont need to switch the address space
   jz .done_switch_address_space
@@ -127,7 +128,7 @@ sched_switch:
   ; switch_address_space(next->space)
   mov r12, rsi ; next -> r12
   mov r13, rdi ; curr -> r13
-  mov rdi, PROCESS_VM_SPACE(r13) ; next->space
+  mov rdi, PROCESS_SPACE(r13) ; next->space
   call switch_address_space
   mov rsi, r12 ; next -> rsi
 .done_switch_address_space:

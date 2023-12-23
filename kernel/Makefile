@@ -2,7 +2,7 @@
 $(call register,kernel,KERNEL)
 
 KERNEL_CFLAGS = $(CFLAGS) -mcmodel=large -mno-red-zone -fno-stack-protector \
-				-fno-omit-frame-pointer -fstrict-volatile-bitfields -fno-builtin-memset \
+				-fno-omit-frame-pointer -fno-builtin-memset \
 				$(KERNEL_DEFINES)
 
 KERNEL_LDFLAGS = $(LDFLAGS) -Tlinker.ld -nostdlib -z max-page-size=0x1000 -L$(BUILD_DIR)
@@ -13,7 +13,7 @@ KERNEL_DEFINES = $(DEFINES) -D__KERNEL__
 
 
 # kernel/
-kernel += entry.asm memory.asm smpboot.asm syscall.asm thread.asm \
+kernel += entry.asm memory.asm smpboot.asm syscall.asm switch.asm \
 	chan.c clock.c device.c  errno.c init.c irq.c loader.c main.c \
 	mutex.c panic.c printf.c process.c semaphore.c signal.c smpboot.c \
 	spinlock.c string.c syscall.c timer.c ipi.c input.c kio.c tty.c \

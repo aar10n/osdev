@@ -332,8 +332,7 @@ void remap_dwarf_sections(void *data) {
 
   char name[64] = {0};
   ksnprintf(name, 63, "elf %s", section->name);
-  vm_mapping_t *vm = vmap_phys(section->phys_addr, 0, size, VM_READ, name);
-  section->virt_addr = vm->address;
+  section->virt_addr = vmap_phys(section->phys_addr, 0, size, VM_READ, name);
 }
 
 void dwarf_early_init() {

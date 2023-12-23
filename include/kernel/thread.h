@@ -10,8 +10,6 @@
 #include <kernel/mutex.h>
 #include <kernel/mm_types.h>
 
-
-#define USER_STACK_SIZE  0x20000  // 128 KiB
 #define TLS_SIZE          0x2000   // 8 KiB
 #define DEFAULT_RFLAGS 0x246
 

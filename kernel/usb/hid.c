@@ -85,7 +85,8 @@ noreturn void *hid_device_event_loop(void *arg) {
 
   kprintf("hid: starting device event loop\n");
   while (true) {
-    thread_sleep(MS_TO_US(16));
+    // thread_sleep(MS_TO_US(16));
+    todo();
     // kprintf("hid: checking\n");
     chan_wait(endpoint->event_ch);
 
@@ -230,7 +231,8 @@ int hid_device_init(usb_device_t *device) {
   hid->handle_input = fn_ptr;
 
   device->driver_data = hid;
-  hid->thread = thread_create(hid_device_event_loop, device, str_make("hid_device_event_loop"));
+  // hid->thread = thread_create(hid_device_event_loop, device, str_make("hid_device_event_loop"));
+  todo();
 
   kprintf("hid: done\n");
   return 0;

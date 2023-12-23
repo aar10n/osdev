@@ -59,8 +59,8 @@ __move page_t *alloc_pages_zone(zone_type_t zone_type, size_t count, size_t page
 __move page_t *alloc_pages_size(size_t count, size_t pagesize);
 __move page_t *alloc_pages(size_t count);
 __move page_t *alloc_pages_at(uintptr_t address, size_t count, size_t pagesize);
+__move page_t *alloc_cloned_pages(page_t *pages);
 __move page_t *alloc_cow_pages(page_t *pages);
-__move page_t *clone_pages(page_t *pages, bool cow);
 void release_pages(__move page_t **pagesref);
 
 __move page_t *page_list_split(__move page_t **pagesref, size_t count);

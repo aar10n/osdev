@@ -148,12 +148,12 @@ static inline bool vm_are_siblings(vm_mapping_t *a, vm_mapping_t *b) {
     return false;
   }
 
-  vm_mapping_t *curr = a->sibling;
+  vm_mapping_t *curr = LIST_NEXT(a, list);
   while (curr != NULL) {
     if (curr == b) {
       return true;
     }
-    curr = curr->sibling;
+    curr = LIST_NEXT(curr, list);
   }
   return false;
 }
@@ -507,6 +507,18 @@ static void page_type_join_internal(__move page_t **pagesref, __move page_t *oth
 
 // anon type
 
+static vm_anon_t *anon_type_fork_internal(vm_anon_t *anon) {
+  vm_anon_t *new_anon = anon_struct_alloc_len(NULL, anon->length, anon->pg_size);
+  for (size_t i = 0; i < anon->length; i++) {
+    page_t *page = anon->pages[i];
+    if (page == NULL) {
+      continue;
+    }
+    new_anon->pages[i] = alloc_cow_pages(anon->pages[i]);
+  }
+  return new_anon;
+}
+
 static void anon_type_map_internal(vm_mapping_t *vm, vm_anon_t *anon, size_t size, size_t off) {
   uint32_t pg_flags = vm_flags_to_pg_flags(vm->flags);
   size_t stride = vm_flags_to_size(vm->flags);
@@ -695,10 +707,10 @@ static void vm_fork_internal(vm_mapping_t *vm, vm_mapping_t *new_vm) {
       new_vm->vm_phys = vm->vm_phys;
       break;
     case VM_TYPE_PAGE:
-      //
-      // break;
+      new_vm->vm_pages = alloc_cow_pages(vm->vm_pages);
+      break;
     case VM_TYPE_ANON:
-      new_vm->vm_anon = anon_struct_alloc_len(vm->vm_anon, vm->vm_anon->length, vm->vm_anon->pg_size);
+      new_vm->vm_anon = anon_type_fork_internal(vm->vm_anon);
       break;
     default:
       panic("vm_fork_internal: invalid mapping type");
@@ -951,7 +963,6 @@ static vm_mapping_t *split_mapping(vm_mapping_t *vm, size_t off) {
   spin_init(&new_vm->lock);
 
   vm_split_internal(vm, off, new_vm);
-  vm->sibling = new_vm;
   vm->flags |= VM_LINKED;
   vm->size = off;
   if (vm->flags & VM_STACK) {
@@ -986,7 +997,6 @@ static vm_mapping_t *split_mapping(vm_mapping_t *vm, size_t off) {
 // first (now joined) mapping is returned.
 static vm_mapping_t *join_mappings(vm_mapping_t *vm_a, vm_mapping_t *vm_b) {
   // vm_a and vm_b should both be locked while calling this
-  ASSERT(vm_a->sibling == vm_b);
   ASSERT((vm_a->flags & VM_LINKED) != 0);
   ASSERT((vm_b->flags & VM_SPLIT) != 0);
   interval_t intvl_a = vm_virt_interval(vm_a);
@@ -1010,7 +1020,6 @@ static vm_mapping_t *join_mappings(vm_mapping_t *vm_a, vm_mapping_t *vm_b) {
     vm_a->flags &= ~VM_LINKED;
     vm_a->size = vm_a->size + vm_b->size;
     vm_a->virt_size = vm_a->virt_size + vm_b->virt_size;
-    vm_a->sibling = vm_b->sibling;
 
     str_free(&vm_b->name);
     kfree(vm_b);
@@ -1092,7 +1101,7 @@ void page_fault_handler(uint8_t vector, uint32_t error_code, cpu_irq_stack_t *fr
   per_cpu_t *percpu = __percpu_struct_ptr();
   uint32_t id = PERCPU_ID;
   uint64_t fault_addr = __read_cr2();
-  if (fault_addr == 0)
+  if (fault_addr == 0 || !PERCPU_ADDRESS_SPACE)
     goto exception;
 
 
@@ -1151,97 +1160,75 @@ LABEL(exception);
 //
 
 void init_address_space() {
-  uintptr_t pgtable = get_current_pgtable();
-  init_recursive_pgtable((void *) pgtable, pgtable);
-
-  default_user_space = vm_new_space(USER_SPACE_START, USER_SPACE_END, 0);
-  {
-    vm_mapping_t *null_vm = vm_struct_alloc(VM_TYPE_RSVD, 0, PAGE_SIZE, PAGE_SIZE);
-    null_vm->name = str_make("null");
-    null_vm->address = 0;
-
-    intvl_tree_insert(default_user_space->new_tree, intvl(0, PAGE_SIZE), null_vm);
-    LIST_ADD(&default_user_space->mappings, null_vm, list);
-    default_user_space->num_mappings++;
-  }
-
-  address_space_t *user_space = vm_fork_space(default_user_space);
-  kernel_space = vm_new_space(KERNEL_SPACE_START, KERNEL_SPACE_END, pgtable);
-
+  // the page tables are still pretty much the same as what the bootloader set up for us
+  //
+  //   0x0000000000000000 - +1Gi           | identity mapped
+  //   +1GB - 0x00007FFFFFFFFFFF           | unmapped
+  //       ...
+  //   === kernel mappings ===
+  //   0xFFFF800000000000 - +1Mi           | mapped 0-1Mi
+  //   kernel_code_start - kernel_code_end | kernel code (rw)
+  //   kernel_code_end - kernel_data_end   | kernel data (rw)
+  //       ...
+  //   0xFFFFFF8000400000 - +6Mi           | kernel heap (rw)
+  //       ...
+  //   0xFFFFFF8000C00000 - +rsvd size     | kernel reserved (--)
+  //
+  init_recursive_pgtable();
   irq_register_exception_handler(CPU_EXCEPTION_PF, page_fault_handler);
 
-  // set up the starting address space layout
+  uintptr_t pgtable = get_current_pgtable();
   size_t lowmem_size = kernel_address;
   size_t kernel_code_size = kernel_code_end - kernel_code_start;
   size_t kernel_data_size = kernel_data_end - kernel_code_end;
   size_t reserved_size = kernel_reserved_va_ptr - KERNEL_RESERVED_VA;
 
-  vmap_rsvd(0, PAGE_SIZE, VM_USER | VM_FIXED, "null");
-  vmap_phys(0, kernel_virtual_offset, lowmem_size, VM_FIXED, "reserved")->flags
-    |= VM_READ | VM_WRITE;
-  vmap_phys(kernel_address, kernel_code_start, kernel_code_size, VM_FIXED, "kernel code")->flags
-    |= VM_READ | VM_EXEC;
-  vmap_phys(kernel_address + kernel_code_size, kernel_code_end, kernel_data_size, VM_FIXED, "kernel data")->flags
-    |= VM_READ | VM_WRITE;
-  vmap_phys(kheap_phys_addr(), KERNEL_HEAP_VA, KERNEL_HEAP_SIZE, VM_FIXED, "kernel heap")->flags
-    |= VM_READ | VM_WRITE;
-  vmap_phys(kernel_reserved_start, KERNEL_RESERVED_VA, reserved_size, VM_FIXED, "kernel reserved")->flags
-    |= VM_READ | VM_WRITE;
+  // allocate the shared kernel space
+  kernel_space = vm_new_space(KERNEL_SPACE_START, KERNEL_SPACE_END, 0);
+  // allocate the default user space
+  default_user_space = vm_new_space(USER_SPACE_START, USER_SPACE_END, pgtable);
+  PERCPU_SET_ADDRESS_SPACE(default_user_space);
 
-  // bsp kernel stack
-  page_t *stack_pages = alloc_pages(SIZE_TO_PAGES(KERNEL_STACK_SIZE));
-  uintptr_t stack_vaddr = vmap_pages(stack_pages, 0, KERNEL_STACK_SIZE, VM_WRITE | VM_STACK, "kernel stack");
+  /////////////////////////////////
+  // initial address space layout
+  uint32_t kvm_flags = VM_FIXED | VM_NOMAP | VM_MAPPED;
+  // we are describing existing mappings, dont remap them
+  vmap_rsvd(0, PAGE_SIZE, VM_USER | kvm_flags, "null");
+  vmap_phys(0, kernel_virtual_offset, lowmem_size, VM_RDWR | kvm_flags, "lowmem");
+  vmap_phys(kernel_address, kernel_code_start, kernel_code_size, VM_RDEXC | kvm_flags, "kernel code");
+  vmap_phys(kernel_address + kernel_code_size, kernel_code_end, kernel_data_size, VM_RDWR | kvm_flags, "kernel data");
+  vmap_phys(kheap_phys_addr(), KERNEL_HEAP_VA, KERNEL_HEAP_SIZE, VM_RDWR | kvm_flags, "kernel heap");
+  vmap_phys(kernel_reserved_start, KERNEL_RESERVED_VA, reserved_size, VM_RDWR | kvm_flags, "kernel reserved");
+  /////////////////////////////////
 
   execute_init_address_space_callbacks();
 
-  // relocate boot info struct
+  // remap boot info struct
   static_assert(sizeof(boot_info_v2_t) <= PAGE_SIZE);
-  vm_mapping_t *bootinfo_vm = vmap_phys((uintptr_t) boot_info_v2, 0, PAGE_SIZE, VM_WRITE, "boot info");
-  boot_info_v2 = (void *) bootinfo_vm->address;
+  boot_info_v2 = (void *) vmap_phys((uintptr_t) boot_info_v2, 0, PAGE_SIZE, VM_WRITE, "boot info");
+
+  // fork the default address space but dont deepcopy the user page tables so as
+  // to effectively "unmap" the user identity mappings in our new address space.
+  // this leaves the original page tables (identity mappings included) for our APs
+  address_space_t *user_space = vm_fork_space(default_user_space, /*deepcopy_user=*/false);
+  set_current_pgtable(user_space->page_table);
+  PERCPU_SET_ADDRESS_SPACE(user_space);
 
   vm_print_address_space();
-
-  // switch to new kernel stack
-  kprintf("switching to new kernel stack\n");
-  uint64_t rsp = cpu_read_stack_pointer();
-  uint64_t stack_offset = ((uint64_t) &entry_initial_stack_top) - rsp;
-
-  uint64_t new_rsp = stack_vaddr + KERNEL_STACK_SIZE - stack_offset;
-  memcpy((void *) new_rsp, (void *) rsp, stack_offset);
-  cpu_write_stack_pointer(new_rsp);
-  pgtable_unmap_user_mappings();
 }
 
 void init_ap_address_space() {
-  address_space_t *user_space = vm_new_space(USER_SPACE_START, USER_SPACE_END, get_current_pgtable());
+  // do not need to lock default_user_space here because after its creation during init_address_space
+  // it is only read from and never written to again
+  address_space_t *user_space = vm_fork_space(default_user_space, true);
   PERCPU_SET_ADDRESS_SPACE(user_space);
-
-  vmap_rsvd(0, PAGE_SIZE, VM_USER | VM_FIXED, "null");
 }
 
-uintptr_t make_ap_page_tables() {
-  page_t *pml4_pages = NULL;
-  uintptr_t pml4 = create_new_ap_page_tables(&pml4_pages);
-  return pml4;
+uintptr_t get_default_ap_pml4() {
+  return default_user_space->page_table;
 }
 
-// // TODO: make sure this works
-// address_space_t *fork_address_space() {
-//   address_space_t *current = PERCPU_ADDRESS_SPACE;
-//   address_space_t *space = kmalloc(sizeof(address_space_t));
-//   space->min_addr = current->min_addr;
-//   space->max_addr = current->max_addr;
-//   LIST_INIT(&space->table_pages);
-//   mutex_init(&space->lock, MUTEX_SHARED);
 //
-//   // fork page tables
-//   page_t *meta_pages = NULL;
-//   uintptr_t pgtable = deepcopy_fork_page_tables(&meta_pages);
-//   space->page_table = pgtable;
-//   SLIST_ADD_SLIST(&space->table_pages, meta_pages, SLIST_GET_LAST(meta_pages, next), next);
-//
-//   return space;
-// }
 
 address_space_t *vm_new_space(uintptr_t min_addr, uintptr_t max_addr, uintptr_t page_table) {
   address_space_t *space = kmallocz(sizeof(address_space_t));
@@ -1253,33 +1240,39 @@ address_space_t *vm_new_space(uintptr_t min_addr, uintptr_t max_addr, uintptr_t 
   return space;
 }
 
-// the caller must handle locking of space
-address_space_t *vm_fork_space(address_space_t *space) {
-  address_space_t *newspace = vm_new_space(USER_SPACE_START, USER_SPACE_END, 0);
+// the caller must have target space locked
+address_space_t *vm_fork_space(address_space_t *space, bool deepcopy_user) {
+  address_space_t *newspace = vm_new_space(space->min_addr, space->max_addr, 0);
   newspace->num_mappings = space->num_mappings;
+  ASSERT(space->page_table == get_current_pgtable());
 
-  // copy over all the mappings
+  // fork the page tables
+  page_t *meta_pages = NULL;
+  // we need to hold a lock on the kernel space during the fork so that
+  // none of the kernel entries can change while we're copying them
+  SPACE_LOCK(kernel_space);
+  uintptr_t pgtable = fork_page_tables(&meta_pages, deepcopy_user);
+  SPACE_UNLOCK(kernel_space);
+  newspace->page_table = pgtable;
+  SLIST_ADD_SLIST(&newspace->table_pages, meta_pages, SLIST_GET_LAST(meta_pages, next), next);
+
+  // clone and fork all the vm_mappings
+  vm_mapping_t *prev_newvm = NULL;
   vm_mapping_t *vm = NULL;
   LIST_FOREACH(vm, &space->mappings, list) {
+    vm_mapping_t *newvm = vm_struct_alloc(vm->type, vm->flags, vm->size, vm->virt_size);
+    newvm->name = str_dup(vm->name);
+    vm_fork_internal(vm, newvm);
 
-    // vm_mapping_t *newvm = kmallocz(sizeof(vm_mapping_t));
-    // memcpy(newvm, vm, sizeof(vm_mapping_t));
-    // spin_init(&newvm->lock);
-
-    // // copy over the mapping name
-    // newvm->name = str_copy_cstr(cstr_from_str(vm->name));
-
-    // // copy over the mapping data
-    // switch (newvm->type) {
-    //   case VM_TYPE_PHYS:
+    // insert into new space
+    intvl_tree_insert(newspace->new_tree, vm_virt_interval(newvm), newvm);
+    if (prev_newvm) {
+      LIST_INSERT(&newspace->mappings, newvm, list, prev_newvm);
+    } else {
+      LIST_ADD(&newspace->mappings, newvm, list);
+    }
+    newspace->num_mappings++;
   }
-
-  // // fork page tables
-  // page_t *meta_pages = NULL;
-  // uintptr_t pgtable = deepcopy_fork_page_tables(space->page_table, &meta_pages);
-  // newspace->page_table = pgtable;
-  // SLIST_ADD_SLIST(&newspace->table_pages, meta_pages, SLIST_GET_LAST(meta_pages, next), next);
-
   return newspace;
 }
 
@@ -1426,22 +1419,12 @@ vm_mapping_t *vmap(enum vm_type type, uintptr_t hint, size_t size, size_t vm_siz
 
   // map the region if any protection flags are given
   if (vm->flags & VM_PROT_MASK) {
-    switch (vm->type) {
-      case VM_TYPE_RSVD:
-        break;
-      case VM_TYPE_PHYS:
-        phys_type_map_internal(vm, vm->vm_phys, vm->size, 0);
-        break;
-      case VM_TYPE_PAGE:
-        page_type_map_internal(vm, vm->vm_pages, vm->size, 0);
-        break;
-      case VM_TYPE_ANON:
-        anon_type_map_internal(vm, vm->vm_anon, vm->size, 0);
-        break;
-      default:
-        unreachable;
+    // unless we're asked to skip it
+    if (vm->flags & VM_NOMAP) {
+      vm->flags ^= VM_NOMAP; // flag only applied on allocation
+    } else {
+      vm_update_internal(vm, vm->flags);
     }
-    vm->flags |= VM_MAPPED;
   }
   SPACE_UNLOCK(space);
   return vm;
@@ -1452,19 +1435,19 @@ LABEL(error);
   return NULL;
 }
 
-vm_mapping_t *vmap_rsvd(uintptr_t hint, size_t size, uint32_t vm_flags, const char *name) {
+int vmap_rsvd(uintptr_t hint, size_t size, uint32_t vm_flags, const char *name) {
   vm_mapping_t *vm = vmap(VM_TYPE_RSVD, hint, size, size, vm_flags, name, NULL);
   PANIC_IF(!vm, "vmap: failed to make reserved mapping %s\n", name);
-  return vm;
+  return 0;
 }
 
-vm_mapping_t *vmap_phys(uintptr_t phys_addr, uintptr_t hint, size_t size, uint32_t vm_flags, const char *name) {
+uintptr_t vmap_phys(uintptr_t phys_addr, uintptr_t hint, size_t size, uint32_t vm_flags, const char *name) {
   vm_mapping_t *vm = vmap(VM_TYPE_PHYS, hint, size, size, vm_flags, name, (void *) phys_addr);
   PANIC_IF(!vm, "vmap: failed to make physical address mapping %s [phys=%p]\n", name, phys_addr);
-  return vm;
+  return vm->address;
 }
 
-uintptr_t vmap_pages(page_t *pages, uintptr_t hint, size_t size, uint32_t vm_flags, const char *name) {
+uintptr_t vmap_pages(__move page_t *pages, uintptr_t hint, size_t size, uint32_t vm_flags, const char *name) {
   vm_mapping_t *vm = vmap(VM_TYPE_PAGE, hint, size, size, vm_flags, name, pages);
   PANIC_IF(!vm, "vmap: failed to make pages mapping %s [page=%p]\n", name, pages);
   return vm->address;
@@ -1671,9 +1654,9 @@ int vm_protect(uintptr_t vaddr, size_t len, uint32_t prot) {
     vm_update_internal(vm_a, prot);
   } else if (are_siblings && i.start == i_start.start && i.end == i_end.end) {
     // case 5
-    vm_mapping_t *sibling = vm->sibling;
+    vm_mapping_t *sibling = LIST_NEXT(vm, list);
     while (sibling) {
-      vm_mapping_t *next = sibling->sibling;
+      vm_mapping_t *next = LIST_NEXT(sibling, list);
       join_mappings(vm, sibling);
       sibling = next;
     }
@@ -1722,7 +1705,6 @@ int vm_resize(vm_mapping_t *vm, size_t new_size, bool allow_move) {
   }
 
   address_space_t *space = vm->space;
-  SPACE_LOCK(space);
   bool ok = move_mapping(vm, new_size);
   SPACE_UNLOCK(space);
   VM_UNLOCK(vm);
@@ -1900,7 +1882,7 @@ void *vmalloc_at_phys(uintptr_t phys_addr, size_t size, uint32_t vm_flags) {
   page_t *pages = alloc_pages_at(phys_addr, SIZE_TO_PAGES(size), vm_flags_to_size(vm_flags));
   PANIC_IF(!pages, "vmalloc_at_phys: alloc_pages_at failed");
   // allocate and map the virtual memory
-  uintptr_t vaddr = vmap_pages(pages, 0, size, vm_flags, "vmalloc");
+  uintptr_t vaddr = vmap_pages(moveref(pages), 0, size, vm_flags, "vmalloc");
   PANIC_IF(!vaddr, "vmalloc_at_phys: vmap_pages failed");
   return (void *) vaddr;
 }

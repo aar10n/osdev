@@ -64,7 +64,8 @@ int set_alarm_timer_value(timer_device_t *timer, clock_t expiry) {
 noreturn void *alarm_event_loop(unused void *arg) {
   kassert(global_one_shot_timer != NULL);
   timer_device_t *timer = global_one_shot_timer;
-  thread_setaffinity(cpu_bsp_id); // pin to CPU#0
+  // thread_setaffinity(cpu_bsp_id); // pin to CPU#0
+  todo();
 
   kprintf("timer: starting alarm event loop\n");
   while (true) {
@@ -92,9 +93,11 @@ noreturn void *alarm_event_loop(unused void *arg) {
     rb_tree_delete_node(alarm_expiry_tree, alarm_expiry_tree->min);
     rb_tree_delete(pending_alarm_tree, alarm->expires);
 
-    preempt_enable();
+    // preempt_enable();
+    todo();
     alarm->callback(alarm->data);
-    preempt_disable();
+    // preempt_disable();
+    todo();
 
     kfree(alarm);
     if (pending_alarm_tree->nodes > 0) {
@@ -183,8 +186,9 @@ void alarms_init() {
 
   cond_init(&alarm_cond, 0);
   spin_init(&alarm_cond_lock);
-  thread_create(alarm_event_loop, NULL, str_make("alarm_event_loop"));
-  thread_yield();
+  // thread_create(alarm_event_loop, NULL, str_make("alarm_event_loop"));
+  // thread_yield();
+  todo();
 }
 
 void alarm_reschedule() {

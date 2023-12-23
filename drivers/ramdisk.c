@@ -79,15 +79,17 @@ static void ramdisk_initrd_module_init() {
     panic("initrd not found");
   }
 
-  vm_mapping_t *vm = vmap_phys(boot_info_v2->initrd_addr, 0, boot_info_v2->initrd_size, VM_READ, "initrd");
-  if (vm == NULL) {
+  uintptr_t vaddr = vmap_phys(boot_info_v2->initrd_addr, 0, boot_info_v2->initrd_size, VM_READ, "initrd");
+  if (vaddr == 0) {
     panic("failed to map initrd");
   }
 
+
+
   struct ramdisk *initrd = kmallocz(sizeof(struct ramdisk));
-  initrd->base = (void *) vm->address;
-  initrd->size = vm->size;
-  initrd->vm = vm;
+  initrd->base = (void *) vaddr;
+  initrd->size = boot_info_v2->initrd_size;
+  initrd->vm = vm_get_mapping(vaddr);
 
   kprintf("ramdisk: registering initrd\n");
   device_t *dev = alloc_device(initrd, &ramdisk_ops);
