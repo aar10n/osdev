@@ -9,7 +9,7 @@
 
 #define MAX_CPUS 64
 
-#define PERCPU_IS_BSP (__percpu_get_id() == cpu_bsp_id)
+#define PERCPU_IS_BOOT (PERCPU_ID == cpu_bsp_id)
 
 #define IA32_TSC_MSR            0x10
 #define IA32_APIC_BASE_MSR      0x1B
@@ -131,9 +131,10 @@ typedef union cpuid_bits {
 
 #define CPUID_BIT_INVARIANT_TSC _CPUID_BIT(edx_8_7, 8)
 
-typedef struct cpu_info {
+struct cpu_info {
+  uint32_t apic_id;
   cpuid_bits_t cpuid_bits;
-} cpu_info_t;
+};
 
 typedef struct cpu_registers {
   uint64_t rax, rbx, rcx, rdx;
@@ -150,7 +151,7 @@ typedef struct cpu_irq_stack {
   uint64_t ss;
 } cpu_irq_stack_t;
 
-#define temp_irq_save(flags) ({ ASSERT_IS_TYPE(uint64_t, flags); flags = cpu_save_clear_interrupts(); 0; })
+#define temp_irq_save(flags) ({ ASSERT_IS_TYPE(uint64_t, flags); (flags) = cpu_save_clear_interrupts(); (flags); })
 #define temp_irq_restore(flags) ({ ASSERT_IS_TYPE(uint64_t, flags); cpu_restore_interrupts(flags); })
 
 extern uint8_t cpu_bsp_id;

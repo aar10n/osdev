@@ -22,7 +22,7 @@ struct bus_type {
   LIST_HEAD(struct device_bus) buses;
   LIST_HEAD(struct device_driver) drivers;
   hash_map_t *driver_by_name;
-  spinlock_t lock;
+  mtx_t lock;
 };
 
 struct dev_type {
@@ -32,7 +32,7 @@ struct dev_type {
   struct device_ops *ops; // single-driver device types
 
   uint8_t last_minor;
-  spinlock_t lock;
+  mtx_t lock;
   LIST_HEAD(struct device) devices;
 };
 
@@ -52,18 +52,18 @@ struct dev_type dev_types[] = {
 };
 
 static rb_tree_t *device_tree;
-static spinlock_t device_tree_lock;
+static mtx_t device_tree_lock;
 static hash_map_t *bus_type_by_name;
 static hash_map_t *dev_type_by_name;
 
 static void device_static_init() {
   device_tree = create_rb_tree();
-  spin_init(&device_tree_lock);
+  mtx_init(&device_tree_lock, MTX_SPIN, "device_tree_lock");
 
   bus_type_by_name = hash_map_new();
   for (int i = 0; i < ARRAY_SIZE(bus_types); i++) {
     bus_types[i].driver_by_name = hash_map_new();
-    spin_init(&bus_types[i].lock);
+    mtx_init(&bus_types[i].lock, MTX_SPIN, "bus_type_lock");
     hash_map_set(bus_type_by_name, bus_types[i].name, (void *) &bus_types[i]);
   }
 
@@ -103,13 +103,13 @@ device_t *free_device(device_t *dev) {
 void probe_all_buses() {
   for (int i = 0; i < ARRAY_SIZE(bus_types); i++) {
     struct bus_type *bus_type = &bus_types[i];
-    SPIN_LOCK(&bus_type->lock);
+    mtx_lock(&bus_type->lock);
     LIST_FOR_IN(bus, &bus_type->buses, list) {
       if (bus->probe(bus) < 0) {
         DPRINTF("failed to probe bus '%s%d'\n", bus->name, bus->number);
       }
     }
-    SPIN_UNLOCK(&bus_type->lock);
+    mtx_unlock(&bus_type->lock);
   }
 }
 
@@ -118,10 +118,10 @@ void probe_all_buses() {
 //
 
 device_t *device_get(dev_t dev) {
-  SPIN_LOCK(&device_tree_lock);
+  mtx_lock(&device_tree_lock);
   rb_node_t *node = rb_tree_find(device_tree, (uint64_t) dev);
   device_t *device = node ? node->data : NULL;
-  SPIN_UNLOCK(&device_tree_lock);
+  mtx_unlock(&device_tree_lock);
   return device;
 }
 
@@ -137,12 +137,12 @@ int register_bus(device_bus_t *bus) {
     return -1;
   }
 
-  SPIN_LOCK(&bus_type->lock);
+  mtx_lock(&bus_type->lock);
   bus->number = bus_type->last_number++;
   LIST_ENTRY_INIT(&bus->list);
 
   LIST_ADD(&bus_type->buses, bus, list);
-  SPIN_UNLOCK(&bus_type->lock);
+  mtx_unlock(&bus_type->lock);
 
   kprintf("device: registered bus '%s%d'\n", bus->name, bus->number);
   return 0;
@@ -161,10 +161,10 @@ int register_driver(const char *bus_type, device_driver_t *driver) {
   }
 
   LIST_ENTRY_INIT(&driver->list);
-  SPIN_LOCK(&type->lock);
+  mtx_lock(&type->lock);
   LIST_ADD(&type->drivers, driver, list);
   hash_map_set(type->driver_by_name, driver->name, driver);
-  SPIN_UNLOCK(&type->lock);
+  mtx_unlock(&type->lock);
 
   kprintf("device: registered driver '%s' for bus type '%s'\n", driver->name, bus_type);
   return 0;
@@ -204,9 +204,9 @@ int register_bus_device(device_bus_t *bus, void *bus_device) {
     return -1;
   }
 
-  SPIN_LOCK(&bus->devices_lock);
+  mtx_lock(&bus->devices_lock);
   SLIST_ADD(&bus->devices, dev, bus_list);
-  SPIN_UNLOCK(&bus->devices_lock);
+  mtx_unlock(&bus->devices_lock);
   return 0;
 }
 
@@ -217,9 +217,9 @@ int register_device_ops(const char *dev_type, struct device_ops *ops) {
     return -1;
   }
 
-  SPIN_LOCK(&type->lock);
+  mtx_lock(&type->lock);
   type->ops = ops;
-  SPIN_UNLOCK(&type->lock);
+  mtx_unlock(&type->lock);
   return 0;
 }
 
@@ -240,18 +240,18 @@ int register_dev(const char *dev_type, device_t *dev) {
     panic("register_dev: dev->ops is NULL.");
   }
 
-  SPIN_LOCK(&type->lock);
+  mtx_lock(&type->lock);
   dev->dtype = type->type;
   dev->major = type->major;
   dev->minor = type->last_minor++;
   dev->bus_list = NULL;
   dev->dev_list = NULL;
   SLIST_ADD(&type->devices, dev, dev_list);
-  SPIN_UNLOCK(&type->lock);
+  mtx_unlock(&type->lock);
 
-  SPIN_LOCK(&device_tree_lock);
+  mtx_lock(&device_tree_lock);
   rb_tree_insert(device_tree, (uint64_t) make_dev(dev), dev);
-  SPIN_UNLOCK(&device_tree_lock);
+  mtx_unlock(&device_tree_lock);
 
   kprintf("device: registered %s device %d\n", dev_type, dev->minor);
   return 0;

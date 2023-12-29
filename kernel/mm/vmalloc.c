@@ -44,12 +44,12 @@ address_space_t *kernel_space;
 
 // called from switch.asm
 __used void switch_address_space(address_space_t *new_space) {
-  address_space_t *current = PERCPU_ADDRESS_SPACE;
+  address_space_t *current = curspace;
   if (current != NULL && current->page_table == new_space->page_table) {
     return;
   }
   set_current_pgtable(new_space->page_table);
-  PERCPU_SET_ADDRESS_SPACE(new_space);
+  set_curspace(new_space);
 }
 
 // generic fault handler that allocates and returns a new page
@@ -106,7 +106,7 @@ static always_inline bool space_contains(address_space_t *space, uintptr_t addr)
 }
 
 static always_inline bool is_valid_pointer(uintptr_t ptr) {
-  return space_contains(PERCPU_ADDRESS_SPACE, ptr) || space_contains(kernel_space, ptr);
+  return space_contains(curspace, ptr) || space_contains(kernel_space, ptr);
 }
 
 static always_inline uintptr_t vm_virtual_start(vm_mapping_t *vm) {
@@ -811,7 +811,7 @@ static vm_mapping_t *vm_struct_alloc(enum vm_type type, uint32_t vm_flags, size_
   vm->flags = vm_flags;
   vm->virt_size = virt_size;
   vm->size = size;
-  spin_init(&vm->lock);
+  mtx_init(&vm->lock, MTX_SPIN, "vm_mapping_lock");
   return vm;
 }
 
@@ -960,7 +960,7 @@ static vm_mapping_t *split_mapping(vm_mapping_t *vm, size_t off) {
   new_vm->size = vm->size - off;
   new_vm->space = space;
   new_vm->name = str_copy_cstr(cstr_from_str(vm->name));
-  spin_init(&new_vm->lock);
+  mtx_init(&new_vm->lock, MTX_SPIN, "vm_mapping_lock");
 
   vm_split_internal(vm, off, new_vm);
   vm->flags |= VM_LINKED;
@@ -1098,10 +1098,10 @@ static always_inline bool can_handle_fault(vm_mapping_t *vm, uintptr_t fault_add
 }
 
 void page_fault_handler(uint8_t vector, uint32_t error_code, cpu_irq_stack_t *frame, cpu_registers_t *regs) {
-  per_cpu_t *percpu = __percpu_struct_ptr();
+  struct percpu *percpu_area = PERCPU_AREA;
   uint32_t id = PERCPU_ID;
   uint64_t fault_addr = __read_cr2();
-  if (fault_addr == 0 || !PERCPU_ADDRESS_SPACE)
+  if (fault_addr == 0 || !curspace)
     goto exception;
 
 
@@ -1187,7 +1187,7 @@ void init_address_space() {
   kernel_space = vm_new_space(KERNEL_SPACE_START, KERNEL_SPACE_END, 0);
   // allocate the default user space
   default_user_space = vm_new_space(USER_SPACE_START, USER_SPACE_END, pgtable);
-  PERCPU_SET_ADDRESS_SPACE(default_user_space);
+  set_curspace(default_user_space);
 
   /////////////////////////////////
   // initial address space layout
@@ -1212,7 +1212,7 @@ void init_address_space() {
   // this leaves the original page tables (identity mappings included) for our APs
   address_space_t *user_space = vm_fork_space(default_user_space, /*deepcopy_user=*/false);
   set_current_pgtable(user_space->page_table);
-  PERCPU_SET_ADDRESS_SPACE(user_space);
+  set_curspace(user_space);
 
   vm_print_address_space();
 }
@@ -1221,7 +1221,7 @@ void init_ap_address_space() {
   // do not need to lock default_user_space here because after its creation during init_address_space
   // it is only read from and never written to again
   address_space_t *user_space = vm_fork_space(default_user_space, true);
-  PERCPU_SET_ADDRESS_SPACE(user_space);
+  set_curspace(user_space);
 }
 
 uintptr_t get_default_ap_pml4() {
@@ -1236,7 +1236,7 @@ address_space_t *vm_new_space(uintptr_t min_addr, uintptr_t max_addr, uintptr_t 
   space->max_addr = max_addr;
   space->new_tree = create_intvl_tree();
   space->page_table = page_table;
-  mutex_init(&space->lock, MUTEX_SHARED);
+  mtx_init(&space->lock, MTX_RECURSE, "vm_space_lock");
   return space;
 }
 
@@ -1335,7 +1335,7 @@ vm_mapping_t *vmap(enum vm_type type, uintptr_t hint, size_t size, size_t vm_siz
 
   address_space_t *space;
   if (vm_flags & VM_USER) {
-    space = PERCPU_ADDRESS_SPACE;
+    space = curspace;
   } else {
     space = kernel_space;
   }
@@ -1807,8 +1807,8 @@ vm_mapping_t *vm_get_mapping(uintptr_t virt_addr) {
     return NULL;
 
   address_space_t *space;
-  if (space_contains(PERCPU_ADDRESS_SPACE, virt_addr)) {
-    space = PERCPU_ADDRESS_SPACE;
+  if (space_contains(curspace, virt_addr)) {
+    space = curspace;
   } else {
     space = kernel_space;
   }
@@ -1905,7 +1905,7 @@ void vfree(void *ptr) {
 void vm_print_address_space() {
   kprintf("vm: address space mappings\n");
   kprintf("{:$=^80s}\n", " user space ");
-  vm_print_mappings(PERCPU_ADDRESS_SPACE);
+  vm_print_mappings(curspace);
   kprintf("{:$=^80s}\n", " kernel space ");
   vm_print_mappings(kernel_space);
   kprintf("{:$=^80}\n");
@@ -1932,7 +1932,7 @@ void vm_print_mappings(address_space_t *space) {
 void vm_print_address_space_v2() {
   kprintf("vm: address space mappings\n");
   kprintf("{:$=^80s}\n", " user space ");
-  vm_print_format_address_space(PERCPU_ADDRESS_SPACE);
+  vm_print_format_address_space(curspace);
   kprintf("{:$=^80s}\n", " kernel space ");
   vm_print_format_address_space(kernel_space);
   kprintf("{:$=^80}\n");

@@ -6,10 +6,10 @@
 #define KERNEL_MM_TYPES_H
 
 #include <kernel/base.h>
+#include <kernel/queue.h>
 #include <kernel/str.h>
 #include <kernel/ref.h>
-#include <kernel/queue.h>
-#include <kernel/spinlock.h>
+#include <kernel/lock.h>
 
 #ifndef PAGE_SIZE
 #define PAGE_SIZE 0x1000
@@ -82,7 +82,7 @@ typedef struct page {
 typedef struct address_space {
   uintptr_t min_addr;
   uintptr_t max_addr;
-  mutex_t lock;
+  mtx_t lock;
 
   size_t num_mappings;
   LIST_HEAD(struct vm_mapping) mappings;
@@ -92,8 +92,8 @@ typedef struct address_space {
   LIST_HEAD(struct page) table_pages;
 } address_space_t;
 
-#define SPACE_LOCK(space) __type_checked(struct address_space *, space, mutex_lock(&(space)->lock))
-#define SPACE_UNLOCK(space) __type_checked(struct address_space *, space, mutex_unlock(&(space)->lock))
+#define SPACE_LOCK(space) __type_checked(struct address_space *, space, mtx_lock(&(space)->lock))
+#define SPACE_UNLOCK(space) __type_checked(struct address_space *, space, mtx_unlock(&(space)->lock))
 
 enum vm_type {
   VM_TYPE_RSVD, // reserved memory
@@ -119,7 +119,7 @@ typedef struct vm_mapping {
   enum vm_type type;        // vm type
   uint32_t flags;           // vm flags
 
-  spinlock_t lock;          // mapping lock
+  mtx_t lock;               // mapping lock
   str_t name;               // name of the mapping
   address_space_t *space;   // owning address space
 
@@ -163,8 +163,8 @@ typedef struct vm_mapping {
 #define VM_PROT_MASK  (VM_READ | VM_WRITE | VM_EXEC)
 #define VM_FLAGS_MASK 0xFFF
 
-#define VM_LOCK(vm) __type_checked(struct vm_mapping *, vm, SPIN_LOCK(&(vm)->lock))
-#define VM_UNLOCK(vm) __type_checked(struct vm_mapping *, vm, SPIN_UNLOCK(&(vm)->lock))
+#define VM_LOCK(vm) __type_checked(struct vm_mapping *, vm, mtx_lock(&(vm)->lock))
+#define VM_UNLOCK(vm) __type_checked(struct vm_mapping *, vm, mtx_unlock(&(vm)->lock))
 
 // address space layout
 

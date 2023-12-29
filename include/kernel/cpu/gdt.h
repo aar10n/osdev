@@ -18,6 +18,11 @@ struct packed tss {
 };
 static_assert(sizeof(struct tss) == 0x64);
 
+struct packed gdt_desc {
+  uint16_t limit;
+  uint64_t base;
+};
+
 typedef union packed gdt_entry {
   struct {
     uint16_t limit_low;      // Lower 16 bits of the limit

@@ -14,12 +14,11 @@
   if (!(expression)) \
     panic("assertion failed: %s, file %s, line %d", #expression, __FILE__, __LINE__);
 
-#define kassertf(expression, msg, args...) \
+#define kassertf(expression, msg, ...) \
   if (!(expression)) \
-    panic("assertion failed: " msg ", file %s, line %d", ##args, __FILE__, __LINE__);
+    panic("assertion failed: " msg ", file %s, line %d", ##__VA_ARGS__ __VA_OPT__(,) __FILE__, __LINE__);
 
 #define unreachable panic("unreachable: file %s, line %d", __FILE__, __LINE__)
-#define todo() panic("todo: file %s, line %d", __FILE__, __LINE__)
 #define unimplemented(msg) panic("not implemented: " msg ", file %s, line %d", __FILE__, __LINE__)
 
 noreturn void panic(const char *fmt, ...);

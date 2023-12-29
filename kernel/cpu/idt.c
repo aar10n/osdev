@@ -5,9 +5,6 @@
 #include <kernel/cpu/idt.h>
 #include <kernel/cpu/cpu.h>
 
-#include <kernel/string.h>
-#include <kernel/printf.h>
-
 #define IDT_GATES 256
 #define IDT_STUB_SIZE 32
 
@@ -22,7 +19,7 @@ idt_desc_t idt_desc;
 extern uintptr_t idt_stubs;
 
 void setup_idt() {
-  if (PERCPU_IS_BSP) {
+  if (PERCPU_IS_BOOT) {
     // setup the shared IDT
     uintptr_t asm_handler = (uintptr_t) &idt_stubs;
     for (int i = 0; i < IDT_GATES; i++) {;

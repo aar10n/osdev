@@ -1,11 +1,11 @@
 ; https://github.com/freebsd/freebsd-src/blob/main/sys/amd64/amd64/cpu_switch.S
 
 ; struct per_cpu offsets
-%define PERCPU_THREAD       gs:0x10
-%define PERCPU_PROCESS      gs:0x18
+%define PERCPU_THREAD       gs:0x18
+%define PERCPU_PROCESS      gs:0x20
 
 ; struct process offsets
-%define PROCESS_SPACE(x)    [x+0x8]
+%define PROCESS_SPACE(x)    [x+0x00]
 
 ; struct thread offsets
 %define THREAD_FLAGS(x)     [x+0x04]

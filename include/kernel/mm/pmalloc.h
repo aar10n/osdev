@@ -34,7 +34,7 @@ typedef struct frame_allocator {
   uintptr_t base;
   size_t size;
   size_t free;
-  spinlock_t lock;
+  mtx_t lock;
 
   struct frame_allocator_impl *impl;
   void *data;

@@ -5,7 +5,6 @@
 #ifndef LIB_ATOMIC_H
 #define LIB_ATOMIC_H
 
-#include <kernel/base.h>
 #include <asm/atomic.h>
 
 #define atomic_fetch_add(ptr, val)  \

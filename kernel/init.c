@@ -3,7 +3,6 @@
 //
 
 #include <kernel/init.h>
-#include <kernel/queue.h>
 #include <kernel/mm.h>
 
 #include <kernel/panic.h>
@@ -14,12 +13,13 @@ typedef struct callback_obj {
   LIST_ENTRY(struct callback_obj) list;
 } callback_obj_t;
 
+LOAD_SECTION(__percpu_init_array, ".init_array.percpu");
 LOAD_SECTION(__static_init_array, ".init_array.static");
 LOAD_SECTION(__module_init_array, ".init_array.module");
 LIST_HEAD(callback_obj_t) init_address_space_cb_list;
 
 void register_init_address_space_callback(init_callback_t callback, void *data) {
-  callback_obj_t *obj = kmalloc(sizeof(callback_obj_t));
+  callback_obj_t *obj = kmallocz(sizeof(callback_obj_t));
   obj->callback = callback;
   obj->data = data;
   LIST_ENTRY_INIT(&obj->list);
@@ -37,6 +37,20 @@ void execute_init_address_space_callbacks() {
 }
 
 //
+
+void do_early_percpu_initializers() {
+  // execute all of the percpu initializers
+  if (__percpu_init_array.virt_addr == 0) {
+    panic("failed to load percpu initializers");
+  }
+
+  void (**init_funcs)() = (void *) __percpu_init_array.virt_addr;
+  size_t num_init_funcs = __percpu_init_array.size / sizeof(void *);
+  for (size_t i = 0; i < num_init_funcs; i++) {
+    init_funcs[i]();
+  }
+}
+
 
 void do_static_initializers() {
   // execute all of the static initializers

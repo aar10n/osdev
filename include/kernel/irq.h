@@ -8,8 +8,6 @@
 #include <kernel/base.h>
 #include <kernel/cpu/cpu.h>
 
-
-typedef struct cond cond_t;
 typedef struct pcie_device pcie_device_t;
 typedef void (*irq_handler_t)(uint8_t, void *);
 typedef void (*exception_handler_t)(uint8_t, uint32_t, cpu_irq_stack_t *, cpu_registers_t *);
@@ -26,7 +24,6 @@ int irq_reserve_irqnum(uint8_t irq);
 
 int irq_register_exception_handler(uint8_t vector, exception_handler_t handler);
 int irq_register_irq_handler(uint8_t irq, irq_handler_t handler, void *data);
-int irq_register_signaled_irq_handler(uint8_t irq, cond_t *condition);
 
 int irq_enable_interrupt(uint8_t irq);
 int irq_disable_interrupt(uint8_t irq);

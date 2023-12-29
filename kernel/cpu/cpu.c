@@ -10,17 +10,16 @@
 
 #include <kernel/mm.h>
 #include <kernel/syscall.h>
-#include <kernel/string.h>
 #include <kernel/panic.h>
 #include <kernel/printf.h>
+
+#define PERCPU_CPUID (PERCPU_INFO->cpuid_bits)
 
 // prctl.h bits
 #define ARCH_SET_GS			0x1001
 #define ARCH_SET_FS			0x1002
 #define ARCH_GET_FS			0x1003
 #define ARCH_GET_GS			0x1004
-
-#define PERCPU_CPUID (PERCPU_CPU_INFO->cpuid_bits)
 
 #define CPU_CR0_EM         (1 << 2)
 #define CPU_CR0_WP         (1 << 16)
@@ -42,11 +41,9 @@
 #define CPU_EFER_NXE       (1 << 11)
 #define CPU_EFER_FFXSR     (1 << 14)
 
-uint8_t cpu_bsp_id = 0;
-cpu_info_t cpu_bsp_info = {0};
-per_cpu_t *percpu_structs[MAX_CPUS] = {};
-uint8_t cpu_id_to_apic_id_table[MAX_CPUS] = {};
-
+uint32_t cpu_id_to_apic_id_table[MAX_CPUS];
+struct percpu *percpu_areas[MAX_CPUS];
+struct cpu_info cpu0_info;
 
 #define __cpuid(level, a, b, c, d) \
   __asm("cpuid\n\t" : "=a" (a), "=b" (b), "=c" (c), "=d" (d) : "0" (level))
@@ -84,7 +81,7 @@ static inline void cpuid_clear_bit(uint16_t cpuid_bit) {
   if (bit > 31 || dword > (sizeof(cpuid_bits_t) / sizeof(uint32_t))) {
     return;
   }
-  PERCPU_CPU_INFO->cpuid_bits.raw[dword] &= ~(uint32_t)(1 << bit);
+  PERCPU_INFO->cpuid_bits.raw[dword] &= ~(uint32_t)(1 << bit);
 }
 
 static inline void assert_cpu_feature(const char *feature, int supported) {
@@ -107,25 +104,21 @@ void cpu_early_init() {
   setup_idt();
   apic_init();
 
-  per_cpu_t *percpu_struct = (void *) cpu_read_gsbase();
-  percpu_structs[PERCPU_ID] = percpu_struct;
   uint32_t apic_id = cpu_get_apic_id();
-  kassert(apic_id <= UINT8_MAX);
-
-  cpuid_bits_t *cpuid_bits = NULL;
-  if (PERCPU_IS_BSP) {
-    cpuid_bits = &cpu_bsp_info.cpuid_bits;
-    __percpu_struct_ptr()->apic_id = (uint8_t) apic_id;
-    PERCPU_SET_CPU_INFO(&cpu_bsp_info);
+  struct percpu *percpu_area = (void *) cpu_read_gsbase();
+  if (PERCPU_IS_BOOT) {
+    percpu_area->info = &cpu0_info;
   } else {
-    cpu_info_t *cpu_info = kmalloc(sizeof(cpu_info_t));
-    memset(cpu_info, 0, sizeof(cpu_info_t));
-    cpuid_bits = &cpu_info->cpuid_bits;
-    PERCPU_SET_CPU_INFO(cpu_info);
+    // ap processors
+    percpu_area->info = kmallocz(sizeof(struct cpu_info));
   }
-  kassert(cpuid_bits != NULL);
+
+  percpu_area->info->apic_id = apic_id;
+  percpu_areas[PERCPU_ID] = percpu_area;
+  cpu_id_to_apic_id_table[PERCPU_ID] = apic_id;
 
   // load cpuid bits
+  union cpuid_bits *cpuid_bits = &percpu_area->info->cpuid_bits;
   do_cpuid(0x00000001, &cpuid_bits->eax_0_1, &cpuid_bits->ebx_0_1, &cpuid_bits->ecx_0_1, &cpuid_bits->edx_0_1);
   do_cpuid(0x00000006, &cpuid_bits->eax_0_6, &cpuid_bits->ebx_0_6, &cpuid_bits->ecx_0_6, &cpuid_bits->edx_0_6);
   do_cpuid(0x00000007, &cpuid_bits->eax_0_7, &cpuid_bits->ebx_0_7, &cpuid_bits->ecx_0_7, &cpuid_bits->edx_0_7);
@@ -133,7 +126,7 @@ void cpu_early_init() {
   do_cpuid(0x80000007, &cpuid_bits->eax_8_7, &cpuid_bits->ebx_8_7, &cpuid_bits->ecx_8_7, &cpuid_bits->edx_8_7);
   do_cpuid(0x80000008, &cpuid_bits->eax_8_8, &cpuid_bits->ebx_8_8, &cpuid_bits->ecx_8_8, &cpuid_bits->edx_8_8);
 
-  // if (PERCPU_IS_BSP) {
+  // if (PERCPU_IS_BOOT) {
   //   cpu_print_info();
   //   cpu_print_cpuid();
   // }
@@ -206,8 +199,7 @@ void cpu_early_init() {
   // save cpu id to aux msr
   cpu_write_msr(IA32_TSC_AUX_MSR, apic_id);
 
-  cpu_id_to_apic_id_table[PERCPU_ID] = PERCPU_APIC_ID;
-  if (PERCPU_IS_BSP) {
+  if (PERCPU_IS_BOOT) {
     cpu_print_info();
     cpu_print_cpuid();
 
@@ -282,7 +274,7 @@ uint32_t cpu_get_apic_id() {
 
 int cpu_get_is_bsp() {
   uint32_t apic_base = cpu_read_msr(IA32_APIC_BASE_MSR);
-  return (apic_base >> 8) & 1;
+  return ((apic_base >> 8) & 1) ? 1 : 0;
 }
 
 uint8_t cpu_id_to_apic_id(uint8_t cpu_id) {
@@ -296,7 +288,7 @@ int cpuid_query_bit(uint16_t feature) {
   if (bit > 31 || dword > (sizeof(cpuid_bits_t) / sizeof(uint32_t))) {
     return -1;
   }
-  return (PERCPU_CPU_INFO->cpuid_bits.raw[dword] & (1 << bit)) != 0;
+  return (PERCPU_INFO->cpuid_bits.raw[dword] & (1 << bit)) != 0;
 }
 
 void cpu_print_info() {

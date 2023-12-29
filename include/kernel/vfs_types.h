@@ -6,8 +6,7 @@
 #define KERNEL_VFS_TYPES_H
 
 #include <kernel/base.h>
-#include <kernel/queue.h>
-#include <kernel/mutex.h>
+#include <kernel/lock.h>
 #include <kernel/kio.h>
 #include <kernel/ref.h>
 #include <kernel/str.h>
@@ -69,8 +68,8 @@ typedef struct vfs {
   int mount_flags;                // mount flags
   void *data;                     // filesystem private data
 
-  mutex_t lock;                   // vfs lock
-  rw_lock_t op_lock;              // vfs operation lock (held during vnode ops)
+  mtx_t lock;                     // vfs lock
+  rwlock_t op_lock;               // vfs operation lock (held during vnode ops)
   refcount_t refcount;            // reference count
 
   struct fs_type *type;           // filesystem type
@@ -155,11 +154,11 @@ typedef struct vnode {
   uint16_t flags;                 // vnode flags
   void *data;                     // filesystem private data
 
-  mutex_t lock;                   // vnode lock
-  rw_lock_t data_lock;            // vnode file data lock
+  mtx_t lock;                     // vnode lock
+  rwlock_t data_lock;             // vnode file data lock
   refcount_t refcount;            // vnode reference count
   uint32_t nopen;                 // number of open file descriptors
-  cond_t waiters;                 // waiters for nopen == 0
+  // cond_t waiters;                 // waiters for nopen == 0
 
   id_t parent_id;                 // parent vnode id
   struct vfs *vfs;                // owning vfs reference

@@ -6,12 +6,12 @@
 #define INCLUDE_BASE_H
 
 #include <kernel/types.h>
-#include <kernel/errno.h>
+#include <bits/errno.h>
 #include <bits/syscall.h>
 
-#define __PER_CPU_BASE__
-#include <kernel/cpu/per_cpu.h>
-#undef __PER_CPU_BASE__
+#define __PERCPU_BASE__
+#include <kernel/percpu.h>
+#undef __PERCPU_BASE__
 
 #include <boot.h>
 #include <limits.h>
@@ -150,6 +150,11 @@
 #define __sentinel(n) __attribute((sentinel(n)))
 #define __nonnull(...) __attribute((nonnull(__VA_ARGS__)))
 
+#define __expect_true(expr) __builtin_expect((expr), 1)
+#define __expect_false(expr) __builtin_expect((expr), 0)
+
+#define todo(msg) kprintf("TODO: %s:%d: %s\n", __FILE__, __LINE__, #msg); WHILE_TRUE
+
 //
 // Special Macros
 //
@@ -167,6 +172,14 @@
  * up to the kernel to later map these sections into virtual memory.
  */
 #define LOAD_SECTION(varname, secname) loaded_section_t __attribute__((section(".load_sections"))) varname = { .name = secname }
+
+/**
+ * The PERCPU_EARLY_INIT macro provides a way for kernel components to register early
+ * initializer functions that are invoked by all CPUs in the system. These are invoked
+ * very eary during processor startup and only have access to the kernel heap and other
+ * 'early' memory APIs.
+ */
+#define PERCPU_EARLY_INIT(fn) static __attribute__((section(".init_array.percpu"))) void (*__do_percpu_init_ ## fn)() = fn
 
 /**
  * The STATIC_INIT macro provides a way for kernel components to register static
@@ -213,5 +226,7 @@ extern uintptr_t __kernel_virtual_offset;
 extern uintptr_t __kernel_code_start;
 extern uintptr_t __kernel_code_end;
 extern uintptr_t __kernel_data_end;
+
+void kprintf(const char *format, ...);
 
 #endif

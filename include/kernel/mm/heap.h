@@ -6,9 +6,7 @@
 #define KERNEL_MM_HEAP_H
 
 #include <kernel/base.h>
-#include <kernel/queue.h>
-#include <kernel/mutex.h>
-#include <kernel/string.h>
+#include <kernel/lock.h>
 
 // TODO: switch to better allocator for large sizes
 #define CHUNK_MIN_SIZE   8
@@ -35,7 +33,7 @@ typedef struct mm_heap {
   uintptr_t virt_addr;          // virtual address of heap base
   mm_chunk_t *last_chunk;       // the last created chunk
   LIST_HEAD(mm_chunk_t) chunks; // linked list of free chunks
-  mutex_t lock;                 // heap lock (must be held to alloc/free)
+  mtx_t lock;                   // heap lock (must be held to alloc/free)
 
   size_t size;                  // the size of the heap
   size_t used;                  // the total number of bytes used

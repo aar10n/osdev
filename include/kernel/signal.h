@@ -16,4 +16,8 @@ typedef struct sigqueue {
   SLIST_ENTRY(struct sigqueue) next;
 } sigqueue_t;
 
+struct sigacts {
+
+};
+
 #endif

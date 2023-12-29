@@ -6,35 +6,31 @@
 #define KERNEL_REF_H
 
 #include <kernel/base.h>
-#include <atomic.h>
-#include <kernel/mutex.h>
-#include <kernel/spinlock.h>
+#include <kernel/atomic.h>
 
-// implementation taken from Linux kernel
 // https://www.open-std.org/JTC1/SC22/WG21/docs/papers/2007/n2167.pdf
 
 #define __move // identifies a pointer as a moved reference (ownership transferred)
 #define __ref  // marks a pointer as a reference (ownership not transferred)
 
-typedef atomic_t refcount_t;
+typedef volatile int refcount_t;
 
 static inline void ref_init(refcount_t *ref) {
-  atomic_init(ref, 1);
+  *ref = 1;
 }
 
-static inline void ref_get(refcount_t *ref) {
-  atomic_inc(ref);
+static inline void ref_get(refcount_t *ref) { // NOLINT(*-non-const-parameter)
+  atomic_fetch_add(ref, 1);
 }
 
-static inline int ref_put(refcount_t *ref) {
-  if (atomic_dec_and_test(ref)) {
+static inline int ref_put(refcount_t *ref) { // NOLINT(*-non-const-parameter)
+  if (atomic_fetch_sub(ref, 1) == 0)
     return 1;
-  }
   return 0;
 }
 
-static inline int ref_count(refcount_t *ref) {
-  return atomic_read(ref);
+static inline int ref_count(const refcount_t *ref) {
+  return *ref;
 }
 
 

@@ -1,12 +1,11 @@
 ;
 ; SMP Trampoline
 ;
-%include "kernel/base.inc"
 
 %define SMPBOOT_START 0x1000
 %define SMPDATA_START 0x2000
 
-; Smpboot Data
+; struct smpboot offsets
 %define SMP_LOCK    0x00
 %define SMP_GATE    0x02
 %define SMP_CPU_ID  0x04
@@ -18,8 +17,10 @@
 %define CODE_SEGMENT 0x08
 %define DATA_SEGMENT 0x10
 
+%define IA32_EFER_MSR      0x0C0000080
+
 %define label_rel(l) (SMPBOOT_START + (l - ap_boot))
-%define data(ofst) (SMPDATA_START + (ofst))
+%define data_ptr(ofst) (SMPDATA_START + (ofst))
 
 extern ap_entry
 
@@ -46,23 +47,26 @@ ap_boot:
   shr ebx, cl
   and ebx, 0xFF
 
-  lock add word [data(SMP_COUNT)], 1 ; increment ap count
+  lock add word [data_ptr(SMP_COUNT)], 1 ; increment ap count
+
+  ; ========= Exclusive lock =========
+.acquire_lock:
   xor ax, ax
-
-.aquire_lock:
+  lock cmpxchg word [data_ptr(SMP_LOCK)], 1
+  jne .lock_acquired
+.spin_lock:
   pause
-  lock bts word [data(SMP_LOCK)], 0
-  setc al
-  cmp al, 0x00
-  jne .aquire_lock
-  ; ========= Lock Aquired =========
+  cmp word [data_ptr(SMP_GATE)], 0 ; wait for gate to open
+  je .acquire_lock:                ; before trying to re-acquire lock
+  jmp .spin_lock
+  ; ==================================
+.lock_acquired:
 
-  mov byte [data(SMP_CPU_ID)], bl ; set current id
-
+  mov byte [data_ptr(SMP_CPU_ID)], bl ; set current id
   ; wait for bsp to release gate
 .wait_for_bsp:
   pause
-  cmp word [data(SMP_GATE)], 1
+  cmp word [data_ptr(SMP_GATE)], 1
   je .wait_for_bsp
 
   ;
@@ -74,7 +78,7 @@ ap_boot:
   mov cr4, eax
 
   ; load pml4 into cr3
-  mov eax, [data(SMP_PML4)]
+  mov eax, [data_ptr(SMP_PML4)]
   mov cr3, eax
 
   ; set LME bit
@@ -107,8 +111,8 @@ ap_boot64:
   mov ds, ax
   mov es, ax
 
-  mov rsp, [data(SMP_STACK)]      ; use ap kernel stack
-  mov rax, [data(SMP_PERCPU)]     ; use ap per-cpu data
+  mov rsp, [data_ptr(SMP_STACK)]      ; use ap kernel stack
+  mov rax, [data_ptr(SMP_PERCPU)]     ; use ap per-cpu data
   mov rdx, rax
   mov cl, 32
   shr rdx, cl
@@ -116,8 +120,8 @@ ap_boot64:
   wrmsr
 
   ; finally close gate and release lock
-  mov byte [data(SMP_GATE)], 1
-  mov byte [data(SMP_LOCK)], 0
+  mov byte [data_ptr(SMP_GATE)], 1
+  mov byte [data_ptr(SMP_LOCK)], 0
 
   ; ========= Lock Released =========
   mov rax, ap_entry

@@ -27,7 +27,7 @@ noreturn void panic_other_cpus(cpu_irq_stack_t *frame, cpu_registers_t *regs) {
   }
 
   kprintf(">>>> STOPPING CPU#%d <<<<\n", PERCPU_ID);
-  kprintf("thread %d:%d [{:str}]\n", PERCPU_PROCESS->pid, PERCPU_THREAD->tid, &PERCPU_THREAD->name);
+  kprintf("thread %d:%d [{:str}]\n", PERCPU_PROC->pid, PERCPU_THREAD->tid, &PERCPU_THREAD->name);
   debug_unwind(frame->rip, regs->rbp);
   atomic_lock_test_and_reset(&lock);
 
@@ -63,7 +63,7 @@ noreturn void panic(const char *fmt, ...) {
 
   thread_t *thread = PERCPU_THREAD;
   if (thread) {
-    kprintf("thread %d:%d [%s]\n", PERCPU_PROCESS->pid, PERCPU_THREAD->tid, &PERCPU_THREAD->name);
+    kprintf("thread %d:%d [%s]\n", PERCPU_PROC->pid, PERCPU_THREAD->tid, &PERCPU_THREAD->name);
   }
   stackframe_t *frame = (void *) __builtin_frame_address(0);
   debug_unwind(frame->rip, (uintptr_t) frame->rbp);

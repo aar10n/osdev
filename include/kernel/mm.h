@@ -2,8 +2,8 @@
 // Created by Aaron Gill-Braun on 2021-03-24.
 //
 
-#ifndef INCLUDE_KERNEL_MM_H
-#define INCLUDE_KERNEL_MM_H
+#ifndef KERNEL_MM_H
+#define KERNEL_MM_H
 
 #include <kernel/base.h>
 #include <kernel/mm_types.h>

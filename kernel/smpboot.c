@@ -24,7 +24,7 @@ extern void smpboot_end();
 // incremented non-atomically by the bsp _only_
 uint32_t system_num_cpus = 1;
 
-int smp_boot_ap(uint16_t id, smp_data_t *smpdata) {
+int smp_boot_ap(uint16_t id, struct smp_data *smpdata) {
   // wait until AP aquires lock
   while (!smpdata->lock) cpu_pause();
   cpu_pause();
@@ -71,11 +71,11 @@ void smp_init() {
 
   size_t smpboot_size = smpboot_end - smpboot_start;
   kassert(smpboot_size <= PAGE_SIZE);
-  kassert(sizeof(smp_data_t) <= PAGE_SIZE);
+  kassert(sizeof(struct smp_data) <= PAGE_SIZE);
   memcpy(code_ptr, smpboot_start, smpboot_size);
   memset(data_ptr, 0, PAGE_SIZE);
 
-  smp_data_t *smpdata = data_ptr;
+  struct smp_data *smpdata = data_ptr;
   smpdata->lock = 0;
   smpdata->gate = 1;
 

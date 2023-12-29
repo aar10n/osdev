@@ -9,6 +9,7 @@
 
 #include <kernel/cpu/cpu.h>
 
+#include <kernel/lock.h>
 #include <kernel/string.h>
 #include <kernel/printf.h>
 #include <kernel/panic.h>
@@ -155,7 +156,7 @@ static intptr_t bitmap_fa_alloc(frame_allocator_t *fa, size_t count, size_t page
 
   size_t num_4k_pages = num_4k_pages = (count * pagesize) / PAGE_SIZE;
   index_t frame_index;
-  SPIN_LOCK(&fa->lock);
+  mtx_spin_lock(&fa->lock);
   if (num_4k_pages == 1) {
     // common case - fastest
     frame_index = bitmap_get_set_free(frames);
@@ -168,7 +169,7 @@ static intptr_t bitmap_fa_alloc(frame_allocator_t *fa, size_t count, size_t page
   if (frame_index >= 0) {
     fa->free -= count * pagesize;
   }
-  SPIN_UNLOCK(&fa->lock);
+  mtx_spin_unlock(&fa->lock);
   if (frame_index < 0) {
     return -1;
   }
@@ -186,7 +187,7 @@ static int bitmap_fa_reserve(frame_allocator_t *fa, uintptr_t frame, size_t coun
   size_t before_count;
   index_t frame_index = SIZE_TO_PAGES(frame - fa->base);
   // mark frames as used
-  SPIN_LOCK(&fa->lock);
+  mtx_spin_lock(&fa->lock);
   if (num_4k_pages == 1) {
     // common case - fastest
     before_count = bitmap_set(frames, frame_index) ? 1 : 0;
@@ -202,7 +203,7 @@ static int bitmap_fa_reserve(frame_allocator_t *fa, uintptr_t frame, size_t coun
   if (before_count == 0) {
     fa->free -= count * pagesize;
   }
-  SPIN_UNLOCK(&fa->lock);
+  mtx_spin_unlock(&fa->lock);
   if (before_count != 0) {
     // some or all of the requested pages are allocated
     return -1;
@@ -216,7 +217,7 @@ static void bitmap_fa_free(frame_allocator_t *fa, uintptr_t frame, size_t count,
   size_t num_4k_pages = num_4k_pages = (count * pagesize) / PAGE_SIZE;
 
   index_t frame_index = SIZE_TO_PAGES(frame - fa->base);
-  SPIN_LOCK(&fa->lock);
+  mtx_spin_lock(&fa->lock);
   if (num_4k_pages == 1) {
     // common case - fastest
     bitmap_clear(frames, frame_index);
@@ -226,7 +227,7 @@ static void bitmap_fa_free(frame_allocator_t *fa, uintptr_t frame, size_t count,
   }
 
   fa->free += count * pagesize;
-  SPIN_UNLOCK(&fa->lock);
+  mtx_spin_unlock(&fa->lock);
 }
 
 static struct frame_allocator_impl bitmap_allocator = {
@@ -246,7 +247,7 @@ frame_allocator_t *new_frame_allocator(uintptr_t base, size_t size, struct frame
   fa->size = size;
   fa->free = size;
   fa->impl = impl;
-  spin_init(&fa->lock);
+  mtx_init(&fa->lock, MTX_SPIN, "frame_allocator_lock");
 
   fa->data = impl->fa_init(fa);
   if (fa->data == NULL) {

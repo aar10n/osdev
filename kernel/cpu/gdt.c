@@ -8,11 +8,6 @@
 #include <kernel/panic.h>
 #include <kernel/mm.h>
 
-struct packed gdt_desc {
-  uint16_t limit;
-  uint64_t base;
-};
-
 #define TSS_LOW  0x28ULL
 #define TSS_HIGH 0x30ULL
 
@@ -34,13 +29,13 @@ struct tss bsp_tss;
 
 void setup_gdt() {
   struct gdt_desc gdt_desc;
-  if (PERCPU_IS_BSP) {
+  if (PERCPU_IS_BOOT) {
     bsp_gdt[index(TSS_LOW)] = tss_segment_low((uintptr_t) &bsp_tss);
     bsp_gdt[index(TSS_HIGH)] = tss_segment_high((uintptr_t) &bsp_tss);
     gdt_desc.limit = sizeof(bsp_gdt) - 1;
     gdt_desc.base = (uint64_t) &bsp_gdt;
-    PERCPU_SET_CPU_GDT(&bsp_gdt);
-    PERCPU_SET_CPU_TSS(&bsp_tss);
+    PERCPU_AREA->cpu_gdt = &bsp_gdt;
+    PERCPU_AREA->cpu_tss = &bsp_tss;
   } else {
     struct tss *ap_tss = kmallocz(sizeof(struct tss));
     gdt_entry_t *ap_gdt = kmalloc(sizeof(bsp_gdt));
@@ -50,8 +45,8 @@ void setup_gdt() {
     ap_gdt[index(TSS_HIGH)] = tss_segment_high((uintptr_t) &ap_tss);
     gdt_desc.limit = sizeof(bsp_gdt) - 1;
     gdt_desc.base = (uint64_t) ap_gdt;
-    PERCPU_SET_CPU_GDT(ap_gdt);
-    PERCPU_SET_CPU_TSS(ap_tss);
+    PERCPU_AREA->cpu_gdt = ap_gdt;
+    PERCPU_AREA->cpu_tss = ap_tss;
   }
 
   cpu_load_gdt(&gdt_desc);
@@ -61,7 +56,7 @@ void setup_gdt() {
 
 uintptr_t tss_set_rsp(int cpl, uintptr_t sp) {
   kassert(cpl >= 0 && cpl <= 3);
-  struct tss *tss = __percpu_get_cpu_tss();
+  struct tss *tss = PERCPU_AREA->cpu_tss;
   uintptr_t old_rsp = tss->rsp[cpl];
   tss->rsp[cpl] = sp;
   return old_rsp;
@@ -69,7 +64,7 @@ uintptr_t tss_set_rsp(int cpl, uintptr_t sp) {
 
 uintptr_t tss_set_ist(int ist, uintptr_t sp) {
   kassert(ist >= 1 && ist <= 7);
-  struct tss *tss = __percpu_get_cpu_tss();
+  struct tss *tss = PERCPU_AREA->cpu_tss;
   uintptr_t old_rsp = tss->ist[ist - 1];
   tss->ist[ist - 1] = sp;
   return old_rsp;

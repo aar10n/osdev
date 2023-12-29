@@ -8,7 +8,11 @@
 
 #include <kernel/base.h>
 #include <kernel/string.h>
-#include <kernel/mm/heap.h>
+
+void *kmalloc(size_t size);
+void *kmallocz(size_t size);
+void kfree(void *);
+
 
 /**
  * cstr represents a constant fixed-length string.

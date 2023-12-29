@@ -4,8 +4,8 @@
 
 #include <kernel/fs.h>
 #include <kernel/mm.h>
+#include <kernel/proc.h>
 #include <kernel/device.h>
-#include <kernel/process.h>
 #include <kernel/panic.h>
 #include <kernel/printf.h>
 #include <kernel/str.h>
@@ -22,7 +22,7 @@
 #define DPRINTF(fmt, ...) kprintf("fs: %s: " fmt, __func__, ##__VA_ARGS__)
 #define goto_error(lbl, err) do { res = err; goto lbl; } while (0)
 
-#define FTABLE (PERCPU_PROCESS->files)
+#define FTABLE (curproc->files)
 
 #define HMAP_TYPE fs_type_t *
 #include <hash_map.h>
@@ -93,7 +93,7 @@ __move ventry_t *fs_root_getref() {
 
 int fs_mount(const char *source, const char *mount, const char *fs_type, int flags) {
   fs_type_t *type = hash_map_get(fs_types, fs_type);
-  ventry_t *at_ve = ve_getref(PERCPU_PROCESS->pwd);
+  ventry_t *at_ve = ve_getref(curproc->pwd);
   ventry_t *mount_ve = NULL;
   int res;
 
@@ -141,7 +141,7 @@ LABEL(ret);
 }
 
 int fs_unmount(const char *path) {
-  ventry_t *at_ve = ve_getref(PERCPU_PROCESS->pwd);
+  ventry_t *at_ve = ve_getref(curproc->pwd);
   ventry_t *mount_ve = NULL;
   int res;
 
@@ -166,7 +166,7 @@ LABEL(ret);
 //
 
 int fs_open(const char *path, int flags, mode_t mode) {
-  ventry_t *at_ve = ve_getref(PERCPU_PROCESS->pwd);
+  ventry_t *at_ve = ve_getref(curproc->pwd);
   ventry_t *ve = NULL;
   int fd = -1;
   int res;
@@ -499,7 +499,7 @@ LABEL(ret);
 //
 
 int fs_opendir(const char *path) {
-  ventry_t *at_ve = ve_getref(PERCPU_PROCESS->pwd);
+  ventry_t *at_ve = ve_getref(curproc->pwd);
   ventry_t *ve = NULL;
   int res;
 
@@ -678,7 +678,7 @@ LABEL(ret);
 //
 
 int fs_stat(const char *path, struct stat *stat) {
-  ventry_t *at_ve = ve_getref(PERCPU_PROCESS->pwd);
+  ventry_t *at_ve = ve_getref(curproc->pwd);
   ventry_t *ve = NULL;
   int res;
 
@@ -698,7 +698,7 @@ LABEL(ret);
 }
 
 int fs_lstat(const char *path, struct stat *stat) {
-  ventry_t *at_ve = ve_getref(PERCPU_PROCESS->pwd);
+  ventry_t *at_ve = ve_getref(curproc->pwd);
   ventry_t *ve = NULL;
   int res;
 
@@ -722,7 +722,7 @@ int fs_create(const char *path, mode_t mode) {
 }
 
 int fs_mknod(const char *path, mode_t mode, dev_t dev) {
-  ventry_t *at_ve = ve_getref(PERCPU_PROCESS->pwd);
+  ventry_t *at_ve = ve_getref(curproc->pwd);
   ventry_t *dve = NULL;
   int res;
 
@@ -754,7 +754,7 @@ LABEL(ret);
 }
 
 int fs_symlink(const char *target, const char *linkpath) {
-  ventry_t *at_ve = ve_getref(PERCPU_PROCESS->pwd);
+  ventry_t *at_ve = ve_getref(curproc->pwd);
   ventry_t *dve = NULL;
   int res;
 
@@ -786,7 +786,7 @@ LABEL(ret);
 }
 
 int fs_link(const char *oldpath, const char *newpath) {
-  ventry_t *at_ve = ve_getref(PERCPU_PROCESS->pwd);
+  ventry_t *at_ve = ve_getref(curproc->pwd);
   ventry_t *ove = NULL;
   ventry_t *dve = NULL;
   int res;
@@ -828,7 +828,7 @@ LABEL(ret);
 }
 
 int fs_unlink(const char *path) {
-  ventry_t *at_ve = ve_getref(PERCPU_PROCESS->pwd);
+  ventry_t *at_ve = ve_getref(curproc->pwd);
   ventry_t *ve = NULL;
   ventry_t *dve = NULL;
   int res;
@@ -866,7 +866,7 @@ LABEL(ret);
 }
 
 int fs_mkdir(const char *path, mode_t mode) {
-  ventry_t *at_ve = ve_getref(PERCPU_PROCESS->pwd);
+  ventry_t *at_ve = ve_getref(curproc->pwd);
   ventry_t *dve = NULL;
   int res;
 
@@ -898,7 +898,7 @@ LABEL(ret);
 }
 
 int fs_rmdir(const char *path) {
-  ventry_t *at_ve = ve_getref(PERCPU_PROCESS->pwd);
+  ventry_t *at_ve = ve_getref(curproc->pwd);
   ventry_t *ve = NULL;
   ventry_t *dve = NULL;
   int res;
@@ -943,7 +943,7 @@ int fs_rename(const char *oldpath, const char *newpath) {
 }
 
 ssize_t fs_readlink(const char *path, char *buf, size_t bufsiz) {
-  ventry_t *at_ve = ve_getref(PERCPU_PROCESS->pwd);
+  ventry_t *at_ve = ve_getref(curproc->pwd);
   ventry_t *ve = NULL;
   ssize_t res;
 

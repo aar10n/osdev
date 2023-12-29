@@ -3,9 +3,7 @@
 //
 
 #include <kernel/irq.h>
-#include <kernel/process.h>
-#include <kernel/thread.h>
-#include <kernel/spinlock.h>
+#include <kernel/lock.h>
 #include <kernel/printf.h>
 #include <kernel/panic.h>
 
@@ -29,7 +27,6 @@ struct irq_handler {
   union {
     void *ptr;
     irq_handler_t handler;
-    cond_t *condition;
   };
   void *data;
 };
@@ -42,9 +39,9 @@ struct isa_irq_override {
 
 uint8_t ipi_vectornum;
 static int irq_external_max;
-static spinlock_t irqnum_hardware_lock;
+static mtx_t irqnum_hardware_lock;
 static bitmap_t *irqnum_hardware_map;
-static spinlock_t irqnum_software_lock;
+static mtx_t irqnum_software_lock;
 static bitmap_t *irqnum_software_map;
 
 struct irq_handler irq_handlers[IRQ_NUM_VECTORS];
@@ -78,7 +75,7 @@ __used void exception_handler(uint8_t vector, uint32_t error, cpu_irq_stack_t *f
 __used void irq_handler(uint8_t vector, cpu_irq_stack_t *frame, cpu_registers_t *regs) {
   // kprintf("CPU#%d --> IRQ%d [vector = %d]\n", PERCPU_ID, vector - IRQ_VECTOR_BASE, vector);
   uint64_t rflags = cpu_save_clear_interrupts();
-  __percpu_inc_irq_level();
+  // __percpu_inc_irq_level();
   apic_send_eoi();
   if (vector == ipi_vectornum) {
     ipi_handler(frame, regs);
@@ -95,7 +92,7 @@ __used void irq_handler(uint8_t vector, cpu_irq_stack_t *frame, cpu_registers_t 
         irq_handlers[vector].handler(vector - IRQ_VECTOR_BASE, irq_handlers[vector].data);
         break;
       case IRQ_TYPE_COND:
-        cond_signal(irq_handlers[vector].condition);
+        todo();
         break;
       default:
         unreachable;
@@ -107,7 +104,7 @@ __used void irq_handler(uint8_t vector, cpu_irq_stack_t *frame, cpu_registers_t 
   kprintf("CPU#%d --> IRQ%d\n", PERCPU_ID, vector - IRQ_VECTOR_BASE);
 
 LABEL(done);
-  __percpu_dec_irq_level();
+  // __percpu_dec_irq_level();
   cpu_restore_interrupts(rflags);
 }
 
@@ -132,8 +129,8 @@ uint8_t irq_internal_map_to_vector(uint8_t irq) {
 void irq_init() {
   irqnum_hardware_map = create_bitmap(IRQ_NUM_VECTORS);
   irqnum_software_map = create_bitmap(IRQ_NUM_VECTORS);
-  spin_init(&irqnum_hardware_lock);
-  spin_init(&irqnum_software_lock);
+  mtx_init(&irqnum_hardware_lock, MTX_SPIN, "irqnum_hardware_lock");
+  mtx_init(&irqnum_software_lock, MTX_SPIN, "irqnum_software_lock");
 
   // mark all over the max number of interrupts as reserved
   bitmap_set_n(irqnum_hardware_map, IRQ_NUM_VECTORS - IRQ_VECTOR_BASE, IRQ_VECTOR_BASE);
@@ -167,9 +164,9 @@ void irq_init() {
 //
 
 int irq_alloc_hardware_irqnum() {
-  spin_lock(&irqnum_hardware_lock);
+  mtx_spin_lock(&irqnum_hardware_lock);
   index_t num = bitmap_get_set_free(irqnum_hardware_map);
-  spin_unlock(&irqnum_hardware_lock);
+  mtx_spin_unlock(&irqnum_hardware_lock);
   if (num < 0) {
     return -1;
   }
@@ -177,9 +174,9 @@ int irq_alloc_hardware_irqnum() {
 }
 
 int irq_alloc_software_irqnum() {
-  spin_lock(&irqnum_software_lock);
+  mtx_spin_lock(&irqnum_software_lock);
   index_t num = bitmap_get_set_free(irqnum_software_map);
-  spin_unlock(&irqnum_software_lock);
+  mtx_spin_unlock(&irqnum_software_lock);
   if (num < 0) {
     return -1;
   }
@@ -193,19 +190,18 @@ int irq_try_reserve_irqnum(uint8_t irq) {
 
   bool pre_claimed;
   if (irq <= irq_external_max) {
-    spin_lock(&irqnum_hardware_lock);
+    mtx_spin_lock(&irqnum_hardware_lock);
     pre_claimed = bitmap_set(irqnum_hardware_map, irq);
-    spin_unlock(&irqnum_hardware_lock);
+    mtx_spin_unlock(&irqnum_hardware_lock);
   } else {
-    spin_lock(&irqnum_software_lock);
+    mtx_spin_lock(&irqnum_software_lock);
     pre_claimed = bitmap_set(irqnum_software_map, irq);
-    spin_unlock(&irqnum_software_lock);
+    mtx_spin_unlock(&irqnum_software_lock);
   }
 
   if (pre_claimed) {
     return -EADDRINUSE;
   }
-
   return irq;
 }
 
@@ -242,20 +238,6 @@ int irq_register_irq_handler(uint8_t irq, irq_handler_t handler, void *data) {
   irq_handlers[vector].type = IRQ_TYPE_FUNC;
   irq_handlers[vector].handler = handler;
   irq_handlers[vector].data = data;
-  return 0;
-}
-
-int irq_register_signaled_irq_handler(uint8_t irq, cond_t *condition) {
-  kprintf("irq: registering deferred handler for IRQ%d\n", irq);
-  if (irq > IRQ_NUM_VECTORS - IRQ_VECTOR_BASE) {
-    return -ERANGE;
-  }
-
-  uint8_t vector = irq_internal_map_to_vector(irq);
-  irq_handlers[vector].ignored = 1;
-  irq_handlers[vector].type = IRQ_TYPE_COND;
-  irq_handlers[vector].condition = condition;
-  irq_handlers[vector].data = NULL;
   return 0;
 }
 

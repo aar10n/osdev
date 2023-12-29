@@ -7,7 +7,6 @@
 #include <kernel/mm.h>
 #include <kernel/fs.h>
 #include <kernel/sched.h>
-#include <kernel/mutex.h>
 #include <kernel/thread.h>
 #include <kernel/loader.h>
 #include <kernel/string.h>
@@ -20,7 +19,6 @@
 
 #include <asm/bits.h>
 #include <bitmap.h>
-#include <atomic.h>
 
 // #define ASSERT(x)
 #define ASSERT(x) kassert(x)
@@ -176,7 +174,7 @@ thread_t *thread_alloc_struct(process_t *proc, pid_t tid, uint32_t flags) {
   thread_t *td = kmallocz(sizeof(thread_t));
   td->tid = tid;
   td->flags = flags;
-  td->process = getref(proc);
+  td->process = proc;
   td->creds = getref(proc->creds);
   td->cpuset = kmallocz(sizeof(struct cpuset));
 
@@ -469,3 +467,36 @@ void proc_init() {
 // DEFINE_SYSCALL(getegid, gid_t) {
 //   return PERCPU_PROCESS->egid;
 // }
+
+
+//
+//
+
+void spinlock_enter() {
+  thread_t *td = PERCPU_THREAD;
+  if (td == NULL) {
+    uint64_t rflags;
+    temp_irq_save(rflags);
+    PERCPU_SET_RFLAGS(rflags);
+    return;
+  }
+
+  if (td->spinlock_count == 0) {
+    // first time entering a spinlock, time for this thread to enter a critical section
+    uint64_t rflags;
+    temp_irq_save(rflags);
+    td->saved_rflags = rflags;
+    td->spinlock_count = 1;
+    // td->critical_level
+    // td_begin_critical(td);
+  }
+}
+
+void spinlock_exit() {
+  thread_t *td = PERCPU_THREAD;
+  if (td == NULL) {
+    uint64_t flags = PERCPU_RFLAGS;
+    temp_irq_restore(flags);
+    return;
+  }
+}

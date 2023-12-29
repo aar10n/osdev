@@ -6,9 +6,7 @@
 #define KERNEL_DEVICE_H
 
 #include <kernel/mm_types.h>
-#include <kernel/queue.h>
-#include <kernel/spinlock.h>
-#include <kernel/mutex.h>
+#include <kernel/lock.h>
 #include <kernel/kio.h>
 
 struct device;
@@ -101,7 +99,7 @@ typedef struct device_bus {
   void *data; // private data
 
   LIST_HEAD(struct device) devices;
-  spinlock_t devices_lock;
+  mtx_t devices_lock;
 
   /**
    * Probe the bus for devices.

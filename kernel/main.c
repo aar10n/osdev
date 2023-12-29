@@ -8,18 +8,14 @@
 #include <kernel/mm.h>
 #include <kernel/fs.h>
 #include <kernel/device.h>
-#include <kernel/process.h>
-#include <kernel/thread.h>
+#include <kernel/proc.h>
 #include <kernel/smpboot.h>
 #include <kernel/timer.h>
 #include <kernel/sched.h>
 
 #include <kernel/acpi/acpi.h>
 #include <kernel/cpu/cpu.h>
-#include <kernel/cpu/io.h>
-#include <kernel/cpu/per_cpu.h>
 #include <kernel/debug/debug.h>
-#include <kernel/gui/screen.h>
 
 #include <kernel/printf.h>
 #include <kernel/panic.h>
@@ -36,36 +32,33 @@ boot_info_v2_t __boot_data *boot_info_v2;
 //
 
 __used void kmain() {
-  // Setup kprintf
   kprintf_early_init();
 
-  // Early initialization
   cpu_early_init();
   mm_early_init();
   acpi_early_init();
-  screen_early_init();
   debug_early_init();
   fs_early_init();
-  irq_init();
+  do_early_percpu_initializers();
 
-  // Memory initialization
+  irq_init();
   init_mem_zones();
   init_address_space();
   cpu_stage2_init();
   debug_init();
-
   do_static_initializers();
 
   fs_init();
   proc_init();
   sched_init();
-  // smp_init();
+  smp_init();
 
   unreachable;
 }
 
 __used void ap_main() {
   cpu_early_init();
+  do_early_percpu_initializers();
   kprintf("[CPU#%d] initializing\n", PERCPU_ID);
 
   init_ap_address_space();

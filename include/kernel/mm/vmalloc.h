@@ -7,7 +7,6 @@
 
 #include <kernel/base.h>
 #include <kernel/queue.h>
-#include <kernel/spinlock.h>
 #include <kernel/mm_types.h>
 
 typedef __move page_t *(*vm_getpage_t)(struct vm_mapping *vm, size_t off, uint32_t vm_flags, void *data);
