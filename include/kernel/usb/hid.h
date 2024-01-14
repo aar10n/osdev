@@ -115,7 +115,7 @@ typedef struct hid_device {
   hid_buffer_t *buffer;
   size_t size;
 
-  thread_t *thread;
+  struct thread *thread;
 
   void *data;
   void (*handle_input)(struct hid_device *device, uint8_t *buffer);

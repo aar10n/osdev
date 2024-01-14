@@ -2,9 +2,10 @@
 // Created by Aaron Gill-Braun on 2023-12-10.
 //
 
-#include <kernel/device/8250.h>
-
+// 8250 UART Serial Port Driver
+#include <kernel/hw/8250.h>
 #include <kernel/cpu/io.h>
+
 
 #define SERIAL_DATA 0
 #define SERIAL_INTR_EN 1

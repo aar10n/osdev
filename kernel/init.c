@@ -13,6 +13,7 @@ typedef struct callback_obj {
   LIST_ENTRY(struct callback_obj) list;
 } callback_obj_t;
 
+LOAD_SECTION(__early_init_array, ".init_array.early");
 LOAD_SECTION(__percpu_init_array, ".init_array.percpu");
 LOAD_SECTION(__static_init_array, ".init_array.static");
 LOAD_SECTION(__module_init_array, ".init_array.module");
@@ -38,7 +39,20 @@ void execute_init_address_space_callbacks() {
 
 //
 
-void do_early_percpu_initializers() {
+void do_early_initializers() {
+  // execute all of the early initializers
+  if (__early_init_array.virt_addr == 0) {
+    panic("failed to load early initializers");
+  }
+
+  void (**init_funcs)() = (void *) __early_init_array.virt_addr;
+  size_t num_init_funcs = __early_init_array.size / sizeof(void *);
+  for (size_t i = 0; i < num_init_funcs; i++) {
+    init_funcs[i]();
+  }
+}
+
+void do_percpu_initializers() {
   // execute all of the percpu initializers
   if (__percpu_init_array.virt_addr == 0) {
     panic("failed to load percpu initializers");

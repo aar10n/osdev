@@ -6,8 +6,7 @@
 
 #include <kernel/mm.h>
 #include <kernel/fs.h>
-#include <kernel/thread.h>
-#include <kernel/process.h>
+#include <kernel/proc.h>
 #include <kernel/panic.h>
 #include <kernel/printf.h>
 #include <kernel/string.h>
@@ -182,7 +181,7 @@ int elf_load_image(elf_program_t *prog, void *buf, size_t len, uint32_t e_type) 
         prog->phdr = prog->base + phdr[i].p_vaddr;
         continue;
       case PT_INTERP:
-        prog->interp_path = str_make(offset_ptr(ehdr, phdr[i].p_offset));
+        prog->interp_path = str_from(offset_ptr(ehdr, phdr[i].p_offset));
         continue;
       default:
         continue;

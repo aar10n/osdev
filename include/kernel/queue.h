@@ -86,6 +86,21 @@
     (el);                                                 \
   })
 
+/* inserts an element into the correct position of a key-ordered list */
+#define LIST_INSERT_ORDERED_BY(head, el, name, order_key) \
+  ({                                                      \
+    typeof(el) __ptr = (head)->first;                     \
+    while (__ptr && __ptr->order_key < (el)->order_key) { \
+      __ptr = __ptr->name.next;                           \
+    }                                                     \
+    if (__ptr) {                                          \
+      LIST_INSERT(head, el, name, __ptr->name.prev);      \
+    } else {                                              \
+      LIST_ADD(head, el, name);                           \
+    }                                                     \
+    (el);                                                 \
+  })
+
 /* Removes an element from the list */
 #define LIST_REMOVE(head, el, name)                       \
   ({                                                      \

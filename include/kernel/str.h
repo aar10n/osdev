@@ -79,7 +79,7 @@ static inline cstr_t cstr_from_str(str_t str) {
   return cstr_new(str.str, str.len);
 }
 
-static inline str_t str_alloc(size_t len) {
+static inline str_t str_alloc_empty(size_t len) {
   char *buf = kmallocz(len + 1);
   return (str_t) {
     .str = buf,
@@ -100,7 +100,7 @@ static inline str_t str_new(const char *str, size_t len) {
   };
 }
 
-static inline str_t str_make(const char *str) {
+static inline str_t str_from(const char *str) {
   if (!str)
     return str_null;
 
@@ -176,6 +176,20 @@ static inline bool str_eq_c(str_t str1, cstr_t str2) {
 
 // TODO: rest of string functions
 
+#endif
+
+#ifdef __PRINTF__
+// is available if printf.h is included
+#ifndef STR_PRINTF
+#define STR_PRINTF
+static inline str_t str_fmt(const char *format, ...) {
+  va_list args;
+  va_start(args, format);
+  char *s = kvasprintf(format, args);
+  va_end(args);
+  return str_from_charp(s);
+}
+#endif
 #endif
 
 #ifdef __PATH__

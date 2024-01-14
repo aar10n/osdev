@@ -29,9 +29,10 @@ struct tcb *tcb_alloc(int flags) {
     tcb->fpu = fpu_area_alloc();
   }
   tcb->tcb_flags = flags;
+  return tcb;
 }
 
-void tcb_free_struct(struct tcb **ptcb) {
+void tcb_free(struct tcb **ptcb) {
   if (*ptcb == NULL) {
     return;
   }

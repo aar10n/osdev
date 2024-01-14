@@ -26,8 +26,6 @@ typedef enum ipi_mode {
   IPI_ALL_EXCL,
 } ipi_mode_t;
 
-typedef void (*ipi_handler_t)(uint64_t data);
-
 int ipi_deliver_cpu_id(ipi_type_t type, uint8_t cpu_id, uint64_t data);
 int ipi_deliver_mode(ipi_type_t type, ipi_mode_t mode, uint64_t data);
 

@@ -6,14 +6,13 @@
 #include <kernel/cpu/fpu.h>
 #include <kernel/cpu/gdt.h>
 #include <kernel/cpu/idt.h>
-#include <kernel/device/apic.h>
+#include <kernel/hw/apic.h>
+#include <kernel/hw/8254.h>
 
 #include <kernel/mm.h>
 #include <kernel/syscall.h>
 #include <kernel/panic.h>
 #include <kernel/printf.h>
-
-#define PERCPU_CPUID (PERCPU_INFO->cpuid_bits)
 
 // prctl.h bits
 #define ARCH_SET_GS			0x1001
@@ -41,9 +40,11 @@
 #define CPU_EFER_NXE       (1 << 11)
 #define CPU_EFER_FFXSR     (1 << 14)
 
-uint32_t cpu_id_to_apic_id_table[MAX_CPUS];
+uint8_t cpu_bsp_id = 0;
+uint32_t cpu_to_apic_id[MAX_CPUS];
 struct percpu *percpu_areas[MAX_CPUS];
 struct cpu_info cpu0_info;
+
 
 #define __cpuid(level, a, b, c, d) \
   __asm("cpuid\n\t" : "=a" (a), "=b" (b), "=c" (c), "=d" (d) : "0" (level))
@@ -81,7 +82,7 @@ static inline void cpuid_clear_bit(uint16_t cpuid_bit) {
   if (bit > 31 || dword > (sizeof(cpuid_bits_t) / sizeof(uint32_t))) {
     return;
   }
-  PERCPU_INFO->cpuid_bits.raw[dword] &= ~(uint32_t)(1 << bit);
+  curcpu_info->cpuid_bits.raw[dword] &= ~(uint32_t)(1 << bit);
 }
 
 static inline void assert_cpu_feature(const char *feature, int supported) {
@@ -91,7 +92,7 @@ static inline void assert_cpu_feature(const char *feature, int supported) {
 }
 
 static inline void bsp_log_message(const char *message) {
-  if (PERCPU_ID != cpu_bsp_id) {
+  if (curcpu_id != cpu_bsp_id) {
     return;
   }
   kprintf(message);
@@ -100,25 +101,23 @@ static inline void bsp_log_message(const char *message) {
 //
 
 void cpu_early_init() {
-  setup_gdt();
-  setup_idt();
   apic_init();
 
-  uint32_t apic_id = cpu_get_apic_id();
-  struct percpu *percpu_area = (void *) cpu_read_gsbase();
-  if (PERCPU_IS_BOOT) {
-    percpu_area->info = &cpu0_info;
+  struct cpu_info *info;
+  if (curcpu_is_boot) {
+    info = &cpu0_info;
   } else {
-    // ap processors
-    percpu_area->info = kmallocz(sizeof(struct cpu_info));
+    info = kmallocz(sizeof(struct cpu_info));
   }
+  curcpu_area->info = info;
 
-  percpu_area->info->apic_id = apic_id;
-  percpu_areas[PERCPU_ID] = percpu_area;
-  cpu_id_to_apic_id_table[PERCPU_ID] = apic_id;
+  uint32_t apic_id = cpu_get_apic_id();
+  info->apic_id = apic_id;
+  percpu_areas[curcpu_id] = curcpu_area;
+  cpu_to_apic_id[curcpu_id] = apic_id;
 
-  // load cpuid bits
-  union cpuid_bits *cpuid_bits = &percpu_area->info->cpuid_bits;
+  // load cpuid info
+  union cpuid_bits *cpuid_bits = &info->cpuid_bits;
   do_cpuid(0x00000001, &cpuid_bits->eax_0_1, &cpuid_bits->ebx_0_1, &cpuid_bits->ecx_0_1, &cpuid_bits->edx_0_1);
   do_cpuid(0x00000006, &cpuid_bits->eax_0_6, &cpuid_bits->ebx_0_6, &cpuid_bits->ecx_0_6, &cpuid_bits->edx_0_6);
   do_cpuid(0x00000007, &cpuid_bits->eax_0_7, &cpuid_bits->ebx_0_7, &cpuid_bits->ecx_0_7, &cpuid_bits->edx_0_7);
@@ -126,14 +125,8 @@ void cpu_early_init() {
   do_cpuid(0x80000007, &cpuid_bits->eax_8_7, &cpuid_bits->ebx_8_7, &cpuid_bits->ecx_8_7, &cpuid_bits->edx_8_7);
   do_cpuid(0x80000008, &cpuid_bits->eax_8_8, &cpuid_bits->ebx_8_8, &cpuid_bits->ecx_8_8, &cpuid_bits->edx_8_8);
 
-  // if (PERCPU_IS_BOOT) {
-  //   cpu_print_info();
-  //   cpu_print_cpuid();
-  // }
-
   assert_cpu_feature("APIC", cpuid_query_bit(CPUID_BIT_APIC));
   assert_cpu_feature("TSC", cpuid_query_bit(CPUID_BIT_TSC));
-
   // SSE support
   assert_cpu_feature("CLFSH", cpuid_query_bit(CPUID_BIT_CLFSH));
   assert_cpu_feature("FXSR", cpuid_query_bit(CPUID_BIT_FXSR));
@@ -196,21 +189,18 @@ void cpu_early_init() {
   }
   cpu_write_msr(IA32_EFER_MSR, efer);
 
-  // save cpu id to aux msr
-  cpu_write_msr(IA32_TSC_AUX_MSR, apic_id);
-
-  if (PERCPU_IS_BOOT) {
+  if (curcpu_is_boot) {
     cpu_print_info();
     cpu_print_cpuid();
 
     // callibrate processor frequency
     kprintf("calibrating processor frequency...\n");
-    const uint64_t ms = 5;
+    const uint64_t ms = 1;
     uint64_t cycles = UINT64_MAX;
     uint64_t t0, t1, dt;
     for (int i = 0; i < 5; i++) {
       t0 = cpu_read_tsc();
-      apic_mdelay(ms);
+      pit_mdelay(ms);
       t1 = cpu_read_tsc();
       dt = t1 - t0;
       cycles = min(cycles, dt);
@@ -218,24 +208,20 @@ void cpu_early_init() {
 
     uint64_t cpu_ticks_per_sec = cycles * (MS_PER_SEC / ms);
     uint64_t cpu_clock_khz = cpu_ticks_per_sec / 1000;
-    kprintf("detected %.2f MHz processor\n", (double)(cpu_clock_khz / 1000));
+    kprintf("detected %d.%03d MHz processor\n", cpu_clock_khz / 1000, cpu_clock_khz % 1000);
   }
-}
 
-void cpu_stage2_init() {
   // setup the syscall handler
   cpu_write_msr(IA32_LSTAR_MSR, (uintptr_t) syscall_handler);
   cpu_write_msr(IA32_SFMASK_MSR, 0);
   cpu_write_msr(IA32_STAR_MSR, 0x10LL << 48 | KERNEL_CS << 32);
+}
 
-  // setup the stack that is used when handling interrupts
-  uintptr_t irq_stack = (uintptr_t) vmalloc_n(SIZE_16KB, VM_WRITE | VM_STACK, "irq stack");
-  tss_set_rsp(0, irq_stack + SIZE_16KB);
-
+void cpu_late_init() {
   // setup the clean stack that is used for double fault handling
   uintptr_t df_stack = (uintptr_t) vmalloc_n(SIZE_4KB, VM_WRITE | VM_STACK, "df stack");
   tss_set_ist(1, df_stack + SIZE_4KB);
-  set_gate_ist(CPU_EXCEPTION_DF, 1);
+  idt_set_gate_ist(CPU_EXCEPTION_DF, 1);
 }
 
 void cpu_map_topology() {
@@ -279,7 +265,7 @@ int cpu_get_is_bsp() {
 
 uint8_t cpu_id_to_apic_id(uint8_t cpu_id) {
   kassert(cpu_id < system_num_cpus);
-  return cpu_id_to_apic_id_table[cpu_id];
+  return cpu_to_apic_id[cpu_id];
 }
 
 int cpuid_query_bit(uint16_t feature) {
@@ -288,7 +274,7 @@ int cpuid_query_bit(uint16_t feature) {
   if (bit > 31 || dword > (sizeof(cpuid_bits_t) / sizeof(uint32_t))) {
     return -1;
   }
-  return (PERCPU_INFO->cpuid_bits.raw[dword] & (1 << bit)) != 0;
+  return (curcpu_info->cpuid_bits.raw[dword] & (1 << bit)) != 0;
 }
 
 void cpu_print_info() {
@@ -332,10 +318,10 @@ void cpu_print_info() {
   kprintf("  Model:      %-2d (%02xh)\n", model, model);
   kprintf("  Stepping:   %-2d (%02xh)\n", stepping, stepping);
 
-  uint8_t num_phys_bits = PERCPU_CPUID.eax_8_8 & 0xFF;
-  uint8_t num_linear_bits = (PERCPU_CPUID.eax_8_8 >> 8) & 0xFF;
-  uint8_t num_phys_cores = (PERCPU_CPUID.ecx_8_8 & 0xFF) + 1;
-  uint8_t max_apic_id = 1 << ((PERCPU_CPUID.ecx_8_8 >> 12) & 0xF);
+  uint8_t num_phys_bits = curcpu_info->cpuid_bits.eax_8_8 & 0xFF;
+  uint8_t num_linear_bits = (curcpu_info->cpuid_bits.eax_8_8 >> 8) & 0xFF;
+  uint8_t num_phys_cores = (curcpu_info->cpuid_bits.ecx_8_8 & 0xFF) + 1;
+  uint8_t max_apic_id = 1 << ((curcpu_info->cpuid_bits.ecx_8_8 >> 12) & 0xF);
 
   kprintf("\n");
   kprintf("  Number of physical address bits: %d\n", num_phys_bits);
@@ -350,10 +336,11 @@ void cpu_print_cpuid() {
   kprintf("  extapic: %d\n", cpuid_query_bit(CPUID_BIT_EXTAPIC));
   kprintf("  x2apic: %d\n", cpuid_query_bit(CPUID_BIT_X2APIC));
   kprintf("  tsc: %d\n", cpuid_query_bit(CPUID_BIT_TSC));
-  kprintf("  tsc-deadline: %d\n", cpuid_query_bit(CPUID_BIT_TSC_DEADLINE));
-  kprintf("  tsc-adjust: %d\n", cpuid_query_bit(CPUID_BIT_TSC_ADJUST));
-  kprintf("  tsc-invariant: %d\n", cpuid_query_bit(CPUID_BIT_INVARIANT_TSC));
-  kprintf("  perf-tsc: %d\n", cpuid_query_bit(CPUID_BIT_PERFTSC));
+  kprintf("  tsc_deadline: %d\n", cpuid_query_bit(CPUID_BIT_TSC_DEADLINE));
+  kprintf("  tsc_adjust: %d\n", cpuid_query_bit(CPUID_BIT_TSC_ADJUST));
+  kprintf("  invariant_tsc: %d\n", cpuid_query_bit(CPUID_BIT_INVARIANT_TSC));
+  kprintf("  perftsc: %d\n", cpuid_query_bit(CPUID_BIT_PERFTSC));
+  kprintf("  rdtscp: %d\n", cpuid_query_bit(CPUID_BIT_RDTSCP));
   kprintf("  fsgsbase: %d\n", cpuid_query_bit(CPUID_BIT_FSGSBASE));
   kprintf("  arat: %d\n", cpuid_query_bit(CPUID_BIT_ARAT));
   kprintf("  wdt: %d\n", cpuid_query_bit(CPUID_BIT_WDT));

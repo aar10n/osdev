@@ -22,7 +22,13 @@
 #define atomic_fetch_add(ptr, val) __atomic_fetch_add(ptr, val, __ATOMIC_SEQ_CST)
 #define atomic_fetch_sub(ptr, val) __atomic_fetch_sub(ptr, val, __ATOMIC_SEQ_CST)
 
+#define atomic_fetch_and(ptr, val) __atomic_fetch_and(ptr, val, __ATOMIC_SEQ_CST)
+#define atomic_fetch_or(ptr, val) __atomic_fetch_or(ptr, val, __ATOMIC_SEQ_CST)
+#define atomic_fetch_xor(ptr, val) __atomic_fetch_xor(ptr, val, __ATOMIC_SEQ_CST)
+#define atomic_fetch_nand(ptr, val) __atomic_fetch_nand(ptr, val, __ATOMIC_SEQ_CST)
+
 #define atomic_xchg(ptr, val) __atomic_exchange_n(ptr, val, __ATOMIC_SEQ_CST)
+
 
 /*
  * Atomic compare and exchange.

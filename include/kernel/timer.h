@@ -7,7 +7,7 @@
 
 #include <kernel/base.h>
 #include <kernel/queue.h>
-#include <kernel/spinlock.h>
+#include <kernel/mutex.h>
 
 // Indicates the timer is not shared between logical CPUs.
 #define TIMER_CAP_PER_CPU 0x1
@@ -26,7 +26,7 @@ typedef struct timer_device {
   timer_mode_t modes;
   uint32_t scale_ns;
   uint64_t value_mask;
-  spinlock_t lock;
+  mtx_t lock; // spin mutex
 
   // timer api
   int (*init)(struct timer_device *, timer_mode_t mode);
@@ -47,12 +47,6 @@ void register_timer_device(timer_device_t *device);
 
 int init_periodic_timer();
 int init_oneshot_timer();
-
-void alarms_init();
-void alarm_reschedule();
-clockid_t timer_create_alarm(clock_t expires, timer_cb_t callback, void *data);
-void *timer_delete_alarm(clockid_t id);
-clock_t timer_now();
 
 int timer_enable(uint16_t type);
 int timer_disable(uint16_t type);

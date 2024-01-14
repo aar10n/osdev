@@ -6,30 +6,29 @@
 #define KERNEL_INTERRUPT_H
 
 #include <kernel/base.h>
-#include <kernel/cpu/cpu.h>
 
-typedef struct pcie_device pcie_device_t;
-typedef void (*irq_handler_t)(uint8_t, void *);
-typedef void (*exception_handler_t)(uint8_t, uint32_t, cpu_irq_stack_t *, cpu_registers_t *);
+struct trapframe;
+struct pcie_device;
 
-extern uint8_t ipi_vectornum;
+#define MAX_IRQ 223
 
+typedef void (*irq_handler_t)(struct trapframe *frame);
 
 void irq_init();
+
+int irq_get_vector(uint8_t irq);
 
 int irq_alloc_hardware_irqnum();
 int irq_alloc_software_irqnum();
 int irq_try_reserve_irqnum(uint8_t irq);
-int irq_reserve_irqnum(uint8_t irq);
+int irq_must_reserve_irqnum(uint8_t irq);
 
-int irq_register_exception_handler(uint8_t vector, exception_handler_t handler);
-int irq_register_irq_handler(uint8_t irq, irq_handler_t handler, void *data);
-
+int irq_register_handler(uint8_t irq, irq_handler_t handler, void *data);
 int irq_enable_interrupt(uint8_t irq);
 int irq_disable_interrupt(uint8_t irq);
-int irq_enable_msi_interrupt(uint8_t irq, uint8_t index, pcie_device_t *device);
-int irq_disable_msi_interrupt(uint8_t irq, uint8_t index, pcie_device_t *device);
+int irq_enable_msi_interrupt(uint8_t irq, uint8_t index, struct pcie_device *device);
+int irq_disable_msi_interrupt(uint8_t irq, uint8_t index, struct pcie_device *device);
 
-int irq_override_isa_interrupt(uint8_t isa_irq, uint8_t dest_irq, uint16_t flags);
+int early_irq_override_isa_interrupt(uint8_t isa_irq, uint8_t dest_irq, uint16_t flags);
 
 #endif

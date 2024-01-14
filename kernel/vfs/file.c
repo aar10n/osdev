@@ -14,7 +14,7 @@ typedef struct ftable {
   rb_tree_t *tree;
   bitmap_t *bitmap;
   size_t count;
-  spinlock_t lock;
+  mtx_t lock;
 } ftable_t;
 
 #define ASSERT(x) kassert(x)
@@ -22,8 +22,8 @@ typedef struct ftable {
 
 #define FTABLE_MAX_FILES 1024
 
-#define FTABLE_LOCK(ftable) SPIN_LOCK(&(ftable)->lock)
-#define FTABLE_UNLOCK(ftable) SPIN_UNLOCK(&(ftable)->lock)
+#define FTABLE_LOCK(ftable) mtx_spin_lock(&(ftable)->lock)
+#define FTABLE_UNLOCK(ftable) mtx_spin_unlock(&(ftable)->lock)
 
 static void f_cleanup(file_t *file) {
   vn_release(&file->vnode);
@@ -38,7 +38,7 @@ file_t *f_alloc(int fd, int flags, vnode_t *vnode) __move {
   file->flags = flags;
   file->type = vnode->type;
   file->vnode = vn_getref(vnode);
-  mutex_init(&file->lock, 0);
+  mtx_init(&file->lock, 0, "file_struct_lock");
   ref_init(&file->refcount);
   return file;
 }
@@ -63,7 +63,7 @@ ftable_t *ftable_alloc() {
   ftable_t *ftable = kmallocz(sizeof(ftable_t));
   ftable->tree = create_rb_tree();
   ftable->bitmap = create_bitmap(FTABLE_MAX_FILES);
-  spin_init(&ftable->lock);
+  mtx_init(&ftable->lock, MTX_SPIN, "ftable_lock");
   return ftable;
 }
 

@@ -7,17 +7,18 @@
 
 ; struct smpboot offsets
 %define SMP_LOCK    0x00
-%define SMP_GATE    0x02
-%define SMP_CPU_ID  0x04
-%define SMP_COUNT   0x06
-%define SMP_PML4    0x08
-%define SMP_STACK   0x10
-%define SMP_PERCPU  0x18
+%define SMP_GATE    0x04
+%define SMP_CPU_ID  0x08
+%define SMP_COUNT   0x0C
+%define SMP_PML4    0x10
+%define SMP_STACK   0x18
+%define SMP_PERCPU  0x20
 
 %define CODE_SEGMENT 0x08
 %define DATA_SEGMENT 0x10
 
-%define IA32_EFER_MSR      0x0C0000080
+%define GSBASE_MSR      0xC0000101
+%define IA32_EFER_MSR   0xC0000080
 
 %define label_rel(l) (SMPBOOT_START + (l - ap_boot))
 %define data_ptr(ofst) (SMPDATA_START + (ofst))
@@ -47,17 +48,18 @@ ap_boot:
   shr ebx, cl
   and ebx, 0xFF
 
-  lock add word [data_ptr(SMP_COUNT)], 1 ; increment ap count
+  lock add dword [data_ptr(SMP_COUNT)], 1 ; increment ap count
 
   ; ========= Exclusive lock =========
 .acquire_lock:
   xor ax, ax
-  lock cmpxchg word [data_ptr(SMP_LOCK)], 1
+  mov eax, 1
+  lock cmpxchg dword [data_ptr(SMP_LOCK)], eax
   jne .lock_acquired
 .spin_lock:
   pause
-  cmp word [data_ptr(SMP_GATE)], 0 ; wait for gate to open
-  je .acquire_lock:                ; before trying to re-acquire lock
+  cmp dword [data_ptr(SMP_GATE)], 0 ; wait for gate to open
+  je .acquire_lock                  ; before trying to re-acquire lock
   jmp .spin_lock
   ; ==================================
 .lock_acquired:
@@ -66,7 +68,7 @@ ap_boot:
   ; wait for bsp to release gate
 .wait_for_bsp:
   pause
-  cmp word [data_ptr(SMP_GATE)], 1
+  cmp dword [data_ptr(SMP_GATE)], 1
   je .wait_for_bsp
 
   ;
@@ -116,7 +118,7 @@ ap_boot64:
   mov rdx, rax
   mov cl, 32
   shr rdx, cl
-  mov ecx, GS_BASE_MSR
+  mov ecx, GSBASE_MSR
   wrmsr
 
   ; finally close gate and release lock

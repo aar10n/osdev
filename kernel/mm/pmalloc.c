@@ -9,7 +9,7 @@
 
 #include <kernel/cpu/cpu.h>
 
-#include <kernel/lock.h>
+#include <kernel/mutex.h>
 #include <kernel/string.h>
 #include <kernel/printf.h>
 #include <kernel/panic.h>
@@ -520,6 +520,11 @@ __move page_t *page_list_split(__move page_t **pagesref, size_t count) {
   page_t *head = moveref(*pagesref);
   ASSERT(head->flags & PG_HEAD);
   ASSERT(head->head.count >= count);
+  if (head->head.count == count) {
+    // the entire list is being split
+    *pagesref = NULL;
+    return head;
+  }
 
   page_t *pptr = NULL;
   page_t *ptr = head;

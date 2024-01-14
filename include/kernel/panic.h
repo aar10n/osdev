@@ -21,6 +21,8 @@
 #define unreachable panic("unreachable: file %s, line %d", __FILE__, __LINE__)
 #define unimplemented(msg) panic("not implemented: " msg ", file %s, line %d", __FILE__, __LINE__)
 
+void panic_early_init();
+
 noreturn void panic(const char *fmt, ...);
 
 #endif

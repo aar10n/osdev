@@ -97,12 +97,13 @@ static dwarf_line_t *get_line_by_addr(dwarf_file_t *file, uintptr_t addr) {
 
 //
 
-void debug_early_init() {
+static void debug_early_init() {
   if (!is_debug_enabled)
     return;
 
   dwarf_early_init();
 }
+EARLY_INIT(debug_early_init);
 
 void debug_init() {
   // NOTE: Initializing debugging information is quite slow and unbearably so while

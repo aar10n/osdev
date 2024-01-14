@@ -40,7 +40,7 @@ static inline int ref_count(const refcount_t *ref) {
 
 #define initref(objptr) (ref_init(&(objptr)->_refname))
 #define newref(objptr) ({ ref_init(&(objptr)->_refname); objptr; })
-#define getref(objptr) ({ ref_get(&(objptr)->_refname); objptr; })
+#define getref(objptr) ({ if (__expect_true((objptr) != NULL)) ref_get(&(objptr)->_refname); objptr; })
 #define moveref(objref) ({ typeof(objref) tmp = (objref); (objref) = NULL; tmp; })
 // putref(obj **objpptr, void(*objdtor)(obj*))
 #define putref(objpptr, objdtor) ({ \

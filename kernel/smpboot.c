@@ -3,10 +3,10 @@
 //
 
 #include <kernel/smpboot.h>
+#include <kernel/percpu.h>
 
 #include <kernel/acpi/acpi.h>
-#include <kernel/cpu/per_cpu.h>
-#include <kernel/device/apic.h>
+#include <kernel/hw/apic.h>
 
 #include <kernel/mm.h>
 #include <kernel/printf.h>
@@ -24,25 +24,23 @@ extern void smpboot_end();
 // incremented non-atomically by the bsp _only_
 uint32_t system_num_cpus = 1;
 
-int smp_boot_ap(uint16_t id, struct smp_data *smpdata) {
+int smp_boot_ap(uint32_t id, struct smp_data *smpdata) {
   // wait until AP aquires lock
   while (!smpdata->lock) cpu_pause();
   cpu_pause();
   cpu_pause();
 
-  uint8_t apic_id = smpdata->current_id;
-  kprintf("smp: booting CPU#%d\n", apic_id);
+  kprintf("smp: booting CPU#%d\n", id);
 
   // allocate stack and per-cpu area for ap
-  per_cpu_t *percpu = percpu_alloc_area(id, apic_id);
-
+  struct percpu *percpu_area = percpu_alloc_area(id);
   page_t *stack_pages = alloc_pages(SIZE_TO_PAGES(KERNEL_STACK_SIZE));
   void *ap_stack_ptr = (void *) vmap_pages(moveref(stack_pages), 0, KERNEL_STACK_SIZE, VM_WRITE | VM_STACK, "ap stack");
 
   // we can do this cast "safely" because the pml4 pointer is a physical address
   // guarenteed to have been allocated from below 4GB
   smpdata->pml4_addr = (uint32_t) get_default_ap_pml4();
-  smpdata->percpu_ptr = (uintptr_t) percpu;
+  smpdata->percpu_ptr = (uintptr_t) percpu_area;
   smpdata->stack_addr = (uintptr_t) ap_stack_ptr;
 
   // release gate
@@ -51,7 +49,7 @@ int smp_boot_ap(uint16_t id, struct smp_data *smpdata) {
   // wait until current AP is done
   while (!smpdata->gate) cpu_pause();
 
-  kprintf("smp: booted CPU#%d!\n", apic_id);
+  kprintf("smp: booted CPU#%d!\n", id);
   smpdata->pml4_addr = 0;
   smpdata->percpu_ptr = 0;
   smpdata->stack_addr = 0;

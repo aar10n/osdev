@@ -4,68 +4,66 @@
 
 #include <kernel/cpu/gdt.h>
 #include <kernel/cpu/cpu.h>
-#include <kernel/string.h>
 #include <kernel/panic.h>
 #include <kernel/mm.h>
 
 #define TSS_LOW  0x28ULL
 #define TSS_HIGH 0x30ULL
 
-#define index(v) ((v)/sizeof(gdt_entry_t))
+#define system_segment(base, limit, s, typ, ring, p, is64, is32, g) \
+  entry(base, limit, s, typ, ring, p, is64, is32, g)
+#define code_segment(base, limit, s, r, c, ring, p, is64, is32, g) \
+  entry(base, limit, s, entry_type(0, r, c, 1), ring, p, is64, is32, g)
+#define data_segment(base, limit, s, w, x, ring, p, is64, is32, g) \
+  entry(base, limit, s, entry_type(0, w, x, 0), ring, p, is64, is32, g)
 
-gdt_entry_t bsp_gdt[] = {
-  null_segment(),    // 0x00 null
-  [index(KERNEL_CS)] = code_segment64(0), // 0x08 kernel code
-  [index(KERNEL_DS)] = data_segment64(0), // 0x10 kernel data
-  [index(USER_DS)]   = data_segment64(3), // 0x18 user data
-  [index(USER_CS)]   = code_segment64(3), // 0x20 user code
-  [index(TSS_LOW)]   = null_segment(),    // 0x28 tss low
-  [index(TSS_HIGH)]  = null_segment(),    // 0x30 tss high
-};
+#define null_segment() entry(0, 0, 0, 0, 0, 0, 0, 0, 0)
+#define code_segment64(ring) code_segment(0, 0, 1, 1, 0, ring, 1, 1, 0, 1)
+#define data_segment64(ring) data_segment(0, 0, 1, 1, 0, ring, 1, 1, 1, 1)
+#define tss_segment64_lo(base) system_segment(base, 0, 0, entry_type(1, 0, 0, 1), 0, 1, 0, 0, 1)
+#define tss_segment64_hi(base) entry_extended(base)
 
-struct tss bsp_tss;
+#define index(v) ((v)/sizeof(union gdt_entry))
 
-//
+union gdt_entry cpu0_gdt[7];
+struct tss cpu0_tss;
 
-void setup_gdt() {
-  struct gdt_desc gdt_desc;
-  if (PERCPU_IS_BOOT) {
-    bsp_gdt[index(TSS_LOW)] = tss_segment_low((uintptr_t) &bsp_tss);
-    bsp_gdt[index(TSS_HIGH)] = tss_segment_high((uintptr_t) &bsp_tss);
-    gdt_desc.limit = sizeof(bsp_gdt) - 1;
-    gdt_desc.base = (uint64_t) &bsp_gdt;
-    PERCPU_AREA->cpu_gdt = &bsp_gdt;
-    PERCPU_AREA->cpu_tss = &bsp_tss;
+static void gdt_percpu_init() {
+  // early initialization of the GDT and TSS for all CPUs
+  union gdt_entry *gdt;
+  struct tss *tss;
+  if (curcpu_is_boot) {
+    gdt = cpu0_gdt;
+    tss = &cpu0_tss;
   } else {
-    struct tss *ap_tss = kmallocz(sizeof(struct tss));
-    gdt_entry_t *ap_gdt = kmalloc(sizeof(bsp_gdt));
-    memcpy(ap_gdt, bsp_gdt, sizeof(bsp_gdt));
-
-    ap_gdt[index(TSS_LOW)] = tss_segment_low((uintptr_t) &ap_tss);
-    ap_gdt[index(TSS_HIGH)] = tss_segment_high((uintptr_t) &ap_tss);
-    gdt_desc.limit = sizeof(bsp_gdt) - 1;
-    gdt_desc.base = (uint64_t) ap_gdt;
-    PERCPU_AREA->cpu_gdt = ap_gdt;
-    PERCPU_AREA->cpu_tss = ap_tss;
+    gdt = kmallocz(sizeof(cpu0_gdt));
+    tss = kmallocz(sizeof(struct tss));
   }
+  curcpu_area->gdt = gdt;
+  curcpu_area->tss = tss;
 
-  cpu_load_gdt(&gdt_desc);
+  gdt[index(0)] = null_segment();
+  gdt[index(KERNEL_CS)] = code_segment64(0);
+  gdt[index(KERNEL_DS)] = data_segment64(0);
+  gdt[index(USER_CS)] = code_segment64(3);
+  gdt[index(USER_DS)] = data_segment64(3);
+  gdt[index(TSS_LOW)] = tss_segment64_lo((uintptr_t) tss);
+  gdt[index(TSS_HIGH)] = tss_segment64_hi((uintptr_t) tss);
+
+  struct gdt_desc desc;
+  desc.limit = sizeof(cpu0_gdt) - 1;
+  desc.base = (uint64_t) gdt;
+  cpu_load_gdt(&desc);
+
   cpu_load_tr(TSS_LOW);
   cpu_reload_segments();
 }
+PERCPU_EARLY_INIT(gdt_percpu_init);
 
-uintptr_t tss_set_rsp(int cpl, uintptr_t sp) {
-  kassert(cpl >= 0 && cpl <= 3);
-  struct tss *tss = PERCPU_AREA->cpu_tss;
-  uintptr_t old_rsp = tss->rsp[cpl];
-  tss->rsp[cpl] = sp;
-  return old_rsp;
-}
+//
 
-uintptr_t tss_set_ist(int ist, uintptr_t sp) {
+void tss_set_ist(int ist, uintptr_t sp) {
   kassert(ist >= 1 && ist <= 7);
-  struct tss *tss = PERCPU_AREA->cpu_tss;
-  uintptr_t old_rsp = tss->ist[ist - 1];
+  struct tss *tss = curcpu_area->tss;
   tss->ist[ist - 1] = sp;
-  return old_rsp;
 }

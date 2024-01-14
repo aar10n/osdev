@@ -56,20 +56,20 @@ static inline uint64_t ve_unique_id(ventry_t *ve) {
 
 static inline bool ve_lock(ventry_t *ve) {
   if (V_ISDEAD(ve)) return false;
-  mutex_lock(&ve->lock);
+  mtx_lock(&ve->lock);
   ve_syncvn(ve);
   if (V_ISDEAD(ve)) {
-    mutex_unlock(&ve->lock); return false;
+    mtx_unlock(&ve->lock); return false;
   }
   return true;
 }
 
 static inline void ve_unlock(ventry_t *ve) {
-  mutex_unlock(&ve->lock);
+  mtx_unlock(&ve->lock);
 }
 
 static inline void ve_unlock_release(__move ventry_t **ve) {
-  mutex_unlock(&(*ve)->lock);
+  mtx_unlock(&(*ve)->lock);
   ve_release(ve);
 }
 

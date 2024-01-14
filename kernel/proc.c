@@ -3,114 +3,304 @@
 //
 
 #include <kernel/proc.h>
-#include <kernel/mm.h>
-#include <kernel/lock.h>
+#include <kernel/sched.h>
 #include <kernel/tqueue.h>
+#include <kernel/clock.h>
+#include <kernel/mm.h>
+#include <kernel/fs.h>
+
+#include <kernel/printf.h>
 #include <kernel/panic.h>
+#include <kernel/bits.h>
+#include <kernel/str.h>
 
 #include <kernel/cpu/cpu.h>
-#include <asm/bits.h>
+#include <kernel/cpu/gdt.h>
+#include <kernel/vfs/file.h>
 
 #include <bitmap.h>
 
+extern uintptr_t entry_initial_stack;
+
 // #define ASSERT(x)
 #define ASSERT(x) kassert(x)
+#define ASSERTF(x, fmt, ...) kassertf(x, fmt, ##__VA_ARGS__)
 // #define DPRINTF(...)
 #define DPRINTF(x, ...) kprintf("proc: " x, ##__VA_ARGS__)
 
 #define MAX_PROCS 8192
 
-//
-// MARK: proc
-//
+static struct creds *root_creds;
+static pgroup_t *pgroup0;
+static proc_t *proc0;
+static mtx_t proc0_ap_lock;
 
-// MARK: Process table
+void proc0_init() {
+  root_creds = creds_alloc(0, 0);
+  pgroup0 = pgrp_alloc_empty(0, NULL);
+  proc0 = proc_alloc_empty(0, NULL, getref(root_creds));
+
+  // this lock is used to provide exclusive access to proc0 among the APs while they're
+  // initializing and attaching their idle threads. they wont have a proc context at that
+  // point therefore cant use pr_lock/_unlock.
+  mtx_init(&proc0_ap_lock, MTX_SPIN, "proc0_ap_lock");
+
+  thread_t *maintd = thread_alloc_empty(TDF_KTHREAD, (uintptr_t)&entry_initial_stack, SIZE_8KB);
+  proc_setup_add_thread(proc0, maintd);
+  pgrp_setup_add_proc(pgroup0, proc0);
+
+  proc0->state = PRS_ACTIVE;
+  maintd->state = TDS_RUNNING;
+  tss_set_ist(1, (uintptr_t)(maintd->frame + sizeof(struct trapframe)));
+
+  // we cant insert proc0 into the ptable yet since it hasnt been initialized
+  set_curthread(maintd);
+  set_curproc(proc0);
+}
+
+/////////////////
+// MARK: ptable
+
+struct ptable_entry {
+  mtx_t lock;
+  LIST_HEAD(struct proc) head;
+};
+
 static struct ptable {
-  bitmap_t *pidset;   // allocatable pid set
-  proc_t **array;     // array of process pointers
-  size_t nprocs;      // number of processes
-  mtx_t lock;         // process table lock
-} ptable;
+  struct ptable_entry *entries;
+  size_t nprocs; // number of processes
+} _ptable;
 
-static void ptable_init() {
-  size_t ptable_size = align(MAX_PROCS*sizeof(void *), PAGE_SIZE);
+#define pid_index(pid) ((pid) % MAX_PROCS)
+
+static inline proc_t *ptable_get_proc(pid_t pid) {
+  ASSERT(pid < MAX_PROCS);
+  struct ptable_entry *entry = &_ptable.entries[pid_index(pid)];
+  mtx_lock(&entry->lock);
+  LIST_FOR_IN(proc, &entry->head, hashlist) {
+    if (proc->pid == pid) {
+      mtx_unlock(&entry->lock);
+      return proc;
+    }
+  }
+
+  mtx_unlock(&entry->lock);
+  return NULL;
+}
+
+static inline void ptable_add_proc(pid_t pid, proc_t *proc) {
+  ASSERT(pid < MAX_PROCS);
+  struct ptable_entry *entry = &_ptable.entries[pid_index(pid)];
+  mtx_spin_lock(&entry->lock);
+  LIST_INSERT_ORDERED_BY(&entry->head, proc, hashlist, pid);
+  atomic_fetch_add(&_ptable.nprocs, 1);
+  mtx_spin_unlock(&entry->lock);
+}
+
+static inline void ptable_remove_proc(pid_t pid, proc_t *proc) {
+  ASSERT(pid < MAX_PROCS);
+  struct ptable_entry *entry = &_ptable.entries[pid_index(pid)];
+  mtx_spin_lock(&entry->lock);
+  LIST_REMOVE(&entry->head, proc, hashlist);
+  atomic_fetch_sub(&_ptable.nprocs, 1);
+  mtx_spin_unlock(&entry->lock);
+}
+
+static void ptable_static_init() {
+  size_t ptable_size = align(MAX_PROCS*sizeof(struct ptable_entry), PAGE_SIZE);
   uintptr_t ptable_base = vmap_anon(0, 0, ptable_size, VM_WRITE|VM_GLOBAL, "ptable");
   kassert(ptable_base != 0);
 
-  ptable.pidset = create_bitmap(MAX_PROCS);
-  ptable.array = (void *) ptable_base;
-  ptable.nprocs = 0;
-  mtx_init(&ptable.lock, 0, "ptable_lock");
-}
-STATIC_INIT(ptable_init);
+  _ptable.entries = (struct ptable_entry *) ptable_base;
+  _ptable.nprocs = 0;
 
-//
-
-void proc_init() {
-
-}
-
-pid_t proc_alloc_pid() {
-  mtx_lock(&ptable.lock);
-  index_t pid = bitmap_get_set_free(ptable.pidset);
-  if (pid == -1) {
-    mtx_unlock(&ptable.lock);
-    return -1;
+  for (int i = 0; i < MAX_PROCS; i++) {
+    mtx_init(&_ptable.entries[i].lock, MTX_SPIN, "ptable_entry_lock");
+    LIST_INIT(&_ptable.entries[i].head);
   }
 
-  bitmap_set(ptable.pidset, pid);
-  mtx_unlock(&ptable.lock);
-  return (pid_t)pid;
+  ptable_add_proc(0, proc0);
+}
+STATIC_INIT(ptable_static_init);
+
+//////////////////
+// MARK: pid set
+
+static bitmap_t *_pidset; // allocatable pid set
+static mtx_t _pidset_lock; // pid set lock
+
+static void pidset_static_init() {
+  _pidset = create_bitmap(MAX_PROCS);
+  bitmap_set(_pidset, 0); // pid 0 is reserved
+  mtx_init(&_pidset_lock, MTX_SPIN, "pidset_lock");
+}
+STATIC_INIT(pidset_static_init);
+
+static inline pid_t pidset_alloc() {
+  mtx_lock(&_pidset_lock);
+  pid_t res = (pid_t) bitmap_get_set_free(_pidset);
+  mtx_unlock(&_pidset_lock);
+  return res;
 }
 
-void proc_free_pid(pid_t pid) {
-  mtx_lock(&ptable.lock);
-  bitmap_clear(ptable.pidset, pid);
-  mtx_unlock(&ptable.lock);
+static inline void pidset_free(pid_t pid) {
+  bitmap_clear(_pidset, pid);
 }
 
-proc_t *proc_alloc_empty(pid_t pid, struct address_space *space, pgroup_t *group, struct creds *creds) {
-  proc_t *proc = kmallocz(sizeof(proc_t));
-  proc->space = space;
-  proc->group = group;
-  proc->creds = getref(creds);
+///////////////////
+// MARK: creds
 
-  proc->pid = pid;
-  proc->ppid = 0;
-  proc->state = PRS_EMPTY;
-
-  mtx_init(&proc->lock, 0, "proc_lock");
-  mtx_init(&proc->statlock, 0, "proc_statlock");
-  return proc;
+__move creds_t *creds_alloc(uid_t uid, gid_t gid) {
+  creds_t *creds = kmallocz(sizeof(creds_t));
+  creds->uid = uid;
+  creds->gid = gid;
+  creds->euid = uid;
+  creds->egid = gid;
+  return creds;
 }
 
-void proc_free_exited(proc_t **procp) {
-  proc_t *proc = *procp;
-  ASSERT(proc->state == PRS_EXITED);
-
-  proc_free_pid(proc->pid);
-  mtx_destroy(&proc->lock);
-  mtx_destroy(&proc->statlock);
-  kfree(proc);
-  *procp = NULL;
+void creds_release(__move creds_t **credsp) {
+  putref(credsp, kfree);
 }
 
-void proc_setup_add_thread(proc_t *proc, thread_t *td) {
-  ASSERT(proc->state == PRS_EMPTY);
-  ASSERT(td->state == TDS_EMPTY);
-  ASSERT(td->proc == NULL);
+///////////////////
+// MARK: session
 
+///////////////////
+// MARK: pgroup
+
+pgroup_t *pgrp_alloc_empty(pid_t pgid, session_t *session) {
+  pgroup_t *pgroup = kmallocz(sizeof(pgroup_t));
+  pgroup->pgid = pgid;
+  pgroup->session = session;
+  pgroup->num_procs = 0;
+  LIST_INIT(&pgroup->procs);
+  mtx_init(&pgroup->lock, 0, "pgroup_lock");
+  return pgroup;
+}
+
+void pgrp_free_empty(pgroup_t **pgp) {
+  pgroup_t *pgroup = *pgp;
+  ASSERT(pgroup->num_procs == 0);
+  mtx_destroy(&pgroup->lock);
+  kfree(pgroup);
+  *pgp = NULL;
+}
+
+void pgrp_setup_add_proc(pgroup_t *pg, proc_t *proc) {
+  ASSERT(PRS_IS_EMPTY(proc));
+  ASSERT(proc->group == NULL);
+
+  proc->group = pg;
+  pg->num_procs++;
+  LIST_ADD(&pg->procs, proc, pglist);
+}
+
+void pgrp_add_proc(pgroup_t *pg, proc_t *proc) {
+  ASSERT(PRS_IS_ALIVE(proc));
+  pg_lock_assert(pg, MA_OWNED);
+  pr_lock_assert(proc, MA_OWNED);
+
+  LIST_ADD(&pg->procs, proc, pglist);
+  pg->num_procs++;
+  proc->group = pg;
+}
+
+void pgrp_remove_proc(pgroup_t *pg, proc_t *proc) {
+  pg_lock_assert(pg, MA_OWNED);
+  pr_lock_assert(proc, MA_OWNED);
+
+  proc->group = NULL;
+  pg->num_procs--;
+  LIST_REMOVE(&pg->procs, proc, pglist);
+}
+
+///////////////////
+// MARK: proc
+
+static inline void proc_do_add_thread(proc_t *proc, thread_t *td) {
   td->proc = proc;
+  td->creds = getref(proc->creds);
   td->tid = (pid_t)proc->num_threads;
   LIST_ADD(&proc->threads, td, plist);
   proc->num_threads++;
 }
 
+// proc api
 
+pid_t proc_alloc_pid() {
+  pid_t pid = pidset_alloc();
+  ASSERT(pid != -1);
+  return pid;
+}
 
-//
+void proc_free_pid(pid_t pid) {
+  pidset_free(pid);
+}
+
+proc_t *proc_alloc_empty(pid_t pid, struct address_space *space, creds_t *creds) {
+  proc_t *proc = kmallocz(sizeof(proc_t));
+  proc->pid = pid;
+  proc->space = space;
+  proc->creds = getref(creds);
+  proc->pwd = fs_root_getref();
+
+  proc->files = ftable_alloc();
+  proc->sigacts = NULL; // TODO
+  proc->stats = kmallocz(sizeof(struct pstats));
+  proc->usage = kmallocz(sizeof(struct rusage));
+  proc->limit = kmallocz(sizeof(struct rlimit));
+
+  proc->state = PRS_EMPTY;
+
+  mtx_init(&proc->lock, 0, "proc_lock");
+  mtx_init(&proc->statlock, MTX_SPIN, "proc_statlock");
+  return proc;
+}
+
+void proc_free_exited(proc_t **procp) {
+  proc_t *proc = *procp;
+  ASSERT(PRS_IS_EXITED(proc));
+
+  mtx_destroy(&proc->lock);
+  mtx_destroy(&proc->statlock);
+  proc_free_pid(proc->pid);
+  creds_release(&proc->creds);
+  kfree(proc);
+  *procp = NULL;
+}
+
+void proc_setup_add_thread(proc_t *proc, thread_t *td) {
+  ASSERT(PRS_IS_EMPTY(td));
+  ASSERT(TDS_IS_EMPTY(td))
+  ASSERT(td->proc == NULL);
+  proc_do_add_thread(proc, td);
+}
+
+void proc_setup_finish_and_submit_all(proc_t *proc) {
+  ASSERT(PRS_IS_EMPTY(proc));
+  ASSERT(proc->num_threads > 0);
+
+  proc->state = PRS_ACTIVE;
+  LIST_FOR_IN(td, &proc->threads, plist) {
+    thread_setup_finish_submit(td);
+  }
+  proc->stats->start_time = clock_micro_time();
+
+  // insert into process table
+  ptable_add_proc(proc->pid, proc);
+}
+
+void proc_add_thread(proc_t *proc, thread_t *td) {
+  ASSERT(PRS_IS_ALIVE(td));
+  ASSERT(TDS_IS_EMPTY(td));
+  ASSERT(td->proc == NULL);
+  pr_lock_assert(proc, MA_OWNED);
+  proc_do_add_thread(proc, td);
+}
+
+///////////////////
 // MARK: thread
-//
 
 static inline uint8_t td_flags_to_base_priority(uint32_t td_flags) {
   if (td_flags & TDF_ITHREAD) {
@@ -122,63 +312,124 @@ static inline uint8_t td_flags_to_base_priority(uint32_t td_flags) {
   }
 }
 
-thread_t *thread_alloc_empty(uint32_t flags, proc_t *proc, struct creds *creds) {
+// thread api
+
+thread_t *thread_alloc_idle() {
+  // this is called once by each cpu during scheduler initialization
+  thread_t *td = thread_alloc_empty(TDF_KTHREAD|TDF_IDLE, 0, PAGE_SIZE);
+  td->state = TDS_READY;
+  td->name = str_fmt("idle thread [CPU#%d]", curcpu_id);
+
+  mtx_spin_lock(&proc0_ap_lock);
+  proc_do_add_thread(proc0, td);
+  mtx_spin_unlock(&proc0_ap_lock);
+  return td;
+}
+
+thread_t *thread_alloc_empty(uint32_t flags, uintptr_t kstack_base, size_t kstack_size) {
+  ASSERT(is_aligned(kstack_base, PAGE_SIZE));
+  ASSERT(kstack_size > 0 && is_aligned(kstack_size, PAGE_SIZE));
+
   thread_t *td = kmallocz(sizeof(thread_t));
   td->flags = flags;
-  td->lock = mtx_alloc(MTX_RECURSE, "td_lock");
   td->tcb = tcb_alloc((flags & TDF_KTHREAD) ? TCB_KERNEL : TCB_IRETQ);
-  td->proc = proc;
-  td->creds = getref(creds);
 
   td->cpuset = cpuset_alloc(NULL);
   td->own_lockq = lockq_alloc();
   td->own_waitq = waitq_alloc();
-  td->lock_claims = lock_claim_list_alloc();
+  td->wait_claims = lock_claim_list_alloc();
+  td->frame = kmallocz(sizeof(struct trapframe));
 
   td->state = TDS_EMPTY;
+  td->last_cpu = -1;
   td->pri_base = td_flags_to_base_priority(flags);
   td->priority = td->pri_base;
+
+  if (kstack_base == 0) {
+    // allocate a new kernel stack
+    td->kstack_base = vmap_anon(SIZE_2MB, 0, kstack_size, VM_RDWR|VM_STACK, "thread_kstack");
+    td->kstack_size = kstack_size;
+  } else {
+    // use base as the kernel stack
+    td->kstack_base = kstack_base;
+    td->kstack_size = kstack_size;
+  }
+
+  mtx_init(&td->lock, MTX_SPIN, "thread_lock");
   return td;
 }
 
 void thread_free_exited(thread_t **tdp) {
   thread_t *td = *tdp;
-  ASSERT(td->state == TDS_EXITED);
+  ASSERT(TDS_IS_EXITED(td));
+  td_lock_assert(td, MA_UNLOCKED);
 
-  cpuset_free(td->cpuset);
+  mtx_destroy(&td->lock);
+  kfree(td->frame);
+  td->frame = NULL;
+  lock_claim_list_free(&td->wait_claims);
   lockq_free(&td->own_lockq);
   waitq_free(&td->own_waitq);
-  lock_claim_list_free(&td->lock_claims);
+  cpuset_free(&td->cpuset);
+
+  creds_release(&td->creds);
   tcb_free(&td->tcb);
-  mtx_free(td->lock);
   kfree(td);
   *tdp = NULL;
 }
 
-void thread_setup_kstack(thread_t *td, uintptr_t base, size_t size) {
-  ASSERT(td->state == TDS_EMPTY);
-  ASSERT(is_aligned(base, PAGE_SIZE));
-  ASSERT(size > 0 && is_aligned(size, PAGE_SIZE));
-  if (base == 0) {
-    // allocate a new kernel stack
-    td->kstack_base = vmap_anon(SIZE_2MB, 0, size, VM_RDWR|VM_STACK, "thread_kstack");
-    td->kstack_size = size;
-  } else {
-    // use base as the kernel stack
-    td->kstack_base = base;
-    td->kstack_size = size;
-  }
-}
+// void thread_setup_entry(thread_t *td, uintptr_t entry, uintptr_t arg) {
+//   ASSERT(TDS_IS_EMPTY(td));
+//   ASSERT(td->kstack_base != 0);
+//
+//   td->frame->rdi = arg;
+//   td->frame
+// }
+
+// void thread_setup_stack(thread_t *td, uintptr_t entry, uintptr_t arg) {
+//   ASSERT(TDS_IS_EMPTY(td));
+//   ASSERT(td->kstack_base != 0);
+//
+//   // if (TDF_IS_KTHREAD(td)) {
+//   //   // prepare the kernel stack for execution
+//   // } else {
+//   //   //
+//   // }
+//   uintptr_t stack_top = td->kstack_base + td->kstack_size;
+//   todo();
+//   uintptr_t stack_bottom = stack_top - sizeof(struct trapframe);
+//   // struct trapframe *tf = (struct trapframe *) stack_bottom;
+//   // memset(tf, 0, sizeof(struct trapframe));
+//
+//   // tf->tf_rip = entry;
+//   // tf->tf_rsp = stack_bottom;
+//   // tf->tf_rdi = arg;
+//   //
+//   // td->tcb->rsp0 = stack_top;
+//   // td->tcb->rsp = stack_bottom;
+//   // td->tcb->rip = (uintptr_t) thread_entry;
+//   // td->tcb->rflags = RFLAGS_IF;
+// }
 
 void thread_setup_priority(thread_t *td, uint8_t base_pri) {
-  ASSERT(td->state == TDS_EMPTY);
+  ASSERT(TDS_IS_EMPTY(td));
   td->pri_base = base_pri;
   td->priority = base_pri;
 }
 
-//
+void thread_setup_finish_submit(thread_t *td) {
+  ASSERT(TDS_IS_EMPTY(td));
+  ASSERT(td->proc != NULL);
+
+  td_lock(td);
+  sched_submit_new_thread(td);
+  ASSERT(TDS_IS_READY(td));
+  td_unlock(td);
+  // td is now owned by scheduler
+}
+
+///////////////////
 // MARK: cpuset
-//
 
 #define CPUSET_MAX_INDEX (MAX_CPUS / 64)
 #define cpuset_index(cpu) ((cpu) / 64)
@@ -201,8 +452,9 @@ struct cpuset *cpuset_alloc(struct cpuset *existing) {
   }
 }
 
-void cpuset_free(struct cpuset *set) {
-  kfree(set);
+void cpuset_free(struct cpuset **set) {
+  kfree(*set);
+  *set = NULL;
 }
 
 void cpuset_set(struct cpuset *set, int cpu) {
@@ -239,7 +491,7 @@ int cpuset_next_set(struct cpuset *set, int cpu) {
     if (bits == 0) {
       continue;
     }
-    uint8_t index = __bsf64(bits & mask);
+    int index = bit_ffs64(bits & mask);
     return cpuset_cpu(i, index);
   }
   return -1;
@@ -260,10 +512,9 @@ void critical_enter() {
     return;
   }
 
-  if (td->crit_level == 0) {
+  if (atomic_fetch_add(&td->crit_level, 1) == 0) {
     // first time entering a critical section, save flags
     PERCPU_SET_RFLAGS(rflags);
-    td->crit_level++;
   }
 }
 
@@ -275,10 +526,9 @@ void critical_exit() {
     return;
   }
 
-  if (td->crit_level == 1) {
+  if (atomic_fetch_sub(&td->crit_level, 1) == 1) {
     // last time exiting a critical section, restore flags
     uint64_t flags = PERCPU_RFLAGS;
     temp_irq_restore(flags);
-    td->crit_level--;
   }
 }

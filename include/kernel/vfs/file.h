@@ -6,7 +6,6 @@
 #define KERNEL_VFS_FILE_H
 
 #include <kernel/vfs_types.h>
-#include <kernel/mutex.h>
 
 typedef struct ftable ftable_t;
 
@@ -20,7 +19,7 @@ typedef struct file {
   vnode_t *vnode;       // vnode reference
   ventry_t *ventry;     //
 
-  mutex_t lock;         // file lock
+  mtx_t lock;           // file lock
   refcount_t refcount;  // reference count
   off_t offset;         // current file offset
   bool closed;          // file closed
@@ -54,15 +53,15 @@ void ftable_remove_file(ftable_t *ftable, int fd);
 
 static bool f_lock(file_t *file) {
   if (file->closed) return false;
-  mutex_lock(&file->lock);
+  mtx_lock(&file->lock);
   if (file->closed) {
-    mutex_unlock(&file->lock); return false;
+    mtx_unlock(&file->lock); return false;
   }
   return true;
 }
 
 static void f_unlock(file_t *file) {
-  mutex_unlock(&file->lock);
+  mtx_unlock(&file->lock);
 }
 
 #endif

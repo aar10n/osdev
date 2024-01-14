@@ -54,8 +54,8 @@ vnode_t *vn_alloc_empty(enum vtype type) __move {
   vnode->type = type;
   vnode->state = V_EMPTY;
   vnode->flags = 0;
-  mutex_init(&vnode->lock, MUTEX_REENTRANT);
-  rw_lock_init(&vnode->data_lock);
+  mtx_init(&vnode->lock, MTX_RECURSIVE, "vnode_lock");
+  rw_init(&vnode->data_lock, 0, "vnode_data_lock");
   ref_init(&vnode->refcount);
   return vn_moveref(&vnode);
 }
@@ -181,7 +181,7 @@ int vn_readlink(vnode_t *vn, kio_t *kio) {
 
   if (str_len(vn->v_link) == 0) {
     // read link from filesystem
-    str_t link = str_alloc(vn->size);
+    str_t link = str_alloc_empty(vn->size);
     kio_t lnkio = kio_writeonly_from_str(link);
     if ((res = VN_OPS(vn)->v_readlink(vn, &lnkio)) < 0) {
       str_free(&link);

@@ -56,7 +56,7 @@ void register_acpi_pm_timer() {
   cs->name = "acpi_pm";
   cs->data = NULL;
   cs->scale_ns = period_ns;
-  cs->last_tick = 0;
+  cs->last_count = 0;
   cs->value_mask = UINT32_MAX;
 
   cs->enable = acpi_pm_timer_enable;
@@ -82,7 +82,6 @@ void register_acpi_pm_timer() {
     return;
   }
 
-  cs->last_tick = cs->read(cs);
   pm_timer_clock_source = cs;
   register_clock_source(cs);
 }

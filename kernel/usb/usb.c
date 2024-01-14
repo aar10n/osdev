@@ -8,14 +8,13 @@
 #include <kernel/usb/scsi.h>
 
 #include <kernel/mm.h>
-#include <kernel/sched.h>
-#include <kernel/process.h>
+#include <kernel/mutex.h>
+#include <kernel/cond.h>
 #include <kernel/printf.h>
 #include <kernel/panic.h>
 #include <kernel/string.h>
 
 #include <rb_tree.h>
-#include <atomic.h>
 
 #define usb_log(str, args...) kprintf("[usb] " str "\n", ##args)
 

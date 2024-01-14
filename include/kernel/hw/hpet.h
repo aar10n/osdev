@@ -2,8 +2,8 @@
 // Created by Aaron Gill-Braun on 2020-10-17.
 //
 
-#ifndef KERNEL_DEVICE_HPET_H
-#define KERNEL_DEVICE_HPET_H
+#ifndef KERNEL_HW_HPET_H
+#define KERNEL_HW_HPET_H
 
 #include <kernel/base.h>
 

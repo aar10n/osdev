@@ -11,9 +11,8 @@
 #include <kernel/cpu/cpu.h>
 #include <kernel/debug/debug.h>
 
-#include <kernel/process.h>
 #include <kernel/init.h>
-#include <kernel/irq.h>
+#include <kernel/proc.h>
 #include <kernel/panic.h>
 #include <kernel/string.h>
 #include <kernel/printf.h>
@@ -48,8 +47,8 @@ __used void switch_address_space(address_space_t *new_space) {
   if (current != NULL && current->page_table == new_space->page_table) {
     return;
   }
-  set_current_pgtable(new_space->page_table);
   set_curspace(new_space);
+  set_current_pgtable(new_space->page_table);
 }
 
 // generic fault handler that allocates and returns a new page
@@ -1097,21 +1096,21 @@ static always_inline bool can_handle_fault(vm_mapping_t *vm, uintptr_t fault_add
   return prot != 0;
 }
 
-void page_fault_handler(uint8_t vector, uint32_t error_code, cpu_irq_stack_t *frame, cpu_registers_t *regs) {
-  struct percpu *percpu_area = PERCPU_AREA;
-  uint32_t id = PERCPU_ID;
+__used void page_fault_handler(struct trapframe *frame) {
+  uint32_t id = curcpu_id;
   uint64_t fault_addr = __read_cr2();
   if (fault_addr == 0 || !curspace)
     goto exception;
 
 
-  if (!(error_code & CPU_PF_P)) {
+  if (!(frame->error & CPU_PF_P)) {
     // fault was due to a non-present page this might be recoverable
     // check if this fault is related to a vm mapping
     vm_mapping_t *vm = vm_get_mapping(fault_addr);
-    if (vm == NULL || !vm_mapping_contains(vm, fault_addr) || !can_handle_fault(vm, fault_addr, error_code)) {
+    if (vm == NULL || !vm_mapping_contains(vm, fault_addr) || !can_handle_fault(vm, fault_addr, frame->error)) {
       // TODO: support extending stacks automatically if the fault happens
       //       in the guard page
+      kprintf_kputs("stack overflow\n");
       goto exception;
     }
 
@@ -1134,13 +1133,13 @@ void page_fault_handler(uint8_t vector, uint32_t error_code, cpu_irq_stack_t *fr
 
 LABEL(exception);
   kprintf("================== !!! Exception !!! ==================\n");
-  kprintf("  Page Fault  - Error: %#b (CPU#%d)\n", error_code, PERCPU_ID);
+  kprintf("  Page Fault  - Error: %#b (CPU#%d)\n", (uint32_t)frame->error, curcpu_id);
   kprintf("  CPU#%d  -  RIP: %018p    CR2: %018p\n", id, frame->rip, fault_addr);
 
   uintptr_t rip = frame->rip - 8;
-  uintptr_t rbp = regs->rbp;
+  uintptr_t rbp = frame->rbp;
 
-  if (error_code & CPU_PF_U) {
+  if (frame->error & CPU_PF_U) {
     kprintf("  User mode fault\n");
   } else {
     kprintf("  Kernel mode fault\n");
@@ -1175,7 +1174,6 @@ void init_address_space() {
   //   0xFFFFFF8000C00000 - +rsvd size     | kernel reserved (--)
   //
   init_recursive_pgtable();
-  irq_register_exception_handler(CPU_EXCEPTION_PF, page_fault_handler);
 
   uintptr_t pgtable = get_current_pgtable();
   size_t lowmem_size = kernel_address;
@@ -1236,7 +1234,7 @@ address_space_t *vm_new_space(uintptr_t min_addr, uintptr_t max_addr, uintptr_t 
   space->max_addr = max_addr;
   space->new_tree = create_intvl_tree();
   space->page_table = page_table;
-  mtx_init(&space->lock, MTX_RECURSE, "vm_space_lock");
+  mtx_init(&space->lock, MTX_RECURSIVE, "vm_space_lock");
   return space;
 }
 
@@ -1387,7 +1385,7 @@ vm_mapping_t *vmap(enum vm_type type, uintptr_t hint, size_t size, size_t vm_siz
   }
 
   vm->address = virt_addr + off;
-  vm->name = str_make(name);
+  vm->name = str_from(name);
   vm->space = space;
   switch (vm->type) {
     case VM_TYPE_RSVD: vm->flags &= ~VM_PROT_MASK; break;
@@ -1864,7 +1862,7 @@ void *vmalloc_n(size_t size, uint32_t vm_flags, const char *name) {
   uintptr_t vaddr = vmalloc_internal(size, vm_flags, name);
   vm_mapping_t *vm = vm_get_mapping(vaddr);
   str_free(&vm->name);
-  vm->name = str_make(name);
+  vm->name = str_from(name);
   return (void *) vm->address;
 }
 

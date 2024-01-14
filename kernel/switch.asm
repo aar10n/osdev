@@ -1,16 +1,13 @@
 ; https://github.com/freebsd/freebsd-src/blob/main/sys/amd64/amd64/cpu_switch.S
 
-; struct per_cpu offsets
-%define PERCPU_THREAD       gs:0x18
-%define PERCPU_PROCESS      gs:0x20
-
-; struct process offsets
-%define PROCESS_SPACE(x)    [x+0x00]
+; struct proc offsets
+%define PROCESS_SPACE(x)    [x+0x08]
 
 ; struct thread offsets
 %define THREAD_FLAGS(x)     [x+0x04]
-%define THREAD_TCB(x)       [x+0x08]
-%define THREAD_PROCESS(x)   [x+0x10]
+%define THREAD_LOCK(x)      [x+0x08]
+%define THREAD_TCB(x)       [x+0x10]
+%define THREAD_PROCESS(x)   [x+0x18]
 
 ; struct tcb offsets
 %define TCB_RIP(x)          [x+0x00]
@@ -44,25 +41,24 @@
 
 ; void switch_address_space(address_space_t *new_space);
 extern switch_address_space
+; void _thread_unlock(thread_t *td);
+extern _thread_unlock
 
-; int mutex_unlock(mutex_t *mutex);
-extern mutex_unlock
+; defined in isr.asm
+extern __restore_trapframe
 
 
-; sched_switch(thread_t *curr, thread_t *next, mutex_t *lock);
-;   rdi = current thread
-;   rsi = next thread
-;   rdx = current lock
-global sched_switch
-sched_switch:
+; void sched_do_switch(thread_t *old_td, thread_t *new_td)
+global sched_do_switch
+sched_do_switch:
+  ; the old_td lock should be held on entry and will be released once the state is saved
   test qword rdi, 0
-  jz .restore_thread ; no current thread to save
+  jnz .switch_address_space ; no current thread to save
 
   ; ====================
   ;     save thread
   ; ====================
 
-.save_thread:
   ; ==== save registers
   mov r8, THREAD_TCB(rdi)
   mov rax, [rsp] ; return address
@@ -78,17 +74,21 @@ sched_switch:
   ; ==== save base registers
   test dword TCB_FLAGS(r8), TCB_KERNEL
   jz .done_save_base ; skip it for kernel threads
-  ;   - fsbase
-  rdfsbase rax
+
+  push rdx ; -- save lock
+  ; save fsbase
+  mov ecx, FSBASE_MSR
+  rdmsr
+  shl rdx, 32
+  or rax, rdx
   mov TCB_FSBASE(r8), rax
-  ;   - kgsbase
-  push rdx ; save lock ptr
+  ; save kgsbase
   mov ecx, KGSBASE_MSR
   rdmsr
   shl rdx, 32
   or rax, rdx
   mov TCB_KGSBASE(r8), rax
-  pop rdx
+  pop rdx ; -- restore lock
 .done_save_base:
 
   ; ==== save debug registers
@@ -118,24 +118,24 @@ sched_switch:
   fxsave [r9]
 .done_save_fpu:
 
-  ; ==== switch address space
-  mov rax, PERCPU_PROCESS
+  mov rax, THREAD_PROCESS(rdi)
+  ; done with the current thread now release the thread lock
+  call _thread_unlock ; rdi = curr
+
   test rax, THREAD_PROCESS(rsi)
   ; if the next thread is from the same process
   ; we dont need to switch the address space
   jz .done_switch_address_space
 
   ; switch_address_space(next->space)
+.switch_address_space:
   mov r12, rsi ; next -> r12
   mov r13, rdi ; curr -> r13
   mov rdi, PROCESS_SPACE(r13) ; next->space
   call switch_address_space
+  mov rdi, r13 ; curr -> rdi
   mov rsi, r12 ; next -> rsi
 .done_switch_address_space:
-
-  ; done with the current thread now release the lock
-  mov rdi, rdx ; lock -> rdi
-  call mutex_unlock
 
   ; ====================
   ;    restore thread
@@ -147,10 +147,13 @@ sched_switch:
   ; ==== load base registers
   test dword TCB_FLAGS(r8), TCB_KERNEL
   jz .done_load_base ; skip load base for kernel threads
-  ;   - fsbase
+  ; load fsbase
   mov rax, TCB_FSBASE(r8)
-  wrfsbase rax
-  ;   - kgsbase
+  mov rdx, TCB_FSBASE(r8)
+  shr rdx, 32
+  mov ecx, FSBASE_MSR
+  wrmsr
+  ; load kgsbase
   mov ecx, KGSBASE_MSR
   mov eax, TCB_KGSBASE(r8)
   mov rdx, TCB_KGSBASE(r8)
@@ -191,6 +194,13 @@ sched_switch:
   mov r14, TCB_R14(r8)
   mov r15, TCB_R15(r8)
 
+  test dword TCB_FLAGS(r8), TCB_IRETQ
+  jnz .full_iretq
+
   mov [rsp], rax ; return address
   ret
+.full_iretq:
+  ; if the TCB_IRETQ flag is set, the restored stack pointer is expected
+  ; point to the bottom of a valid trapframe.
+  jmp __restore_trapframe
 ; end sched_switch

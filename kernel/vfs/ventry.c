@@ -58,7 +58,7 @@ ventry_t *ve_alloc_linked(cstr_t name, vnode_t *vnode) __move {
     entry->ops = &ve_default_ops;
   }
 
-  mutex_init(&entry->lock, MUTEX_REENTRANT);
+  mtx_init(&entry->lock, MTX_RECURSIVE, "ventry_lock");
   ref_init(&entry->refcount);
 
   ve_link_vnode(entry, vn_getref(vnode));

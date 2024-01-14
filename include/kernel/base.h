@@ -23,19 +23,19 @@
 
 #define KERNEL_CS 0x08ULL
 #define KERNEL_DS 0x10ULL
-#define USER_DS   0x18ULL
-#define USER_CS   0x20ULL
+#define USER_CS   0x18ULL
+#define USER_DS   0x20ULL
 
-#define MS_PER_SEC 1000
-#define US_PER_SEC 1000000
-#define NS_PER_SEC 1000000000
+#define MS_PER_SEC 1000LL
+#define US_PER_SEC 1000000LL
+#define NS_PER_SEC 1000000000LL
 #define NS_PER_USEC 1000
 #define FS_PER_SEC 1000000000000000
 
-#define MS_TO_NS(ms) ((clock_t)(ms) * (NS_PER_SEC / MS_PER_SEC))
-#define US_TO_NS(us) ((clock_t)(us) * (NS_PER_SEC / US_PER_SEC))
-#define FS_TO_NS(fs) ((clock_t)(fs) / (FS_PER_SEC / NS_PER_SEC))
-#define MS_TO_US(ms) ((clock_t)(ms) * (US_PER_SEC / MS_PER_SEC))
+#define MS_TO_NS(ms) ((uint64_t)(ms) * (NS_PER_SEC / MS_PER_SEC))
+#define US_TO_NS(us) ((uint64_t)(us) * (NS_PER_SEC / US_PER_SEC))
+#define FS_TO_NS(fs) ((uint64_t)(fs) / (FS_PER_SEC / NS_PER_SEC))
+#define MS_TO_US(ms) ((uint64_t)(ms) * (US_PER_SEC / MS_PER_SEC))
 
 #define SIZE_1KB  0x400ULL
 #define SIZE_2KB  0x800ULL
@@ -174,25 +174,30 @@
 #define LOAD_SECTION(varname, secname) loaded_section_t __attribute__((section(".load_sections"))) varname = { .name = secname }
 
 /**
- * The PERCPU_EARLY_INIT macro provides a way for kernel components to register early
- * initializer functions that are invoked by all CPUs in the system. These are invoked
- * very eary during processor startup and only have access to the kernel heap and other
- * 'early' memory APIs.
+ * The EARLY_INIT macro provides a way to register initializer functions that are invoked
+ * at the end of the 'early' phase. These functions may only use panic, kmalloc and other
+ * 'early' APIs, and they are not called from within a thread context.
+ */
+#define EARLY_INIT(fn) static __attribute__((section(".init_array.early"))) void (*__do_early_init_ ## fn)() = fn
+
+/**
+ * The PERCPU_EARLY_INIT macro provides a way to register initializer functions that are
+ * invoked by each CPU at the end of the 'early' phase. The same restrictions apply as
+ * with EARLY_INIT functions. On the boot CPU, these functions are called after the
+ * normal 'early' initializers.
  */
 #define PERCPU_EARLY_INIT(fn) static __attribute__((section(".init_array.percpu"))) void (*__do_percpu_init_ ## fn)() = fn
 
 /**
- * The STATIC_INIT macro provides a way for kernel components to register static
- * initializer functions. The initializers may use the memory management or irq
- * APIs. In general they should only perform basic initialization.
+ * The STATIC_INIT macro provides a way to register initializer functions that are invoked
+ * at the end of the 'static' phase. These functions may only use the memory, time, and
+ * irq APIs, and are called from within the proc0 context.
  */
 #define STATIC_INIT(fn) static __attribute__((section(".init_array.static"))) void (*__do_static_init_ ## fn)() = fn
 
 /**
- * The MODULE_INIT macro provides a way for kernel components to register module
- * initializer functions. The initializers are called in the root process and have
- * access to all kernel APIs. Drivers may use this to register themselves with the
- * kernel or spawn additional processes.
+ * The MODULE_INIT macro provides a way to register initializer functions that are invoked
+ * from within the root process and have access to all kernel APIs.
  */
 #define MODULE_INIT(fn) static __attribute__((section(".init_array.module"))) void (*__do_module_init_ ## fn)() = fn
 
@@ -227,6 +232,8 @@ extern uintptr_t __kernel_code_start;
 extern uintptr_t __kernel_code_end;
 extern uintptr_t __kernel_data_end;
 
+#ifndef __PRINTF__
 void kprintf(const char *format, ...);
+#endif
 
 #endif

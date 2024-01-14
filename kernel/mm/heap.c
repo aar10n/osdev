@@ -8,7 +8,6 @@
 
 #include <kernel/printf.h>
 #include <kernel/string.h>
-#include <kernel/spinlock.h>
 #include <kernel/panic.h>
 #include <kernel/mutex.h>
 
@@ -16,8 +15,7 @@
 #define END_ADDR(heap) ((heap)->virt_addr + (heap)->size)
 
 mm_heap_t kheap;
-spinlock_t kheap_lock;
-mutex_t kheap_mutex;
+mtx_t kheap_lock;
 
 static const char *hist_labels[9] = {
   "0-8", "9-16", "17-32", "33-64", "65-128", "129-512", "513-1024", "larger"
@@ -72,22 +70,20 @@ static inline mm_chunk_t *get_next_chunk(mm_heap_t *heap, mm_chunk_t *chunk) {
 }
 
 static inline void aquire_heap(mm_heap_t *heap) {
-  // PERCPU_THREAD will only be null on initial bootup
-  spin_lock(&kheap_lock);
-  // if (__builtin_expect(PERCPU_THREAD != NULL, true)) {
-  //   mutex_lock(&heap->lock);
-  // } else {
-  //   spin_lock(&kheap_lock);
-  // }
+  // curthread will only be null for the earliest of allocations
+  if (__expect_false(curthread == NULL)) {
+    mtx_spin_lock(&kheap_lock);
+  } else {
+    mtx_lock(&heap->lock);
+  }
 }
 
 static inline void release_heap(mm_heap_t *heap) {
-  spin_unlock(&kheap_lock);
-  // if (__builtin_expect(PERCPU_THREAD != NULL, true)) {
-  //   mutex_unlock(&heap->lock);
-  // } else {
-  //   spin_unlock(&kheap_lock);
-  // }
+  if (__expect_false(curthread == NULL)) {
+    mtx_spin_unlock(&kheap_lock);
+  } else {
+    mtx_unlock(&heap->lock);
+  }
 }
 
 // ----- heap creation -----
@@ -115,9 +111,8 @@ void mm_init_kheap() {
   kheap.used = 0;
   kheap.last_chunk = NULL;
   LIST_INIT(&kheap.chunks);
-  spin_init(&kheap_lock);
-  mutex_init(&kheap_mutex, MUTEX_REENTRANT | MUTEX_SHARED);
-  mutex_init(&kheap.lock, MUTEX_REENTRANT | MUTEX_SHARED);
+  mtx_init(&kheap_lock, MTX_SPIN|MTX_RECURSIVE, "kheap_lock");
+  mtx_init(&kheap.lock, MTX_RECURSIVE, "kheap_mutex");
 
   kprintf("initialized kernel heap\n");
 }

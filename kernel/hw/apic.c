@@ -2,8 +2,8 @@
 // Created by Aaron Gill-Braun on 2020-10-14.
 //
 
-#include <kernel/device/apic.h>
-#include <kernel/device/pit.h>
+#include <kernel/hw/apic.h>
+#include <kernel/hw/pit.h>
 
 #include <kernel/cpu/cpu.h>
 #include <kernel/mm.h>
@@ -64,7 +64,7 @@ struct apic_device {
 static size_t num_apics = 0;
 static LIST_HEAD(struct apic_device) apics;
 
-static uintptr_t apic_base = APIC_BASE_PA;
+uintptr_t apic_base = APIC_BASE_PA;
 static uint64_t cpu_clock;  // ticks per second
 static uint32_t apic_clock; // ticks per second
 

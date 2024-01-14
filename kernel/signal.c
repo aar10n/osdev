@@ -3,8 +3,7 @@
 //
 
 #include <kernel/signal.h>
-#include <kernel/process.h>
-#include <kernel/thread.h>
+#include <kernel/proc.h>
 #include <kernel/panic.h>
 #include <kernel/mm.h>
 #include <kernel/string.h>
@@ -15,17 +14,17 @@ extern void thread_sighandle(uintptr_t fn, uintptr_t rsp);
 
 static int abort_handler(thread_t *thread) {
   // not implemented
-  panic("[abort] process: %d\n", thread->process->pid);
+  panic("[abort] process: %d\n", thread->proc->pid);
 }
 
 static int terminate_handler(thread_t *thread) {
   // not implemented
-  panic("[terminate] process: %d\n", thread->process->pid);
+  panic("[terminate] process: %d\n", thread->proc->pid);
 }
 
 static int coredump_handler(thread_t *thread) {
   // not implemented
-  panic("[core dump] process: %d\n", thread->process->pid);
+  panic("[core dump] process: %d\n", thread->proc->pid);
 }
 
 static int ignore_handler(thread_t *thread) {
@@ -34,12 +33,12 @@ static int ignore_handler(thread_t *thread) {
 
 static int continue_hanlder(thread_t *thread) {
   // not implemented
-  panic("[continue] process: %d\n", thread->process->pid);
+  panic("[continue] process: %d\n", thread->proc->pid);
 }
 
 static int stop_handler(thread_t *thread) {
   // not implemented
-  panic("[stop] process: %d\n", thread->process->pid);
+  panic("[stop] process: %d\n", thread->proc->pid);
 }
 
 

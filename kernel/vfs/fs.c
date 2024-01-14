@@ -28,16 +28,17 @@
 #include <hash_map.h>
 
 hash_map_t *fs_types;
-spinlock_t fs_types_lock;
+mtx_t fs_types_lock;
 vcache_t *vcache;
 ventry_t *root_ve;
 
-//
-
-void fs_early_init() {
+static void fs_early_init() {
   fs_types = hash_map_new();
-  spin_init(&fs_types_lock);
+  mtx_init(&fs_types_lock, MTX_SPIN, "fs_types_lock");
 }
+EARLY_INIT(fs_early_init);
+
+//
 
 void fs_init() {
   DPRINTF("initializing\n");
@@ -75,9 +76,9 @@ int fs_register_type(fs_type_t *fs_type) {
   }
 
   DPRINTF("registering fs type '%s'\n", fs_type->name);
-  SPIN_LOCK(&fs_types_lock);
+  mtx_spin_lock(&fs_types_lock);
   hash_map_set(fs_types, fs_type->name, fs_type);
-  SPIN_UNLOCK(&fs_types_lock);
+  mtx_spin_unlock(&fs_types_lock);
   return 0;
 }
 
@@ -310,7 +311,8 @@ LABEL(done);
 
   vn_lock(vn);
   vn->nopen--;
-  cond_broadcast(&vn->waiters);
+  // cond_broadcast(&vn->waiters);
+  // todo(); // TODO:
   vn_unlock(vn);
 
 LABEL(ret_unlock);
@@ -548,7 +550,8 @@ int fs_closedir(int fd) {
 
   vn_lock(vn);
   vn->nopen--;
-  cond_broadcast(&vn->waiters);
+  // cond_broadcast(&vn->waiters);
+  todo(); // TODO:
   vn_unlock(vn);
   f_unlock(file);
 

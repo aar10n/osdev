@@ -12,10 +12,10 @@
 #define ASSERT(x) kassert(x)
 #define DPRINTF(fmt, ...) kprintf("ramfs: " fmt, ##__VA_ARGS__)
 
-#define LOCK_MOUNT(mount) SPIN_LOCK(&(mount)->lock)
-#define UNLOCK_MOUNT(mount) SPIN_UNLOCK(&(mount)->lock)
-#define LOCK_NODE(node) mutex_lock(&(node)->lock)
-#define UNLOCK_NODE(node) mutex_unlock(&(node)->lock)
+#define LOCK_MOUNT(mount) mtx_spin_lock(&(mount)->lock)
+#define UNLOCK_MOUNT(mount) mtx_spin_unlock(&(mount)->lock)
+#define LOCK_NODE(node) mtx_lock(&(node)->lock)
+#define UNLOCK_NODE(node) mtx_unlock(&(node)->lock)
 
 
 ramfs_mount_t *ramfs_alloc_mount(vfs_t *vfs) {
@@ -23,7 +23,7 @@ ramfs_mount_t *ramfs_alloc_mount(vfs_t *vfs) {
   mount->vfs = vfs;
 
   mount->next_id = 0;
-  spin_init(&mount->lock);
+  mtx_init(&mount->lock, MTX_SPIN, "ramfs_mount_lock");
 
   ramfs_node_t *root = ramfs_alloc_node(
     mount, &(struct vattr) {
@@ -65,12 +65,12 @@ ramfs_node_t *ramfs_alloc_node(ramfs_mount_t *mount, struct vattr *vattr) {
   node->mount = mount;
   node->type = vattr->type;
   node->mode = vattr->mode;
-  mutex_init(&node->lock, 0);
+  mtx_init(&node->lock, 0, "ramfs_node_lock");
   return node;
 }
 
 void ramfs_free_node(ramfs_node_t *node) {
-  ASSERT(mutex_trylock(&node->lock) == 0);
+  mtx_assert(&node->lock, MA_OWNED);
   ASSERT(node->data == NULL);
   kfree(node);
 }

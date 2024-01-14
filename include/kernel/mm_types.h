@@ -9,7 +9,7 @@
 #include <kernel/queue.h>
 #include <kernel/str.h>
 #include <kernel/ref.h>
-#include <kernel/lock.h>
+#include <kernel/mutex.h>
 
 #ifndef PAGE_SIZE
 #define PAGE_SIZE 0x1000

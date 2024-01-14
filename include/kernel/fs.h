@@ -9,8 +9,7 @@
 
 #include <abi/mman.h>
 
-
-void fs_early_init();
+void fs_static_init();
 void fs_init();
 
 int fs_register_type(fs_type_t *fs_type);

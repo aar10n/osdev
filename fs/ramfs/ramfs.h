@@ -8,7 +8,7 @@
 #include <kernel/vfs_types.h>
 #include <kernel/mm_types.h>
 #include <kernel/device.h>
-#include <kernel/queue.h>
+#include <kernel/mutex.h>
 
 struct memfile;
 struct ramfs_node;
@@ -20,7 +20,7 @@ typedef struct ramfs_mount {
 
   struct ramfs_node *root;
   size_t num_nodes;
-  spinlock_t lock;
+  mtx_t lock; // spin mtx
   id_t next_id;
 } ramfs_mount_t;
 
@@ -31,7 +31,7 @@ typedef struct ramfs_node {
   void *data; // embedded fs data
   size_t size;
 
-  mutex_t lock;
+  mtx_t lock; // wait mtx
   struct ramfs_node *parent;
   struct ramfs_mount *mount;
 

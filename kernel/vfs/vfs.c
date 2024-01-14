@@ -11,13 +11,12 @@
 #include <kernel/printf.h>
 #include <kernel/panic.h>
 
-#include <atomic.h>
 #include <rb_tree.h>
 
 struct vtable {
   rb_tree_t *tree;
   size_t count;
-  spinlock_t lock;
+  mtx_t lock; // spin mutex
 };
 
 #define ASSERT(x) kassert(x)
@@ -54,7 +53,7 @@ vfs_t *vfs_alloc(struct fs_type *type, int mount_flags) __move {
   vfs->type = type;
   vfs->ops = type->vfs_ops;
   vfs->vtable = vtable_alloc();
-  mutex_init(&vfs->lock, MUTEX_REENTRANT);
+  mtx_init(&vfs->lock, MTX_RECURSIVE, "vfs_lock");
   ref_init(&vfs->refcount);
   return vfs;
 }

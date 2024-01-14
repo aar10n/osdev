@@ -2,7 +2,7 @@
 // Created by Aaron Gill-Braun on 2020-10-14.
 //
 
-#include <kernel/device/ioapic.h>
+#include <kernel/hw/ioapic.h>
 
 #include <kernel/mm.h>
 #include <kernel/init.h>

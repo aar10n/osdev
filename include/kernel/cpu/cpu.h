@@ -9,8 +9,6 @@
 
 #define MAX_CPUS 64
 
-#define PERCPU_IS_BOOT (PERCPU_ID == cpu_bsp_id)
-
 #define IA32_TSC_MSR            0x10
 #define IA32_APIC_BASE_MSR      0x1B
 #define IA32_EFER_MSR           0xC0000080
@@ -157,7 +155,7 @@ typedef struct cpu_irq_stack {
 extern uint8_t cpu_bsp_id;
 
 void cpu_early_init();
-void cpu_stage2_init();
+void cpu_late_init();
 void cpu_map_topology();
 
 uint32_t cpu_get_apic_id();

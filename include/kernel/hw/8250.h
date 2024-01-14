@@ -2,8 +2,8 @@
 // Created by Aaron Gill-Braun on 2023-12-10.
 //
 
-#ifndef KERNEL_DEVICE_8250_H
-#define KERNEL_DEVICE_8250_H
+#ifndef KERNEL_HW_8250_H
+#define KERNEL_HW_8250_H
 
 #include <kernel/base.h>
 

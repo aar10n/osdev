@@ -16,7 +16,7 @@
 
 typedef struct vcache {
   struct ventry *root; // root reference
-  spinlock_t lock;
+  mtx_t lock;
   size_t size;
   size_t capacity;
   struct rb_tree *dir_map;
@@ -36,8 +36,8 @@ struct vcache_dir {
   hash_t *children; // array of child (full path) hashes
 };
 
-#define VCACHE_LOCK(vcache) SPIN_LOCK(&(vcache)->lock)
-#define VCACHE_UNLOCK(vcache) SPIN_UNLOCK(&(vcache)->lock)
+#define VCACHE_LOCK(vcache) mtx_spin_lock(&(vcache)->lock)
+#define VCACHE_UNLOCK(vcache) mtx_spin_unlock(&(vcache)->lock)
 
 #define ASSERT(x) kassert(x)
 #define DPRINTF(fmt, ...) kprintf("vcache: %s: " fmt, __func__, ##__VA_ARGS__)
@@ -225,7 +225,7 @@ vcache_t *vcache_alloc(ventry_t *root) {
   vcache->capacity = VCACHE_INITIAL_SIZE;
   vcache->dir_map = create_rb_tree();
   vcache->entries = kmallocz(sizeof(*vcache->entries) * vcache->capacity);
-  spin_init(&vcache->lock);
+  mtx_init(&vcache->lock, MTX_SPIN, "vcache_lock");
   return vcache;
 }
 

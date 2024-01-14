@@ -8,7 +8,7 @@
 #include <kernel/printf.h>
 #include <kernel/panic.h>
 #include <kernel/string.h>
-#include <atomic.h>
+#include <kernel/atomic.h>
 
 static id_t chan_id = 0;
 
@@ -44,17 +44,17 @@ chan_t *chan_alloc(uint16_t size, uint32_t flags) {
   memset(chan, 0, sizeof(chan_t));
   chan->id = atomic_fetch_add(&chan_id, 1);
   chan->flags = flags;
-  mutex_init(&chan->lock, MUTEX_REENTRANT);
+  mtx_init(&chan->lock, MTX_RECURSIVE, "chan_lock");
 
   chan->max_idx = size - 1;
   chan->read_idx = 0;
   chan->write_idx = 0;
   chan->buffer = kmalloc(size * sizeof(uint64_t));
 
-  mutex_init(&chan->reader, MUTEX_REENTRANT);
-  cond_init(&chan->data_read, COND_NOEMPTY);
-  mutex_init(&chan->writer, MUTEX_REENTRANT);
-  cond_init(&chan->data_written, COND_NOEMPTY);
+  mtx_init(&chan->reader, MTX_RECURSIVE, "chan_reader_mtx");
+  // cond_init(&chan->data_read, 0);
+  mtx_init(&chan->writer, MTX_RECURSIVE, "chan_writer_mtx");
+  // cond_init(&chan->data_written, 0);
   return chan;
 }
 
@@ -92,9 +92,9 @@ int chan_send(chan_t *chan, uint64_t data) {
     return -1;
   }
 
-  mutex_lock(&chan->writer);
-  mutex_lock(&chan->lock);
-  cond_clear_signal(&chan->data_written);
+  mtx_lock(&chan->writer);
+  mtx_lock(&chan->lock);
+  // cond_clear_signal(&chan->data_written);
 
   // we can write the data into the buffer normally
   chan->buffer[chan->write_idx] = data;
@@ -128,9 +128,9 @@ int chan_send(chan_t *chan, uint64_t data) {
     chan->write_idx = get_next_index(chan, chan->write_idx);
   }
 
-  cond_signal(&chan->data_written);
-  mutex_unlock(&chan->lock);
-  mutex_unlock(&chan->writer);
+  // cond_signal(&chan->data_written);
+  mtx_unlock(&chan->lock);
+  mtx_unlock(&chan->writer);
   return 0;
 }
 
@@ -141,15 +141,15 @@ int chan_sendb(chan_t *chan, uint64_t data) {
   }
 
   // blocking send
-  mutex_lock(&chan->writer);
+  mtx_lock(&chan->writer);
 
   if (chan_send(chan, data) < 0) {
-    mutex_unlock(&chan->writer);
+    mtx_unlock(&chan->writer);
     return -1;
   }
 
-  cond_wait(&chan->data_read);
-  mutex_unlock(&chan->writer);
+  // cond_wait(&chan->data_read);
+  mtx_unlock(&chan->writer);
   return 0;
 }
 
@@ -159,21 +159,21 @@ int chan_recv(chan_t *chan, uint64_t *result) {
     return -1;
   }
 
-  mutex_lock(&chan->reader);
-  mutex_lock(&chan->lock);
-  cond_clear_signal(&chan->data_read);
+  mtx_lock(&chan->reader);
+  mtx_lock(&chan->lock);
+  // cond_clear_signal(&chan->data_read);
 
   if (chan->read_idx == chan->write_idx) {
-    mutex_unlock(&chan->lock);
+    mtx_unlock(&chan->lock);
     // wait for new data to be written
-    cond_wait(&chan->data_written);
+    // cond_wait(&chan->data_written);
     if (chan->flags & CHAN_CLOSED) {
       kprintf("error: closed while waiting in `chan_recv()` on channel[%u]\n", chan->id);
-      mutex_unlock(&chan->reader);
+      mtx_unlock(&chan->reader);
       return -1;
     }
     //
-    mutex_lock(&chan->lock);
+    mtx_lock(&chan->lock);
   }
   kassert(chan->read_idx != chan->write_idx);
 
@@ -182,8 +182,8 @@ int chan_recv(chan_t *chan, uint64_t *result) {
   chan->buffer[chan->read_idx] = 0;
   chan->read_idx = get_next_index(chan, chan->read_idx);
 
-  cond_signal(&chan->data_read);
-  mutex_unlock(&chan->lock);
+  // cond_signal(&chan->data_read);
+  mtx_unlock(&chan->lock);
 
   if (result != NULL) {
     *result = data;
@@ -192,7 +192,7 @@ int chan_recv(chan_t *chan, uint64_t *result) {
     cleanup_data(chan, data);
   }
 
-  mutex_unlock(&chan->reader);
+  mtx_unlock(&chan->reader);
   return 0;
 }
 
@@ -202,13 +202,13 @@ int chan_recv_noblock(chan_t *chan, uint64_t *result) {
     return -1;
   }
 
-  mutex_lock(&chan->reader);
-  mutex_lock(&chan->lock);
-  cond_clear_signal(&chan->data_read);
+  mtx_lock(&chan->reader);
+  mtx_lock(&chan->lock);
+  // cond_clear_signal(&chan->data_read);
 
   if (chan->read_idx == chan->write_idx) {
-    mutex_unlock(&chan->lock);
-    mutex_unlock(&chan->reader);
+    mtx_unlock(&chan->lock);
+    mtx_unlock(&chan->reader);
     return -2; // no data to read (without blocking)
   }
   kassert(chan->read_idx != chan->write_idx);
@@ -218,8 +218,8 @@ int chan_recv_noblock(chan_t *chan, uint64_t *result) {
   chan->buffer[chan->read_idx] = 0;
   chan->read_idx = get_next_index(chan, chan->read_idx);
 
-  cond_signal(&chan->data_read);
-  mutex_unlock(&chan->lock);
+  // cond_signal(&chan->data_read);
+  mtx_unlock(&chan->lock);
 
   if (result != NULL) {
     *result = data;
@@ -228,7 +228,7 @@ int chan_recv_noblock(chan_t *chan, uint64_t *result) {
     cleanup_data(chan, data);
   }
 
-  mutex_unlock(&chan->reader);
+  mtx_unlock(&chan->reader);
   return 0;
 }
 
@@ -238,12 +238,12 @@ int chan_recvn(chan_t *chan, size_t n, uint64_t *results) {
     return -1;
   }
 
-  mutex_lock(&chan->reader);
+  mtx_lock(&chan->reader);
 
   for (size_t i = 0; i < n; i++) {
     uint64_t result;
     if (chan_recv(chan, &result) < 0) {
-      mutex_unlock(&chan->reader);
+      mtx_unlock(&chan->reader);
       return -1;
     }
 
@@ -252,7 +252,7 @@ int chan_recvn(chan_t *chan, size_t n, uint64_t *results) {
     }
   }
 
-  mutex_unlock(&chan->reader);
+  mtx_unlock(&chan->reader);
   return 0;
 }
 
@@ -262,24 +262,24 @@ int chan_wait(chan_t *chan) {
     return -1;
   }
 
-  mutex_lock(&chan->reader);
-  mutex_lock(&chan->lock);
-  cond_clear_signal(&chan->data_read);
+  mtx_lock(&chan->reader);
+  mtx_lock(&chan->lock);
+  // cond_clear_signal(&chan->data_read);
 
   if (chan->read_idx == chan->write_idx) {
     // wait until there is data to read
-    mutex_unlock(&chan->lock);
-    cond_wait(&chan->data_written);
+    mtx_unlock(&chan->lock);
+    // cond_wait(&chan->data_written);
     if (chan->flags & CHAN_CLOSED) {
       kprintf("error: closed while waiting in `chan_wait()` on channel[%u]\n", chan->id);
-      mutex_unlock(&chan->reader);
+      mtx_unlock(&chan->reader);
       return -1;
     }
     return 0;
   }
 
-  mutex_unlock(&chan->lock);
-  mutex_unlock(&chan->reader);
+  mtx_unlock(&chan->lock);
+  mtx_unlock(&chan->reader);
   return 0;
 }
 
@@ -289,8 +289,8 @@ int chan_close(chan_t *chan) {
     return -1;
   }
 
-  mutex_lock(&chan->writer);
-  mutex_lock(&chan->lock);
+  mtx_lock(&chan->writer);
+  mtx_lock(&chan->lock);
 
   // set closed flag
   chan->flags |= CHAN_CLOSED;
@@ -304,8 +304,8 @@ int chan_close(chan_t *chan) {
     cleanup_data(chan, data);
   }
 
-  mutex_unlock(&chan->lock);
-  mutex_unlock(&chan->writer);
+  mtx_unlock(&chan->lock);
+  mtx_unlock(&chan->writer);
   return 0;
 }
 

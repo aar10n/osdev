@@ -6,7 +6,7 @@
 #define KERNEL_DEVICE_H
 
 #include <kernel/mm_types.h>
-#include <kernel/lock.h>
+#include <kernel/mutex.h>
 #include <kernel/kio.h>
 
 struct device;

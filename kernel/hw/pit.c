@@ -5,7 +5,7 @@
 #include <kernel/panic.h>
 #include <kernel/cpu/io.h>
 #include <kernel/cpu/idt.h>
-#include <kernel/device/pit.h>
+#include <kernel/hw/pit.h>
 #include <kernel/printf.h>
 
 #define PIT0_DATA   0x40
@@ -69,18 +69,18 @@ void pit_interrupt_handler() {
 
 //
 
-void pit_mdelay(uint64_t ms) {
-  uint8_t val = pit_control(0, PIT_MODE_0, PIT_ACCESS_WORD, PIT_CHANNEL_2);
-  outb(PIT_CONTROL, val);
-
-  while (ms > 0) {
-    pit_set_counter(PIT_CHANNEL_2, PIT_CLOCK_RATE / 1000);
-    while ((inb(PIT2_GATE) & (1 << 5)) == 0) {
-      cpu_pause();
-    }
-    ms--;
-  }
-}
+// void pit_mdelay(uint64_t ms) {
+//   uint8_t val = pit_control(0, PIT_MODE_0, PIT_ACCESS_WORD, PIT_CHANNEL_2);
+//   outb(PIT_CONTROL, val);
+//
+//   while (ms > 0) {
+//     pit_set_counter(PIT_CHANNEL_2, PIT_CLOCK_RATE / 1000);
+//     while ((inb(PIT2_GATE) & (1 << 5)) == 0) {
+//       cpu_pause();
+//     }
+//     ms--;
+//   }
+// }
 
 void pit_oneshot(uint16_t ms) {
   uint8_t val = pit_control(0, PIT_MODE_0, PIT_ACCESS_WORD, PIT_CHANNEL_0);

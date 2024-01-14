@@ -5,7 +5,7 @@
 #ifndef KERNEL_TQUEUE_H
 #define KERNEL_TQUEUE_H
 
-#include <kernel/lock.h>
+#include <kernel/mutex.h>
 
 // https://man.freebsd.org/cgi/man.cgi?locking(9)
 
@@ -16,23 +16,23 @@ typedef LIST_HEAD(struct thread) tdqueue_t;
 // =================================
 
 struct runqueue {
-  struct mtx lock;
+  mtx_t lock;
   size_t count;
-  tdqueue_t queue;
+  tdqueue_t head;
 };
 
 void runq_init(struct runqueue *runq);
 /// Adds the given thread to the runqueue. The thread lock should be held when
 /// calling this function, and it will be released after the thread has been
 /// added to the queue and transitioned to the ready state.
-void runq_add(struct runqueue *runq, thread_t *td);
+void runq_add(struct runqueue *runq, struct thread *td);
 /// Removes the given thread from the runqueue. The thread lock should be held
 /// when calling this function, and it will remain locked on return.
-void runq_remove(struct runqueue *runq, thread_t *td);
-/// Returns the next thread to run from the runqueue. If this function returns
-/// a non-null value, the thread lock will be held and the thread will be in the
-/// ready state.
-thread_t *runq_remove_next(struct runqueue *runq);
+void runq_remove(struct runqueue *runq, struct thread *td);
+/// Removes and returns the next thread to run from the runqueue. If this function
+/// returns a non-null thread, the thread lock will be held and it will be in the
+/// running state.
+struct thread *runq_next_thread(struct runqueue *runq);
 
 // =================================
 //            lockqueue
@@ -50,11 +50,10 @@ thread_t *runq_remove_next(struct runqueue *runq);
  * access to the inner lock. It is equivalent to the turnstile in FreeBSD.
  */
 struct lockqueue {
-  struct mtx lock;                          // lockqueue struct spinlock
+  mtx_t lock;                               // lockqueue spin mutex
   tdqueue_t queues[2];                      // exclusive and shared queues
 
   struct thread *owner;                     // owning thread
-  LIST_ENTRY(struct lockqueue) td_list;     // thread contested list entry
   struct lock_object *lock_obj;             // the lock object
   LIST_ENTRY(struct lockqueue) chain_list;  // chain list entry
 };
@@ -75,6 +74,7 @@ void lockq_chain_unlock(struct lock_object *lock_obj);
 void lockq_wait(struct lockqueue *lockq, struct thread *owner, int queue);
 /// Removes the given thread from the lockqueue.
 void lockq_remove(struct lockqueue *lockq, struct thread *td, int queue);
+
 
 /// Signals the first thread on the lockqueue and unblocks it.
 void lockq_signal(struct lockqueue *lockq, int queue);
@@ -97,7 +97,7 @@ void lockq_broadcast(struct lockqueue *lockq, int queue);
  * Equivalent to FreeBSD sleepqueues.
  */
 struct waitqueue {
-  struct mtx lock;    // waitqueue struct spinlock
+  mtx_t lock;         // waitqueue struct spinlock
   tdqueue_t queue;    // thread queue
   const void *wchan;  // wait channel
   LIST_ENTRY(struct waitqueue) chain_list;
@@ -119,7 +119,5 @@ void waitq_chain_unlock(const void *wchan);
 void waitq_wait(struct waitqueue *waitq, const char *wdmsg);
 /// Removes the given thread from the waitqueue.
 void waitq_remove(struct waitqueue *waitq, struct thread *td);
-
-
 
 #endif

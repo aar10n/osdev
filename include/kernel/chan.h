@@ -7,7 +7,7 @@
 
 #include <kernel/base.h>
 #include <kernel/mutex.h>
-#include <kernel/queue.h>
+#include <kernel/cond.h>
 
 // -------- Channels --------
 
@@ -32,7 +32,7 @@ typedef void (*chan_free_cb_t)(void *data);
 typedef struct chan {
   id_t id;
   uint32_t flags;
-  mutex_t lock;
+  mtx_t lock;
 
   uint16_t read_idx;
   uint16_t write_idx;
@@ -40,9 +40,9 @@ typedef struct chan {
   uint64_t *buffer;
   chan_free_cb_t free_cb;
 
-  mutex_t reader;
+  mtx_t reader;
   cond_t data_read;
-  mutex_t writer;
+  mtx_t writer;
   cond_t data_written;
 } chan_t;
 

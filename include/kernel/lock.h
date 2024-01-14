@@ -17,144 +17,109 @@ struct thread;
 struct mtx;
 
 struct lock_object;
-struct lock_class;
-
 struct lock_claim;
 struct lock_claim_list;
 
 /*
- * An implementation of a lock class.
+ * Common lock object.
+ *
+ * All lock_class lock objects have a lock_object as their first member. There are
+ * some common state bits shared among all lock types with the rest being free for
+ * each lock_class to use. The data field is also for implementation use.
  */
-struct lock_class {
-  const char *lc_name;
-  int (*lc_owner)(struct lock_object *lock, struct thread **owner);
-  void (*lc_lock)(struct lock_object *lock, uintptr_t how);
-  uintptr_t (*lc_unlock)(struct lock_object *lock);
+struct lock_object {
+  const char *name;         /* lock name */
+  uint32_t flags;           /* lock options + class bits */
+  uint32_t data;            /* lock class data */
 };
 
 /*
- * Common lock object.
- *
- * All lock objects embed the lock_object at their start.
+ * A generic interface for the different lock types (mutex, rwlock).
  */
-struct lock_object {
-#define embed_lock_object \
-  const char *name;         /* lock name */ \
-  uint32_t state;           /* lock state */ \
-  uint32_t data;            /* class-specific data */
-  embed_lock_object
+struct lock_class {
+  const char *name;
+  uint32_t flags;
+  int (*lc_owner)(struct lock_object *lock, struct thread **owner);
+  void (*lc_assert)(struct lock_object *lock, int what);
+  void (*lc_lock)(struct lock_object *lock, uintptr_t how, const char *file, int line);
+  uintptr_t (*lc_unlock)(struct lock_object *lock);
 };
 
+// === lock class flags ===
+// Each lock class has a unique set of flags that are used to
+// identify and describe the behavior of the lock. The class
+// bits are copied into the state of every lock of that type.
+#define LC_SPINLOCK     0x0001  // spin lock
+#define LC_WAITLOCK     0x0002  // wait lock
+#define LC_SHAREABLE    0x0004  // lock can have shared ownership
+#define LC_SLEEPABLE    0x0008  // can sleep while holding lock
+#define LC_MASK   0x00ff
+
+// === lock option flags ===
+// (these are OR'd with the class bits)
+// These flags describe common properties/state that are used by
+// all lock classes. Each lock class nomalizes its specific init
+// flags into these to store in state.
+#define LO_DEBUG        0x0100 // enable debugging for this lock
+#define LO_NOCLAIMS     0x0200 // don't track lock claims
+#define LO_RECURSABLE   0x0400 // lock is recursable
+#define LO_SLEEPABLE    0x0800 // can sleep while holding lock
+#define LO_INITIALIZED  0x1000 // lock has been initialized
+#define LO_FLAGS_MASK   0xffff
+
+// === lock assertions ===
+#define LA_UNLOCKED     0x00 // lock is not locked
+#define LA_LOCKED       0x01 // lock is locked (any s/x)
+#define LA_SLOCKED      0x02 // lock is shared locked
+#define LA_XLOCKED      0x04 // lock is exclusive locked
+#define LA_OWNED        0x08 // lock is locked and owned by thread
+#define LA_RECURSED     0x20 // lock is recursed
+#define LA_NOTRECURSED  0x40 // lock is not recursed
+
+#define LO_LOCK_CLASS(lock) ((lock)->flags & LC_MASK)
+#define LO_LOCK_OPTS(lock) ((lock)->flags & LO_FLAGS_MASK)
+
+#define SPINLOCK_LOCKCLASS  (LC_SPINLOCK)
+#define MUTEX_LOCKCLASS     (LC_WAITLOCK)
+#define RWLOCK_LOCKCLASS    (LC_WAITLOCK|LC_SHAREABLE)
+
+static inline const char *lock_class_kind_str(uint32_t lc_flags) {
+  if (lc_flags == SPINLOCK_LOCKCLASS) {
+    return "spinlock";
+  } else if (lc_flags == MUTEX_LOCKCLASS) {
+    return "mutex";
+  } else if (lc_flags == RWLOCK_LOCKCLASS) {
+    return "rwlock";
+  }
+  return "unknown";
+}
+
+////////////////////
+// lock claim api
 struct lock_claim_list *lock_claim_list_alloc();
 void lock_claim_list_free(struct lock_claim_list **listp);
 void lock_claim_list_add(struct lock_claim_list *list, struct lock_object *lock, uintptr_t how, const char *file, int line);
 void lock_claim_list_remove(struct lock_claim_list *list, struct lock_object *lock);
 
-// =================================
-//              mutex
-// =================================
+////////////////////
+// spin delay api
 
-/*
- * Mutal exclusion primitive.
- *
- * A mutex is a synchronization primitive that can be used to protect
- * shared data from being simultaneously accessed by multiple threads.
- */
-typedef struct mtx {
-  struct lock_object lo;         // common lock object
-  volatile uintptr_t owner_opts; // owner thread ptr (8-byte aligned) bitwise
-                                 // or'd with the mutex options
-} mtx_t;
-
-// mutex options
-#define MTX_DEBUG     0x1  // enable debugging for this lock
-#define MTX_SPIN      0x2  // spin when blocked (default is context switch)
-#define MTX_RECURSE   0x4  // allow recursive locking
-#define MTX_OPT_MASK  0x7
-
-int _mtx_spin_trylock(mtx_t *mtx, const char *file, int line);
-void _mtx_spin_lock(mtx_t *mtx, const char *file, int line);
-void _mtx_spin_unlock(mtx_t *mtx);
-
-int _mtx_wait_trylock(mtx_t *mtx, const char *file, int line);
-void _mtx_wait_lock(mtx_t *mtx, const char *file, int line);
-void _mtx_wait_unlock(mtx_t *mtx);
-
-/* common mutex api */
-void _mtx_init(mtx_t *mtx, uint32_t opts, const char *name);
-void _mtx_destroy(mtx_t *mtx);
-int _mtx_locked(mtx_t *mtx);
-int _mtx_owned(mtx_t *mtx);
-
-int _mtx_assert(mtx_t *mtx, int what, const char *file, int line);
-int _mtx_trylock(mtx_t *mtx, const char *file, int line);
-void _mtx_lock(mtx_t *mtx, const char *file, int line);
-void _mtx_unlock(mtx_t *mtx);
-
-// assert options
-#define MA_OWNED    0x1 // lock is owned
-#define MA_NOTOWNED 0x2 // lock is not owned
-#define MA_RECURSED 0x4 // lock is recursed
-
-
-// This is the actual public api. Only the trylock and lock functions
-// need to be macros but we define them all as such for consistency.
-
-#define MTX_INITIALIZER(opts) { \
-  .name = __FILE__ ":" __macro_str(__LINE__), \
-  .state = 0, \
-  .data = 0, \
-  .owner_opts = ((opts) & MTX_OPT_MASK) \
-}
-
-#define mtx_init(m,o,n) _mtx_init(m, o, n)
-#define mtx_destroy(m) _mtx_destroy(m)
-#define mtx_locked(m) _mtx_locked(m)
-#define mtx_owned(m) _mtx_owned(m)
-
-#define mtx_assert(m, w) _mtx_assert(m, w, __FILE__, __LINE__)
-#define mtx_trylock(m) _mtx_trylock(m, __FILE__, __LINE__)
-#define mtx_lock(m) _mtx_lock(m, __FILE__, __LINE__)
-#define mtx_unlock(m) _mtx_unlock(m)
-
-#define mtx_spin_trylock(m) _mtx_spin_trylock(m, __FILE__, __LINE__)
-#define mtx_spin_lock(m) _mtx_spin_lock(m, __FILE__, __LINE__)
-#define mtx_spin_unlock(m) _mtx_spin_unlock(m)
-
-#define mtx_alloc(o, n) ({ \
-  mtx_t *m = kmalloc(sizeof(mtx_t)); \
-  mtx_init(m, o, n); \
-  m; \
+struct spin_delay {
+  uint32_t delay_count;
+  uint32_t max_waits;
+  /* private */
+  uint32_t waits;
+};
+#define new_spin_delay(count, maxwaits) ((struct spin_delay){ \
+  .delay_count = (count), \
+  .max_waits = (maxwaits), \
+  .waits = 0, \
 })
 
-#define mtx_free(m) ({ \
-  mtx_destroy(m); \
-  kfree((void *)(m)); \
-  (m) = NULL; \
-})
+#define SHORT_DELAY 100
+#define LONG_DELAY  1000
+#define MAX_RETRIES UINT32_MAX
 
-// =================================
-//              rwlock
-// =================================
+int spin_delay_wait(struct spin_delay *delay);
 
-/*
- * Read-write lock primitive.
- *
- * A read-write lock allows multiple readers or a single writer to
- * access a resource. It is used to protect data structures that are
- * read often but modified infrequently.
- */
-typedef struct rwlock {
-  struct lock_object lo;          // common lock object
-  volatile uintptr_t owner_opts;  // owner thread ptr (8-byte aligned) bitwise
-                                  // or'd with the rwlock options
-  volatile uint32_t readers;      // number of readers
-} rwlock_t;
-
-// rwlock options
-#define RWL_DEBUG   0x4  // enable debugging for this lock
-#define RWL_RECURSE 0x2  // allow recursive locking
-#define RWL_OPT_MASK 0x7
-
-#undef embed_lock_object
 #endif

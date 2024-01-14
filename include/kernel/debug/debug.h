@@ -12,8 +12,6 @@ typedef struct stackframe {
   uint64_t rip;
 } stackframe_t;
 
-
-void debug_early_init();
 void debug_init();
 
 const char *debug_function_name(uintptr_t addr);

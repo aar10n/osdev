@@ -2,18 +2,19 @@
 // Created by Aaron Gill-Braun on 2020-10-17.
 //
 
-#include <kernel/device/hpet.h>
-
-#include <kernel/clock.h>
-#include <kernel/timer.h>
+#include <kernel/hw/hpet.h>
 
 #include <kernel/mm.h>
 #include <kernel/irq.h>
+#include <kernel/clock.h>
 #include <kernel/init.h>
+
 #include <kernel/string.h>
 #include <kernel/panic.h>
 #include <kernel/printf.h>
 #include <asm/bits.h>
+
+#define ASSERT(x) kassert(x)
 
 #define MAX_HPETS 4
 
@@ -55,7 +56,6 @@
 // clears all writable bits
 #define HPET_TN_CONFIG_MASK 0x00008030
 
-
 typedef enum hpet_reg {
   HPET_ID     = 0x000,
   HPET_CONFIG = 0x010,
@@ -68,6 +68,7 @@ typedef enum hpet_reg {
 
 
 struct hpet_timer_device;
+
 struct hpet_device {
   uint8_t id;
   uint8_t max_num_timers;
@@ -88,7 +89,6 @@ struct hpet_device {
 struct hpet_timer_device {
   struct hpet_device *hpet;
   uint8_t num;
-  timer_mode_t mode;
   LIST_ENTRY(struct hpet_timer_device) list;
 };
 
@@ -140,25 +140,13 @@ struct hpet_timer_device *get_hpet_timer_by_id(struct hpet_device *hpet, uint8_t
 
 //
 
-void hpet_interrupt_handler(uint8_t vector, void *data) {
-  // kprintf("hpet: IRQ!\n");
-  timer_device_t *td = data;
-  struct hpet_timer_device *tn = td->data;
-  // hpet_write32(tn->hpet->address, HPET_STATUS, (1 << tn->num));
-
-  if (td->irq_handler) {
-    td->irq_handler(td);
-  }
-}
-
 void remap_hpet_registers(void *data) {
   struct hpet_device *hpet = data;
-  hpet->address = vmap_phys(hpet->phys_addr, 0, PAGE_SIZE, VM_WRITE | VM_NOCACHE, "hpet");
+  hpet->address = vmap_phys(hpet->phys_addr, 0, PAGE_SIZE, VM_WRITE|VM_NOCACHE, "hpet");
 }
 
-//
-// HPET Clock API
-//
+//////////////////////////////
+// MARK: HPET clock source
 
 int hpet_clock_enable(clock_source_t *cs) {
   struct hpet_device *hpet = cs->data;
@@ -196,25 +184,25 @@ uint64_t hpet_clock_read(clock_source_t *cs) {
   return hpet_read32(hpet->address, HPET_COUNT);
 }
 
-//
-// HPET Timer API
-//
+//////////////////////////////
+// MARK: HPET alarm source
 
-int hpet_timer_init(timer_device_t *td, timer_mode_t mode) {
-  struct hpet_timer_device *tn = td->data;
+int hpet_alarm_source_init(alarm_source_t *as, uint32_t mode, irq_handler_t handler) {
+  struct hpet_timer_device *tn = as->data;
   if (tn == NULL) {
     return -ENODEV;
   }
 
-  kassert(mode != 0);
-  kassert(tn->mode == 0);
-  if (mode != TIMER_ONE_SHOT && mode != TIMER_PERIODIC) {
+
+  ASSERT(mode != 0);
+  ASSERT(as->mode == 0);
+  if (mode != ALARM_ONE_SHOT && mode != ALARM_PERIODIC) {
     return -EINVAL;
   }
 
   struct hpet_device *hpet = tn->hpet;
   uint32_t tn_config_reg = hpet_read32(hpet->address, timer_config_reg(tn->num));
-  if (mode == TIMER_PERIODIC && !HPET_TN_PER_INT_CAP(tn_config_reg)) {
+  if (mode == ALARM_PERIODIC && !HPET_TN_PER_INT_CAP(tn_config_reg)) {
     kprintf("hpet: timer does not support periodic mode\n");
     return -EINVAL;
   }
@@ -239,36 +227,35 @@ int hpet_timer_init(timer_device_t *td, timer_mode_t mode) {
     break;
   }
 
-  tn->mode = mode;
-  td->irq = irq;
-  irq_register_irq_handler(irq, hpet_interrupt_handler, td);
+  as->irq_num = irq;
+  irq_register_handler(irq, handler, as);
   irq_enable_interrupt(irq);
 
   // zero comparator register
   if (HPET_TN_SIZE_CAP(tn_config_reg)) {
-    td->value_mask = UINT64_MAX;
+    as->value_mask = UINT64_MAX;
     hpet_write64(hpet->address, timer_value_reg(tn->num), 0);
   } else {
-    td->value_mask = UINT32_MAX;
+    as->value_mask = UINT32_MAX;
     hpet_write32(hpet->address, timer_value_reg(tn->num), 0);
   }
 
   // configure timer
   tn_config_reg |= HPET_TN_INT_ROUTE(irq);
-  if (mode == TIMER_PERIODIC) {
+  if (mode == ALARM_PERIODIC) {
     tn_config_reg |= HPET_TN_TYPE_PERIODIC;
   }
   hpet_write32(hpet->address, timer_config_reg(tn->num), tn_config_reg);
   return 0;
 }
 
-int hpet_timer_enable(timer_device_t *td) {
-  struct hpet_timer_device *tn = td->data;
+int hpet_alarm_source_enable(alarm_source_t *as) {
+  ASSERT(as->mode != 0);
+  struct hpet_timer_device *tn = as->data;
   if (tn == NULL) {
     return -ENODEV;
   }
 
-  kassert(tn->mode != 0);
   struct hpet_device *hpet = tn->hpet;
 
   uint32_t tn_config_reg = hpet_read32(hpet->address, timer_config_reg(tn->num));
@@ -277,13 +264,13 @@ int hpet_timer_enable(timer_device_t *td) {
   return 0;
 }
 
-int hpet_timer_disable(timer_device_t *td) {
-  struct hpet_timer_device *tn = td->data;
+int hpet_alarm_source_disable(alarm_source_t *as) {
+  ASSERT(as->mode != 0);
+  struct hpet_timer_device *tn = as->data;
   if (tn == NULL) {
     return -ENODEV;
   }
 
-  kassert(tn->mode != 0);
   struct hpet_device *hpet = tn->hpet;
 
   uint32_t tn_config_reg = hpet_read32(hpet->address, timer_config_reg(tn->num));
@@ -292,16 +279,16 @@ int hpet_timer_disable(timer_device_t *td) {
   return 0;
 }
 
-int hpet_timer_setval(timer_device_t *td, uint64_t value) {
-  struct hpet_timer_device *tn = td->data;
+int hpet_alarm_source_setval(alarm_source_t *as, uint64_t value) {
+  ASSERT(as->mode != 0);
+  struct hpet_timer_device *tn = as->data;
   if (tn == NULL) {
     return -ENODEV;
   }
 
-  kassert(tn->mode != 0);
   struct hpet_device *hpet = tn->hpet;
 
-  if (tn->mode == TIMER_PERIODIC) {
+  if (as->mode == ALARM_PERIODIC) {
     // disable hpet clock
     uint32_t config_reg = hpet_read32(hpet->address, HPET_CONFIG);
     config_reg &= ~HPET_CLOCK_EN;
@@ -313,13 +300,13 @@ int hpet_timer_setval(timer_device_t *td, uint64_t value) {
   }
 
   // write value
-  if (td->value_mask == UINT64_MAX) {
+  if (as->value_mask == UINT64_MAX) {
     hpet_write64(hpet->address, timer_value_reg(tn->num), value);
   } else {
     hpet_write32(hpet->address, timer_value_reg(tn->num), value);
   }
 
-  if (tn->mode == TIMER_PERIODIC) {
+  if (as->mode == ALARM_PERIODIC) {
     // re-enable hpet clock
     uint32_t config_reg = hpet_read32(hpet->address, HPET_CONFIG);
     config_reg |= HPET_CLOCK_EN;
@@ -331,29 +318,26 @@ int hpet_timer_setval(timer_device_t *td, uint64_t value) {
 
 //
 
-void register_hpet_timer(struct hpet_device *hpet, uint8_t n) {
+void register_hpet_alarm_source(struct hpet_device *hpet, uint8_t n) {
   if (get_hpet_timer_by_id(hpet, n) != NULL) {
     panic("hpet: timer %d already registered", n);
   } else if (n >= hpet->max_num_timers) {
     panic("hpet: timer %d out of range", n);
   }
 
-  struct hpet_timer_device *hpet_timer_struct = kmalloc(sizeof(struct hpet_timer_device));
+  struct hpet_timer_device *hpet_timer_struct = kmallocz(sizeof(struct hpet_timer_device));
   hpet_timer_struct->hpet = hpet;
   hpet_timer_struct->num = n;
-  hpet_timer_struct->mode = 0;
 
-  timer_device_t *hpet_timer_device = kmalloc(sizeof(timer_device_t));
-  hpet_timer_device->name = kasprintf("hpet%d", n);
-  hpet_timer_device->data = hpet_timer_struct;
-  hpet_timer_device->irq = 0;
-  hpet_timer_device->flags = 0;
-  hpet_timer_device->modes = TIMER_ONE_SHOT;
-  hpet_timer_device->scale_ns = hpet->clock_period_ns;
+  alarm_source_t *hpet_alarm_source = kmalloc(sizeof(alarm_source_t));
+  hpet_alarm_source->name = kasprintf("hpet%d", n);
+  hpet_alarm_source->data = hpet_timer_struct;
+  hpet_alarm_source->cap_flags = ALARM_ONE_SHOT;
+  hpet_alarm_source->scale_ns = hpet->clock_period_ns;
 
   uint32_t tn_config_reg = hpet_read32(hpet->address, timer_config_reg(n));
   if (HPET_TN_PER_INT_CAP(tn_config_reg)) {
-    hpet_timer_device->modes |= TIMER_PERIODIC;
+    hpet_alarm_source->cap_flags |= ALARM_PERIODIC;
   }
 
   // configure timer
@@ -361,13 +345,13 @@ void register_hpet_timer(struct hpet_device *hpet, uint8_t n) {
   tn_config_reg |= HPET_TN_INT_TYPE_LEVEL;            // set edge interupt type
   hpet_write32(hpet->address, timer_config_reg(n), tn_config_reg);
 
-  hpet_timer_device->init = hpet_timer_init;
-  hpet_timer_device->enable = hpet_timer_enable;
-  hpet_timer_device->disable = hpet_timer_disable;
-  hpet_timer_device->setval = hpet_timer_setval;
+  hpet_alarm_source->init = hpet_alarm_source_init;
+  hpet_alarm_source->enable = hpet_alarm_source_enable;
+  hpet_alarm_source->disable = hpet_alarm_source_disable;
+  hpet_alarm_source->setval = hpet_alarm_source_setval;
 
   LIST_ADD(&hpet->timers, hpet_timer_struct, list);
-  register_timer_device(hpet_timer_device);
+  // register_timer_device(hpet_timer_device);
 }
 
 void register_hpet(uint8_t id, uintptr_t address, uint16_t min_period) {
@@ -378,7 +362,7 @@ void register_hpet(uint8_t id, uintptr_t address, uint16_t min_period) {
     panic("hpet %d already registered", id);
   }
 
-  struct hpet_device *hpet = kmalloc(sizeof(struct hpet_device));
+  struct hpet_device *hpet = kmallocz(sizeof(struct hpet_device));
   hpet->id = id;
   hpet->phys_addr = address;
   hpet->address = address;
@@ -421,12 +405,12 @@ void register_hpet(uint8_t id, uintptr_t address, uint16_t min_period) {
     global_hpet_device = hpet;
 
     // register hpet as clock source
-    clock_source_t *hpet_clock_source = kmalloc(sizeof(clock_source_t));
+    clock_source_t *hpet_clock_source = kmallocz(sizeof(clock_source_t));
     memset(hpet_clock_source, 0, sizeof(clock_source_t));
     hpet_clock_source->name = "hpet";
     hpet_clock_source->data = hpet;
     hpet_clock_source->scale_ns = hpet->clock_period_ns;
-    hpet_clock_source->last_tick = hpet_read64(hpet->address, HPET_COUNT);
+    hpet_clock_source->last_count = hpet_read64(hpet->address, HPET_COUNT);
     hpet_clock_source->value_mask = hpet->clock_count_mask;
 
     hpet_clock_source->enable = hpet_clock_enable;
@@ -434,9 +418,7 @@ void register_hpet(uint8_t id, uintptr_t address, uint16_t min_period) {
     hpet_clock_source->read = hpet_clock_read;
 
     register_clock_source(hpet_clock_source);
-
-    // register hpet timer 0 as timer device
-    register_hpet_timer(hpet, 0);
+    register_hpet_alarm_source(hpet, 0); // register timer 0
   }
 
   num_hpets += 1;

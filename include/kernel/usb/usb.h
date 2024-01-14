@@ -6,7 +6,6 @@
 #define KERNEL_USB_USB_H
 
 #include <kernel/base.h>
-#include <kernel/thread.h>
 #include <kernel/chan.h>
 
 typedef struct pcie_device pcie_device_t;

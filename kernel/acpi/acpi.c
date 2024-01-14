@@ -7,11 +7,10 @@
 
 #include <kernel/cpu/io.h>
 
-#include <kernel/device/apic.h>
-#include <kernel/device/ioapic.h>
-#include <kernel/device/hpet.h>
+#include <kernel/hw/apic.h>
+#include <kernel/hw/ioapic.h>
+#include <kernel/hw/hpet.h>
 
-// #include <kernel/bus/pcie.h>
 #include <kernel/bus/pci_v2.h>
 
 #include <kernel/mm.h>
@@ -186,7 +185,7 @@ void acpi_parse_madt() {
       if (isa_irq != dest_irq) {
         kprintf("ACPI: ISA IRQ%d remapped to IRQ%d\n", isa_irq, dest_irq);
       }
-      irq_override_isa_interrupt(isa_irq, dest_irq, iso->flags);
+      early_irq_override_isa_interrupt(isa_irq, dest_irq, iso->flags);
     }
   }
 

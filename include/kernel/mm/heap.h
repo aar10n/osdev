@@ -6,7 +6,7 @@
 #define KERNEL_MM_HEAP_H
 
 #include <kernel/base.h>
-#include <kernel/lock.h>
+#include <kernel/mutex.h>
 
 // TODO: switch to better allocator for large sizes
 #define CHUNK_MIN_SIZE   8

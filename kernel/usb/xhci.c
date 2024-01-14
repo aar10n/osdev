@@ -192,8 +192,8 @@ static inline bool device_is_usb3(_xhci_device_t *device) {
 // MARK:
 //
 
-void xhci_host_irq_handler(uint8_t vector, void *data) {
-  xhci_controller_t *hc = data;
+void xhci_host_irq_handler(struct trapframe *frame) {
+  xhci_controller_t *hc = (void *) frame->data;
   // kprintf("[CPU#%d] xhci: >>> controller interrupt <<<\n", PERCPU_ID);
   uint32_t usbsts = read32(hc->op_base, XHCI_OP_USBSTS);
 
@@ -214,11 +214,12 @@ void xhci_host_irq_handler(uint8_t vector, void *data) {
     return;
   }
 
-  cond_signal(&hc->evt_ring->cond);
+  // cond_signal(&hc->evt_ring->cond);
+  todo();
 }
 
-void xhci_device_irq_handler(uint8_t vector, void *data) {
-  _xhci_device_t *device = data;
+void xhci_device_irq_handler(struct trapframe *frame) {
+  _xhci_device_t *device = (void *) frame->data;
   xhci_controller_t *hc = device->host;
   uint8_t n = device->interrupter->index;
   // kprintf("[CPU#%d] xhci: >>> device interrupt <<<\n", PERCPU_ID);
@@ -231,7 +232,8 @@ void xhci_device_irq_handler(uint8_t vector, void *data) {
   uint32_t iman = read32(hc->rt_base, XHCI_INTR_IMAN(n));
   iman |= IMAN_IP;
   write32(hc->rt_base, XHCI_INTR_IMAN(n), iman);
-  cond_signal(&device->evt_ring->cond);
+  // cond_signal(&device->evt_ring->cond);
+  todo();
 }
 
 //
@@ -275,7 +277,7 @@ noreturn void *_xhci_controller_event_loop(void *arg) {
   kprintf("[CPU#%d] xhci: starting controller event loop\n", PERCPU_ID);
 
   while (true) {
-    cond_wait(&hc->evt_ring->cond);
+    // cond_wait(&hc->evt_ring->cond);
     // kprintf("[CPU#%d] xhci: controller event\n", PERCPU_ID);
 
     uint64_t old_erdp = _xhci_ring_device_ptr(hc->evt_ring);
@@ -324,7 +326,7 @@ noreturn void *_xhci_device_event_loop(void *arg) {
   uint8_t n = device->interrupter->index;
 
   while (true) {
-    cond_wait(&device->evt_ring->cond);
+    // cond_wait(&device->evt_ring->cond);
     // kprintf("[CPU#%d] xhci: device event\n", PERCPU_ID);
 
     // handler transfer event
@@ -1252,7 +1254,7 @@ xhci_controller_t *_xhci_alloc_controller(pcie_device_t *device, pcie_bar_t *bar
   hc->dcbaap = dcbaap;
 
   // event thread
-  mutex_init(&hc->lock, 0);
+  mtx_init(&hc->lock, 0, "xhci_controller_lock");
   // hc->thread = thread_create(_xhci_controller_event_loop, hc, str_make("xhci_controller_event_loop"));
   // thread_yield();
   todo();
@@ -1322,7 +1324,7 @@ xhci_interrupter_t *_xhci_alloc_interrupter(xhci_controller_t *hc, irq_handler_t
 
   int irq = irq_alloc_software_irqnum();
   kassert(irq >= 0);
-  irq_register_irq_handler(irq, fn, data);
+  irq_register_handler(irq, fn, data);
   irq_enable_msi_interrupt(irq, n, hc->pcie_device);
 
   size_t erst_size = sizeof(xhci_erst_entry_t) * ERST_SIZE;
@@ -1364,7 +1366,7 @@ _xhci_device_t *_xhci_alloc_device(xhci_controller_t *hc, _xhci_port_t *port, ui
   device->evt_ring = device->interrupter->ring;
   LIST_ENTRY_INIT(&device->list);
 
-  mutex_init(&device->lock, 0);
+  mtx_init(&device->lock, 0, "xhci_device_lock");
   cond_init(&device->event, 0);
   device->thread = NULL;
   return device;

@@ -137,6 +137,7 @@ size_t kvsnprintf(char *str, size_t n, const char *format, va_list args);
  * buffer.
  */
 char *kasprintf(const char *format, ...);
+char *kvasprintf(const char *format, va_list args);
 
 /**
  * Writes formatted data to a file (by path).

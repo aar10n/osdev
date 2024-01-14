@@ -68,6 +68,7 @@
 #include <stddef.h>
 #include <stdbool.h>
 
+typedef int64_t sbintime_t;
 typedef uint16_t char16_t;
 
 #endif

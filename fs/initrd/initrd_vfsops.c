@@ -60,7 +60,7 @@ int initrd_vfs_mount(vfs_t *vfs, device_t *device, __move ventry_t **root) {
   // build the filesystem tree
   id_t next_id = 1;
   hash_map_t *node_map = hash_map_new();
-  hash_map_set_str(node_map, str_make("/"), mount->root);
+  hash_map_set_str(node_map, str_from("/"), mount->root);
   ramfs_node_t *dir_node = mount->root;
   path_t dirpath = path_new("/", 1);
   initrd_entry_t *entry = (initrd_entry_t *) metadata;
@@ -119,7 +119,7 @@ int initrd_vfs_mount(vfs_t *vfs, device_t *device, __move ventry_t **root) {
     } else if (entry->entry_type == 'l') {
       // kprintf("initrd:   link  {:path}\n", &path);
       size_t len = entry->data_size - 1;
-      str_t link = str_alloc(len); // data_size includes null terminator
+      str_t link = str_alloc_empty(len); // data_size includes null terminator
       tmp = kio_writeonly_from_str(link);
       if (d_nread(device, entry->data_offset, len, &tmp) < 0 || tmp.size != len) {
         DPRINTF("mount: failed to read link data\n");

@@ -65,41 +65,43 @@ int vn_rmdir(ventry_t *dve, vnode_t *dvn, ventry_t *ve, vnode_t *vn); // dve = l
 
 static inline bool vn_lock(vnode_t *vn) {
   if (V_ISDEAD(vn)) return false;
-  mutex_lock(&vn->lock);
+  mtx_lock(&vn->lock);
   if (V_ISDEAD(vn)) {
-    mutex_unlock(&vn->lock); return false;
+    mtx_unlock(&vn->lock); return false;
   }
   return true;
 }
 
 static inline void vn_unlock(vnode_t *vn) {
-  mutex_unlock(&vn->lock);
+  mtx_unlock(&vn->lock);
 }
 
 static inline bool vn_begin_data_read(vnode_t *vn) {
   if (V_ISDEAD(vn)) return false;
-  rw_lock_read(&vn->data_lock);
+  rw_rlock(&vn->data_lock);
   if (V_ISDEAD(vn)) {
-    rw_unlock_read(&vn->data_lock); return false;
+    rw_runlock(&vn->data_lock);
+    return false;
   }
   return true;
 }
 
 static inline void vn_end_data_read(vnode_t *vn) {
-  rw_unlock_read(&vn->data_lock);
+  rw_runlock(&vn->data_lock);
 }
 
 static inline bool vn_begin_data_write(vnode_t *vn) {
   if (V_ISDEAD(vn)) return false;
-  rw_lock_write(&vn->data_lock);
+  rw_wlock(&vn->data_lock);
   if (V_ISDEAD(vn)) {
-    rw_unlock_write(&vn->data_lock); return false;
+    rw_wunlock(&vn->data_lock);
+    return false;
   }
   return true;
 }
 
 static inline void vn_end_data_write(vnode_t *vn) {
-  rw_unlock_write(&vn->data_lock);
+  rw_wunlock(&vn->data_lock);
 }
 
 

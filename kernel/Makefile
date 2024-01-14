@@ -13,11 +13,11 @@ KERNEL_DEFINES = $(DEFINES) -D__KERNEL__
 
 
 # kernel/
-kernel += entry.asm memory.asm smpboot.asm syscall.asm switch.asm \
-	chan.c clock.c device.c  errno.c init.c irq.c loader.c lock.c \
-	main.c sched.c panic.c printf.c signal.c smpboot.c string.c   \
-	syscall.c timer.c ipi.c input.c kio.c tty.c tqueue.c percpu.c \
-	proc.c percpu.c fs_utils.c
+kernel += entry.asm isr.asm memory.asm smpboot.asm syscall.asm switch.asm \
+	chan.c cond.c clock.c device.c errno.c exec.c init.c irq.c loader.c \
+	lock.c main.c sched.c panic.c printf.c signal.c smpboot.c ipi.c \
+	string.c syscall.c timer.c input.c kio.c tty.c tqueue.c proc.c  \
+	percpu.c fs_utils.c mutex.c rwlock.c time.c
 
 # kernel/acpi
 kernel += acpi/acpi.c acpi/pm_timer.c
@@ -26,15 +26,14 @@ kernel += acpi/acpi.c acpi/pm_timer.c
 kernel += bus/pci.c bus/pci_tables.c bus/pcie.c bus/pci_v2.c
 
 # kernel/cpu
-kernel += cpu/cpu.asm cpu/idt.asm cpu/io.asm cpu/cpu.c \
-	cpu/gdt.c cpu/idt.c cpu/per_cpu.c cpu/tcb.c
+kernel += cpu/cpu.asm cpu/io.asm cpu/cpu.c cpu/gdt.c cpu/idt.c cpu/tcb.c
 
 # kernel/debug
 kernel += debug/debug.c debug/dwarf.c
 
-# kernel/device
-kernel += device/8250.c device/apic.c device/hpet.c \
-	device/ioapic.c device/pit.c
+# kernel/hw
+kernel += hw/8250.c hw/8254.c hw/apic.c hw/hpet.c \
+	hw/ioapic.c hw/pit.c hw/rtc.c
 
 # kernel/gui
 kernel += gui/screen.c

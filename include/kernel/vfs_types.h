@@ -6,7 +6,8 @@
 #define KERNEL_VFS_TYPES_H
 
 #include <kernel/base.h>
-#include <kernel/lock.h>
+#include <kernel/mutex.h>
+#include <kernel/rwlock.h>
 #include <kernel/kio.h>
 #include <kernel/ref.h>
 #include <kernel/str.h>
@@ -250,7 +251,7 @@ typedef struct ventry {
   hash_t hash;                        // entry name hash
   void *data;                         // filesystem private data
 
-  mutex_t lock;                       // ventry lock
+  mtx_t lock;                         // ventry lock
   refcount_t refcount;                // reference count
   id_t vfs_id;                        // vfs id @
 

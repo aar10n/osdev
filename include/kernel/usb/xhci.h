@@ -13,7 +13,7 @@
 #include <kernel/bus/pcie.h>
 
 #include <kernel/irq.h>
-#include <kernel/mutex.h>
+#include <kernel/cond.h>
 #include <kernel/chan.h>
 
 #define ep_index(num, dir) ((num) + max((num) - 1, 0) + dir)
@@ -99,8 +99,8 @@ typedef struct _xhci_device {
   _xhci_ring_t *evt_ring; // device event ring
   xhci_interrupter_t *interrupter;
 
-  mutex_t lock;
-  thread_t *thread;
+  mtx_t lock;
+  struct thread *thread;
   cond_t event;
 
   xhci_endpoint_t *endpoints[MAX_ENDPOINTS];
@@ -134,8 +134,8 @@ typedef struct xhci_controller {
   chan_t *xfer_evt_ch;
   chan_t *port_sts_ch;
 
-  mutex_t lock;
-  thread_t *thread;
+  mtx_t lock;
+  struct thread *thread;
 
   LIST_ENTRY(struct xhci_controller) list;
 } xhci_controller_t;

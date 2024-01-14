@@ -45,44 +45,44 @@ int vfs_stat(vfs_t *vm, struct vfs_stat *stat); // vfs = l
 
 static inline bool vfs_lock(vfs_t *vfs) {
   if (V_ISDEAD(vfs)) return false;
-  mutex_lock(&vfs->lock);
+  mtx_lock(&vfs->lock);
   if (V_ISDEAD(vfs)) {
-    mutex_unlock(&vfs->lock);
+    mtx_unlock(&vfs->lock);
     return false;
   }
   return true;
 }
 
 static inline void vfs_unlock(vfs_t *vfs) {
-  mutex_unlock(&vfs->lock);
+  mtx_unlock(&vfs->lock);
 }
 
 static inline bool vfs_begin_read_op(vfs_t *vfs) {
   if (V_ISDEAD(vfs)) return false;
-  rw_lock_read(&vfs->op_lock);
+  rw_rlock(&vfs->op_lock);
   if (V_ISDEAD(vfs)) {
-    rw_unlock_read(&vfs->op_lock);
+    rw_runlock(&vfs->op_lock);
     return false;
   }
   return true;
 }
 
 static inline void vfs_end_read_op(vfs_t *vfs) {
-  rw_unlock_read(&vfs->op_lock);
+  rw_runlock(&vfs->op_lock);
 }
 
 static inline bool vfs_begin_write_op(vfs_t *vfs) {
   if (V_ISDEAD(vfs)) return false;
-  rw_lock_write(&vfs->op_lock);
+  rw_wlock(&vfs->op_lock);
   if (V_ISDEAD(vfs)) {
-    rw_unlock_write(&vfs->op_lock);
+    rw_wunlock(&vfs->op_lock);
     return false;
   }
   return true;
 }
 
 static inline void vfs_end_write_op(vfs_t *vfs) {
-  rw_unlock_write(&vfs->op_lock);
+  rw_wunlock(&vfs->op_lock);
 }
 
 #endif
