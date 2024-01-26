@@ -32,6 +32,7 @@ typedef struct mtx {
 #define MA_UNLOCKED     LA_UNLOCKED
 #define MA_LOCKED       LA_LOCKED
 #define MA_OWNED        LA_OWNED
+#define MA_NOTOWNED     LA_NOTOWNED
 #define MA_RECURSED     LA_RECURSED
 #define MA_NOTRECURSED  LA_NOTRECURSED
 

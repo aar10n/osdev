@@ -68,6 +68,15 @@ __used void kmain() {
   sched_init();
 
   // smp_init();
+
+  page_t *pages = alloc_pages(2);
+  address_space_t *uspace = vm_new_uspace();
+  if (other_space_map(uspace, 0x1000000, VM_RDWR, pages) < 0) {
+    panic("failed to map pages");
+  }
+
+  switch_address_space(uspace);
+
   kprintf("done!\n");
   unreachable;
 }
@@ -85,42 +94,49 @@ __used void ap_main() {
   unreachable;
 }
 
+//
 
+void test1() {
+  kprintf("hello from pid %d\n", curproc->pid);
+}
 
+void test2() {
+  kprintf("hello from pid %d\n", curproc->pid);
+}
 
 //
 // Launch process
 //
 
-// noreturn void root() {
-//   kprintf("starting root process\n");
-//   do_module_initializers();
-//   // probe_all_buses();
-//
-//   //////////////////////////////////////////
-//
-//   mkdir("/dev");
-//   mknod("/dev/rd0", S_IFBLK, makedev(1, 0));
-//   mknod("/dev/tty0", S_IFCHR, makedev(2, 0));
-//   mknod("/dev/tty1", S_IFCHR, makedev(2, 1));
-//   mknod("/dev/tty2", S_IFCHR, makedev(2, 2));
-//   mknod("/dev/tty3", S_IFCHR, makedev(2, 3));
-//   mknod("/dev/null", S_IFCHR, makedev(3, 0));
-//   mknod("/dev/debug", S_IFCHR, makedev(3, 1));
-//
-//   mkdir("/initrd");
-//   mount("/dev/rd0", "/initrd", "initrd", 0);
-//   ls("/initrd");
-//
-//   open("/dev/null", O_RDONLY|O_SYNC); // fd0=stdin
-//   open("/dev/tty2", O_WRONLY|O_SYNC); // fd1=stdout
-//   open("/dev/tty2", O_WRONLY|O_SYNC); // fd2=stderr
-//   // char *const args[] = {"/initrd/sbin/init", "hello", "world"};
-//   // process_execve("/initrd/sbin/init", args, NULL);
-//
-//   //////////////////////////////////////////
-//
-//   kprintf("it worked!\n");
-//   kprintf("haulting...\n");
-//   WHILE_TRUE;
-// }
+noreturn void root() {
+  kprintf("starting root process\n");
+  do_module_initializers();
+  // probe_all_buses();
+
+  //////////////////////////////////////////
+
+  mkdir("/dev");
+  mknod("/dev/rd0", S_IFBLK, makedev(1, 0));
+  mknod("/dev/tty0", S_IFCHR, makedev(2, 0));
+  mknod("/dev/tty1", S_IFCHR, makedev(2, 1));
+  mknod("/dev/tty2", S_IFCHR, makedev(2, 2));
+  mknod("/dev/tty3", S_IFCHR, makedev(2, 3));
+  mknod("/dev/null", S_IFCHR, makedev(3, 0));
+  mknod("/dev/debug", S_IFCHR, makedev(3, 1));
+
+  mkdir("/initrd");
+  mount("/dev/rd0", "/initrd", "initrd", 0);
+  ls("/initrd");
+
+  open("/dev/null", O_RDONLY|O_SYNC); // fd0=stdin
+  open("/dev/tty2", O_WRONLY|O_SYNC); // fd1=stdout
+  open("/dev/tty2", O_WRONLY|O_SYNC); // fd2=stderr
+  // char *const args[] = {"/initrd/sbin/init", "hello", "world"};
+  // process_execve("/initrd/sbin/init", args, NULL);
+
+  //////////////////////////////////////////
+
+  kprintf("it worked!\n");
+  kprintf("haulting...\n");
+  WHILE_TRUE;
+}

@@ -5,7 +5,7 @@
 #ifndef FS_RAMFS_MEMFILE_H
 #define FS_RAMFS_MEMFILE_H
 
-#include <kernel/mm_types.h>
+#include <kernel/base.h>
 #include <kernel/kio.h>
 #include <kernel/mm/vmalloc.h>
 
@@ -13,8 +13,8 @@
  * A memfile is a memory object with a file-like interface.
  */
 typedef struct memfile {
+  uintptr_t base;
   size_t size;
-  vm_mapping_t *vm;
 } memfile_t;
 
 // memfile api

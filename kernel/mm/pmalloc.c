@@ -24,32 +24,27 @@ static size_t zone_page_count[MAX_ZONE_TYPE];
 static size_t reserved_pages = 128;
 
 static const size_t zone_limits[MAX_ZONE_TYPE] = {
-  ZONE_LOW_MAX, ZONE_DMA_MAX, ZONE_NORMAL_MAX, ZONE_HIGH_MAX
+  [ZONE_TYPE_LOW] = ZONE_LOW_MAX,
+  [ZONE_TYPE_DMA] = ZONE_DMA_MAX,
+  [ZONE_TYPE_NORMAL] = ZONE_NORMAL_MAX,
+  [ZONE_TYPE_HIGH] = ZONE_HIGH_MAX
 };
 static const char *zone_names[MAX_ZONE_TYPE] = {
-  "Low", "DMA", "Normal", "High"
+  [ZONE_TYPE_LOW] = "Low",
+  [ZONE_TYPE_DMA] = "DMA",
+  [ZONE_TYPE_NORMAL] = "Normal",
+  [ZONE_TYPE_HIGH] = "High"
 };
 
 // this specifies the zone preference order for allocating pages
 static zone_type_t zone_alloc_order[MAX_ZONE_TYPE] = {
-  [ZONE_TYPE_HIGH]    = ZONE_TYPE_NORMAL,
-  [ZONE_TYPE_NORMAL]  = ZONE_TYPE_DMA,
-  [ZONE_TYPE_DMA]     = ZONE_TYPE_LOW,
   [ZONE_TYPE_LOW]     = MAX_ZONE_TYPE, // out of zones
+  [ZONE_TYPE_DMA]     = ZONE_TYPE_LOW,
+  [ZONE_TYPE_NORMAL]  = ZONE_TYPE_DMA,
+  [ZONE_TYPE_HIGH]    = ZONE_TYPE_NORMAL,
 };
 
-static inline uint32_t vm_flags_to_pg_flags(uint32_t vm_flags) {
-  uint32_t pg_flags = 0;
-  pg_flags |= vm_flags & VM_MAPPED ? PG_PRESENT : 0;
-  if (!(vm_flags & VM_COW))
-    pg_flags |= vm_flags & VM_WRITE ? PG_WRITE : 0;
-  pg_flags |= vm_flags & VM_EXEC ? PG_EXEC : 0;
-  pg_flags |= vm_flags & VM_USER ? PG_USER : 0;
-  pg_flags |= vm_flags & VM_NOCACHE ? PG_NOCACHE : 0;
-  return pg_flags;
-}
-
-zone_type_t get_mem_zone_type(uintptr_t addr) {
+static inline zone_type_t get_mem_zone_type(uintptr_t addr) {
   if (addr < ZONE_LOW_MAX) {
     return ZONE_TYPE_LOW;
   } else if (addr < ZONE_DMA_MAX) {
@@ -60,7 +55,7 @@ zone_type_t get_mem_zone_type(uintptr_t addr) {
   return ZONE_TYPE_HIGH;
 }
 
-frame_allocator_t *locate_owning_allocator(uintptr_t addr) {
+static frame_allocator_t *locate_owning_allocator(uintptr_t addr) {
   zone_type_t zone_type = get_mem_zone_type(addr);
   struct frame_allocator *fa = LIST_FIRST(&mem_zones[zone_type]);
   while (fa != NULL) {
@@ -72,22 +67,17 @@ frame_allocator_t *locate_owning_allocator(uintptr_t addr) {
   return NULL;
 }
 
-__move static page_t *alloc_page_structs(frame_allocator_t *fa, uintptr_t frame, size_t count, size_t pagesize, uint32_t pg_flags) {
-  if (count == 0) {
-    return NULL;
-  }
-
-  // mask out all but the internal flags
-  pg_flags &= ~(PG_FLAGS_MASK|PG_BIGPAGE|PG_HUGEPAGE);
-  if (pagesize == BIGPAGE_SIZE) {
+__move static page_t *alloc_page_structs(frame_allocator_t *fa, uintptr_t frame, size_t count, size_t pg_size) {
+  ASSERT(count > 0);
+  uint32_t pg_flags = PG_OWNING;
+  if (pg_size == BIGPAGE_SIZE) {
     pg_flags |= PG_BIGPAGE;
-  } else if (pagesize == HUGEPAGE_SIZE) {
+  } else if (pg_size == HUGEPAGE_SIZE) {
     pg_flags |= PG_HUGEPAGE;
   }
 
   uintptr_t address = frame;
   size_t remaining = count;
-
   page_t *first = NULL;
   page_t *last = NULL;
   while (remaining > 0) {
@@ -104,14 +94,43 @@ __move static page_t *alloc_page_structs(frame_allocator_t *fa, uintptr_t frame,
       last = last->next;
     }
 
-    address += pagesize;
+    address += pg_size;
     remaining--;
   }
 
   first->flags |= PG_HEAD;
   first->head.count = count;
   first->head.contiguous = true;
-  return first;
+  return moveref(first);
+}
+
+__move static page_t *alloc_cow_structs(__ref page_t *pages) {
+  ASSERT(pages->flags & PG_HEAD);
+
+  page_t *first = NULL;
+  page_t *last = NULL;
+  page_t *curr = pages;
+  while (curr) {
+    page_t *page = kmallocz(sizeof(page_t));
+    page->address = curr->address;
+    page->flags = (curr->flags & PG_SIZE_MASK) | PG_COW;
+    page->source = getref(curr);
+    initref(page);
+    if (first == NULL) {
+      first = moveref(page);
+      last = first;
+    } else {
+      last->next = moveref(page);
+      last = last->next;
+    }
+
+    curr = curr->next;
+  }
+
+  first->flags |= PG_HEAD;
+  first->head.count = pages->head.count;
+  first->head.contiguous = pages->head.contiguous;
+  return moveref(first);
 }
 
 //
@@ -131,7 +150,7 @@ static void *bitmap_fa_init(frame_allocator_t *fa) {
     }
 
     uintptr_t buffer_phys = mm_early_alloc_pages(num_bmp_pages);
-    void *buffer = mm_early_map_pages_reserved(buffer_phys, num_bmp_pages, PG_WRITE | PG_NOCACHE);
+    void *buffer = mm_early_map_pages_reserved(buffer_phys, num_bmp_pages, VM_WRITE|VM_NOCACHE);
     memset(buffer, 0, nbytes);
 
     frames = kmalloc(sizeof(bitmap_t));
@@ -258,56 +277,44 @@ frame_allocator_t *new_frame_allocator(uintptr_t base, size_t size, struct frame
   return fa;
 }
 
-page_t *fa_alloc_pages(frame_allocator_t *fa, size_t count, size_t pagesize) __move {
-  ASSERT(pagesize == PAGE_SIZE || pagesize == PAGE_SIZE_2MB || pagesize == PAGE_SIZE_1GB);
+__move page_t *fa_alloc_pages(frame_allocator_t *fa, size_t count, size_t pg_size) {
+  ASSERT(pg_size == PAGE_SIZE || pg_size == PAGE_SIZE_2MB || pg_size == PAGE_SIZE_1GB);
   if (fa->free == 0 || count == 0) {
     return NULL;
   }
 
   // alloc the backing frames
-  uintptr_t frame = fa->impl->fa_alloc(fa, count, pagesize);
+  uintptr_t frame = fa->impl->fa_alloc(fa, count, pg_size);
   if (frame == 0) {
     return NULL;
   }
 
-  ASSERT(is_aligned(frame, pagesize));
-  return alloc_page_structs(fa, frame, count, pagesize, 0);
+  ASSERT(is_aligned(frame, pg_size));
+  return alloc_page_structs(fa, frame, count, pg_size);
 }
 
-int fa_reserve_pages(frame_allocator_t *fa, uintptr_t frame, size_t count, size_t pagesize) {
-  ASSERT(pagesize == PAGE_SIZE || pagesize == PAGE_SIZE_2MB || pagesize == PAGE_SIZE_1GB);
-  ASSERT(is_aligned(frame, pagesize));
+int fa_reserve_pages(frame_allocator_t *fa, uintptr_t frame, size_t count, size_t pg_size) {
+  ASSERT(pg_size == PAGE_SIZE || pg_size == PAGE_SIZE_2MB || pg_size == PAGE_SIZE_1GB);
+  ASSERT(is_aligned(frame, pg_size));
   ASSERT(frame >= fa->base && frame < fa->base + fa->size);
   if (fa->free == 0 || count == 0) {
     return -1;
   }
 
-  if (fa->impl->fa_reserve(fa, frame, count, pagesize) < 0) {
-    return -1;
-  }
-  return 0;
+  return fa->impl->fa_reserve(fa, frame, count, pg_size);
 }
 
-void fa_free_page(__move page_t *page) {
-  ASSERT(page->flags & PG_HEAD);
-  ASSERT(page->head.count == 1);
-  frame_allocator_t *fa = page->fa;
-  if (fa != NULL)
+void fa_free_page(page_t *page) {
+  if (page->flags & PG_COW) {
+    // drop ref to the source page
+    putref(&page->source, fa_free_page);
+  } else if (page->flags & PG_OWNING) {
+    frame_allocator_t *fa = page->fa;
     fa->impl->fa_free(fa, page->address, 1, pg_flags_to_size(page->flags));
+  }
 
   putref(&page->next, fa_free_page);
   kfree(page);
-}
-
-void fa_free_pages(__move page_t *pages) {
-  ASSERT(pages->flags & PG_HEAD);
-  ASSERT(pages->head.count > 0);
-
-  while (pages) {
-    page_t *next = pages->next;
-    fa_free_page(moveref(pages));
-    pages = next;
-  }
 }
 
 //
@@ -366,6 +373,7 @@ void init_mem_zones() {
 }
 
 int reserve_pages(uintptr_t address, size_t count, size_t pagesize) {
+  ASSERT(pagesize == PAGE_SIZE || pagesize == PAGE_SIZE_2MB || pagesize == PAGE_SIZE_1GB);
   ASSERT(is_aligned(address, pagesize));
   if (count == 0) {
     return -1;
@@ -447,71 +455,52 @@ __move page_t *alloc_pages_at(uintptr_t address, size_t count, size_t pagesize) 
   }
 
   frame_allocator_t *fa = locate_owning_allocator(address);
-  return alloc_page_structs(fa, address, count, pagesize, 0);
+  return alloc_page_structs(fa, address, count, pagesize);
 }
 
-__move page_t *alloc_cow_pages(page_t *pages) {
-  ASSERT(pages->flags & PG_HEAD);
-  // this doesn't allocate anything new, it just bumps the refcount of the head,
-  // updates the original page entries to be non-writable and returns a new ref
-  // to the pages. the relevant address space lock should be held for this.
-  bool updated = false;
-  page_t *curr = pages;
-  while (curr) {
-    if (curr->flags & PG_COW) {
-      // page is already cow
-      curr = curr->next;
-      continue;
-    }
-
-    curr->flags |= PG_COW;
-    vm_mapping_t *vm = curr->mapping;
-    if (vm != NULL && !updated) {
-      vm->flags |= VM_COW;
-      uint32_t pg_flags = vm_flags_to_pg_flags(vm->flags);
-      recursive_update_range(vm->address, vm->size, pg_flags);
-      updated = true;
-    }
-    curr = curr->next;
-  }
-
-  if (updated)
-    cpu_flush_tlb();
-  return pages;
+__move page_t *alloc_cow_pages(__ref page_t *pages) {
+  return alloc_cow_structs(pages);
 }
 
-__move page_t *alloc_cloned_pages(page_t *pages) {
-  ASSERT(pages->flags & PG_HEAD);
-  page_t *new_pages = alloc_pages_size(pages->head.count, pg_flags_to_size(pages->flags));
-
-  // TODO: this can be much better
-  uint64_t flags;
-  temp_irq_save(flags);
-  cpu_disable_write_protection();
-  memcpy(new_pages, pages, sizeof(page_t) * pages->head.count);
-  cpu_enable_write_protection();
-  temp_irq_restore(flags);
-
-  return new_pages;
-}
-
-void release_pages(__move page_t **pagesref) {
-  if (pagesref == NULL || *pagesref == NULL) {
+void drop_pages(__move page_t **pagesref) {
+  if (__expect_false(pagesref == NULL || *pagesref == NULL)) {
     return;
   }
 
-  page_t *head = moveref(*pagesref);
-  ASSERT(head->flags & PG_HEAD);
-  ASSERT(head->fa != NULL);
-  fa_free_pages(moveref(head));
-  *pagesref = NULL;
+  page_t *pages = moveref(*pagesref);
+  ASSERT(pages->flags & PG_HEAD);
+  putref(&pages, fa_free_page);
 }
 
 //
 //
 
-// It updates the page list through the pointer with a reference to the tail, and
-// returns a moved reference to the original head of the split pages.
+// Joins two page lists together and returns a moved reference to the new head.
+__move page_t *page_list_join(__move page_t **pagesref, __move page_t *pages) {
+  page_t *head = moveref(*pagesref);
+  if (head == NULL) {
+    return pages;
+  } else if (pages == NULL) {
+    return head;
+  }
+
+  ASSERT(head->flags & PG_HEAD);
+  ASSERT(pages->flags & PG_HEAD);
+  __ref page_t *head_last = SLIST_GET_LAST(head, next);
+  size_t head_size = pg_flags_to_size(head->flags);
+
+  head->head.count += pages->head.count;
+  head->head.contiguous = (head_last->address + head_size) == pages->address && pages->head.contiguous;
+
+  pages->flags ^= PG_HEAD;
+  pages->head.count = 0;
+  pages->head.contiguous = false;
+  head_last->next = moveref(pages);
+  return head;
+}
+
+// Updates the page list through the pointer with a reference to the tail,
+// and returns a moved reference to the original head of the split pages.
 __move page_t *page_list_split(__move page_t **pagesref, size_t count) {
   if (*pagesref == NULL || count == 0) {
     return NULL;

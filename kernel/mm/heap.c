@@ -95,13 +95,13 @@ void mm_init_kheap() {
   if (KERNEL_HEAP_SIZE >= BIGPAGE_SIZE && is_aligned(phys_addr, BIGPAGE_SIZE)) {
     uintptr_t num_bigpages = KERNEL_HEAP_SIZE / BIGPAGE_SIZE;
     page_count = PAGES_TO_SIZE(page_count) % BIGPAGE_SIZE;
-    early_map_entries(virt_addr, phys_addr, num_bigpages, PG_WRITE | PG_BIGPAGE);
+    early_map_entries(virt_addr, phys_addr, num_bigpages, VM_RDWR|VM_HUGE_2MB);
     phys_addr += num_bigpages * BIGPAGE_SIZE;
     virt_addr += num_bigpages * BIGPAGE_SIZE;
   }
 
   if (page_count > 0) {
-    early_map_entries(virt_addr, phys_addr, page_count, PG_WRITE);
+    early_map_entries(virt_addr, phys_addr, page_count, VM_RDWR);
   }
 
   memset(&kheap, 0, sizeof(mm_heap_t));

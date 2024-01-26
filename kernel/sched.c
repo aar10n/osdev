@@ -5,6 +5,7 @@
 #include <kernel/sched.h>
 #include <kernel/proc.h>
 #include <kernel/clock.h>
+#include <kernel/ipi.h>
 
 #include <kernel/panic.h>
 #include <kernel/printf.h>
@@ -108,8 +109,8 @@ int select_cpu_for_new_thread(thread_t *td) {
     pr_lock(proc);
     thread_t *td2 = LIST_FIRST(&proc->threads);
     while (td2 != NULL) {
-      if (td2 != td && td2->last_cpu != -1) {
-        cpu = td2->last_cpu;
+      if (td2 != td && td2->cpu_id != -1) {
+        cpu = td2->cpu_id;
         break;
       }
       td2 = LIST_NEXT(td2, plist);
@@ -124,15 +125,26 @@ int select_cpu_for_new_thread(thread_t *td) {
   return select_cpu_by_lowest_readycnt(NULL);
 }
 
+static inline thread_t *sched_runq_get_next_thread(sched_t *sched, int i) {
+  bool empty;
+  thread_t *td = runq_next_thread(&sched->queues[i], &empty);
+  if (empty) {
+    // clear the readymask bit if the runqueue is empty
+    atomic_fetch_and(&sched->readymask, ~(1 << i));
+  }
+  return td;
+}
+
 // returns the next thread to run on the current cpu. the thread will be
 // locked and in the ready state on return.
 static thread_t *sched_next_thread() {
   sched_t *sched = cursched;
   thread_t *td = NULL;
 
+  bool empty;
   int i = bit_ffs64(sched->readymask);
   if (i != -1) {
-    td = runq_next_thread(&sched->queues[i]);
+    td = sched_runq_get_next_thread(sched, i);
     if (td != NULL) {
       return td;
     }
@@ -143,7 +155,7 @@ static thread_t *sched_next_thread() {
     // get the runq count without acquiring the lock and then
     // optimistically try to get the next thread
     if (atomic_load_relaxed(&sched->queues[i].count) > 0) {
-      td = runq_next_thread(&sched->queues[i]);
+      td = sched_runq_get_next_thread(sched, i);
       if (td != NULL) {
         break;
       }
@@ -212,14 +224,12 @@ void sched_submit_new_thread(thread_t *td) {
   sched_t *sched = cpu_scheds[cpu];
   ASSERT(sched != NULL);
 
-  int i = td->priority / 4;
-  struct runqueue *runq = &sched->queues[i];
-
   TD_SET_STATE(td, TDS_READY);
   td->flags2 |= TDF2_FIRSTTIME;
-  td->last_cpu = cpu;
+  td->cpu_id = cpu;
 
-  runq_add(runq, td);
+  int i = td->priority / 4;
+  runq_add(&sched->queues[i], td);
   atomic_fetch_or(&sched->readymask, 1 << i);
 }
 
@@ -227,7 +237,16 @@ void sched_remove_ready_thread(thread_t *td) {
   ASSERT(TDS_IS_READY(td));
   td_lock_assert(td, MA_OWNED);
 
+  ASSERT(td->cpu_id >= 0);
+  sched_t *sched = cpu_scheds[td->cpu_id];
+  ASSERT(sched != NULL);
 
+  bool empty;
+  int i = td->priority / 4;
+  runq_remove(&sched->queues[i], td, &empty);
+  if (empty) {
+    atomic_fetch_and(&sched->readymask, ~(1 << i));
+  }
 }
 
 //
@@ -268,7 +287,6 @@ void sched_again(sched_reason_t reason) {
 
   if (TDF2_IS_FIRSTTIME(newtd)) {
     newtd->start_time = clock_micro_time();
-
   }
 
   td_unlock(newtd);
@@ -276,6 +294,13 @@ void sched_again(sched_reason_t reason) {
 
 }
 
-void sched_yield() {
-
+void sched_cpu(int cpu, sched_reason_t reason) {
+  ASSERT(cpu >= 0 && cpu < system_num_cpus);
+  if (cpu == curcpu_id) {
+    sched_again(reason);
+  } else {
+    if (ipi_deliver_cpu_id(IPI_SCHEDULE, (uint8_t)cpu, (uint64_t)reason) < 0) {
+      panic("failed to deliver IPI_SCHEDULE to CPU#%d", cpu);
+    }
+  }
 }

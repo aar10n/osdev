@@ -10,8 +10,8 @@
 
 // https://www.open-std.org/JTC1/SC22/WG21/docs/papers/2007/n2167.pdf
 
-#define __move // identifies a pointer as a moved reference (ownership transferred)
-#define __ref  // marks a pointer as a reference (ownership not transferred)
+#define __move    // identifies a pointer as a moved reference (ownership transferred)
+#define __ref     // marks a refcounted parameter as a normal pointer (ownership not transferred)
 
 typedef volatile int refcount_t;
 
@@ -42,6 +42,7 @@ static inline int ref_count(const refcount_t *ref) {
 #define newref(objptr) ({ ref_init(&(objptr)->_refname); objptr; })
 #define getref(objptr) ({ if (__expect_true((objptr) != NULL)) ref_get(&(objptr)->_refname); objptr; })
 #define moveref(objref) ({ typeof(objref) tmp = (objref); (objref) = NULL; tmp; })
+
 // putref(obj **objpptr, void(*objdtor)(obj*))
 #define putref(objpptr, objdtor) ({ \
   if (*(objpptr)) { \
@@ -50,11 +51,6 @@ static inline int ref_count(const refcount_t *ref) {
     } \
     *(objpptr) = NULL; \
   } \
-})
-#define try_putref(objptr) ({ \
-  int res = ref_put(&((objptr))->_refname); \
-  (objptr) = NULL; \
-  res; \
 })
 
 #endif

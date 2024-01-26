@@ -28,7 +28,7 @@
 
 hid_buffer_t *hid_buffer_create(uint16_t alloc_size) {
   hid_buffer_t *buffer = kmalloc(sizeof(hid_buffer_t));
-  void *buf = vmalloc(PAGE_SIZE, VM_USER);
+  void *buf = vmalloc(PAGE_SIZE, VM_USER|VM_RDWR);
 
   buffer->alloc_ptr = virt_to_phys(buf);
   buffer->read_ptr = (uintptr_t) buf;

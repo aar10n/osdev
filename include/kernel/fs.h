@@ -9,6 +9,8 @@
 
 #include <abi/mman.h>
 
+struct proc;
+
 void fs_static_init();
 void fs_init();
 
@@ -19,6 +21,7 @@ __move ventry_t *fs_root_getref();
 int fs_mount(const char *source, const char *mount, const char *fs_type, int flags);
 int fs_unmount(const char *path);
 
+int fs_proc_open(struct proc *proc, int fd, const char *path, int flags, mode_t mode);
 int fs_open(const char *path, int flags, mode_t mode);
 int fs_close(int fd);
 ssize_t fs_kread(int fd, kio_t *kio);
@@ -28,6 +31,7 @@ ssize_t fs_write(int fd, const void *buf, size_t len);
 ssize_t fs_readv(int fd, const struct iovec *iov, int iovcnt);
 ssize_t fs_writev(int fd, const struct iovec *iov, int iovcnt);
 off_t fs_lseek(int fd, off_t offset, int whence);
+int fs_mmap(int fd, void *addr, size_t len, int prot, int flags, off_t offset);
 
 int fs_opendir(const char *path);
 int fs_closedir(int fd);

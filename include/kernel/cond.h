@@ -30,4 +30,7 @@ int cond_wait_sig(cond_t *cond, struct lock_object *lock);
 int cond_timedwait(cond_t *cond, struct lock_object *lock, uint64_t timeout);
 // int cond_timedwait_sig(cond_t *cond, )
 
+void cond_signal(cond_t *cond);
+void cond_broadcast(cond_t *cond);
+
 #endif

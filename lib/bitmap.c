@@ -31,6 +31,16 @@ bitmap_t *create_bitmap(size_t n) {
   return bmp;
 }
 
+bitmap_t *clone_bitmap(bitmap_t *bmp) {
+  bitmap_t *clone = _malloc(sizeof(bitmap_t));
+  clone->map = _malloc(bmp->size);
+  clone->size = bmp->size;
+  clone->used = bmp->used;
+  clone->free = bmp->free;
+  memcpy(clone->map, bmp->map, bmp->size);
+  return clone;
+}
+
 void bitmap_init(bitmap_t *bmp, size_t n) {
   size_t na = align(n, BIT_SIZE);
   size_t bytes = na / BYTE_SIZE;

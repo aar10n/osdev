@@ -1417,7 +1417,7 @@ xhci_ictx_t *_xhci_alloc_input_ctx(_xhci_device_t *device) {
   size_t ctxsz = is_64_byte_context(hc) ? 64 : 32;
 
   // input context
-  void *ptr = vmalloc(PAGE_SIZE, VM_NOCACHE);
+  void *ptr = vmalloc(PAGE_SIZE, VM_RDWR|VM_NOCACHE);
 
   xhci_ictx_t *ictx = kmallocz(sizeof(xhci_ictx_t));
   ictx->buffer = ptr;
@@ -1450,7 +1450,7 @@ xhci_dctx_t *_xhci_alloc_device_ctx(_xhci_device_t *device) {
 
   // input context
   xhci_dctx_t *dctx = kmallocz(sizeof(xhci_dctx_t));
-  dctx->buffer = vmalloc(PAGE_SIZE, VM_NOCACHE);
+  dctx->buffer = vmalloc(PAGE_SIZE, VM_RDWR|VM_NOCACHE);
   dctx->slot = dctx->buffer;
   for (int i = 0; i < 31; i++) {
     dctx->endpoint[i] = offset_ptr(dctx->buffer, ctxsz * (i + 2));
@@ -1473,7 +1473,7 @@ _xhci_ring_t *_xhci_alloc_ring(size_t capacity) {
   size_t size = capacity * sizeof(xhci_trb_t);
 
   _xhci_ring_t *ring = kmallocz(sizeof(_xhci_ring_t));
-  ring->base = vmalloc(capacity * sizeof(xhci_trb_t), 0);
+  ring->base = vmalloc(capacity * sizeof(xhci_trb_t), VM_RDWR);
   ring->index = 0;
   ring->max_index = capacity;
   ring->cycle = 1;

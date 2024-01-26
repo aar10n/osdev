@@ -12,9 +12,8 @@
 #define ASSERT(x) kassert(x)
 
 struct ramdisk {
-  void *base;       // virtual base address
+  uintptr_t base;   // virtual base address
   size_t size;      // size of the memory region
-  vm_mapping_t *vm; // virtual mapping
 };
 
 
@@ -22,11 +21,11 @@ struct ramdisk {
 
 int ramdisk_d_open(device_t *device, int flags) {
   struct ramdisk *rd = device->data;
-  ASSERT(rd->vm != NULL);
   return 0;
 }
 
 int ramdisk_d_close(device_t *device) {
+  struct ramdisk *rd = device->data;
   return 0;
 }
 
@@ -39,7 +38,7 @@ ssize_t ramdisk_d_read(device_t *device, size_t off, size_t nmax, kio_t *kio) {
   size_t len = kio_remaining(kio);
   if (nmax > 0 && len > nmax)
     len = nmax;
-  return (ssize_t) kio_nwrite_in(kio, rd->base, rd->size, off, nmax);
+  return (ssize_t) kio_nwrite_in(kio, (void *)rd->base, rd->size, off, nmax);
 }
 
 ssize_t ramdisk_d_write(device_t *device, size_t off, size_t nmax, kio_t *kio) {
@@ -49,7 +48,7 @@ ssize_t ramdisk_d_write(device_t *device, size_t off, size_t nmax, kio_t *kio) {
   }
 
   size_t len = kio_remaining(kio);
-  return (ssize_t) kio_nread_out(rd->base, len, off, nmax, kio);
+  return (ssize_t) kio_nread_out((void *)rd->base, len, off, nmax, kio);
 }
 
 __move page_t *ramdisk_d_getpage(device_t *device, size_t off) {
@@ -57,7 +56,7 @@ __move page_t *ramdisk_d_getpage(device_t *device, size_t off) {
   if (off >= rd->size) {
     return NULL;
   }
-  return vm_getpage(rd->vm, off, /*cowref=*/true);
+  return vm_getpage_cow(rd->base+off);
 }
 
 int ramdisk_d_putpage(device_t *device, size_t off, __move page_t *page) {
@@ -84,12 +83,9 @@ static void ramdisk_initrd_module_init() {
     panic("failed to map initrd");
   }
 
-
-
   struct ramdisk *initrd = kmallocz(sizeof(struct ramdisk));
-  initrd->base = (void *) vaddr;
+  initrd->base = vaddr;
   initrd->size = boot_info_v2->initrd_size;
-  initrd->vm = vm_get_mapping(vaddr);
 
   kprintf("ramdisk: registering initrd\n");
   device_t *dev = alloc_device(initrd, &ramdisk_ops);

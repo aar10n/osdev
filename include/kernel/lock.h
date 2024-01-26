@@ -73,6 +73,7 @@ struct lock_class {
 #define LA_SLOCKED      0x02 // lock is shared locked
 #define LA_XLOCKED      0x04 // lock is exclusive locked
 #define LA_OWNED        0x08 // lock is locked and owned by thread
+#define LA_NOTOWNED     0x10 // lock may be locked but not owned by thread
 #define LA_RECURSED     0x20 // lock is recursed
 #define LA_NOTRECURSED  0x40 // lock is not recursed
 

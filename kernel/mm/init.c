@@ -140,9 +140,14 @@ uintptr_t mm_early_alloc_pages(size_t count) {
   return addr;
 }
 
-void *mm_early_map_pages_reserved(uintptr_t phys_addr, size_t count, uint32_t flags) {
+void *mm_early_map_pages_reserved(uintptr_t phys_addr, size_t count, uint32_t vm_flags) {
   uintptr_t va_ptr = kernel_reserved_va_ptr;
-  size_t size = pg_flags_to_size(flags) * count;
+  size_t size = PAGE_SIZE;
+  if (vm_flags & VM_HUGE_2MB) {
+    size = SIZE_2MB;
+  } else if (vm_flags & VM_HUGE_1GB) {
+    size = SIZE_1GB;
+  }
   kernel_reserved_va_ptr += size;
-  return early_map_entries(va_ptr, phys_addr, count, flags);
+  return early_map_entries(va_ptr, phys_addr, count, vm_flags);
 }

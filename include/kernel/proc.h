@@ -8,6 +8,7 @@
 #include <kernel/base.h>
 #include <kernel/queue.h>
 #include <kernel/mutex.h>
+#include <kernel/cond.h>
 #include <kernel/signal.h>
 #include <kernel/ref.h>
 #include <kernel/str.h>
@@ -17,6 +18,7 @@
 
 #include <abi/resource.h>
 
+struct page;
 struct ftable;
 struct ventry;
 struct tty;
@@ -27,7 +29,8 @@ struct waitqueue;
 
 struct cpuset;
 struct proc;
-struct pstats;
+struct procstats;
+struct pcmdline;
 struct thread;
 
 /*
@@ -69,9 +72,9 @@ typedef struct pgroup {
   LIST_ENTRY(struct pgroup) hashlist;// pgtable hash list entry
 } pgroup_t;
 
-#define pg_lock_assert(pg, what) __type_checked(pgroup_t*, pg, mtx_assert(&(pg)->lock, what))
-#define pg_lock(pg) __type_checked(pgroup_t*, pg, mtx_lock(&(pg)->lock))
-#define pg_unlock(pg) __type_checked(pgroup_t*, pg, mtx_unlock(&(pg)->lock))
+#define pgrp_lock_assert(pg, what) __type_checked(pgroup_t*, pg, mtx_assert(&(pg)->lock, what))
+#define pgrp_lock(pg) __type_checked(pgroup_t*, pg, mtx_lock(&(pg)->lock))
+#define pgrp_unlock(pg) __type_checked(pgroup_t*, pg, mtx_unlock(&(pg)->lock))
 
 /*
  * Process
@@ -86,9 +89,9 @@ typedef struct proc {
 
   struct ftable *files;             // open file descriptors
   struct sigacts *sigacts;          // signal stuff?
-  struct pstats *stats;             // process stats
   struct rusage *usage;             // resource usage
   struct rlimit *limit;             // resource limit
+  struct procstats *stats;          // process stats
 
   enum proc_state {
     PRS_EMPTY,
@@ -99,16 +102,23 @@ typedef struct proc {
 
   mtx_t lock;                       // process lock
   mtx_t statlock;                   // process stats lock
+  cond_t td_exit_cond;              // thread exit condition
 
   /* starts zeroed */
-  pid_t ppid;                       // parent pid
-  sigqueue_t sigqueue;              // signals waiting for a thread
+  str_t name;                       // process name
+  str_t binpath;                    // path to executable
+  struct page *binpages;            // pages containing the executable
 
-  size_t num_threads;               // number of threads
+  sigqueue_t sigqueue;              // signals waiting for a thread
+  pid_t ppid;                       // parent pid
+
+  volatile uint32_t num_exiting;    // pending thread exits
+  volatile uint32_t num_exited;     // number of exited threads
+  uint32_t num_threads;             // number of threads
   LIST_HEAD(struct thread) threads; // process threads
 
-  LIST_ENTRY(struct proc) pglist;    // process group list entry
-  LIST_ENTRY(struct proc) hashlist;  // ptable hash list entry
+  LIST_ENTRY(struct proc) pglist;   // process group list entry
+  LIST_ENTRY(struct proc) hashlist; // ptable hash list entry
 } proc_t;
 
 // process flags
@@ -127,8 +137,26 @@ typedef struct proc {
 #define pr_lock(p) __type_checked(proc_t*, p, mtx_lock(&(p)->lock))
 #define pr_unlock(p) __type_checked(proc_t*, p, mtx_unlock(&(p)->lock))
 
-struct pstats {
+struct procstats {
   struct timeval start_time;
+};
+
+/*
+ * Process exec arguments.
+ */
+struct pargs {
+  uint32_t arg_count;   // number of arguments
+  uint32_t arg_size;    // size of all arguments
+  struct page *pages;   // pages containing the strings (ref)
+};
+
+/*
+ * Process environment.
+ */
+struct penv {
+  uint32_t env_count;   // number of env variables
+  uint32_t env_size;    // size of all env variables
+  struct page *pages;   // pages containing the strings (ref)
 };
 
 /*
@@ -149,21 +177,21 @@ typedef struct thread {
   struct trapframe *frame;              // thread trapframe
 
   enum thread_state {
-    TDS_EMPTY,
-    TDS_READY,
-    TDS_RUNNING,
-    TDS_BLOCKED,
-    TDS_WAITING,
-    TDS_EXITED,
+    TDS_EMPTY,    // thread is being set up
+    TDS_READY,    // thread is on a runqueue
+    TDS_RUNNING,  // thread is running on a cpu
+    TDS_BLOCKED,  // thread is on a lockqueue
+    TDS_WAITING,  // thread is on a waitqueue
+    TDS_EXITED,   // thread has exited
   } state;
 
-  int last_cpu;                        // last cpu thread ran on
-  uintptr_t kstack_base;               // kernel stack base
-  size_t kstack_size;                  // kernel stack size
-  volatile uint32_t flags2;            // private flags
+  int cpu_id;                           // last cpu thread ran on
+  uintptr_t kstack_base;                // kernel stack base
+  size_t kstack_size;                   // kernel stack size
+  volatile uint32_t flags2;             // private flags
   uint16_t : 16;
-  uint8_t pri_base;                    // base priority
-  uint8_t priority;                    // current priority
+  uint8_t pri_base;                     // base priority
+  uint8_t priority;                     // current priority
 
   /* starts zeroed */
   str_t name;                           // thread name
@@ -177,13 +205,13 @@ typedef struct thread {
   int spin_count;                       // number of spin mutexes held
   int crit_level;                       // critical section level
 
-  int errno;                            // last syscall errno
+  int errno;                            // last thread errno
   sigset_t sigmask;                     // signal mask
   stack_t sigstack;                     // signal stack
 
   struct runqueue *runq;                // runqueue (if ready)
+  struct lock_object *lockobj;          // contested lock (if blocked)
   int lockq_num;                        // lockq queue number (LQ_EXCL or LQ_SHRD)
-  LIST_HEAD(struct lockqueue) contested;// contested lockqueues
   const void *wchan;                    // wait channel (if in waitqueue)
   const char *wdmsg;                    // wait debug message
 
@@ -214,11 +242,14 @@ typedef struct thread {
 #define TDS_IS_EMPTY(td) ((td)->state == TDS_EMPTY)
 #define TDS_IS_READY(td) ((td)->state == TDS_READY)
 #define TDS_IS_RUNNING(td) ((td)->state == TDS_RUNNING)
-#define TDS_IS_SLEEPING(td) ((td)->state == TDS_SLEEPING)
+#define TDS_IS_BLOCKED(td) ((td)->state == TDS_BLOCKED)
 #define TDS_IS_WAITING(td) ((td)->state == TDS_WAITING)
 #define TDS_IS_EXITED(td) ((td)->state == TDS_EXITED)
 
+#define TD_CPU_ID()
+
 #define TD_SET_STATE(td, s) ((td)->state = (s))
+#define TD_SET_CPU(td, id) ((td)->)
 
 #define td_lock_assert(td, what) __type_checked(thread_t*, td, mtx_assert(&(td)->lock, what))
 #define td_lock(td) _thread_lock(td, __FILE__, __LINE__)
@@ -257,8 +288,17 @@ void proc_free_pid(pid_t pid);
 proc_t *proc_alloc_empty(pid_t pid, struct address_space *space, creds_t *creds);
 void proc_free_exited(proc_t **procp);
 void   proc_setup_add_thread(proc_t *proc, thread_t *td);
+
+int    proc_setup_load_exec(proc_t *proc, const char *path);
+int    proc_setup_exec_args(proc_t *proc, char *const argv[], char *const envp[]);
+
+int    proc_setup_clone_fds(proc_t *proc, struct ftable *ftable);
+int    proc_setup_open_fd(proc_t *proc, int fd, const char *path, int flags);
 void   proc_setup_finish_and_submit_all(proc_t *proc);
 void proc_add_thread(proc_t *proc, thread_t *td);
+
+proc_t *proc_setup_create(void (start_routine)());
+// proc_t *proc_setup_execve
 
 thread_t *thread_alloc_idle();
 thread_t *thread_alloc_empty(uint32_t flags, uintptr_t kstack_base, size_t kstack_size);
@@ -266,7 +306,7 @@ void thread_free_exited(thread_t **tdp);
 void   thread_setup_entry(thread_t *td, uintptr_t entry, uintptr_t arg);
 void   thread_setup_priority(thread_t *td, uint8_t base_pri);
 void   thread_setup_finish_submit(thread_t *td);
-
+void thread_stop(thread_t *td);
 
 struct cpuset *cpuset_alloc(struct cpuset *existing);
 void cpuset_free(struct cpuset **set);

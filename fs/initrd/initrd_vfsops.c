@@ -45,7 +45,7 @@ int initrd_vfs_mount(vfs_t *vfs, device_t *device, __move ventry_t **root) {
 
   // read the metadata
   size_t metadata_size = header.data_offset - sizeof(header);
-  void *metadata = vmalloc(metadata_size, 0);
+  void *metadata = vmalloc(metadata_size, VM_RDWR);
   ASSERT(metadata_size <= UINT16_MAX); // prevent overflow
   if ((res = __d_read(device, sizeof(header), metadata, metadata_size)) < 0 || res != metadata_size) {
     vfree(metadata);

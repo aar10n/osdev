@@ -6,6 +6,7 @@
 #include <kernel/sched.h>
 #include <kernel/tqueue.h>
 #include <kernel/clock.h>
+#include <kernel/exec.h>
 #include <kernel/mm.h>
 #include <kernel/fs.h>
 
@@ -29,6 +30,22 @@ extern uintptr_t entry_initial_stack;
 #define DPRINTF(x, ...) kprintf("proc: " x, ##__VA_ARGS__)
 
 #define MAX_PROCS 8192
+
+static inline size_t ptr_list_len(char *const list[], size_t *full_sizep) {
+  if (list == NULL)
+    return 0;
+
+  size_t count = 0;
+  size_t full_size = 0;
+  while (list[count] != NULL) {
+    full_size += strlen(list[count]) + 1;
+    count++;
+  }
+
+  if (full_sizep)
+    *full_sizep = full_size;
+  return count;
+}
 
 static struct creds *root_creds;
 static pgroup_t *pgroup0;
@@ -136,14 +153,14 @@ static void pidset_static_init() {
 }
 STATIC_INIT(pidset_static_init);
 
-static inline pid_t pidset_alloc() {
+static pid_t pidset_alloc() {
   mtx_lock(&_pidset_lock);
   pid_t res = (pid_t) bitmap_get_set_free(_pidset);
   mtx_unlock(&_pidset_lock);
   return res;
 }
 
-static inline void pidset_free(pid_t pid) {
+static void pidset_free(pid_t pid) {
   bitmap_clear(_pidset, pid);
 }
 
@@ -198,7 +215,7 @@ void pgrp_setup_add_proc(pgroup_t *pg, proc_t *proc) {
 
 void pgrp_add_proc(pgroup_t *pg, proc_t *proc) {
   ASSERT(PRS_IS_ALIVE(proc));
-  pg_lock_assert(pg, MA_OWNED);
+  pgrp_lock_assert(pg, MA_OWNED);
   pr_lock_assert(proc, MA_OWNED);
 
   LIST_ADD(&pg->procs, proc, pglist);
@@ -207,7 +224,7 @@ void pgrp_add_proc(pgroup_t *pg, proc_t *proc) {
 }
 
 void pgrp_remove_proc(pgroup_t *pg, proc_t *proc) {
-  pg_lock_assert(pg, MA_OWNED);
+  pgrp_lock_assert(pg, MA_OWNED);
   pr_lock_assert(proc, MA_OWNED);
 
   proc->group = NULL;
@@ -247,14 +264,15 @@ proc_t *proc_alloc_empty(pid_t pid, struct address_space *space, creds_t *creds)
 
   proc->files = ftable_alloc();
   proc->sigacts = NULL; // TODO
-  proc->stats = kmallocz(sizeof(struct pstats));
   proc->usage = kmallocz(sizeof(struct rusage));
   proc->limit = kmallocz(sizeof(struct rlimit));
+  proc->stats = kmallocz(sizeof(struct procstats));
 
   proc->state = PRS_EMPTY;
 
   mtx_init(&proc->lock, 0, "proc_lock");
   mtx_init(&proc->statlock, MTX_SPIN, "proc_statlock");
+  cond_init(&proc->td_exit_cond, "td_exit_cond");
   return proc;
 }
 
@@ -271,10 +289,44 @@ void proc_free_exited(proc_t **procp) {
 }
 
 void proc_setup_add_thread(proc_t *proc, thread_t *td) {
-  ASSERT(PRS_IS_EMPTY(td));
+  ASSERT(PRS_IS_EMPTY(proc));
   ASSERT(TDS_IS_EMPTY(td))
   ASSERT(td->proc == NULL);
   proc_do_add_thread(proc, td);
+}
+
+int proc_setup_load_exec(proc_t *proc, const char *path) {
+  ASSERT(PRS_IS_EMPTY(proc));
+  return 0;
+}
+
+int proc_setup_exec_args(proc_t *proc, char *const argv[], char *const envp[]) {
+  ASSERT(PRS_IS_EMPTY(proc));
+
+  return 0;
+}
+
+// int proc_setup_exec(proc_t *proc, const char *path, char *const argv[], char *const envp[]) {
+//   ASSERT(PRS_IS_EMPTY(proc));
+//   return 0;
+// }
+
+int proc_setup_clone_fds(proc_t *proc, struct ftable *ftable) {
+  ASSERT(PRS_IS_EMPTY(proc));
+  ASSERT(ftable_empty(proc->files));
+  ftable_free(proc->files);
+  proc->files = ftable_clone(ftable);
+  return 0;
+}
+
+int proc_setup_open_fd(proc_t *proc, int fd, const char *path, int flags) {
+  ASSERT(PRS_IS_EMPTY(proc));
+  ASSERT(!(flags & O_CREAT));
+  int res;
+  if ((res = fs_proc_open(proc, fd, path, flags, 0))) {
+    return res;
+  }
+  return res;
 }
 
 void proc_setup_finish_and_submit_all(proc_t *proc) {
@@ -285,18 +337,38 @@ void proc_setup_finish_and_submit_all(proc_t *proc) {
   LIST_FOR_IN(td, &proc->threads, plist) {
     thread_setup_finish_submit(td);
   }
-  proc->stats->start_time = clock_micro_time();
 
   // insert into process table
   ptable_add_proc(proc->pid, proc);
 }
 
+//
+
 void proc_add_thread(proc_t *proc, thread_t *td) {
-  ASSERT(PRS_IS_ALIVE(td));
   ASSERT(TDS_IS_EMPTY(td));
   ASSERT(td->proc == NULL);
-  pr_lock_assert(proc, MA_OWNED);
+
+  pr_lock(proc);
+  ASSERT(PRS_IS_ALIVE(proc));
+
   proc_do_add_thread(proc, td);
+  pr_unlock(proc);
+}
+
+//
+
+proc_t *proc_setup_create(void (start_routine)()) {
+  pid_t pid = proc_alloc_pid();
+  ASSERT(pid > 0);
+
+  address_space_t *uspace = vm_new_uspace();
+  proc_t *proc = proc_alloc_empty(pid, uspace, getref(curproc->creds));
+  thread_t *td = thread_alloc_empty(TDF_KTHREAD, 0, SIZE_16KB);
+  // proc_setup_load_exec()
+  // thread_setup_entry(td, (uintptr_t)start_routine, 0);
+
+  proc_setup_add_thread(proc, td);
+  return proc;
 }
 
 ///////////////////
@@ -310,6 +382,16 @@ static inline uint8_t td_flags_to_base_priority(uint32_t td_flags) {
   } else {
     return PRI_NORMAL;
   }
+}
+
+static void thread_start_wrapper() {
+  proc_t *proc = curproc;
+  thread_t *td = curthread;
+  kprintf("hello from thread %d.%d\n", proc->pid, td->tid);
+  todo();
+
+  thread_stop(td);
+  unreachable;
 }
 
 // thread api
@@ -341,7 +423,7 @@ thread_t *thread_alloc_empty(uint32_t flags, uintptr_t kstack_base, size_t kstac
   td->frame = kmallocz(sizeof(struct trapframe));
 
   td->state = TDS_EMPTY;
-  td->last_cpu = -1;
+  td->cpu_id = -1;
   td->pri_base = td_flags_to_base_priority(flags);
   td->priority = td->pri_base;
 
@@ -354,6 +436,9 @@ thread_t *thread_alloc_empty(uint32_t flags, uintptr_t kstack_base, size_t kstac
     td->kstack_base = kstack_base;
     td->kstack_size = kstack_size;
   }
+
+  td->frame->rip = (uintptr_t) thread_start_wrapper;
+  // td->frame.
 
   mtx_init(&td->lock, MTX_SPIN, "thread_lock");
   return td;
@@ -381,34 +466,6 @@ void thread_free_exited(thread_t **tdp) {
 // void thread_setup_entry(thread_t *td, uintptr_t entry, uintptr_t arg) {
 //   ASSERT(TDS_IS_EMPTY(td));
 //   ASSERT(td->kstack_base != 0);
-//
-//   td->frame->rdi = arg;
-//   td->frame
-// }
-
-// void thread_setup_stack(thread_t *td, uintptr_t entry, uintptr_t arg) {
-//   ASSERT(TDS_IS_EMPTY(td));
-//   ASSERT(td->kstack_base != 0);
-//
-//   // if (TDF_IS_KTHREAD(td)) {
-//   //   // prepare the kernel stack for execution
-//   // } else {
-//   //   //
-//   // }
-//   uintptr_t stack_top = td->kstack_base + td->kstack_size;
-//   todo();
-//   uintptr_t stack_bottom = stack_top - sizeof(struct trapframe);
-//   // struct trapframe *tf = (struct trapframe *) stack_bottom;
-//   // memset(tf, 0, sizeof(struct trapframe));
-//
-//   // tf->tf_rip = entry;
-//   // tf->tf_rsp = stack_bottom;
-//   // tf->tf_rdi = arg;
-//   //
-//   // td->tcb->rsp0 = stack_top;
-//   // td->tcb->rsp = stack_bottom;
-//   // td->tcb->rip = (uintptr_t) thread_entry;
-//   // td->tcb->rflags = RFLAGS_IF;
 // }
 
 void thread_setup_priority(thread_t *td, uint8_t base_pri) {
@@ -426,6 +483,58 @@ void thread_setup_finish_submit(thread_t *td) {
   ASSERT(TDS_IS_READY(td));
   td_unlock(td);
   // td is now owned by scheduler
+}
+
+void thread_stop(thread_t *td) {
+  ASSERT(!TDS_IS_EXITED(td));
+  td_lock_assert(td, MA_NOTOWNED);
+  td_lock(td);
+
+  proc_t *proc = td->proc;
+  atomic_fetch_add(&proc->num_exiting, 1);
+
+  if (TDS_IS_RUNNING(td)) {
+    if (td == curthread) {
+      // stop the current thread
+      sched_again(SCHED_EXITED);
+      unreachable;
+    }
+    // stop thread running on another cpu
+    sched_cpu(td->cpu_id, SCHED_EXITED);
+    td_unlock(td);
+    return;
+  }
+
+  // thread isnt currently active
+  if (TDS_IS_READY(td)) {
+    // remove ready thread from the scheduler
+    sched_remove_ready_thread(td);
+  } else if (TDS_IS_BLOCKED(td)) {
+    // remove blocked thread from lockqueue
+    lockq_chain_lock(td->lockobj);
+    struct lockqueue *lq = lockq_lookup(td->lockobj);
+    lockq_remove(lq, td, td->lockq_num);
+    lockq_chain_unlock(td->lockobj);
+
+    td->lockobj = NULL;
+    td->lockq_num = -1;
+  } else if (TDS_IS_WAITING(td)) {
+    // remove thread from the associated waitqueue
+    waitq_chain_lock(td->wchan);
+    struct waitqueue *wq = waitq_lookup(td->wchan);
+    waitq_remove(wq, td);
+    waitq_chain_unlock(td->wchan);
+
+    td->wchan = NULL;
+    td->wdmsg = NULL;
+  }
+
+  TD_SET_STATE(td, TDS_EXITED);
+
+  atomic_fetch_add(&proc->num_exited, 1);
+  cond_signal(&proc->td_exit_cond);
+
+  td_unlock(td);
 }
 
 ///////////////////

@@ -22,6 +22,6 @@ extern uintptr_t kernel_reserved_va_ptr;
 void mm_early_init();
 void mm_early_reserve_pages(size_t count);
 uintptr_t mm_early_alloc_pages(size_t count);
-void *mm_early_map_pages_reserved(uintptr_t phys_addr, size_t count, uint32_t flags);
+void *mm_early_map_pages_reserved(uintptr_t phys_addr, size_t count, uint32_t vm_flags);
 
 #endif

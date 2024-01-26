@@ -23,6 +23,6 @@ void sched_submit_new_thread(thread_t *td);
 void sched_remove_ready_thread(thread_t *td);
 
 void sched_again(sched_reason_t reason);
-
+void sched_cpu(int cpu, sched_reason_t reason);
 
 #endif

@@ -89,12 +89,12 @@
 /* inserts an element into the correct position of a key-ordered list */
 #define LIST_INSERT_ORDERED_BY(head, el, name, order_key) \
   ({                                                      \
-    typeof(el) __ptr = (head)->first;                     \
-    while (__ptr && __ptr->order_key < (el)->order_key) { \
-      __ptr = __ptr->name.next;                           \
+    typeof(el) __p = (head)->first;                       \
+    while (__p && __p->order_key < (el)->order_key) {     \
+      __p = __p->name.next;                               \
     }                                                     \
-    if (__ptr) {                                          \
-      LIST_INSERT(head, el, name, __ptr->name.prev);      \
+    if (__p) {                                            \
+      LIST_INSERT(head, el, name, __p->name.prev);        \
     } else {                                              \
       LIST_ADD(head, el, name);                           \
     }                                                     \
@@ -191,13 +191,13 @@
   }
 
 
-#define SLIST_GET_LAST(el, name)            \
-  ({                                        \
-    typeof(el) __ptr = el;                  \
-    while (__ptr && __ptr->name != NULL) {  \
-      __ptr = __ptr->name;                  \
-    }                                       \
-    __ptr;                                  \
+#define SLIST_GET_LAST(el, name)        \
+  ({                                    \
+    typeof(el) __p = el;                \
+    while (__p && __p->name != NULL) {  \
+      __p = __p->name;                  \
+    }                                   \
+    __p;                                \
   })
 
 // Raw list functions

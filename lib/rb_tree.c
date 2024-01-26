@@ -490,6 +490,9 @@ void rb_tree_init_iter(rb_tree_t *tree, rb_node_t *next, rb_iter_type_t type, rb
   iter->type = type;
   iter->tree = tree;
   iter->next = next;
+  if (next == NULL) {
+    iter->next = type == FORWARD ? tree->min : tree->max;
+  }
   iter->has_next = tree->nodes > 0;
 }
 

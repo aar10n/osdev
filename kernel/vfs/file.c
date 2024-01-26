@@ -43,6 +43,17 @@ file_t *f_alloc(int fd, int flags, vnode_t *vnode) __move {
   return file;
 }
 
+__move file_t *f_dup(file_t *file) {
+  file_t *dup = kmallocz(sizeof(file_t));
+  dup->fd = file->fd;
+  dup->flags = file->flags;
+  dup->type = file->type;
+  dup->vnode = vn_getref(file->vnode);
+  mtx_init(&dup->lock, 0, "file_struct_lock");
+  ref_init(&dup->refcount);
+  return dup;
+}
+
 void f_release(__move file_t **ref) {
   if (*ref == NULL) {
     return;
@@ -67,12 +78,47 @@ ftable_t *ftable_alloc() {
   return ftable;
 }
 
+ftable_t *ftable_clone(ftable_t *ftable) {
+  ftable_t *clone = kmallocz(sizeof(ftable_t));
+  ftable->tree = create_rb_tree();
+  ftable->bitmap = create_bitmap(FTABLE_MAX_FILES);
+  mtx_init(&ftable->lock, MTX_SPIN, "ftable_lock");
+
+  FTABLE_LOCK(ftable);
+  ftable->bitmap = clone_bitmap(ftable->bitmap);
+
+  rb_iter_t iter;
+  rb_node_t *node;
+  rb_tree_init_iter(ftable->tree, NULL, FORWARD, &iter);
+  while ((node = rb_iter_next(&iter))) {
+    file_t *file = node->data;
+    if (!f_lock(file)) {
+      continue; // closed
+    }
+
+    file_t *dup = f_dup(file);
+    rb_tree_insert(clone->tree, file->fd, dup);
+    bitmap_set(clone->bitmap, (index_t) file->fd);
+    clone->count++;
+
+    f_unlock(file);
+  }
+
+  FTABLE_UNLOCK(ftable);
+  return clone;
+}
+
 void ftable_free(ftable_t *ftable) {
   ASSERT(ftable->count == 0);
   rb_tree_free(ftable->tree);
   bitmap_free(ftable->bitmap);
   kfree(ftable);
 }
+
+bool ftable_empty(ftable_t *ftable) {
+  return ftable->count == 0;
+}
+
 
 int ftable_alloc_fd(ftable_t *ftable) {
   FTABLE_LOCK(ftable);
@@ -82,6 +128,21 @@ int ftable_alloc_fd(ftable_t *ftable) {
     return -1;
   }
   return (int) fd;
+}
+
+int ftable_claim_fd(ftable_t *ftable, int fd) {
+  if (fd < 0) {
+    return -1;
+  }
+  ASSERT(fd < FTABLE_MAX_FILES);
+  FTABLE_LOCK(ftable);
+  if (bitmap_get(ftable->bitmap, (index_t) fd)) {
+    FTABLE_UNLOCK(ftable);
+    return -1;
+  }
+  bitmap_set(ftable->bitmap, (index_t) fd);
+  FTABLE_UNLOCK(ftable);
+  return fd;
 }
 
 void ftable_free_fd(ftable_t *ftable, int fd) {

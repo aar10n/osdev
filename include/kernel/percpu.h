@@ -36,10 +36,10 @@ _Static_assert(offsetof(struct percpu, id) == 0x00, "percpu id offset");
 _Static_assert(offsetof(struct percpu, self) == 0x08, "percpu self offset");
 _Static_assert(offsetof(struct percpu, space) == 0x10, "percpu space offset");
 
-#define __percpu_get_u32(member) ({ register uint32_t v; __asm("mov %0, gs:%1" : "=r" (v) : "i" (offsetof(struct percpu, member))); v; })
-#define __percpu_get_u64(member) ({ register uint64_t v; __asm("mov %0, gs:%1" : "=r" (v) : "i" (offsetof(struct percpu, member))); v; })
-#define __percpu_set_u32(member, val) ({ register uint32_t v = (uint32_t)(val); __asm("mov gs:%0, %1" : : "i" (offsetof(struct percpu, member)), "r" (v)); })
-#define __percpu_set_u64(member, val) ({ register uint64_t v = (uint64_t)(val); __asm("mov gs:%0, %1" : : "i" (offsetof(struct percpu, member)), "r" (v)); })
+#define __percpu_get_u32(member) ({ register uint32_t __v; __asm("mov %0, gs:%1" : "=r" (__v) : "i" (offsetof(struct percpu, member))); __v; })
+#define __percpu_get_u64(member) ({ register uint64_t __v; __asm("mov %0, gs:%1" : "=r" (__v) : "i" (offsetof(struct percpu, member))); __v; })
+#define __percpu_set_u32(member, val) ({ register uint32_t __v = (uint32_t)(val); __asm("mov gs:%0, %1" : : "i" (offsetof(struct percpu, member)), "r" (__v)); })
+#define __percpu_set_u64(member, val) ({ register uint64_t __v = (uint64_t)(val); __asm("mov gs:%0, %1" : : "i" (offsetof(struct percpu, member)), "r" (__v)); })
 
 //
 

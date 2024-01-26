@@ -36,12 +36,16 @@ static inline file_t *f_moveref(__move file_t **ref) __move {
   return file;
 }
 
-file_t *f_alloc(int fd, int flags, vnode_t *vnode) __move;
+__move file_t *f_alloc(int fd, int flags, vnode_t *vnode);
+__move file_t *f_dup(file_t *file);
 void f_release(__move file_t **ref);
 
 ftable_t *ftable_alloc();
+ftable_t *ftable_clone(ftable_t *ftable);
 void ftable_free(ftable_t *ftable);
+bool ftable_empty(ftable_t *ftable);
 int ftable_alloc_fd(ftable_t *ftable);
+int ftable_claim_fd(ftable_t *ftable, int fd);
 void ftable_free_fd(ftable_t *ftable, int fd);
 file_t *ftable_get_file(ftable_t *ftable, int fd) __move;
 file_t *ftable_get_remove_file(ftable_t *ftable, int fd) __move;

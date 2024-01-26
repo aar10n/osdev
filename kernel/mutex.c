@@ -99,6 +99,8 @@ void _mtx_assert(mtx_t *mtx, int what, const char *file, int line) {
     kassertf(mtx_lock & MTX_LOCKED, "mutex unlocked, %s:%d", file, line);
   } else if (what & MA_OWNED) {
     kassertf(mtx_lock & MTX_LOCKED && owner == curthread, "mutex not owned, %s:%d", file, line);
+  } else if (what & MA_NOTOWNED) {
+    kassertf(owner != curthread, "mutex owned, %s:%d", file, line);
   } else if (what & MA_RECURSED) {
     kassertf(mtx_lock & MTX_LOCKED && mtx->lo.data > 0, "mutex not recursed, %s:%d", file, line);
   } else if (what & MA_NOTRECURSED) {

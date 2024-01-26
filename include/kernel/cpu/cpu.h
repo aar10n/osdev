@@ -152,6 +152,8 @@ typedef struct cpu_irq_stack {
 #define temp_irq_save(flags) ({ ASSERT_IS_TYPE(uint64_t, flags); (flags) = cpu_save_clear_interrupts(); (flags); })
 #define temp_irq_restore(flags) ({ ASSERT_IS_TYPE(uint64_t, flags); cpu_restore_interrupts(flags); })
 
+#define cpu_invlpg(addr) ({ uintptr_t __x = (uintptr_t)(addr); __asm volatile("invlpg [%0]" :: "r" (__x) : "memory"); })
+
 extern uint8_t cpu_bsp_id;
 
 void cpu_early_init();

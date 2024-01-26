@@ -23,9 +23,8 @@
 
 #define ASSERT(x) kassert(x)
 #define DPRINTF(x, ...) kprintf(x, ##__VA_ARGS__)
-#define PANIC_IF(x, msg, ...) { if (x) panic(msg, ##__VA_ARGS__); }
-
-#define INTERNAL_PG_FLAGS 0xF00
+#define DPANICF(x, ...) panic(x, ##__VA_ARGS__)
+#define ALLOC_ERROR(msg, ...) panic(msg, ##__VA_ARGS__)
 
 // these are the default hints for different combinations of vm flags
 // they are used as a starting point for the kernel when searching for
@@ -85,27 +84,35 @@ static inline const char *prot_to_debug_str(uint32_t vm_flags) {
   return "???";
 }
 
-static always_inline uint32_t vm_flags_to_pg_flags(uint32_t vm_flags) {
-  uint32_t pg_flags = 0;
-  if (vm_flags & VM_WRITE) pg_flags |= PG_WRITE;
-  if (vm_flags & VM_USER) pg_flags |= PG_USER;
-  if (vm_flags & VM_EXEC) pg_flags |= PG_EXEC;
-  if (vm_flags & VM_GLOBAL) pg_flags |= PG_GLOBAL;
-  if (vm_flags & VM_NOCACHE) pg_flags |= PG_NOCACHE;
-  if (vm_flags & VM_HUGE_2MB) {
-    pg_flags |= PG_BIGPAGE;
-  } else if (vm_flags & VM_HUGE_1GB) {
-    pg_flags |= PG_HUGEPAGE;
-  }
-  return pg_flags;
-}
-
-static always_inline bool space_contains(address_space_t *space, uintptr_t addr) {
+static always_inline bool space_contains_addr(address_space_t *space, uintptr_t addr) {
   return addr >= space->min_addr && addr < space->max_addr;
 }
 
 static always_inline bool is_valid_pointer(uintptr_t ptr) {
-  return space_contains(curspace, ptr) || space_contains(kernel_space, ptr);
+  return ptr >= USER_SPACE_START && ptr < USER_SPACE_END &&
+         ptr >= KERNEL_SPACE_START && ptr < KERNEL_SPACE_END;
+}
+
+static always_inline bool is_valid_range(uintptr_t start, size_t len) {
+  if (start <= USER_SPACE_START) {
+    return start + len <= USER_SPACE_END;
+  } else if (start >= KERNEL_SPACE_START) {
+    return start + len <= KERNEL_SPACE_END;
+  }
+  return false;
+}
+
+static always_inline address_space_t *select_space(address_space_t *user_space, uintptr_t addr) {
+  if (addr >= KERNEL_SPACE_START) {
+    return kernel_space;
+  }
+  return user_space;
+}
+
+static vm_mapping_t *space_get_mapping(address_space_t *space, uintptr_t vaddr) {
+  space_lock_assert(space, MA_OWNED);
+  vm_mapping_t *vm = intvl_tree_get_point(space->new_tree, vaddr);
+  return vm;
 }
 
 static always_inline uintptr_t vm_virtual_start(vm_mapping_t *vm) {
@@ -147,19 +154,19 @@ static inline bool vm_are_siblings(vm_mapping_t *a, vm_mapping_t *b) {
     return false;
   }
 
-  vm_mapping_t *curr = LIST_NEXT(a, list);
+  vm_mapping_t *curr = LIST_NEXT(a, vm_list);
   while (curr != NULL) {
     if (curr == b) {
       return true;
     }
-    curr = LIST_NEXT(curr, list);
+    curr = LIST_NEXT(curr, vm_list);
   }
   return false;
 }
 
 static inline uintptr_t choose_best_hint(address_space_t *space, uintptr_t hint, uint32_t vm_flags) {
   if (hint != 0) {
-    if (space_contains(space, hint)) {
+    if (space_contains_addr(space, hint)) {
       // caller has provided a hint, use it
       return hint;
     }
@@ -185,7 +192,7 @@ static inline void *array_alloc(size_t count, size_t size) {
   size_t total = count * size;
   void *ptr;
   if (total >= PAGE_SIZE) {
-    ptr = vmalloc(total, VM_WRITE);
+    ptr = vmalloc(total, VM_RDWR);
     memset(ptr, 0, align(total, PAGE_SIZE));
   } else {
     ptr = kmallocz(total);
@@ -208,7 +215,7 @@ static inline void *array_realloc(void *ptr, size_t old_count, size_t new_count,
 
   void *new_ptr;
   if (new_total >= PAGE_SIZE) {
-    new_ptr = vmalloc(new_total, VM_WRITE);
+    new_ptr = vmalloc(new_total, VM_RDWR);
     memset(new_ptr + old_total, 0, align(new_total, PAGE_SIZE) - old_total);
   } else {
     new_ptr = kmalloc(new_total);
@@ -271,7 +278,7 @@ static vm_anon_t *anon_struct_alloc(vm_anon_t *anon, size_t size, size_t pgsize)
       // free any pages in the range that will be removed
       for (size_t i = new_length; i < anon->length; i++) {
         if (anon->pages[i] != NULL) {
-          release_pages(&anon->pages[i]);
+          drop_pages(&anon->pages[i]);
         }
       }
 
@@ -295,7 +302,7 @@ static void anon_struct_free(vm_anon_t *anon) {
     // free the pages and array
     for (size_t i = 0; i < anon->length; i++) {
       if (anon->pages[i] != NULL) {
-        release_pages(&anon->pages[i]);
+        drop_pages(&anon->pages[i]);
       }
     }
 
@@ -328,6 +335,13 @@ static inline __move page_t *anon_struct_getpage(vm_anon_t *anon, size_t index) 
   return getref(anon->pages[index]);
 }
 
+static inline uintptr_t anon_struct_get_phys(vm_anon_t *anon, size_t index) {
+  if (index >= anon->length) {
+    return 0;
+  }
+  return anon->pages[index]->address;
+}
+
 //
 // MARK: Mapping type impls
 //
@@ -335,7 +349,6 @@ static inline __move page_t *anon_struct_getpage(vm_anon_t *anon, size_t index) 
 // phys type
 
 static void phys_type_map_internal(vm_mapping_t *vm, uintptr_t phys, size_t size, size_t off) {
-  uint32_t pg_flags = vm_flags_to_pg_flags(vm->flags);
   size_t stride = vm_flags_to_size(vm->flags);
   ASSERT(off % stride == 0);
   ASSERT(off + size <= vm->size);
@@ -345,7 +358,7 @@ static void phys_type_map_internal(vm_mapping_t *vm, uintptr_t phys, size_t size
   uintptr_t phys_ptr = phys + off;
   while (count > 0) {
     page_t *table_pages = NULL;
-    recursive_map_entry(ptr, phys_ptr, pg_flags, &table_pages);
+    recursive_map_entry(ptr, phys_ptr, vm->flags, &table_pages);
     ptr += stride;
     phys_ptr += stride;
     count--;
@@ -360,7 +373,6 @@ static void phys_type_map_internal(vm_mapping_t *vm, uintptr_t phys, size_t size
 }
 
 static void phys_type_unmap_internal(vm_mapping_t *vm, size_t size, size_t off) {
-  uint32_t pg_flags = vm_flags_to_pg_flags(vm->flags);
   size_t stride = vm_flags_to_size(vm->flags);
   ASSERT(off % stride == 0);
   ASSERT(off + size <= vm->size);
@@ -368,7 +380,7 @@ static void phys_type_unmap_internal(vm_mapping_t *vm, size_t size, size_t off) 
   size_t count = size / stride;
   uintptr_t ptr = vm->address + off;
   while (count > 0) {
-    recursive_unmap_entry(ptr, pg_flags);
+    recursive_unmap_entry(ptr, vm->flags);
     ptr += stride;
     count--;
   }
@@ -379,7 +391,6 @@ static void phys_type_unmap_internal(vm_mapping_t *vm, size_t size, size_t off) 
 // pages type
 
 static void page_type_map_internal(vm_mapping_t *vm, page_t *pages, size_t size, size_t off) {
-  uint32_t pg_flags = vm_flags_to_pg_flags(vm->flags);
   size_t stride = vm_flags_to_size(vm->flags);
   ASSERT(off % stride == 0);
   ASSERT(off + size <= vm->size);
@@ -399,18 +410,14 @@ static void page_type_map_internal(vm_mapping_t *vm, page_t *pages, size_t size,
     // the page must be owned by the mapping if updating
     if (curr->mapping == NULL) {
       // mapping for the first time
-      curr->flags &= INTERNAL_PG_FLAGS;
-      curr->flags |= pg_flags | PG_PRESENT;
       curr->mapping = vm;
-    } else if (curr->mapping == vm) {
+    } else {
       // updating existing mappings
-      curr->flags &= INTERNAL_PG_FLAGS;
-      curr->flags |= pg_flags | PG_PRESENT;
+      ASSERT(curr->mapping == vm);
     }
 
     page_t *table_pages = NULL;
-    recursive_map_entry(ptr, curr->address, pg_flags, &table_pages);
-    // kprintf("mapped: %p [phys = %p, flags = %#08b]\n", ptr, curr->address, pg_flags | PG_PRESENT);
+    recursive_map_entry(ptr, curr->address, vm->flags, &table_pages);
     ptr += stride;
     curr = curr->next;
     count--;
@@ -429,7 +436,6 @@ static void page_type_map_internal(vm_mapping_t *vm, page_t *pages, size_t size,
 }
 
 static void page_type_unmap_internal(vm_mapping_t *vm, size_t size, size_t off) {
-  uint32_t pg_flags = vm_flags_to_pg_flags(vm->flags);
   size_t stride = vm_flags_to_size(vm->flags);
   ASSERT(off % stride == 0);
   ASSERT(off + size <= vm->size);
@@ -441,22 +447,19 @@ static void page_type_unmap_internal(vm_mapping_t *vm, size_t size, size_t off) 
       panic("page_type_unmap_internal: something went wrong");
     }
     // get to page at offset
-    ptr += pg_flags_to_size(curr->flags);
     curr = curr->next;
+    ptr += stride;
     off -= stride;
   }
 
   uintptr_t max_ptr = ptr + size;
   while (ptr < max_ptr && curr != NULL) {
     ASSERT(curr->mapping != NULL);
-    recursive_unmap_entry(ptr, curr->flags);
-    ptr += pg_flags_to_size(curr->flags);
+    recursive_unmap_entry(ptr, vm->flags);
+    ptr += stride;
 
-    // dont free the pages until the mapping is destroyed
-    if (curr->mapping == vm) {
-      curr->mapping = NULL;
-      curr->flags &= INTERNAL_PG_FLAGS;
-    }
+    ASSERT(curr->mapping == vm);
+    curr->mapping = NULL;
     curr = curr->next;
   }
 
@@ -519,7 +522,6 @@ static vm_anon_t *anon_type_fork_internal(vm_anon_t *anon) {
 }
 
 static void anon_type_map_internal(vm_mapping_t *vm, vm_anon_t *anon, size_t size, size_t off) {
-  uint32_t pg_flags = vm_flags_to_pg_flags(vm->flags);
   size_t stride = vm_flags_to_size(vm->flags);
   ASSERT(off % stride == 0);
   ASSERT(off + size <= vm->size);
@@ -540,19 +542,15 @@ static void anon_type_map_internal(vm_mapping_t *vm, vm_anon_t *anon, size_t siz
       continue; // ignore holes
 
     page_t *table_pages = NULL;
-    recursive_map_entry(ptr, page->address, pg_flags, &table_pages);
+    recursive_map_entry(ptr, page->address, vm->flags, &table_pages);
     ptr += stride;
 
-    // the page must be owned by the mapping if updating
     if (page->mapping == NULL) {
       // mapping for the first time
-      page->flags &= INTERNAL_PG_FLAGS;
-      page->flags |= pg_flags | PG_PRESENT;
       page->mapping = vm;
-    } else if (page->mapping == vm) {
+    } else {
       // updating existing mappings
-      page->flags &= INTERNAL_PG_FLAGS;
-      page->flags |= pg_flags | PG_PRESENT;
+      ASSERT(page->mapping == vm);
     }
 
     if (table_pages != NULL) {
@@ -567,7 +565,6 @@ static void anon_type_map_internal(vm_mapping_t *vm, vm_anon_t *anon, size_t siz
 static void anon_type_unmap_internal(vm_mapping_t *vm, size_t size, size_t off) {
   ASSERT(vm->type == VM_TYPE_ANON);
   vm_anon_t *anon = vm->vm_anon;
-  uint32_t pg_flags = vm_flags_to_pg_flags(vm->flags);
   size_t stride = vm_flags_to_size(vm->flags);
   ASSERT(off + size <= vm->size);
 
@@ -581,12 +578,10 @@ static void anon_type_unmap_internal(vm_mapping_t *vm, size_t size, size_t off) 
     page_t *page = anon->pages[i];
     if (page != NULL) {
       recursive_unmap_entry(ptr, page->flags);
-      if (page->mapping == vm) {
-        page->flags &= INTERNAL_PG_FLAGS;
-        page->flags |= pg_flags;
-        page->mapping = NULL;
-        anon->mapped--;
-      }
+
+      ASSERT(page->mapping != NULL);
+      page->mapping = NULL;
+      anon->mapped--;
     }
     ptr += stride;
   }
@@ -597,7 +592,6 @@ static void anon_type_unmap_internal(vm_mapping_t *vm, size_t size, size_t off) 
 static __move page_t *anon_type_getpage_internal(vm_mapping_t *vm, size_t off) {
   ASSERT(vm->type == VM_TYPE_ANON);
   vm_anon_t *anon = vm->vm_anon;
-  uint32_t pg_flags = vm_flags_to_pg_flags(vm->flags);
   size_t stride = vm_flags_to_size(vm->flags);
   ASSERT(off <= vm->size);
 
@@ -607,7 +601,6 @@ static __move page_t *anon_type_getpage_internal(vm_mapping_t *vm, size_t off) {
 }
 
 static void anon_type_putpages_internal(vm_mapping_t *vm, vm_anon_t *anon, size_t size, size_t off, __move page_t *pages) {
-  uint32_t pg_flags = vm_flags_to_pg_flags(vm->flags);
   size_t stride = vm_flags_to_size(vm->flags);
   ASSERT(off % stride == 0);
   ASSERT(off + size <= vm->size);
@@ -627,9 +620,9 @@ static void anon_type_putpages_internal(vm_mapping_t *vm, vm_anon_t *anon, size_
     if (pg_flags_to_size(curr->flags) != stride) {
       panic("anon_putpage_internal: page size does not match vm page size");
     }
-    recursive_map_entry(ptr, curr->address, pg_flags, &table_pages);
-    curr->flags &= INTERNAL_PG_FLAGS;
-    curr->flags |= pg_flags | PG_PRESENT;
+
+    recursive_map_entry(ptr, curr->address, vm->flags, &table_pages);
+    ASSERT(curr->mapping == NULL);
     curr->mapping = vm;
     ptr += stride;
 
@@ -717,8 +710,11 @@ static void vm_fork_internal(vm_mapping_t *vm, vm_mapping_t *new_vm) {
 }
 
 static void vm_update_internal(vm_mapping_t *vm, uint32_t prot) {
+  space_lock_assert(vm->space, MA_OWNED);
+  prot &= VM_PROT_MASK;
+
   vm->flags &= ~VM_PROT_MASK;
-  vm->flags |= (prot & VM_PROT_MASK);
+  vm->flags |= prot;
   if (prot != 0) {
     vm->flags |= VM_MAPPED;
     switch (vm->type) {
@@ -753,6 +749,7 @@ static void vm_update_internal(vm_mapping_t *vm, uint32_t prot) {
 }
 
 static void vm_split_internal(vm_mapping_t *vm, size_t off, vm_mapping_t *sibling) {
+  space_lock_assert(vm->space, MA_OWNED);
   switch (vm->type) {
     case VM_TYPE_PHYS:
       break;
@@ -768,6 +765,7 @@ static void vm_split_internal(vm_mapping_t *vm, size_t off, vm_mapping_t *siblin
 }
 
 static void vm_join_internal(vm_mapping_t *vm, vm_mapping_t *other) {
+  space_lock_assert(vm->space, MA_OWNED);
   switch (vm->type) {
     case VM_TYPE_PHYS:
       break;
@@ -783,6 +781,7 @@ static void vm_join_internal(vm_mapping_t *vm, vm_mapping_t *other) {
 }
 
 static void vm_free_internal(vm_mapping_t *vm) {
+  space_lock_assert(vm->space, MA_OWNED);
   switch (vm->type) {
     case VM_TYPE_PHYS:
       phys_type_unmap_internal(vm, vm->size, 0);
@@ -790,7 +789,7 @@ static void vm_free_internal(vm_mapping_t *vm) {
       break;
     case VM_TYPE_PAGE:
       page_type_unmap_internal(vm, vm->size, 0);
-      release_pages(&vm->vm_pages);
+      drop_pages(&vm->vm_pages);
       break;
     case VM_TYPE_ANON:
       anon_type_unmap_internal(vm, vm->size, 0);
@@ -808,14 +807,20 @@ static vm_mapping_t *vm_struct_alloc(enum vm_type type, uint32_t vm_flags, size_
   vm_mapping_t *vm = kmallocz(sizeof(vm_mapping_t));
   vm->type = type;
   vm->flags = vm_flags;
-  vm->virt_size = virt_size;
   vm->size = size;
-  mtx_init(&vm->lock, MTX_SPIN, "vm_mapping_lock");
+  vm->virt_size = virt_size;
   return vm;
 }
 
-static uintptr_t get_free_region(address_space_t *space, uintptr_t base, size_t size, uintptr_t align,
-                                 uint32_t vm_flags, vm_mapping_t **closest_vm) {
+static uintptr_t get_free_region(
+  address_space_t *space,
+  uintptr_t base,
+  size_t size,
+  uintptr_t align,
+  uint32_t vm_flags,
+  vm_mapping_t **closest_vm
+) {
+  space_lock_assert(space, MA_OWNED);
   uintptr_t addr = base;
   interval_t interval = intvl(base, base + size);
   intvl_node_t *closest = intvl_tree_find_closest(space->new_tree, interval);
@@ -847,7 +852,7 @@ static uintptr_t get_free_region(address_space_t *space, uintptr_t base, size_t 
 
       addr = align(i.start - size, align);
       prev = curr;
-      curr = LIST_PREV(curr, list);
+      curr = LIST_PREV(curr, vm_list);
     } else {
       // go forward looking for a free space from the bottom of each free region
       bool contig = contiguous(i, j);
@@ -856,7 +861,7 @@ static uintptr_t get_free_region(address_space_t *space, uintptr_t base, size_t 
 
       addr = align(i.end, align);
       prev = curr;
-      curr = LIST_NEXT(curr, list);
+      curr = LIST_NEXT(curr, vm_list);
     }
   }
 
@@ -868,8 +873,14 @@ static uintptr_t get_free_region(address_space_t *space, uintptr_t base, size_t 
   return addr;
 }
 
-static bool check_range_free(address_space_t *space, uintptr_t base, size_t size, uint32_t vm_flags,
-                             vm_mapping_t **closest_vm) {
+static bool check_range_free(
+  address_space_t *space,
+  uintptr_t base,
+  size_t size,
+  uint32_t vm_flags,
+  vm_mapping_t **closest_vm
+) {
+  space_lock_assert(space, MA_OWNED);
   interval_t interval = intvl(base, base + size);
   intvl_node_t *closest = intvl_tree_find_closest(space->new_tree, interval);
   if (closest == NULL) {
@@ -884,8 +895,9 @@ static bool check_range_free(address_space_t *space, uintptr_t base, size_t size
 }
 
 static bool resize_mapping_inplace(vm_mapping_t *vm, size_t new_size) {
-  // vm should be locked while calling this
   address_space_t *space = vm->space;
+  space_lock_assert(space, MA_OWNED);
+
   interval_t interval = vm_virt_interval(vm);
   intvl_node_t *node = intvl_tree_find(space->new_tree, interval);
   ASSERT(node && node->data == vm);
@@ -909,15 +921,13 @@ static bool resize_mapping_inplace(vm_mapping_t *vm, size_t new_size) {
 
   // for growing beyond the virtual space of the node we need to update the tree
   // but first we need to make sure we dont overlap with the next node
-  SPACE_LOCK(space);
   if (vm->flags & VM_STACK) {
-    vm_mapping_t *prev = LIST_PREV(vm, list);
+    vm_mapping_t *prev = LIST_PREV(vm, vm_list);
     intvl_node_t *prev_node = intvl_tree_find(space->new_tree, vm_virt_interval(prev));
 
     // |--prev--| empty space |---vm---|
     size_t empty_space = interval.start - prev_node->interval.end + vm_empty_space(vm);
     if (empty_space < delta) {
-      SPACE_UNLOCK(space);
       return false;
     }
 
@@ -925,13 +935,12 @@ static bool resize_mapping_inplace(vm_mapping_t *vm, size_t new_size) {
     vm->address -= new_size - vm->size;
     vm->size = new_size;
   } else {
-    vm_mapping_t *next = LIST_NEXT(vm, list);
+    vm_mapping_t *next = LIST_NEXT(vm, vm_list);
     intvl_node_t *next_node = intvl_tree_find(space->new_tree, vm_virt_interval(next));
 
     // |---vm---| empty space |--next--|
     size_t empty_space = next_node->interval.start - interval.end + vm_empty_space(vm);
     if (empty_space < delta) {
-      SPACE_UNLOCK(space);
       return false;
     }
 
@@ -946,10 +955,11 @@ static bool resize_mapping_inplace(vm_mapping_t *vm, size_t new_size) {
 // the range from vm->address+off to the end of the mapping. The new mapping
 // is inserted into the space list after the current mapping and returned.
 static vm_mapping_t *split_mapping(vm_mapping_t *vm, size_t off) {
-  // vm should be locked while calling this
+  address_space_t *space = vm->space;
+  space_lock_assert(space, MA_OWNED);
+
   ASSERT(off % vm_flags_to_size(vm->flags) == 0);
   interval_t intvl = vm_virt_interval(vm);
-  address_space_t *space = vm->space;
 
   // create new mapping
   vm_mapping_t *new_vm = kmallocz(sizeof(vm_mapping_t));
@@ -959,7 +969,6 @@ static vm_mapping_t *split_mapping(vm_mapping_t *vm, size_t off) {
   new_vm->size = vm->size - off;
   new_vm->space = space;
   new_vm->name = str_copy_cstr(cstr_from_str(vm->name));
-  mtx_init(&new_vm->lock, MTX_SPIN, "vm_mapping_lock");
 
   vm_split_internal(vm, off, new_vm);
   vm->flags |= VM_LINKED;
@@ -973,21 +982,16 @@ static vm_mapping_t *split_mapping(vm_mapping_t *vm, size_t off) {
     vm->virt_size = vm->size;
   }
 
-  SPACE_LOCK(space);
-  {
-    intvl_node_t *node = intvl_tree_find(space->new_tree, intvl);
+  // resize current interval down and insert new node
+  intvl_node_t *node = intvl_tree_find(space->new_tree, intvl);
+  off_t delta_end = magnitude(intvl) - off;
+  intvl_tree_update_interval(space->new_tree, node, 0, -delta_end);
+  intvl_tree_insert(space->new_tree, vm_virt_interval(new_vm), new_vm);
+  space->num_mappings++;
+  ASSERT(contiguous(vm_virt_interval(vm), vm_virt_interval(new_vm)));
 
-    // resize current interval down and insert new node
-    off_t delta_end = magnitude(intvl) - off;
-    intvl_tree_update_interval(space->new_tree, node, 0, -delta_end);
-    intvl_tree_insert(space->new_tree, vm_virt_interval(new_vm), new_vm);
-    space->num_mappings++;
-    ASSERT(contiguous(vm_virt_interval(vm), vm_virt_interval(new_vm)));
-
-    // insert new node into the list
-    LIST_INSERT(&space->mappings, new_vm, list, vm);
-  }
-  SPACE_UNLOCK(space);
+  // insert new node into the list
+  LIST_INSERT(&space->mappings, new_vm, vm_list, vm);
   return new_vm;
 }
 
@@ -995,44 +999,41 @@ static vm_mapping_t *split_mapping(vm_mapping_t *vm, size_t off) {
 // The sibling mapping is removed from the space list and tree and freed, and the
 // first (now joined) mapping is returned.
 static vm_mapping_t *join_mappings(vm_mapping_t *vm_a, vm_mapping_t *vm_b) {
+  address_space_t *space = vm_a->space;
+  space_lock_assert(space, MA_OWNED);
+
   // vm_a and vm_b should both be locked while calling this
   ASSERT((vm_a->flags & VM_LINKED) != 0);
   ASSERT((vm_b->flags & VM_SPLIT) != 0);
   interval_t intvl_a = vm_virt_interval(vm_a);
   interval_t intvl_b = vm_virt_interval(vm_b);
-  address_space_t *space = vm_a->space;
 
-  SPACE_LOCK(space);
-  {
-    intvl_node_t *node = intvl_tree_find(space->new_tree, intvl_a);
+  // remove node_b and update node_a to fill its space
+  intvl_node_t *node = intvl_tree_find(space->new_tree, intvl_a);
+  intvl_tree_delete(space->new_tree, intvl_b);
+  off_t delta_end = (off_t) magnitude(intvl_b);
+  intvl_tree_update_interval(space->new_tree, node, 0, delta_end);
 
-    // remove node_b and update node_a to fill its space
-    intvl_tree_delete(space->new_tree, intvl_b);
-    off_t delta_end = (off_t) magnitude(intvl_b);
-    intvl_tree_update_interval(space->new_tree, node, 0, delta_end);
+  // remove vm_b from the space list
+  LIST_REMOVE(&space->mappings, vm_b, vm_list);
+  space->num_mappings--;
 
-    // remove vm_b from the space list
-    LIST_REMOVE(&space->mappings, vm_b, list);
-    space->num_mappings--;
+  vm_join_internal(vm_a, vm_b);
+  vm_a->flags &= ~VM_LINKED;
+  vm_a->size = vm_a->size + vm_b->size;
+  vm_a->virt_size = vm_a->virt_size + vm_b->virt_size;
 
-    vm_join_internal(vm_a, vm_b);
-    vm_a->flags &= ~VM_LINKED;
-    vm_a->size = vm_a->size + vm_b->size;
-    vm_a->virt_size = vm_a->virt_size + vm_b->virt_size;
-
-    str_free(&vm_b->name);
-    kfree(vm_b);
-  }
-  SPACE_UNLOCK(space);
+  str_free(&vm_b->name);
+  kfree(vm_b);
   return vm_a;
 }
 
 static bool move_mapping(vm_mapping_t *vm, size_t newsize) {
-  // space should be locked while calling this
   address_space_t *space = vm->space;
+  space_lock_assert(space, MA_OWNED);
+
   uintptr_t base = vm->address;
   size_t virt_size = newsize;
-
   size_t off = 0;
   if (vm->flags & VM_STACK) {
     virt_size += PAGE_SIZE;
@@ -1052,12 +1053,12 @@ static bool move_mapping(vm_mapping_t *vm, size_t newsize) {
   intvl_tree_insert(space->new_tree, intvl(virt_addr, virt_addr + virt_size), vm);
 
   // switch place of the mapping in the space list
-  LIST_REMOVE(&space->mappings, vm, list);
+  LIST_REMOVE(&space->mappings, vm, vm_list);
   if (closest->address > virt_addr) {
-    closest = LIST_PREV(closest, list);
+    closest = LIST_PREV(closest, vm_list);
   }
   // insert into the list
-  LIST_INSERT(&space->mappings, vm, list, closest);
+  LIST_INSERT(&space->mappings, vm, vm_list, closest);
 
   // update the mapping
   vm->address = virt_addr + off;
@@ -1066,18 +1067,21 @@ static bool move_mapping(vm_mapping_t *vm, size_t newsize) {
   return true;
 }
 
-static void free_mapping(vm_mapping_t *vm) {
-  // space should be locked while calling this
+static void free_mapping(vm_mapping_t **vmp) {
+  vm_mapping_t *vm = *vmp;
   address_space_t *space = vm->space;
-  SPACE_LOCK(space);
-  LIST_REMOVE(&space->mappings, vm, list);
+  space_lock_assert(space, MA_OWNED);
+
+  LIST_REMOVE(&space->mappings, vm, vm_list);
   intvl_tree_delete(space->new_tree, vm_virt_interval(vm));
   space->num_mappings--;
-  SPACE_LOCK(space);
 
+  if (vm->flags & VM_MAPPED) {
+    vm_free_internal(vm);
+  }
   str_free(&vm->name);
-  memset(vm, 0, sizeof(vm_mapping_t));
   kfree(vm);
+  *vmp = NULL;
 }
 
 //
@@ -1102,15 +1106,18 @@ __used void page_fault_handler(struct trapframe *frame) {
   if (fault_addr == 0 || !curspace)
     goto exception;
 
+  address_space_t *space = select_space(curspace, fault_addr);
+  space_lock(space);
 
+  vm_mapping_t *vm = NULL;
   if (!(frame->error & CPU_PF_P)) {
     // fault was due to a non-present page this might be recoverable
     // check if this fault is related to a vm mapping
-    vm_mapping_t *vm = vm_get_mapping(fault_addr);
-    if (vm == NULL || !vm_mapping_contains(vm, fault_addr) || !can_handle_fault(vm, fault_addr, frame->error)) {
+    vm = space_get_mapping(space, fault_addr);
+    if (vm == NULL || !can_handle_fault(vm, fault_addr, frame->error)) {
       // TODO: support extending stacks automatically if the fault happens
       //       in the guard page
-      kprintf_kputs("stack overflow\n");
+      space_unlock(space);
       goto exception;
     }
 
@@ -1118,14 +1125,17 @@ __used void page_fault_handler(struct trapframe *frame) {
     size_t off = align_down(fault_addr - vm->address, PAGE_SIZE);
     vm_anon_t *anon = vm->vm_anon;
     page_t *page = anon->get_page(vm, off, vm->flags, anon->data);
-    if (!page) {
+    if (page == NULL) {
       DPRINTF("failed to get non-present page in vm_file [vm={:str},off=%zu]\n", &vm->name, off);
+      space_unlock(space);
       goto exception;
     }
 
     // map the new page into the file
     size_t size = vm_flags_to_size(vm->flags);
     anon_type_putpages_internal(vm, anon, size, off, page);
+
+    space_unlock(space);
     return; // recover
   }
 
@@ -1150,9 +1160,7 @@ LABEL(exception);
     debug_unwind(rip, rbp);
   }
 
-  while (true) {
-    cpu_pause();
-  }
+  WHILE_TRUE;
 }
 
 //
@@ -1238,8 +1246,27 @@ address_space_t *vm_new_space(uintptr_t min_addr, uintptr_t max_addr, uintptr_t 
   return space;
 }
 
+address_space_t *vm_new_uspace() {
+  // fork pages with deepcopy false to allocate a new pml4 with
+  // the kernel entries copied over.
+  page_t *pml4;
+  space_lock(kernel_space);
+  fork_page_tables(&pml4, /*deepcopy_user=*/false);
+  space_unlock(kernel_space);
+
+  address_space_t *space = kmallocz(sizeof(address_space_t));
+  space->min_addr = USER_SPACE_START;
+  space->max_addr = USER_SPACE_END;
+  space->new_tree = create_intvl_tree();
+  space->page_table = pml4->address;
+  mtx_init(&space->lock, MTX_RECURSIVE, "vm_space_lock");
+  SLIST_ADD(&space->table_pages, pml4, next);
+  return space;
+}
+
 // the caller must have target space locked
 address_space_t *vm_fork_space(address_space_t *space, bool deepcopy_user) {
+  space_lock_assert(space, MA_OWNED);
   address_space_t *newspace = vm_new_space(space->min_addr, space->max_addr, 0);
   newspace->num_mappings = space->num_mappings;
   ASSERT(space->page_table == get_current_pgtable());
@@ -1248,16 +1275,16 @@ address_space_t *vm_fork_space(address_space_t *space, bool deepcopy_user) {
   page_t *meta_pages = NULL;
   // we need to hold a lock on the kernel space during the fork so that
   // none of the kernel entries can change while we're copying them
-  SPACE_LOCK(kernel_space);
+  space_lock(kernel_space);
   uintptr_t pgtable = fork_page_tables(&meta_pages, deepcopy_user);
-  SPACE_UNLOCK(kernel_space);
+  space_unlock(kernel_space);
   newspace->page_table = pgtable;
   SLIST_ADD_SLIST(&newspace->table_pages, meta_pages, SLIST_GET_LAST(meta_pages, next), next);
 
   // clone and fork all the vm_mappings
   vm_mapping_t *prev_newvm = NULL;
   vm_mapping_t *vm = NULL;
-  LIST_FOREACH(vm, &space->mappings, list) {
+  LIST_FOREACH(vm, &space->mappings, vm_list) {
     vm_mapping_t *newvm = vm_struct_alloc(vm->type, vm->flags, vm->size, vm->virt_size);
     newvm->name = str_dup(vm->name);
     vm_fork_internal(vm, newvm);
@@ -1265,9 +1292,9 @@ address_space_t *vm_fork_space(address_space_t *space, bool deepcopy_user) {
     // insert into new space
     intvl_tree_insert(newspace->new_tree, vm_virt_interval(newvm), newvm);
     if (prev_newvm) {
-      LIST_INSERT(&newspace->mappings, newvm, list, prev_newvm);
+      LIST_INSERT(&newspace->mappings, newvm, vm_list, prev_newvm);
     } else {
-      LIST_ADD(&newspace->mappings, newvm, list);
+      LIST_ADD(&newspace->mappings, newvm, vm_list);
     }
     newspace->num_mappings++;
   }
@@ -1275,14 +1302,66 @@ address_space_t *vm_fork_space(address_space_t *space, bool deepcopy_user) {
 }
 
 //
+//
+
+size_t rw_unmapped_pages(__ref page_t *pages, size_t off, kio_t *kio) {
+  size_t pgsize = pg_flags_to_size(pages->flags);
+  ASSERT(pgsize == PAGE_SIZE);
+  ASSERT(pages->flags & PG_HEAD);
+
+  // get start page for offset
+  page_t *page = pages;
+  while (page && off >= PAGE_SIZE) {
+    off -= pgsize;
+    page = page->next;
+  }
+
+  size_t n = 0;
+  size_t remain;
+  while ((remain = kio_remaining(kio)) > 0) {
+    if (page == NULL) {
+      break;
+    }
+
+    n += rw_unmapped_page(page, off, kio);
+    off = 0;
+    page = page->next;
+  }
+  return n;
+}
+
+void fill_unmapped_pages(__ref page_t *pages, uint8_t v) {
+  page_t *page = pages;
+  while (page) {
+    fill_unmapped_page(page, v);
+    page = page->next;
+  }
+}
+
+//
 // MARK: Vmap API
 //
 
-vm_mapping_t *vmap(enum vm_type type, uintptr_t hint, size_t size, size_t vm_size, uint32_t vm_flags, const char *name, void *arg) {
+// creates a new virtual mapping. if the VM_USER flag is set, the mapping will be
+// allocated in the provided address space. if the VM_FIXED flag is set, the hint
+// address will be used as the base address for the mapping and it will fail if
+// the address is not available. by default, the mapping is reflected in the page
+// tables of the current address space, but the VM_NOMAP flag can be used to only
+// allocate the virtual range. on success a non-zero virtual address is returned.
+static uintptr_t vmap_internal(
+  address_space_t *user_space,
+  enum vm_type type,
+  uintptr_t hint,
+  size_t size,
+  size_t vm_size,
+  uint32_t vm_flags,
+  const char *name,
+  void *arg
+) {
   ASSERT(type < VM_MAX_TYPE);
   vm_size = max(vm_size, size);
-  if (vm_size == 0) {
-    return NULL;
+  if (!is_valid_pointer(hint) || vm_size == 0) {
+    return 0;
   }
 
   if (vm_flags & VM_WRITE || vm_flags & VM_EXEC) {
@@ -1301,7 +1380,7 @@ vm_mapping_t *vmap(enum vm_type type, uintptr_t hint, size_t size, size_t vm_siz
   if (vm_flags & VM_FIXED && !is_aligned(hint, pgsize)) {
     if (!(vm_flags & VM_USER))
       DPRINTF("hint %p is not aligned to page size %zu [name=%s]\n", hint, pgsize, name);
-    return NULL;
+    return 0;
   }
 
   vm_mapping_t *vm = vm_struct_alloc(type, vm_flags, size, vm_size);
@@ -1333,17 +1412,17 @@ vm_mapping_t *vmap(enum vm_type type, uintptr_t hint, size_t size, size_t vm_siz
 
   address_space_t *space;
   if (vm_flags & VM_USER) {
-    space = curspace;
+    space = user_space;
   } else {
     space = kernel_space;
   }
 
   // allocate the virtual address range for the mapping
-  SPACE_LOCK(space);
+  space_lock(space);
   uintptr_t virt_addr = 0;
   vm_mapping_t *closest = NULL;
   if (vm_flags & VM_FIXED) {
-    if (!space_contains(space, hint)) {
+    if (!space_contains_addr(space, hint)) {
       if (!(vm_flags & VM_USER)) { // panic for kernel requests
         panic("vmap: hint address not in address space: %p [name=%s]\n", hint, name);
       }
@@ -1377,16 +1456,15 @@ vm_mapping_t *vmap(enum vm_type type, uintptr_t hint, size_t size, size_t vm_siz
 
     virt_addr = get_free_region(space, hint, vm->virt_size, pgsize, vm_flags, &closest);
     if (virt_addr == 0) {
-      SPACE_UNLOCK(space);
-      kfree(vm);
-      kprintf("vmap: failed to satisfy allocation request [name=%s]\n", name);
-      return NULL;
+      DPRINTF("vmap: failed to satisfy allocation request [name=%s]\n", name);
+      goto error;
     }
   }
 
   vm->address = virt_addr + off;
   vm->name = str_from(name);
   vm->space = space;
+
   switch (vm->type) {
     case VM_TYPE_RSVD: vm->flags &= ~VM_PROT_MASK; break;
     case VM_TYPE_PHYS: vm->vm_phys = (uintptr_t) arg; break;
@@ -1401,14 +1479,14 @@ vm_mapping_t *vmap(enum vm_type type, uintptr_t hint, size_t size, size_t vm_siz
     if (closest->address > virt_addr) {
       // we dont care about closeness here we just want the mapping
       // immediately before where the new mapping is going to be
-      closest = LIST_PREV(closest, list);
+      closest = LIST_PREV(closest, vm_list);
     }
 
     // insert into the list
-    LIST_INSERT(&space->mappings, vm, list, closest);
+    LIST_INSERT(&space->mappings, vm, vm_list, closest);
   } else {
     // first mapping
-    LIST_ADD(&space->mappings, vm, list);
+    LIST_ADD(&space->mappings, vm, vm_list);
   }
 
   // insert mapping to address space tree
@@ -1424,149 +1502,120 @@ vm_mapping_t *vmap(enum vm_type type, uintptr_t hint, size_t size, size_t vm_siz
       vm_update_internal(vm, vm->flags);
     }
   }
-  SPACE_UNLOCK(space);
-  return vm;
+  space_unlock(space);
+  return virt_addr + off;
 
 LABEL(error);
-  SPACE_UNLOCK(space);
+  space_unlock(space);
   kfree(vm);
-  return NULL;
+  return 0;
 }
 
+// these functions dont need any locks held
+
 int vmap_rsvd(uintptr_t hint, size_t size, uint32_t vm_flags, const char *name) {
-  vm_mapping_t *vm = vmap(VM_TYPE_RSVD, hint, size, size, vm_flags, name, NULL);
-  PANIC_IF(!vm, "vmap: failed to make reserved mapping %s\n", name);
+  uintptr_t vaddr = vmap_internal(curspace, VM_TYPE_RSVD, hint, size, size, vm_flags, name, NULL);
+  if (vaddr == 0) {
+    ALLOC_ERROR("vmap: failed to make reserved mapping %s\n", name);
+    return -1;
+  }
   return 0;
 }
 
 uintptr_t vmap_phys(uintptr_t phys_addr, uintptr_t hint, size_t size, uint32_t vm_flags, const char *name) {
-  vm_mapping_t *vm = vmap(VM_TYPE_PHYS, hint, size, size, vm_flags, name, (void *) phys_addr);
-  PANIC_IF(!vm, "vmap: failed to make physical address mapping %s [phys=%p]\n", name, phys_addr);
-  return vm->address;
+  uintptr_t vaddr = vmap_internal(curspace, VM_TYPE_PHYS, hint, size, size, vm_flags, name, (void *) phys_addr);
+  if (vaddr == 0) {
+    ALLOC_ERROR("vmap: failed to make physical address mapping %s [phys=%p]\n", name, phys_addr);
+    return 0;
+  }
+  return vaddr;
 }
 
 uintptr_t vmap_pages(__move page_t *pages, uintptr_t hint, size_t size, uint32_t vm_flags, const char *name) {
-  vm_mapping_t *vm = vmap(VM_TYPE_PAGE, hint, size, size, vm_flags, name, pages);
-  PANIC_IF(!vm, "vmap: failed to make pages mapping %s [page=%p]\n", name, pages);
-  return vm->address;
+  ASSERT(pages->flags & PG_HEAD);
+  if (VM_HUGE_2MB & vm_flags) {
+    ASSERT(pages->flags & PG_BIGPAGE);
+  } else if (VM_HUGE_1GB & vm_flags) {
+    ASSERT(pages->flags & PG_HUGEPAGE);
+  }
+
+  uintptr_t vaddr = vmap_internal(curspace, VM_TYPE_PAGE, hint, size, size, vm_flags, name, pages);
+  if (vaddr == 0) {
+    ALLOC_ERROR("vmap: failed to make pages mapping %s [page=%p]\n", name, pages);
+    drop_pages(&pages); // release the reference
+    return 0;
+  }
+  return vaddr;
 }
 
 uintptr_t vmap_anon(size_t vm_size, uintptr_t hint, size_t size, uint32_t vm_flags, const char *name) {
   vm_anon_t *anon = anon_struct_alloc(NULL, size, vm_flags_to_size(vm_flags));
-  vm_mapping_t *vm = vmap(VM_TYPE_ANON, hint, size, vm_size, vm_flags, name, anon);
-  PANIC_IF(!vm, "vmap: failed to make anonymous mapping %s\n", name);
-  DPRINTF("vmap: anonymous mapping: %p [%zu]\n", vm->address, vm->size);
-  return vm->address;
-}
-
-void vmap_free(vm_mapping_t *vm) {
-  ASSERT(vm->type != VM_TYPE_RSVD);
-  vm_mapping_t *linked = NULL;
-  if (vm->flags & VM_MAPPED) {
-    // unmap the region
-    switch (vm->type) {
-      case VM_TYPE_RSVD:
-        break;
-      case VM_TYPE_PHYS:
-        phys_type_unmap_internal(vm, vm->size, 0);
-        break;
-      case VM_TYPE_PAGE:
-        page_type_unmap_internal(vm, vm->size, 0);
-        release_pages(&vm->vm_pages);
-        if (vm->flags & VM_LINKED)
-          LIST_NEXT(vm, list);
-        break;
-      case VM_TYPE_ANON:
-        anon_type_unmap_internal(vm, vm->size, 0);
-        anon_struct_free(vm->vm_anon);
-        break;
-      default:
-        unreachable;
-    }
-    vm->flags &= ~VM_MAPPED;
-  }
-
-  address_space_t *space = vm->space;
-  SPACE_LOCK(space);
-  LIST_REMOVE(&space->mappings, vm, list);
-  intvl_tree_delete(space->new_tree, vm_virt_interval(vm));
-  space->num_mappings--;
-  SPACE_LOCK(space);
-
-  str_free(&vm->name);
-  memset(vm, 0, sizeof(vm_mapping_t));
-  kfree(vm);
-
-  if (linked) {
-    linked->flags &= ~VM_SPLIT;
-    vmap_free(linked);
-  }
-}
-
-
-uintptr_t vm_map_anon(size_t vm_size, uintptr_t hint, size_t size, uint32_t vm_flags, const char *name) {
-  vm_anon_t *anon = anon_struct_alloc(NULL, size, vm_flags_to_size(vm_flags));
-  vm_mapping_t *vm = vmap(VM_TYPE_ANON, hint, size, vm_size, vm_flags, name, anon);
-  if (vm == NULL) {
-    DPRINTF("vm_map_anon: failed to make anonymous mapping [vm_size=%zu, hint=%p, size=%zu, flags=%d, name=%s]\n",
-            vm_size, hint, size, vm_flags, name);
+  uintptr_t vaddr = vmap_internal(curspace, VM_TYPE_ANON, hint, size, vm_size, vm_flags, name, anon);
+  if (vaddr == 0) {
+    ALLOC_ERROR("vmap: failed to make anonymous mapping %s\n", name);
+    anon_struct_free(anon);
     return 0;
   }
-  return vm->address;
+  return vaddr;
 }
 
-int vm_free(uintptr_t vaddr, size_t len) {
+int vm_free(uintptr_t vaddr, size_t size) {
   // The range [vaddr, vaddr+len-1] may contain one or more non-reserved mappings,
   // but the range must end at a mapping boundary.
-  if (!is_valid_pointer(vaddr) || !is_aligned(len, PAGE_SIZE)) {
+  if (!is_valid_range(vaddr, size) || !is_aligned(size, PAGE_SIZE)) {
     return -EINVAL;
   }
 
-  vm_mapping_t *vm = vm_get_mapping(vaddr);
-  vm_mapping_t *vm_end = vm_get_mapping(vaddr + len - 1);
+  address_space_t *space = select_space(curspace, vaddr);
+  space_lock(space);
+
+  int res = 0;
+  vm_mapping_t *vm = space_get_mapping(space, vaddr);
+  vm_mapping_t *vm_end = space_get_mapping(space, vaddr + size - 1);
   if (vm == NULL || vm_end == NULL) {
-    return -ENOMEM;
+    res = -ENOMEM;
+    goto ret;
   }
 
-  interval_t i = intvl(vaddr, vaddr+len);
+  interval_t i = intvl(vaddr, vaddr + size);
   interval_t i_start = vm_real_interval(vm);
   interval_t i_end = vm_real_interval(vm_end);
   if (i.start < i_start.start || i.end > i_end.end) {
     // the range falls in the virtual mapping range, but some or all of it may
     // be outside the actually mapped region of the vm
-    DPRINTF("vm_free: invalid request: references outside of active region [vaddr=%p, len=%zu]\n", vaddr, len);
-    return -ENOMEM;
+    DPRINTF("vm_free: invalid request: references outside of active region [vaddr=%p, len=%zu]\n", vaddr, size);
+    res = -ENOMEM;
+    goto ret;
   }
 
   // make sure that the range starts and ends exactly on the mapping boundaries
   interval_t full = intvl(i_start.start, i_end.end);
   if (!intvl_eq(i, full)) {
-    DPRINTF("vm_free: invalid request: not aligned to mapping boundary [vaddr=%p, len=%zu]\n", vaddr, len);
+    DPRINTF("vm_free: invalid request: not aligned to mapping boundary [vaddr=%p, len=%zu]\n", vaddr, size);
     return -EINVAL;
   }
 
   // check that none of the mappings in the range are reserved
-  for (vm_mapping_t *curr = vm; curr != LIST_NEXT(vm_end, list); curr = LIST_NEXT(curr, list)) {
+  for (vm_mapping_t *curr = vm; curr != LIST_NEXT(vm_end, vm_list); curr = LIST_NEXT(curr, vm_list)) {
     if (curr->type == VM_TYPE_RSVD) {
       DPRINTF("vm_free: invalid request: attempting to free reserved region [vaddr=%p, len=%zu, start=%p, size=%zu]\n",
-              vaddr, len, curr->address, curr->address + curr->size);
+              vaddr, size, curr->address, curr->address + curr->size);
       return -EINVAL;
     }
   }
 
   // free all the mappings
-LABEL(free_vm);
-  if (vm->flags & VM_MAPPED) {
-    vm_free_internal(vm);
-  }
-  vm_mapping_t *next = LIST_NEXT(vm, list);
-  free_mapping(vm);
-  if (vm != vm_end) {
+  while (vm != vm_end) {
+    vm_mapping_t *next = LIST_NEXT(vm, vm_list);
+    free_mapping(&vm);
     vm = next;
-    goto free_vm;
   }
+  free_mapping(&vm_end);
+  vm_end = NULL;
 
-  return 0;
+LABEL(ret);
+  space_unlock(space);
+  return res;
 }
 
 int vm_protect(uintptr_t vaddr, size_t len, uint32_t prot) {
@@ -1609,25 +1658,31 @@ int vm_protect(uintptr_t vaddr, size_t len, uint32_t prot) {
   //   7. two or more mixed non-linked mappings
   //        - error
   //
-  prot &= VM_PROT_MASK;
-  if (!is_valid_pointer(vaddr) || !is_aligned(len, PAGE_SIZE)) {
+  if (!is_valid_range(vaddr, len) || !is_aligned(len, PAGE_SIZE)) {
     return -EINVAL;
   }
 
-  vm_mapping_t *vm = vm_get_mapping(vaddr);
-  vm_mapping_t *vm_end = vm_get_mapping(vaddr + len - 1);
-  if (vm == NULL || vm_end == NULL) {
-    return -ENOMEM;
+  int res = 0;
+  address_space_t *space = select_space(curspace, vaddr);
+  space_lock(space);
+
+  vm_mapping_t *vm = space_get_mapping(space, vaddr);
+  vm_mapping_t *vm_end = space_get_mapping(space, vaddr + len - 1);
+  if (vm == NULL || vm_end == NULL || vm->type == VM_TYPE_RSVD || vm_end->type == VM_TYPE_RSVD) {
+    res = -ENOMEM;
+    goto ret;
   }
 
-  interval_t i = intvl(vaddr, vaddr+len);
   interval_t i_start = vm_real_interval(vm);
   interval_t i_end = vm_real_interval(vm_end);
+  interval_t i = intvl(vaddr, vaddr+len);
   bool is_single = vm == vm_end;
   bool are_siblings = vm_are_siblings(vm, vm_end);
+  prot &= VM_PROT_MASK;
   if (!contains_point(i_start, i.start) || !contains_point(i_end, i.end-1)) {
     // case 1
-    return -ENOMEM;
+    res = -ENOMEM;
+    goto ret;
   } else if (is_single && intvl_eq(i, i_start)) {
     // case 2
     vm_update_internal(vm, prot);
@@ -1652,9 +1707,9 @@ int vm_protect(uintptr_t vaddr, size_t len, uint32_t prot) {
     vm_update_internal(vm_a, prot);
   } else if (are_siblings && i.start == i_start.start && i.end == i_end.end) {
     // case 5
-    vm_mapping_t *sibling = LIST_NEXT(vm, list);
+    vm_mapping_t *sibling = LIST_NEXT(vm, vm_list);
     while (sibling) {
-      vm_mapping_t *next = LIST_NEXT(sibling, list);
+      vm_mapping_t *next = LIST_NEXT(sibling, vm_list);
       join_mappings(vm, sibling);
       sibling = next;
     }
@@ -1662,56 +1717,70 @@ int vm_protect(uintptr_t vaddr, size_t len, uint32_t prot) {
   } else if (are_siblings) {
     // case 6
     DPRINTF("vm_protect: error: cannot handle non-aligned sibling mappings [name={:str}]\n", &vm->name);
-    return -ENOMEM;
+    res = -ENOMEM;
+    goto ret;
   } else {
     // case 7
     DPRINTF("vm_protect: error: cannot update protection of region containing multiple mappings\n");
-    return -ENOMEM;
+    res = -ENOMEM;
+    goto ret;
   }
-  return 0;
+
+LABEL(ret);
+  space_unlock(space);
+  return res;
 }
 
-//
-
-int vm_resize(vm_mapping_t *vm, size_t new_size, bool allow_move) {
-  if (vm->type != VM_TYPE_PAGE && vm->type != VM_TYPE_ANON) {
-    kprintf("vm_resize: invalid mapping type %d [name={:str}]\n", vm->type, &vm->name);
-    return -1;
-  } else if (vm->flags & VM_LINKED || vm->flags & VM_SPLIT) {
-    kprintf("vm_resize: cannot resize part of a split mapping [name={:str}]\n", &vm->name);
-    return -1;
+int vm_resize(uintptr_t vaddr, size_t old_size, size_t new_size, bool allow_move, uintptr_t *new_vaddr) {
+  // The range [vaddr, vaddr+old_size-1] must represent exactly one mapping of type
+  // VM_TYPE_PAGE or VM_TYPE_ANON with a mapping size of old_size. If new_size is
+  // less than old_size, the mapping is truncated removing any previously active
+  // mappings. If new_size is greater than old_size and allow_move is false, the
+  // mapping will be resized in-place if the mapping has non-mapped but claimed
+  // vm space, or there is free space after the mapping. If allow_move is true,
+  // the mapping will be moved to a new location if the above conditions are not
+  // met, and new_vaddr will be set to the new address.
+  if (!is_valid_range(vaddr, old_size) || !is_aligned(old_size, PAGE_SIZE) || !is_aligned(new_size, PAGE_SIZE)) {
+    return -EINVAL;
   }
 
-  VM_LOCK(vm);
+  int res = 0;
+  address_space_t *space = select_space(curspace, vaddr);
+  space_lock(space);
+
+  vm_mapping_t *vm = space_get_mapping(space, vaddr);
+  if (vm == NULL || vm->type == VM_TYPE_RSVD) {
+    res = -ENOMEM;
+    goto ret;
+  }
+
+  if ((vm->type != VM_TYPE_PAGE && vm->type != VM_TYPE_ANON) || vm->size != old_size) {
+    res = -EINVAL;
+    goto ret;
+  } else if (vm->flags & VM_LINKED || vm->flags & VM_SPLIT) {
+    DPRINTF("vm_resize_old: cannot resize part of a split mapping [name={:str}]\n", &vm->name);
+    res = -EINVAL;
+    goto ret;
+  }
+
   if (vm->size == new_size) {
-    VM_UNLOCK(vm);
-    return 0;
+    // nothing to do
+    goto ret;
   }
 
   // first try resizing the existing mapping in place
   uintptr_t old_addr = vm->address;
-  size_t old_size = vm->size;
-  if (resize_mapping_inplace(vm, new_size)) {
-    VM_UNLOCK(vm);
-    goto update_memory;
-  }
-
-  // okay that didnt work but we can try moving the mapping
-  if (!allow_move) {
-    VM_UNLOCK(vm);
-    return -1;
-  }
-
-  address_space_t *space = vm->space;
-  bool ok = move_mapping(vm, new_size);
-  SPACE_UNLOCK(space);
-  VM_UNLOCK(vm);
-  if (!ok) {
-    return -1;
+  if (!resize_mapping_inplace(vm, new_size)) {
+    // that didnt work but maybe we can try moving the mapping
+    if (allow_move && move_mapping(vm, new_size)) {
+      *new_vaddr = vm->address;
+    } else {
+      res = -ENOMEM;
+      goto ret;
+    }
   }
 
   // finally call the appropriate resize function to update the underlying mappings
-LABEL(update_memory);
   if (new_size < old_size) {
     size_t len = old_size - new_size;
     size_t off = new_size;
@@ -1721,11 +1790,27 @@ LABEL(update_memory);
       anon_type_unmap_internal(vm, len, off);
     }
   }
-  return 0;
+
+LABEL(ret);
+  space_unlock(space);
+  return res;
 }
 
-__move page_t *vm_getpage(vm_mapping_t *vm, size_t off, bool cowref) {
+__move page_t *vm_getpage_cow(uintptr_t vaddr) {
+  if (!is_valid_pointer(vaddr)) {
+    return NULL;
+  }
+
   page_t *page = NULL;
+  address_space_t *space = select_space(curspace, vaddr);
+  space_lock(space);
+
+  vm_mapping_t *vm = space_get_mapping(space, vaddr);
+  if (vm == NULL || vm->type == VM_TYPE_RSVD) {
+    goto ret;
+  }
+
+  size_t off = vaddr - vm->address;
   switch (vm->type) {
     case VM_TYPE_RSVD:
     case VM_TYPE_PHYS:
@@ -1740,162 +1825,287 @@ __move page_t *vm_getpage(vm_mapping_t *vm, size_t off, bool cowref) {
       unreachable;
   }
 
-  if (cowref) {
-    return alloc_cow_pages(page);
-  }
+LABEL(ret);
+  space_unlock(space);
   return getref(page);
-}
-
-int vm_putpages(vm_mapping_t *vm, __move page_t *pages, size_t off) {
-  ASSERT(!(vm->flags & VM_LINKED)); // should be end of the chain
-  ASSERT(pages->flags & PG_HEAD);
-  size_t pgsize = pg_flags_to_size(pages->flags);
-  size_t size = pages->head.count * pgsize;
-  if (off + size > vm->size) {
-    DPRINTF("vm_putpages: out of bounds [vm={:str}, off=%zu, size=%zu]\n", &vm->name, off, size);
-    return -1;
-  }
-
-  if (vm->type == VM_TYPE_PAGE) {
-    page_type_map_internal(vm, pages, size, off);
-  } else if (vm->type == VM_TYPE_ANON) {
-    anon_type_putpages_internal(vm, vm->vm_anon, off, size, pages);
-  } else {
-    panic("vm_putpages: invalid mapping type");
-  }
-  return 0;
-}
-
-uintptr_t vm_mapping_to_phys(vm_mapping_t *vm, uintptr_t virt_addr) {
-  if (vm->type == VM_TYPE_RSVD)
-    return 0;
-
-  size_t off = virt_addr - vm->address;
-  if (vm->type == VM_TYPE_PHYS) {
-    return vm->vm_phys + off;
-  } else if (vm->type == VM_TYPE_PAGE) {
-    // walk the page list and find the page that contains the address
-    page_t *page = vm->vm_pages;
-    uintptr_t curr_addr = vm->address;
-    while (curr_addr < virt_addr) {
-      size_t sz = pg_flags_to_size(page->flags);
-      if (curr_addr + sz > virt_addr) {
-        // the pointer is within this page
-        return page->address + (virt_addr - curr_addr);
-      }
-
-      page = page->next;
-      curr_addr += sz;
-    }
-    return 0;
-  }
-
-  unreachable;
-}
-
-bool vm_mapping_contains(vm_mapping_t *vm, uintptr_t virt_addr) {
-  interval_t j = intvl(virt_addr, virt_addr + 1);
-  return contains(vm_real_interval(vm), j);
 }
 
 //
 
-vm_mapping_t *vm_get_mapping(uintptr_t virt_addr) {
-  if (virt_addr == 0)
-    return NULL;
-
-  address_space_t *space;
-  if (space_contains(curspace, virt_addr)) {
-    space = curspace;
-  } else {
-    space = kernel_space;
+uintptr_t vm_virt_to_phys(uintptr_t vaddr) {
+  if (!is_valid_pointer(vaddr)) {
+    return 0;
   }
 
-  SPACE_LOCK(space);
-  vm_mapping_t *vm = intvl_tree_get_point(space->new_tree, virt_addr);
-  SPACE_UNLOCK(space);
-  return vm;
+  uintptr_t paddr = 0;
+  address_space_t *space = select_space(curspace, vaddr);
+  space_lock(space);
+
+  vm_mapping_t *vm = space_get_mapping(space, vaddr);
+  if (vm == NULL || vm->type == VM_TYPE_RSVD) {
+    goto ret;
+  }
+
+  size_t off = vaddr - vm->address;
+  size_t stride = vm_flags_to_size(vm->flags);
+  if (vm->type == VM_TYPE_PHYS) {
+    // contiguous physical mapping
+    paddr = vm->vm_phys + off;
+  } else if (vm->type == VM_TYPE_PAGE) {
+    // walk the page list and find the page that contains the address
+    page_t *page = vm->vm_pages;
+    ASSERT(page->flags & PG_HEAD);
+    if (page->head.contiguous) {
+      // we can do a simple offset from the head page
+      paddr = page->address + off;
+      goto ret;
+    }
+
+    uintptr_t curr_vaddr = vm->address;
+    while (curr_vaddr < vaddr) {
+      if (curr_vaddr+stride > vaddr) {
+        // the pointer is within this page
+        paddr = page->address + (vaddr - curr_vaddr);
+        goto ret;
+      }
+
+      page = page->next;
+      curr_vaddr += stride;
+    }
+  } else if (vm->type == VM_TYPE_ANON) {
+    vm_anon_t *anon = vm->vm_anon;
+    size_t index = off / stride;
+    paddr = anon_struct_get_phys(anon, index);
+  }
+
+LABEL(ret);
+  space_unlock(space);
+  return paddr;
 }
 
-uintptr_t vm_virt_to_phys(uintptr_t virt_addr) {
-  vm_mapping_t *vm = vm_get_mapping(virt_addr);
-  if (!vm)
-    return 0;
+//
+// MARK: user space API
+//
 
-  return vm_mapping_to_phys(vm, virt_addr);
+// create page mappings in the non-current user address space
+int other_space_map(address_space_t *uspace, uintptr_t vaddr, uint32_t prot, __move page_t *pages) {
+  ASSERT(uspace != kernel_space);
+  ASSERT(pages->flags & PG_HEAD);
+  ASSERT(vaddr < USER_SPACE_END);
+  size_t size = pages->head.count * pg_flags_to_size(pages->flags);
+  ASSERT(vaddr+size <= USER_SPACE_END);
+
+  int res = 0;
+  space_lock(uspace);
+
+  const char *name = prot & VM_STACK ? "user stack" : "user";
+  uint32_t vm_flags = (prot & VM_PROT_MASK) | VM_USER | VM_FIXED | VM_NOMAP;
+  if (pages->flags & PG_COW)
+    vm_flags |= VM_COW;
+
+  if (vmap_internal(uspace, VM_TYPE_PAGE, vaddr, size, size, vm_flags, name, pages) == 0) {
+    DPRINTF("other_space_map: failed to make user mapping in address space [vaddr=%p, size=%zu, prot=%d]\n",
+            vaddr, size, prot);
+    res = -ENOMEM;
+    goto ret;
+  }
+
+  // map the pages (non-intrusively)
+  page_t *table_pages = NULL;
+  nonrecursive_map_pages(uspace->page_table, vaddr, vm_flags, pages, &table_pages);
+  if (table_pages != NULL) {
+    page_t *last_page = SLIST_GET_LAST(table_pages, next);
+    SLIST_ADD_SLIST(&uspace->table_pages, table_pages, last_page, next);
+  }
+
+LABEL(ret);
+  space_unlock(uspace);
+  return res;
+}
+
+int other_space_map_cow(address_space_t *uspace, uintptr_t vaddr, uint32_t prot, __ref page_t *pages) {
+  ASSERT(uspace != kernel_space);
+  page_t *cow_pages = alloc_cow_pages(pages);
+  if (cow_pages == NULL) {
+    DPRINTF("other_space_map_cow: failed to allocate COW pages\n");
+    return -ENOMEM;
+  }
+  return other_space_map(uspace, vaddr, prot, cow_pages);
 }
 
 //
 // MARK: Vmalloc API
 //
 
-static uintptr_t vmalloc_internal(size_t size, uint32_t vm_flags, const char *name) {
+void *vmalloc(size_t size, uint32_t vm_flags) {
+  ASSERT(!(vm_flags & VM_HUGE_2MB) && !(vm_flags & VM_HUGE_1GB));
   if (size == 0)
     return 0;
+
   size = align(size, PAGE_SIZE);
-
   vm_flags &= VM_FLAGS_MASK;
   vm_flags |= VM_MALLOC;
   if (!(vm_flags & VM_PROT_MASK)) {
-    vm_flags |= VM_READ | VM_WRITE; // default to read/write
+    return 0; // no protection flags given
   }
 
-  // allocate pages
-  page_t *pages;
-  size_t pagesize = vm_flags_to_size(vm_flags);
-  if (pagesize == PAGE_SIZE) {
-    pages = alloc_pages(SIZE_TO_PAGES(size));
-    // pages = alloc_pages_mixed(SIZE_TO_PAGES(size));
+  uintptr_t vaddr;
+  if (size <= SIZE_TO_PAGES(4)) {
+    page_t *pages = alloc_pages(SIZE_TO_PAGES(size));
+    if (pages == NULL) {
+      ALLOC_ERROR("vmalloc: failed to allocate page\n");
+      return 0;
+    }
+    vaddr = vmap_pages(moveref(pages), 0, PAGE_SIZE, vm_flags, "vmalloc");
   } else {
-    pages = alloc_pages_size(SIZE_TO_PAGES(size), pagesize);
-  }
-  PANIC_IF(!pages, "vmalloc: alloc_pages failed");
-  // allocate and map the virtual memory
-  return vmap_pages(pages, 0, size, vm_flags, name);
-}
-
-void *vmalloc(size_t size, uint32_t vm_flags) {
-  return (void *) vmalloc_internal(size, vm_flags, "vmalloc");
-}
-
-void *vmalloc_n(size_t size, uint32_t vm_flags, const char *name) {
-  uintptr_t vaddr = vmalloc_internal(size, vm_flags, name);
-  vm_mapping_t *vm = vm_get_mapping(vaddr);
-  str_free(&vm->name);
-  vm->name = str_from(name);
-  return (void *) vm->address;
-}
-
-void *vmalloc_at_phys(uintptr_t phys_addr, size_t size, uint32_t vm_flags) {
-  if (size == 0)
-    return NULL;
-
-  vm_flags &= VM_FLAGS_MASK;
-  vm_flags |= VM_MALLOC;
-  if (!(vm_flags & VM_PROT_MASK)) {
-    vm_flags |= VM_READ | VM_WRITE; // default to read/write
+    vaddr = vmap_anon(size, 0, size, vm_flags, "vmalloc");
   }
 
-  // allocate pages
-  page_t *pages = alloc_pages_at(phys_addr, SIZE_TO_PAGES(size), vm_flags_to_size(vm_flags));
-  PANIC_IF(!pages, "vmalloc_at_phys: alloc_pages_at failed");
-  // allocate and map the virtual memory
-  uintptr_t vaddr = vmap_pages(moveref(pages), 0, size, vm_flags, "vmalloc");
-  PANIC_IF(!vaddr, "vmalloc_at_phys: vmap_pages failed");
-  return (void *) vaddr;
+  if (vaddr == 0) {
+    ALLOC_ERROR("vmalloc: failed to make page mapping\n");
+    return 0;
+  }
+  return (void *)vaddr;
 }
 
 void vfree(void *ptr) {
-  if (ptr == NULL)
+  uintptr_t vaddr = (uintptr_t)ptr;
+  if (ptr == NULL || !is_valid_pointer(vaddr))
     return;
 
-  vm_mapping_t *vm = vm_get_mapping((uintptr_t) ptr);
-  PANIC_IF(!vm, "vfree: invalid pointer: {:018p} is not mapped", ptr);
-  PANIC_IF(!(vm->type == VM_TYPE_PAGE && (vm->flags & VM_MALLOC)), "vfree: invalid pointer: {:018p} is not a vmalloc pointer", ptr);
-  PANIC_IF(((uintptr_t)ptr) != vm->address, "vfree: invalid pointer: {:018p} is not the start of a vmalloc mapping", ptr);
-  vmap_free(vm);
+  address_space_t *space = select_space(curspace, vaddr);
+  space_lock(space);
+
+  vm_mapping_t *vm = space_get_mapping(space, vaddr);
+  if (vm == NULL) {
+    DPANICF("vfree: invalid pointer: {:018p} is not mapped\n", ptr);
+  } else if (!((vm->type == VM_TYPE_PAGE || vm->type == VM_TYPE_ANON) && (vm->flags & VM_MALLOC))) {
+    DPANICF("vfree: invalid pointer: {:018p} is not a vmalloc pointer\n", ptr);
+  } else if (((uintptr_t)ptr) != vm->address) {
+    DPANICF("vfree: invalid pointer: {:018p} is not the start of a vmalloc mapping\n", ptr);
+  }
+
+  free_mapping(&vm);
+  space_unlock(space);
 }
 
+//
+// MARK: vm descriptors
+//
+
+static uintptr_t internal_map_desc_virtual(address_space_t *space, vm_desc_t *desc, uint32_t extra_flags) {
+  uintptr_t vaddr;
+  if (desc->pages != NULL) {
+    vaddr = vmap_internal(
+      space,
+      VM_TYPE_PAGE,
+      desc->address,
+      desc->size,
+      desc->vm_size,
+      desc->vm_flags | extra_flags,
+      desc->name,
+      getref(desc->pages)
+    );
+  } else {
+    vm_anon_t *anon = anon_struct_alloc(NULL, desc->size, vm_flags_to_size(desc->vm_flags));
+    vaddr = vmap_internal(
+      space,
+      VM_TYPE_ANON,
+      desc->address,
+      desc->size,
+      desc->vm_size,
+      desc->vm_flags | extra_flags,
+      desc->name,
+      anon
+    );
+    if (vaddr == 0)
+      anon_struct_free(anon);
+  }
+
+  if (vaddr == 0) {
+    DPRINTF("internal_map_desc_virtual: failed to make user mapping in address space [vaddr=%p, size=%zu, prot=%d]\n",
+            desc->address, desc->size, desc->vm_flags);
+  }
+  return vaddr;
+}
+
+//
+
+vm_desc_t *vm_desc_alloc(uint64_t address, size_t size, uint32_t vm_flags, const char *name, __move page_t *pages) {
+  vm_desc_t *desc = kmallocz(sizeof(vm_desc_t));
+  desc->address = address;
+  desc->size = size;
+  desc->vm_size = size;
+  desc->vm_flags = vm_flags;
+  desc->pages = pages;
+  desc->name = name;
+  desc->next = NULL;
+  ASSERT(pages ? pages->flags & PG_HEAD : true);
+
+  if (name == NULL) {
+    desc->name = (vm_flags & VM_STACK) ? "stack" : (pages != NULL) ? "pages" : "anon";
+  }
+  return desc;
+}
+
+void vm_desc_free_all(vm_desc_t **descp) {
+  vm_desc_t *desc = *descp;
+  while (desc) {
+    vm_desc_t *next = desc->next;
+    drop_pages(&desc->pages);
+    kfree(desc);
+    desc = next;
+  }
+  *descp = NULL;
+}
+
+int vm_desc_map(vm_desc_t *descs) {
+  int res = 0;
+  space_lock(curspace);
+
+  vm_desc_t *desc = descs;
+  while (desc != NULL) {
+    if (internal_map_desc_virtual(curspace, desc, 0) == 0) {
+      res = -1;
+      goto ret;
+    }
+
+    desc = desc->next;
+  }
+
+LABEL(ret);
+  space_unlock(curspace);
+  return res;
+}
+
+int vm_desc_map_other_space(vm_desc_t *descs, address_space_t *uspace) {
+  int res = 0;
+  space_lock(uspace);
+
+  vm_desc_t *desc = descs;
+  while (desc != NULL) {
+    page_t *pages = getref(desc->pages);
+    uintptr_t vaddr = internal_map_desc_virtual(uspace, desc, VM_NOMAP);
+    if (vaddr == 0) {
+      drop_pages(&pages);
+      res = -1;
+      goto ret;
+    }
+
+    page_t *table_pages = NULL;
+    nonrecursive_map_pages(uspace->page_table, vaddr, desc->vm_flags, desc->pages, &table_pages);
+    if (table_pages != NULL) {
+      page_t *last_page = SLIST_GET_LAST(table_pages, next);
+      SLIST_ADD_SLIST(&uspace->table_pages, table_pages, last_page, next);
+    }
+
+    desc = desc->next;
+  }
+
+LABEL(ret);
+  space_unlock(uspace);
+  return res;
+}
 
 //
 // debug functions
@@ -1910,6 +2120,7 @@ void vm_print_address_space() {
 }
 
 void vm_print_mappings(address_space_t *space) {
+  space_lock(space);
   vm_mapping_t *prev = NULL;
   vm_mapping_t *vm = LIST_FIRST(&space->mappings);
   while (vm) {
@@ -1923,8 +2134,9 @@ void vm_print_mappings(address_space_t *space) {
 
     kprintf("  [{:018p}-{:018p}] {:$ >10llu}  %.3s  {:str}\n",
             vm->address, vm->address+vm->size, vm->size, prot_to_debug_str(vm->flags), &vm->name);
-    vm = LIST_NEXT(vm, list);
+    vm = LIST_NEXT(vm, vm_list);
   }
+  space_unlock(space);
 }
 
 void vm_print_address_space_v2() {
@@ -1937,6 +2149,7 @@ void vm_print_address_space_v2() {
 }
 
 void vm_print_format_address_space(address_space_t *space) {
+  space_lock(space);
   vm_mapping_t *prev = NULL;
   vm_mapping_t *vm = LIST_FIRST(&space->mappings);
   uintptr_t prev_end = space->min_addr;
@@ -1973,11 +2186,13 @@ void vm_print_format_address_space(address_space_t *space) {
     }
 
     prev_end = intvl.end;
-    vm = LIST_NEXT(vm, list);
+    vm = LIST_NEXT(vm, vm_list);
   }
+  space_unlock(space);
 }
 
 void vm_write_format_address_space(int fd, address_space_t *space) {
+  space_lock(space);
   vm_mapping_t *prev = NULL;
   vm_mapping_t *vm = LIST_FIRST(&space->mappings);
   uintptr_t prev_end = space->min_addr;
@@ -2014,12 +2229,14 @@ void vm_write_format_address_space(int fd, address_space_t *space) {
     }
 
     prev_end = intvl.end;
-    vm = LIST_NEXT(vm, list);
+    vm = LIST_NEXT(vm, vm_list);
   }
   kprintf("{:$=^64}\n");
+  space_unlock(space);
 }
 
 void vm_write_format_address_space_graphiz(int fd, address_space_t *space) {
+  space_lock(space);
   intvl_iter_t *iter = intvl_iter_tree(space->new_tree);
   intvl_node_t *node;
   rb_node_t *nil = space->new_tree->tree->nil;
@@ -2053,6 +2270,7 @@ void vm_write_format_address_space_graphiz(int fd, address_space_t *space) {
   }
   kfdprintf(fd, "}}\n");
   kfree(iter);
+  space_unlock(space);
 }
 
 //
@@ -2076,7 +2294,7 @@ DEFINE_SYSCALL(mmap, void *, void *addr, size_t len, int prot, int flags, int fd
     vm_flags |= prot & PROT_WRITE ? VM_WRITE : 0;
     vm_flags |= prot & PROT_EXEC ? VM_EXEC : 0;
 
-    uintptr_t res = vm_map_anon(max(len, SIZE_16GB), (uintptr_t)addr, len, vm_flags, "mmap");
+    uintptr_t res = vmap_anon(0, (uintptr_t)addr, len, vm_flags, "mmap");
     if (res == 0)
       return MAP_FAILED;
     return (void *) res;

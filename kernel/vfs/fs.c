@@ -164,17 +164,24 @@ LABEL(ret);
   return res;
 }
 
-//
+///////////////////
+// MARK: open
 
-int fs_open(const char *path, int flags, mode_t mode) {
-  ventry_t *at_ve = ve_getref(curproc->pwd);
+int fs_proc_open(proc_t *proc, int fd, const char *path, int flags, mode_t mode) {
+  ventry_t *at_ve = ve_getref(proc->pwd);
   ventry_t *ve = NULL;
-  int fd = -1;
   int res;
 
-  fd = ftable_alloc_fd(FTABLE);
-  if (fd < 0)
-    goto_error(ret, -EMFILE);
+  if (fd < 0) {
+    // allocate new fd
+    fd = ftable_alloc_fd(proc->files);
+    if (fd < 0)
+      goto_error(ret, -EMFILE);
+  } else {
+    // claim fd
+    if (ftable_claim_fd(proc->files, fd) < 0)
+      goto_error(ret, -EBADF);
+  }
 
   int acc = flags & O_ACCMODE;
   if (acc != O_RDONLY && acc != O_WRONLY && acc != O_RDWR)
@@ -251,18 +258,24 @@ LABEL(done);
   vn_unlock(vn);
 
   file_t *file = f_alloc(fd, flags, vn);
-  ftable_add_file(FTABLE, f_moveref(&file));
+  ftable_add_file(proc->files, f_moveref(&file));
 
   res = fd;
 LABEL(ret_unlock);
   ve_unlock(ve);
 LABEL(ret);
   if (res < 0)
-    ftable_free_fd(FTABLE, fd);
+    ftable_free_fd(proc->files, fd);
 
   ve_release(&ve);
   ve_release(&at_ve);
   return res;
+}
+
+//
+
+int fs_open(const char *path, int flags, mode_t mode) {
+  return fs_proc_open(curproc, -1, path, flags, mode);
 }
 
 int fs_close(int fd) {

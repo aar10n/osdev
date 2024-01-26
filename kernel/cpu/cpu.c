@@ -40,6 +40,8 @@
 #define CPU_EFER_NXE       (1 << 11)
 #define CPU_EFER_FFXSR     (1 << 14)
 
+#define DF_STACK_SIZE SIZE_4KB
+
 uint8_t cpu_bsp_id = 0;
 uint32_t cpu_to_apic_id[MAX_CPUS];
 struct percpu *percpu_areas[MAX_CPUS];
@@ -219,8 +221,10 @@ void cpu_early_init() {
 
 void cpu_late_init() {
   // setup the clean stack that is used for double fault handling
-  uintptr_t df_stack = (uintptr_t) vmalloc_n(SIZE_4KB, VM_WRITE | VM_STACK, "df stack");
-  tss_set_ist(1, df_stack + SIZE_4KB);
+  page_t *pages = alloc_pages(SIZE_TO_PAGES(DF_STACK_SIZE));
+  kassert(pages != NULL);
+  uintptr_t df_stack = vmap_pages(moveref(pages), 0, DF_STACK_SIZE, VM_WRITE|VM_STACK, "df stack");
+  tss_set_ist(1, df_stack + DF_STACK_SIZE);
   idt_set_gate_ist(CPU_EXCEPTION_DF, 1);
 }
 

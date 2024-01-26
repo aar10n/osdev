@@ -17,6 +17,7 @@ typedef struct bitmap {
 typedef ptrdiff_t index_t;
 
 bitmap_t *create_bitmap(size_t n);
+bitmap_t *clone_bitmap(bitmap_t *bmp);
 void bitmap_init(bitmap_t *bmp, size_t n);
 void bitmap_free(bitmap_t *bmp);
 

@@ -63,8 +63,22 @@ void smp_init() {
     return;
   }
 
-  void *code_ptr = vmalloc_at_phys(SMPBOOT_START, PAGE_SIZE, VM_WRITE | VM_EXEC);
-  void *data_ptr = vmalloc_at_phys(SMPDATA_START, PAGE_SIZE, VM_WRITE | VM_NOCACHE);
+  void *code_ptr;
+  {
+    page_t *code_page = alloc_pages_at(SMPBOOT_START, 1, PAGE_SIZE);
+    ASSERT(code_page != NULL);
+    code_ptr = (void *)vmap_pages(moveref(code_page), 0, PAGE_SIZE, VM_WRITE|VM_EXEC, "smpboot code");
+    ASSERT(code_ptr != NULL);
+  }
+
+  void *data_ptr;
+  {
+    page_t *data_page = alloc_pages_at(SMPDATA_START, 1, PAGE_SIZE);
+    ASSERT(data_page != NULL);
+    data_ptr = (void *)vmap_pages(moveref(data_page), 0, PAGE_SIZE, VM_WRITE|VM_NOCACHE, "smpboot data");
+    ASSERT(data_ptr != NULL);
+  }
+
   uintptr_t eip = vm_virt_to_phys((uintptr_t) code_ptr);
 
   size_t smpboot_size = smpboot_end - smpboot_start;
@@ -101,8 +115,8 @@ void smp_init() {
     system_num_cpus++;
   }
 
-  vfree(code_ptr);
-  vfree(data_ptr);
+  vm_free((uintptr_t)code_ptr, PAGE_SIZE);
+  vm_free((uintptr_t)data_ptr, PAGE_SIZE);
   kprintf("smp: total cpus = %d\n", system_num_cpus);
   kprintf("smp: done!\n");
 }

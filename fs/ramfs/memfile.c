@@ -22,35 +22,33 @@ memfile_t *memfile_alloc(size_t size) {
     kfree(memf);
     return NULL;
   }
-  memf->vm = vm_get_mapping(vaddr);
+  memf->base = vaddr;
   return memf;
 }
 
 void memfile_free(memfile_t *memf) {
-  vm_mapping_t *vm = memf->vm;
-  vmap_free(vm);
+  if (vm_free(memf->base, memf->size) < 0) {
+    DPRINTF("failed to free vm mapping\n");
+  }
   kfree(memf);
 }
 
 int memfile_fallocate(memfile_t *memf, size_t newsize) {
-  vm_mapping_t *vm = memf->vm;
-  if (vm_resize(vm, newsize, true) < 0) {
+  int res;
+  if ((res = vm_resize(memf->base, memf->size, newsize, true, &memf->base)) < 0) {
     DPRINTF("failed to resize vm mapping\n");
-    return -1;
+    return res;
   }
-
   memf->size = newsize;
   return 0;
 }
 
 ssize_t memfile_read(memfile_t *memf, size_t off, kio_t *kio) {
-  vm_mapping_t *vm = memf->vm;
-  return (ssize_t) kio_write_in(kio, (void *) vm->address, memf->size, off);
+  return (ssize_t) kio_write_in(kio, (void *)memf->base, memf->size, off);
 }
 
 ssize_t memfile_write(memfile_t *memf, size_t off, kio_t *kio) {
-  vm_mapping_t *vm = memf->vm;
-  return (ssize_t) kio_read_out((void *) vm->address, memf->size, off, kio);
+  return (ssize_t) kio_read_out((void *)memf->base, memf->size, off, kio);
 }
 
 int memfile_map(memfile_t *memf, size_t off, vm_mapping_t *vm) {

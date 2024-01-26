@@ -17,6 +17,10 @@
 #include <limits.h>
 #include <macros.h>
 
+#define __in      // identifies a pointer parameter as an input parameter
+#define __out     // identifies a pointer parameter as an output parameter
+#define __inout   // identifies a pointer parameter as an input/output parameter (modified)
+
 //
 // General Definitions
 //
@@ -64,12 +68,14 @@
 #define offset_addr(p, c) (((uintptr_t)(p)) + (c))
 #define align(v, a) ((v) + (((a) - (v)) & ((a) - 1)))
 #define align_down(v, a) ((v) & ~((a) - 1))
+#define page_align(v) align(v, PAGE_SIZE)
 #define is_aligned(v, a) (((v) & ((a) - 1)) == 0)
 #define is_pow2(v) (((v) & ((v) - 1)) == 0)
 #define prev_pow2(v) (1 << ((sizeof(v)*8 - 1) - __builtin_clz(v)))
 #define next_pow2(v) (1 << ((sizeof(v)*8 - __builtin_clz((v) - 1))))
 #define align_ptr(p, a) ((void *) (align((uintptr_t)(p), (a))))
 #define ptr_after(s) ((void *)(((uintptr_t)(s)) + (sizeof(*s))))
+
 
 #define min(a, b) (((a) < (b)) ? (a) : (b))
 #define max(a, b) (((a) > (b)) ? (a) : (b))

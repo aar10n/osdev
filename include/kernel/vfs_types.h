@@ -58,7 +58,7 @@ enum vstate {
 //               vfs
 // =================================
 
-/**
+/*
  * A virtual filesystem.
  */
 typedef struct vfs {
@@ -141,7 +141,7 @@ enum vtype {
 #define V_ISSOCK(v) ((v)->type == V_SOCK)
 #define V_ISDEV(v) (V_ISBLK(v) || V_ISCHR(v))
 
-/**
+/*
  * A virtual filesystem node.
  *
  * A vnode represents an object in a filesystem. It owns the data associated
@@ -236,7 +236,7 @@ struct vnode_ops {
 //             ventry
 // =================================
 
-/**
+/*
  * A virtual filesystem reference to a vnode.
  *
  * @ = updated during ve_syncvn()

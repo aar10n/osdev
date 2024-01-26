@@ -28,11 +28,11 @@ void runq_init(struct runqueue *runq);
 void runq_add(struct runqueue *runq, struct thread *td);
 /// Removes the given thread from the runqueue. The thread lock should be held
 /// when calling this function, and it will remain locked on return.
-void runq_remove(struct runqueue *runq, struct thread *td);
+void runq_remove(struct runqueue *runq, struct thread *td, bool *empty);
 /// Removes and returns the next thread to run from the runqueue. If this function
 /// returns a non-null thread, the thread lock will be held and it will be in the
 /// running state.
-struct thread *runq_next_thread(struct runqueue *runq);
+struct thread *runq_next_thread(struct runqueue *runq, bool *empty);
 
 // =================================
 //            lockqueue

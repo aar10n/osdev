@@ -16,9 +16,9 @@
 uint8_t ipi_irqnum;
 uint8_t ipi_vectornum;
 static mtx_t ipi_lock;
-static uint8_t ipi_type;
-static uint64_t ipi_data;
-static uint8_t ipi_ack;
+static volatile uint8_t ipi_type;
+static volatile uint64_t ipi_data;
+static volatile uint8_t ipi_ack;
 
 __used void ipi_handler(struct trapframe *frame) {
   uint8_t type = ipi_type;
@@ -42,7 +42,7 @@ __used void ipi_handler(struct trapframe *frame) {
       todo("IPI_INVLPG");
       break;
     case IPI_SCHEDULE:
-      todo("reschedule");
+      sched_again((sched_reason_t)data);
       break;
     case IPI_NOOP:
       break;
@@ -71,7 +71,8 @@ int ipi_deliver_cpu_id(ipi_type_t type, uint8_t cpu_id, uint64_t data) {
 
   // kprintf("[CPU#%d] delivering ipi to CPU#%d\n", PERCPU_ID, cpu_id);
 
-  // we cant use spin_lock here because it disables interrupts
+  // we cant use spin_lock here because it disables interrupts which might be coming
+  // from another cpu holding the lock
   while (!mtx_spin_trylock(&ipi_lock)) {
     cpu_pause();
   }
