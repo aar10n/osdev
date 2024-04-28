@@ -1,6 +1,3 @@
-[submodule "lib/fmt"]
-	path = lib/fmt
-	url = https://github.com/aar10n/fmt_c.git
 [submodule "third-party/musl"]
 	path = third-party/musl
 	url = git://git.musl-libc.org/musl
