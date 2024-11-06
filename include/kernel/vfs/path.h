@@ -73,11 +73,14 @@ size_t path_copy(char *dest, size_t size, path_t path);
 bool path_eq(path_t path1, path_t path2);
 
 /// Compares the path and the string for equality. Returns true if the paths the same.
-bool path_eq_str(path_t path, const char *str);
+bool path_eq_charp(path_t path, const char *str);
 
 /// Compares a path and a string with a specified length for equality. Returns true if
 /// the paths the same.
-bool path_eq_strn(path_t path, const char *str, uint16_t len);
+bool path_eq_charpn(path_t path, const char *str, uint16_t len);
+
+/// Returns true if path1 is at or under path2 (i.e. /a/b/c is under /a/b).
+bool path_is_subpath(path_t path1, path_t path2);
 
 /// Counts the number of occurrences of a character in a path.
 int path_count_char(path_t path, char c);

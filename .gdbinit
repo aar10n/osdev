@@ -1,10 +1,36 @@
+python
+
+# Custom Printers to format cstr_t and str_t objects like real strings.
+
+class StrPrinter(gdb.ValuePrinter):
+    """Print a str or cstr object."""
+
+    def __init__(self, val):
+        self.val = val
+
+    def to_string(self):
+        if self.val is None:
+          return '(null)'
+        if self.val['str'] == 0 or self.val['len'] == 0:
+          return '(empty)'
+        return f'"{self.val['str'].string(length=self.val['len'])}"'
+
+
+def build_pretty_printer():
+    pp = gdb.printing.RegexpCollectionPrettyPrinter('custom_str_printers')
+    pp.add_printer('cstr', '^cstr$', StrPrinter)
+    pp.add_printer('str', '^str$', StrPrinter)
+    return pp
+
+
+gdb.printing.register_pretty_printer(gdb.current_objfile(), build_pretty_printer())
+
 # https://stackoverflow.com/questions/33049201/gdb-add-symbol-file-all-sections-and-load-address
 #
 #   add-symbol-file-all <file> <address>
 #
 # Loads the symbols from the given file at the specified base address.
 # Useful for debugging dynamically linked libraries.
-python
 import subprocess
 import re
 
@@ -19,7 +45,7 @@ def relocatesections(filename, addr):
             continue
 
         line = re.sub(r' +', ' ', line)
-        line = re.sub(r'\[ *(\d+)\]', '\g<1>', line)
+        line = re.sub(r'\[ *(\d+)\]', r'\g<1>', line)
         fieldsvalue = line.split(' ')
         fieldsname = ['number', 'name', 'type', 'addr', 'offset', 'size', 'entsize', 'flags', 'link', 'info', 'addralign']
         sec = dict(zip(fieldsname, fieldsvalue))
@@ -99,5 +125,8 @@ add-symbol-file build/kernel.elf
 b kmain
 commands
   set variable is_debug_enabled = 0
-  add-symbol-file-all build/toolchain/usr/lib/libc.so 0x7fc0000000
+  add-symbol-file-all build/musl/x86_64-linux-musl/lib/libc.so 0x7fc0000000
+  add-symbol-file-all build/sbin/init/init 0x00000000000
+  #b _dlstart_c
+  #b _start_c
 end

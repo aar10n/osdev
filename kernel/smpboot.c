@@ -79,7 +79,7 @@ void smp_init() {
     ASSERT(data_ptr != NULL);
   }
 
-  uintptr_t eip = vm_virt_to_phys((uintptr_t) code_ptr);
+  uintptr_t eip = virt_to_phys(code_ptr);
 
   size_t smpboot_size = smpboot_end - smpboot_start;
   kassert(smpboot_size <= PAGE_SIZE);
@@ -115,8 +115,8 @@ void smp_init() {
     system_num_cpus++;
   }
 
-  vm_free((uintptr_t)code_ptr, PAGE_SIZE);
-  vm_free((uintptr_t)data_ptr, PAGE_SIZE);
+  vmap_free((uintptr_t) code_ptr, PAGE_SIZE);
+  vmap_free((uintptr_t) data_ptr, PAGE_SIZE);
   kprintf("smp: total cpus = %d\n", system_num_cpus);
   kprintf("smp: done!\n");
 }

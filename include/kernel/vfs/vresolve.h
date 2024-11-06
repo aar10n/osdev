@@ -7,6 +7,7 @@
 
 #include <kernel/vfs_types.h>
 #include <kernel/vfs/vcache.h>
+#include <kernel/sbuf.h>
 
 // flags
 #define VR_NOFOLLOW 0x1   // do not follow symlinks or mount points at the end of the path (return entry itself)
@@ -19,8 +20,9 @@
 #define VR_LNK      0x400 // the path must be a symlink
 
 int vresolve_cache(vcache_t *vc, cstr_t path, int flags, int depth, __move ventry_t **result);
-int vresolve_fullwalk(vcache_t *vc, ventry_t *at, cstr_t path, int flags, int depth, __move ventry_t **result);
+int vresolve_fullwalk(vcache_t *vc, ventry_t *at, cstr_t path, int flags, int depth, sbuf_t *fullpath, __move ventry_t **result);
 
+int vresolve_fullpath(vcache_t *vcache, ventry_t *at, cstr_t path, int flags, __inout sbuf_t *fullpath, __move ventry_t **result);
 int vresolve(vcache_t *vcache, ventry_t *at, cstr_t path, int flags, __move ventry_t **result);
 
 #endif

@@ -11,6 +11,6 @@
 #include <kernel/mm/pmalloc.h>
 #include <kernel/mm/vmalloc.h>
 #include <kernel/mm/init.h>
-
+#include <kernel/mm/file.h>
 
 #endif

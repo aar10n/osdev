@@ -56,12 +56,7 @@ typedef struct interval {
 
 //
 
-typedef struct intvl_tree_events {
-  void *(*copy_data)(void *data);
-} intvl_tree_events_t;
-
 typedef struct intvl_node {
-  intvl_tree_events_t *events;
   rb_node_t *node;
   interval_t interval;
   uint64_t max;
@@ -69,25 +64,15 @@ typedef struct intvl_node {
   void *data;
 } intvl_node_t;
 
-typedef struct intvl_tree {
-  rb_tree_t *tree;
-  intvl_tree_events_t *events;
-} intvl_tree_t;
+typedef rb_tree_t intvl_tree_t;
 
-typedef rb_iter_t intvl_iter_t;
-typedef bool (*intvl_pred_t)(rb_tree_t *, intvl_node_t *);
 
 intvl_tree_t *create_intvl_tree();
-intvl_tree_t *copy_intvl_tree(intvl_tree_t *tree);
-intvl_tree_t *copy_intvl_tree_pred(intvl_tree_t *tree, intvl_pred_t pred);
 intvl_node_t *intvl_tree_find(intvl_tree_t *tree, interval_t interval);
 void *intvl_tree_get_point(intvl_tree_t *tree, uint64_t point);
-intvl_node_t *intvl_tree_find_closest(intvl_tree_t *tree, interval_t interval);
+interval_t intvl_tree_find_free_gap(intvl_tree_t *tree, interval_t intvl, size_t align, intvl_node_t **prev_node);
 void intvl_tree_insert(intvl_tree_t *tree, interval_t interval, void *data);
 void intvl_tree_delete(intvl_tree_t *tree, interval_t interval);
 void intvl_tree_update_interval(intvl_tree_t *tree, intvl_node_t *node, off_t ds, off_t de);
-
-intvl_iter_t *intvl_iter_tree(intvl_tree_t *tree);
-intvl_node_t *intvl_iter_next(intvl_iter_t *iter);
 
 #endif

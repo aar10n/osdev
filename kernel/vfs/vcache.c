@@ -8,7 +8,6 @@
 #include <kernel/mm.h>
 #include <kernel/panic.h>
 #include <kernel/printf.h>
-#include <kernel/sbuf.h>
 #include <kernel/str.h>
 #include <kernel/kio.h>
 
@@ -40,8 +39,9 @@ struct vcache_dir {
 #define VCACHE_UNLOCK(vcache) mtx_spin_unlock(&(vcache)->lock)
 
 #define ASSERT(x) kassert(x)
-#define DPRINTF(fmt, ...) kprintf("vcache: %s: " fmt, __func__, ##__VA_ARGS__)
 // #define DPRINTF(str, args...)
+#define DPRINTF(fmt, ...) kprintf("vcache: %s: " fmt, __func__, ##__VA_ARGS__)
+#define EPRINTF(fmt, ...) kprintf("vcache: %s: " fmt, __func__, ##__VA_ARGS__)
 
 #define VCACHE_INITIAL_SIZE 1024
 
@@ -59,7 +59,7 @@ static const char *vtype_to_str[] = {
 
 static inline struct vcache_entry *vcache_entry_alloc(cstr_t path, hash_t hash, ventry_t *ve) {
   struct vcache_entry *entry = kmallocz(sizeof(struct vcache_entry));
-  entry->path = str_copy_cstr(path);
+  entry->path = str_from_cstr(path);
   entry->hash = hash;
   entry->ve = ve_getref(ve); // take a reference
   return entry;
@@ -124,9 +124,9 @@ static inline void vcache_remove_entry(vcache_t *vcache, struct vcache_entry *en
   vcache->size--;
 }
 
-static inline int vcache_invalidate_nolock(vcache_t *vcache, cstr_t path) {
-  DPRINTF("invalidating path {:cstr}\n", &path);
+static int vcache_invalidate_nolock(vcache_t *vcache, cstr_t path) {
   hash_t hash = ve_hash_cstr(vcache->root, path);
+  DPRINTF("invalidating {:cstr} [hash=%llu]\n", &path, hash);
   struct vcache_entry *entry = vcache_find_entry(vcache, path, hash);
   if (!entry) {
     return -1;
@@ -136,8 +136,8 @@ static inline int vcache_invalidate_nolock(vcache_t *vcache, cstr_t path) {
   if (ve->type == V_DIR) {
     // if entry is a directory, recursively invalidate all children before
     // removing the vcache_dir itself
-    rb_node_t *rb_node = rb_tree_find(vcache->dir_map, ve_unique_id(ve));
-    ASSERT(rb_node != NULL);
+    rb_node_t *rb_node = rb_tree_find_node(vcache->dir_map, ve_unique_id(ve));
+    ASSERT(!rb_node_is_nil(rb_node));
     struct vcache_dir *direntry = rb_node->data;
     // invalidate children recursively and do it in a while loop because
     // the array will be modified as we go
@@ -146,7 +146,7 @@ static inline int vcache_invalidate_nolock(vcache_t *vcache, cstr_t path) {
       if (child_entry) {
         vcache_invalidate_nolock(vcache, cstr_from_str(child_entry->path));
       } else {
-        DPRINTF("missing child entry %llu\n", &direntry->children[0]);
+        EPRINTF("missing child entry %llu\n", &direntry->children[0]);
         vcache_dir_remove(direntry, direntry->children[0]);
       }
     }
@@ -168,16 +168,28 @@ static inline int vcache_invalidate_nolock(vcache_t *vcache, cstr_t path) {
   hash_t parent_hash = ve_hash_cstr(vcache->root, parent_path);
   struct vcache_entry *parent = vcache_find_entry(vcache, parent_path, parent_hash);
   if (parent) {
-    // DPRINTF("removing entry %u from parent dir (id=%u,%u)\n", ve->id, parent->ve->vfs_id, parent->ve->id);
-    struct vcache_dir *direntry = rb_tree_get(vcache->dir_map, ve_unique_id(parent->ve));
+    struct vcache_dir *direntry = rb_tree_find(vcache->dir_map, ve_unique_id(parent->ve));
+    DPRINTF("removing entry %llu from parent dir {:ve} [%p]\n", hash, parent->ve, direntry);
     vcache_dir_remove(direntry, hash);
   }
 
   return 0;
 }
 
+static int vcache_invalidate_all_nolock(vcache_t *vcache) {
+  for (size_t i = 0; i < vcache->capacity; i++) {
+    struct vcache_entry *entry = LIST_FIRST(&vcache->entries[i]);
+    while (entry) {
+      vcache_invalidate_nolock(vcache, cstr_from_str(entry->path));
+      entry = LIST_FIRST(&vcache->entries[i]);
+    }
+  }
+  return 0;
+}
+
 static inline int vcache_put_nolock(vcache_t *vcache, cstr_t path, ventry_t *ve) {
   hash_t hash = ve_hash_cstr(ve, path);
+  DPRINTF("caching {:ve} at path {:cstr} [hash=%llu]\n", ve, &path, hash);
   struct vcache_entry *entry = vcache_find_entry(vcache, path, hash);
   if (entry) {
     if (entry->ve == ve) {
@@ -189,13 +201,14 @@ static inline int vcache_put_nolock(vcache_t *vcache, cstr_t path, ventry_t *ve)
 
   if (ve->type == V_DIR) {
     // if entry is a directory, add it to the directory map by its vnode id
-    if (rb_tree_get(vcache->dir_map, ve_unique_id(ve)) != NULL) {
-      panic("vcache: directory already exists in dir_map (id=%u,%u)\n", ve->vfs_id, ve->id);
+    if (rb_tree_find(vcache->dir_map, ve_unique_id(ve)) != NULL) {
+      panic("vcache: directory already exists in dir_map {:ve}\n", ve);
       return -1;
     }
 
-    struct vcache_dir *dir = vcache_dir_alloc();
-    rb_tree_insert(vcache->dir_map, ve_unique_id(ve), dir);
+    struct vcache_dir *direntry = vcache_dir_alloc();
+    // DPRINTF("allocated dir for {:ve} [%p]\n", ve, direntry);
+    rb_tree_insert(vcache->dir_map, ve_unique_id(ve), direntry);
   }
 
   // now add the ventry to the vcache
@@ -205,13 +218,13 @@ static inline int vcache_put_nolock(vcache_t *vcache, cstr_t path, ventry_t *ve)
     return 0; // root entry
   }
 
-  // add the entry to its parent directory
+  // add the entry hash to the parent directory
   cstr_t parent_path = cstr_dirname(path);
   hash_t parent_hash = ve_hash_cstr(vcache->root, parent_path);
   struct vcache_entry *parent = vcache_find_entry(vcache, parent_path, parent_hash);
   if (parent) {
-    // DPRINTF("adding entry %d to parent dir (id=%u,%u)\n", ve->id, parent->ve->vfs_id, parent->ve->id);
-    struct vcache_dir *direntry = rb_tree_get(vcache->dir_map, ve_unique_id(parent->ve));
+    struct vcache_dir *direntry = rb_tree_find(vcache->dir_map, ve_unique_id(parent->ve));
+    DPRINTF("adding entry %llu to parent dir {:ve} [%p]\n", hash, parent->ve, direntry);
     vcache_dir_add(direntry, hash);
   }
   return 0;
@@ -219,7 +232,7 @@ static inline int vcache_put_nolock(vcache_t *vcache, cstr_t path, ventry_t *ve)
 
 //
 
-vcache_t *vcache_alloc(ventry_t *root) {
+vcache_t *vcache_alloc(__ref ventry_t *root) {
   vcache_t *vcache = kmallocz(sizeof(vcache_t));
   vcache->root = ve_getref(root);
   vcache->capacity = VCACHE_INITIAL_SIZE;
@@ -236,7 +249,7 @@ void vcache_free(vcache_t *vcache) {
   kfree(vcache->entries);
 }
 
-ventry_t *vcache_get_root(vcache_t *vcache) {
+ventry_t *vcache_get_root(vcache_t *vcache) __ref {
   return vcache->root;
 }
 
@@ -262,10 +275,13 @@ ventry_t *vcache_get(vcache_t *vcache, cstr_t path) __move {
 int vcache_put(vcache_t *vcache, cstr_t path, ventry_t *ve) {
   if (ve->state == V_DEAD)
     return -1;
+  if (!cstr_starts_with(path, '/')) {
+    EPRINTF("skipping invalid path {:cstr}\n", &path);
+    return -1;
+  }
 
   ve_hash(ve);
   VCACHE_LOCK(vcache);
-  DPRINTF("caching {:cstr} [id=%u,%u]\n", &path, ve->vfs_id, ve->id);
   int ret = vcache_put_nolock(vcache, path, ve);
   VCACHE_UNLOCK(vcache);
   return ret;
@@ -273,18 +289,23 @@ int vcache_put(vcache_t *vcache, cstr_t path, ventry_t *ve) {
 
 int vcache_invalidate(vcache_t *vcache, cstr_t path) {
   VCACHE_LOCK(vcache);
-  DPRINTF("invalidating {:cstr}\n", &path);
   int res = vcache_invalidate_nolock(vcache, path);
-  // DPRINTF("done\n", &path);
+  VCACHE_UNLOCK(vcache);
+  return res;
+}
+
+int vcache_invalidate_all(vcache_t *vcache) {
+  VCACHE_LOCK(vcache);
+  int res = vcache_invalidate_all_nolock(vcache);
   VCACHE_UNLOCK(vcache);
   return res;
 }
 
 void vcache_dump(vcache_t *vcache) {
   VCACHE_LOCK(vcache);
-  kprintf("{:$=<21} vcache dump {:$=>20}\n");
-  kprintf(" idx   | id       | type | path \n");
-  kprintf("-------+----------+------+{:$-<30}\n");
+  kprintf("{:$=<34} vcache dump {:$=>34}\n");
+  kprintf(" idx   | id       | type | hash                   | path\n");
+  kprintf("-------+----------+------+------------------------+------------------------------\n");
   {
     for (size_t i = 0; i < vcache->capacity; i++) {
       struct vcache_entry *entry = LIST_FIRST(&vcache->entries[i]);
@@ -300,10 +321,10 @@ void vcache_dump(vcache_t *vcache) {
         ksnprintf(entrystr, sizeof(entrystr)-1, "",
                   i, ve->vfs_id, ve->id, type, str_cptr(entry->path));
         kio_t kio = kio_new_writable(entrystr, sizeof(entrystr) - 1);
-        kio_sprintf(&kio, " {:>5zu} | {:>8s} | {:4s} | {:29s} ", i, unique_id, type, str_cptr(entry->path));
+        kio_sprintf(&kio, " {:>5zu} | {:>8s} | {:4s} | {:22llu} | {:28s} ", i, unique_id, type, entry->hash, str_cptr(entry->path));
 
         if (V_ISDIR(ve)) {
-          struct vcache_dir *direntry = rb_tree_get(vcache->dir_map, ve_unique_id(ve));
+          struct vcache_dir *direntry = rb_tree_find(vcache->dir_map, ve_unique_id(ve));
           ASSERT(direntry != NULL);
           kio_sprintf(&kio, "(%zu", direntry->count);
           if (direntry->count == 1) {
@@ -321,7 +342,37 @@ void vcache_dump(vcache_t *vcache) {
         entry = LIST_NEXT(entry, list);
       }
     }
+
+    kprintf("{:$-<81}\n");
+    kprintf("{:$=<25} directory map {:$=>24}\n");
+    kprintf(" idx   | id       | pointer            | children\n");
+    kprintf("-------+----------+--------------------+------------------------\n");
+
+    // directory info
+    for (size_t i = 0; i < vcache->capacity; i++) {
+      struct vcache_entry *entry = LIST_FIRST(&vcache->entries[i]);
+      while (entry) {
+        ventry_t *ve = entry->ve;
+        if (V_ISDIR(ve)) {
+          struct vcache_dir *direntry = rb_tree_find(vcache->dir_map, ve_unique_id(ve));
+          ASSERT(direntry != NULL);
+
+          char unique_id[32] = {0};
+          ksnprintf(unique_id, sizeof(unique_id)-1, "%u,%u", ve->vfs_id, ve->id);
+          kprintf(" {:>5zu} | {:>8s} | {:18p} | ", i, unique_id, direntry);
+          for (size_t j = 0; j < direntry->count; j++) {
+            kprintf("%llu", direntry->children[j]);
+            if (j < direntry->count - 1) {
+              kprintf(", ");
+            }
+          }
+          kprintf("\n");
+        }
+
+        entry = LIST_NEXT(entry, list);
+      }
+    }
   }
-  kprintf("{:$-<56}\n");
+  kprintf("{:$-<64}\n");
   VCACHE_UNLOCK(vcache);
 }

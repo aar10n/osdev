@@ -7,6 +7,7 @@
 #include <kernel/mm.h>
 #include <kernel/printf.h>
 
+
 #define ASSERT(x) kassert(x)
 #define DPRINTF(fmt, ...) kprintf("memfile: %s: " fmt, __func__, ##__VA_ARGS__)
 
@@ -27,15 +28,22 @@ memfile_t *memfile_alloc(size_t size) {
 }
 
 void memfile_free(memfile_t *memf) {
-  if (vm_free(memf->base, memf->size) < 0) {
+  if (vmap_free(memf->base, memf->size) < 0) {
     DPRINTF("failed to free vm mapping\n");
   }
   kfree(memf);
 }
 
-int memfile_fallocate(memfile_t *memf, size_t newsize) {
+__ref page_t *memfile_getpage(memfile_t *memf, off_t off) {
+  if (off >= memf->size) {
+    return NULL;
+  }
+  return vm_getpage(memf->base + off);
+}
+
+int memfile_falloc(memfile_t *memf, size_t newsize) {
   int res;
-  if ((res = vm_resize(memf->base, memf->size, newsize, true, &memf->base)) < 0) {
+  if ((res = vmap_resize(memf->base, memf->size, newsize, /*allow_move=*/true, &memf->base)) < 0) {
     DPRINTF("failed to resize vm mapping\n");
     return res;
   }
@@ -49,8 +57,4 @@ ssize_t memfile_read(memfile_t *memf, size_t off, kio_t *kio) {
 
 ssize_t memfile_write(memfile_t *memf, size_t off, kio_t *kio) {
   return (ssize_t) kio_read_out((void *)memf->base, memf->size, off, kio);
-}
-
-int memfile_map(memfile_t *memf, size_t off, vm_mapping_t *vm) {
-  unimplemented("memfile_map");
 }

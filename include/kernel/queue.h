@@ -40,50 +40,52 @@
 /* Adds an element to the end of the list */
 #define LIST_ADD(head, el, name)        \
   ({                                    \
+    typeof(el) __el = (el);             \
     if ((head)->first == NULL) {        \
-      (head)->first = (el);             \
-      (head)->last = (el);              \
-      (el)->name.next = NULL;           \
-      (el)->name.prev = NULL;           \
+      (head)->first = (__el);           \
+      (head)->last = (__el);            \
+      (__el)->name.next = NULL;         \
+      (__el)->name.prev = NULL;         \
     } else {                            \
-      (head)->last->name.next = (el);   \
-      (el)->name.next = NULL;           \
-      (el)->name.prev = (head)->last;   \
-      (head)->last = (el);              \
+      (head)->last->name.next = (__el); \
+      (__el)->name.next = NULL;         \
+      (__el)->name.prev = (head)->last; \
+      (head)->last = (__el);            \
     }                                   \
-    (el);                               \
+    (__el);                             \
   })
 
 /* Adds an element to the start of the list */
 #define LIST_ADD_FRONT(head, el, name)  \
   ({                                    \
+    typeof(el) __el = (el);             \
     if ((head)->first == NULL) {        \
-      (head)->first = (el);             \
-      (head)->last = (el);              \
-      (el)->name.next = NULL;           \
-      (el)->name.prev = NULL;           \
+      (head)->first = (__el);           \
+      (head)->last = (__el);            \
+      (__el)->name.next = NULL;         \
+      (__el)->name.prev = NULL;         \
     } else {                            \
-      (head)->first->name.prev = (el);  \
-      (el)->name.next = (head)->first;  \
-      (el)->name.prev = NULL;           \
-      (head)->first = (el);             \
+      (head)->first->name.prev = (__el);\
+      (__el)->name.next = (head)->first;\
+      (__el)->name.prev = NULL;         \
+      (head)->first = (__el);           \
     }                                   \
-    (el); \
+    (__el); \
   })
 
 /* inserts an element after another */
 #define LIST_INSERT(head, el, name, after)                \
   ({                                                      \
-                                                          \
+    typeof(el) __el = (el);                               \
     if ((after) == (head)->last) {                        \
-      (head)->last = (el);                                \
+      (head)->last = (__el);                              \
     } else {                                              \
-      (after)->name.next->name.prev = (el);               \
+      (after)->name.next->name.prev = (__el);             \
     }                                                     \
-    (el)->name.next = (after)->name.next;                 \
-    (el)->name.prev = (after);                            \
-    (after)->name.next = (el);                            \
-    (el);                                                 \
+    (__el)->name.next = (after)->name.next;               \
+    (__el)->name.prev = (after);                          \
+    (after)->name.next = (__el);                          \
+    (__el);                                               \
   })
 
 /* inserts an element into the correct position of a key-ordered list */
@@ -126,6 +128,16 @@
     (el);                                                 \
   })
 
+/* Removes the first element from the list */
+#define LIST_REMOVE_FIRST(head, name) \
+  ({                                  \
+    typeof((head)->first) __el = (head)->first; \
+    if (__el) {                       \
+      LIST_REMOVE(head, __el, name);  \
+    }                                 \
+    __el;                             \
+  })
+
 /* Adds a list to the end of another */
 #define LIST_CONCAT(head, start, end, name)               \
   ({                                                      \
@@ -147,27 +159,29 @@
 /* Adds an element to the end of the single list */
 #define SLIST_ADD(head, el, name)       \
   {                                     \
+    typeof((head)->first) __el = (el);  \
     if ((head)->first == NULL) {        \
-      (head)->first = (el);             \
-      (head)->last = (el);              \
-      (el)->name = NULL;                \
+      (head)->first = (__el);           \
+      (head)->last = (__el);            \
+      (__el)->name = NULL;              \
     } else {                            \
-      (head)->last->name = (el);        \
-      (el)->name = NULL;                \
-      (head)->last = (el);              \
+      (head)->last->name = (__el);      \
+      (__el)->name = NULL;              \
+      (head)->last = (__el);            \
     }                                   \
   }
 
 /* Adds an element to the start of the list */
 #define SLIST_ADD_FRONT(head, el, name)  \
   {                                      \
+    typeof((head)->first) __el = (el);   \
     if ((head)->first == NULL) {         \
-      (head)->first = (el);              \
-      (head)->last = (el);               \
-      (el)->name = NULL;                 \
+      (head)->first = (__el);            \
+      (head)->last = (__el);             \
+      (__el)->name = NULL;               \
     } else {                             \
-      (el)->name = (head)->first;        \
-      (head)->first = (el);              \
+      (__el)->name = (head)->first;      \
+      (head)->first = (__el);            \
     }                                    \
   }
 

@@ -1,5 +1,4 @@
 // This file contains X-Macro definitions of all linux syscalls (used by musl)
-// All uncommented lines
 #ifndef SYSCALL
 #define SYSCALL(name, n_args, ret_type, ...)
 #endif
@@ -19,7 +18,7 @@ SYSCALL(lseek, 3, off_t, PARAM(int, fd, "%d"), PARAM(off_t, offset, "%zd"), PARA
 SYSCALL(mmap, 6, void *, PARAM(void *, addr, "%p"), PARAM(size_t, length, "%zu"), PARAM(int, prot, "%d"), PARAM(int, flags, "%d"), PARAM(int, fd, "%d"), PARAM(off_t, offset, "%zd"))
 SYSCALL(mprotect, 3, int, PARAM(void *, addr, "%p"), PARAM(size_t, len, "%zu"), PARAM(int, prot, "%d"))
 SYSCALL(munmap, 2, int, PARAM(void *, addr, "%p"), PARAM(size_t, length, "%zu"))
-SYSCALL(brk, 1, void *, PARAM(void *, addr, "%p"))
+SYSCALL(brk, 1, unsigned long, PARAM(unsigned long, addr, "%p"))
 SYSCALL(rt_sigaction, 4, int, PARAM(int, signum, "%d"), PARAM(const struct sigaction *, act, "%p"), PARAM(struct sigaction *, oldact, "%p"), PARAM(size_t, sigsetsize, "%zu"))
 SYSCALL(rt_sigprocmask, 4, int, PARAM(int, how, "%d"), PARAM(const sigset_t *, set, "%p"), PARAM(sigset_t *, oldset, "%p"), PARAM(size_t, sigsetsize, "%zu"))
 SYSCALL(rt_sigreturn, 0, int)

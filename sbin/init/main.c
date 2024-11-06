@@ -5,6 +5,6 @@
 #include <stdio.h>
 
 int main() {
-  printf("Hello, from userspace!\n");
+  puts("Hello, from userspace!\n");
   return 0;
 }

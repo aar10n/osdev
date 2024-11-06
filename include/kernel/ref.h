@@ -24,8 +24,8 @@ static inline void ref_get(refcount_t *ref) { // NOLINT(*-non-const-parameter)
 }
 
 static inline int ref_put(refcount_t *ref) { // NOLINT(*-non-const-parameter)
-  if (atomic_fetch_sub(ref, 1) == 0)
-    return 1;
+  if (atomic_fetch_sub(ref, 1) == 1) // value was 1 -> now 0
+    return 1; // last reference
   return 0;
 }
 
@@ -41,7 +41,7 @@ static inline int ref_count(const refcount_t *ref) {
 #define initref(objptr) (ref_init(&(objptr)->_refname))
 #define newref(objptr) ({ ref_init(&(objptr)->_refname); objptr; })
 #define getref(objptr) ({ if (__expect_true((objptr) != NULL)) ref_get(&(objptr)->_refname); objptr; })
-#define moveref(objref) ({ typeof(objref) tmp = (objref); (objref) = NULL; tmp; })
+#define moveref(objref) ({ typeof(objref) __tmp = (objref); (objref) = NULL; __tmp; })
 
 // putref(obj **objpptr, void(*objdtor)(obj*))
 #define putref(objpptr, objdtor) ({ \

@@ -76,6 +76,9 @@ void lock_claim_list_remove(struct lock_claim_list *list, struct lock_object *lo
   for (int i = list->nclaims - 1; i >= 0; i--) {
     if (list->claims[i].lock == lock) {
       list->claims[i].lock = NULL;
+      list->claims[i].how = 0;
+      list->claims[i].file = NULL;
+      list->claims[i].line = 0;
       list->nclaims--;
       return;
     }

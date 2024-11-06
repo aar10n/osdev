@@ -123,7 +123,7 @@ debug: $(BUILD_DIR)/osdev.img
 		-ex "add-symbol-file $(BUILD_DIR)/kernel.elf"
 
 run-debug: $(BUILD_DIR)/osdev.img
-	$(QEMU) -s -S $(QEMU_OPTIONS) -monitor telnet:127.0.0.1:55544,server,nowait &> $(BUILD_DIR)/output &
+	$(QEMU) -s -S $(QEMU_OPTIONS) -monitor telnet:127.0.0.1:55544,server,nowait 2>&1 > $(BUILD_DIR)/qemu.log &
 
 remote-run: REMOTE_QEMU ?= $(QEMU)
 remote-run: REMOTE_QEMU_OPTIONS ?= $(QEMU_OPTIONS)
@@ -248,7 +248,7 @@ $(SYS_ROOT): install-userspace
 	$(MAKE) -C toolchain musl-headers DESTDIR=$(SYS_ROOT)/usr
 	cp $(TOOL_ROOT)/usr/lib/libc.so $(SYS_ROOT)/usr/lib/libc.so
 	$(STRIP) $(SYS_ROOT)/usr/lib/libc.so
-	ln -sf /initrd/usr/lib/libc.so $(SYS_ROOT)/lib/ld-musl-$(ARCH).so.1 || true
+	ln -sf /usr/lib/libc.so $(SYS_ROOT)/lib/ld-musl-$(ARCH).so.1 || true
 	@touch $(BUILD_DIR)/sysroot_sha1
 
 # sysroot sha1sum

@@ -4,25 +4,13 @@
 
 #include "interval_tree.h"
 
-#include <kernel/string.h>
-
-#ifndef _assert
-#include <kernel/panic.h>
-#define _assert(expr) kassert((expr))
-#endif
-
-#ifndef _malloc
 #include <kernel/mm/heap.h>
+#include <kernel/string.h>
+#include <kernel/panic.h>
 #include <kernel/printf.h>
-#define _malloc(size) kmalloc(size)
-#define _free(ptr) kfree(ptr)
-#endif
 
-#define callback(cb, args...) \
-  if (tree->events && tree->events->cb) {   \
-    tree->events->cb(args);                 \
-  }                                         \
-  NULL
+#define ASSERT(x) kassert(x)
+#define DPRINTF(fmt, ...) kprintf("intvl_tree: " fmt, ##__VA_ARGS__)
 
 
 static inline interval_t get_interval(rb_tree_t *tree, rb_node_t *node) {
@@ -44,6 +32,19 @@ static inline uint64_t get_min(rb_tree_t *tree, rb_node_t *node) {
     return UINT64_MAX;
   }
   return ((intvl_node_t *) node->data)->min;
+}
+
+static bool check_gap(uint64_t gap_start, uint64_t gap_end, uint64_t size, size_t align) {
+  uint64_t aligned_start = align(gap_start, align);
+  if (aligned_start < gap_end && (gap_end - aligned_start) >= size) {
+    return true;
+  }
+  return false;
+}
+
+static interval_t make_aligned_interval(uint64_t start, uint64_t size, size_t align) {
+  uint64_t aligned_start = align(start, align);
+  return intvl(aligned_start, aligned_start + size);
 }
 
 //
@@ -90,72 +91,34 @@ void replace_node_callback(rb_tree_t *tree, rb_node_t *u, rb_node_t *v) {
 void duplicate_node_callback(rb_tree_t *tree, rb_tree_t *new_tree, rb_node_t *u, rb_node_t *v) {
   if (u->data) {
     intvl_node_t *ud = u->data;
-    intvl_node_t *vd = _malloc(sizeof(intvl_node_t));
-    vd->events = ud->events;
+    intvl_node_t *vd = kmallocz(sizeof(intvl_node_t));
     vd->node = v;
     vd->interval = ud->interval;
     vd->min = ud->min;
     vd->max = ud->max;
-
-    if (ud->data && ud->events && ud->events->copy_data) {
-      vd->data = ud->events->copy_data(ud->data);
-    }
     v->data = vd;
-  }
-}
-
-bool duplicate_node_pred(rb_tree_t *tree, rb_node_t *node, void *pred) {
-  if (node->data) {
-    if (pred) {
-      intvl_node_t *vd = node->data;
-      bool result = ((intvl_pred_t) pred)(tree, vd);
-      return result;
-    } else {
-      return true;
-    }
-  } else {
-    return false;
   }
 }
 
 //
 
 intvl_tree_t *create_intvl_tree() {
-  rb_tree_t *rb_tree = create_rb_tree();
-  rb_tree_events_t *events = _malloc(sizeof(rb_tree_events_t));
-  memset(events, 0, sizeof(rb_tree_events_t));
+  rb_tree_t *tree = create_rb_tree();
+  rb_tree_events_t *events = kmallocz(sizeof(rb_tree_events_t));
   events->post_rotate = post_rotate_callback;
   events->post_insert_node = post_insert_callback;
   events->post_delete_node = post_delete_callback;
   events->replace_node = replace_node_callback;
   events->duplicate_node = duplicate_node_callback;
 
-  rb_tree->events = events;
-
-  intvl_tree_t *tree = _malloc(sizeof(intvl_tree_t));
-  tree->tree = rb_tree;
-  tree->events = NULL;
+  tree->events = events;
   return tree;
-}
-
-intvl_tree_t *copy_intvl_tree(intvl_tree_t *tree) {
-  intvl_tree_t *new_tree = _malloc(sizeof(intvl_tree_t));
-  new_tree->tree = copy_rb_tree(tree->tree);
-  new_tree->events = tree->events;
-  return new_tree;
-}
-
-intvl_tree_t *copy_intvl_tree_pred(intvl_tree_t *tree, intvl_pred_t pred) {
-  intvl_tree_t *new_tree = _malloc(sizeof(intvl_tree_t));
-  new_tree->tree = copy_rb_tree_pred(tree->tree, duplicate_node_pred, pred);
-  new_tree->events = tree->events;
-  return new_tree;
 }
 
 //
 
 intvl_node_t *intvl_tree_find(intvl_tree_t *tree, interval_t interval) {
-  rb_tree_t *rb = tree->tree;
+  rb_tree_t *rb = tree;
   interval_t i = interval;
 
   rb_node_t *node = rb->root;
@@ -171,7 +134,7 @@ intvl_node_t *intvl_tree_find(intvl_tree_t *tree, interval_t interval) {
 }
 
 void *intvl_tree_get_point(intvl_tree_t *tree, uint64_t point) {
-  rb_tree_t *rb = tree->tree;
+  rb_tree_t *rb = tree;
   interval_t i = intvl(point, point+1);
 
   rb_node_t *node = rb->root;
@@ -189,59 +152,131 @@ void *intvl_tree_get_point(intvl_tree_t *tree, uint64_t point) {
   return NULL;
 }
 
-intvl_node_t *intvl_tree_find_closest(intvl_tree_t *tree, interval_t interval) {
-  rb_tree_t *rb = tree->tree;
-  interval_t i = interval;
+/// Returns an interval representing the next non-occupied range in the tree with
+/// the same size as the given interval and a start point greater than or equal to
+/// the given interval's start point.
+interval_t intvl_tree_find_free_gap(intvl_tree_t *tree, interval_t intvl, size_t align, intvl_node_t **prev_node) {
+  rb_tree_t *rb = tree;
+  uint64_t size = intvl.end - intvl.start;
+  if (align == 0)
+    align = 1;
 
-  rb_node_t *closest = NULL;
-  rb_node_t *node = rb->root;
-  while (node != rb->nil) {
-    if (overlaps(i, get_interval(rb, node))) {
-      return node->data;
-    }
+  if (prev_node) {
+    *prev_node = NULL;
+  }
 
-    closest = node;
-    if (overlaps(i, get_interval(rb, node->left))) {
-      return node->left->data;
-    } else if (overlaps(i, get_interval(rb, node->right))) {
-      return node->right->data;
+  if (rb->root == rb->nil) {
+    return intvl;
+  }
+
+  // Find the first node whose start point is >= intvl.start
+  rb_node_t *current = rb->root;
+  rb_node_t *closest_greater = rb->nil;
+
+  while (current != rb->nil) {
+    intvl_node_t *node_data = (intvl_node_t *)current->data;
+    if (node_data->interval.start >= intvl.start) {
+      closest_greater = current;
+      current = current->left;
     } else {
-      uint64_t cdiff = min(
-        udiff(get_interval(rb, node).start, i.start),
-        udiff(get_interval(rb, node).end, i.end)
-      );
-      uint64_t ldiff = min(
-        udiff(get_min(rb, node->left), i.start),
-        udiff(get_max(rb, node->left), i.end)
-      );
-      uint64_t rdiff = min(
-        udiff(get_min(rb, node->right), i.start),
-        udiff(get_max(rb, node->right), i.end)
-      );
+      current = current->right;
+    }
+  }
 
-      if (cdiff < ldiff && cdiff < rdiff) {
-        return node->data;
-      } else if (ldiff <= rdiff) {
-        node = node->left;
-      } else {
-        node = node->right;
+  // Find the node with the greatest start point < intvl.start
+  rb_node_t *closest_lesser = rb->nil;
+  if (closest_greater != rb->nil) {
+    closest_lesser = closest_greater->prev;
+  } else {
+    closest_lesser = rb->max;
+  }
+
+  // Check gap before the closest_greater interval
+  if (closest_greater != rb->nil) {
+    intvl_node_t *greater_data = (intvl_node_t *)closest_greater->data;
+    uint64_t gap_start;
+
+    if (closest_lesser != rb->nil) {
+      intvl_node_t *lesser_data = (intvl_node_t *)closest_lesser->data;
+      gap_start = max(intvl.start, lesser_data->interval.end);
+      if (check_gap(gap_start, greater_data->interval.start, size, align)) {
+        if (prev_node) {
+          *prev_node = lesser_data;
+        }
+        return make_aligned_interval(gap_start, size, align);
+      }
+    } else {
+      gap_start = intvl.start;
+      if (check_gap(gap_start, greater_data->interval.start, size, align)) {
+        if (prev_node) {
+          *prev_node = NULL;
+        }
+        return make_aligned_interval(gap_start, size, align);
       }
     }
   }
 
-  return closest ? closest->data : NULL;
+  // Walk forward through the nodes looking for gaps
+  current = closest_greater;
+  rb_node_t *prev = closest_lesser;
+  uint64_t current_start = intvl.start;
+
+  while (current != rb->nil) {
+    intvl_node_t *curr_data = (intvl_node_t *)current->data;
+    uint64_t gap_start;
+
+    if (prev != rb->nil) {
+      intvl_node_t *prev_data = (intvl_node_t *)prev->data;
+      gap_start = max(current_start, prev_data->interval.end);
+
+      if (check_gap(gap_start, curr_data->interval.start, size, align)) {
+        if (prev_node) {
+          *prev_node = prev_data;
+        }
+        return make_aligned_interval(gap_start, size, align);
+      }
+    } else {
+      gap_start = current_start;
+
+      if (check_gap(gap_start, curr_data->interval.start, size, align)) {
+        if (prev_node) {
+          *prev_node = NULL;
+        }
+        return make_aligned_interval(gap_start, size, align);
+      }
+    }
+
+    current_start = max(current_start, curr_data->interval.end);
+    prev = current;
+    current = current->next;
+  }
+
+  // Check if there's space after the last interval
+  if (prev != rb->nil) {
+    intvl_node_t *prev_data = (intvl_node_t *)prev->data;
+    uint64_t gap_start = max(current_start, prev_data->interval.end);
+    if (prev_node) {
+      *prev_node = prev_data;
+    }
+    return make_aligned_interval(gap_start, size, align);
+  }
+
+  // No previous intervals
+  if (prev_node) {
+    *prev_node = NULL;
+  }
+  return make_aligned_interval(current_start, size, align);
 }
 
 void intvl_tree_insert(intvl_tree_t *tree, interval_t interval, void *data) {
-  intvl_node_t *node_data = _malloc(sizeof(intvl_node_t));
-  node_data->events = tree->events;
+  intvl_node_t *node_data = kmalloc(sizeof(intvl_node_t));
   node_data->interval = interval;
   node_data->data = data;
-  rb_tree_insert(tree->tree, interval.start, node_data);
+  rb_tree_insert(tree, interval.start, node_data);
 }
 
 void intvl_tree_delete(intvl_tree_t *tree, interval_t interval) {
-  rb_tree_delete(tree->tree, interval.start);
+  rb_tree_delete(tree, interval.start);
 }
 
 void intvl_tree_update_interval(intvl_tree_t *tree, intvl_node_t *node, off_t ds, off_t de) {
@@ -249,20 +284,5 @@ void intvl_tree_update_interval(intvl_tree_t *tree, intvl_node_t *node, off_t ds
   node->interval.end += de;
   node->min = min(node->min, node->interval.start);
   node->max = max(node->max, node->interval.end);
-  recalculate_min_max(tree->tree, node->node);
-}
-
-//
-
-intvl_iter_t *intvl_iter_tree(intvl_tree_t *tree) {
-  return rb_tree_iter(tree->tree);
-}
-
-intvl_node_t *intvl_iter_next(intvl_iter_t *iter) {
-  if (!iter->has_next) {
-    return NULL;
-  }
-
-  rb_node_t *node = rb_iter_next(iter);
-  return node->data;
+  recalculate_min_max(tree, node->node);
 }

@@ -44,11 +44,11 @@ void _mtx_assert(mtx_t *mtx, int what, const char *file, int line);
 
 int _mtx_spin_trylock(mtx_t *mtx, const char *file, int line);
 void _mtx_spin_lock(mtx_t *mtx, const char *file, int line);
-void _mtx_spin_unlock(mtx_t *mtx);
+void _mtx_spin_unlock(mtx_t *mtx, const char *file, int line);
 
 int _mtx_wait_trylock(mtx_t *mtx, const char *file, int line);
 void _mtx_wait_lock(mtx_t *mtx, const char *file, int line);
-void _mtx_wait_unlock(mtx_t *mtx);
+void _mtx_wait_unlock(mtx_t *mtx, const char *file, int line);
 
 // This is the actual public api. Only the trylock and lock functions
 // need to be macros but we define them all as such for consistency.
@@ -60,13 +60,13 @@ void _mtx_wait_unlock(mtx_t *mtx);
 
 #define mtx_trylock(m) _mtx_wait_trylock(m, __FILE__, __LINE__)
 #define mtx_lock(m) _mtx_wait_lock(m, __FILE__, __LINE__)
-#define mtx_unlock(m) _mtx_wait_unlock(m)
+#define mtx_unlock(m) _mtx_wait_unlock(m, __FILE__, __LINE__)
 
 #define mtx_spin_trylock(m) _mtx_spin_trylock(m, __FILE__, __LINE__)
 #define mtx_spin_lock(m) _mtx_spin_lock(m, __FILE__, __LINE__)
-#define mtx_spin_unlock(m) _mtx_spin_unlock(m)
+#define mtx_spin_unlock(m) _mtx_spin_unlock(m, __FILE__, __LINE__)
 
 void _thread_lock(struct thread *td, const char *file, int line);
-void _thread_unlock(struct thread *td);
+void _thread_unlock(struct thread *td, const char *file, int line);
 
 #endif

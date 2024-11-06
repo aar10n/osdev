@@ -124,6 +124,7 @@ MUSL_CONFIG = \
 	--srcdir=$(MUSL_SRC_DIR) \
 	--enable-debug \
 	\
+	CFLAGS="-g -O0" \
 	CC="$(GCC_DIR)/gcc/xgcc -B $(GCC_DIR)/gcc" \
 	LIBCC="$(GCC_DIR)/$(TOOLCHAIN)/libgcc/libgcc.a"
 

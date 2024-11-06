@@ -28,12 +28,13 @@ typedef struct ramfs_node {
   id_t id;
   enum vtype type;
   mode_t mode;
-  void *data; // embedded fs data
   size_t size;
+  void *data; // embedded data
 
   mtx_t lock; // wait mtx
   struct ramfs_node *parent;
   struct ramfs_mount *mount;
+  struct vnode_ops *ops;
 
   union {
     str_t n_link;
@@ -44,7 +45,6 @@ typedef struct ramfs_node {
 
 typedef struct ramfs_dentry {
   str_t name;
-  ventry_t *ventry; // no ref held
   struct ramfs_node *node;
   LIST_ENTRY(struct ramfs_dentry) list;
 } ramfs_dentry_t;
@@ -61,6 +61,10 @@ void ramfs_add_dentry(ramfs_node_t *dir, ramfs_dentry_t *dentry);
 void ramfs_remove_dentry(ramfs_node_t *dir, ramfs_dentry_t *dentry);
 ramfs_dentry_t *ramfs_lookup_dentry(ramfs_node_t *dir, cstr_t name);
 
+extern struct vfs_ops ramfs_vfs_ops;
+extern struct vnode_ops ramfs_vnode_ops;
+extern struct ventry_ops ramfs_ventry_ops;
+
 // MARK: implementation
 
 // vfs operations
@@ -73,7 +77,7 @@ void ramfs_vfs_cleanup(vfs_t *vfs);
 // vnode operations
 ssize_t ramfs_vn_read(vnode_t *vn, off_t off, kio_t *kio);
 ssize_t ramfs_vn_write(vnode_t *vn, off_t off, kio_t *kio);
-int ramfs_vn_map(vnode_t *vn, off_t off, vm_mapping_t *vm);
+int ramfs_vn_getpage(vnode_t *vn, off_t off, __move page_t **result);
 
 int ramfs_vn_readlink(vnode_t *vn, kio_t *kio);
 ssize_t ramfs_vn_readdir(vnode_t *vn, off_t off, kio_t *kio);

@@ -3,6 +3,7 @@
 //
 
 #include <kernel/syscall.h>
+#include <kernel/cpu/frame.h>
 
 #include <kernel/panic.h>
 #include <kernel/printf.h>
@@ -43,17 +44,24 @@ static const char *syscall_names[] = {
 #include <kernel/syscalls.def>
 };
 
-__used uint64_t handle_syscall(int n, uint64_t a0, uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4, uint64_t a5) {
-  if (n < 0 || n > SYS_MAX) {
-    DPRINTF("!!! invalid syscall: %d !!!\n", n);
+__used uint64_t handle_syscall(uint64_t syscall, struct trapframe *frame) {
+  if (syscall < 0 || syscall > SYS_MAX) {
+    DPRINTF("!!! invalid syscall: %d !!!\n", syscall);
     return -ENOSYS;
   }
 
-  syscall_t fn = syscall_handlers[n];
+  syscall_t fn = syscall_handlers[syscall];
   if (!fn) {
-    panic("!!! syscall not implemented: %d !!! \n", n);
+    panic("!!! syscall not implemented: %d !!! \n", syscall);
     return -ENOSYS;
   }
-  DPRINTF("syscall: %s\n", syscall_names[n]);
-  return fn(a0, a1, a2, a3, a4, a5);
+  DPRINTF("syscall: %s\n", syscall_names[syscall]);
+
+  // rdi   arg1
+  // rsi   arg2
+  // rdx   arg3
+  // r10   arg4
+  // r8    arg5
+  // r9    arg6
+  return fn(frame->rdi, frame->rsi, frame->rdx, frame->r10, frame->r8, frame->r9);
 }

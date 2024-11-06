@@ -9,33 +9,32 @@
 #include <kernel/mm_types.h>
 #include <kernel/kio.h>
 
-void *early_map_entries(uintptr_t virt_addr, uintptr_t phys_addr, size_t count, uint32_t vm_flags);
+void *early_map_entries(uintptr_t vaddr, uintptr_t paddr, size_t count, uint32_t vm_flags);
 
 void init_recursive_pgtable();
-void pgtable_unmap_user_mappings();
-uint64_t *recursive_map_entry(uintptr_t virt_addr, uintptr_t phys_addr, uint32_t vm_flags, __move page_t **out_pages);
-void recursive_unmap_entry(uintptr_t virt_addr, uint32_t vm_flags);
-void recursive_update_entry(uintptr_t virt_addr, uint32_t vm_flags);
-void recursive_update_range(uintptr_t virt_addr, size_t size, uint32_t vm_flags);
-
 uintptr_t get_current_pgtable();
 void set_current_pgtable(uintptr_t table_phys);
 
-static always_inline size_t pg_flags_to_size(uint32_t pg_flags) {
-  if (pg_flags & PG_BIGPAGE) {
-    return PAGE_SIZE_2MB;
-  } else if (pg_flags & PG_HUGEPAGE) {
-    return PAGE_SIZE_1GB;
-  }
-  return PAGE_SIZE;
-}
+void pgtable_update_entry_flags(uintptr_t vaddr, uint64_t *pte, uint32_t vm_flags);
+bool pgtable_get_entry_dirty(const uint64_t *pte);
+void pgtable_clear_entry_dirty(uint64_t *pte);
 
-void fill_unmapped_page(page_t *page, uint8_t v);
+uint64_t *recursive_map_entry(uintptr_t vaddr, uintptr_t paddr, uint32_t vm_flags, __move page_t **out_pages);
+void recursive_unmap_entry(uintptr_t vaddr, uint32_t vm_flags);
+void recursive_update_entry(uintptr_t vaddr, uint32_t vm_flags);
+void recursive_update_range(uintptr_t vaddr, size_t size, uint32_t vm_flags);
+
+void fill_unmapped_page(page_t *page, uint8_t v, size_t off, size_t len);
+void fill_unmapped_pages(page_t *pages, uint8_t v, size_t off, size_t len);
 size_t rw_unmapped_page(page_t *page, size_t off, kio_t *kio);
+size_t rw_unmapped_pages(page_t *pages, size_t off, kio_t *kio);
 
-// creates page mapping entries in an arbitrary pml4. this doesnt use the recursive method
-// or leave any implicit mappings in the active page tables.
-void nonrecursive_map_pages(uintptr_t pml4, uintptr_t start_vaddr, uint32_t vm_flags, __ref page_t *pages, __move page_t **out_pages);
+// The nonrecursive_ functions are able to operate on an aribtrary physical pml4.
+// It does not use the recursive method or modify any live mappings in the active
+// page tables. This method is much slower than the recursive method and should
+// only be used to modify non-active page tables.
+void nonrecursive_map_frames(uintptr_t pml4, uintptr_t vaddr, uintptr_t paddr, size_t count, uint32_t vm_flags, __move page_t **out_pages);
+void nonrecursive_map_pages(uintptr_t pml4, uintptr_t vaddr, page_t *pages, uint32_t vm_flags, __move page_t **out_pages);
 
 uintptr_t create_new_ap_page_tables(__move page_t **out_pages);
 uintptr_t fork_page_tables(__move page_t **out_pages, bool deepcopy_user);

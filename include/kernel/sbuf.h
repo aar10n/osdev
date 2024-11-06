@@ -120,6 +120,17 @@ static inline size_t sbuf_write_char(sbuf_t *sbuf, char ch) {
   return sbuf_write(sbuf, &ch, 1);
 }
 
+static inline size_t sbuf_transfer(sbuf_t *from, sbuf_t *to) {
+  if (from == NULL || to == NULL)
+    return 0;
+
+  size_t size = min(sbuf_len(from), sbuf_rem(to));
+  memcpy(to->ptr, from->data, size);
+  from->data += size;
+  to->ptr += size;
+  return size;
+}
+
 #ifdef __FS_TYPES__
 
 #include <path.h>

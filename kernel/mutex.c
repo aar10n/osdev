@@ -23,17 +23,20 @@
 #define MTX_RECURSED    0x04 // mutex is locked recursively (non-spin)
 #define MTX_STATE_MASK  0x07
 
-#define mtx_debugf(m, fmt, ...) if (__expect_false((m)->lo.flags & LO_DEBUG)) kprintf("mtx_debug: " fmt "", __VA_ARGS__)
+#define MTX_DEBUGF(m, file, line, fmt, ...) \
+  { if (__expect_false((m)->lo.flags & LO_DEBUG)) kprintf("mtx: " fmt " [%s:%d]\n", ##__VA_ARGS__, file, line); }
 
 #define SPIN_CLAIMS_ADD(lock_obj, file, line) if (__expect_true(curcpu_spin_claims != NULL)) \
     lock_claim_list_add(curcpu_spin_claims, lock_obj, 0, file, line)
 #define SPIN_CLAIMS_REMOVE(lock_obj) if (__expect_true(curcpu_spin_claims != NULL)) \
     lock_claim_list_remove(curcpu_spin_claims, lock_obj)
 
-#define WAIT_CLAIMS_ADD(lock_obj, file, line) if (__expect_true(curthread != NULL)) \
-    lock_claim_list_add(curthread->wait_claims, lock_obj, 0, file, line)
-#define WAIT_CLAIMS_REMOVE(lock_obj) if (__expect_true(curthread != NULL)) \
-    lock_claim_list_remove(curthread->wait_claims, lock_obj)
+// #define WAIT_CLAIMS_ADD(lock_obj, file, line) if (__expect_true(curthread != NULL)) \
+//     lock_claim_list_add(curthread->wait_claims, lock_obj, 0, file, line)
+#define WAIT_CLAIMS_ADD(lock_obj, file, line)
+// #define WAIT_CLAIMS_REMOVE(lock_obj) if (__expect_true(curthread != NULL)) \
+//     lock_claim_list_remove(curthread->wait_claims, lock_obj)
+#define WAIT_CLAIMS_REMOVE(lock_obj)
 
 static inline void spinlock_enter() {
   if (__expect_true(curthread != NULL)) {
@@ -77,6 +80,7 @@ void _mtx_init(mtx_t *mtx, uint32_t opts, const char *name) {
 }
 
 void _mtx_destroy(mtx_t *mtx) {
+  MTX_DEBUGF(mtx, __FILE__, __LINE__, "destroy {:#Lo}", mtx);
   ASSERT(mtx->mtx_lock != MTX_DESTROYED, "_mtx_destroy() on locked mutex");
   mtx->lo.flags = MTX_DESTROYED;
   mtx->lo.data = 0;
@@ -177,7 +181,7 @@ void _mtx_spin_lock(mtx_t *mtx, const char *file, int line) {
   mtx->lo.data = 1;
 }
 
-void _mtx_spin_unlock(mtx_t *mtx) {
+void _mtx_spin_unlock(mtx_t *mtx, const char *file, int line) {
   thread_t *owner = mtx_get_owner(mtx);
   ASSERT(mtx->mtx_lock != MTX_DESTROYED, "_mtx_spin_unlock() on destroyed mutex");
   ASSERT(mtx_get_lc(mtx) == SPINLOCK_LOCKCLASS, "_mtx_spin_unlock() on non-spin mutex");
@@ -203,6 +207,7 @@ void _mtx_spin_unlock(mtx_t *mtx) {
 // mtx_wait_lock
 
 int _mtx_wait_trylock(mtx_t *mtx, const char *file, int line) {
+  MTX_DEBUGF(mtx, file, line, "wait_trylock {:#Lo} curthread={:td}", mtx, curthread);
   ASSERT(mtx->mtx_lock != MTX_DESTROYED, "_mtx_wait_trylock() on destroyed mutex, %s:%d", file, line);
   ASSERT(mtx_get_lc(mtx) == MUTEX_LOCKCLASS, "_mtx_wait_trylock() on non-wait mutex, %s:%d", file, line);
 
@@ -229,12 +234,14 @@ int _mtx_wait_trylock(mtx_t *mtx, const char *file, int line) {
 }
 
 void _mtx_wait_lock(mtx_t *mtx, const char *file, int line) {
+  MTX_DEBUGF(mtx, file, line, "wait_lock {:#Lo} lock={:#x} owner={:td} curthread={:td}", mtx, mtx->mtx_lock, mtx_lock_owner(mtx->mtx_lock), curthread);
   ASSERT(mtx->mtx_lock != MTX_DESTROYED, "_mtx_wait_lock() on destroyed mutex, %s:%d", file, line);
   ASSERT(mtx_get_lc(mtx) == MUTEX_LOCKCLASS, "_mtx_wait_lock() on non-wait mutex, %s:%d", file, line);
 
   WAIT_CLAIMS_ADD(&mtx->lo, file, line);
 
   if (curthread != NULL && mtx_get_owner(mtx) == curthread) {
+    MTX_DEBUGF(mtx, file, line, "wait_lock {:#Lo} recursed", mtx);
     ASSERT(mtx_get_lo(mtx) & LO_RECURSABLE, "_mtx_wait_lock() on non-recursive mutex, %s:%d", file, line);
     // recursed lock
     mtx->mtx_lock |= MTX_RECURSED;
@@ -264,18 +271,26 @@ void _mtx_wait_lock(mtx_t *mtx, const char *file, int line) {
   }
 }
 
-void _mtx_wait_unlock(mtx_t *mtx) {
+void _mtx_wait_unlock(mtx_t *mtx, const char *file, int line) {
+  thread_t *owner = mtx_lock_owner(mtx->mtx_lock);
+  MTX_DEBUGF(mtx, file, line, "wait_unlock {:#Lo} lock={:#x} owner={:td} curthread={:td}", mtx, mtx->mtx_lock, owner, curthread);
+  if (owner == NULL) {
+    panic("!!! wait_unlock on unowned mutex\n");
+  }
+
   ASSERT(mtx->mtx_lock != MTX_DESTROYED, "_mtx_wait_unlock() on destroyed mutex");
   ASSERT(mtx_get_lc(mtx) == MUTEX_LOCKCLASS, "_mtx_wait_unlock() on non-wait mutex");
-  ASSERT(mtx_lock_owner(mtx->mtx_lock) == curthread, "_mtx_wait_unlock() on unowned mutex");
+  ASSERT(owner == curthread, "_mtx_wait_unlock() by {:td} on mutex owned by {:td}", curthread, owner);
 
   mtx->lo.data--;
   curthread->lock_count--;
   if (mtx->mtx_lock & MTX_RECURSED && mtx->lo.data > 0) {
+    MTX_DEBUGF(mtx, file, line, "wait_unlock {:#Lo} recursed", mtx);
     ASSERT(mtx_get_lo(mtx) & LO_RECURSABLE, "_mtx_wait_unlock() on non-recursive mutex");
     if (mtx->lo.data == 1) {
       mtx->mtx_lock &= ~MTX_RECURSED;
     }
+    MTX_DEBUGF(mtx, file, line, "--> lock={:#x}", mtx->mtx_lock);
     return;
   }
 
@@ -288,12 +303,11 @@ void _mtx_wait_unlock(mtx_t *mtx) {
 //
 // MARK: thread lock stuff
 
-// the main reason for
 
 void _thread_lock(thread_t *td, const char *file, int line) {
-  _mtx_spin_lock(&td->lock, file, line);
+  _mtx_wait_lock(&td->lock, file, line);
 }
 
-void _thread_unlock(thread_t *td) {
-  _mtx_spin_unlock(&td->lock);
+void _thread_unlock(thread_t *td, const char *file, int line) {
+  _mtx_wait_unlock(&td->lock, file, line);
 }

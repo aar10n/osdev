@@ -35,13 +35,13 @@ enum dtype {
  * devices are not accessible.
  */
 typedef struct device {
-  enum dtype dtype;
-  uint8_t major;
-  uint8_t minor;
-  uint8_t unit;
+  enum dtype dtype;   // device type
+  uint8_t major;      // major number
+  uint8_t minor;      // minor number
+  uint8_t unit;       // unit number
 
-  void *bus_device;  // device struct for the specific bus
-  void *data;        // private data for the device (for the driver)
+  void *bus_device;   // device struct for the specific bus
+  void *data;         // private data for the device (for the driver)
 
   struct device_bus *bus;
   struct device_driver *driver;
@@ -60,8 +60,8 @@ struct device_ops {
   ssize_t (*d_read)(struct device *device, size_t off, size_t nmax, struct kio *kio);
   ssize_t (*d_write)(struct device *device, size_t off, size_t nmax, struct kio *kio);
   // int (*d_ioctl)(struct device *device, int cmd, void *arg);
-  __move page_t *(*d_getpage)(struct device *device, size_t off);
-  int (*d_putpage)(struct device *device, size_t off, __move page_t *page);
+  __ref page_t *(*d_getpage)(struct device *device, size_t off);
+  int (*d_putpage)(struct device *device, size_t off, __ref page_t *page);
 };
 
 /**
@@ -120,6 +120,7 @@ static inline dev_t makedev(uint8_t major, uint8_t minor) {
   return ((dev_t)major) | ((dev_t)minor << 8);
 }
 static inline dev_t make_dev(device_t *dev) {
+  if (!dev) return 0;
   return ((dev_t)dev->major) | ((dev_t)dev->minor << 8) | ((dev_t)dev->unit << 16);
 }
 static inline uint8_t dev_major(dev_t dev) {
@@ -213,14 +214,20 @@ static inline ssize_t d_write(device_t *device, size_t off, kio_t *kio) {
   return d_nwrite(device, off, kio_remaining(kio), kio);
 }
 
-static inline ssize_t __d_read(device_t *device, size_t off, void *buf, size_t len) {
+static inline ssize_t d_read_n(device_t *device, size_t off, void *buf, size_t len) {
   kio_t tmp = kio_new_writable(buf, len);
   return d_read(device, off, &tmp);
 }
 
-static inline ssize_t __d_write(device_t *device, size_t off, const void *buf, size_t len) {
+static inline ssize_t d_write_n(device_t *device, size_t off, const void *buf, size_t len) {
   kio_t tmp = kio_new_readable(buf, len);
   return d_write(device, off, &tmp);
+}
+
+static inline __ref page_t *d_getpage(device_t *device, size_t off) {
+  if (device->ops->d_getpage == NULL)
+    return NULL;
+  return device->ops->d_getpage(device, off);
 }
 
 #endif

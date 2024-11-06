@@ -55,6 +55,12 @@ struct packed tss {
 };
 static_assert(sizeof(struct tss) == 100);
 
+// ist stacks
+#define IST_DF  1 // double fault
+#define IST_NMI 2 // non-maskable interrupt
+#define IST_DBG 3 // debug
+
+void tss_set_rsp(int idx, uintptr_t rsp);
 void tss_set_ist(int ist, uintptr_t sp);
 
 #endif // KERNEL_CPU_GDT_H

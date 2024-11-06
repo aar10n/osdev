@@ -22,17 +22,17 @@ void runq_init(struct runqueue *runq) {
 void runq_add(struct runqueue *runq, thread_t *td) {
   td_lock_assert(td, MA_LOCKED);
 
-  mtx_lock(&runq->lock);
+  mtx_spin_lock(&runq->lock);
   LIST_ADD_FRONT(&runq->head, td, rqlist);
   atomic_fetch_add(&runq->count, 1);
 
   td->runq = runq;
-  mtx_unlock(&runq->lock);
+  mtx_spin_unlock(&runq->lock);
 }
 
 void runq_remove(struct runqueue *runq, thread_t *td, bool *empty) {
   size_t count;
-  mtx_lock(&runq->lock);
+  mtx_spin_lock(&runq->lock);
   LIST_REMOVE(&runq->head, td, rqlist);
   count = atomic_fetch_sub(&runq->count, 1);
 
@@ -40,23 +40,28 @@ void runq_remove(struct runqueue *runq, thread_t *td, bool *empty) {
   if (empty != NULL) {
     *empty = count == 0;
   }
-  mtx_unlock(&runq->lock);
+  mtx_spin_unlock(&runq->lock);
 }
 
 thread_t *runq_next_thread(struct runqueue *runq, bool *empty) {
   size_t count;
-  mtx_lock(&runq->lock);
+  mtx_spin_lock(&runq->lock);
+
   thread_t *td = LIST_FIRST(&runq->head);
   if (td != NULL) {
+    ASSERT(runq->count > 0);
     LIST_REMOVE(&runq->head, td, rqlist);
     count = atomic_fetch_sub(&runq->count, 1);
+
+    // lock the thread (and return it locked)
+    td_lock(td);
+    td->runq = NULL;
   }
 
-  td->runq = NULL;
   if (empty != NULL) {
     *empty = count == 0;
   }
-  mtx_unlock(&runq->lock);
+  mtx_spin_unlock(&runq->lock);
   return td;
 }
 

@@ -31,8 +31,8 @@ UINTN ElfGetTotalLoadSize(IN Elf64_Ehdr *ElfHdr) {
   UINTN TotalSize = 0;
 
   for (UINTN Index = 0; Index < ElfHdr->e_phnum; Index++) {
-    if (Phdr->p_type == PT_LOAD) {
-      TotalSize += Phdr->p_memsz;
+    if (Phdr->p_type == PT_LOAD && Phdr->p_memsz > 0) {
+      TotalSize += ALIGN_VALUE(Phdr->p_memsz, EFI_PAGE_SIZE);
     }
     Phdr = NEXT_PHDR(ElfHdr, Phdr);
   }

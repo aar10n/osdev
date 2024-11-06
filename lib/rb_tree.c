@@ -3,20 +3,15 @@
 //
 
 #include "rb_tree.h"
-#include <kernel/string.h>
 
-#ifndef _assert
 #include <kernel/panic.h>
 #define _assert(expr) kassert((expr))
-#endif
 
-#ifndef _malloc
 #include <kernel/mm/heap.h>
 #include <kernel/printf.h>
 
-#define _malloc(size) kmalloc(size)
-#define _free(ptr) kfree(ptr)
-#endif
+#define ASSERT(x) kassert(x)
+#define DPRINTF(fmt, ...) kprintf("rb_tree: " fmt, ##__VA_ARGS__)
 
 #define callback(cb, args...) \
   if (tree->events && tree->events->cb) {   \
@@ -99,9 +94,7 @@ void replace_node(rb_tree_t *tree, rb_node_t *u, rb_node_t *v) {
   v->parent = u->parent;
 }
 
-//
 // Insertion
-//
 
 void insert_fixup(rb_tree_t *tree, rb_node_t *z) {
   rb_node_t *y;
@@ -155,6 +148,7 @@ void insert_node(rb_tree_t *tree, rb_node_t *z) {
   rb_node_t *x = tree->root;
   rb_node_t *y = tree->nil;
 
+  // find the insertion point
   while (x != tree->nil) {
     y = x;
     if (z->key < x->key) {
@@ -164,6 +158,7 @@ void insert_node(rb_tree_t *tree, rb_node_t *z) {
     }
   }
 
+  // insert the node
   z->parent = y;
   if (y == tree->nil) {
     tree->root = z;
@@ -177,15 +172,47 @@ void insert_node(rb_tree_t *tree, rb_node_t *z) {
   z->left = tree->nil;
   z->right = tree->nil;
 
+  // handle linked list pointers
+  if (tree->nodes == 0) {
+    // first node
+    z->prev = tree->nil;
+    z->next = tree->nil;
+    tree->min = z;
+    tree->max = z;
+  } else {
+    // find correct position in linked list
+    rb_node_t *curr = tree->min;
+    while (curr != tree->nil && curr->key < z->key) {
+      curr = curr->next;
+    }
+
+    if (curr == tree->nil) {
+      // insert at end
+      z->prev = tree->max;
+      z->next = tree->nil;
+      tree->max->next = z;
+      tree->max = z;
+    } else if (curr == tree->min) {
+      // insert at beginning
+      z->next = tree->min;
+      z->prev = tree->nil;
+      tree->min->prev = z;
+      tree->min = z;
+    } else {
+      // insert between nodes
+      z->next = curr;
+      z->prev = curr->prev;
+      curr->prev->next = z;
+      curr->prev = z;
+    }
+  }
+
   // repair the tree
   insert_fixup(tree, z);
+  tree->nodes++;
 
   callback(post_insert_node, tree, z);
 }
-
-//
-// Deletion
-//
 
 void delete_fixup(rb_tree_t *tree, rb_node_t *x) {
   rb_node_t *w;
@@ -256,9 +283,22 @@ void delete_fixup(rb_tree_t *tree, rb_node_t *x) {
 void delete_node(rb_tree_t *tree, rb_node_t *z) {
   callback(pre_delete_node, tree, z);
 
+  // update linked list pointers
+  if (z->prev != tree->nil) {
+    z->prev->next = z->next;
+  } else {
+    tree->min = z->next;
+  }
+
+  if (z->next != tree->nil) {
+    z->next->prev = z->prev;
+  } else {
+    tree->max = z->prev;
+  }
+
   rb_node_t *x;
   rb_node_t *y = z;
-  rb_color_t orig_color = y->color;
+  enum rb_color orig_color = y->color;
 
   if (z->left == tree->nil) {
     x = z->right;
@@ -284,6 +324,7 @@ void delete_node(rb_tree_t *tree, rb_node_t *z) {
     y->color = z->color;
   }
 
+  tree->nodes--;
   callback(post_delete_node, tree, z, x);
 
   if (orig_color == BLACK) {
@@ -292,23 +333,61 @@ void delete_node(rb_tree_t *tree, rb_node_t *z) {
   }
 }
 
+void fix_list_pointers(rb_tree_t *tree) {
+  rb_node_t *curr = tree->min;
+  rb_node_t *prev = tree->nil;
+
+  while (curr != tree->nil) {
+    rb_node_t *next = NULL;
+    rb_node_t *node = tree->root;
+
+    // find next node in order
+    uint64_t min_key = UINT64_MAX;
+    rb_node_t *min_node = NULL;
+
+    // find the smallest key larger than current
+    while (node != tree->nil) {
+      if (node->key > curr->key && node->key < min_key && node != curr) {
+        min_key = node->key;
+        min_node = node;
+      }
+      if (curr->key < node->key) {
+        node = node->left;
+      } else {
+        node = node->right;
+      }
+    }
+
+    next = min_node ? min_node : tree->nil;
+
+    // set up doubly-linked pointers
+    curr->prev = prev;
+    curr->next = next;
+    if (prev != tree->nil) {
+      prev->next = curr;
+    }
+
+    prev = curr;
+    curr = next;
+  }
+}
+
 //
 
-rb_node_t *duplicate_node(rb_tree_t *tree, rb_tree_t *new_tree, rb_node_t *parent, rb_node_t *node, rb_pred_t pred, void *arg) {
+rb_node_t *duplicate_node(rb_tree_t *tree, rb_tree_t *new_tree, rb_node_t *parent, rb_node_t *node) {
   if (node == tree->nil) {
-    return new_tree->nil;
-  } else if (pred && !pred(tree, node, arg)) {
-    // node did not match predicate
     return new_tree->nil;
   }
 
-  rb_node_t *copy = _malloc(sizeof(rb_node_t));
+  rb_node_t *copy = kmalloc(sizeof(rb_node_t));
   copy->key = node->key;
   copy->data = NULL;
   copy->color = node->color;
-  copy->left = duplicate_node(tree, new_tree, copy, node->left, pred, arg);
-  copy->right = duplicate_node(tree, new_tree, copy, node->right, pred, arg);
+  copy->left = duplicate_node(tree, new_tree, copy, node->left);
+  copy->right = duplicate_node(tree, new_tree, copy, node->right);
   copy->parent = parent;
+  copy->next = new_tree->nil;
+  copy->prev = new_tree->nil;
   new_tree->nodes++;
 
   if (tree->events && tree->events->duplicate_node) {
@@ -330,7 +409,7 @@ rb_node_t *duplicate_node(rb_tree_t *tree, rb_tree_t *new_tree, rb_node_t *paren
 //
 
 rb_tree_t *create_rb_tree() {
-  rb_node_t *nil = _malloc(sizeof(rb_node_t));
+  rb_node_t *nil = kmalloc(sizeof(rb_node_t));
   nil->key = 0;
   nil->data = NULL;
   nil->color = BLACK;
@@ -338,7 +417,7 @@ rb_tree_t *create_rb_tree() {
   nil->right = nil;
   nil->parent = nil;
 
-  rb_tree_t *tree = _malloc(sizeof(rb_tree_t));
+  rb_tree_t *tree = kmalloc(sizeof(rb_tree_t));
   tree->root = nil;
   tree->nil = nil;
   tree->min = nil;
@@ -350,7 +429,7 @@ rb_tree_t *create_rb_tree() {
 }
 
 void rb_tree_free(rb_tree_t *tree) {
-  kassert(tree->root == tree->nil);
+  ASSERT(tree->root == tree->nil);
   kfree(tree->nil);
   kfree(tree);
 }
@@ -358,44 +437,14 @@ void rb_tree_free(rb_tree_t *tree) {
 rb_tree_t *copy_rb_tree(rb_tree_t *tree) {
   rb_tree_t *new_tree = create_rb_tree();
   new_tree->events = tree->events;
-  new_tree->root = duplicate_node(tree, new_tree, tree->nil, tree->root, NULL, NULL);
-  return new_tree;
-}
-
-rb_tree_t *copy_rb_tree_pred(rb_tree_t *tree, rb_pred_t pred, void *arg) {
-  rb_tree_t *new_tree = create_rb_tree();
-  new_tree->events = tree->events;
-
-  rb_iter_t *iter = rb_tree_iter(tree);
-  rb_node_t *node;
-  while ((node = rb_iter_next(iter))) {
-    if (pred(tree, node, arg)) {
-      void *data = NULL;
-      if (tree->events && tree->events->duplicate_node) {
-        rb_node_t copy;
-        callback(duplicate_node, tree, new_tree, node, &copy);
-        data = copy.data;
-      } else {
-        data = node->data;
-      }
-
-      rb_tree_insert(new_tree, node->key, data);
-    }
-  }
+  new_tree->root = duplicate_node(tree, new_tree, tree->nil, tree->root);
+  fix_list_pointers(new_tree);
   return new_tree;
 }
 
 //
 
-void *rb_tree_get(rb_tree_t *tree, uint64_t key) {
-  rb_node_t *node = rb_tree_find(tree, key);
-  if (node) {
-    return node->data;
-  }
-  return NULL;
-}
-
-rb_node_t *rb_tree_find(rb_tree_t *tree, uint64_t key) {
+rb_node_t *rb_tree_find_node(rb_tree_t *tree, uint64_t key) {
   rb_node_t *node = tree->root;
   while (node != tree->nil) {
     if (key == node->key) {
@@ -408,39 +457,7 @@ rb_node_t *rb_tree_find(rb_tree_t *tree, uint64_t key) {
       node = node->right;
     }
   }
-  return NULL;
-}
-
-rb_node_t *rb_tree_find_closest(rb_tree_t *tree, uint64_t key) {
-  rb_node_t *closest = NULL;
-  rb_node_t *node = tree->root;
-  while (node != tree->nil) {
-    uint64_t ldiff = udiff(node->left->key, key);
-    uint64_t rdiff = udiff(node->right->key, key);
-
-    closest = node;
-    if (ldiff <= rdiff) {
-      node = node->left;
-    } else {
-      node = node->right;
-    }
-  }
-
-  if (closest == tree->nil) {
-    return NULL;
-  }
-  return closest;
-}
-
-void rb_tree_insert(rb_tree_t *tree, uint64_t key, void *data) {
-  rb_node_t *node = _malloc(sizeof(rb_node_t));
-  node->key = key;
-  node->data = data;
-  node->color = RED;
-  node->parent = tree->nil;
-  node->left = tree->nil;
-  node->right = tree->nil;
-  rb_tree_insert_node(tree, node);
+  return tree->nil;
 }
 
 void rb_tree_insert_node(rb_tree_t *tree, rb_node_t *node) {
@@ -454,14 +471,6 @@ void rb_tree_insert_node(rb_tree_t *tree, rb_node_t *node) {
     tree->max = node;
   }
   tree->nodes++;
-}
-
-void *rb_tree_delete(rb_tree_t *tree, uint64_t key) {
-  rb_node_t *node = rb_tree_find(tree, key);
-  if (node == NULL) {
-    return NULL;
-  }
-  return rb_tree_delete_node(tree, node);
 }
 
 void *rb_tree_delete_node(rb_tree_t *tree, rb_node_t *node) {
@@ -479,93 +488,37 @@ void *rb_tree_delete_node(rb_tree_t *tree, rb_node_t *node) {
     tree->max = node->parent;
   }
   tree->nodes--;
+
   void *data = node->data;
-  _free(node);
+  kfree(node);
   return data;
 }
 
-// Iterators
+//
 
-void rb_tree_init_iter(rb_tree_t *tree, rb_node_t *next, rb_iter_type_t type, rb_iter_t *iter) {
-  iter->type = type;
-  iter->tree = tree;
-  iter->next = next;
-  if (next == NULL) {
-    iter->next = type == FORWARD ? tree->min : tree->max;
-  }
-  iter->has_next = tree->nodes > 0;
-}
-
-rb_iter_t *rb_tree_make_iter(rb_tree_t *tree, rb_node_t *next, rb_iter_type_t type) {
-  rb_iter_t *iter = _malloc(sizeof(rb_iter_t));
-  iter->type = type;
-  iter->tree = tree;
-  iter->next = next;
-  iter->has_next = tree->nodes > 0;
-  return iter;
-}
-
-rb_iter_t *rb_tree_iter(rb_tree_t *tree) {
-  // start at first (leftmost) node
-  rb_iter_t *iter = _malloc(sizeof(rb_iter_t));
-  rb_tree_init_iter(tree, tree->min, FORWARD, iter);
-  return iter;
-}
-
-rb_iter_t *rb_tree_iter_reverse(rb_tree_t *tree) {
-  // start at last (rightmost) node
-  rb_iter_t *iter = _malloc(sizeof(rb_iter_t));
-  rb_tree_init_iter(tree, tree->max, REVERSE, iter);
-  return iter;
-}
-
-rb_node_t *rb_iter_next(rb_iter_t *iter) {
-  if (!iter->has_next) {
+void *rb_tree_find(rb_tree_t *tree, uint64_t key) {
+  rb_node_t *node = rb_tree_find_node(tree, key);
+  if (rb_node_is_nil(node)) {
     return NULL;
   }
-
-  rb_tree_t *tree = iter->tree;
-  rb_node_t *node = iter->next;
-  rb_node_t *next = iter->next;
-
-  bool side = iter->type == REVERSE;
-  if (get_side(next, side) != tree->nil) {
-    next = get_side(next, side);
-    while (get_side(next, !side) != tree->nil) {
-      next = get_side(next, !side);
-    }
-
-    iter->next = next;
-    iter->has_next = next != tree->nil;
-    return node;
-  }
-
-  while (true) {
-    if (next->parent == tree->nil) {
-      iter->next = NULL;
-      iter->has_next = false;
-      return node;
-    } else if (get_side(next->parent, !side) == next) {
-      iter->next = next->parent;
-      iter->has_next = next != tree->nil;
-      return node;
-    }
-    next = next->parent;
-  }
+  return node->data;
 }
 
-rb_node_t *rb_tree_get_next(rb_tree_t *tree, rb_node_t *node) {
-  rb_iter_t *iter = rb_tree_make_iter(tree, node, FORWARD);
-  rb_iter_next(iter); // skip node
-  rb_node_t *result = rb_iter_next(iter);
-  _free(iter);
-  return result;
+void rb_tree_insert(rb_tree_t *tree, uint64_t key, void *data) {
+  rb_node_t *node = kmalloc(sizeof(rb_node_t));
+  node->key = key;
+  node->data = data;
+  node->color = RED;
+  node->parent = tree->nil;
+  node->left = tree->nil;
+  node->right = tree->nil;
+  rb_tree_insert_node(tree, node);
 }
 
-rb_node_t *rb_tree_get_last(rb_tree_t *tree, rb_node_t *node) {
-  rb_iter_t *iter = rb_tree_make_iter(tree, node, REVERSE);
-  rb_iter_next(iter); // skip node
-  rb_node_t *result = rb_iter_next(iter);
-  _free(iter);
-  return result;
+void *rb_tree_delete(rb_tree_t *tree, uint64_t key) {
+  rb_node_t *node = rb_tree_find_node(tree, key);
+  if (rb_node_is_nil(node)) {
+    return NULL;
+  }
+  return rb_tree_delete_node(tree, node);
 }

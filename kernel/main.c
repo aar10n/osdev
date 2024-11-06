@@ -8,6 +8,7 @@
 #include <kernel/clock.h>
 #include <kernel/mm.h>
 #include <kernel/fs.h>
+#include <kernel/exec.h>
 #include <kernel/device.h>
 #include <kernel/proc.h>
 #include <kernel/smpboot.h>
@@ -20,8 +21,6 @@
 #include <kernel/printf.h>
 #include <kernel/panic.h>
 #include <kernel/fs_utils.h>
-
-noreturn void root();
 
 bool is_smp_enabled = false;
 bool is_debug_enabled = true;
@@ -57,6 +56,7 @@ __used void kmain() {
   init_mem_zones();
   init_address_space();
   debug_init();
+  cpu_late_init();
 
   // initialize the irq layer and timekeeping so the static initializers can use them.
   irq_init();
@@ -69,15 +69,35 @@ __used void kmain() {
 
   // smp_init();
 
-  page_t *pages = alloc_pages(2);
-  address_space_t *uspace = vm_new_uspace();
-  if (other_space_map(uspace, 0x1000000, VM_RDWR, pages) < 0) {
-    panic("failed to map pages");
-  }
-
-  switch_address_space(uspace);
-
+  proc_alloc_pid(); // reserve pid 1
+  do_module_initializers();
   kprintf("done!\n");
+  // ---------------
+
+  mkdir("/initrd");
+  mknod("/rd0", S_IFBLK, makedev(1, 0));
+
+  mount("/rd0", "/initrd", "initrd", 0);
+  replace_root("/initrd");
+  unmount("/");
+
+  mkdir("/dev");
+  mknod("/dev/stdin", S_IFCHR, makedev(3, 0)); // null
+  mknod("/dev/stdout", S_IFCHR, makedev(2, 2)); // com3
+  mknod("/dev/stderr", S_IFCHR, makedev(2, 3)); // com4
+  ls("/");
+
+  proc_t *proc = proc_alloc_empty(1, vm_new_uspace(), getref(curproc->creds));
+  proc_setup_add_thread(proc, thread_alloc_empty(0, 0, SIZE_16KB));
+  proc_setup_new_env(proc, (const char *[]){"PWD=/", "PATH=/bin:/sbin", NULL});
+  proc_setup_exec_args(proc, (const char *[]){"hello", "world", NULL});
+  proc_setup_exec(proc, cstr_make("/sbin/init"));
+  proc_setup_open_fd(proc, 0, cstr_make("/dev/stdin"), O_RDONLY);
+  proc_setup_open_fd(proc, 1, cstr_make("/dev/stdout"), O_WRONLY);
+  proc_setup_open_fd(proc, 2, cstr_make("/dev/stderr"), O_WRONLY);
+  proc_finish_setup_and_submit_all(proc);
+
+  sched_again(SCHED_BLOCKED);
   unreachable;
 }
 
@@ -92,51 +112,4 @@ __used void ap_main() {
 
   sched_init();
   unreachable;
-}
-
-//
-
-void test1() {
-  kprintf("hello from pid %d\n", curproc->pid);
-}
-
-void test2() {
-  kprintf("hello from pid %d\n", curproc->pid);
-}
-
-//
-// Launch process
-//
-
-noreturn void root() {
-  kprintf("starting root process\n");
-  do_module_initializers();
-  // probe_all_buses();
-
-  //////////////////////////////////////////
-
-  mkdir("/dev");
-  mknod("/dev/rd0", S_IFBLK, makedev(1, 0));
-  mknod("/dev/tty0", S_IFCHR, makedev(2, 0));
-  mknod("/dev/tty1", S_IFCHR, makedev(2, 1));
-  mknod("/dev/tty2", S_IFCHR, makedev(2, 2));
-  mknod("/dev/tty3", S_IFCHR, makedev(2, 3));
-  mknod("/dev/null", S_IFCHR, makedev(3, 0));
-  mknod("/dev/debug", S_IFCHR, makedev(3, 1));
-
-  mkdir("/initrd");
-  mount("/dev/rd0", "/initrd", "initrd", 0);
-  ls("/initrd");
-
-  open("/dev/null", O_RDONLY|O_SYNC); // fd0=stdin
-  open("/dev/tty2", O_WRONLY|O_SYNC); // fd1=stdout
-  open("/dev/tty2", O_WRONLY|O_SYNC); // fd2=stderr
-  // char *const args[] = {"/initrd/sbin/init", "hello", "world"};
-  // process_execve("/initrd/sbin/init", args, NULL);
-
-  //////////////////////////////////////////
-
-  kprintf("it worked!\n");
-  kprintf("haulting...\n");
-  WHILE_TRUE;
 }

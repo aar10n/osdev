@@ -24,6 +24,12 @@ typedef struct cstr {
 
 #define cstr_null ((cstr_t){ NULL, 0 })
 
+#define cstr_move(str) ({ \
+  cstr_t _str = (str); \
+  (str) = cstr_null; \
+  _str; \
+})
+
 static inline cstr_t cstr_new(const char *str, size_t len) {
   if (!str)
     return cstr_null;
@@ -61,6 +67,18 @@ static inline bool cstr_eq(cstr_t str1, cstr_t str2) {
   return cstr_len(str1) == cstr_len(str2) && cstr_cmp(str1, str2) == 0;
 }
 
+static inline bool cstr_eq_charp(cstr_t str1, const char *cstr2) {
+  size_t len = strlen(cstr2);
+  return cstr_len(str1) == len && strncmp(cstr_ptr(str1), cstr2, len) == 0;
+}
+
+static inline size_t cstr_memcpy(cstr_t str, void *buf, size_t len) {
+  size_t n = min(cstr_len(str)+1, len);
+  memcpy(buf, cstr_ptr(str), cstr_len(str));
+  ((char *)buf)[n] = '\0';
+  return n;
+}
+
 /**
  * str represents an owned mutable string.
  */
@@ -71,12 +89,22 @@ typedef struct str {
 
 #define str_null ((str_t) { NULL, 0 })
 
+#define str_move(str) ({ \
+  str_t _str = (str); \
+  (str) = str_null; \
+  _str; \
+})
+
 static inline bool str_isnull(str_t str) {
   return str.str == NULL;
 }
 
 static inline cstr_t cstr_from_str(str_t str) {
   return cstr_new(str.str, str.len);
+}
+
+static inline bool cstr_starts_with(cstr_t str, char c) {
+  return cstr_len(str) > 0 && cstr_ptr(str)[0] == c;
 }
 
 static inline str_t str_alloc_empty(size_t len) {
@@ -125,7 +153,7 @@ static inline str_t str_from_charp(char *str) {
   };
 }
 
-static inline str_t str_copy_cstr(cstr_t str) {
+static inline str_t str_from_cstr(cstr_t str) {
   return str_new(str.str, str.len);
 }
 
@@ -143,6 +171,8 @@ static inline str_t str_dup(str_t str) {
 }
 
 static inline void str_free(str_t *str) {
+  if (str_isnull(*str))
+    return;
   kfree(str->str);
   str->str = NULL;
   str->len = 0;

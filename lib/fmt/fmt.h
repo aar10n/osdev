@@ -121,12 +121,22 @@
  *
  *         'M'             - memory quantity
  *
+ *         'Lo'            - pointer to struct lock_object
+ *
+ *         'td'            - pointer to struct thread
+ *
+ *         'va'            - pointer to struct vattr
+ *         've'            - pointer to struct ventry
+ *         'vn'            - pointer to struct vnode
+ *         'vt'            - enum vtype
+ *
  *         'err'           - error code as string
  *         'str'           - pointer to str_t
  *         'cstr'          - pointer to cstr_t
  *         'path'          - pointer to path_t
  *         'time'          - pointer to struct tm (UTC timestamp)
  *         'epoc'          - uint64_t (UNIX timestamp)
+ *         'file'          - pointer to struct file
  *
  * Notes:
  *

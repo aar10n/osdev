@@ -113,7 +113,7 @@ char *kvasprintf(const char *format, va_list args) {
 }
 
 int kfprintf(const char *path, const char *format, ...) {
-  int fd = fs_open(path, O_WRONLY, 0);
+  int fd = fs_open(cstr_make(path), O_WRONLY, 0);
   if (fd < 0) {
     return fd;
   }

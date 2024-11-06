@@ -49,7 +49,7 @@ section .data
 align 0x1000
 global entry_initial_stack
 entry_initial_stack:
-  resb 2*PAGE_SIZE
+  resb 4*PAGE_SIZE
 global entry_initial_stack_top
 entry_initial_stack_top:
 

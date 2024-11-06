@@ -16,23 +16,23 @@
 //
 
 int ramfs_vfs_mount(vfs_t *vfs, device_t *device, __move ventry_t **rootve) {
-  DPRINTF("mount\n");
+  DPRINTF("mount vfs=%u\n", vfs->id);
   ramfs_mount_t *mount = ramfs_alloc_mount(vfs);
   vfs->data = mount;
 
-  // create root vnode
-  vnode_t *vn = vn_alloc(0, &make_vattr(V_DIR, S_IFDIR));
+  // create the root vnode
+  vnode_t *vn = vn_alloc(1, &make_vattr(V_DIR, S_IFDIR));
   vn->data = mount->root;
 
   ventry_t *ve = ve_alloc_linked(cstr_new("/", 1), vn);
   *rootve = ve_moveref(&ve);
+  vn_release(&vn);
   return 0;
 }
 
 int ramfs_vfs_unmount(vfs_t *vfs) {
-  DPRINTF("unmount\n");
-
-  vfs->data = NULL;
+  DPRINTF("unmount vfs=%u\n", vfs->id);
+  // nothing to be done as freeing our data happens during cleanup
   return 0;
 }
 

@@ -63,12 +63,14 @@ static void device_static_init() {
   bus_type_by_name = hash_map_new();
   for (int i = 0; i < ARRAY_SIZE(bus_types); i++) {
     bus_types[i].driver_by_name = hash_map_new();
-    mtx_init(&bus_types[i].lock, MTX_SPIN, "bus_type_lock");
+    mtx_init(&bus_types[i].lock, 0, "bus_type_lock");
     hash_map_set(bus_type_by_name, bus_types[i].name, (void *) &bus_types[i]);
   }
 
   dev_type_by_name = hash_map_new();
   for (int i = 1; i < ARRAY_SIZE(dev_types); i++) {
+    dev_types[i].last_minor = 0;
+    mtx_init(&dev_types[i].lock, 0, "dev_type_lock");
     hash_map_set(dev_type_by_name, dev_types[i].name, (void *) &dev_types[i]);
   }
 }
@@ -118,10 +120,9 @@ void probe_all_buses() {
 //
 
 device_t *device_get(dev_t dev) {
-  mtx_lock(&device_tree_lock);
-  rb_node_t *node = rb_tree_find(device_tree, (uint64_t) dev);
-  device_t *device = node ? node->data : NULL;
-  mtx_unlock(&device_tree_lock);
+  mtx_spin_lock(&device_tree_lock);
+  device_t *device = rb_tree_find(device_tree, (uint64_t) dev);
+  mtx_spin_unlock(&device_tree_lock);
   return device;
 }
 
@@ -249,9 +250,9 @@ int register_dev(const char *dev_type, device_t *dev) {
   SLIST_ADD(&type->devices, dev, dev_list);
   mtx_unlock(&type->lock);
 
-  mtx_lock(&device_tree_lock);
+  mtx_spin_lock(&device_tree_lock);
   rb_tree_insert(device_tree, (uint64_t) make_dev(dev), dev);
-  mtx_unlock(&device_tree_lock);
+  mtx_spin_unlock(&device_tree_lock);
 
   kprintf("device: registered %s device %d\n", dev_type, dev->minor);
   return 0;

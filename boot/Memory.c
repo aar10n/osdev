@@ -234,7 +234,7 @@ EFI_STATUS EFIAPI ConvertEfiMemoryMapToBootFormat(
       continue;
     }
 
-    uint32_t MemoryType = GetMemoryEntryType(Desc->Type);
+    UINT32 MemoryType = GetMemoryEntryType(Desc->Type);
     BOOLEAN CanMerge = FALSE;
     if (NumEntries > 0 && Map[NumEntries - 1].type == MemoryType) {
       memory_map_entry_t *PrevEntry = &Map[NumEntries - 1];
@@ -334,6 +334,9 @@ VOID EFIAPI FillTableWithEntries(
   IN UINTN Stride,
   IN UINT16 Flags
 ) {
+  if (NumEntries == 0) {
+    return;
+  }
   ASSERT(Table != NULL);
   ASSERT(StartIndex < TABLE_MAX_ENTRIES);
   ASSERT(StartIndex + NumEntries <= TABLE_MAX_ENTRIES);
@@ -401,7 +404,8 @@ EFI_STATUS EFIAPI SetupKernelPageTables(IN PAGE_DESCRIPTOR *Descriptors, OUT UIN
 
   FILL:
     UINTN N = MIN(NumPages, TABLE_MAX_ENTRIES - PTOffset);
-    FillTableWithEntries(UpperPTs[Index], PTOffset, N, PhysAddr, SIZE_4KB, Flags);
+    if (N > 0)
+      FillTableWithEntries(UpperPTs[Index], PTOffset, N, PhysAddr, SIZE_4KB, Flags);
     NumPages -= N;
     PTOffset += N;
     PhysAddr += N * SIZE_4KB;

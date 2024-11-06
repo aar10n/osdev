@@ -142,10 +142,12 @@ static thread_t *sched_next_thread() {
   thread_t *td = NULL;
 
   bool empty;
-  int i = bit_ffs64(sched->readymask);
-  if (i != -1) {
+  int i = 0;
+  if (sched->readymask != 0 && (i = bit_ffs64(sched->readymask)) != -1) {
     td = sched_runq_get_next_thread(sched, i);
     if (td != NULL) {
+      // clear the readymask bit
+      atomic_fetch_xor(&sched->readymask, 1 << i);
       return td;
     }
   }
@@ -172,7 +174,7 @@ static thread_t *sched_next_thread() {
 
 //
 
-noreturn static void idle_thread(unused void *arg) {
+noreturn void idle_thread_entry() {
   sched_t *sched = cursched;
 
 idle_wait:;
@@ -203,6 +205,7 @@ void sched_init() {
   for (int i = 0; i < NRUNQS; i++) {
     runq_init(&sched->queues[i]);
   }
+  cpu_scheds[curcpu_id] = sched;
 
   set_cursched(sched);
   if (curthread == NULL) {
@@ -279,6 +282,8 @@ void sched_again(sched_reason_t reason) {
       ASSERT(TDF2_IS_STOPPING(oldtd));
       TD_SET_STATE(oldtd, TDS_EXITED);
       break;
+    default:
+      unreachable;
   }
 
   thread_t *newtd = sched_next_thread();
@@ -291,7 +296,6 @@ void sched_again(sched_reason_t reason) {
 
   td_unlock(newtd);
   sched_do_switch(oldtd, newtd);
-
 }
 
 void sched_cpu(int cpu, sched_reason_t reason) {

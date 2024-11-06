@@ -6,7 +6,7 @@
 #define KERNEL_CPU_FRAME_H
 
 struct trapframe {
-  /* pushed by common isr handler */
+  /* pushed by common handler */
   uint64_t rdi;
   uint64_t rsi;
   uint64_t rdx;
@@ -22,7 +22,11 @@ struct trapframe {
   uint64_t r13;
   uint64_t r14;
   uint64_t r15;
-
+  uint16_t	fs;
+  uint16_t	gs;
+  uint16_t	es;
+  uint16_t	ds;
+  /* pushed by stub */
   uint64_t data;
   uint64_t vector;
   /* pushed by processor */
@@ -33,5 +37,6 @@ struct trapframe {
   uint64_t rsp;
   uint64_t ss;
 };
+static_assert(sizeof(struct trapframe) == 0xc0); // referenced in exception.asm, switch.asm and syscall.asm
 
 #endif

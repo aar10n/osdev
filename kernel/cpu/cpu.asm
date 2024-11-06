@@ -125,28 +125,23 @@ cpu_load_tr:
   ltr di
   ret
 
-global cpu_reload_segments
-cpu_reload_segments:
-  push 0x08
+; void cpu_set_cs(uint16_t cs)
+global cpu_set_cs
+cpu_set_cs:
   lea rax, [rel .reload]
+  push rdi
   push rax
-  retfq
+  retfq ; pops IP followed by CS
 .reload:
-  mov ax, 0x10
-  mov ss, ax
-  mov ax, 0x00
-  mov ds, ax
-  mov es, ax
   ret
 
-  ; set up the stack frame so we can call
-  ; iretq to set our new cs register value
-  push qword 0x10 ; new ss
-  push rbp        ; rsp
-  pushfq          ; flags
-  push qword 0x08 ; new cs
-  push rax        ; rip
-  iretq
+; void cpu_set_ds(uint16_t ds)
+global cpu_set_ds
+cpu_set_ds:
+  mov ss, di
+  mov ds, di
+  mov es, di
+  ret
 
 ; Control Registers
 

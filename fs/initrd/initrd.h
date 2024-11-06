@@ -36,14 +36,13 @@ typedef struct initrd_node {
   uint32_t data_offset;
 } initrd_node_t;
 
-
 // vfs operations
 int initrd_vfs_mount(vfs_t *vfs, device_t *device, ventry_t **root);
 int initrd_vfs_stat(vfs_t *vfs, struct vfs_stat *stat);
 
 // vnode operations
 ssize_t initrd_vn_read(vnode_t *vn, off_t off, kio_t *kio);
-int initrd_vn_map(vnode_t *vn, off_t off, vm_mapping_t *mapping);
+int initrd_vn_getpage(vnode_t *vn, off_t off, __move page_t **result);
 void initrd_vn_cleanup(vnode_t *vn);
 
 #endif

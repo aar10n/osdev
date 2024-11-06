@@ -9,6 +9,15 @@
 
 #define MAX_CPUS 64
 
+#define NULL_SEG    0x00ULL
+#define KCODE_SEG   0x08ULL
+#define KDATA_SEG   0x10ULL
+#define UCODE32_SEG 0x18ULL
+#define UDATA_SEG   0x20ULL
+#define UCODE64_SEG 0x28ULL
+#define TSS_LO_SEG  0x30ULL
+#define TSS_HI_SEG  0x38ULL
+
 #define IA32_TSC_MSR            0x10
 #define IA32_APIC_BASE_MSR      0x1B
 #define IA32_EFER_MSR           0xC0000080
@@ -183,8 +192,9 @@ void cpu_write_stack_pointer(uint64_t sp);
 void cpu_load_gdt(void *gdt);
 void cpu_load_idt(void *idt);
 void cpu_load_tr(uint16_t tr);
+void cpu_set_cs(uint16_t cs);
+void cpu_set_ds(uint16_t ds);
 void cpu_flush_tlb();
-void cpu_reload_segments();
 
 uint64_t cpu_read_msr(uint32_t msr);
 uint64_t cpu_write_msr(uint32_t msr, uint64_t value);

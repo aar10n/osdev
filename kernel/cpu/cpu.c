@@ -10,9 +10,13 @@
 #include <kernel/hw/8254.h>
 
 #include <kernel/mm.h>
+#include <kernel/proc.h>
 #include <kernel/syscall.h>
+
 #include <kernel/panic.h>
 #include <kernel/printf.h>
+
+#define DPRINTF(x, ...) kprintf("cpu: " x, ##__VA_ARGS__)
 
 // prctl.h bits
 #define ARCH_SET_GS			0x1001
@@ -40,7 +44,7 @@
 #define CPU_EFER_NXE       (1 << 11)
 #define CPU_EFER_FFXSR     (1 << 14)
 
-#define DF_STACK_SIZE SIZE_4KB
+#define IRQ_STACK_SIZE SIZE_16KB
 
 uint8_t cpu_bsp_id = 0;
 uint32_t cpu_to_apic_id[MAX_CPUS];
@@ -214,18 +218,39 @@ void cpu_early_init() {
   }
 
   // setup the syscall handler
+  kprintf("IA32_LSTAR_MSR = %p\n", syscall_handler);
   cpu_write_msr(IA32_LSTAR_MSR, (uintptr_t) syscall_handler);
   cpu_write_msr(IA32_SFMASK_MSR, 0);
-  cpu_write_msr(IA32_STAR_MSR, 0x10LL << 48 | KERNEL_CS << 32);
+  cpu_write_msr(IA32_STAR_MSR, UCODE32_SEG << 48 | KCODE_SEG << 32);
 }
 
+// runs after virtual memory initialization and before static initializers
 void cpu_late_init() {
-  // setup the clean stack that is used for double fault handling
-  page_t *pages = alloc_pages(SIZE_TO_PAGES(DF_STACK_SIZE));
-  kassert(pages != NULL);
-  uintptr_t df_stack = vmap_pages(moveref(pages), 0, DF_STACK_SIZE, VM_WRITE|VM_STACK, "df stack");
-  tss_set_ist(1, df_stack + DF_STACK_SIZE);
-  idt_set_gate_ist(CPU_EXCEPTION_DF, 1);
+  struct ist_stack {
+    int ist_num;
+    int idt_num;
+    size_t size;
+  } ist_stacks[] = {
+    {IST_DBG, CPU_EXCEPTION_DB, SIZE_8KB},
+    {IST_NMI, CPU_EXCEPTION_NMI, SIZE_8KB},
+    {IST_DF, CPU_EXCEPTION_DF, SIZE_8KB},
+  };
+
+  // allocate special IST stacks
+  for (int i = 0; i < ARRAY_SIZE(ist_stacks); i++) {
+    struct ist_stack *stack = &ist_stacks[i];
+    page_t *pages = alloc_pages(SIZE_TO_PAGES(stack->size));
+    kassert(pages != NULL);
+    uintptr_t stack_addr = vmap_pages(moveref(pages), 0, stack->size, VM_WRITE | VM_STACK, "ist stack");
+    tss_set_ist(stack->ist_num, stack_addr + stack->size);
+    idt_set_gate_ist(stack->idt_num, stack->ist_num);
+  }
+
+  // allocate a stack for handling irqs
+  page_t *irq_stack = alloc_pages(SIZE_TO_PAGES(IRQ_STACK_SIZE));
+  kassert(irq_stack != NULL);
+  uintptr_t irq_stack_addr = vmap_pages(moveref(irq_stack), 0, IRQ_STACK_SIZE, VM_WRITE | VM_STACK, "irq stack");
+  set_irq_stack_top(irq_stack_addr + IRQ_STACK_SIZE);
 }
 
 void cpu_map_topology() {
@@ -400,6 +425,7 @@ void fpu_state_free(struct fpu_area **fp) {
 //
 
 DEFINE_SYSCALL(arch_prctl, int, int code, unsigned long arg) {
+  DPRINTF("arch_prctl code=%d arg=%p\n", code, arg);
   switch (code) {
     case ARCH_SET_GS:
       cpu_write_kernel_gsbase(arg);

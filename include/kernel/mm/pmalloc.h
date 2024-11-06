@@ -25,6 +25,12 @@ typedef enum zone_type {
 #define ZONE_NORMAL_MAX SIZE_4GB
 #define ZONE_HIGH_MAX   UINT64_MAX
 
+enum pg_rsrv_kind {
+  PG_RSRV_ANY,     // the reserved frames can be from any source
+  PG_RSRV_MANAGED, // the reserved frames must be from a managed zone
+  PG_RSRV_PHYS,    // the reserved frames must be from an unmanaged region
+};
+
 /**
  * frame_allocator represents a generic frame allocator.
  * this struct wraps the frame_allocator_impl interface to provide a
@@ -50,20 +56,31 @@ struct frame_allocator_impl {
 };
 
 void init_mem_zones();
-int reserve_pages(uintptr_t address, size_t count, size_t pagesize);
+int reserve_pages(enum pg_rsrv_kind kind, uintptr_t address, size_t count, size_t pagesize);
 
-// physical memory api
-//
+// page allocation api
 
-__move page_t *alloc_pages_zone(zone_type_t zone_type, size_t count, size_t pagesize);
-__move page_t *alloc_pages_size(size_t count, size_t pagesize);
-__move page_t *alloc_pages(size_t count);
-__move page_t *alloc_pages_at(uintptr_t address, size_t count, size_t pagesize);
-__move page_t *alloc_cow_pages(__ref page_t *pages);
+__ref page_t *alloc_pages_zone(zone_type_t zone_type, size_t count, size_t pagesize);
+__ref page_t *alloc_pages_size(size_t count, size_t pagesize);
+__ref page_t *alloc_pages(size_t count);
+__ref page_t *alloc_pages_at(uintptr_t address, size_t count, size_t pagesize);
+__ref page_t *alloc_nonowned_pages_at(uintptr_t address, size_t count, size_t pagesize);
+__ref page_t *alloc_cow_pages(page_t *pages);
+__ref page_t *alloc_shared_pages(page_t *pages);
 void drop_pages(__move page_t **pagesref);
 
-__move page_t *page_list_join(__move page_t **pagesref, __move page_t *pages);
-__move page_t *page_list_split(__move page_t **pagesref, size_t count);
+// page struct api
+
+struct pte *pte_struct_alloc(page_t *page, uint64_t *entry, vm_mapping_t *vm);
+void pte_struct_free(struct pte **pteptr);
+
+void page_add_mapping(page_t *page, struct pte *pte);
+struct pte *page_remove_mapping(page_t *page, vm_mapping_t *vm);
+struct pte *page_get_mapping(page_t *page, vm_mapping_t *vm);
+void page_update_flags(page_t *page, uint32_t flags);
+
+__ref page_t *page_list_join(__ref page_t *head, __ref page_t *tail);
+__ref page_t *page_list_split(__ref page_t *pages, size_t count, __out page_t **tailref);
 
 bool is_kernel_code_ptr(uintptr_t ptr);
 bool is_kernel_data_ptr(uintptr_t ptr);

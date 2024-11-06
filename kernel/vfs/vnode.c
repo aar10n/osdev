@@ -10,7 +10,6 @@
 #include <kernel/mm.h>
 #include <kernel/printf.h>
 
-
 #define ASSERT(x) kassert(x)
 #define DPRINTF(fmt, ...) kprintf("vnode: %s: " fmt, __func__, ##__VA_ARGS__)
 
@@ -35,42 +34,40 @@ static inline mode_t vn_to_mode(vnode_t *vnode) {
   return mode;
 }
 
-static void vn_cleanup(vnode_t *vn) {
-  // called when last reference is released
-  ASSERT(ref_count(&vn->refcount) == 0);
-  DPRINTF("cleanup [id=%u,%u]\n", vn->vfs->id, vn->id);
-
-  if (VN_OPS(vn)->v_cleanup)
-    VN_OPS(vn)->v_cleanup(vn);
-
-  vfs_release(&vn->vfs);
-  kfree(vn);
-}
-
 //
 
-vnode_t *vn_alloc_empty(enum vtype type) __move {
+__ref vnode_t *vn_alloc_empty(enum vtype type) {
   vnode_t *vnode = kmallocz(sizeof(vnode_t));
+  vnode->id = 0;
   vnode->type = type;
   vnode->state = V_EMPTY;
   vnode->flags = 0;
   mtx_init(&vnode->lock, MTX_RECURSIVE, "vnode_lock");
   rw_init(&vnode->data_lock, 0, "vnode_data_lock");
   ref_init(&vnode->refcount);
-  return vn_moveref(&vnode);
+  DPRINTF("allocated {:+vn}\n", vnode);
+  return vnode;
 }
 
-vnode_t *vn_alloc(id_t id, struct vattr *vattr) __move {
+__ref vnode_t *vn_alloc(id_t id, struct vattr *vattr) {
   vnode_t *vnode = vn_alloc_empty(vattr->type);
   vnode->id = id;
-  return vn_moveref(&vnode);
+  return vnode;
 }
 
-void vn_release(__move vnode_t **vnref) {
-  if (ref_put(&(*vnref)->refcount)) {
-    vn_cleanup(*vnref);
+__ref struct pgcache *vn_get_pgcache(vnode_t *vn) {
+  if (!vn_lock(vn)) {
+    panic("vnode is dead");
   }
-  *vnref = NULL;
+
+  if (vn->pgcache == NULL) {
+    uint16_t order = pgcache_size_to_order(page_align(vn->size), PAGE_SIZE);
+    vn->pgcache = pgcache_alloc(order, PAGE_SIZE);
+  }
+
+  struct pgcache *pgcache = getref(vn->pgcache);
+  vn_unlock(vn);
+  return pgcache;
 }
 
 void vn_stat(vnode_t *vn, struct stat *statbuf) {
@@ -82,11 +79,25 @@ void vn_stat(vnode_t *vn, struct stat *statbuf) {
   statbuf->st_nlink = vn->nlink;
   statbuf->st_rdev = vn->device ? make_dev(vn->device) : 0;
   if (vn->type == V_BLK || vn->type == V_CHR) {
-    statbuf->st_dev = vn->v_dev;
-    statbuf->st_dev = vn->v_dev;
+    statbuf->st_dev = make_dev(vn->v_dev);
   }
 
   // TODO: rest of the fields
+}
+
+void vn_cleanup(__move vnode_t **vnref) {
+  // called when last reference is released
+  vnode_t *vn = vn_moveref(vnref);
+  DPRINTF("!!! vnode cleanup !!! {:+vn}\n", vn);
+  ASSERT(vn != NULL);
+  ASSERT(vn->state == V_DEAD);
+  ASSERT(ref_count(&vn->refcount) == 0);
+
+  if (VN_OPS(vn)->v_cleanup)
+    VN_OPS(vn)->v_cleanup(vn);
+
+  vfs_release(&vn->vfs);
+  kfree(vn);
 }
 
 //
@@ -136,14 +147,26 @@ ssize_t vn_write(vnode_t *vn, off_t off, kio_t *kio) {
   return VN_OPS(vn)->v_write(vn, off, kio);
 }
 
-int vn_map(vnode_t *vn, off_t off, struct vm_mapping *mapping) {
-  if (!VN_OPS(vn)->v_map) return -ENOTSUP;
+int vn_getpage(vnode_t *vn, off_t off, bool pgcache, __move page_t **result) {
+  if (!VN_OPS(vn)->v_getpage) return -ENOTSUP;
   if (off < 0) return -EINVAL;
   if (off >= vn->size)
     return 0;
 
-  // filesystem map
-  return VN_OPS(vn)->v_map(vn, off, mapping);
+  page_t *page;
+  if (pgcache && vn->pgcache && (page = pgcache_lookup(vn->pgcache, off)) != NULL) {
+    *result = page;
+    return 0;
+  }
+
+  // filesystem getpage
+  int res = VN_OPS(vn)->v_getpage(vn, off, &page);
+  if (res < 0) {
+    return res;
+  }
+
+  *result = page;
+  return 0;
 }
 
 //
@@ -234,11 +257,11 @@ int vn_lookup(ventry_t *dve, vnode_t *dvn, cstr_t name, __move ventry_t **result
   }
 
   assert_new_ventry_valid(ve);
+  ve_add_child(dve, ve);
   vfs_add_node(vfs, ve);
   vfs_end_read_op(vfs);
   // READ END
 
-  ve_add_child(dve, ve);
   if (result)
     *result = ve_moveref(&ve);
   else
@@ -267,11 +290,11 @@ int vn_create(ventry_t *dve, vnode_t *dvn, cstr_t name, mode_t mode, __move vent
   }
 
   assert_new_ventry_valid(ve);
+  ve_add_child(dve, ve);
   vfs_add_node(vfs, ve);
   vfs_end_write_op(vfs);
   // WRITE END
 
-  ve_add_child(dve, ve);
   if (result)
     *result = ve_moveref(&ve);
   else
@@ -309,12 +332,12 @@ int vn_mknod(ventry_t *dve, vnode_t *dvn, cstr_t name, mode_t mode, dev_t dev, _
 
   assert_new_ventry_valid(ve);
   vnode_t *vn = VN(ve);
-  vn->v_dev = dev;
+  vn->v_dev = device_get(dev);
+  ve_add_child(dve, ve);
   vfs_add_node(vfs, ve);
   vfs_end_write_op(vfs);
   // WRITE END
 
-  ve_add_child(dve, ve);
   if (result)
     *result = ve_moveref(&ve);
   else
@@ -344,11 +367,11 @@ int vn_symlink(ventry_t *dve, vnode_t *dvn, cstr_t name, cstr_t target, __move v
   }
 
   assert_new_ventry_valid(ve);
+  ve_add_child(dve, ve);
   vfs_add_node(vfs, ve);
   vfs_end_write_op(vfs);
   // WRITE END
 
-  ve_add_child(dve, ve);
   if (result)
     *result = ve_moveref(&ve);
   else
@@ -376,10 +399,10 @@ int vn_hardlink(ventry_t *dve, vnode_t *dvn, cstr_t name, vnode_t *target, __mov
   }
 
   assert_new_ventry_valid(ve);
+  ve_add_child(dve, ve);
   vfs_end_write_op(vfs);
   // WRITE END
 
-  ve_add_child(dve, ve);
   if (result)
     *result = ve_moveref(&ve);
   else
@@ -405,15 +428,14 @@ int vn_unlink(ventry_t *dve, vnode_t *dvn, ventry_t *ve, vnode_t *vn) {
     return res;
   }
 
-  vfs_end_write_op(vfs);
-  // WRITE END
-
+  if (vn->nlink == 1) {
+    vfs_remove_node(vfs, vn); // this marks the vnode dead
+    ve_syncvn(ve); // this marks the ventry dead
+  }
   ve_remove_child(dve, ve);
   ve_unlink_vnode(ve, vn);
-
-  if (vn->nlink == 0) {
-    panic("what to do here");
-  }
+  vfs_end_write_op(vfs);
+  // WRITE END
 
   return 0;
 }
@@ -439,11 +461,11 @@ int vn_mkdir(ventry_t *dve, vnode_t *dvn, cstr_t name, mode_t mode, __move ventr
   }
 
   assert_new_ventry_valid(ve);
+  ve_add_child(dve, ve);
   vfs_add_node(vfs, ve);
   vfs_end_write_op(vfs);
   // WRITE END
 
-  ve_add_child(dve, ve);
   if (result)
     *result = ve_moveref(&ve);
   else
@@ -468,10 +490,13 @@ int vn_rmdir(ventry_t *dve, vnode_t *dvn, ventry_t *ve, vnode_t *vn) {
     return res;
   }
 
+  ve_remove_child(dve, ve);
+  vfs_remove_node(vfs, vn); // this marks the vnode dead
+  ve_syncvn(ve); // this marks the ventry dead
+
+  ve_unlink_vnode(ve, vn);
   vfs_end_write_op(vfs);
   // WRITE END
 
-  ve_remove_child(dve, ve);
-  ve_unlink_vnode(ve, vn);
   return 0;
 }

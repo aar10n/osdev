@@ -10,7 +10,7 @@
 
 struct exec_image;
 
-bool elf_is_valid_file(void *filebuf, size_t len);
-int elf_load_image(void *filebuf, size_t len, uint32_t e_type, struct exec_image *image);
+bool elf_is_valid_file(void *file_base, size_t len);
+int elf_load_image(int fd, void *file_base, size_t len, uint32_t e_type, uintptr_t base, __inout struct exec_image *image);
 
 #endif

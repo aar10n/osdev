@@ -69,7 +69,9 @@ noreturn void panic(const char *fmt, ...) {
   kheap_dump_stats();
   mtx_spin_unlock(&panic_lock);
 
-  ipi_deliver_mode(IPI_PANIC, IPI_ALL_EXCL, (uint64_t) panic_other_cpus);
+  if (system_num_cpus > 1) {
+    ipi_deliver_mode(IPI_PANIC, IPI_ALL_EXCL, (uint64_t) panic_other_cpus);
+  }
 
   kprintf(">>>> STOPPING CPU#%d <<<<\n", PERCPU_ID);
 

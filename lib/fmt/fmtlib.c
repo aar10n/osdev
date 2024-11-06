@@ -4,14 +4,18 @@
 //
 
 #include "fmtlib.h"
-#include "fmt.h"
 
 #include <kernel/mm.h>
 #include <kernel/errno.h>
 #include <kernel/time.h>
 #include <kernel/string.h>
 #include <kernel/str.h>
+#include <kernel/vfs_types.h>
 #include <kernel/vfs/path.h>
+#include <kernel/vfs/file.h>
+#include <kernel/lock.h>
+#include <kernel/mutex.h>
+#include <kernel/proc.h>
 
 
 #ifndef min
@@ -29,13 +33,21 @@
 #define mk_fmtlib_spec_u64(v, w) ((fmt_spec_t) { \
   .fill_char = '0',                           \
   .width = (w),                               \
-  .argtype = FMT_ARGTYPE_INT64,               \
   .value = fmt_rawvalue_uint64(v),            \
+  .argtype = FMT_ARGTYPE_INT64,               \
+})
+
+#define mk_fmtlib_spec_pointer(p) ((fmt_spec_t) { \
+  .flags = FMT_FLAG_ALT,                          \
+  .fill_char = '0',                               \
+  .width = 16,                                    \
+  .value = fmt_rawvalue_voidptr(p),                 \
+  .argtype = FMT_ARGTYPE_VOIDPTR,                 \
 })
 
 #define mk_fmtlib_spec_voidp(v) ((fmt_spec_t) { \
-  .argtype = FMT_ARGTYPE_VOIDPTR,              \
-  .value = fmt_rawvalue_voidptr(v),            \
+  .value = fmt_rawvalue_voidptr(v),             \
+  .argtype = FMT_ARGTYPE_VOIDPTR,               \
 })
 
 typedef struct fmt_format_type {
@@ -350,13 +362,17 @@ static size_t format_mem_quantity(fmt_buffer_t *buffer, const fmt_spec_t *spec) 
 
 static size_t format_errno(fmt_buffer_t *buffer, const fmt_spec_t *spec) {
   int err = (int) spec->value.uint64_value;
+  size_t n = 0;
   if (err >= 0) {
-    return fmtlib_buffer_write(buffer, "success", 7);
+    n += fmtlib_buffer_write(buffer, "success<", 8);
+    n += format_unsigned(buffer, &mk_fmtlib_spec_u64(err, 0));
+    n += fmtlib_buffer_write_char(buffer, '>');
+    return n;
   }
 
   const char *str = strerror(abs(err));
   if (str == NULL) {
-    size_t n = fmtlib_buffer_write(buffer, "{unknown error: ", 16);
+    n = fmtlib_buffer_write(buffer, "{unknown error: ", 16);
     n += format_signed(buffer, spec);
     n += fmtlib_buffer_write_char(buffer, '}');
     return n;
@@ -426,6 +442,254 @@ static size_t format_time_unix(fmt_buffer_t *buffer, const fmt_spec_t *spec) {
   struct tm tm = {0};
   posix2tm(epoch, &tm);
   return format_struct_tm_utc(buffer, &tm);
+}
+
+static size_t format_thread(fmt_buffer_t *buffer, const fmt_spec_t *spec) {
+  // (<pid>:<tid>:<name>)
+  const struct thread *td = spec->value.voidptr_value;
+  if (td == NULL) {
+    return fmtlib_buffer_write(buffer, "(null)", 6);
+  }
+
+  size_t n = 0;
+  n += fmtlib_buffer_write_char(buffer, '(');
+  n += fmtlib_buffer_write_u64(buffer, td->proc->pid);
+  n += fmtlib_buffer_write_char(buffer, ':');
+  n += fmtlib_buffer_write_u64(buffer, td->tid);
+  if (str_len(td->name) > 0) {
+    n += fmtlib_buffer_write_char(buffer, ':');
+    n += fmtlib_buffer_write(buffer, str_cptr(td->name), str_len(td->name));
+  }
+  n += fmtlib_buffer_write_char(buffer, ')');
+  return n;
+}
+
+static size_t format_lock_object(fmt_buffer_t *buffer, const fmt_spec_t *spec) {
+  // {<name>:<class>:<opts>:<data>}
+  const struct lock_object *lo = spec->value.voidptr_value;
+  bool alt = (spec->flags & FMT_FLAG_ALT) != 0;
+  bool upper = (spec->flags & FMT_FLAG_UPPER) != 0;
+  if (lo == NULL) {
+    return fmtlib_buffer_write(buffer, "(null)", 6);
+  }
+
+  size_t n = 0;
+  n += fmtlib_buffer_write(buffer, "{", 1);
+
+  size_t lo_name_len = strlen(lo->name);
+  bool write_pointer = alt || (lo_name_len == 0);
+  n += fmtlib_buffer_write(buffer, lo->name, strlen(lo->name));
+  if (write_pointer) {
+    n += fmtlib_buffer_write_char(buffer, '<');
+
+    fmt_spec_t ptr_spec = mk_fmtlib_spec_voidp(lo);
+    ptr_spec.flags = FMT_FLAG_ALT | FMT_FLAG_ZERO | (upper ? FMT_FLAG_UPPER : 0);
+    ptr_spec.width = 16;
+    n += format_hex(buffer, &ptr_spec);
+    n += fmtlib_buffer_write_char(buffer, '>');
+  }
+
+  n += fmtlib_buffer_write_char(buffer, ':');
+
+  switch (LO_LOCK_CLASS(lo)) {
+    case SPINLOCK_LOCKCLASS:
+      if (upper)
+        n += fmtlib_buffer_write(buffer, "spinlock", 8);
+      else
+        n += fmtlib_buffer_write(buffer, "spl", 3);
+      break;
+    case MUTEX_LOCKCLASS:
+      if (upper)
+        n += fmtlib_buffer_write(buffer, "mutex", 5);
+      else
+        n += fmtlib_buffer_write(buffer, "mtx", 3);
+      break;
+    case RWLOCK_LOCKCLASS:
+      if (upper)
+        n += fmtlib_buffer_write(buffer, "rwlock", 6);
+      else
+        n += fmtlib_buffer_write(buffer, "rwl", 3);
+      break;
+    default:
+      n += fmtlib_buffer_write(buffer, "invalid", 7);
+      n += fmtlib_buffer_write_char(buffer, '<');
+      n += fmtlib_buffer_write_u64(buffer, LO_LOCK_CLASS(lo));
+      n += fmtlib_buffer_write_char(buffer, '>');
+      n += fmtlib_buffer_write_char(buffer, '}');
+      return n;
+  }
+
+  uint32_t lo_opts = LO_LOCK_OPTS(lo);
+  if (upper) {
+    if (lo_opts & LO_DEBUG) n += fmtlib_buffer_write(buffer, ",debug", 6);
+    if (lo_opts & LO_NOCLAIMS) n += fmtlib_buffer_write(buffer, ",noclaims", 9);
+    if (lo_opts & LO_RECURSABLE) n += fmtlib_buffer_write(buffer, ",recurse", 8);
+    if (lo_opts & LO_SLEEPABLE) n += fmtlib_buffer_write(buffer, ",sleep", 6);
+    if (lo_opts & LO_INITIALIZED) n += fmtlib_buffer_write(buffer, ",init", 5);
+  } else {
+    n += fmtlib_buffer_write_char(buffer, ':');
+    if (lo_opts & LO_DEBUG) n += fmtlib_buffer_write_char(buffer, 'D');
+    if (lo_opts & LO_NOCLAIMS) n += fmtlib_buffer_write_char(buffer, 'N');
+    if (lo_opts & LO_RECURSABLE) n += fmtlib_buffer_write_char(buffer, 'R');
+    if (lo_opts & LO_SLEEPABLE) n += fmtlib_buffer_write_char(buffer, 'S');
+    if (lo_opts & LO_INITIALIZED) n += fmtlib_buffer_write_char(buffer, 'i');
+  }
+
+  n += fmtlib_buffer_write_char(buffer, ':');
+  n += fmtlib_buffer_write_u64(buffer, lo->data);
+  n += fmtlib_buffer_write_char(buffer, '}');
+  return n;
+}
+
+static size_t format_vtype(fmt_buffer_t *buffer, const fmt_spec_t *spec) {
+  enum vtype vtype = spec->value.uint64_value;
+  bool upper = (spec->flags & FMT_FLAG_UPPER) != 0;
+
+  size_t n = 0;
+  switch (vtype) {
+    case V_NONE:
+      n += fmtlib_buffer_write(buffer, (upper ? "V_NONE" : "v_none"), 6);
+      return n;
+    case V_REG:
+      n += fmtlib_buffer_write(buffer, (upper ? "V_REG" : "v_reg"), 5);
+      return n;
+    case V_DIR:
+      n += fmtlib_buffer_write(buffer, (upper ? "V_DIR" : "v_dir"), 5);
+      return n;
+    case V_LNK:
+      n += fmtlib_buffer_write(buffer, (upper ? "V_LNK" : "v_lnk"), 5);
+      return n;
+    case V_BLK:
+      n += fmtlib_buffer_write(buffer, (upper ? "V_BLK" : "v_blk"), 5);
+      return n;
+    case V_CHR:
+      n += fmtlib_buffer_write(buffer, (upper ? "V_CHR" : "v_chr"), 5);
+      return n;
+    case V_FIFO:
+      n += fmtlib_buffer_write(buffer, (upper ? "V_FIFO" : "v_fifo"), 6);
+      return n;
+    case V_SOCK:
+      n += fmtlib_buffer_write(buffer, (upper ? "V_SOCK" : "v_sock"), 6);
+      return n;
+    default:
+      n += fmtlib_buffer_write(buffer, upper ? "INVALID VTYPE<" : "invalid vtype<", 14);
+      n += fmtlib_buffer_write_u64(buffer, vtype);
+      n += fmtlib_buffer_write_char(buffer, '>');
+      return n;
+  }
+}
+
+static size_t format_vattr(fmt_buffer_t *buffer, const fmt_spec_t *spec) {
+  // {<type>,<mode>}
+  const struct vattr *vattr = spec->value.voidptr_value;
+  if (vattr == NULL) {
+    return fmtlib_buffer_write(buffer, "(null)", 6);
+  }
+
+  size_t n = 0;
+  n += fmtlib_buffer_write_char(buffer, '{');
+  n += format_vtype(buffer, &mk_fmtlib_spec_u64(vattr->type, 0));
+  n += fmtlib_buffer_write_char(buffer, ',');
+  n += format_octal(buffer, &mk_fmtlib_spec_u64(vattr->mode, 0));
+  n += fmtlib_buffer_write_char(buffer, '}');
+  return n;
+}
+
+static size_t format_vnode(fmt_buffer_t *buffer, const fmt_spec_t *spec) {
+  // (<vfs_id>:<vnode_id>)
+  // (<vfs_id>:<vnode_id>)<pointer>    '+' flag
+  const vnode_t *vn = spec->value.voidptr_value;
+  bool plus = (spec->flags & FMT_FLAG_SIGN) != 0;
+  if (vn == NULL) {
+    return fmtlib_buffer_write(buffer, "(null)", 6);
+  }
+
+  size_t n = 0;
+  fmt_spec_t tmp_spec;
+  n += fmtlib_buffer_write_char(buffer, '(');
+  if (vn->vfs != NULL) {
+    tmp_spec = mk_fmtlib_spec_u64(vn->vfs->id, 0);
+    n += format_signed(buffer, &tmp_spec);
+  } else {
+    n += fmtlib_buffer_write(buffer, "null", 4);
+  }
+  n += fmtlib_buffer_write_char(buffer, ':');
+  tmp_spec = mk_fmtlib_spec_u64(vn->id, 0);
+  n += format_signed(buffer, &tmp_spec);
+  n += fmtlib_buffer_write_char(buffer, ')');
+
+  if (plus) {
+    n += fmtlib_buffer_write_char(buffer, '<');
+    tmp_spec = mk_fmtlib_spec_pointer(vn);
+    n += format_hex(buffer, &tmp_spec);
+    n += fmtlib_buffer_write_char(buffer, '>');
+  }
+  return n;
+}
+
+static size_t format_ventry(fmt_buffer_t *buffer, const fmt_spec_t *spec) {
+  // (<vfs_id>:<vnode_id>:<name>)
+  // (<vfs_id>:<vnode_id>:<name>)<pointer>    '+' flag
+  const ventry_t *ve = spec->value.voidptr_value;
+  bool plus = (spec->flags & FMT_FLAG_SIGN) != 0;
+  if (ve == NULL) {
+    return fmtlib_buffer_write(buffer, "(null)", 6);
+  }
+
+  size_t n = 0;
+  fmt_spec_t tmp_spec;
+  n += fmtlib_buffer_write_char(buffer, '(');
+  if (ve->vn != NULL && ve->vn->vfs == NULL) {
+    n += fmtlib_buffer_write(buffer, "null", 4);
+  } else {
+    tmp_spec = mk_fmtlib_spec_u64(ve->vfs_id, 0);
+    n += format_signed(buffer, &tmp_spec);
+  }
+  n += fmtlib_buffer_write_char(buffer, ':');
+  if (!((ve)->flags & VE_LINKED)) {
+    n += fmtlib_buffer_write(buffer, "null", 4);
+  } else {
+    tmp_spec = mk_fmtlib_spec_u64(ve->id, 0);
+    n += format_signed(buffer, &tmp_spec);
+  }
+  n += fmtlib_buffer_write_char(buffer, ':');
+  tmp_spec = mk_fmtlib_spec_voidp(&ve->name);
+  n += format_str_t(buffer, &tmp_spec);
+  n += fmtlib_buffer_write_char(buffer, ')');
+
+  if (plus) {
+    n += fmtlib_buffer_write_char(buffer, '<');
+    tmp_spec = mk_fmtlib_spec_pointer(ve);
+    n += format_hex(buffer, &tmp_spec);
+    n += fmtlib_buffer_write_char(buffer, '>');
+  }
+  return n;
+}
+
+static size_t format_file(fmt_buffer_t *buffer, const fmt_spec_t *spec) {
+  // <<fd>:<vtype>:<vnode>>
+  // <<fd>:<vtype>:<vnode>><pointer>    '+' flag
+  const file_t *f = spec->value.voidptr_value;
+  bool plus = (spec->flags & FMT_FLAG_SIGN) != 0;
+  if (f == NULL) {
+    return fmtlib_buffer_write(buffer, "(null)", 6);
+  }
+
+  size_t n = 0;
+  n += fmtlib_buffer_write_char(buffer, '<');
+  n += format_signed(buffer, &mk_fmtlib_spec_u64(f->fd, 0));
+  n += fmtlib_buffer_write_char(buffer, ':');
+  n += format_vtype(buffer, &mk_fmtlib_spec_u64(f->type, 0));
+  n += fmtlib_buffer_write_char(buffer, ':');
+  n += format_vnode(buffer, &mk_fmtlib_spec_voidp(f->vnode));
+  n += fmtlib_buffer_write_char(buffer, '>');
+
+  if (plus) {
+    n += fmtlib_buffer_write_char(buffer, '<');
+    n += format_hex(buffer, &mk_fmtlib_spec_pointer(f));
+    n += fmtlib_buffer_write_char(buffer, '>');
+  }
+  return n;
 }
 
 // aligns the string to the spec width
@@ -511,9 +775,71 @@ int fmtlib_resolve_type(fmt_spec_t *spec) {
   }
 
   if (spec->type_len == 1) {
-    goto single_char;
+    switch (spec->type[0]) {
+      case 'F': spec->flags |= FMT_FLAG_UPPER; // fallthrough
+      case 'f':
+        spec->argtype = FMT_ARGTYPE_DOUBLE;
+        spec->formatter = format_double;
+        return 1;
+      case 's':
+        spec->argtype = FMT_ARGTYPE_VOIDPTR;
+        spec->formatter = format_string;
+        return 1;
+      case 'c':
+        spec->argtype = FMT_ARGTYPE_INT32;
+        spec->formatter = format_char;
+        return 1;
+      case 'p':
+        spec->flags |= FMT_FLAG_ALT;
+        spec->argtype = FMT_ARGTYPE_VOIDPTR;
+        spec->formatter = format_hex;
+        return 1;
+      case 'M':
+        spec->flags |= FMT_FLAG_UPPER;
+        spec->argtype = FMT_ARGTYPE_SIZE;
+        spec->formatter = format_mem_quantity;
+        return 1;
+      default:
+        break;
+    }
   }
 
+  // td -> struct thread*
+  if (strncmp("td", spec->type, 2) == 0) {
+    spec->argtype = FMT_ARGTYPE_VOIDPTR;
+    spec->formatter = format_thread;
+    return 1;
+  }
+  // Lo -> struct lock_object*
+  if (strncmp("Lo", spec->type, 2) == 0) {
+    spec->argtype = FMT_ARGTYPE_VOIDPTR;
+    spec->formatter = format_lock_object;
+    return 1;
+  }
+  // va -> struct vattr*
+  if (strncmp("va", spec->type, 2) == 0) {
+    spec->argtype = FMT_ARGTYPE_VOIDPTR;
+    spec->formatter = format_vattr;
+    return 1;
+  }
+  // ve -> struct ventry*
+  if (strncmp("ve", spec->type, 2) == 0) {
+    spec->argtype = FMT_ARGTYPE_VOIDPTR;
+    spec->formatter = format_ventry;
+    return 1;
+  }
+  // vn -> struct vnode*
+  if (strncmp("vn", spec->type, 2) == 0) {
+    spec->argtype = FMT_ARGTYPE_VOIDPTR;
+    spec->formatter = format_vnode;
+    return 1;
+  }
+  // vt -> enum vtype
+  if (strncmp("vt", spec->type, 2) == 0) {
+    spec->argtype = FMT_ARGTYPE_INT32;
+    spec->formatter = format_vtype;
+    return 1;
+  }
   // err -> int
   if (strncmp("err", spec->type, 3) == 0) {
     spec->argtype = FMT_ARGTYPE_INT32;
@@ -550,18 +876,13 @@ int fmtlib_resolve_type(fmt_spec_t *spec) {
     spec->formatter = format_time_unix;
     return 1;
   }
-
-single_char:
-  switch (spec->type[0]) {
-    case 'F': spec->flags |= FMT_FLAG_UPPER; // fallthrough
-    case 'f': spec->argtype = FMT_ARGTYPE_DOUBLE; spec->formatter = format_double; return 1;
-    case 's': spec->argtype = FMT_ARGTYPE_VOIDPTR; spec->formatter = format_string; return 1;
-    case 'c': spec->argtype = FMT_ARGTYPE_INT32; spec->formatter = format_char; return 1;
-    case 'p': spec->flags |= FMT_FLAG_ALT;
-              spec->argtype = FMT_ARGTYPE_VOIDPTR; spec->formatter = format_hex; return 1;
-    case 'M': spec->flags |= FMT_FLAG_UPPER; // fallthrough
-              spec->argtype = FMT_ARGTYPE_SIZE; spec->formatter = format_mem_quantity; return 1;
+  // file -> struct file
+  if (strncmp("file", spec->type, 4) == 0) {
+    spec->argtype = FMT_ARGTYPE_VOIDPTR;
+    spec->formatter = format_file;
+    return 1;
   }
+
 
   // type not found
   spec->argtype = FMT_ARGTYPE_NONE;
@@ -595,12 +916,32 @@ size_t fmtlib_parse_printf_type(const char *format, const char **end) {
         }
       }
       break;
+    case 't':
+      if (ptr[1] == 'd') {
+        *end = ptr + 2;
+        return 2;
+      }
+      break;
+    case 'L':
+      if (ptr[1] == 'o') {
+        *end = ptr + 2;
+        return 2;
+      }
+      break;
     case 'z':
       if (ptr[1] == 'd' || ptr[1] == 'u' || ptr[1] == 'b' ||
           ptr[1] == 'o' || ptr[1] == 'x' || ptr[1] == 'X') {
         *end = ptr + 2;
         return 2;
       }
+      break;
+    case 'v':
+      if (ptr[1] == 'a' || ptr[1] == 'e' || ptr[1] == 'n' || ptr[1] == 't') {
+        *end = ptr + 2;
+        return 2;
+      }
+      break;
+    default:
       break;
   }
 

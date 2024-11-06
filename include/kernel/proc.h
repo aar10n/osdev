@@ -29,20 +29,9 @@ struct waitqueue;
 
 struct cpuset;
 struct proc;
-struct procstats;
-struct pcmdline;
+struct pstats;
+struct pstrings;
 struct thread;
-
-/*
- * Credentials
- */
-typedef struct creds {
-  uid_t uid;  // user id
-  uid_t euid; // effective user id
-  gid_t gid;  // group id
-  gid_t egid; // effective group id
-  _refcount;
-} creds_t;
 
 /*
  * Session
@@ -83,15 +72,15 @@ typedef struct proc {
   pid_t pid;                        // process id
   uint32_t flags;                   // process flags
   struct address_space *space;      // address space
-  struct creds *creds;              // owner identity (ref)
   struct pgroup *group;             // owning process group
+  struct pcreds *creds;             // owner credentials (ref)
   struct ventry *pwd;               // working dir vnode (ref)
 
   struct ftable *files;             // open file descriptors
   struct sigacts *sigacts;          // signal stuff?
   struct rusage *usage;             // resource usage
   struct rlimit *limit;             // resource limit
-  struct procstats *stats;          // process stats
+  struct pstats *stats;             // process stats
 
   enum proc_state {
     PRS_EMPTY,
@@ -105,13 +94,19 @@ typedef struct proc {
   cond_t td_exit_cond;              // thread exit condition
 
   /* starts zeroed */
-  str_t name;                       // process name
-  str_t binpath;                    // path to executable
-  struct page *binpages;            // pages containing the executable
+  struct pstrings *args;            // process arguments
+  struct pstrings *env;             // process environment
+  str_t binpath;                    // process executable path
 
+  uintptr_t brk_start;              // process brk segment start
+  uintptr_t brk_end;                // process brk segment end
+  uintptr_t brk_max;                // process brk max address
+
+  str_t name;                       // process name
   sigqueue_t sigqueue;              // signals waiting for a thread
   pid_t ppid;                       // parent pid
 
+  int exit_code;                    // process exit code
   volatile uint32_t num_exiting;    // pending thread exits
   volatile uint32_t num_exited;     // number of exited threads
   uint32_t num_threads;             // number of threads
@@ -137,26 +132,23 @@ typedef struct proc {
 #define pr_lock(p) __type_checked(proc_t*, p, mtx_lock(&(p)->lock))
 #define pr_unlock(p) __type_checked(proc_t*, p, mtx_unlock(&(p)->lock))
 
-struct procstats {
+struct pstats {
   struct timeval start_time;
 };
 
-/*
- * Process exec arguments.
- */
-struct pargs {
-  uint32_t arg_count;   // number of arguments
-  uint32_t arg_size;    // size of all arguments
-  struct page *pages;   // pages containing the strings (ref)
+struct pcreds {
+  uid_t uid;  // user id
+  uid_t euid; // effective user id
+  gid_t gid;  // group id
+  gid_t egid; // effective group id
+  _refcount;
 };
 
-/*
- * Process environment.
- */
-struct penv {
-  uint32_t env_count;   // number of env variables
-  uint32_t env_size;    // size of all env variables
+struct pstrings {
+  uint32_t count;       // number of strings
+  uint32_t size;        // size of all strings
   struct page *pages;   // pages containing the strings (ref)
+  char *kptr;           // kernel pointer to the strings
 };
 
 /*
@@ -168,13 +160,15 @@ typedef struct thread {
   mtx_t lock;                           // thread mutex lock
   struct tcb *tcb;                      // thread context
   struct proc *proc;                    // owning process
-  struct creds *creds;                  // owner identity (ref)
+  struct trapframe *frame;              // thread trapframe
+  uintptr_t kstack_base;                // kernel stack base
+  size_t kstack_size;                   // kernel stack size
 
+  struct pcreds *creds;                 // owner identity (ref)
   struct cpuset *cpuset;                // cpu affinity set
   struct lockqueue *own_lockq;          // thread owned lockq
   struct waitqueue *own_waitq;          // thread owned waitq
   struct lock_claim_list *wait_claims;  // wait lock claim list
-  struct trapframe *frame;              // thread trapframe
 
   enum thread_state {
     TDS_EMPTY,    // thread is being set up
@@ -186,8 +180,6 @@ typedef struct thread {
   } state;
 
   int cpu_id;                           // last cpu thread ran on
-  uintptr_t kstack_base;                // kernel stack base
-  size_t kstack_size;                   // kernel stack size
   volatile uint32_t flags2;             // private flags
   uint16_t : 16;
   uint8_t pri_base;                     // base priority
@@ -199,7 +191,7 @@ typedef struct thread {
   struct rusage usage;                  // resource usage
   struct rlimit limit;                  // resource limit
   uint64_t runtime;                     // total run time
-  uint64_t blocktime;
+  uint64_t blocktime;                   // total block time
 
   int lock_count;                       // number of normal mutexes held
   int spin_count;                       // number of spin mutexes held
@@ -220,6 +212,8 @@ typedef struct thread {
   LIST_ENTRY(struct thread) lqlist;     // lockq list entry
   LIST_ENTRY(struct thread) wqlist;     // waitq list entry
 } thread_t;
+static_assert(offsetof(thread_t, kstack_base) == 0x38);
+static_assert(offsetof(thread_t, kstack_size) == 0x40);
 
 // thread flags
 #define TDF_KTHREAD     0x00000001  // kernel thread
@@ -253,7 +247,7 @@ typedef struct thread {
 
 #define td_lock_assert(td, what) __type_checked(thread_t*, td, mtx_assert(&(td)->lock, what))
 #define td_lock(td) _thread_lock(td, __FILE__, __LINE__)
-#define td_unlock(td) _thread_unlock(td)
+#define td_unlock(td) _thread_unlock(td, __FILE__, __LINE__)
 
 // realtime threads: 48-79
 // timeshare threads: 120-223
@@ -273,8 +267,8 @@ typedef struct thread {
 
 void proc0_init();
 
-__move creds_t *creds_alloc(uid_t uid, gid_t gid);
-void creds_release(__move creds_t **credsp);
+__move struct pcreds *pcreds_alloc(uid_t uid, gid_t gid);
+void pcreds_release(__move struct pcreds **credsp);
 
 pgroup_t *pgrp_alloc_empty(pid_t pgid, session_t *session);
 void pgrp_free_empty(pgroup_t **pgp);
@@ -285,27 +279,26 @@ void pgrp_remove_proc(pgroup_t *pg, proc_t *proc);
 pid_t proc_alloc_pid();
 void proc_free_pid(pid_t pid);
 
-proc_t *proc_alloc_empty(pid_t pid, struct address_space *space, creds_t *creds);
+proc_t *proc_alloc_empty(pid_t pid, struct address_space *space, struct pcreds *creds);
 void proc_free_exited(proc_t **procp);
 void   proc_setup_add_thread(proc_t *proc, thread_t *td);
-
-int    proc_setup_load_exec(proc_t *proc, const char *path);
-int    proc_setup_exec_args(proc_t *proc, char *const argv[], char *const envp[]);
-
+int    proc_setup_new_env(proc_t *proc, const char *const env[]);
+int    proc_setup_copy_env(proc_t *proc, struct pstrings *env);
+int    proc_setup_exec_args(proc_t *proc, const char *const args[]);
+int    proc_setup_exec(proc_t *proc, cstr_t path);
 int    proc_setup_clone_fds(proc_t *proc, struct ftable *ftable);
-int    proc_setup_open_fd(proc_t *proc, int fd, const char *path, int flags);
-void   proc_setup_finish_and_submit_all(proc_t *proc);
+int    proc_setup_open_fd(proc_t *proc, int fd, cstr_t path, int flags);
+void   proc_finish_setup_and_submit_all(proc_t *proc);
 void proc_add_thread(proc_t *proc, thread_t *td);
-
-proc_t *proc_setup_create(void (start_routine)());
-// proc_t *proc_setup_execve
+void proc_exit_all_wait(proc_t *proc, int exit_code);
 
 thread_t *thread_alloc_idle();
 thread_t *thread_alloc_empty(uint32_t flags, uintptr_t kstack_base, size_t kstack_size);
+static inline uintptr_t thread_get_kstack_top(thread_t *td) { return (uintptr_t) td->frame; }
 void thread_free_exited(thread_t **tdp);
 void   thread_setup_entry(thread_t *td, uintptr_t entry, uintptr_t arg);
 void   thread_setup_priority(thread_t *td, uint8_t base_pri);
-void   thread_setup_finish_submit(thread_t *td);
+void   thread_finish_setup_and_submit(thread_t *td);
 void thread_stop(thread_t *td);
 
 struct cpuset *cpuset_alloc(struct cpuset *existing);

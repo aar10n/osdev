@@ -22,7 +22,7 @@ ramfs_mount_t *ramfs_alloc_mount(vfs_t *vfs) {
   ramfs_mount_t *mount = kmallocz(sizeof(ramfs_mount_t));
   mount->vfs = vfs;
 
-  mount->next_id = 0;
+  mount->next_id = 1;
   mtx_init(&mount->lock, MTX_SPIN, "ramfs_mount_lock");
 
   ramfs_node_t *root = ramfs_alloc_node(
@@ -37,7 +37,6 @@ ramfs_mount_t *ramfs_alloc_mount(vfs_t *vfs) {
 }
 
 void ramfs_free_mount(ramfs_mount_t *mount) {
-  ASSERT(mount->next_id == 0);
   ASSERT(mount->root == NULL);
   ASSERT(mount->data == NULL);
   kfree(mount);
@@ -46,7 +45,7 @@ void ramfs_free_mount(ramfs_mount_t *mount) {
 ramfs_dentry_t *ramfs_alloc_dentry(ramfs_node_t *node, cstr_t name) {
   ramfs_dentry_t *dirent = kmallocz(sizeof(ramfs_dentry_t));
   dirent->node = node;
-  dirent->name = str_copy_cstr(name);
+  dirent->name = str_from_cstr(name);
   return dirent;
 }
 
@@ -70,7 +69,6 @@ ramfs_node_t *ramfs_alloc_node(ramfs_mount_t *mount, struct vattr *vattr) {
 }
 
 void ramfs_free_node(ramfs_node_t *node) {
-  mtx_assert(&node->lock, MA_OWNED);
   ASSERT(node->data == NULL);
   kfree(node);
 }
@@ -114,7 +112,7 @@ struct vfs_ops ramfs_vfs_ops = {
 struct vnode_ops ramfs_vnode_ops = {
   .v_read = ramfs_vn_read,
   .v_write = ramfs_vn_write,
-  .v_map = ramfs_vn_map,
+  .v_getpage = ramfs_vn_getpage,
 
   .v_readlink = ramfs_vn_readlink,
   .v_readdir = ramfs_vn_readdir,
@@ -138,8 +136,8 @@ struct ventry_ops ramfs_ventry_ops = {
 static fs_type_t ramfs_type = {
   .name = "ramfs",
   .vfs_ops = &ramfs_vfs_ops,
-  .vnode_ops = &ramfs_vnode_ops,
-  .ventry_ops = &ramfs_ventry_ops,
+  .vn_ops = &ramfs_vnode_ops,
+  .ve_ops = &ramfs_ventry_ops,
 };
 
 

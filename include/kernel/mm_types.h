@@ -25,13 +25,14 @@
 #define PAGES_TO_SIZE(pages) ((pages) << PAGE_SHIFT)
 #define SIZE_TO_PAGES(size) (((size) >> PAGE_SHIFT) + (((size) & 0xFFF) ? 1 : 0))
 
-struct frame_allocator;
-struct page;
 struct address_space;
+struct frame_allocator;
+struct rb_tree;
+struct page;
+struct pte;
 struct vm_mapping;
-struct vm_anon;
+struct vm_file;
 
-struct intvl_tree;
 
 /*
  * A page of physical memory.
@@ -46,16 +47,17 @@ struct intvl_tree;
 typedef struct page {
   uint64_t address;             // physical frame
   uint32_t flags;               // page flags
+  mtx_t pg_lock;                // spinlock for certain page struct fields
   struct {                      // *** valid if PG_HEAD ***
     uint64_t count : 63;        //   number of pages in the list
     uint64_t contiguous : 1;    //   whether the list is physically contiguous
   } head;
   union {
     struct frame_allocator *fa; // owning frame allocator (if PG_OWNING)
-    struct page *source;        // source page (if PG_COW)
+    struct page *source;        // source page ref (if PG_COW)
   };
-  struct vm_mapping *mapping;   // owning virtual mapping
-  struct page *next;            // next page (ref)
+  struct pte *entries;          // s-list of pte structs (l)
+  struct page *next;            // next page ref (l)
   _refcount;
 } page_t;
 
@@ -67,6 +69,30 @@ typedef struct page {
 #define PG_COW        (1 << 4)
 
 #define PG_SIZE_MASK  (PG_BIGPAGE | PG_HUGEPAGE)
+
+static always_inline size_t pg_flags_to_size(uint32_t pg_flags) {
+  if (pg_flags & PG_BIGPAGE) {
+    return PAGE_SIZE_2MB;
+  } else if (pg_flags & PG_HUGEPAGE) {
+    return PAGE_SIZE_1GB;
+  }
+  return PAGE_SIZE;
+}
+
+/*
+ * A page table entry
+ *
+ * The pte struct represents a mapped page in a page table. It associates a
+ * page with a pointer to the pt entry that maps it and the vm mapping that
+ * owns the mapping. The pte struct is used to track all places where a page
+ * is actively mapped in the system.
+ */
+struct pte {
+  __ref struct page *page;
+  uint64_t *entry;
+  uintptr_t address;
+  SLIST_ENTRY(struct pte) next;
+};
 
 /*
  * A virtual address space.
@@ -83,7 +109,7 @@ typedef struct address_space {
 
   size_t num_mappings;
   LIST_HEAD(struct vm_mapping) mappings;
-  struct intvl_tree *new_tree;
+  struct rb_tree *new_tree;
 
   uintptr_t page_table;
   LIST_HEAD(struct page) table_pages;
@@ -96,8 +122,8 @@ typedef struct address_space {
 enum vm_type {
   VM_TYPE_RSVD, // reserved memory
   VM_TYPE_PHYS, // direct physical mapping
-  VM_TYPE_PAGE, // mapped pages
-  VM_TYPE_ANON, // on-demand page mapping
+  VM_TYPE_PAGE, // mapped page list
+  VM_TYPE_FILE, // memory mapped file
   VM_MAX_TYPE,
 };
 
@@ -124,9 +150,9 @@ typedef struct vm_mapping {
 
   address_space_t *space;   // owning address space
   union {
-    uintptr_t vm_phys;
-    struct page *vm_pages;
-    struct vm_anon *vm_anon;
+    uintptr_t vm_phys;      // VM_TYPE_PHYS
+    struct page *vm_pages;  // VM_TYPE_PAGE
+    struct vm_file *vm_file;// VM_TYPE_FILE
   };
 
   LIST_ENTRY(struct vm_mapping) vm_list; // entry in list of vm mappings
@@ -134,43 +160,60 @@ typedef struct vm_mapping {
 
 /////////////
 // vm flags
+
+/* prot flags */
 #define VM_READ       (1 << 0)  // mapping is readable
 #define VM_WRITE      (1 << 1)  // mapping is writable
 #define VM_EXEC       (1 << 2)  // mapping is executable
 #define   VM_RDWR       (VM_READ | VM_WRITE)
 #define   VM_RDEXC      (VM_READ | VM_EXEC)
-#define VM_USER       (1 << 3)  // mapping lives in user space
-#define VM_GLOBAL     (1 << 4)  // mapping is global in the TLB
-#define VM_NOCACHE    (1 << 5)  // mapping is non-cacheable
-#define VM_WRITETHRU  (1 << 6)  // mapping is write-through
-#define VM_HUGE_2MB   (1 << 7)  // mapping uses 2M pages
-#define VM_HUGE_1GB   (1 << 8)  // mapping uses 1G pages
+/* mode flags */
+#define VM_PRIVATE    (1 << 3)  // mapping is private to the address space (copy-on-write)
+#define VM_SHARED     (1 << 4)  // mapping is shared between address spaces
+/* mapping flags */
+#define VM_USER       (1 << 5)  // mapping lives in user space
+#define VM_GLOBAL     (1 << 6)  // mapping is global in the TLB
+#define VM_NOCACHE    (1 << 7)  // mapping is non-cacheable
+#define VM_WRITETHRU  (1 << 8)  // mapping is write-through
+#define VM_HUGE_2MB   (1 << 9)  // mapping uses 2M pages
+#define VM_HUGE_1GB   (1 << 10) // mapping uses 1G pages
+#define VM_NOMAP      (1 << 11) // do not make the mapping active after initial allocation
 /* allocation flags */
-#define VM_FIXED      (1 << 9)  // mapping has fixed address (hint used for address)
-#define VM_STACK      (1 << 10) // mapping grows downwards and has a guard page (only for VM_TYPE_PAGE)
-#define VM_MALLOC     (1 << 11) // mapping is a vmalloc allocation
-#define VM_NOMAP      (1 << 12) // do not make the mapping active after allocation (cleared after)
-#define VM_REPLACE    (1 << 13) // mapping should replace any non-reserved mappings in the range (used with VM_FIXED)
+#define VM_FIXED      (1 << 12) // mapping has fixed address (hint used for address)
+#define VM_STACK      (1 << 13) // mapping grows downwards and has a guard page (only for VM_TYPE_PAGE)
+#define VM_REPLACE    (1 << 14) // mapping should replace any non-reserved mappings in the range (used with VM_FIXED)
 /* internal flags */
-#define VM_MAPPED     (1 << 16) // mapping is currently active
+#define VM_MALLOC     (1 << 16) // mapping is a vmalloc allocation
+#define VM_MAPPED     (1 << 17) // mapping is currently active
 #define VM_LINKED     (1 << 18) // mapping was split and is linked to the following mapping
 #define VM_SPLIT      (1 << 19) // mapping was split and is the second half of the split
-#define VM_COW        (1 << 20) // mapping is a copy-on-write mapping
 
 #define VM_PROT_MASK  0x7    // mask of protection flags
-#define VM_FLAGS_MASK 0x3FFF // mask of public flags
+#define VM_MODE_MASK  0x18   // mask of mode flags
+#define VM_MAP_MASK   0xFE0  // mask of mapping flags
+#define VM_FLAGS_MASK 0xFFFF // mask of public flags
+
+static always_inline size_t vm_flags_to_size(uint32_t vm_flags) {
+  if (vm_flags & VM_HUGE_2MB) {
+    return PAGE_SIZE_2MB;
+  } else if (vm_flags & VM_HUGE_1GB) {
+    return PAGE_SIZE_1GB;
+  }
+  return PAGE_SIZE;
+}
 
 /*
  * A description of a future virtual mapping.
  */
 typedef struct vm_desc {
+  enum vm_type type;  // mapping type
   uint64_t address;   // virtual address
   size_t size;        // size of the mapping
   size_t vm_size;     // size of the virtual region containing the mapping
   uint32_t vm_flags;  // vm mapping flags
   const char *name;   // vm name
-
-  struct page *pages; // pages backing the mapping (ref) [anon if NULL]
+  void *data;         // associated data
+  bool mapped;        // whether the desc was mapped
   struct vm_desc *next;
 } vm_desc_t;
 

@@ -17,6 +17,8 @@
 #include <abi/stat.h>
 
 struct device;
+struct page;
+struct pgcache;
 struct vm_mapping;
 
 struct vnode;
@@ -38,8 +40,8 @@ typedef struct fs_type {
   const char *name;
   int flags; // mount flags
   struct vfs_ops *vfs_ops;
-  struct vnode_ops *vnode_ops;
-  struct ventry_ops *ventry_ops;
+  struct vnode_ops *vn_ops;
+  struct ventry_ops *ve_ops;
 } fs_type_t;
 
 // the main vfs objects share these lifecycle states
@@ -175,23 +177,24 @@ typedef struct vnode {
   time_t ctime;                   // last status change time
 
   /* associated data */
+  struct pgcache *pgcache;        // vnode page cache
   union {
-    dev_t v_dev;                  // device number (V_BLK, V_CHR)
-    str_t v_link;                 // symlink (V_LNK)
-    struct vnode *v_shadow;       // shadowed vnode (VN_MOUNT)
+    struct device *v_dev;         // device pointer (V_BLK, V_CHR)
+    str_t v_link;                 // symlink path (V_LNK)
+    struct vnode *v_shadow;       // shadowed vnode (V_DIR & VN_MOUNT)
   };
 
   LIST_ENTRY(struct vnode) list;  // vfs vnode list
 } vnode_t;
 
 // vnode flags
-#define VN_LOADED 0x01 // vnode has been loaded
+#define VN_LOADED 0x01 /// vnode has been loaded
 #define   VN_ISLOADED(vn) __type_checked(struct vnode *, vn, ((vn)->flags & VN_LOADED))
-#define VN_DIRTY  0x02 // vnode has been modified
+#define VN_DIRTY  0x02 /// vnode has been modified
 #define   VN_ISDIRTY(vn) __type_checked(struct vnode *, vn, ((vn)->flags & VN_DIRTY))
-#define VN_ROOT   0x08 // vnode is the root of a filesystem
+#define VN_ROOT   0x08 /// vnode is the root of a filesystem
 #define   VN_ISROOT(vn) __type_checked(struct vnode *, vn, ((vn)->flags & VN_ROOT))
-#define VN_OPEN   0x10 // vnode is open (has open file descriptors)
+#define VN_OPEN   0x10 /// vnode is open (has open file descriptors)
 #define   VN_ISOPEN(vn) __type_checked(struct vnode *, vn, ((vn)->flags & VN_OPEN))
 
 
@@ -207,8 +210,8 @@ struct vnode_ops {
   int (*v_close)(struct vnode *vn);
   ssize_t (*v_read)(struct vnode *vn, off_t off, struct kio *kio);
   ssize_t (*v_write)(struct vnode *vn, off_t off, struct kio *kio);
-  int (*v_map)(struct vnode *vn, off_t off, struct vm_mapping *mapping);
-  int (*v_fallocate)(struct vnode *vn, size_t len);
+  int (*v_getpage)(struct vnode *vn, off_t off, __move struct page **result);
+  int (*v_falloc)(struct vnode *vn, size_t len);
 
   // node operations
   int (*v_load)(struct vnode *vn);
@@ -239,6 +242,11 @@ struct vnode_ops {
 /*
  * A virtual filesystem reference to a vnode.
  *
+ * Fields that are synced to the underlying vnode are preserved even after
+ * the vnode is unlinked. The id and vfs_id fields together form a unique
+ * id for the ventry<->vnode pair that remains valid until the ventry is
+ * is destroyed.
+ *
  * @ = updated during ve_syncvn()
  */
 typedef struct ventry {
@@ -260,16 +268,21 @@ typedef struct ventry {
   struct ventry_ops *ops;             // ventry operations @
 
   size_t chld_count;                  // child count (V_DIR)
-  LIST_HEAD(struct ventry) children;  // child ventry references (V_DIR)
+  union {
+    struct ventry *mount;            // mounted root ventry reference (VE_MOUNT)
+    LIST_HEAD(struct ventry) children;// child ventry references (V_DIR)
+  };
 
-  LIST_ENTRY(struct ventry) list;     // parent child list
+  LIST_ENTRY(struct ventry) list;     // parent `children` list entry
 } ventry_t;
 
 // ventry flags
-#define VE_LINKED 0x01  // ventry has been linked to a vnode
+#define VE_LINKED  0x01  /// ventry has been linked to a vnode
 #define   VE_ISLINKED(ve) __type_checked(struct ventry *, ve, ((ve)->flags & VE_LINKED))
-#define VE_MOUNT  0x02 // ventry is a mount point
+#define VE_MOUNT   0x02 /// ventry is a mount point
 #define   VE_ISMOUNT(ve) __type_checked(struct ventry *, ve, ((ve)->flags & VE_MOUNT))
+#define VE_FSROOT  0x04 /// ventry is the filesystem root
+#define   VE_ISFSROOT(ve) __type_checked(struct ventry *, ve, ((ve)->flags & VE_FSROOT))
 
 
 struct ventry_ops {

@@ -68,7 +68,7 @@ bool path_eq(path_t path1, path_t path2) {
   return memcmp(path_start(path1), path_start(path2), path_len(path1)) == 0;
 }
 
-bool path_eq_str(path_t path, const char *str) {
+bool path_eq_charp(path_t path, const char *str) {
   if (path_is_null(path)) {
     return str == NULL;
   }
@@ -80,7 +80,7 @@ bool path_eq_str(path_t path, const char *str) {
   return memcmp(path_start(path), str, len) == 0;
 }
 
-bool path_eq_strn(path_t path, const char *str, uint16_t len) {
+bool path_eq_charpn(path_t path, const char *str, uint16_t len) {
   if (path_is_null(path)) {
     return str == NULL && len == 0;
   }
@@ -103,6 +103,31 @@ int path_count_char(path_t path, char c) {
     ptr++;
   }
   return count;
+}
+
+bool path_is_subpath(path_t path1, path_t path2) {
+  if (path_is_null(path1) || path_is_null(path2)) {
+    return false;
+  }
+
+  const char *ptr1 = path_start(path1);
+  const char *ptr2 = path_start(path2);
+  const char *eptr1 = path_end(path1);
+  const char *eptr2 = path_end(path2);
+
+  while (ptr1 < eptr1 && ptr2 < eptr2) {
+    if (*ptr1 != *ptr2) {
+      return false;
+    }
+    ptr1++;
+    ptr2++;
+  }
+
+  if (ptr1 == eptr1) {
+    return ptr2 == eptr2 || *ptr2 == '/';
+  } else {
+    return *ptr1 == '/';
+  }
 }
 
 // MARK: Path Manipulation

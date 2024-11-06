@@ -25,11 +25,6 @@
 // General Definitions
 //
 
-#define KERNEL_CS 0x08ULL
-#define KERNEL_DS 0x10ULL
-#define USER_CS   0x18ULL
-#define USER_DS   0x20ULL
-
 #define MS_PER_SEC 1000LL
 #define US_PER_SEC 1000000LL
 #define NS_PER_SEC 1000000000LL
@@ -69,19 +64,21 @@
 #define align(v, a) ((v) + (((a) - (v)) & ((a) - 1)))
 #define align_down(v, a) ((v) & ~((a) - 1))
 #define page_align(v) align(v, PAGE_SIZE)
+#define page_trunc(v) align_down(v, PAGE_SIZE)
 #define is_aligned(v, a) (((v) & ((a) - 1)) == 0)
 #define is_pow2(v) (((v) & ((v) - 1)) == 0)
 #define prev_pow2(v) (1 << ((sizeof(v)*8 - 1) - __builtin_clz(v)))
 #define next_pow2(v) (1 << ((sizeof(v)*8 - __builtin_clz((v) - 1))))
 #define align_ptr(p, a) ((void *) (align((uintptr_t)(p), (a))))
-#define ptr_after(s) ((void *)(((uintptr_t)(s)) + (sizeof(*s))))
-
+#define ptr_after(s) ((void *)(((uintptr_t)(s)) + (sizeof(*(s)))))
 
 #define min(a, b) (((a) < (b)) ? (a) : (b))
 #define max(a, b) (((a) > (b)) ? (a) : (b))
 #define abs(a) (((a) < 0) ? (-(a)) : (a))
 #define diff(a, b) abs((a) - (b))
 #define udiff(a, b) (max(a, b) - min(a, b))
+
+#define moveptr(objptr) ({ typeof(objptr) __tmp = (objptr); (objptr) = NULL; __tmp; })
 
 #define LABEL(l) l: NULL
 

@@ -51,12 +51,12 @@ ssize_t ramdisk_d_write(device_t *device, size_t off, size_t nmax, kio_t *kio) {
   return (ssize_t) kio_nread_out((void *)rd->base, len, off, nmax, kio);
 }
 
-__move page_t *ramdisk_d_getpage(device_t *device, size_t off) {
+__ref page_t *ramdisk_d_getpage(device_t *device, size_t off) {
   struct ramdisk *rd = device->data;
   if (off >= rd->size) {
     return NULL;
   }
-  return vm_getpage_cow(rd->base+off);
+  return vm_getpage_cow(rd->base + off);
 }
 
 int ramdisk_d_putpage(device_t *device, size_t off, __move page_t *page) {

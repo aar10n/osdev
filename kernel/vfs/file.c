@@ -25,47 +25,41 @@ typedef struct ftable {
 #define FTABLE_LOCK(ftable) mtx_spin_lock(&(ftable)->lock)
 #define FTABLE_UNLOCK(ftable) mtx_spin_unlock(&(ftable)->lock)
 
-static void f_cleanup(file_t *file) {
-  vn_release(&file->vnode);
-  kfree(file);
-}
-
 //
 
-file_t *f_alloc(int fd, int flags, vnode_t *vnode) __move {
+__ref file_t *f_alloc(int fd, int flags, vnode_t *vnode, cstr_t real_path) {
   file_t *file = kmallocz(sizeof(file_t));
   file->fd = fd;
   file->flags = flags;
   file->type = vnode->type;
   file->vnode = vn_getref(vnode);
+  file->real_path = str_from_cstr(real_path);
   mtx_init(&file->lock, 0, "file_struct_lock");
   ref_init(&file->refcount);
   return file;
 }
 
-__move file_t *f_dup(file_t *file) {
+__ref file_t *f_dup(file_t *f) {
   file_t *dup = kmallocz(sizeof(file_t));
-  dup->fd = file->fd;
-  dup->flags = file->flags;
-  dup->type = file->type;
-  dup->vnode = vn_getref(file->vnode);
+  dup->fd = f->fd;
+  dup->flags = f->flags;
+  dup->type = f->type;
+  dup->vnode = vn_getref(f->vnode);
   mtx_init(&dup->lock, 0, "file_struct_lock");
   ref_init(&dup->refcount);
   return dup;
 }
 
-void f_release(__move file_t **ref) {
-  if (*ref == NULL) {
-    return;
-  }
+void f_cleanup(__move file_t **fref) {
+  file_t *file = *fref;
+  ASSERT(file != NULL);
+  ASSERT(file->closed);
+  ASSERT(ref_count(&file->refcount) == 0);
+  DPRINTF("!!! file cleanup {:file} !!!\n", file);
 
-  file_t *file = f_moveref(ref);
-  if (*ref) {
-    if (ref_put(&(*ref)->refcount)) {
-      f_cleanup(*ref);
-      *ref = NULL;
-    }
-  }
+  vn_release(&file->vnode);
+  str_free(&file->real_path);
+  kfree(file);
 }
 
 //
@@ -78,6 +72,22 @@ ftable_t *ftable_alloc() {
   return ftable;
 }
 
+static bool ftable_clone_rb_tree_pred(rb_tree_t *tree, rb_node_t *node, void *data) {
+  ftable_t *ftable = data;
+  file_t *file = node->data;
+  if (!f_lock(file)) {
+    return false; // closed
+  }
+
+  file_t *dup = f_dup(file);
+  rb_tree_insert(ftable->tree, file->fd, dup);
+  bitmap_set(ftable->bitmap, (index_t) file->fd);
+  ftable->count++;
+
+  f_unlock(file);
+  return true;
+}
+
 ftable_t *ftable_clone(ftable_t *ftable) {
   ftable_t *clone = kmallocz(sizeof(ftable_t));
   ftable->tree = create_rb_tree();
@@ -87,10 +97,10 @@ ftable_t *ftable_clone(ftable_t *ftable) {
   FTABLE_LOCK(ftable);
   ftable->bitmap = clone_bitmap(ftable->bitmap);
 
-  rb_iter_t iter;
-  rb_node_t *node;
-  rb_tree_init_iter(ftable->tree, NULL, FORWARD, &iter);
-  while ((node = rb_iter_next(&iter))) {
+  // typedef bool (*rb_pred_t)(struct rb_tree *, struct rb_node *, void *);
+
+  rb_node_t *node = ftable->tree->min;
+  while (node != NULL) {
     file_t *file = node->data;
     if (!f_lock(file)) {
       continue; // closed
@@ -155,22 +165,23 @@ void ftable_free_fd(ftable_t *ftable, int fd) {
   FTABLE_UNLOCK(ftable);
 }
 
-file_t *ftable_get_file(ftable_t *ftable, int fd) __move {
+__ref file_t *ftable_get_file(ftable_t *ftable, int fd) {
   FTABLE_LOCK(ftable);
-  file_t *file = rb_tree_get(ftable->tree, fd);
+  file_t *file = rb_tree_find(ftable->tree, fd);
+  file = f_getref(file);
   FTABLE_UNLOCK(ftable);
-  return f_getref(file);
+  return file;
 }
 
-file_t *ftable_get_remove_file(ftable_t *ftable, int fd) __move {
+__ref file_t *ftable_get_remove_file(ftable_t *ftable, int fd) {
   FTABLE_LOCK(ftable);
-  rb_node_t *node = rb_tree_find(ftable->tree, fd);
-  if (node == NULL) {
+  rb_node_t *node = rb_tree_find_node(ftable->tree, fd);
+  if (rb_node_is_nil(node)) {
     FTABLE_UNLOCK(ftable);
     return NULL;
   }
   file_t *file = node->data;
-  rb_tree_delete(ftable->tree, fd);
+  rb_tree_delete_node(ftable->tree, node);
   FTABLE_UNLOCK(ftable);
   return f_moveref(&file);
 }
@@ -178,7 +189,7 @@ file_t *ftable_get_remove_file(ftable_t *ftable, int fd) __move {
 void ftable_add_file(ftable_t *ftable, __move file_t *file) {
   ASSERT(file->fd >= 0 && file->fd < FTABLE_MAX_FILES);
   FTABLE_LOCK(ftable);
-  if (rb_tree_get(ftable->tree, file->fd) != NULL) {
+  if (rb_tree_find(ftable->tree, file->fd) != NULL) {
     panic("file already exists");
   }
   rb_tree_insert(ftable->tree, file->fd, file);

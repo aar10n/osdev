@@ -13,11 +13,11 @@ KERNEL_DEFINES = $(DEFINES) -D__KERNEL__
 
 
 # kernel/
-kernel += entry.asm isr.asm memory.asm smpboot.asm syscall.asm switch.asm \
+kernel += entry.asm exception.asm memory.asm smpboot.asm syscall.asm switch.asm \
 	chan.c cond.c clock.c device.c errno.c exec.c init.c irq.c loadelf.c \
-	loader.c lock.c main.c sched.c panic.c printf.c signal.c smpboot.c ipi.c \
-	string.c syscall.c timer.c input.c kio.c tty.c tqueue.c proc.c  \
-	percpu.c fs_utils.c mutex.c rwlock.c time.c
+	lock.c main.c sched.c panic.c printf.c signal.c smpboot.c ipi.c string.c \
+	syscall.c timer.c input.c kio.c tty.c tqueue.c proc.c percpu.c fs_utils.c \
+	mutex.c rwlock.c time.c
 
 # kernel/acpi
 kernel += acpi/acpi.c acpi/pm_timer.c
@@ -32,14 +32,14 @@ kernel += cpu/cpu.asm cpu/io.asm cpu/cpu.c cpu/gdt.c cpu/idt.c cpu/tcb.c
 kernel += debug/debug.c debug/dwarf.c
 
 # kernel/hw
-kernel += hw/8250.c hw/8254.c hw/apic.c hw/hpet.c \
-	hw/ioapic.c hw/pit.c hw/rtc.c
+kernel += hw/8250.c hw/8254.c hw/apic.c hw/hpet.c hw/ioapic.c hw/pit.c hw/rtc.c
 
 # kernel/gui
 kernel += gui/screen.c
 
 # kernel/mm
-kernel += mm/init.c mm/heap.c mm/pgtable.c mm/pmalloc.c mm/vmalloc.c
+kernel += mm/file.c mm/heap.c mm/init.c mm/pgcache.c mm/pgtable.c mm/pmalloc.c \
+ 	mm/vmalloc.c
 
 # kernel/usb
 kernel += usb/usb.c usb/xhci.c \
