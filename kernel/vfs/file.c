@@ -18,7 +18,8 @@ typedef struct ftable {
 } ftable_t;
 
 #define ASSERT(x) kassert(x)
-#define DPRINTF(fmt, ...) kprintf("file: %s: " fmt, __func__, ##__VA_ARGS__)
+#define DPRINTF(fmt, ...)
+// #define DPRINTF(fmt, ...) kprintf("file: %s: " fmt, __func__, ##__VA_ARGS__)
 
 #define FTABLE_MAX_FILES 1024
 

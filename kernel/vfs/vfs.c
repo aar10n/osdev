@@ -20,7 +20,8 @@ struct vtable {
 };
 
 #define ASSERT(x) kassert(x)
-#define DPRINTF(fmt, ...) kprintf("vfs: %s: " fmt, __func__, ##__VA_ARGS__)
+// #define DPRINTF(fmt, ...) kprintf("vfs: %s: " fmt, __func__, ##__VA_ARGS__)
+#define DPRINTF(fmt, ...)
 #define EPRINTF(fmt, ...) kprintf("vfs: %s: " fmt, __func__, ##__VA_ARGS__)
 
 static id_t unique_vfs_id = 1;

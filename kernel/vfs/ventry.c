@@ -10,12 +10,11 @@
 #include <kernel/printf.h>
 #include <murmur3.h>
 
-#define ASSERT(x) kassert(x)
-
 #define MURMUR3_SEED 0xDEADBEEF
 
 #define ASSERT(x) kassert(x)
-#define DPRINTF(fmt, ...) kprintf("ventry: %s: " fmt, __func__, ##__VA_ARGS__)
+// #define DPRINTF(fmt, ...) kprintf("ventry: %s: " fmt, __func__, ##__VA_ARGS__)
+#define DPRINTF(fmt, ...)
 
 static struct ventry_ops ve_default_ops = {
   .v_cleanup = NULL,

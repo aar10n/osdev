@@ -172,7 +172,7 @@ sched_do_switch:
   ; update percpu kernel_sp
   mov rax, THREAD_KSTACK_BASE(rsi)
   add rax, THREAD_KSTACK_SIZE(rsi)
-  sub rax, STACK_TOP_OFF
+  sub rax, STACK_TOP_OFF ; stack starts just below tcb and trapframe
   mov PERCPU_KERNEL_SP, rax
   mov qword PERCPU_USER_SP, 0
   ; update tss rsp0 to point at the top of the thread trapframe

@@ -82,7 +82,4 @@ void page_update_flags(page_t *page, uint32_t flags);
 __ref page_t *page_list_join(__ref page_t *head, __ref page_t *tail);
 __ref page_t *page_list_split(__ref page_t *pages, size_t count, __out page_t **tailref);
 
-bool is_kernel_code_ptr(uintptr_t ptr);
-bool is_kernel_data_ptr(uintptr_t ptr);
-
 #endif

@@ -104,6 +104,10 @@ static inline uint16_t vm_flags_to_pe_flags(uint32_t vm_flags) {
   entry_flags |= (vm_flags & VM_NOCACHE) ? PE_CACHE_DISABLE : 0;
   entry_flags |= (vm_flags & VM_WRITETHRU) ? PE_WRITE_THROUGH : 0;
   entry_flags |= (vm_flags & VM_EXEC) ? 0 : PE_NO_EXECUTE;
+  entry_flags |= (vm_flags & VM_GLOBAL) ? PE_GLOBAL : 0;
+  if ((vm_flags & VM_HUGE_2MB) || (vm_flags & VM_HUGE_1GB)) {
+    entry_flags |= PE_SIZE;
+  }
   return entry_flags;
 }
 
@@ -264,6 +268,9 @@ uint64_t *recursive_map_entry(uintptr_t vaddr, uintptr_t paddr, uint32_t vm_flag
   uint16_t table_pg_flags = PE_WRITE | PE_PRESENT;
   if (vaddr < USER_SPACE_END) {
     table_pg_flags |= PE_USER;
+  }
+  if ((vm_flags & VM_HUGE_2MB) || (vm_flags & VM_HUGE_1GB)) {
+    table_pg_flags |= PE_SIZE;
   }
 
   uint16_t entry_flags = vm_flags_to_pe_flags(vm_flags);

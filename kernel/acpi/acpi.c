@@ -129,7 +129,7 @@ void acpi_parse_madt() {
 
   acpi_madt_entry_t *entries = (void *)((uint64_t) header + sizeof(acpi_madt_header_t));
   acpi_madt_entry_t *entry = entries;
-  while ((uintptr_t) entry < (uintptr_t) offset_ptr(madt_ptr, header->header.length)) {
+  while ((void *) entry < offset_ptr(madt_ptr, header->header.length)) {
     if (entry->type == ACPI_MADT_TYPE_LOCAL_APIC) {
       acpi_madt_local_apic_t *local_apic = (void *) entry;
       if ((local_apic->flags & ACPI_MADT_APIC_FLAG_ENABLED) != 0) {

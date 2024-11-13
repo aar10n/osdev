@@ -157,11 +157,11 @@ int exec_image_setup_stack(
       arg_off = strlen(args->kptr+arg_off) + 1;
     }
 
-    // add a descriptor for the env string page
+    // add a descriptor for the arg string page
     page_t *arg_pages = alloc_cow_pages(args->pages);
-    SLIST_ADD(&descs, vm_desc_alloc(VM_TYPE_PAGE, stack_top, args_size, VM_READ, "env", moveref(arg_pages)), next);
+    SLIST_ADD(&descs, vm_desc_alloc(VM_TYPE_PAGE, stack_top, args_size, VM_READ, "arg", moveref(arg_pages)), next);
   }
-  arg_ptrs[args->count+1] = 0;
+  arg_ptrs[args->count+1] = 0; // null pointer
 
   // env pointers
   if (env->count > 0) {
@@ -179,7 +179,7 @@ int exec_image_setup_stack(
     page_t *env_pages = alloc_cow_pages(env->pages);
     SLIST_ADD(&descs, vm_desc_alloc(VM_TYPE_PAGE, stack_top + args_size, env_size, VM_READ, "env", moveref(env_pages)), next);
   }
-  env_ptrs[env->count] = 0;
+  env_ptrs[env->count] = 0; // null pointer
 
   // auxv entries
   uintptr_t aux_base = image->base;

@@ -11,7 +11,8 @@
 #include <kernel/printf.h>
 
 #define ASSERT(x) kassert(x)
-#define DPRINTF(fmt, ...) kprintf("ramfs_vfsops: " fmt, ##__VA_ARGS__)
+// #define DPRINTF(fmt, ...) kprintf("ramfs_vfsops: " fmt, ##__VA_ARGS__)
+#define DPRINTF(fmt, ...)
 
 //
 

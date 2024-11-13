@@ -12,7 +12,8 @@
 #include <kernel/printf.h>
 
 #define ASSERT(x) kassert(x)
-#define DPRINTF(fmt, ...) kprintf("ramfs_vnops: " fmt, ##__VA_ARGS__)
+// #define DPRINTF(fmt, ...) kprintf("ramfs_vnops: " fmt, ##__VA_ARGS__)
+#define DPRINTF(fmt, ...)
 
 static inline unsigned char vtype_to_dtype(enum vtype type) {
   switch (type) {

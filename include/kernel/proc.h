@@ -292,14 +292,19 @@ void   proc_finish_setup_and_submit_all(proc_t *proc);
 void proc_add_thread(proc_t *proc, thread_t *td);
 void proc_exit_all_wait(proc_t *proc, int exit_code);
 
+thread_t *thread_alloc(uint32_t flags, size_t kstack_size);
+thread_t *thread_alloc_proc0_main();
 thread_t *thread_alloc_idle();
-thread_t *thread_alloc_empty(uint32_t flags, uintptr_t kstack_base, size_t kstack_size);
-static inline uintptr_t thread_get_kstack_top(thread_t *td) { return (uintptr_t) td->frame; }
 void thread_free_exited(thread_t **tdp);
-void   thread_setup_entry(thread_t *td, uintptr_t entry, uintptr_t arg);
+void   thread_setup_entry(thread_t *td, uintptr_t entry);
 void   thread_setup_priority(thread_t *td, uint8_t base_pri);
 void   thread_finish_setup_and_submit(thread_t *td);
 void thread_stop(thread_t *td);
+
+static inline uintptr_t thread_get_kstack_top(thread_t *td) {
+  uintptr_t stack_top_off = align(sizeof(struct tcb), 16) + sizeof(struct trapframe);
+  return offset_addr(td->frame, td->kstack_size) - stack_top_off;
+}
 
 struct cpuset *cpuset_alloc(struct cpuset *existing);
 void cpuset_free(struct cpuset **set);

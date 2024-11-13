@@ -39,8 +39,8 @@ struct vcache_dir {
 #define VCACHE_UNLOCK(vcache) mtx_spin_unlock(&(vcache)->lock)
 
 #define ASSERT(x) kassert(x)
-// #define DPRINTF(str, args...)
-#define DPRINTF(fmt, ...) kprintf("vcache: %s: " fmt, __func__, ##__VA_ARGS__)
+#define DPRINTF(str, args...)
+// #define DPRINTF(fmt, ...) kprintf("vcache: %s: " fmt, __func__, ##__VA_ARGS__)
 #define EPRINTF(fmt, ...) kprintf("vcache: %s: " fmt, __func__, ##__VA_ARGS__)
 
 #define VCACHE_INITIAL_SIZE 1024

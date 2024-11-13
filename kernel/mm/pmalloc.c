@@ -702,11 +702,3 @@ __ref page_t *page_list_split(__ref page_t *head, size_t count, __out page_t **t
   *tailref = moveref(newhead);
   return head;
 }
-
-bool is_kernel_code_ptr(uintptr_t ptr) {
-  return ptr >= kernel_code_start && ptr < kernel_code_end;
-}
-
-bool is_kernel_data_ptr(uintptr_t ptr) {
-  return ptr >= kernel_code_end && ptr < kernel_data_end;
-}

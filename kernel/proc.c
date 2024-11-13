@@ -25,6 +25,7 @@
 noreturn void idle_thread_entry();
 
 extern uintptr_t entry_initial_stack;
+extern uintptr_t entry_initial_stack_top;
 
 // #define ASSERT(x)
 #define ASSERT(x) kassert(x)
@@ -57,12 +58,11 @@ void proc0_init() {
   // point therefore cant use pr_lock/_unlock.
   mtx_init(&proc0_ap_lock, MTX_SPIN, "proc0_ap_lock");
 
-  thread_t *maintd = thread_alloc_empty(TDF_KTHREAD, (uintptr_t)&entry_initial_stack, SIZE_8KB);
+  thread_t *maintd = thread_alloc_proc0_main();
   proc_setup_add_thread(proc0, maintd);
   pgrp_setup_add_proc(pgroup0, proc0);
 
   proc0->state = PRS_ACTIVE;
-  maintd->state = TDS_RUNNING;
 
   set_curthread(maintd);
   set_curproc(proc0);
@@ -583,50 +583,21 @@ static inline uint8_t td_flags_to_base_priority(uint32_t td_flags) {
   }
 }
 
-static void thread_start_wrapper() {
+// thread api
+
+static void kernel_thread_start_wrapper(void (*func)()) {
   proc_t *proc = curproc;
   thread_t *td = curthread;
-  kprintf("hello from thread %d.%d\n", proc->pid, td->tid);
-  todo();
+  func();
 
   thread_stop(td);
   unreachable;
 }
 
-// thread api
-
-thread_t *thread_alloc_idle() {
-  // this is called once by each cpu during scheduler initialization
-  thread_t *td = thread_alloc_empty(TDF_KTHREAD|TDF_IDLE, 0, SIZE_8KB);
-  td->state = TDS_READY;
-  td->name = str_fmt("idle thread [CPU#%d]", curcpu_id);
-  td->tcb->rip = (uintptr_t) idle_thread_entry;
-
-  mtx_spin_lock(&proc0_ap_lock);
-  proc_do_add_thread(proc0, td);
-  mtx_spin_unlock(&proc0_ap_lock);
-  return td;
-}
-
-thread_t *thread_alloc_empty(uint32_t flags, uintptr_t kstack_base, size_t kstack_size) {
-  ASSERT(is_aligned(kstack_base, PAGE_SIZE));
-  ASSERT(kstack_size > 0 && is_aligned(kstack_size, PAGE_SIZE));
-
+static thread_t *thread_alloc_internal(uint32_t flags, uintptr_t kstack_base, size_t kstack_size) {
   thread_t *td = kmallocz(sizeof(thread_t));
   td->flags = flags;
   td->flags2 = TDF2_FIRSTTIME;
-
-  if (kstack_base == 0) {
-    // allocate a new kernel stack
-    page_t *pages = alloc_pages(SIZE_TO_PAGES(kstack_size));
-    ASSERT(pages != NULL);
-    td->kstack_base = vmap_pages(moveref(pages), 0, kstack_size, VM_RDWR|VM_STACK, "kstack");
-    td->kstack_size = kstack_size;
-  } else {
-    // use base as the kernel stack
-    td->kstack_base = kstack_base;
-    td->kstack_size = kstack_size;
-  }
 
   td->cpuset = cpuset_alloc(NULL);
   td->own_lockq = lockq_alloc();
@@ -637,6 +608,12 @@ thread_t *thread_alloc_empty(uint32_t flags, uintptr_t kstack_base, size_t kstac
   td->cpu_id = -1;
   td->pri_base = td_flags_to_base_priority(flags);
   td->priority = td->pri_base;
+  mtx_init(&td->lock, 0, "thread_lock");
+
+  // ASSERT(kstack_pages != NULL);
+  // td->kstack_base =
+  td->kstack_base = kstack_base;
+  td->kstack_size = kstack_size;
 
   // kstack top   --------------
   //        tcb ->
@@ -646,21 +623,43 @@ thread_t *thread_alloc_empty(uint32_t flags, uintptr_t kstack_base, size_t kstac
   uintptr_t kstack_top = td->kstack_base + td->kstack_size;
   kstack_top -= align(sizeof(struct tcb), 16);
   td->tcb = (struct tcb *) kstack_top;
-  memset(td->tcb, 0, sizeof(struct tcb));
+  memset((void *) td->tcb, 0, sizeof(struct tcb));
   kstack_top -= sizeof(struct trapframe);
   td->frame = (struct trapframe *) kstack_top;
-  memset(td->frame, 0, sizeof(struct trapframe));
+  memset((void *) td->frame, 0, sizeof(struct trapframe));
 
-  if (flags & TDF_KTHREAD) {
-    td->tcb->tcb_flags |= TCB_KERNEL; // kernel thread
-  } else {
-    td->tcb->tcb_flags |= TCB_IRETQ; // user thread
-  }
-
-  td->tcb->rip = (uintptr_t) thread_start_wrapper;
   td->tcb->rsp = kstack_top;
+  td->tcb->rflags = 0x3202; // IF=1, IOPL=3
+  if (flags & TDF_KTHREAD) {
+    td->tcb->tcb_flags |= TCB_KERNEL;
+  } else {
+    td->tcb->tcb_flags |= TCB_IRETQ;
+  }
+  return td;
+}
 
-  mtx_init(&td->lock, 0, "thread_lock");
+thread_t *thread_alloc(uint32_t flags, size_t kstack_size) {
+  ASSERT(kstack_size > 0 && is_aligned(kstack_size, PAGE_SIZE));
+  uintptr_t kstack_base = vmap_pages(alloc_pages(SIZE_TO_PAGES(kstack_size)), 0, kstack_size, VM_RDWR|VM_STACK, "kstack");
+  return thread_alloc_internal(flags, kstack_base, kstack_size);
+}
+
+thread_t *thread_alloc_proc0_main() {
+  uintptr_t curr_stack_base = (uintptr_t)&entry_initial_stack;
+  uintptr_t curr_stack_top = (uintptr_t)&entry_initial_stack_top;
+  return thread_alloc_internal(0, curr_stack_base, curr_stack_top - curr_stack_base);
+}
+
+thread_t *thread_alloc_idle() {
+  // this is called once by each cpu during scheduler initialization
+  thread_t *td = thread_alloc(TDF_KTHREAD|TDF_IDLE, SIZE_8KB);
+  td->state = TDS_READY;
+  td->name = str_fmt("idle thread [CPU#%d]", curcpu_id);
+  td->tcb->rip = (uintptr_t) idle_thread_entry;
+
+  mtx_spin_lock(&proc0_ap_lock);
+  proc_do_add_thread(proc0, td);
+  mtx_spin_unlock(&proc0_ap_lock);
   return td;
 }
 
@@ -682,6 +681,18 @@ void thread_free_exited(thread_t **tdp) {
   todo();
   kfree(td);
   *tdp = NULL;
+}
+
+void thread_setup_entry(thread_t *td, uintptr_t entry) {
+  ASSERT(TDS_IS_EMPTY(td));
+  ASSERT(td->tcb->rip == 0);
+
+  td->tcb->rip = entry;
+  if (is_userspace_ptr(entry)) {
+    td->tcb->tcb_flags |= TCB_SYSRET;
+  } else {
+    td->tcb->tcb_flags |= TCB_KERNEL;
+  }
 }
 
 void thread_setup_priority(thread_t *td, uint8_t base_pri) {

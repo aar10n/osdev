@@ -88,7 +88,7 @@ __used void kmain() {
   ls("/");
 
   proc_t *proc = proc_alloc_empty(1, vm_new_uspace(), getref(curproc->creds));
-  proc_setup_add_thread(proc, thread_alloc_empty(0, 0, SIZE_16KB));
+  proc_setup_add_thread(proc, thread_alloc(0, SIZE_16KB));
   proc_setup_new_env(proc, (const char *[]){"PWD=/", "PATH=/bin:/sbin", NULL});
   proc_setup_exec_args(proc, (const char *[]){"hello", "world", NULL});
   proc_setup_exec(proc, cstr_make("/sbin/init"));
