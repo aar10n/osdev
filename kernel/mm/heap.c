@@ -258,6 +258,16 @@ void *kmallocz(size_t size) {
   return p;
 }
 
+void *kmalloc_cp(const void *obj, size_t size) {
+  if (obj == NULL) {
+    return NULL;
+  }
+
+  void *p = __kmalloc(&kheap, size, CHUNK_MIN_ALIGN);
+  memcpy(p, obj, size);
+  return p;
+}
+
 void *kmalloca(size_t size, size_t alignment) {
   return __kmalloc(&kheap, size, alignment);
 }

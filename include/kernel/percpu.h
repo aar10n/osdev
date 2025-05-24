@@ -18,7 +18,8 @@ struct lock_claim_list;
 
 struct percpu {
   uint32_t id;
-  int intr_level;
+  uint16_t intr_level;
+  bool preempted;
   uintptr_t self;
   struct address_space *space;
   struct thread *thread;
@@ -38,6 +39,7 @@ struct percpu {
 _Static_assert(sizeof(struct percpu) <= 0x1000, "percpu too big");
 _Static_assert(offsetof(struct percpu, id) == 0x00, "percpu id offset");
 _Static_assert(offsetof(struct percpu, intr_level) == 0x04, "percpu intr_level offset");
+_Static_assert(offsetof(struct percpu, preempted) == 0x06, "percpu preempted offset");
 _Static_assert(offsetof(struct percpu, self) == 0x08, "percpu self offset");
 _Static_assert(offsetof(struct percpu, space) == 0x10, "percpu space offset");
 _Static_assert(offsetof(struct percpu, proc) == 0x20, "percpu proc offset");
@@ -46,6 +48,7 @@ _Static_assert(offsetof(struct percpu, kernel_sp) == 0x48, "percpu kernel_sp off
 _Static_assert(offsetof(struct percpu, tss_rsp0_ptr) == 0x50, "percpu tss_rsp0_ptr offset");
 _Static_assert(offsetof(struct percpu, irq_stack_top) == 0x58, "percpu irq_stack_top offset");
 _Static_assert(offsetof(struct percpu, scratch_rax) == 0x60, "percpu scratch_rax offset");
+_Static_assert(offsetof(struct percpu, rflags) == 0x68, "percpu rflags offset");
 
 #define __percpu_get_u32(member) ({ register uint32_t __v; __asm("mov %0, gs:%1" : "=r" (__v) : "i" (offsetof(struct percpu, member))); __v; })
 #define __percpu_get_u64(member) ({ register uint64_t __v; __asm("mov %0, gs:%1" : "=r" (__v) : "i" (offsetof(struct percpu, member))); __v; })
@@ -62,8 +65,10 @@ _Static_assert(offsetof(struct percpu, scratch_rax) == 0x60, "percpu scratch_rax
 
 #define curcpu_id ((uint8_t) __percpu_get_u32(id))
 #define curcpu_is_boot (curcpu_id == 0)
+#define curcpu_is_interrupt (curcpu_intr_level > 0)
 
 #define curcpu_area ((struct percpu *) __percpu_get_u64(self))
+#define curcpu_intr_level ((uint16_t) __percpu_get_u32(intr_level))
 #define curcpu_info ((struct cpu_info *) __percpu_get_u64(info))
 #define curcpu_spin_claims ((struct lock_claim_list *) __percpu_get_u64(spin_claims))
 
@@ -72,6 +77,7 @@ _Static_assert(offsetof(struct percpu, scratch_rax) == 0x60, "percpu scratch_rax
 #define curproc ((struct proc *) __percpu_get_u64(proc))
 #define cursched ((struct sched *) __percpu_get_u64(sched))
 
+#define set_preempted(p) __percpu_set_u32(preempted, p)
 #define set_curspace(s) __percpu_set_u64(space, s)
 #define set_curthread(t) __percpu_set_u64(thread, t)
 #define set_curproc(p) __percpu_set_u64(proc, p)

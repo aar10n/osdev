@@ -80,6 +80,14 @@ void lock_claim_list_remove(struct lock_claim_list *list, struct lock_object *lo
       list->claims[i].file = NULL;
       list->claims[i].line = 0;
       list->nclaims--;
+      // shift the rest of the claims down
+      if (list->nclaims == 0) {
+        return;
+      }
+
+      for (int j = i; j < list->nclaims; j++) {
+        list->claims[j] = list->claims[j + 1];
+      }
       return;
     }
   }

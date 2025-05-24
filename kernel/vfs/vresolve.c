@@ -17,7 +17,7 @@
 #define ASSERT(x) kassert(x)
 #define DPRINTF(fmt, ...) kprintf("vresolve: %s: " fmt, __func__, ##__VA_ARGS__)
 
-#define goto_error(err) do { res = err; goto error; } while (0)
+#define goto_res(err) do { res = err; goto error; } while (0)
 
 
 static size_t vresolve_get_ve_path(ventry_t *ve, sbuf_t *sb) {
@@ -75,7 +75,7 @@ static int vresolve_follow(vcache_t *vc, __move ventry_t **veref, int flags, boo
   int res;
 
   if (depth > MAX_LOOP)
-    goto_error(-ELOOP);
+    goto_res(-ELOOP);
 
   if (V_ISLNK(ve)) { // handle symlinks
     if (islast && (flags & VR_NOFOLLOW)) {
@@ -85,7 +85,7 @@ static int vresolve_follow(vcache_t *vc, __move ventry_t **veref, int flags, boo
 
     vnode_t *vn = VN(ve);
     if (vn->size > PATH_MAX)
-      goto_error(-ENAMETOOLONG);
+      goto_res(-ENAMETOOLONG);
 
     char linkbuf[PATH_MAX+1] = {0};
     // READ BEGIN
@@ -117,7 +117,7 @@ static int vresolve_follow(vcache_t *vc, __move ventry_t **veref, int flags, boo
     // follow the mount point
     next_ve = ve_getref(ve->mount);
     if (!ve_lock(next_ve))
-      goto_error(-ENOENT);
+      goto_res(-ENOENT);
 
     // unlock the mount ventry and swap refs with the mount root
     ve_unlock(ve);
@@ -159,7 +159,7 @@ int vresolve_cache(vcache_t *vc, cstr_t path, int flags, int depth, __move ventr
   }
 
   if (flags & VR_EXCLUSV)
-    goto_error(-EEXIST);
+    goto_res(-EEXIST);
 
   // follow the symlink or mount point if needed
   if ((res = vresolve_follow(vc, &ve, flags, true, depth, NULL, &ve)) < 0)
@@ -215,9 +215,9 @@ int vresolve_fullwalk(vcache_t *vc, ventry_t *at, cstr_t path, int flags, int de
   while (!path_is_null(part = path_next_part(part))) {
     vnode_t *vn = VN(ve); // non-ref
     if (!V_ISDIR(ve))
-      goto_error(-ENOTDIR);
+      goto_res(-ENOTDIR);
     if (path_len(part) > NAME_MAX)
-      goto_error(-ENAMETOOLONG);
+      goto_res(-ENAMETOOLONG);
 
     bool is_last = path_iter_end(part);
     ventry_t *next_ve = NULL; // ref
@@ -254,7 +254,7 @@ int vresolve_fullwalk(vcache_t *vc, ventry_t *at, cstr_t path, int flags, int de
   LABEL(lock_next);
     if (!ve_lock(next_ve)) {
       ve_release(&next_ve);
-      goto_error(-ENOENT);
+      goto_res(-ENOENT);
     }
 
     // unlock the current ventry and swap refs with the next

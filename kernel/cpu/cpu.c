@@ -7,7 +7,7 @@
 #include <kernel/cpu/gdt.h>
 #include <kernel/cpu/idt.h>
 #include <kernel/hw/apic.h>
-#include <kernel/hw/8254.h>
+#include <kernel/hw/pit.h>
 
 #include <kernel/mm.h>
 #include <kernel/proc.h>
@@ -44,6 +44,7 @@
 #define CPU_EFER_NXE       (1 << 11)
 #define CPU_EFER_FFXSR     (1 << 14)
 
+#define NUM_INTERRUPTS 256
 #define IRQ_STACK_SIZE SIZE_16KB
 
 uint8_t cpu_bsp_id = 0;
@@ -231,9 +232,9 @@ void cpu_late_init() {
     int idt_num;
     size_t size;
   } ist_stacks[] = {
-    {IST_DBG, CPU_EXCEPTION_DB, SIZE_8KB},
-    {IST_NMI, CPU_EXCEPTION_NMI, SIZE_8KB},
-    {IST_DF, CPU_EXCEPTION_DF, SIZE_8KB},
+    {IST_DEBUG, CPU_EXCEPTION_DB,  SIZE_8KB},
+    {IST_NMI,   CPU_EXCEPTION_NMI, SIZE_8KB},
+    {IST_DF,    CPU_EXCEPTION_DF,  SIZE_8KB},
   };
 
   // allocate special IST stacks
@@ -246,7 +247,15 @@ void cpu_late_init() {
     idt_set_gate_ist(stack->idt_num, stack->ist_num);
   }
 
-  // allocate a stack for handling irqs
+  // // set all other interrupts to use ist7 which points at the thread trapframe
+  // for (int i = 0; i < NUM_INTERRUPTS; i++) {
+  //   if (i == CPU_EXCEPTION_DB || i == CPU_EXCEPTION_NMI || i == CPU_EXCEPTION_DF) {
+  //     continue;
+  //   }
+  //   idt_set_gate_ist(i, IST_TRAPFRAME);
+  // }
+
+  // allocate a stack that we can switch to when handling irqs
   page_t *irq_stack = alloc_pages(SIZE_TO_PAGES(IRQ_STACK_SIZE));
   kassert(irq_stack != NULL);
   uintptr_t irq_stack_addr = vmap_pages(moveref(irq_stack), 0, IRQ_STACK_SIZE, VM_WRITE | VM_STACK, "irq stack");
@@ -421,7 +430,7 @@ void fpu_state_free(struct fpu_area **fp) {
 }
 
 //
-// MARK: Syscalls
+// MARK: System Calls
 //
 
 DEFINE_SYSCALL(arch_prctl, int, int code, unsigned long arg) {

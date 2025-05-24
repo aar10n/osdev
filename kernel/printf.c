@@ -9,7 +9,7 @@
 #include <kernel/mm.h>
 #include <kernel/fs.h>
 
-#include <kernel/hw/8250.h>
+#include <drivers/serial.h>
 
 #include <fmt/fmt.h>
 
@@ -22,14 +22,14 @@ static struct early_kprintf {
   mtx_t lock;
   uint16_t port;
 } early_kprintf = {
-  .port = COM1_PORT,
+  .port = COM1,
 };
 
 static int early_kprintf_puts(void *arg, const char *s) {
   struct early_kprintf *p = arg;
   mtx_spin_lock(&p->lock);
   while (*s) {
-    serial_port_write_char(p->port, *s);
+    serial_write_char(p->port, *s);
     s++;
   }
   mtx_spin_unlock(&p->lock);
@@ -39,7 +39,7 @@ static int early_kprintf_puts(void *arg, const char *s) {
 //
 
 void kprintf_early_init() {
-  serial_port_init(early_kprintf.port);
+  serial_init(early_kprintf.port);
   impl_arg = &early_kprintf;
   mtx_init(&early_kprintf.lock, MTX_SPIN, "early_kprintf_lock");
   kprintf_puts_impl = early_kprintf_puts;

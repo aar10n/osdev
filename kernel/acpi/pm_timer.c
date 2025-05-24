@@ -49,7 +49,7 @@ void remap_pm_timer_registers(void *data) {
 void register_acpi_pm_timer() {
   kassert(acpi_global_fadt != NULL);
 
-  uint64_t period_ns = 1 / ((double) pm_timer_frequency / NS_PER_SEC);
+  uint64_t period_ns = (uint64_t)(1 / ((double) pm_timer_frequency / NS_PER_SEC));
 
   clock_source_t *cs = kmalloc(sizeof(clock_source_t));
   memset(cs, 0, sizeof(clock_source_t));
@@ -100,7 +100,7 @@ int pm_timer_udelay(clock_t us) {
 
 int pm_timer_mdelay(clock_t ms) {
   uint64_t delay_ns = MS_TO_NS(ms);
-  uint64_t period_ns = 1 / ((double) pm_timer_frequency / NS_PER_SEC);
+  uint64_t period_ns = (uint64_t)(1 / ((double) pm_timer_frequency / NS_PER_SEC));
   uint64_t count = pm_timer_clock_source->read(pm_timer_clock_source) + (delay_ns / period_ns);
   while (pm_timer_clock_source->read(pm_timer_clock_source) < count) {
     cpu_pause();

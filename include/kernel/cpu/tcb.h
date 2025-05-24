@@ -34,8 +34,7 @@ _Static_assert(sizeof(struct tcb) == 0x98, ""); // referenced in switch.asm
 #define TCB_KERNEL  0x01 // kernel thread context
 #define TCB_FPU     0x02 // save fpu registers
 #define TCB_DEBUG   0x04 // save debug registers
-#define TCB_IRETQ   0x08 // first return via iretq
-#define TCB_SYSRET  0x10 // first return via systet
+#define TCB_SYSRET  0x08 // next return via systet
 
 struct tcb *tcb_alloc(int flags);
 void tcb_free(struct tcb **ptcb);

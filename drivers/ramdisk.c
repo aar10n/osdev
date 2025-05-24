@@ -17,7 +17,7 @@ struct ramdisk {
 };
 
 
-// Device API
+// MARK: Device API
 
 int ramdisk_d_open(device_t *device, int flags) {
   struct ramdisk *rd = device->data;
@@ -72,6 +72,8 @@ static struct device_ops ramdisk_ops = {
   .d_getpage = ramdisk_d_getpage,
   .d_putpage = ramdisk_d_putpage,
 };
+
+// MARK: Device Registration
 
 static void ramdisk_initrd_module_init() {
   if (boot_info_v2->initrd_addr == 0) {

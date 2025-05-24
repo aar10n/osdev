@@ -167,11 +167,11 @@ typedef struct vm_mapping {
 #define VM_EXEC       (1 << 2)  // mapping is executable
 #define   VM_RDWR       (VM_READ | VM_WRITE)
 #define   VM_RDEXC      (VM_READ | VM_EXEC)
+#define VM_USER       (1 << 3)  // mapping is user readable
 /* mode flags */
-#define VM_PRIVATE    (1 << 3)  // mapping is private to the address space (copy-on-write)
-#define VM_SHARED     (1 << 4)  // mapping is shared between address spaces
+#define VM_PRIVATE    (1 << 4)  // mapping is private to the address space (copy-on-write)
+#define VM_SHARED     (1 << 5)  // mapping is shared between address spaces
 /* mapping flags */
-#define VM_USER       (1 << 5)  // mapping lives in user space
 #define VM_GLOBAL     (1 << 6)  // mapping is global in the TLB
 #define VM_NOCACHE    (1 << 7)  // mapping is non-cacheable
 #define VM_WRITETHRU  (1 << 8)  // mapping is write-through
@@ -188,9 +188,9 @@ typedef struct vm_mapping {
 #define VM_LINKED     (1 << 18) // mapping was split and is linked to the following mapping
 #define VM_SPLIT      (1 << 19) // mapping was split and is the second half of the split
 
-#define VM_PROT_MASK  0x7    // mask of protection flags
-#define VM_MODE_MASK  0x18   // mask of mode flags
-#define VM_MAP_MASK   0xFE0  // mask of mapping flags
+#define VM_PROT_MASK  0xF    // mask of protection flags
+#define VM_MODE_MASK  0x30   // mask of mode flags
+#define VM_MAP_MASK   0xFC0  // mask of mapping flags
 #define VM_FLAGS_MASK 0xFFFF // mask of public flags
 
 static always_inline size_t vm_flags_to_size(uint32_t vm_flags) {

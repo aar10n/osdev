@@ -7,15 +7,13 @@
 
 #include <kernel/base.h>
 
-typedef struct pci_subclass {
+typedef struct pci_desc {
   uint8_t class_code;
   uint8_t subclass_code;
+  uint8_t prog_if;
   const char *desc;
-} pci_subclass_t;
+} pci_desc_t;
 
-const char *pci_get_class_desc(uint8_t class_code);
-const char *pci_get_subclass_desc(uint8_t class_code, uint8_t subclass_code);
-
-
+const char *pci_get_device_desc(uint8_t class_code, uint8_t subclass_code, uint8_t prog_if);
 
 #endif

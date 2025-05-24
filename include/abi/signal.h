@@ -18,13 +18,13 @@ typedef int sig_atomic_t;
 #define __NEED_clock_t
 #define __NEED_sigset_t
 #include <bits/alltypes.h>
-
-#define _GNU_SOURCE
 #include <bits/signal.h>
 
-typedef void (*sig_t)(int);
-
 #define NSIG _NSIG
+
+#define SIGRTMIN  35
+#define SIGRTMAX  (_NSIG-1)
+#define NRRTSIG  (SIGRTMAX-SIGRTMIN+1)
 
 #define SIG_BLOCK     0
 #define SIG_UNBLOCK   1
@@ -87,93 +87,39 @@ union sigval {
   void *sival_ptr;
 };
 
-typedef struct {
-  int si_signo, si_errno, si_code;
-  union {
-    char __pad[128 - 2*sizeof(int) - sizeof(long)];
-    struct {
-      union {
-        struct {
-          pid_t si_pid;
-          uid_t si_uid;
-        } __piduid;
-        struct {
-          int si_timerid;
-          int si_overrun;
-        } __timer;
-      } __first;
-      union {
-        union sigval si_value;
-        struct {
-          int si_status;
-          clock_t si_utime, si_stime;
-        } __sigchld;
-      } __second;
-    } __si_common;
-    struct {
-      void *si_addr;
-      short si_addr_lsb;
-      union {
-        struct {
-          void *si_lower;
-          void *si_upper;
-        } __addr_bnd;
-        unsigned si_pkey;
-      } __first;
-    } __sigfault;
-    struct {
-      long si_band;
-      int si_fd;
-    } __sigpoll;
-    struct {
-      void *si_call_addr;
-      int si_syscall;
-      unsigned si_arch;
-    } __sigsys;
-  } __si_fields;
-} siginfo_t;
-#define si_pid     __si_fields.__si_common.__first.__piduid.si_pid
-#define si_uid     __si_fields.__si_common.__first.__piduid.si_uid
-#define si_status  __si_fields.__si_common.__second.__sigchld.si_status
-#define si_utime   __si_fields.__si_common.__second.__sigchld.si_utime
-#define si_stime   __si_fields.__si_common.__second.__sigchld.si_stime
-#define si_value   __si_fields.__si_common.__second.si_value
-#define si_addr    __si_fields.__sigfault.si_addr
-#define si_addr_lsb __si_fields.__sigfault.si_addr_lsb
-#define si_lower   __si_fields.__sigfault.__first.__addr_bnd.si_lower
-#define si_upper   __si_fields.__sigfault.__first.__addr_bnd.si_upper
-#define si_pkey    __si_fields.__sigfault.__first.si_pkey
-#define si_band    __si_fields.__sigpoll.si_band
-#define si_fd      __si_fields.__sigpoll.si_fd
-#define si_timerid __si_fields.__si_common.__first.__timer.si_timerid
-#define si_overrun __si_fields.__si_common.__first.__timer.si_overrun
-#define si_ptr     si_value.sival_ptr
-#define si_int     si_value.sival_int
-#define si_call_addr __si_fields.__sigsys.si_call_addr
-#define si_syscall __si_fields.__sigsys.si_syscall
-#define si_arch    __si_fields.__sigsys.si_arch
+struct siginfo {
+  int si_signo;           // signal number
+  int si_code;            // signal code
+  union sigval si_value;  // signal value
+  int si_errno;           // errno
+  pid_t si_pid;           // sending process
+  uid_t si_uid;           // sending user
+  void *si_addr;          // faulting address
+  int si_status;          // exit status
+  int si_band;            // band event
+};
 
+// matches k_sigaction defined in musl/<arch>/ksigaction.h
 struct sigaction {
   union {
     void (*sa_handler)(int);
-    void (*sa_sigaction)(int, siginfo_t *, void *);
-  } __sa_handler;
-  sigset_t sa_mask;
-  int sa_flags;
+    void (*sa_sigaction)(int, struct siginfo *, void *);
+  };
+  unsigned long sa_flags;
   void (*sa_restorer)(void);
+  unsigned sa_mask[2];
 };
-#define sa_handler   __sa_handler.sa_handler
-#define sa_sigaction __sa_handler.sa_sigaction
+static_assert(sizeof(struct sigaction) == 32);
 
-#define SA_UNSUPPORTED 0x00000400
-#define SA_EXPOSE_TAGBITS 0x00000800
+/* SA_ flags in addition to ones in <bits/signal.h> */
+#define SA_KERNHAND   0x02000000 // runs in kernel space
 
 struct sigevent {
   union sigval sigev_value;
   int sigev_signo;
   int sigev_notify;
   union {
-    char __pad[64 - 2*sizeof(int) - sizeof(union sigval)];
+    char __pad[64 - (2*sizeof(int)) - sizeof(union sigval)];
     pid_t sigev_notify_thread_id;
     struct {
       void (*sigev_notify_function)(union sigval);

@@ -33,7 +33,7 @@ __used void ipi_handler(struct trapframe *frame) {
         if (!is_kernel_code_ptr(data)) {
           kprintf("CPU#%d IPI panic - bad handler!\n", curcpu_id);
         } else {
-          ((irq_handler_t)((void *) data))(frame);
+          ((irq_handler_t)(data))(frame);
         }
       }
       WHILE_TRUE;
@@ -42,6 +42,8 @@ __used void ipi_handler(struct trapframe *frame) {
       todo("IPI_INVLPG");
       break;
     case IPI_SCHEDULE:
+      todo("fix ipi scheduling");
+      // curthread->flags2
       sched_again((sched_reason_t)data);
       break;
     case IPI_NOOP:

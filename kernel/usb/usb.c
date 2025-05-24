@@ -43,7 +43,6 @@ usb_driver_t hid_driver = {
   .dev_class = USB_CLASS_HID,
   .dev_subclass = 0,
 
-
   .init = hid_device_init,
   .deinit = hid_device_deinit,
 };
@@ -53,6 +52,7 @@ usb_driver_t scsi_driver = {
   .name = "Mass Storage Driver",
   .dev_class = USB_CLASS_STORAGE,
   .dev_subclass = USB_SUBCLASS_SCSI,
+
   .init = scsi_device_init,
   .deinit = scsi_device_deinit,
 };

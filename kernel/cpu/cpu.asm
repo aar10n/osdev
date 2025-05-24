@@ -226,11 +226,8 @@ syscall:
 
 global sysret
 sysret:
-  mov KERNEL_SP, rsp
-  mov rsp, USER_SP
-  swapgs
-
   mov rcx, rdi ; rip
   mov rsp, rsi ; rsp
   mov r11, 0   ; rflags
+  swapgs
   o64 sysret

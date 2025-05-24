@@ -15,6 +15,10 @@
 #define HMAP_TYPE void *
 #include <hash_map.h>
 
+#define ASSERT(x) kassert(x)
+#define DPRINTF(fmt, ...) kprintf("device: " fmt, ##__VA_ARGS__)
+#define EPRINTF(fmt, ...) kprintf("device: %s: " fmt, __func__, ##__VA_ARGS__)
+
 struct bus_type {
   const char *name;
 
@@ -36,9 +40,6 @@ struct dev_type {
   LIST_HEAD(struct device) devices;
 };
 
-#define ASSERT(x) kassert(x)
-#define DPRINTF(fmt, ...) kprintf("device: %s: " fmt, __func__, ##__VA_ARGS__)
-
 struct bus_type bus_types[] = {
   { "pci" },
   { "usb" },
@@ -55,6 +56,36 @@ static rb_tree_t *device_tree;
 static mtx_t device_tree_lock;
 static hash_map_t *bus_type_by_name;
 static hash_map_t *dev_type_by_name;
+
+static inline bool is_valid_device_bus(device_bus_t *bus) {
+  if (bus->name == NULL) {
+    DPRINTF("invalid bus: missing name\n");
+    return false;
+  } else if (bus->probe == NULL) {
+    DPRINTF("invalid bus: missing probe function\n");
+    return false;
+  }
+  return true;
+}
+
+static inline bool is_valid_device_driver(device_driver_t *driver) {
+  if (driver->name == NULL) {
+    DPRINTF("invalid driver: missing name\n");
+    return false;
+  } else if (driver->check_device == NULL) {
+    DPRINTF("invalid driver: missing check_device function\n");
+    return false;
+  } else if (driver->setup_device == NULL) {
+    DPRINTF("invalid driver: missing setup_device function\n");
+    return false;
+  } else if (driver->remove_device == NULL) {
+    DPRINTF("invalid driver: missing remove_device function\n");
+    return false;
+  }
+  return true;
+}
+
+//
 
 static void device_static_init() {
   device_tree = create_rb_tree();
@@ -100,6 +131,25 @@ device_t *free_device(device_t *dev) {
   return NULL;
 }
 
+device_driver_t *alloc_driver(const char *name, void *data, struct device_ops *ops) {
+  ASSERT(name != NULL);
+  ASSERT(ops != NULL); // data can be NULL
+  device_driver_t *driver = kmallocz(sizeof(device_driver_t));
+  driver->name = name;
+  driver->data = data;
+  driver->ops = ops;
+  return driver;
+}
+
+device_driver_t *free_driver(device_driver_t *driver) {
+  ASSERT(driver != NULL);
+  ASSERT(driver->data == NULL);
+  ASSERT(driver->name == NULL);
+  ASSERT(driver->ops == NULL);
+  kfree(driver);
+  return NULL;
+}
+
 //
 
 void probe_all_buses() {
@@ -108,7 +158,7 @@ void probe_all_buses() {
     mtx_lock(&bus_type->lock);
     LIST_FOR_IN(bus, &bus_type->buses, list) {
       if (bus->probe(bus) < 0) {
-        DPRINTF("failed to probe bus '%s%d'\n", bus->name, bus->number);
+        EPRINTF("failed to probe bus '%s.%d'\n", bus->name, bus->number);
       }
     }
     mtx_unlock(&bus_type->lock);
@@ -127,37 +177,36 @@ device_t *device_get(dev_t dev) {
 }
 
 int register_bus(device_bus_t *bus) {
-  if (bus->name == NULL || bus->probe == NULL) {
-    DPRINTF("invalid bus: missing one or more required field(s)\n");
+  if (!is_valid_device_bus(bus)) {
+    EPRINTF("invalid bus: missing one or more required field(s)\n");
     return -1;
   }
 
   struct bus_type *bus_type = hash_map_get(bus_type_by_name, bus->name);
   if (bus_type == NULL) {
-    DPRINTF("bus type %s not found\n", bus->name);
+    EPRINTF("bus type %s not found\n", bus->name);
     return -1;
   }
 
   mtx_lock(&bus_type->lock);
   bus->number = bus_type->last_number++;
   LIST_ENTRY_INIT(&bus->list);
-
   LIST_ADD(&bus_type->buses, bus, list);
   mtx_unlock(&bus_type->lock);
 
-  kprintf("device: registered bus '%s%d'\n", bus->name, bus->number);
+  DPRINTF("registered bus '%s.%d'\n", bus->name, bus->number);
   return 0;
 }
 
 int register_driver(const char *bus_type, device_driver_t *driver) {
-  if (driver->name == NULL || driver->check_device == NULL) {
-    DPRINTF("invalid driver: missing one or more required field(s)\n");
+  if (!is_valid_device_driver(driver)) {
+    EPRINTF("invalid driver: missing one or more required field(s)\n");
     return -1;
   }
 
   struct bus_type *type = hash_map_get(bus_type_by_name, bus_type);
   if (type == NULL) {
-    DPRINTF("bus type '%s' not found\n", bus_type);
+    EPRINTF("bus type '%s' not found\n", bus_type);
     return -1;
   }
 
@@ -173,25 +222,23 @@ int register_driver(const char *bus_type, device_driver_t *driver) {
 
 int register_bus_device(device_bus_t *bus, void *bus_device) {
   if (bus_device == NULL) {
-    DPRINTF("bus_device cannot be null\n");
+    EPRINTF("bus_device cannot be null\n");
     return -1;
   }
 
   struct bus_type *type = hash_map_get(bus_type_by_name, bus->name);
   ASSERT(type != NULL);
 
-  device_t *dev = kmalloc(sizeof(device_t));
-  memset(dev, 0, sizeof(device_t));
+  device_t *dev = kmallocz(sizeof(device_t));
   dev->bus_device = bus_device;
   dev->bus = bus;
-  LIST_INIT(&dev->children);
-  LIST_INIT(&dev->entries);
 
   // look for a driver that can handle this device
   device_driver_t *driver = NULL;
   LIST_FOR_IN(drv, &type->drivers, list) {
     if (drv->check_device(drv, dev) == 0) {
       // found a driver!
+      DPRINTF("found driver '%s' for device on bus '%s.%d'\n", drv->name, bus->name, bus->number);
       driver = drv;
       break;
     }
@@ -200,11 +247,19 @@ int register_bus_device(device_bus_t *bus, void *bus_device) {
   if (driver == NULL) {
     // no driver found. in the future we should keep a list of devices that
     // don't have a driver and try to find one when a driver is registered
-    DPRINTF("no driver found for device on bus '%s%d'\n", bus->name, bus->number);
+    EPRINTF("no driver found for device on bus '%s.%d'\n", bus->name, bus->number);
     kfree(dev);
     return -1;
   }
 
+  // bind the driver and initialize the device
+  dev->driver = driver;
+  if (driver->setup_device(dev) < 0) {
+    EPRINTF("failed to initialize driver '%s' to device on bus '%s.%d'\n", driver->name, bus->name, bus->number);
+    kfree(dev);
+    return -1;
+  }
+  
   mtx_lock(&bus->devices_lock);
   SLIST_ADD(&bus->devices, dev, bus_list);
   mtx_unlock(&bus->devices_lock);

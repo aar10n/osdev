@@ -135,7 +135,8 @@ int exec_image_setup_stack(
   LIST_HEAD(vm_desc_t) descs = {0};
 
   // add a descriptor for the stack
-  SLIST_ADD(&descs, vm_desc_alloc(VM_TYPE_PAGE, stack_base, stack_size, VM_STACK|VM_RDWR, "stack", getref(stack_pages)), next);
+  int stack_vm_flags = VM_STACK | VM_RDWR | ((stack_base != 0) ? VM_FIXED : 0);
+  SLIST_ADD(&descs, vm_desc_alloc(VM_TYPE_PAGE, stack_base, stack_size, stack_vm_flags, "stack", getref(stack_pages)), next);
 
   // copy in the argv[0] string
   kio_t kio = kio_readonly_from_str(image->path);

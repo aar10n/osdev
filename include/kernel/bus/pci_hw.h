@@ -95,8 +95,8 @@ static_assert(sizeof(union pci_status_reg) == 2);
 
 struct pci_header {
   // dword 0
-  uint32_t vendor_id : 8;
-  uint32_t device_id : 8;
+  uint32_t vendor_id : 16;
+  uint32_t device_id : 16;
   // dword 1
   union pci_command_reg command;
   union pci_status_reg status;

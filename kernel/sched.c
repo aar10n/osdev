@@ -32,7 +32,7 @@ typedef struct sched {
 static sched_t *cpu_scheds[MAX_CPUS];
 
 // defined in switch.asm
-void sched_do_switch(thread_t *curr, thread_t *next);
+void switch_thread(thread_t *curr, thread_t *next);
 
 // this function selects the cpu with the lowest thread count estimated by scanning
 // the readymask of each cpu scheduler. note that the readymask only indicates which
@@ -92,8 +92,7 @@ static int select_cpu_by_lowest_readycnt(size_t *out_count) {
 
 // this function selects a cpu for a thread based on the thread's affinity,
 // existing threads from the same process, and the current load on each cpu.
-int select_cpu_for_new_thread(thread_t *td) {
-  ASSERT(TDS_IS_EMPTY(td));
+int select_cpu_for_thread(thread_t *td) {
   proc_t *proc = td->proc;
   int cpu = -1;
   if (TDF2_HAS_AFFINITY(td)) {
@@ -167,7 +166,10 @@ static thread_t *sched_next_thread() {
   if (td == NULL) {
     // if no threads available, run idle thread
     td = sched->idle;
-    td_lock(td);
+    // handle case where current thread is idle but no new thread is available
+    // in this case we dont want to re-lock the idle thread.
+    if (td_lock_owner(td) == NULL)
+      td_lock(td);
   }
   return td;
 }
@@ -175,6 +177,7 @@ static thread_t *sched_next_thread() {
 //
 
 noreturn void idle_thread_entry() {
+  kprintf("starting idle thread on CPU#%d\n", curcpu_id);
   sched_t *sched = cursched;
 
 idle_wait:;
@@ -213,17 +216,18 @@ void sched_init() {
     thread_t *td = sched->idle;
     TD_SET_STATE(td, TDS_RUNNING);
     td->start_time = clock_micro_time();
+    td->last_sched_ns = clock_get_nanos();
 
-    sched_do_switch(NULL, td);
+    switch_thread(NULL, td);
     unreachable;
   }
 }
 
 void sched_submit_new_thread(thread_t *td) {
-  ASSERT(TDS_IS_EMPTY(td));
   td_lock_assert(td, MA_OWNED);
+  ASSERT(TDS_IS_EMPTY(td));
 
-  int cpu = select_cpu_for_new_thread(td);
+  int cpu = select_cpu_for_thread(td);
   sched_t *sched = cpu_scheds[cpu];
   ASSERT(sched != NULL);
 
@@ -236,9 +240,28 @@ void sched_submit_new_thread(thread_t *td) {
   atomic_fetch_or(&sched->readymask, 1 << i);
 }
 
-void sched_remove_ready_thread(thread_t *td) {
-  ASSERT(TDS_IS_READY(td));
+void sched_submit_ready_thread(thread_t *td) {
   td_lock_assert(td, MA_OWNED);
+  ASSERT(TDS_IS_READY(td));
+
+  int cpu = td->cpu_id;
+  if (cpu < 0) {
+    // thread cpu was cleared, reselect a cpu
+    cpu = select_cpu_for_thread(td);
+    td->cpu_id = cpu;
+  }
+
+  sched_t *sched = cpu_scheds[cpu];
+  ASSERT(sched != NULL);
+
+  int i = td->priority / 4;
+  runq_add(&sched->queues[i], td);
+  atomic_fetch_or(&sched->readymask, 1 << i);
+}
+
+void sched_remove_ready_thread(thread_t *td) {
+  td_lock_assert(td, MA_OWNED);
+  ASSERT(TDS_IS_READY(td));
 
   ASSERT(td->cpu_id >= 0);
   sched_t *sched = cpu_scheds[td->cpu_id];
@@ -255,47 +278,88 @@ void sched_remove_ready_thread(thread_t *td) {
 //
 
 void sched_again(sched_reason_t reason) {
+  if (reason == SCHED_PREEMPTED && curcpu_is_interrupt) {
+    // we are in an interrupt so defer the preemption to interrupt exit
+    set_preempted(true);
+    return;
+  }
+
   thread_t *oldtd = curthread;
   if (mtx_owner(&oldtd->lock) == NULL) {
     // lock the thread if it hasnt been already
-    mtx_lock(&oldtd->lock);
+    td_lock(oldtd);
   }
   td_lock_assert(oldtd, MA_NOTRECURSED);
 
+  // select next thread now
+  thread_t *newtd = sched_next_thread();
+  td_lock_assert(newtd, MA_OWNED);
+
+  if (TDF_IS_IDLE(newtd)) {
+    if (newtd == oldtd) {
+      // idle thread tried to yield but no other thread is ready
+      // so we just return to the idle thread
+      td_unlock(oldtd); // only unlock once
+      return;
+    }
+
+    // dont rereschedule to idle thread if oldtd is just yielding or being preempted
+    // because we have nothing better to do
+    if (reason == SCHED_PREEMPTED || reason == SCHED_YIELDED) {
+      td_unlock(oldtd);
+      td_unlock(newtd);
+      return; // return to oldtd
+    }
+  }
+
   // update thread state+stats
   switch (reason) {
-    case SCHED_UPDATED:
+    case SCHED_PREEMPTED:
+      ASSERT(!curcpu_is_interrupt);
+      TD_SET_STATE(oldtd, TDS_READY);
+      atomic_fetch_or(&oldtd->flags2, TDF2_PREEMPTED);
+      sched_submit_ready_thread(oldtd);
       break;
     case SCHED_YIELDED:
       TD_SET_STATE(oldtd, TDS_READY);
+      // if the thread is yielding because it was
+      // stopped do not add it back to the runqueue
+      if (!TDF2_IS_STOPPED(oldtd)) {
+        sched_submit_ready_thread(oldtd);
+      }
       break;
     case SCHED_BLOCKED:
       TD_SET_STATE(oldtd, TDS_BLOCKED);
+      if (oldtd->proc->pid != 0)
+        ASSERT(oldtd->contested_lock != NULL);
       break;
     case SCHED_SLEEPING:
       TD_SET_STATE(oldtd, TDS_WAITING);
-      break;
-    case SCHED_PREEMPTED:
-      TD_SET_STATE(oldtd, TDS_READY);
+      ASSERT(oldtd->wchan != NULL);
       break;
     case SCHED_EXITED:
-      ASSERT(TDF2_IS_STOPPING(oldtd));
+      ASSERT(TDF2_IS_STOPPED(oldtd));
       TD_SET_STATE(oldtd, TDS_EXITED);
+      atomic_fetch_add(&oldtd->proc->num_exited, 1);
+      cond_broadcast(&oldtd->proc->td_exit_cond);
       break;
     default:
       unreachable;
   }
 
-  thread_t *newtd = sched_next_thread();
-  td_lock_assert(newtd, MA_OWNED);
-  TD_SET_STATE(newtd, TDS_RUNNING);
-
   if (TDF2_IS_FIRSTTIME(newtd)) {
     newtd->start_time = clock_micro_time();
+    newtd->last_sched_ns = clock_get_nanos();
+    newtd->flags2 &= ~TDF2_FIRSTTIME;
+    DPRINTF("thread {:td} started on CPU#%d\n", newtd, curcpu_id);
+  } else {
+    newtd->last_sched_ns = clock_get_nanos();
+    DPRINTF("thread {:td} resumed on CPU#%d\n", newtd, curcpu_id);
   }
 
+  TD_SET_STATE(newtd, TDS_RUNNING);
   td_unlock(newtd);
-  sched_do_switch(oldtd, newtd);
+  switch_thread(oldtd, newtd); // oldtd is unlocked by switch_thread
 }
 
 void sched_cpu(int cpu, sched_reason_t reason) {

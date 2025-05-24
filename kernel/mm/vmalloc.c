@@ -135,7 +135,7 @@ static inline bool vm_are_siblings(vm_mapping_t *a, vm_mapping_t *b) {
 
 static inline uintptr_t choose_best_hint(uintptr_t hint, uint32_t vm_flags) {
   if (vm_flags & VM_USER) {
-    if (hint > 0 && hint < USER_SPACE_END) {
+    if (hint > 0) {
       return hint;
     }
 
@@ -204,12 +204,6 @@ static void phys_type_unmap_internal(vm_mapping_t *vm, size_t size, size_t off) 
 }
 
 // pages type
-
-// static __ref page_t *page_type_fork_internal(page_t *pages, bool shared) {
-//   if (!shared) {
-//     return alloc_cow_pages(getref(pages));
-//   }
-// }
 
 static void page_type_map_internal(vm_mapping_t *vm, page_t *pages, size_t size, size_t off) {
   size_t stride = vm_flags_to_size(vm->flags);
@@ -452,6 +446,7 @@ static void vm_split_internal(vm_mapping_t *vm, size_t off, vm_mapping_t *siblin
   space_lock_assert(vm->space, MA_OWNED);
   switch (vm->type) {
     case VM_TYPE_PHYS:
+      sibling->vm_phys = vm->vm_phys + off;
       break;
     case VM_TYPE_PAGE:
       vm->vm_pages = page_type_split_internal(moveref(vm->vm_pages), off, &sibling->vm_pages);
@@ -1099,7 +1094,7 @@ void init_address_space() {
   // to effectively "unmap" the user identity mappings in our new address space.
   // this leaves the original page tables (identity mappings included) for our APs
   space_lock(default_user_space);
-  address_space_t *user_space = vm_fork_space(default_user_space, /*deepcopy_user=*/false);
+  address_space_t *user_space = vm_new_fork_space(default_user_space, /*deepcopy_user=*/false);
   set_current_pgtable(user_space->page_table);
   set_curspace(user_space);
   curproc->space = user_space;
@@ -1112,7 +1107,7 @@ void init_ap_address_space() {
   // do not need to lock default_user_space here because after its creation during init_address_space
   // it is only read from and never written to again
   space_lock(default_user_space);
-  address_space_t *user_space = vm_fork_space(default_user_space, /*deepcopy_user=*/true);
+  address_space_t *user_space = vm_new_fork_space(default_user_space, /*deepcopy_user=*/true);
   set_curspace(user_space);
   curproc->space = user_space;
   space_lock(default_user_space);
@@ -1134,26 +1129,8 @@ address_space_t *vm_new_space(uintptr_t min_addr, uintptr_t max_addr, uintptr_t 
   return space;
 }
 
-address_space_t *vm_new_uspace() {
-  // fork pages with deepcopy false to allocate a new pml4 with
-  // the kernel entries copied over.
-  page_t *pml4;
-  space_lock(kernel_space);
-  fork_page_tables(&pml4, /*deepcopy_user=*/false);
-  space_unlock(kernel_space);
-
-  address_space_t *space = kmallocz(sizeof(address_space_t));
-  space->min_addr = USER_SPACE_START;
-  space->max_addr = USER_SPACE_END;
-  space->new_tree = create_intvl_tree();
-  space->page_table = pml4->address;
-  mtx_init(&space->lock, MTX_RECURSIVE, "vm_space_lock");
-  SLIST_ADD(&space->table_pages, pml4, next);
-  return space;
-}
-
 // the caller must have target space locked
-address_space_t *vm_fork_space(address_space_t *space, bool deepcopy_user) {
+address_space_t *vm_new_fork_space(address_space_t *space, bool deepcopy_user) {
   space_lock_assert(space, MA_OWNED);
   address_space_t *newspace = vm_new_space(space->min_addr, space->max_addr, 0);
   newspace->num_mappings = space->num_mappings;
@@ -1188,6 +1165,24 @@ address_space_t *vm_fork_space(address_space_t *space, bool deepcopy_user) {
     newspace->num_mappings++;
   }
   return newspace;
+}
+
+address_space_t *vm_new_empty_space() {
+  // fork pages with deepcopy false to allocate a new pml4 with
+  // the kernel entries copied over.
+  page_t *pml4;
+  space_lock(kernel_space);
+  fork_page_tables(&pml4, /*deepcopy_user=*/false);
+  space_unlock(kernel_space);
+
+  address_space_t *space = kmallocz(sizeof(address_space_t));
+  space->min_addr = USER_SPACE_START;
+  space->max_addr = USER_SPACE_END;
+  space->new_tree = create_intvl_tree();
+  space->page_table = pml4->address;
+  mtx_init(&space->lock, MTX_RECURSIVE, "vm_space_lock");
+  SLIST_ADD(&space->table_pages, pml4, next);
+  return space;
 }
 
 //
@@ -1338,7 +1333,7 @@ LABEL(ret);
   return res;
 }
 
-int vmap_protect(uintptr_t vaddr, size_t len, int prot) {
+int vmap_protect(uintptr_t vaddr, size_t len, uint32_t vm_prot) {
   // Cases for the range [vaddr, vaddr+len-1]
   //   1. part or all of the range is unmapped (or reserved)
   //        - error
@@ -1378,17 +1373,9 @@ int vmap_protect(uintptr_t vaddr, size_t len, int prot) {
   //   7. two or more mixed non-linked mappings
   //        - error
   //
+  vm_prot &= VM_PROT_MASK;
   if (!is_valid_range(vaddr, len) || !is_aligned(len, PAGE_SIZE)) {
     return -EINVAL;
-  }
-
-  uint32_t vm_prot = 0;
-  if (prot & PROT_READ) {
-    vm_prot |= VM_READ;
-  } if (prot & PROT_WRITE) {
-    vm_prot |= VM_WRITE;
-  } if (prot & PROT_EXEC) {
-    vm_prot |= VM_EXEC;
   }
 
   int res = 0;
@@ -1574,6 +1561,37 @@ __ref page_t *vm_getpage_cow(uintptr_t vaddr) {
   page_t *cow_page = alloc_cow_pages(page);
   drop_pages(&page);
   return cow_page;
+}
+
+int vm_validate_user_ptr(uintptr_t vaddr, bool write) {
+  if (vaddr == 0 || !is_valid_pointer(vaddr)) {
+    return -EFAULT;
+  }
+
+  int res;
+  address_space_t *space = select_space(curspace, vaddr);
+  space_lock(space);
+
+  vm_mapping_t *vm = space_get_mapping(space, vaddr);
+  if (vm == NULL || vm->type == VM_TYPE_RSVD) {
+    res = -EFAULT;
+    goto ret;
+  }
+
+  if (!(vm->type == VM_TYPE_PAGE || vm->type == VM_TYPE_FILE)) {
+    res = -EFAULT;
+    goto ret;
+  }
+  if (write && !(vm->flags & VM_WRITE)) {
+    res = -EFAULT;
+    goto ret;
+  }
+
+  res = !((vm->flags & VM_USER) && (vm->flags & VM_READ));
+LABEL(ret);
+  space_unlock(space);
+  return res;
+
 }
 
 //
@@ -1869,20 +1887,30 @@ void vfree(void *ptr) {
 
 static inline const char *prot_to_debug_str(uint32_t vm_flags) {
   if ((vm_flags & VM_PROT_MASK) == 0)
-    return "---";
+    return "----";
 
-  if (vm_flags & VM_READ) {
+  if (vm_flags & VM_USER) {
     if (vm_flags & VM_WRITE) {
       if (vm_flags & VM_EXEC) {
-        return "rwe";
+        return "urwx";
       }
-      return "rw-";
+      return "urw-";
     } else if (vm_flags & VM_EXEC) {
-      return "r-x";
+      return "ur-x-";
     }
-    return "r--";
+    return "ur--";
+  } else {
+    if (vm_flags & VM_WRITE) {
+      if (vm_flags & VM_EXEC) {
+        return "krwx";
+      }
+      return "krw-";
+    } else if (vm_flags & VM_EXEC) {
+      return "kr-x-";
+    }
+    return "kr--";
   }
-  return "???";
+  return "????";
 }
 
 void vm_print_address_space() {
@@ -1944,19 +1972,19 @@ void vm_print_format_address_space(address_space_t *space) {
 
       // in stack mappings the empty space and guard page come first
       if (empty_size > 0) {
-        kprintf("{:018p}-{:018p} {:$ >10M}  ---  empty\n", empty_start, empty_start+empty_size, empty_size);
+        kprintf("{:018p}-{:018p} {:$ >10M}  ----  empty\n", empty_start, empty_start+empty_size, empty_size);
       }
 
-      kprintf("{:018p}-{:018p} {:$ >10M}  ---  guard\n", guard_start, guard_start+PAGE_SIZE, PAGE_SIZE);
+      kprintf("{:018p}-{:018p} {:$ >10M}  ----  guard\n", guard_start, guard_start+PAGE_SIZE, PAGE_SIZE);
       kprintf("{:018p}-{:018p} {:$ >10M}  {:.3s}  {:str}\n",
               vm->address, vm->address+vm->size, vm->size, prot_str, &vm->name);
     } else {
-      kprintf("{:018p}-{:018p} {:$ >10M}  {:.3s}  {:str}\n",
+      kprintf("{:018p}-{:018p} {:$ >10M}  {:.4s}  {:str}\n",
                 vm->address, vm->address+vm->size, vm->size, prot_str, &vm->name);
 
       if (empty_size > 0) {
         uintptr_t empty_start = vm->address+vm->size;
-        kprintf("{:018p}-{:018p} {:$ >10M}  ---  empty\n", empty_start, empty_start+empty_size, empty_size);
+        kprintf("{:018p}-{:018p} {:$ >10M}  ----  empty\n", empty_start, empty_start+empty_size, empty_size);
       }
     }
 
@@ -1967,26 +1995,27 @@ void vm_print_format_address_space(address_space_t *space) {
 }
 
 //
-// MARK: Syscalls
+// MARK: System Calls
 //
 
 DEFINE_SYSCALL(mmap, void *, void *addr, size_t len, int prot, int flags, int fd, off_t off) {
   DPRINTF("mmap: addr=%p, len=%zu, prot=%#b, flags=%#x, fd=%d, off=%zu\n", addr, len, prot, flags, fd, off);
-  // kprintf("before:\n");
-  // vm_print_format_address_space(curspace);
   void *res = vm_mmap((uintptr_t) addr, len, prot, flags, fd, off);
-  // kprintf("after:\n");
-  // vm_print_format_address_space(curspace);
   return res;
 }
 
 DEFINE_SYSCALL(mprotect, int, void *addr, size_t len, int prot) {
   DPRINTF("mprotect: addr=%p, len=%zu, prot=%d\n", addr, len, prot);
-  // kprintf("before:\n");
-  // vm_print_format_address_space(curspace);
-  int res = vmap_protect((uintptr_t) addr, len, prot);
-  // kprintf("after:\n");
-  // vm_print_format_address_space(curspace);
+  uint32_t vm_prot = VM_USER;
+  if (prot & PROT_READ) {
+    vm_prot |= VM_READ;
+  } if (prot & PROT_WRITE) {
+    vm_prot |= VM_WRITE;
+  } if (prot & PROT_EXEC) {
+    vm_prot |= VM_EXEC;
+  }
+
+  int res = vmap_protect((uintptr_t) addr, len, vm_prot);
   return res;
 }
 

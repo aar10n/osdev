@@ -7,9 +7,10 @@
 
 #include <kernel/cpu/io.h>
 
+#include <kernel/cpu/cpu.h>
 #include <kernel/hw/apic.h>
-#include <kernel/hw/ioapic.h>
 #include <kernel/hw/hpet.h>
+#include <kernel/hw/ioapic.h>
 
 #include <kernel/bus/pci_v2.h>
 
@@ -62,7 +63,7 @@ void acpi_early_init() {
     panic("ACPI 1.0 not supported");
   }
 
-  acpi_table_header_t *xsdt = (void *)((uint64_t) rsdp->xsdt_address);
+  acpi_table_header_t *xsdt = (void *)(rsdp->xsdt_address);
   if (xsdt->signature != ACPI_SIGNATURE_XSDT) {
     panic("ACPI XSDT signature mismatch");
   }
@@ -215,7 +216,6 @@ void acpi_parse_mcfg() {
     uint8_t bus_end = entry->end_bus_number;
     uint64_t address = entry->base_address;
     register_pci_segment_group(number, bus_start, bus_end, address);
-    // register_pcie_segment_group(number, bus_start, bus_end, address);
   }
 }
 

@@ -3,6 +3,7 @@
 //
 
 #include <kernel/irq.h>
+#include <kernel/proc.h>
 #include <kernel/mutex.h>
 #include <kernel/printf.h>
 #include <kernel/panic.h>
@@ -10,8 +11,8 @@
 #include <kernel/hw/apic.h>
 #include <kernel/hw/ioapic.h>
 
-#include <kernel/bus/pcie.h>
-#include <kernel/cpu/frame.h>
+#include <kernel/bus/pci_v2.h>
+#include <kernel/cpu/trapframe.h>
 
 #include <bitmap.h>
 
@@ -72,13 +73,11 @@ __used noreturn void double_fault_handler() {
 
 __used void interrupt_handler(struct trapframe *frame) {
   if (ignored_irqs[frame->vector])
-    goto handled_interrupt;
+    return;
 
   struct irq_handler *handler = &handlers[frame->vector];
   frame->data = (uintptr_t) handler->data;
   handler->handler(frame);
-
-LABEL(handled_interrupt);
   apic_send_eoi();
 }
 
@@ -300,7 +299,9 @@ int irq_disable_interrupt(uint8_t irq) {
   return 0;
 }
 
-int irq_enable_msi_interrupt(uint8_t irq, uint8_t index, struct pcie_device *device) {
+int irq_enable_msi_interrupt(uint8_t irq, uint8_t index, struct pci_device *device) {
+  todo();
+
   ASSERT(irq > irq_external_max);
   if (irq >= NUM_INTERRUPTS) {
     return -ERANGE;
@@ -312,11 +313,13 @@ int irq_enable_msi_interrupt(uint8_t irq, uint8_t index, struct pcie_device *dev
   }
 
   uint8_t vector = IRQ_TO_VECTOR(get_real_irqnum(irq));
-  pcie_enable_msi_vector(device, index, vector);
+  //pcie_enable_msi_vector(device, index, vector);
   return 0;
 }
 
-int irq_disable_msi_interrupt(uint8_t irq, uint8_t index, struct pcie_device *device) {
+int irq_disable_msi_interrupt(uint8_t irq, uint8_t index, struct pci_device *device) {
+  todo();
+
   ASSERT(irq > irq_external_max);
   if (irq >= NUM_INTERRUPTS) {
     return -ERANGE;
@@ -327,7 +330,7 @@ int irq_disable_msi_interrupt(uint8_t irq, uint8_t index, struct pcie_device *de
     return result;
   }
 
-  pcie_disable_msi_vector(device, index);
+  // pcie_disable_msi_vector(device, index);
   return 0;
 }
 

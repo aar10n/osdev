@@ -324,11 +324,6 @@ void pci_print_debug_status(pci_status_t *status) {
 }
 
 void pci_print_debug_device(pci_device_t *device) {
-  kprintf("Bus %d, device %d, function %d:\n", device->bus, device->device, device->function);
-  kprintf("  %s: PCI device %x:%x\n",
-          pci_get_subclass_desc(device->class_code, device->subclass_code),
-          device->vendor_id,
-          device->device_id);
 
   kprintf("  Prog IF: 0x%X\n", device->prog_if);
   if (device->interrupt_pin > 0) {

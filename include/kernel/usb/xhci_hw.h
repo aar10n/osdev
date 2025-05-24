@@ -26,16 +26,16 @@
 #define xhci_db(n) (&((xhci_db_regs_t *)(xhci->db_base))[n])
 
 #define read32(b, r) (*(volatile uint32_t *)((b) + (r)))
-#define write32(b, r, v) ((*(volatile uint32_t *)((b) + (r)) = v))
+#define write32(b, r, v) ((*(volatile uint32_t *)((b) + (r)) = (v)))
 // #define read64(b, r) (read32(b, r) | (uint64_t) read32(b, r + 4) << 32)
 // #define write64(b, r, v) { write32(b, r, V64_LOW(v)); write32(b, r + 4, V64_HIGH(v)); }
 #define read64(b, r) (*(volatile uint64_t *)((b) + (r)))
-#define write64(b, r, v) (*(volatile uint64_t *)((b) + (r)) = v)
+#define write64(b, r, v) (*(volatile uint64_t *)((b) + (r)) = (v))
 #define read64_split(b, r) ((uint64_t) read32(b, r) | ((uint64_t) read32(b, (r) + 8) << 32))
 #define write64_split(b, r, v) ({ write32(b, (r) + 8, V64_HIGH(v)); write32(b, r, V64_LOW(v)); })
 
-#define addr_read64(b, r) ((read32(b, r) & 0xFFFFFFE0) | (uint64_t) read32(b, r + 4) << 32)
-#define addr_write64(b, r, v) { write32(b, r, A64_LOW(v)); write32(b, r + 4, A64_HIGH(v)); }
+#define addr_read64(b, r) ((read32(b, r) & 0xFFFFFFE0) | (uint64_t) read32(b, (r) + 4) << 32)
+#define addr_write64(b, r, v) { write32(b, r, A64_LOW(v)); write32(b, (r) + 4, A64_HIGH(v)); }
 
 #define mask_64a_addr(a) ((a) & ~(0x1FULL))
 #define mask_low5(v) ((v) & 0x1F)
@@ -433,9 +433,9 @@ typedef volatile union {
   };
 } xhci_db_regs_t;
 
-#define XHCI_DB(n)          ((n) * 0x4)
-#define   DB_TARGET(v)        (((v) & 0xFF) << 0)
-#define   DB_TASK_ID(v)       (((v) & 0xFFFF) << 16)
+#define XHCI_DB(n)          ((n) * 0x4ULL)
+#define   DB_TARGET(v)        (((v) & 0xFFULL) << 0)
+#define   DB_TASK_ID(v)       (((v) & 0xFFFFULL) << 16)
 
 
 // -------- XHCI Capabilities --------

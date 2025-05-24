@@ -21,7 +21,7 @@
 #define ASSERT(x) kassert(x)
 #define DPRINTF(fmt, ...) kprintf("fs: %s: " fmt, __func__, ##__VA_ARGS__)
 
-#define goto_error(lbl, err) do { res = err; goto lbl; } while (0)
+#define goto_res(lbl, err) do { res = err; goto lbl; } while (0)
 #define FTABLE (curproc->files)
 
 #define HMAP_TYPE fs_type_t *
@@ -116,7 +116,7 @@ int fs_mount(cstr_t source, cstr_t mount, const char *fs_type, int flags) {
 
   if (type == NULL) {
     DPRINTF("fs type '%s' not registered\n", fs_type);
-    goto_error(ret, -ENODEV);
+    goto_res(ret, -ENODEV);
   }
 
   // resolve source device
@@ -131,7 +131,7 @@ int fs_mount(cstr_t source, cstr_t mount, const char *fs_type, int flags) {
 
   // lookup device
   if (device == NULL)
-    goto_error(ret, -ENODEV);
+    goto_res(ret, -ENODEV);
 
   // resolve and lock mount point
   if ((res = vresolve(fs_vcache, at_ve, mount, VR_NOFOLLOW|VR_DIR, &mount_ve)) < 0) {
@@ -163,7 +163,7 @@ int fs_replace_root(cstr_t new_root) {
 
   if (cstr_eq_charp(new_root, "/")) {
     DPRINTF("new_root cannot be root\n");
-    goto_error(ret, -EINVAL);
+    goto_res(ret, -EINVAL);
   }
 
   // resolve new_root entry
@@ -174,14 +174,14 @@ int fs_replace_root(cstr_t new_root) {
   if (!VE_ISMOUNT(newroot_ve)) {
     DPRINTF("new_root is not a mount point\n");
     ve_unlock(newroot_ve);
-    goto_error(ret, -EINVAL);
+    goto_res(ret, -EINVAL);
   }
 
   // lock the fs root entry
   if (!ve_lock(fs_root_ve)) {
     DPRINTF("fs_root_ve is invalid\n");
     ve_unlock(newroot_ve);
-    goto_error(ret, -EINVAL);
+    goto_res(ret, -EINVAL);
   }
 
   // perform the ventry pivot
@@ -213,7 +213,7 @@ int fs_unmount(cstr_t path) {
   vfs_t *vfs = vfs_getref(VN(mount_ve)->vfs);
   if (!vfs_lock(vfs)) {
     DPRINTF("vfs is dead\n");
-    goto_error(ret, -EINVAL);
+    goto_res(ret, -EINVAL);
   }
 
   // unmount the vfs
@@ -243,16 +243,16 @@ int fs_proc_open(proc_t *proc, int fd, cstr_t path, int flags, mode_t mode) {
     // allocate new fd
     fd = ftable_alloc_fd(proc->files);
     if (fd < 0)
-      goto_error(ret, -EMFILE);
+      goto_res(ret, -EMFILE);
   } else {
     // claim fd
     if (ftable_claim_fd(proc->files, fd) < 0)
-      goto_error(ret, -EBADF);
+      goto_res(ret, -EBADF);
   }
 
   int acc = flags & O_ACCMODE;
   if (acc != O_RDONLY && acc != O_WRONLY && acc != O_RDWR)
-    goto_error(ret, -EINVAL);
+    goto_res(ret, -EINVAL);
 
   int vrflags = VR_NOTDIR;
   if (flags & O_NOFOLLOW)
@@ -298,7 +298,7 @@ int fs_proc_open(proc_t *proc, int fd, cstr_t path, int flags, mode_t mode) {
   if (flags & VR_NOFOLLOW) {
     // check if the file is a symlink or mount
     if (V_ISLNK(ve) || VE_ISMOUNT(ve)) {
-      goto_error(ret_unlock, -ELOOP);
+      goto_res(ret_unlock, -ELOOP);
     }
   }
 
@@ -306,7 +306,7 @@ int fs_proc_open(proc_t *proc, int fd, cstr_t path, int flags, mode_t mode) {
   if (V_ISDEV(vn)) {
     device_t *device = vn->v_dev;
     if (!device)
-      goto_error(ret_unlock, -ENODEV);
+      goto_res(ret_unlock, -ENODEV);
     if (!device->ops->d_open) {
       res = 0;
       goto done;
@@ -354,16 +354,16 @@ int fs_proc_close(proc_t *proc, int fd) {
     return -EBADF;
 
   if (!f_lock(file))
-    goto_error(ret, -EBADF); // file is closed
+    goto_res(ret, -EBADF); // file is closed
 
   vnode_t *vn = file->vnode;
   if (V_ISDIR(vn))
-    goto_error(ret_unlock, -EISDIR); // file is a directory
+    goto_res(ret_unlock, -EISDIR); // file is a directory
 
   if (V_ISDEV(vn)) {
     device_t *device = vn->v_dev;
     if (!device)
-      goto_error(ret_unlock, -ENODEV);
+      goto_res(ret_unlock, -ENODEV);
     if (!device->ops->d_close) {
       res = 0;
       goto done;
@@ -440,19 +440,19 @@ ssize_t fs_kread(int fd, kio_t *kio) {
 
   vnode_t *vn = file->vnode;
   if (V_ISDIR(vn))
-    goto_error(ret, -EISDIR); // file is a directory
+    goto_res(ret, -EISDIR); // file is a directory
   if (file->flags & O_WRONLY)
-    goto_error(ret, -EBADF); // file is not open for reading
+    goto_res(ret, -EBADF); // file is not open for reading
 
   if (!f_lock(file))
-    goto_error(ret, -EBADF); // file is closed
+    goto_res(ret, -EBADF); // file is closed
 
   if (V_ISDEV(vn)) {
     device_t *device = vn->v_dev;
     if (!device)
-      goto_error(ret_unlock, -ENODEV);
+      goto_res(ret_unlock, -ENODEV);
     if (!device->ops->d_read)
-      goto_error(ret_unlock, -ENOTSUP);
+      goto_res(ret_unlock, -ENOTSUP);
 
     // device read
     res = d_read(device, file->offset, kio);
@@ -492,12 +492,12 @@ ssize_t fs_kwrite(int fd, kio_t *kio) {
 
   vnode_t *vn = file->vnode;
   if (V_ISDIR(file->vnode))
-    goto_error(ret, -EISDIR); // file is a directory
+    goto_res(ret, -EISDIR); // file is a directory
   if (file->flags & O_RDONLY)
-    goto_error(ret, -EBADF); // file is not open for writing
+    goto_res(ret, -EBADF); // file is not open for writing
 
   if (!f_lock(file))
-    goto_error(ret, -EBADF); // file is closed
+    goto_res(ret, -EBADF); // file is closed
 
   if (file->flags & O_APPEND)
     file->offset = (off_t) vn->size;
@@ -505,9 +505,9 @@ ssize_t fs_kwrite(int fd, kio_t *kio) {
   if (V_ISDEV(vn)) {
     device_t *device = vn->v_dev;
     if (!device)
-      goto_error(ret_unlock, -ENODEV);
+      goto_res(ret_unlock, -ENODEV);
     if (!device->ops->d_write)
-      goto_error(ret_unlock, -ENOTSUP);
+      goto_res(ret_unlock, -ENOTSUP);
 
     // device write
     res = d_write(device, file->offset, kio);
@@ -572,12 +572,12 @@ off_t fs_lseek(int fd, off_t offset, int whence) {
 
   vnode_t *vn = file->vnode;
   if (V_ISDIR(vn))
-    goto_error(ret, -EISDIR); // file is a directory
+    goto_res(ret, -EISDIR); // file is a directory
   if (V_ISFIFO(vn) || V_ISSOCK(vn))
-    goto_error(ret_unlock, -ESPIPE); // file is a pipe or socket
+    goto_res(ret_unlock, -ESPIPE); // file is a pipe or socket
 
   if (!f_lock(file))
-    goto_error(ret, -EBADF); // file is closed
+    goto_res(ret, -EBADF); // file is closed
 
   // update the file offset
   switch (whence) {
@@ -591,11 +591,11 @@ off_t fs_lseek(int fd, off_t offset, int whence) {
       res = (off_t) file->vnode->size + offset;
       break;
     default:
-      goto_error(ret_unlock, -EINVAL); // invalid whence
+      goto_res(ret_unlock, -EINVAL); // invalid whence
   }
 
   if (res < 0 || res > (off_t) file->vnode->size)
-    goto_error(ret_unlock, -EINVAL); // invalid offset
+    goto_res(ret_unlock, -EINVAL); // invalid offset
 
   // update the file offset
   file->offset = res;
@@ -661,7 +661,7 @@ int fs_opendir(cstr_t path) {
 
   int fd = ftable_alloc_fd(FTABLE);
   if (fd < 0)
-    goto_error(ret_unlock, -EMFILE);
+    goto_res(ret_unlock, -EMFILE);
 
   vnode_t *vn = VN(ve);
   vn_lock(vn);
@@ -688,10 +688,10 @@ int fs_closedir(int fd) {
 
   vnode_t *vn = file->vnode;
   if (!V_ISDIR(vn))
-    goto_error(ret, -ENOTDIR); // file is not a directory
+    goto_res(ret, -ENOTDIR); // file is not a directory
 
   if (!f_lock(file))
-    goto_error(ret, -EBADF); // file is closed
+    goto_res(ret, -EBADF); // file is closed
 
   ftable_remove_file(FTABLE, fd);
   ftable_free_fd(FTABLE, fd);
@@ -719,10 +719,10 @@ ssize_t fs_readdir(int fd, void *dirp, size_t len) {
 
   vnode_t *vn = file->vnode;
   if (!V_ISDIR(vn))
-    goto_error(ret, -ENOTDIR); // file is not a directory
+    goto_res(ret, -ENOTDIR); // file is not a directory
 
   if (!f_lock(file))
-    goto_error(ret, -EBADF); // file is closed
+    goto_res(ret, -EBADF); // file is closed
 
   // read the directory
   kio_t kio = kio_new_writable(dirp, len);
@@ -754,7 +754,7 @@ long fs_telldir(int fd) {
     return -EBADF;
 
   if (!V_ISDIR(file->vnode))
-    goto_error(ret, -ENOTDIR); // file is not a directory
+    goto_res(ret, -ENOTDIR); // file is not a directory
 
   res = file->offset;
 LABEL(ret);
@@ -784,11 +784,11 @@ int fs_dup(int fd) {
     return -EBADF;
 
   if (!f_lock(file))
-    goto_error(ret, -EBADF); // file is closed
+    goto_res(ret, -EBADF); // file is closed
 
   int newfd = ftable_alloc_fd(FTABLE);
   if (newfd < 0)
-    goto_error(ret_unlock, -EMFILE);
+    goto_res(ret_unlock, -EMFILE);
 
   int newflags = file->flags & ~O_CLOEXEC;
   file_t *newfile = f_alloc(newfd, newflags, file->vnode, cstr_from_str(file->real_path));
@@ -814,7 +814,7 @@ int fs_fstat(int fd, struct stat *stat) {
     return -EBADF;
 
   if (!f_lock(file))
-    goto_error(ret, -EBADF); // file is closed
+    goto_res(ret, -EBADF); // file is closed
 
   vnode_t *vn = file->vnode;
   vn_lock(vn);
@@ -1093,7 +1093,7 @@ int fs_rmdir(cstr_t path) {
   vnode_t *vn = VN(ve);
   if (vn->nlink > 2) {
     ve_unlock(ve);
-    goto_error(ret, -ENOTEMPTY);
+    goto_res(ret, -ENOTEMPTY);
   }
 
   dve = ve_getref(ve->parent);
@@ -1157,7 +1157,7 @@ void fs_print_debug_vcache() {
   vcache_dump(fs_vcache);
 }
 
-// MARK: Syscalls
+// MARK: System Calls
 
 SYSCALL_ALIAS(close, fs_close);
 SYSCALL_ALIAS(read, fs_read);

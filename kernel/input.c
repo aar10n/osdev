@@ -299,7 +299,7 @@ int input_event(ev_type_t type, uint16_t flags, uint32_t value) {
     case EV_KEY:
       return input_process_key_event(flags, value);
     case EV_MOUSE:
-      break;
+      todo();
     default:
       unreachable;
   }

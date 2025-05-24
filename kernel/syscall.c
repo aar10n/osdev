@@ -3,7 +3,7 @@
 //
 
 #include <kernel/syscall.h>
-#include <kernel/cpu/frame.h>
+#include <kernel/cpu/trapframe.h>
 
 #include <kernel/panic.h>
 #include <kernel/printf.h>

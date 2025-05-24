@@ -10,13 +10,11 @@
 #include <kernel/mutex.h>
 #include <kernel/irq.h>
 
-#define HZ 100 // system clock frequency
-#define SCALE_TICKS(t, s) ((t) * ((s) / HZ))
 
 /*
  * Clock source
  *
- * A clock source is a hardware device that provides a time source for the kernel.
+ * A clock source is a hardware device that provides a time reference for the kernel.
  */
 typedef struct clock_source {
   /* driver fields */
@@ -36,41 +34,8 @@ typedef struct clock_source {
   LIST_ENTRY(struct clock_source) list;
 } clock_source_t;
 
-/*
- * Alarm source
- *
- * An alarm source is a hardware device that can generate interrupts after a set
- * amount of time has passed.
- */
-typedef struct alarm_source {
-  /* driver fields */
-  const char *name;
-  uint32_t cap_flags;
-  uint32_t scale_ns;
-  uint64_t value_mask;
 
-  int (*init)(struct alarm_source *, uint32_t mode, irq_handler_t);
-  int (*enable)(struct alarm_source *);
-  int (*disable)(struct alarm_source *);
-  int (*setval)(struct alarm_source *, uint64_t value);
-
-  void *data;
-  uint32_t mode;
-  int irq_num;
-
-  /* kernel fields */
-  mtx_t lock;
-  uint64_t last_count;
-  LIST_ENTRY(struct alarm_source) list;
-} alarm_source_t;
-
-#define ALARM_PER_CPU   0x1
-#define ALARM_ONE_SHOT  0x2
-#define ALARM_PERIODIC  0x4
-
-void register_alarm_source(alarm_source_t *as);
 void register_clock_source(clock_source_t *cs);
-
 void clock_init();
 
 /// Reads the current time from the clock source, updates the reference count
@@ -87,8 +52,6 @@ uint64_t clock_wait_sync_nanos();
 /// the approximate time in nanoseconds.
 uint64_t clock_try_sync_nanos();
 
-/// Returns the number of kernel clock ticks.
-uint64_t clock_get_ticks();
 /// Returns the number of seconds since boot.
 uint64_t clock_get_uptime();
 

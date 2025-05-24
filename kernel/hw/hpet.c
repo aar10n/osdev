@@ -4,9 +4,10 @@
 
 #include <kernel/hw/hpet.h>
 
+#include <kernel/alarm.h>
+#include <kernel/clock.h>
 #include <kernel/mm.h>
 #include <kernel/irq.h>
-#include <kernel/clock.h>
 #include <kernel/init.h>
 
 #include <kernel/string.h>
@@ -15,6 +16,7 @@
 #include <asm/bits.h>
 
 #define ASSERT(x) kassert(x)
+#define DPRINTF(x, ...) kprintf("hpet: " x, ##__VA_ARGS__)
 
 #define MAX_HPETS 4
 
@@ -196,14 +198,14 @@ int hpet_alarm_source_init(alarm_source_t *as, uint32_t mode, irq_handler_t hand
 
   ASSERT(mode != 0);
   ASSERT(as->mode == 0);
-  if (mode != ALARM_ONE_SHOT && mode != ALARM_PERIODIC) {
+  if (mode != ALARM_CAP_ONE_SHOT && mode != ALARM_CAP_PERIODIC) {
     return -EINVAL;
   }
 
   struct hpet_device *hpet = tn->hpet;
   uint32_t tn_config_reg = hpet_read32(hpet->address, timer_config_reg(tn->num));
-  if (mode == ALARM_PERIODIC && !HPET_TN_PER_INT_CAP(tn_config_reg)) {
-    kprintf("hpet: timer does not support periodic mode\n");
+  if (mode == ALARM_CAP_PERIODIC && !HPET_TN_PER_INT_CAP(tn_config_reg)) {
+    DPRINTF("timer does not support periodic mode\n");
     return -EINVAL;
   }
 
@@ -228,6 +230,7 @@ int hpet_alarm_source_init(alarm_source_t *as, uint32_t mode, irq_handler_t hand
   }
 
   as->irq_num = irq;
+  as->mode = mode;
   irq_register_handler(irq, handler, as);
   irq_enable_interrupt(irq);
 
@@ -242,7 +245,7 @@ int hpet_alarm_source_init(alarm_source_t *as, uint32_t mode, irq_handler_t hand
 
   // configure timer
   tn_config_reg |= HPET_TN_INT_ROUTE(irq);
-  if (mode == ALARM_PERIODIC) {
+  if (mode == ALARM_CAP_PERIODIC) {
     tn_config_reg |= HPET_TN_TYPE_PERIODIC;
   }
   hpet_write32(hpet->address, timer_config_reg(tn->num), tn_config_reg);
@@ -280,6 +283,7 @@ int hpet_alarm_source_disable(alarm_source_t *as) {
 }
 
 int hpet_alarm_source_setval(alarm_source_t *as, uint64_t value) {
+  DPRINTF("setval: %llu\n", value);
   ASSERT(as->mode != 0);
   struct hpet_timer_device *tn = as->data;
   if (tn == NULL) {
@@ -288,7 +292,7 @@ int hpet_alarm_source_setval(alarm_source_t *as, uint64_t value) {
 
   struct hpet_device *hpet = tn->hpet;
 
-  if (as->mode == ALARM_PERIODIC) {
+  if (as->mode == ALARM_CAP_PERIODIC) {
     // disable hpet clock
     uint32_t config_reg = hpet_read32(hpet->address, HPET_CONFIG);
     config_reg &= ~HPET_CLOCK_EN;
@@ -306,7 +310,7 @@ int hpet_alarm_source_setval(alarm_source_t *as, uint64_t value) {
     hpet_write32(hpet->address, timer_value_reg(tn->num), value);
   }
 
-  if (as->mode == ALARM_PERIODIC) {
+  if (as->mode == ALARM_CAP_PERIODIC) {
     // re-enable hpet clock
     uint32_t config_reg = hpet_read32(hpet->address, HPET_CONFIG);
     config_reg |= HPET_CLOCK_EN;
@@ -332,12 +336,12 @@ void register_hpet_alarm_source(struct hpet_device *hpet, uint8_t n) {
   alarm_source_t *hpet_alarm_source = kmalloc(sizeof(alarm_source_t));
   hpet_alarm_source->name = kasprintf("hpet%d", n);
   hpet_alarm_source->data = hpet_timer_struct;
-  hpet_alarm_source->cap_flags = ALARM_ONE_SHOT;
+  hpet_alarm_source->cap_flags = ALARM_CAP_ONE_SHOT;
   hpet_alarm_source->scale_ns = hpet->clock_period_ns;
 
   uint32_t tn_config_reg = hpet_read32(hpet->address, timer_config_reg(n));
   if (HPET_TN_PER_INT_CAP(tn_config_reg)) {
-    hpet_alarm_source->cap_flags |= ALARM_PERIODIC;
+    hpet_alarm_source->cap_flags |= ALARM_CAP_PERIODIC;
   }
 
   // configure timer
@@ -351,12 +355,12 @@ void register_hpet_alarm_source(struct hpet_device *hpet, uint8_t n) {
   hpet_alarm_source->setval = hpet_alarm_source_setval;
 
   LIST_ADD(&hpet->timers, hpet_timer_struct, list);
-  // register_timer_device(hpet_timer_device);
+  register_alarm_source(hpet_alarm_source);
 }
 
 void register_hpet(uint8_t id, uintptr_t address, uint16_t min_period) {
   if (num_hpets >= MAX_HPETS) {
-    kprintf("HPET: ignoring hpet %d, not supported\n", id);
+    DPRINTF("ignoring hpet %d, not supported\n", id);
     return;
   } else if (get_hpet_by_id(id) != NULL) {
     panic("hpet %d already registered", id);

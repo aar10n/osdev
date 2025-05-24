@@ -408,10 +408,6 @@ void pcie_print_device(pcie_device_t *device) {
   kprintf("Bus %d, device % 2d, function: %d:\n",
           device->bus, device->device, device->function);
 
-  kprintf("  %s: PCI device %04x:%04x\n",
-          pci_get_subclass_desc(device->class_code, device->subclass),
-          device->vendor_id, device->device_id);
-
   kprintf("    PCI subsystem %04x:%04x\n", device->subsystem_vendor, device->subsystem);
 
   if (device->int_line != 0xFF) {

@@ -10,17 +10,18 @@
 #include <kernel/tqueue.h>
 
 typedef enum sched_reason {
-  SCHED_UPDATED,
+  SCHED_PREEMPTED,
   SCHED_YIELDED,
   SCHED_BLOCKED,
   SCHED_SLEEPING,
-  SCHED_PREEMPTED,
   SCHED_EXITED,
 } sched_reason_t;
 
 void sched_init();
-void sched_submit_new_thread(thread_t *td);
-void sched_remove_ready_thread(thread_t *td);
+
+void sched_submit_new_thread(__locked thread_t *td);
+void sched_submit_ready_thread(__locked thread_t *td);
+void sched_remove_ready_thread(__locked thread_t *td);
 
 void sched_again(sched_reason_t reason);
 void sched_cpu(int cpu, sched_reason_t reason);

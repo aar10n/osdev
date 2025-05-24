@@ -48,7 +48,7 @@ struct packed tss {
   uint32_t : 32;      // reserved
   uint64_t rsp[3];    // rsp[0-2]
   uint64_t : 64;      // reserved
-  uint64_t ist[7];    // ist[0-6]
+  uint64_t ist[7];    // ist[1-7]
   uint64_t : 32;      // reserved
   uint16_t : 16;      // reserved
   uint16_t iopb_ofst; // iopb offset
@@ -56,9 +56,10 @@ struct packed tss {
 static_assert(sizeof(struct tss) == 100);
 
 // ist stacks
-#define IST_DF  1 // double fault
-#define IST_NMI 2 // non-maskable interrupt
-#define IST_DBG 3 // debug
+#define IST_DF        1 // double fault stack
+#define IST_NMI       2 // nmi stack
+#define IST_DEBUG     3 // debug stack
+#define IST_TRAPFRAME 7 // thread trapframe
 
 void tss_set_rsp(int idx, uintptr_t rsp);
 void tss_set_ist(int ist, uintptr_t sp);

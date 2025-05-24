@@ -2,8 +2,8 @@
 // Created by Aaron Gill-Braun on 2024-01-01.
 //
 
-#ifndef KERNEL_HW_I8254_H
-#define KERNEL_HW_I8254_H
+#ifndef KERNEL_HW_PIT_H
+#define KERNEL_HW_PIT_H
 
 #include <kernel/base.h>
 

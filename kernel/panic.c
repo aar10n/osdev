@@ -38,6 +38,7 @@ noreturn void panic_other_cpus(cpu_irq_stack_t *frame, cpu_registers_t *regs) {
 
 /** panic - hault the system */
 noreturn void panic(const char *fmt, ...) {
+  cpu_disable_interrupts();
   if (panic_flags[PERCPU_ID]) {
     kprintf(">>>> nested panic <<<<\n");
     kprintf("!!! nested panic [CPU#%d] !!!\n", PERCPU_ID);

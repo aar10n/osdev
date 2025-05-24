@@ -1,6 +1,5 @@
 extern kmain
 extern ap_main
-extern
 
 %define PAGE_SIZE 0x1000
 %define GS_BASE_MSR 0xC0000101

@@ -3,11 +3,11 @@
 //
 
 // Intel 8254 Programmable Interval Timer (PIT) driver
-#include <kernel/hw/i8254.h>
+#include <kernel/hw/pit.h>
 #include <kernel/cpu/cpu.h>
 #include <kernel/cpu/io.h>
 
-#include <kernel/clock.h>
+#include <kernel/alarm.h>
 #include <kernel/panic.h>
 
 
@@ -49,6 +49,7 @@
   ((bcd) | ((mode) << 1) | ((access) << 4) | ((channel) << 6))
 
 #define PIT_FREQUENCY 1193182 // Hz
+// 1000000000 / 1193182 = 838
 
 
 static inline uint16_t read_counter(uint8_t channel) {
@@ -62,25 +63,25 @@ static inline void write_counter(uint8_t channel, uint16_t count) {
   outb(port, (count >> 8) & 0xFF);
 }
 
-
 //////////////////////////////
 // MARK: PIT alarm source
 
 static int pit_alarm_source_init(alarm_source_t *as, uint32_t mode, irq_handler_t handler) {
   as->mode = mode;
   as->irq_num = irq_must_reserve_irqnum(0);
-  if (mode == ALARM_ONE_SHOT) {
-    // set counter 0 to mode 0, LSB only
-    outb(PIT_CONTROL, CONTROL_BYTE(PIT_BINARY, PIT_MODE_0, PIT_ACCESS_LSB, PIT_SEL_CHANNEL0));
+  if (mode == ALARM_CAP_ONE_SHOT) {
+    // set counter 0 to mode 0
+    outb(PIT_CONTROL, CONTROL_BYTE(PIT_BINARY, PIT_MODE_0, PIT_ACCESS_WORD, PIT_SEL_CHANNEL0));
     write_counter(PIT_CHANNEL_0, 0);
     irq_register_handler(as->irq_num, handler, as);
-  } else if (mode == ALARM_PERIODIC) {
-    // set counter 2 to mode 2, LSB only
-    outb(PIT_CONTROL, CONTROL_BYTE(PIT_BINARY, PIT_MODE_2, PIT_ACCESS_LSB, PIT_SEL_CHANNEL2));
-    write_counter(PIT_CHANNEL_2, 0);
+  } else if (mode == ALARM_CAP_PERIODIC) {
+    // set counter 0 to mode 2
+    outb(PIT_CONTROL, CONTROL_BYTE(PIT_BINARY, PIT_MODE_2, PIT_ACCESS_WORD, PIT_SEL_CHANNEL0));
+    write_counter(PIT_CHANNEL_0, 0);
     irq_register_handler(as->irq_num, handler, as);
   } else {
-    panic("invalid alarm mode");
+    DPRINTF("invalid alarm mode\n");
+    return -1;
   }
 
   return 0;
@@ -97,15 +98,16 @@ static int pit_alarm_source_disable(alarm_source_t *as) {
 }
 
 static int pit_alarm_source_setval(alarm_source_t *as, uint64_t value) {
+  DPRINTF("setval: %llu\n", value);
   uint64_t flags = cpu_save_clear_interrupts();
-  if (as->mode == ALARM_ONE_SHOT) {
-    // set counter 0 to mode 0, LSB only
-    outb(PIT_CONTROL, CONTROL_BYTE(PIT_BINARY, PIT_MODE_0, PIT_ACCESS_LSB, PIT_SEL_CHANNEL0));
+  if (as->mode == ALARM_CAP_ONE_SHOT) {
+    // set counter 0 to mode 0
+    outb(PIT_CONTROL, CONTROL_BYTE(PIT_BINARY, PIT_MODE_0, PIT_ACCESS_WORD, PIT_SEL_CHANNEL0));
     write_counter(PIT_CHANNEL_0, value);
-  } else if (as->mode == ALARM_PERIODIC) {
-    // set counter 2 to mode 2, LSB only
-    outb(PIT_CONTROL, CONTROL_BYTE(PIT_BINARY, PIT_MODE_2, PIT_ACCESS_LSB, PIT_SEL_CHANNEL2));
-    write_counter(PIT_CHANNEL_2, value);
+  } else if (as->mode == ALARM_CAP_PERIODIC) {
+    // set counter 0 to mode 2
+    outb(PIT_CONTROL, CONTROL_BYTE(PIT_BINARY, PIT_MODE_2, PIT_ACCESS_WORD, PIT_SEL_CHANNEL0));
+    write_counter(PIT_CHANNEL_0, value);
   } else {
     DPRINTF("invalid alarm mode\n");
     cpu_restore_interrupts(flags);
@@ -119,7 +121,7 @@ static int pit_alarm_source_setval(alarm_source_t *as, uint64_t value) {
 
 static alarm_source_t pit_alarm_source = {
   .name = "pit",
-  .cap_flags = ALARM_ONE_SHOT|ALARM_PERIODIC,
+  .cap_flags = ALARM_CAP_ONE_SHOT | ALARM_CAP_PERIODIC,
   .scale_ns = NS_PER_SEC / PIT_FREQUENCY,
   .value_mask = 0xFFFF,
   .init = pit_alarm_source_init,
@@ -141,8 +143,7 @@ void pit_mdelay(uint32_t ms) {
   while (ms) {
     uint16_t count = PIT_FREQUENCY / 1000; // 1ms
     write_counter(PIT_CHANNEL_2, count);
-    while (!(inb(CHANNEL2_GATE) & GATE2_STATUS))
-      ;
+    while (!(inb(CHANNEL2_GATE) & GATE2_STATUS));
     ms--;
   }
 }

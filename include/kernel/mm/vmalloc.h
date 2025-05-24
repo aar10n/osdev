@@ -19,8 +19,8 @@ void init_ap_address_space();
 uintptr_t get_default_ap_pml4();
 
 address_space_t *vm_new_space(uintptr_t min_addr, uintptr_t max_addr, uintptr_t page_table);
-address_space_t *vm_fork_space(address_space_t *space, bool deepcopy_user);
-address_space_t *vm_new_uspace();
+address_space_t *vm_new_fork_space(address_space_t *space, bool deepcopy_user);
+address_space_t *vm_new_empty_space();
 
 //     vmap api
 //
@@ -34,11 +34,12 @@ uintptr_t vmap_anon(size_t vm_size, uintptr_t hint, size_t size, uint32_t vm_fla
 void *vm_mmap(uintptr_t addr, size_t len, int prot, int flags, int fd, off_t off);
 
 int vmap_free(uintptr_t vaddr, size_t size);
-int vmap_protect(uintptr_t vaddr, size_t len, int prot);
+int vmap_protect(uintptr_t vaddr, size_t len, uint32_t vm_prot);
 int vmap_resize(uintptr_t vaddr, size_t old_size, size_t new_size, bool allow_move, uintptr_t *new_vaddr);
 
 __ref page_t *vm_getpage(uintptr_t vaddr);
 __ref page_t *vm_getpage_cow(uintptr_t vaddr);
+int vm_validate_user_ptr(uintptr_t vaddr, bool write);
 uintptr_t vm_virt_to_phys(uintptr_t vaddr);
 #define virt_to_phys(virt_addr) vm_virt_to_phys((uintptr_t)(virt_addr))
 

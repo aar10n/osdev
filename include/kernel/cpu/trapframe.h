@@ -6,6 +6,8 @@
 #define KERNEL_CPU_FRAME_H
 
 struct trapframe {
+  /* set by the common handler for nested trapframes */
+  struct trapframe *parent;
   /* pushed by common handler */
   uint64_t rdi;
   uint64_t rsi;
@@ -37,6 +39,6 @@ struct trapframe {
   uint64_t rsp;
   uint64_t ss;
 };
-static_assert(sizeof(struct trapframe) == 0xc0); // referenced in exception.asm, switch.asm and syscall.asm
+static_assert(sizeof(struct trapframe) == 0xc8); // referenced in exception.asm, switch.asm and syscall.asm
 
 #endif

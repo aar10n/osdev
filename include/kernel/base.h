@@ -20,6 +20,8 @@
 #define __in      // identifies a pointer parameter as an input parameter
 #define __out     // identifies a pointer parameter as an output parameter
 #define __inout   // identifies a pointer parameter as an input/output parameter (modified)
+#define __locked  // identifies a parameter or return as being locked
+#define __unlocked  // identifies a parameter or return as being unlocked
 
 //
 // General Definitions
@@ -28,9 +30,11 @@
 #define MS_PER_SEC 1000LL
 #define US_PER_SEC 1000000LL
 #define NS_PER_SEC 1000000000LL
+#define NS_PER_MSEC 1000000
 #define NS_PER_USEC 1000
 #define FS_PER_SEC 1000000000000000
 
+#define SEC_TO_NS(sec) ((uint64_t)(sec) * NS_PER_SEC)
 #define MS_TO_NS(ms) ((uint64_t)(ms) * (NS_PER_SEC / MS_PER_SEC))
 #define US_TO_NS(us) ((uint64_t)(us) * (NS_PER_SEC / US_PER_SEC))
 #define FS_TO_NS(fs) ((uint64_t)(fs) / (FS_PER_SEC / NS_PER_SEC))
@@ -238,5 +242,30 @@ extern uintptr_t __kernel_data_end;
 #ifndef __PRINTF__
 void kprintf(const char *format, ...);
 #endif
+
+//
+// Debug Macros
+//
+
+#define QEMU_DEBUG_OUT_PORT   0x800
+#define QEMU_DEBUG_OUTS_PORT  0x801
+#define QEMU_DEBUG_PTR_PORT   0x808
+
+#define QEMU_DEBUG_CHAR(c) __asm__ volatile("out dx, al" : : "a"(c), "d"(QEMU_DEBUG_OUT_PORT))
+#define QEMU_DEBUG_CONST_STR(str) qemu_debug_string(str, sizeof(str))
+#define QEMU_DEBUG_CHARP(str) qemu_debug_string(str, strlen(str)+1)
+#define QEMU_DEBUG_PTR(ptr) ({ \
+  __asm__ volatile("out dx, eax" : : "a"((ptr) & UINT32_MAX), "d"(QEMU_DEBUG_PTR_PORT)); \
+  __asm__ volatile("out dx, eax" : : "a"(((ptr) >> 32) & UINT32_MAX), "d"(QEMU_DEBUG_PTR_PORT)); \
+})
+
+static inline void qemu_debug_string(const char *s, uint16_t len) {
+  asm volatile (
+    "rep outsb"
+    : "+S"(s), "+c"(len)
+    : "d"(QEMU_DEBUG_OUTS_PORT)
+    : "memory"
+  );
+}
 
 #endif

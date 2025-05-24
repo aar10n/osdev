@@ -6,6 +6,7 @@
 %define PERCPU_USER_SP        gs:0x40
 %define PERCPU_KERNEL_SP      gs:0x48
 %define PERCPU_TSS_RSP0_PTR   gs:0x50
+%define PERCPU_RFLAGS         gs:0x68
 
 ; struct proc offsets
 %define PROCESS_SPACE(x)      [x+0x08]
@@ -18,6 +19,11 @@
 %define THREAD_FRAME(x)       [x+0x30]
 %define THREAD_KSTACK_BASE(x) [x+0x38]
 %define THREAD_KSTACK_SIZE(x) [x+0x40]
+%define THREAD_FLAGS2(x)      [x+0x88]
+
+; thread flags2 bits
+%define TDF2_SIGPEND          3
+%define TDF2_PREEMPTED        4
 
 ; struct tcb offsets
 %define TCB_RIP(x)            [x+0x00]
@@ -44,41 +50,52 @@
 %define TCB_KERNEL  0 ; kernel context
 %define TCB_FPU     1 ; save fpu registers
 %define TCB_DEBUG   2 ; save debug registers
-%define TCB_IRETQ   3 ; needs iretq
-%define TCB_SYSRET  4 ; needs sysret
+%define TCB_SYSRET  3 ; needs sysret
+
+%define TCB_SIZE        0xa0 ; 0x98 aligned to 16 bytes
+
+%define TRAPFRAME_SIZE  0xc0
 
 %define FSBASE_MSR  0xC0000100
 %define GSBASE_MSR  0xC0000101
 %define KGSBASE_MSR 0xC0000102
 
-%define TCB_SIZE        0xa0 ; 0x98 aligned to 16 bytes
-%define TRAPFRAME_SIZE  0xc0
-
 ; top of the thread stack sits below the trapframe and tcb
 %define STACK_TOP_OFF   (TCB_SIZE + TRAPFRAME_SIZE)
 
+; void signal_dispatch()
+;   defined in signal.c
+extern signal_dispatch
 
 ; void switch_address_space(address_space_t *new_space)
+;   defined in vmalloc.c
 extern switch_address_space
-; void _thread_unlock(thread_t *td)
+
+; void _thread_unlock(thread_t *td, const char *file, int line)
+;   defined in mutex.c
 extern _thread_unlock
 
-; defined in exception.asm
+; trapframe_restore
+;   defined in exception.asm
 extern trapframe_restore
 
 
-; void sched_do_switch(thread_t *old_td, thread_t *new_td)
-global sched_do_switch
-sched_do_switch:
-  ; the old_td lock should be held on entry and will be released once the state is saved
-  test qword rdi, 0
-  jnz .switch_address_space ; no current thread to save
+section .data
+FILENAME db __FILE__, 0
 
-  ; ====================
-  ;     save thread
-  ; ====================
 
-  ; ==== save registers
+section .text
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;
+; void switch_thread(thread_t *old_td, thread_t *new_td)
+;
+;   the old_td lock should be held on entry and is released once the state is saved
+global switch_thread
+switch_thread:
+  ; ========================================
+  ;            save old thread
+  ; ========================================
+
   mov r8, THREAD_TCB(rdi)
   mov rax, [rsp] ; return address
   mov TCB_RIP(r8), rax
@@ -89,15 +106,15 @@ sched_do_switch:
   mov TCB_R13(r8), r13
   mov TCB_R14(r8), r14
   mov TCB_R15(r8), r15
-  pushfq
-  pop r11
+  ; use the rflags that were preserved by critical_enter() which should
+  ; include the interrupt flag, which at present is disabled
+  mov r11, PERCPU_RFLAGS
   mov TCB_RFLAGS(r8), r11
 
   ; ==== save base registers
   bt dword TCB_FLAGS(r8), TCB_KERNEL
   jc .done_save_base ; skip it for kernel threads
 
-  push rdx ; -- save lock
   ; save fsbase
   mov ecx, FSBASE_MSR
   rdmsr
@@ -110,7 +127,6 @@ sched_do_switch:
   shl rdx, 32
   or rax, rdx
   mov TCB_KGSBASE(r8), rax
-  pop rdx ; -- restore lock
 .done_save_base:
 
   ; ==== save debug registers
@@ -140,12 +156,28 @@ sched_do_switch:
   fxsave [r9]
 .done_save_fpu:
 
-  mov rax, THREAD_PROCESS(rdi)
-  push rsi
-  ; done with the current thread now release the thread lock
-  call _thread_unlock ; rdi = curr
-  pop rsi
+  ; up to this point interrupts have been disabled because we are in a critical section
+  ; as long as the old thread lock is held. when we call _thread_unlock we will exit the
+  ; critical section and our flags restored from PERCPU_RFLAGS. since we dont want to
+  ; be interrupted while restoring the next thread we mask out the interrupt flag from
+  ; the saved flags.
+  and dword PERCPU_RFLAGS, ~0x0200 ; clear the interrupt flag
 
+  ; done with current thread now release the thread lock
+  ; rdi = curr
+  ; rsi = file
+  ; rdx = line
+  push rdi
+  push rsi
+  push rdx
+  mov rsi, FILENAME
+  mov rdx, __LINE__
+  call _thread_unlock
+  pop rdx
+  pop rsi
+  pop rdi
+
+  mov rax, THREAD_PROCESS(rdi)
   test rax, THREAD_PROCESS(rsi)
   ; if the next thread is from the same process
   ; we dont need to switch the address space
@@ -160,9 +192,9 @@ sched_do_switch:
   mov rsi, r12 ; next -> rsi
 .done_switch_address_space:
 
-  ; ====================
-  ;    restore thread
-  ; ====================
+  ; ========================================
+  ;           restore new thread
+  ; ========================================
 
 .restore_thread:
   ; update curthread and curproc
@@ -184,7 +216,7 @@ sched_do_switch:
   mov r8, THREAD_TCB(rsi)
   ; ==== load base registers
   bt dword TCB_FLAGS(r8), TCB_KERNEL
-  jc .done_load_base ; skip load base for kernel threads
+  jc .skip_load_base ; skip load base for kernel threads
   ; load fsbase
   mov rax, TCB_FSBASE(r8)
   mov rdx, TCB_FSBASE(r8)
@@ -197,11 +229,30 @@ sched_do_switch:
   mov rdx, TCB_KGSBASE(r8)
   shr rdx, 32
   wrmsr
-.done_load_base:
+.skip_load_base:
+
+  ; ==== dispatch pending signals
+  bt dword THREAD_FLAGS2(rsi), TDF2_SIGPEND
+  jnc .skip_handle_signals
+  call signal_dispatch
+  ; restore rsi and r8
+  mov rsi, PERCPU_THREAD
+  mov r8, THREAD_TCB(rsi)
+.skip_handle_signals:
+
+  ; ==== check if we were preempted (and should restore from trapframe)
+  bt dword THREAD_FLAGS2(rsi), TDF2_PREEMPTED
+  jnc .skip_trapframe_restore
+  and dword THREAD_FLAGS2(rsi), ~(1 << TDF2_PREEMPTED) ; clear the flag
+  mov r8, PERCPU_THREAD
+  mov rsp, THREAD_FRAME(rsi) ; restore the trapframe
+  jmp trapframe_restore
+  ; unreachable
+.skip_trapframe_restore:
 
   ; ==== load debug registers
   bt dword TCB_FLAGS(r8), TCB_DEBUG
-  jnc .done_load_debug ; skip it
+  jnc .skip_load_debug ; skip it
   mov rax, dr7
   mov r11, TCB_DR0(r8)
   mov r12, TCB_DR1(r8)
@@ -209,20 +260,20 @@ sched_do_switch:
   mov r14, TCB_DR3(r8)
   mov r15, TCB_DR6(r8)
   mov rcx, TCB_DR7(r8)
-  and rax, 0x0000FC00 ; preserve reserved bits
+  and rax, 0x0000FC00 ; save reserved bits
   and rcx, ~0x0000FC00
   or rax, rcx
   mov dr7, rax
-.done_load_debug:
+.skip_load_debug:
 
  ; ==== load fpu registers
   bt dword TCB_FLAGS(r8), TCB_FPU
-  jnc .done_load_fpu
+  jnc .skip_load_fpu
   mov r9, TCB_FPUSTATE(r8)
   fxrstor [r9]
-.done_load_fpu:
+.skip_load_fpu:
 
-  ; ==== load registers
+  ; ==== load general registers
   mov rax, TCB_RIP(r8)
   mov rsp, TCB_RSP(r8)
   mov rbp, TCB_RBP(r8)
@@ -235,23 +286,18 @@ sched_do_switch:
   bt dword TCB_FLAGS(r8), TCB_SYSRET
   jc .do_sysret
 
-  bt dword TCB_FLAGS(r8), TCB_IRETQ
-  jc .do_iretq
-
   sub rsp, 8
+  push qword TCB_RFLAGS(r8) ; save rflags
+  popfq ; restore rflags
   mov [rsp], rax ; return address
   ret
 
 .do_sysret:
-  and dword TCB_FLAGS(r8), ~TCB_SYSRET
+  ; clear the sysret flag
+  and dword TCB_FLAGS(r8), ~(1 << TCB_SYSRET)
   ; sysret loads rip from rcx and rflags from r11
   mov rcx, TCB_RIP(r8)
   mov r11, TCB_RFLAGS(r8)
   swapgs
   o64 sysret
-
-.do_iretq:
-  ; TODO: fix this
-  and dword TCB_FLAGS(r8), ~TCB_IRETQ
-  jmp trapframe_restore
 ; end sched_switch

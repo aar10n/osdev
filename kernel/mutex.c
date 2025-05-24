@@ -183,6 +183,7 @@ void _mtx_spin_lock(mtx_t *mtx, const char *file, int line) {
 
 void _mtx_spin_unlock(mtx_t *mtx, const char *file, int line) {
   thread_t *owner = mtx_get_owner(mtx);
+  thread_t *current = curthread;
   ASSERT(mtx->mtx_lock != MTX_DESTROYED, "_mtx_spin_unlock() on destroyed mutex");
   ASSERT(mtx_get_lc(mtx) == SPINLOCK_LOCKCLASS, "_mtx_spin_unlock() on non-spin mutex");
   ASSERT(owner == curthread, "_mtx_spin_unlock() on unowned mutex");
@@ -259,15 +260,10 @@ void _mtx_wait_lock(mtx_t *mtx, const char *file, int line) {
       return;
     }
 
-    struct lock_object *lock_obj = &mtx->lo;
-    lockq_chain_lock(lock_obj);
-
-    struct lockqueue *lockq = lockq_lookup(lock_obj);
-    if (lockq == NULL) {
-      lockq = curthread->own_lockq; // donate our lockq
-    }
-
-    lockq_wait(lockq, curthread, LQ_EXCL);
+    // lock is contended - wait for it
+    struct lockqueue *lockq = lockq_lookup_or_default(&mtx->lo, curthread->own_lockq);
+    lockq_wait(lockq, mtx_get_owner(mtx), LQ_EXCL);
+    // try to reacquire the lock again
   }
 }
 
@@ -301,13 +297,11 @@ void _mtx_wait_unlock(mtx_t *mtx, const char *file, int line) {
 }
 
 //
-// MARK: thread lock stuff
-
 
 void _thread_lock(thread_t *td, const char *file, int line) {
-  _mtx_wait_lock(&td->lock, file, line);
+  _mtx_spin_lock(&td->lock, file, line);
 }
 
 void _thread_unlock(thread_t *td, const char *file, int line) {
-  _mtx_wait_unlock(&td->lock, file, line);
+  _mtx_spin_unlock(&td->lock, file, line);
 }

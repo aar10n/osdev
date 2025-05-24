@@ -18,6 +18,7 @@
   }
 
 #define SLIST_ENTRY(type) type *
+#define RLIST_HEAD(type) type *
 
 // List functions
 
@@ -92,13 +93,14 @@
 #define LIST_INSERT_ORDERED_BY(head, el, name, order_key) \
   ({                                                      \
     typeof(el) __p = (head)->first;                       \
-    while (__p && __p->order_key < (el)->order_key) {     \
+    typeof(el) ___el = (el);                              \
+    while (__p && __p->order_key < ___el->order_key) {    \
       __p = __p->name.next;                               \
     }                                                     \
     if (__p) {                                            \
-      LIST_INSERT(head, el, name, __p->name.prev);        \
+      LIST_INSERT(head, ___el, name, __p->name.prev);     \
     } else {                                              \
-      LIST_ADD(head, el, name);                           \
+      LIST_ADD(head, ___el, name);                        \
     }                                                     \
     (el);                                                 \
   })
@@ -106,26 +108,65 @@
 /* Removes an element from the list */
 #define LIST_REMOVE(head, el, name)                       \
   ({                                                      \
-    if ((el) == (head)->first) {                          \
-      if ((el) == (head)->last) {                         \
+    typeof(el) __el = (el);                               \
+    if (__el == (head)->first) {                          \
+      if (__el == (head)->last) {                         \
         (head)->first = NULL;                             \
         (head)->last = NULL;                              \
       } else {                                            \
-        (el)->name.next->name.prev = NULL;                \
-        (head)->first = (el)->name.next;                  \
-        (el)->name.next = NULL;                           \
+        __el->name.next->name.prev = NULL;                \
+        (head)->first = __el->name.next;                  \
+        __el->name.next = NULL;                           \
       }                                                   \
-    } else if ((el) == (head)->last) {                    \
-      (el)->name.prev->name.next = NULL;                  \
-      (head)->last = (el)->name.prev;                     \
-      (el)->name.prev = NULL;                             \
+    } else if (__el == (head)->last) {                    \
+      __el->name.prev->name.next = NULL;                  \
+      (head)->last = __el->name.prev;                     \
+      __el->name.prev = NULL;                             \
     } else {                                              \
-      (el)->name.next->name.prev = (el)->name.prev;       \
-      (el)->name.prev->name.next = (el)->name.next;       \
-      (el)->name.next = NULL;                             \
-      (el)->name.prev = NULL;                             \
+      __el->name.next->name.prev = __el->name.prev;       \
+      __el->name.prev->name.next = __el->name.next;       \
+      __el->name.next = NULL;                             \
+      __el->name.prev = NULL;                             \
     }                                                     \
-    (el);                                                 \
+    __el;                                                 \
+  })
+
+#define LIST_SORT_BY(head, name, order_key)                             \
+  ({                                                                    \
+    if ((head)->first == NULL || (head)->first == (head)->last) {      \
+      (head);                                                           \
+    }                                                                   \
+    typeof((head)->first) __sorted = NULL;                              \
+    typeof((head)->first) __cur = (head)->first;                        \
+    while (__cur) {                                                     \
+      typeof((head)->first) __next = __cur->name.next;                 \
+      __cur->name.prev = __cur->name.next = NULL;                      \
+      if (__sorted == NULL) {                                           \
+        __sorted = __cur;                                               \
+        __sorted->name.prev = __sorted->name.next = NULL;              \
+      } else if (__cur->order_key < __sorted->order_key) {             \
+        __cur->name.next = __sorted;                                    \
+        __sorted->name.prev = __cur;                                    \
+        __sorted = __cur;                                               \
+      } else {                                                          \
+        typeof((head)->first) __scan = __sorted;                        \
+        while (__scan->name.next &&                                     \
+               __scan->name.next->order_key < __cur->order_key) {      \
+          __scan = __scan->name.next;                                   \
+        }                                                               \
+        __cur->name.next = __scan->name.next;                          \
+        if (__scan->name.next)                                          \
+          __scan->name.next->name.prev = __cur;                        \
+        __scan->name.next = __cur;                                     \
+        __cur->name.prev = __scan;                                     \
+      }                                                                 \
+      __cur = __next;                                                   \
+    }                                                                   \
+    (head)->first = __sorted;                                           \
+    (head)->last = __sorted;                                            \
+    while ((head)->last && (head)->last->name.next)                    \
+      (head)->last = (head)->last->name.next;                          \
+    (head);                                                             \
   })
 
 /* Removes the first element from the list */
@@ -214,6 +255,22 @@
     __p;                                \
   })
 
+#define SLIST_REMOVE(head, el, name) \
+  {                                  \
+    typeof((head)->first) __el = (head)->first; \
+    if (__el == (el)) {              \
+      (head)->first = __el->name;    \
+    } else {                         \
+      while (__el && __el->name != (el)) { \
+        __el = __el->name;           \
+      }                               \
+      if (__el) {                    \
+        __el->name = __el->name->name; \
+      }                               \
+    }                                 \
+  }
+
+
 // Raw list functions
 
 #define RLIST_ADD(el1, el2, name) \
@@ -228,11 +285,12 @@
  **/
 #define RLIST_ADD_FRONT(ptr, el, name) \
   {                                    \
+    typeof(el) __el = (el);            \
     if (*(ptr) != NULL) {              \
-      (el)->name.next = *(ptr);      \
-      (*(ptr))->name.prev = (el);    \
+      __el->name.next = *(ptr);      \
+      (*(ptr))->name.prev = __el;    \
     }                                  \
-    *(ptr) = (el);                     \
+    *(ptr) = __el;                     \
   }
 
 /*
@@ -241,14 +299,15 @@
  **/
 #define RLIST_REMOVE(ptr, el, name)                   \
   {                                                   \
-    if (*(ptr) == el) {                               \
-      *(ptr) = (el)->name.next;                       \
+    typeof(el) __el = (el);                           \
+    if (*(ptr) == __el) {                             \
+      *(ptr) = __el->name.next;                       \
     } else {                                          \
-      if ((el)->name.prev) {                          \
-        (el)->name.prev->name.next = (el)->name.next; \
+      if (__el->name.prev) {                          \
+        __el->name.prev->name.next = __el->name.next; \
       }                                               \
-      if ((el)->name.next) {                          \
-        (el)->name.next->name.prev = (el)->name.prev; \
+      if (__el->name.next) {                          \
+        __el->name.next->name.prev = __el->name.prev; \
       }                                               \
     }                                                 \
   }
@@ -281,7 +340,7 @@
 
 #define LIST_FIND(var, head, name, cond) \
   ({                                     \
-    typeof(LIST_FIRST(head)) var;        \
+    typeof(LIST_FIRST(head)) var = {0};  \
     LIST_FOREACH(var, head, name) {      \
       if (cond)                          \
         break;                           \
@@ -291,7 +350,7 @@
 
 #define RLIST_FIND(var, el, name, cond)  \
   ({                                     \
-    typeof(el) var;                      \
+    typeof(el) var = {0};                \
     RLIST_FOREACH(var, el, name) {       \
       if (cond)                          \
         break;                           \
@@ -301,7 +360,7 @@
 
 #define SLIST_FIND(var, el, name, cond) \
   ({                                    \
-    typeof(el) var;                     \
+    typeof(el) var = {0};               \
     SLIST_FOREACH(var, el, name) {      \
       if (cond)                         \
         break;                          \
@@ -309,14 +368,14 @@
     var;                                \
   })
 
-#define RLIST_GET_LAST(el, name) \
-  ({                                  \
-    typeof(el) var;                   \
-    RLIST_FOREACH(var, el, name) {    \
-      if (var->name.next == NULL)     \
-        break;                        \
-    }                                 \
-    var;                              \
+#define RLIST_GET_LAST(el, name)        \
+  ({                                    \
+    typeof(el) var = {0};               \
+    RLIST_FOREACH(var, el, name) {      \
+      if (var->name.next == NULL)       \
+        break;                          \
+    }                                   \
+    var;                                \
   })
 
 // List accessors

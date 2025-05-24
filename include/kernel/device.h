@@ -84,9 +84,33 @@ typedef struct device_driver {
    * and it will contain the native device type used for the bus. For example,
    * if the driver is a PCI driver then the bus data will be a pci_device_t
    * structure.
-   * @return 0 if the device is supported, -1 otherwise
+   *
+   * @return true if the driver supports the device, false otherwise.
    */
-  int (*check_device)(struct device_driver *drv, struct device *dev);
+  bool (*check_device)(struct device_driver *drv, struct device *dev);
+
+  /**
+   * Sets up the device.
+   *
+   * This function is called when the driver is bound to a device. It should
+   * initialize the device and prepare it for use. The device's 'data' field
+   * will be set to NULL, and the 'driver' field will be set prior to the
+   * function being called.
+   *
+   * @return 0 on success, -1 on failure.
+   */
+  int (*setup_device)(struct device *dev);
+
+  /**
+   * Shuts down the device.
+   *
+   * This function is called when the driver is unbound from a device. It should
+   * shut down the device and release any resources. The device's 'data' field
+   * must be NULL when the function returns.
+   *
+   * @return 0 on success, -1 on failure.
+   */
+  int (*remove_device)(struct device *dev);
 
   LIST_ENTRY(struct device_driver) list;
 } device_driver_t;
@@ -135,6 +159,9 @@ static inline uint16_t dev_unit(dev_t dev) {
 
 device_t *alloc_device(void *data, struct device_ops *ops);
 device_t *free_device(device_t *dev);
+
+device_driver_t *alloc_driver(const char *name, void *data, struct device_ops *ops);
+device_driver_t *free_driver(device_driver_t *driver);
 
 void probe_all_buses();
 

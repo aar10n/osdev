@@ -39,4 +39,6 @@ void nonrecursive_map_pages(uintptr_t pml4, uintptr_t vaddr, page_t *pages, uint
 uintptr_t create_new_ap_page_tables(__move page_t **out_pages);
 uintptr_t fork_page_tables(__move page_t **out_pages, bool deepcopy_user);
 
+void pgtable_print_debug_pml4(uintptr_t pml4_phys, int max_depth, int start_bound, int end_bound, int bound_level);
+
 #endif

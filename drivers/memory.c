@@ -16,7 +16,7 @@ static int default_d_open(device_t *dev, int flags) { return 0; }
 static int default_d_close(device_t *dev) { return 0; }
 
 
-// Null Device
+// MARK: Null Device
 
 static ssize_t null_d_read(device_t *device, size_t off, size_t nmax, kio_t *kio) {
   if (off != 0) {
@@ -39,7 +39,7 @@ static struct device_ops null_ops = {
   .d_write = null_d_write,
 };
 
-// Debug Device
+// MARK: Debug Device
 
 static ssize_t debug_d_read(device_t *device, size_t off, size_t nmax, kio_t *kio) {
   return -EACCES;
@@ -67,7 +67,7 @@ static struct device_ops debug_ops = {
   .d_write = debug_d_write,
 };
 
-//
+// MARK: Device Registration
 
 static void memory_module_init() {
   device_t *devs[] = {

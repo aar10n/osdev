@@ -4,6 +4,7 @@
 
 #include <kernel/bus/pci_v2.h>
 #include <kernel/bus/pci_hw.h>
+#include <kernel/bus/pci_tables.h>
 
 #include <kernel/device.h>
 #include <kernel/mm.h>
@@ -11,6 +12,10 @@
 #include <kernel/panic.h>
 #include <kernel/printf.h>
 #include <kernel/string.h>
+
+#define ASSERT(x) kassert(x)
+#define DPRINTF(fmt, ...) kprintf("pci: %s: " fmt, __func__, ##__VA_ARGS__)
+#define EPRINTF(fmt, ...) kprintf("pci: %s: " fmt, __func__, ##__VA_ARGS__)
 
 #define MAX_PCIE_SEG_GROUPS 1
 #define PCIE_MMIO_SIZE (256 * SIZE_1MB)
@@ -24,6 +29,11 @@
   (((vec) & 0xFF) | ((e) == 1 ? 0 : (1 << 15)) | ((d) == 1 ? 0 : (1 << 14)))
 
 #define MASK_PTR(ptr) ((ptr) & 0xFFFFFFFFFFFFFFFC)
+
+typedef struct pci_bus_type {
+  device_bus_t bus_type;
+  struct pci_segment_group *segment_group;
+} pci_bus_type_t;
 
 struct pci_segment_group {
   uint8_t num;
@@ -41,7 +51,7 @@ static LIST_HEAD(struct pci_segment_group) segment_groups;
 
 static void remap_pcie_address_space(void *data) {
   struct pci_segment_group *seg = data;
-  seg->address = vmap_phys(seg->phys_addr, 0, PCIE_MMIO_SIZE, VM_WRITE | VM_HUGE_2MB | VM_NOCACHE, "pcie");
+  seg->address = vmap_phys(seg->phys_addr, 0, PCIE_MMIO_SIZE, VM_RDWR|VM_NOCACHE|VM_HUGE_2MB, "pcie");
 }
 
 static struct pci_segment_group *get_segment_group_for_bus_number(uint8_t bus) {
@@ -60,20 +70,112 @@ static void *pci_device_address(struct pci_segment_group *group, uint8_t bus, ui
                    ((uint64_t)(device) << 15) | ((uint64_t)(function) << 12)));
 }
 
-//
-//
-//
+static pci_bar_t *get_device_bars(uint32_t *bar_ptr, int bar_count) {
+  pci_bar_t *first = NULL;
+  pci_bar_t *bars = NULL;
+  for (int i = 0; i < bar_count; i++) {
+    uint32_t v32 = bar_ptr[i];
+
+    // ensure it is a non-empty bar
+    if (is_bar_valid(v32)) {
+      volatile uint32_t *b32 = &(bar_ptr[i]);
+
+      pci_bar_t *bar = kmalloc(sizeof(pci_bar_t));
+      bar->num = i;
+      bar->virt_addr = 0;
+      if ((v32 & 1) == 0) {
+        // memory bar
+        bar->kind = 0;
+        bar->type = (v32 >> 1) & 3;
+        bar->prefetch = (v32 >> 3) & 1;
+        if (bar->type == 0) {
+          // 32-bit bar
+          *b32 = UINT32_MAX;
+          bar->phys_addr = v32 & ~0xF;
+          bar->size = ~(*b32 & ~0xF) + 1;
+          bar->next = NULL;
+          *b32 = v32;
+        } else if (bar->type == 2) {
+          // 64-bit bar
+          volatile uint64_t *b64 = (uint64_t *) &bar_ptr[i];
+          uint64_t v64 = *b64;
+
+          *b64 = UINT64_MAX;
+          bar->phys_addr = v64 & ~0xF;
+          bar->size = ~(*b64 & ~0xF) + 1;
+          *b64 = v64;
+
+          i++;
+        }
+      } else {
+        // io bar
+        bar->kind = 1;
+        bar->type = 0;
+        bar->prefetch = 0;
+
+        *b32 = UINT32_MAX;
+        bar->phys_addr = v32 & ~0x3;
+        bar->size = ~(*b32 & ~0x3) + 1;
+        *b32 = v32;
+      }
+
+      bar->next = NULL;
+      if (bars != NULL) {
+        bars->next = bar;
+      } else {
+        first = bar;
+      }
+      bars = bar;
+    }
+  }
+  return first;
+}
+
+static pci_cap_t *get_device_caps(uintptr_t config_base, uintptr_t cap_off) {
+  pci_cap_t *first = NULL;
+  pci_cap_t *caps = NULL;
+
+  uint16_t *ptr = (void *)(config_base + cap_off);
+  while (true) {
+    uint8_t id = *ptr & 0xFF;
+    uint8_t next = MASK_PTR(*ptr >> 8);
+
+    if (id > 0x15) {
+      break;
+    } else if (id == 0) {
+      continue;
+    }
+
+    pci_cap_t *cap = kmalloc(sizeof(pci_cap_t));
+    cap->id = id;
+    cap->offset = (uintptr_t) ptr;
+    cap->next = NULL;
+
+    if (caps != NULL) {
+      caps->next = cap;
+    } else {
+      first = cap;
+    }
+    caps = cap;
+
+    if (next == 0) {
+      break;
+    }
+    ptr = offset_ptr(config_base, next);
+  }
+  return first;
+}
 
 // called from acpi
 void register_pci_segment_group(uint16_t number, uint8_t start_bus, uint8_t end_bus, uintptr_t address) {
   if (number >= MAX_PCIE_SEG_GROUPS || num_segment_groups >= MAX_PCIE_SEG_GROUPS) {
-    kprintf("pci: ignoring pci segment group %d, not supported\n", number);
+    EPRINTF("ignoring pci segment group %d, not supported\n", number);
     return;
   } else if (get_segment_group_for_bus_number(start_bus) != NULL) {
     panic("pci segment group %d already registered", number);
   }
 
-  struct pci_segment_group *group = kmalloc(sizeof(struct pci_segment_group));
+  struct pci_segment_group *group = kmallocz(sizeof(struct pci_segment_group));
   group->num = number;
   group->bus_start = start_bus;
   group->bus_end = end_bus;
@@ -88,15 +190,11 @@ void register_pci_segment_group(uint16_t number, uint8_t start_bus, uint8_t end_
 
 //
 
-typedef struct pci_bus_type {
-  device_bus_t bus_type;
-  struct pci_segment_group *segment_group;
-} pci_bus_type_t;
-
 static int pci_bus_probe(struct device_bus *bus) {
   pci_bus_type_t *pci_bus = bus->data;
   struct pci_segment_group *seg = pci_bus->segment_group;
 
+  DPRINTF("probing segment group %d\n", seg->num);
   for (int bus_num = seg->bus_start; bus_num < seg->bus_end; bus_num++) {
     // probe devices on bus
     for (int d = 0; d < 32; d++) { // device
@@ -111,27 +209,30 @@ static int pci_bus_probe(struct device_bus *bus) {
         }
 
         struct pci_header_normal *config = (void *) header;
-        struct pci_device *dev = kmalloc(sizeof(struct pci_device));
-        dev->device_id = header->device_id;
-        dev->vendor_id = header->vendor_id;
+        DPRINTF("found device %02X:%02X.%X: %s\n", bus_num, d, f, pci_get_device_desc(header->class_code, header->subclass, header->prog_if));
+        DPRINTF("    (%02X.%02x.%02X)\n", header->class_code, header->subclass, header->prog_if);
+
+        struct pci_device *dev = kmallocz(sizeof(struct pci_device));
         dev->bus = bus_num;
         dev->device = d;
         dev->function = f;
-
         dev->class_code = header->class_code;
         dev->subclass = header->subclass;
         dev->prog_if = header->prog_if;
+
+        dev->device_id = header->device_id;
+        dev->vendor_id = header->vendor_id;
+
         dev->int_line = config->int_line;
         dev->int_pin = config->int_pin;
-
         dev->subsystem = config->subsys_id;
         dev->subsystem_vendor = config->subsys_vendor_id;
 
-        //dev->bars = get_device_bars(config->bars, 6);
-        //dev->caps = get_device_caps((uintptr_t) header, MASK_PTR(config->cap_ptr));
-        //dev->base_addr = (uintptr_t) header;
+        dev->bars = get_device_bars(config->bars, 6);
+        dev->caps = get_device_caps((uintptr_t) header, MASK_PTR(config->cap_ptr));
+
         if (register_bus_device(bus, dev) < 0) {
-          kprintf("pci: failed to register device %d:%d:%d\n", bus_num, d, f);
+          EPRINTF("failed to register device %02X:%02X.%X\n", bus_num, d, f);
           kfree(dev);
         }
 
@@ -156,6 +257,8 @@ void pci_module_init() {
     };
     bus->bus_type = bus_type;
     bus->segment_group = seg;
+    mtx_init(&bus->bus_type.devices_lock, 0, "bus_devices_lock");
+
     if (register_bus(&bus->bus_type) < 0) {
       panic("pci: failed to register bus");
     }

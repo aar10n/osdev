@@ -50,7 +50,7 @@ static inline kio_t kio_new_writable(void *base, size_t len) {
     .dir = KIO_WRITE,
     .size = len,
     .buf = {
-      .base = (void *) base,
+      .base = base,
       .off = 0,
     },
   };
