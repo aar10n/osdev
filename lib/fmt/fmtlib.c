@@ -444,6 +444,25 @@ static size_t format_time_unix(fmt_buffer_t *buffer, const fmt_spec_t *spec) {
   return format_struct_tm_utc(buffer, &tm);
 }
 
+static size_t format_process(fmt_buffer_t *buffer, const fmt_spec_t *spec) {
+  // (<pid>:<name>)
+  const struct proc *proc = spec->value.voidptr_value;
+  if (proc == NULL) {
+    return fmtlib_buffer_write(buffer, "(null)", 6);
+  }
+
+  size_t n = 0;
+  n += fmtlib_buffer_write_char(buffer, '(');
+  n += fmtlib_buffer_write_u64(buffer, proc->pid);
+  n += fmtlib_buffer_write_char(buffer, ':');
+  if (str_len(proc->name) > 0) {
+    n += fmtlib_buffer_write_char(buffer, ':');
+    n += fmtlib_buffer_write(buffer, str_cptr(proc->name), str_len(proc->name));
+  }
+  n += fmtlib_buffer_write_char(buffer, ')');
+  return n;
+}
+
 static size_t format_thread(fmt_buffer_t *buffer, const fmt_spec_t *spec) {
   // (<pid>:<tid>:<name>)
   const struct thread *td = spec->value.voidptr_value;
@@ -804,31 +823,37 @@ int fmtlib_resolve_type(fmt_spec_t *spec) {
     }
   }
 
-  // td -> struct thread*
+  // pr -> struct proc *
+  if (strncmp("pr", spec->type, 2) == 0) {
+    spec->argtype = FMT_ARGTYPE_VOIDPTR;
+    spec->formatter = format_process;
+    return 1;
+  }
+  // td -> struct thread *
   if (strncmp("td", spec->type, 2) == 0) {
     spec->argtype = FMT_ARGTYPE_VOIDPTR;
     spec->formatter = format_thread;
     return 1;
   }
-  // Lo -> struct lock_object*
+  // Lo -> struct lock_object *
   if (strncmp("Lo", spec->type, 2) == 0) {
     spec->argtype = FMT_ARGTYPE_VOIDPTR;
     spec->formatter = format_lock_object;
     return 1;
   }
-  // va -> struct vattr*
+  // va -> struct vattr *
   if (strncmp("va", spec->type, 2) == 0) {
     spec->argtype = FMT_ARGTYPE_VOIDPTR;
     spec->formatter = format_vattr;
     return 1;
   }
-  // ve -> struct ventry*
+  // ve -> struct ventry *
   if (strncmp("ve", spec->type, 2) == 0) {
     spec->argtype = FMT_ARGTYPE_VOIDPTR;
     spec->formatter = format_ventry;
     return 1;
   }
-  // vn -> struct vnode*
+  // vn -> struct vnode *
   if (strncmp("vn", spec->type, 2) == 0) {
     spec->argtype = FMT_ARGTYPE_VOIDPTR;
     spec->formatter = format_vnode;

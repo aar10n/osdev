@@ -123,6 +123,7 @@
  *
  *         'Lo'            - pointer to struct lock_object
  *
+ *         'pr'            - pointer to struct proc
  *         'td'            - pointer to struct thread
  *
  *         'va'            - pointer to struct vattr

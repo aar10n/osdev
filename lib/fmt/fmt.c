@@ -423,7 +423,6 @@ size_t fmt_format(const char *format, char *buffer, size_t size, int max_args, v
         m = parse_fmt_spec(ptr, max_args, &arg_index, &arg_count, parsed_spec);
       } else {
         m = parse_printf_spec(ptr, max_args, &arg_index, &arg_count, parsed_spec);
-        // printf("parsed width: %d | is index: %d\n", parsed_spec->width_or_index, parsed_spec->width_is_index);
       }
       spec->end = ptr + m;
       ptr += m;
@@ -475,14 +474,6 @@ size_t fmt_format(const char *format, char *buffer, size_t size, int max_args, v
         continue;
       }
 
-      // =======================
-      // SINGLE-PASS
-      if (spec->argtype == FMT_ARGTYPE_NONE) {
-        // no value
-        n += fmtlib_format_spec(&buf, spec);
-        continue;
-      }
-
       // load argument(s)
       for (int i = loaded_arg_count; i < arg_count; i++) {
         switch (argtypes[i]) {
@@ -502,6 +493,14 @@ size_t fmt_format(const char *format, char *buffer, size_t size, int max_args, v
       }
       if (parsed_spec->precision_is_index) {
         spec->precision = (int) values[parsed_spec->precision_or_index].uint64_value;
+      }
+
+      // =======================
+      // SINGLE-PASS
+      if (spec->argtype == FMT_ARGTYPE_NONE) {
+        // no value
+        n += fmtlib_format_spec(&buf, spec);
+        continue;
       }
 
       // format
