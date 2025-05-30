@@ -1,356 +1,320 @@
 //
-// Created by Aaron Gill-Braun on 2020-10-31.
+// Created by Aaron Gill-Braun on 2023-02-05.
 //
 
 #include <kernel/bus/pci.h>
+#include <kernel/bus/pci_hw.h>
 #include <kernel/bus/pci_tables.h>
-#include <kernel/cpu/io.h>
+
+#include <kernel/device.h>
+#include <kernel/mm.h>
+#include <kernel/init.h>
+#include <kernel/panic.h>
 #include <kernel/printf.h>
 #include <kernel/string.h>
-#include <kernel/mm/heap.h>
 
-#define config_address(bus, device, function) \
-  ((uint32_t) (((bus) & 0xFF) << 16) |        \
-   (((device) & 0x1F) << 11) |                \
-   (((function) & 0x07) << 8) |               \
-   0x80000000)
+#define ASSERT(x) kassert(x)
+#define DPRINTF(fmt, ...) kprintf("pci: " fmt, ##__VA_ARGS__)
+#define EPRINTF(fmt, ...) kprintf("pci: %s: " fmt, __func__, ##__VA_ARGS__)
 
-#define device_config_address(device) \
-  config_address((device)->bus, (device)->device, (device)->function)
+#define MAX_PCIE_SEG_GROUPS 1
+#define PCIE_MMIO_SIZE (256 * SIZE_1MB)
 
-#define register_address(addr, offset) \
-  ((uint32_t) (addr) | ((offset) & 0xFF))
+#define is_mem_bar_valid(b) (((b) & 0xFFFFFFF0) == 0 ? (((b) >> 1) & 0b11) : true)
+#define is_io_bar_valid(b) (((b) & 0xFFFFFFFC) != 0)
+#define is_bar_valid(bar) (((bar) & 1) == 0 ? is_mem_bar_valid(bar) : is_io_bar_valid(bar))
 
-#define is_device_valid(device) \
-  ((device)->vendor_id != 0xFFFF)
+#define msi_msg_addr(cpu) (0xFEE00000 | ((cpu) << 12))
+#define msi_msg_data(vec, e, d) \
+  (((vec) & 0xFF) | ((e) == 1 ? 0 : (1 << 15)) | ((d) == 1 ? 0 : (1 << 14)))
 
+#define MASK_PTR(ptr) ((ptr) & 0xFFFFFFFFFFFFFFFC)
 
-struct locate_context {
-  uint8_t device_class;
-  uint8_t device_subclass;
-  int prog_if;
-  pci_device_t **result;
+typedef struct pci_bus_type {
+  device_bus_t bus_type;
+  struct pci_segment_group *segment_group;
+} pci_bus_type_t;
+
+struct pci_segment_group {
+  uint8_t num;
+  uint8_t bus_start;
+  uint8_t bus_end;
+
+  uintptr_t phys_addr;
+  uintptr_t address;
+
+  LIST_ENTRY(struct pci_segment_group) list;
 };
 
-//
+static size_t num_segment_groups = 0;
+static LIST_HEAD(struct pci_segment_group) segment_groups;
 
-uint32_t pci_read(uint32_t addr, uint8_t offset) {
-  outdw(PCI_CONFIG_ADDR, register_address(addr, offset));
-  return indw(PCI_CONFIG_DATA);
+static void remap_pcie_address_space(void *data) {
+  struct pci_segment_group *seg = data;
+  seg->address = vmap_phys(seg->phys_addr, 0, PCIE_MMIO_SIZE, VM_RDWR|VM_NOCACHE|VM_HUGE_2MB, "pcie");
 }
 
-void pci_write(uint32_t addr, uint8_t offset, uint32_t value) {
-  outdw(PCI_CONFIG_ADDR, register_address(addr, offset));
-  outdw(PCI_CONFIG_DATA, value);
+static struct pci_segment_group *get_segment_group_for_bus_number(uint8_t bus) {
+  struct pci_segment_group *group;
+  LIST_FOREACH(group, &segment_groups, list) {
+    if (bus >= group->bus_start && bus <= group->bus_end) {
+      return group;
+    }
+  }
+  return NULL;
 }
 
-//
+static void *pci_device_address(struct pci_segment_group *group, uint8_t bus, uint8_t device, uint8_t function) {
+  kassert(bus >= group->bus_start && bus <= group->bus_end);
+  return ((void *)(group->address | ((uint64_t)(bus - group->bus_start) << 20) |
+                   ((uint64_t)(device) << 15) | ((uint64_t)(function) << 12)));
+}
 
-void pci_read_device_info(pci_device_t *device) {
-  uint32_t addr = config_address(device->bus, device->device, device->function);
-  uint32_t reg0 = pci_read(addr, 0x00);
-  uint32_t reg2 = pci_read(addr, 0x08);
-  uint32_t reg3 = pci_read(addr, 0x0C);
-  uint32_t reg15 = pci_read(addr, 0x3C);
+static pci_bar_t *get_device_bars(uint32_t *bar_ptr, int bar_count) {
+  pci_bar_t *first = NULL;
+  pci_bar_t *bars = NULL;
+  for (int i = 0; i < bar_count; i++) {
+    uint32_t v32 = bar_ptr[i];
 
-  device->vendor_id = reg0 & 0xFFFF; // 1st double-word
-  device->device_id = (reg0 >> 16) & 0xFFFF; // 2nd double-word
+    // ensure it is a non-empty bar
+    if (is_bar_valid(v32)) {
+      volatile uint32_t *b32 = &(bar_ptr[i]);
 
-  // exit early if device is invalid
-  if (!is_device_valid(device)) {
-    return;
-  }
+      pci_bar_t *bar = kmalloc(sizeof(pci_bar_t));
+      bar->num = i;
+      bar->virt_addr = 0;
+      if ((v32 & 1) == 0) {
+        // memory bar
+        bar->kind = 0;
+        bar->type = (v32 >> 1) & 3;
+        bar->prefetch = (v32 >> 3) & 1;
+        if (bar->type == 0) {
+          // 32-bit bar
+          *b32 = UINT32_MAX;
+          bar->phys_addr = v32 & ~0xF;
+          bar->size = ~(*b32 & ~0xF) + 1;
+          bar->next = NULL;
+          *b32 = v32;
+        } else if (bar->type == 2) {
+          // 64-bit bar
+          volatile uint64_t *b64 = (uint64_t *) &bar_ptr[i];
+          uint64_t v64 = *b64;
 
-  device->prog_if = (reg2 >> 8) & 0xFF; // 1st word
-  device->subclass_code = (reg2 >> 16) & 0xFF; // 2nd word
-  device->class_code = (reg2 >> 24) & 0xFF; // 3rd word
+          *b64 = UINT64_MAX;
+          bar->phys_addr = v64 & ~0xF;
+          bar->size = ~(*b64 & ~0xF) + 1;
+          *b64 = v64;
 
-  device->header_type = (reg3 >> 16) & 0x7f; // lowest 7-bits
-  device->multi_function = (reg3 >> 23) & 0x1; // eighth bit
-
-  device->interrupt_line = reg15 & 0xFF; // 1st word
-  device->interrupt_pin = (reg15 >> 8) & 0xFF; // 2nd word
-
-  device->next = NULL;
-
-  if (device->header_type == 0x00) {
-    // standard header
-    device->bar_count = 6;
-  } else if (device->header_type == 0x01) {
-    // pci-to-pci bridge header
-    device->bar_count = 2;
-  } else if (device->header_type == 0x01) {
-    // pci-to-cardbus bridge header
-    device->bar_count = 0;
-  }
-
-  // Read all of the device BARs
-  pci_bar_t *bars = kcalloc(sizeof(pci_bar_t), device->bar_count);
-  for (int i = 0; i < device->bar_count; i++) {
-    uint8_t offset = 0x10 + (i * 0x04);
-    // read bar value
-    uint32_t bar = pci_read(addr, offset);
-    // write all 1s to load register with bar size
-    pci_write(addr, offset, 0xFFFFFFFF);
-    // read bar size
-    uint32_t size = pci_read(addr, offset);
-    // write back original bar value
-    pci_write(addr, offset, bar);
-
-    if (bar & 0x1) {
-      // i/o space bar
-      bars[i].bar_type = 1;
-      bars[i].addr_type = 0;
-      bars[i].prefetch = 0;
-      bars[i].base_addr = bar & 0xFFFFFFFE;
-      bars[i].size = ~(size & 0xFFFFFFFE) + 1;
-    } else {
-      // memory space bar
-      bars[i].bar_type = 0;
-      bars[i].addr_type = (bar >> 1) & 0x3;
-      bars[i].prefetch = (bar >> 4) & 0x1;
-
-      if (bars[i].addr_type == 2) {
-        // 64-bit memory bar
-        offset += 4;
-
-        uint32_t bar2 = pci_read(addr, offset);
-        pci_write(addr, offset, 0xFFFFFFFF);
-        uint32_t size2 = pci_read(addr, offset);
-        pci_write(addr, offset, bar2);
-
-        bars[i].base_addr = ((bar & 0xFFFFFFF0) + (((uint64_t) bar2 & 0xFFFFFFFFF) << 32));
-        bars[i].size = ~((size & 0xFFFFFFF0) | ((uint64_t) size2) << 32) + 1;
-
-        memset(&(bars[i + 1]), 0, sizeof(pci_bar_t));
-        i++;
+          i++;
+        }
       } else {
-        bars[i].base_addr = bar & 0xFFFFFFF0;
-        bars[i].size = ~(size & 0xFFFFFFF0) + 1;
+        // io bar
+        bar->kind = 1;
+        bar->type = 0;
+        bar->prefetch = 0;
+
+        *b32 = UINT32_MAX;
+        bar->phys_addr = v32 & ~0x3;
+        bar->size = ~(*b32 & ~0x3) + 1;
+        *b32 = v32;
       }
+
+      bar->next = NULL;
+      if (bars != NULL) {
+        bars->next = bar;
+      } else {
+        first = bar;
+      }
+      bars = bar;
     }
   }
-  device->bars = bars;
+  return first;
+}
+
+static pci_cap_t *get_device_caps(uintptr_t config_base, uintptr_t cap_off) {
+  pci_cap_t *first = NULL;
+  pci_cap_t *caps = NULL;
+
+  uint16_t *ptr = (void *)(config_base + cap_off);
+  while (true) {
+    uint8_t id = *ptr & 0xFF;
+    uint8_t next = MASK_PTR(*ptr >> 8);
+
+    if (id > 0x15) {
+      break;
+    } else if (id == 0) {
+      continue;
+    }
+
+    pci_cap_t *cap = kmalloc(sizeof(pci_cap_t));
+    cap->id = id;
+    cap->offset = (uintptr_t) ptr;
+    cap->next = NULL;
+
+    if (caps != NULL) {
+      caps->next = cap;
+    } else {
+      first = cap;
+    }
+    caps = cap;
+
+    if (next == 0) {
+      break;
+    }
+    ptr = offset_ptr(config_base, next);
+  }
+  return first;
 }
 
 //
 
-pci_device_t *pci_alloc_device_t(uint8_t bus, uint8_t device, uint8_t function) {
-  pci_device_t *dev = kmalloc(sizeof(pci_device_t));
-  memset(dev, 0, sizeof(pci_device_t));
-  dev->bus = bus;
-  dev->device = device;
-  dev->function = function;
-  return dev;
+void register_pci_segment_group(uint16_t number, uint8_t start_bus, uint8_t end_bus, uintptr_t address) {
+  if (number >= MAX_PCIE_SEG_GROUPS || num_segment_groups >= MAX_PCIE_SEG_GROUPS) {
+    EPRINTF("ignoring pci segment group %d, not supported\n", number);
+    return;
+  } else if (get_segment_group_for_bus_number(start_bus) != NULL) {
+    panic("pci segment group %d already registered", number);
+  }
+
+  struct pci_segment_group *group = kmallocz(sizeof(struct pci_segment_group));
+  group->num = number;
+  group->bus_start = start_bus;
+  group->bus_end = end_bus;
+  group->phys_addr = address;
+  group->address = address;
+
+  LIST_ADD(&segment_groups, group, list);
+  num_segment_groups++;
+
+  register_init_address_space_callback(remap_pcie_address_space, group);
 }
 
-void pci_free_device_t(pci_device_t *device) {
-  if (device->bar_count > 0) {
-    kfree(device->bars);
+void pci_enable_msi_vector(pci_device_t *pci_dev, uint8_t index, uint8_t vector) {
+  pci_cap_t *msix_cap_ptr = SLIST_FIND(c, pci_dev->caps, next, c->id == PCI_CAP_MSIX);
+  if (msix_cap_ptr == NULL) {
+    panic("pci: could not locate msix capability");
   }
 
-  pci_device_t *curr = device;
-  while (curr) {
-    pci_device_t *next = curr->next;
-    kfree(curr);
-    curr = next;
+  pci_cap_msix_t *msix_cap = (void *) msix_cap_ptr->offset;
+  uint16_t tbl_size = msix_cap->tbl_sz + 1;
+  ASSERT(index < tbl_size);
+
+  pci_bar_t *bar = SLIST_FIND(b, pci_dev->bars, next, b->num == msix_cap->bir);
+  if (bar == NULL) {
+    panic("pci: could not locate msix bar");
+  } else if (bar->virt_addr == 0) {
+    panic("pci: msix memory space not mapped");
   }
+
+  volatile pci_msix_entry_t *table = (void *)(bar->virt_addr + (msix_cap->tbl_ofst << 3));
+  pci_msix_entry_t *entry = &table[index];
+
+  entry->msg_addr = msi_msg_addr(PERCPU_ID);
+  entry->msg_data = msi_msg_data(vector, 1, 0);
+  entry->masked = 0;
+  msix_cap->en = 1;
+}
+
+void pci_disable_msi_vector(pci_device_t *pci_dev, uint8_t index) {
+  pci_cap_t *msix_cap_ptr = SLIST_FIND(c, pci_dev->caps, next, c->id == PCI_CAP_MSIX);
+  if (msix_cap_ptr == NULL) {
+    panic("pci: could not locate msix capability");
+  }
+
+  pci_cap_msix_t *msix_cap = (void *) msix_cap_ptr->offset;
+  uint16_t tbl_size = msix_cap->tbl_sz + 1;
+  kassert(index < tbl_size);
+
+  pci_bar_t *bar = SLIST_FIND(b, pci_dev->bars, next, b->num == msix_cap->bir);
+  if (bar == NULL) {
+    panic("pci: could not locate msix bar");
+  } else if (bar->virt_addr == 0) {
+    panic("pci: msix memory space not mapped");
+  }
+
+  volatile pci_msix_entry_t *table = (void *)(bar->virt_addr + (msix_cap->tbl_ofst << 3));
+  table[index].masked = 1;
 }
 
 //
+// MARK: Device Bus API
+//
 
-int pci_probe_device(pci_device_t *device, pci_callback_t callback, void *context) {
-  pci_read_device_info(device);
-  if (is_device_valid(device)) {
-    // check if device is pci-to-pci bridge
-    if (device->class_code == PCI_BRIDGE_DEVICE && device->subclass_code == PCI_PCI_BRIDGE) {
-      uint32_t addr = device_config_address(device);
-      uint32_t reg6 = pci_read(addr, 0x18);
-      uint8_t secondary_bus = (reg6 >> 8) & 0xFF;
-      kprintf("probing secondary bus\n");
-      // probe the bridged bus
-      int result = pci_probe_bus(secondary_bus, callback, context);
-      if (result == PCI_PROBE_STOP) {
-        return PCI_PROBE_STOP;
-      }
-    }
+static int pci_bus_probe(struct device_bus *bus) {
+  pci_bus_type_t *pci_bus = bus->data;
+  struct pci_segment_group *seg = pci_bus->segment_group;
 
-    if (callback) {
-      int result = callback(device, context);
-      if (result == PCI_PROBE_STOP) {
-        return PCI_PROBE_STOP;
-      }
-    }
-
-    // check other device functions
-    if (device->multi_function == 1 && device->function == 0) {
-      pci_device_t *last = device;
-      for (int i = 1; i < 8; i++) {
-        pci_device_t *func = pci_alloc_device_t(device->bus, device->device, i);
-        int result = pci_probe_device(func, callback, context);
-        if (!is_device_valid(func)) {
-          pci_free_device_t(func);
+  DPRINTF("probing segment group %d\n", seg->num);
+  for (int bus_num = seg->bus_start; bus_num < seg->bus_end; bus_num++) {
+    // probe devices on bus
+    for (int d = 0; d < 32; d++) { // device
+      for (int f = 0; f < 8; f++) { // function
+        struct pci_header *header = pci_device_address(seg, bus_num, d, f);
+        if (header->vendor_id == 0xFFFF || header->type != 0) {
           continue;
-        } else if (result == PCI_PROBE_STOP) {
-          return PCI_PROBE_STOP;
         }
 
+        if (header->class_code == PCI_BRIDGE_DEVICE) {
+          continue;
+        }
 
-        last->next = func;
-        last = func;
+        struct pci_header_normal *config = (void *) header;
+        DPRINTF("found device on bus %d: %02X.%X: %s\n", bus_num, d, f, pci_get_device_desc(header->class_code, header->subclass, header->prog_if));
+        DPRINTF("    (%02X.%02x.%02X)\n", header->class_code, header->subclass, header->prog_if);
+
+        struct pci_device *dev = kmallocz(sizeof(struct pci_device));
+        dev->bus = bus_num;
+        dev->device = d;
+        dev->function = f;
+        dev->class_code = header->class_code;
+        dev->subclass = header->subclass;
+        dev->prog_if = header->prog_if;
+
+        dev->device_id = header->device_id;
+        dev->vendor_id = header->vendor_id;
+
+        dev->int_line = config->int_line;
+        dev->int_pin = config->int_pin;
+        dev->subsystem = config->subsys_id;
+        dev->subsystem_vendor = config->subsys_vendor_id;
+
+        dev->bars = get_device_bars(config->bars, 6);
+        dev->caps = get_device_caps((uintptr_t) header, MASK_PTR(config->cap_ptr));
+
+        if (register_bus_device(bus, dev) < 0) {
+          EPRINTF("failed to register device %02X:%02X.%X\n", bus_num, d, f);
+          kfree(dev);
+        }
+
+        if (!header->multifn) {
+          break;
+        }
       }
     }
+
+    // TODO: figure out why there are extra busses that are duplicated
+    break;
   }
-  return PCI_PROBE_CONTINUE;
+  return 0;
 }
 
-int pci_probe_bus(uint8_t bus, pci_callback_t callback, void *context) {
-  for (int i = 0; i < 32; i++) {
-    pci_device_t *device = pci_alloc_device_t(bus, i, 0);
-    int result = pci_probe_device(device, callback, context);
-    if (result == PCI_PROBE_STOP) {
-      return PCI_PROBE_STOP;
-    } else {
-      pci_free_device_t(device);
-    }
-  }
+void module_init_pci_register_bus() {
+  LIST_FOR_IN(seg, &segment_groups, list) {
+    struct pci_bus_type *bus = kmalloc(sizeof(struct pci_bus_type));
+    memset(bus, 0, sizeof(struct pci_bus_type));
 
-  return PCI_PROBE_CONTINUE;
-}
+    device_bus_t bus_type = {
+      .name = "pci",
+      .probe = pci_bus_probe,
+      .data = bus,
+    };
+    bus->bus_type = bus_type;
+    bus->segment_group = seg;
+    mtx_init(&bus->bus_type.devices_lock, 0, "bus_devices_lock");
 
-void pci_probe_busses(pci_callback_t callback, void *context) {
-  uint32_t addr = config_address(0, 0, 0);
-  uint32_t reg3 = pci_read(addr, 0x0C);
-  uint8_t header_type = (reg3 >> 16) & 0x7F;
-
-  if (header_type == 0x00) {
-    pci_probe_bus(0, callback, context);
-  } else if (header_type == 0x01) {
-    // Multiple PCI host controllers
-    for (int i = 0; i < 8; i++) {
-      int result = pci_probe_bus(i, callback, context);
-      if (result == PCI_PROBE_STOP) {
-        break;
-      }
-    }
-  }
-}
-
-/* ---- pci enumerate buses ---- */
-
-int pci_enumerate_busses_cb(pci_device_t *device, void *context) {
-  pci_print_debug_device(device);
-  return PCI_PROBE_CONTINUE;
-}
-
-void pci_enumerate_busses() {
-  pci_probe_busses(pci_enumerate_busses_cb, NULL);
-}
-
-/* ---- pci locate device ---- */
-
-int pci_locate_device_cb(pci_device_t *device, void *context) {
-  struct locate_context *ctx = context;
-
-  if (device->class_code == ctx->device_class &&
-      device->subclass_code == ctx->device_subclass &&
-      (ctx->prog_if >= 0 ? device->prog_if == ctx->prog_if : true)) {
-    kprintf("device located!\n");
-    *ctx->result = device;
-    return PCI_PROBE_STOP;
-  }
-  return PCI_PROBE_CONTINUE;
-}
-
-pci_device_t *pci_locate_device(uint8_t device_class, uint8_t device_subclass, int prog_if) {
-  pci_device_t *result;
-  struct locate_context ctx = { device_class, device_subclass, prog_if, &result };
-  pci_probe_busses(pci_locate_device_cb, &ctx);
-  return *ctx.result;
-}
-
-// Debugging
-
-void pci_print_debug_command(pci_command_t *command) {
-  kprintf("command = {\n"
-          "  io_space = %d \n"
-          "  mem_space = %d \n"
-          "  bus_master = %d \n"
-          "  special_cycles = %d \n"
-          "  mem_write_invld = %d \n"
-          "  vga_palette_snoop = %d \n"
-          "  parity_err_resp = %d \n"
-          "  serr_enable = %d \n"
-          "  fast_b2b_enable = %d \n"
-          "  int_disable = %d \n"
-          "}\n",
-          command->io_space,
-          command->mem_space,
-          command->bus_master,
-          command->special_cycles,
-          command->mem_write_invld,
-          command->vga_palette_snoop,
-          command->parity_err_resp,
-          command->serr_enable,
-          command->fast_b2b_enable,
-          command->int_disable);
-}
-
-void pci_print_debug_status(pci_status_t *status) {
-  kprintf("status = {\n"
-          "  int_status = %d \n"
-          "  cap_list = %d \n"
-          "  dev_freq = %d \n"
-          "  fast_b2b = %d \n"
-          "  master_parity = %d \n"
-          "  devsel_timing = %d \n"
-          "  sig_target_abrt = %d \n"
-          "  recv_target_abrt = %d \n"
-          "  recv_master_abrt = %d \n"
-          "  sig_system_err = %d \n"
-          "  det_parity_err = %d \n"
-          "}\n",
-          status->int_status,
-          status->cap_list,
-          status->dev_freq,
-          status->fast_b2b,
-          status->master_parity,
-          status->devsel_timing,
-          status->sig_target_abrt,
-          status->recv_target_abrt,
-          status->recv_master_abrt,
-          status->sig_system_err,
-          status->det_parity_err);
-}
-
-void pci_print_debug_device(pci_device_t *device) {
-
-  kprintf("  Prog IF: 0x%X\n", device->prog_if);
-  if (device->interrupt_pin > 0) {
-    kprintf("  IRQ %d, pin %c\n", device->interrupt_line, device->interrupt_pin + 64);
-  }
-
-  for (int i = 0; i < device->bar_count; i++) {
-    pci_bar_t bar = device->bars[i];
-
-    if (bar.bar_type == 1) {
-      kprintf("  BAR%d: I/O at %#x [%#x]\n", i, bar.base_addr, (bar.base_addr + bar.size) - 1);
-    } else {
-      if (bar.base_addr == 0) {
-        continue;
-      }
-
-      const char *prefetch = bar.prefetch ? " prefetchable" : "";
-      const char *addr_type;
-      switch (bar.addr_type) {
-        case 0: addr_type = "32"; break;
-        case 1: addr_type = "16"; break;
-        case 2: addr_type = "64"; break;
-        default: addr_type = "32";
-      }
-
-      kprintf("  BAR%d: %s-bit%s memory at %p [%p]\n",
-              i, addr_type, prefetch, bar.base_addr, (bar.base_addr + bar.size) - 1);
+    if (register_bus(&bus->bus_type) < 0) {
+      panic("pci: failed to register bus");
     }
   }
 }
+MODULE_INIT(module_init_pci_register_bus);

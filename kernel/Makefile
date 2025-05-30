@@ -23,7 +23,7 @@ kernel += entry.asm exception.asm memory.asm sigtramp.asm smpboot.asm syscall.as
 kernel += acpi/acpi.c acpi/pm_timer.c
 
 # kernel/bus
-kernel += bus/pci_v2.c bus/pci_tables.c
+kernel += bus/pci.c bus/pci_tables.c
 
 # kernel/cpu
 kernel += cpu/cpu.asm cpu/io.asm cpu/cpu.c cpu/gdt.c cpu/idt.c cpu/tcb.c

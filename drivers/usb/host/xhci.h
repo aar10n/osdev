@@ -13,7 +13,7 @@
 #include <kernel/chan.h>
 
 #include <kernel/usb/usb.h>
-#include <kernel/bus/pci_v2.h>
+#include <kernel/bus/pci.h>
 
 typedef union xhci_trb xhci_trb_t;
 struct xhci_input_ctrl_ctx;

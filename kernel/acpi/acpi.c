@@ -12,7 +12,7 @@
 #include <kernel/hw/hpet.h>
 #include <kernel/hw/ioapic.h>
 
-#include <kernel/bus/pci_v2.h>
+#include <kernel/bus/pci.h>
 
 #include <kernel/mm.h>
 #include <kernel/init.h>
