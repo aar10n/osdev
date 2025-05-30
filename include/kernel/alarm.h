@@ -11,8 +11,8 @@
 #include <kernel/irq.h>
 #include <kernel/time.h>
 
-
-#define TICK_PERIOD   MS_TO_NS(50)
+// if commented out kernel runs in tickless mode
+#define TICK_PERIOD  MS_TO_NS(50)
 
 /*
  * Alarm source
@@ -43,8 +43,9 @@ typedef struct alarm_source {
 } alarm_source_t;
 
 // Alarm source capabilities
-#define ALARM_CAP_ONE_SHOT  0x1
-#define ALARM_CAP_PERIODIC  0x2
+#define ALARM_CAP_ONE_SHOT  0x1 // alarm source can generate one-shot events
+#define ALARM_CAP_PERIODIC  0x2 // alarm source can generate periodic events
+#define ALARM_CAP_ABSOLUTE  0x4 // alarm source is programmed with absolute time values
 
 /*
  * An alarm callback.
@@ -65,13 +66,16 @@ typedef struct alarm {
 } alarm_t;
 
 void register_alarm_source(alarm_source_t *as);
-alarm_source_t *alarm_source_get(const char *name);
-
 void alarm_init();
+
+alarm_source_t *alarm_source_get(const char *name);
+alarm_source_t *alarm_tickless_source();
+alarm_source_t *alarm_tick_source();
 int alarm_source_init(alarm_source_t *as, int mode, irq_handler_t handler);
 int alarm_source_enable(alarm_source_t *as);
 int alarm_source_disable(alarm_source_t *as);
-int alarm_source_setval_ns(alarm_source_t *as, uint64_t ns);
+int alarm_source_setval_abs_ns(alarm_source_t *as, uint64_t abs_ns);
+int alarm_source_setval_rel_ns(alarm_source_t *as, uint64_t rel_ns);
 
 #define alarm_cb(fn, ...) ((struct callback){(uintptr_t)(fn), __alarm_cb_args(__VA_ARGS__)})
 alarm_t *alarm_alloc_absolute(uint64_t clock_ns, struct callback cb);

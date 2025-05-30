@@ -6,8 +6,8 @@
 #define KERNEL_USB_KEYBOARD_H
 
 #include <kernel/base.h>
-#include <kernel/usb/hid.h>
-#include <kernel/usb/hid-report.h>
+
+#include "hid.h"
 
 // HID Keyboard Driver
 
@@ -119,6 +119,6 @@ typedef struct {
 
 
 hid_keyboard_t *hid_keyboard_init(report_format_t *format);
-void hid_keyboard_handle_input(hid_device_t *device, uint8_t *buffer);
+void hid_keyboard_handle_input(hid_device_t *hid_dev, uint8_t *buffer);
 
 #endif

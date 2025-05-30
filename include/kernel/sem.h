@@ -17,9 +17,8 @@
  * will block until another thread calls up().
  */
 typedef struct sem {
-  mtx_t lock;                   // protects waitqueue operations
   volatile int count;           // current semaphore count
-  const char *name;             // semaphore name for debugging
+  mtx_t lock;                   // semaphore lock
 } sem_t;
 
 // semaphore init options
@@ -28,28 +27,26 @@ typedef struct sem {
 
 void _sem_init(sem_t *sem, int value, uint32_t opts, const char *name);
 void _sem_destroy(sem_t *sem);
+int _sem_try_down(sem_t *sem, const char *file, int line);
+void _sem_down(sem_t *sem, const char *file, int line);
+void _sem_up(sem_t *sem, const char *file, int line);
 
+// Public API macros
+
+#define sem_init(s, v, o, n) _sem_init(s, v, o, n)
+#define sem_destroy(s) _sem_destroy(s)
 /*
  * Try to decrement the semaphore count without blocking.
  * Returns 1 if successful, 0 if would block.
  */
-int _sem_try_down(sem_t *sem, const char *file, int line);
-
+#define sem_try_down(s) _sem_try_down(s, __FILE__, __LINE__)
 /*
  * Decrement the semaphore count, blocking if it would go below zero.
  */
-void _sem_down(sem_t *sem, const char *file, int line);
-
+#define sem_down(s) _sem_down(s, __FILE__, __LINE__)
 /*
  * Increment the semaphore count and wake one waiting thread if any.
  */
-void _sem_up(sem_t *sem, const char *file, int line);
-
-// Public API macros
-#define sem_init(s,v,o,n) _sem_init(s, v, o, n)
-#define sem_destroy(s) _sem_destroy(s)
-#define sem_try_down(s) _sem_try_down(s, __FILE__, __LINE__)
-#define sem_down(s) _sem_down(s, __FILE__, __LINE__)
 #define sem_up(s) _sem_up(s, __FILE__, __LINE__)
 
 #endif

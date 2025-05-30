@@ -8,7 +8,7 @@
 #include <kernel/base.h>
 #include <kernel/chan.h>
 
-typedef struct pcie_device pcie_device_t;
+typedef struct pci_device pci_device_t;
 
 // USB Device Mode
 #define USB_DEVICE_REGULAR    0x0
@@ -311,6 +311,8 @@ typedef struct usb_driver {
 
   int (*init)(usb_device_t *device);
   int (*deinit)(usb_device_t *device);
+
+  LIST_ENTRY(struct usb_driver) next;
 } usb_driver_t;
 
 typedef struct usb_hub {
@@ -379,7 +381,7 @@ typedef struct usb_endpoint {
 typedef struct usb_host {
   char *name;
   void *data;
-  pcie_device_t *pci_device;
+  pci_device_t *pci_device;
   usb_host_impl_t *host_impl;
   usb_device_impl_t *device_impl;
 
@@ -413,6 +415,9 @@ const char *usb_get_status_string(usb_status_t status);
 
 void usb_init();
 
+// MARK: USB Driver API
+int usb_register_driver(usb_driver_t *driver);
+
 // MARK: Host Driver API
 int usb_register_host(usb_host_t *host);
 int usb_handle_device_connect(usb_host_t *host, void *data);
@@ -425,14 +430,16 @@ int usb_start_transfer(usb_device_t *device, usb_dir_t direction);
 int usb_await_transfer(usb_device_t *device, usb_dir_t direction);
 int usb_start_await_transfer(usb_device_t *device, usb_dir_t direction);
 
-void usb_print_device_descriptor(usb_device_descriptor_t *desc);
-void usb_print_config_descriptor(usb_config_descriptor_t *desc);
-
 // MARK: Internal API
 int usb_device_init(usb_device_t *device);
 int usb_device_configure(usb_device_t *device, usb_config_descriptor_t *config, usb_if_descriptor_t *interface);
 int usb_device_free_endpoints(usb_device_t *device);
 usb_config_descriptor_t *usb_device_read_config_descriptor(usb_device_t *device, uint8_t n);
 char *usb_device_read_string(usb_device_t *device, uint8_t n);
+
+// MARK: Debugging API
+void usb_print_device_descriptor(usb_device_descriptor_t *desc);
+void usb_print_config_descriptor(usb_config_descriptor_t *desc);
+void usb_print_interface_descriptor(usb_if_descriptor_t *desc);
 
 #endif

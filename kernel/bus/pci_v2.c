@@ -14,7 +14,7 @@
 #include <kernel/string.h>
 
 #define ASSERT(x) kassert(x)
-#define DPRINTF(fmt, ...) kprintf("pci: %s: " fmt, __func__, ##__VA_ARGS__)
+#define DPRINTF(fmt, ...) kprintf("pci: " fmt, ##__VA_ARGS__)
 #define EPRINTF(fmt, ...) kprintf("pci: %s: " fmt, __func__, ##__VA_ARGS__)
 
 #define MAX_PCIE_SEG_GROUPS 1
@@ -166,7 +166,8 @@ static pci_cap_t *get_device_caps(uintptr_t config_base, uintptr_t cap_off) {
   return first;
 }
 
-// called from acpi
+//
+
 void register_pci_segment_group(uint16_t number, uint8_t start_bus, uint8_t end_bus, uintptr_t address) {
   if (number >= MAX_PCIE_SEG_GROUPS || num_segment_groups >= MAX_PCIE_SEG_GROUPS) {
     EPRINTF("ignoring pci segment group %d, not supported\n", number);
@@ -188,6 +189,55 @@ void register_pci_segment_group(uint16_t number, uint8_t start_bus, uint8_t end_
   register_init_address_space_callback(remap_pcie_address_space, group);
 }
 
+void pci_enable_msi_vector(pci_device_t *pci_dev, uint8_t index, uint8_t vector) {
+  pci_cap_t *msix_cap_ptr = SLIST_FIND(c, pci_dev->caps, next, c->id == PCI_CAP_MSIX);
+  if (msix_cap_ptr == NULL) {
+    panic("pci: could not locate msix capability");
+  }
+
+  pci_cap_msix_t *msix_cap = (void *) msix_cap_ptr->offset;
+  uint16_t tbl_size = msix_cap->tbl_sz + 1;
+  ASSERT(index < tbl_size);
+
+  pci_bar_t *bar = SLIST_FIND(b, pci_dev->bars, next, b->num == msix_cap->bir);
+  if (bar == NULL) {
+    panic("pci: could not locate msix bar");
+  } else if (bar->virt_addr == 0) {
+    panic("pci: msix memory space not mapped");
+  }
+
+  volatile pci_msix_entry_t *table = (void *)(bar->virt_addr + (msix_cap->tbl_ofst << 3));
+  pci_msix_entry_t *entry = &table[index];
+
+  entry->msg_addr = msi_msg_addr(PERCPU_ID);
+  entry->msg_data = msi_msg_data(vector, 1, 0);
+  entry->masked = 0;
+  msix_cap->en = 1;
+}
+
+void pci_disable_msi_vector(pci_device_t *pci_dev, uint8_t index) {
+  pci_cap_t *msix_cap_ptr = SLIST_FIND(c, pci_dev->caps, next, c->id == PCI_CAP_MSIX);
+  if (msix_cap_ptr == NULL) {
+    panic("pci: could not locate msix capability");
+  }
+
+  pci_cap_msix_t *msix_cap = (void *) msix_cap_ptr->offset;
+  uint16_t tbl_size = msix_cap->tbl_sz + 1;
+  kassert(index < tbl_size);
+
+  pci_bar_t *bar = SLIST_FIND(b, pci_dev->bars, next, b->num == msix_cap->bir);
+  if (bar == NULL) {
+    panic("pci: could not locate msix bar");
+  } else if (bar->virt_addr == 0) {
+    panic("pci: msix memory space not mapped");
+  }
+
+  volatile pci_msix_entry_t *table = (void *)(bar->virt_addr + (msix_cap->tbl_ofst << 3));
+  table[index].masked = 1;
+}
+
+//
+// MARK: Device Bus API
 //
 
 static int pci_bus_probe(struct device_bus *bus) {
@@ -209,7 +259,7 @@ static int pci_bus_probe(struct device_bus *bus) {
         }
 
         struct pci_header_normal *config = (void *) header;
-        DPRINTF("found device %02X:%02X.%X: %s\n", bus_num, d, f, pci_get_device_desc(header->class_code, header->subclass, header->prog_if));
+        DPRINTF("found device on bus %d: %02X.%X: %s\n", bus_num, d, f, pci_get_device_desc(header->class_code, header->subclass, header->prog_if));
         DPRINTF("    (%02X.%02x.%02X)\n", header->class_code, header->subclass, header->prog_if);
 
         struct pci_device *dev = kmallocz(sizeof(struct pci_device));
@@ -241,11 +291,14 @@ static int pci_bus_probe(struct device_bus *bus) {
         }
       }
     }
+
+    // TODO: figure out why there are extra busses that are duplicated
+    break;
   }
   return 0;
 }
 
-void pci_module_init() {
+void module_init_pci_register_bus() {
   LIST_FOR_IN(seg, &segment_groups, list) {
     struct pci_bus_type *bus = kmalloc(sizeof(struct pci_bus_type));
     memset(bus, 0, sizeof(struct pci_bus_type));
@@ -264,4 +317,4 @@ void pci_module_init() {
     }
   }
 }
-MODULE_INIT(pci_module_init);
+MODULE_INIT(module_init_pci_register_bus);

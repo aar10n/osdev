@@ -14,7 +14,7 @@
 
 #define __boot_data __attribute__((section(".boot_data")))
 
-#define KERNEL_MAX_SIZE  SIZE_2MB
+#define KERNEL_MAX_SIZE  SIZE_4MB
 
 // Memory map
 #define MEMORY_UNKNOWN          0

@@ -3,21 +3,43 @@
 //
 
 #include <kernel/sem.h>
+#include <kernel/proc.h>
+#include <kernel/panic.h>
+
+#define ASSERT(x) kassert(x)
+#define DPRINTF(x, ...) kprintf("sem: " x, ##__VA_ARGS__)
+
+
+static inline void acquire_sem_lock(sem_t *sem) {
+  if (LO_LOCK_CLASS(&sem->lock.lo) == SPINLOCK_LOCKCLASS) {
+    mtx_spin_lock(&sem->lock);
+  } else {
+    mtx_lock(&sem->lock);
+  }
+}
+
+static inline void release_sem_lock(sem_t *sem) {
+  if (LO_LOCK_CLASS(&sem->lock.lo) == SPINLOCK_LOCKCLASS) {
+    mtx_spin_unlock(&sem->lock);
+  } else {
+    mtx_unlock(&sem->lock);
+  }
+}
+
+//
+// MARK: Semaphore API
+//
 
 void _sem_init(sem_t *sem, int value, uint32_t opts, const char *name) {
-  if (opts & SEM_SPIN) {
-    _mtx_init(&sem->lock, MTX_SPIN | (opts & SEM_DEBUG), name);
-  } else {
-    _mtx_init(&sem->lock, (opts & SEM_DEBUG), name);
-  }
+  uint32_t mtx_opts = MTX_RECURSIVE;
+  mtx_opts |= (opts & SEM_SPIN) ? MTX_SPIN : 0;
+  mtx_opts |= (opts & SEM_DEBUG) ? MTX_DEBUG : 0;
+  mtx_init(&sem->lock, mtx_opts, name);
   atomic_store(&sem->count, value);
-
-  sem->name = name;
 }
 
 void _sem_destroy(sem_t *sem) {
-
-  _mtx_destroy(&sem->lock);
+  mtx_destroy(&sem->lock);
 }
 
 int _sem_try_down(sem_t *sem, const char *file, int line) {
@@ -32,7 +54,7 @@ int _sem_try_down(sem_t *sem, const char *file, int line) {
 }
 
 void _sem_down(sem_t *sem, const char *file, int line) {
-  // Fast path: try atomic decrement first
+  // fast path: try atomic decrement first
   int count = atomic_load(&sem->count);
   while (count > 0) {
     if (atomic_cmpxchg(&sem->count, count, count - 1)) {
@@ -41,42 +63,34 @@ void _sem_down(sem_t *sem, const char *file, int line) {
     count = atomic_load(&sem->count);
   }
 
-  // Need to block - acquire lock and add to wait queue
-  _mtx_spin_lock(&sem->lock, file, line);
+  // slow path: acquire the semaphore lock
+  acquire_sem_lock(sem);
 
-  // Recheck count after acquiring lock
+  // check count again after acquiring lock
   count = atomic_load(&sem->count);
   if (count > 0) {
     atomic_fetch_sub(&sem->count, 1);
-    _mtx_spin_unlock(&sem->lock, file, line);
+    release_sem_lock(sem);
     return;
   }
 
-  // Lock the waitqueue chain and add current thread
-  // waitq_chain_lock(sem);
-
-  _mtx_spin_unlock(&sem->lock, file, line);  // Release sem lock after chain lock acquired
-
-  // Wait on the queue - this will context switch
-  // waitq_wait(sem->waitq, "semaphore down");
-  // waitq_wait returns with chain lock released
+  // count is 0, add to waitqueue
+  struct waitqueue *waitq = waitq_lookup_or_default(WQ_SEMA, sem, curthread->own_waitq);
+  release_sem_lock(sem);  // release sem lock before adding to waitqueue
+  waitq_add(waitq, "semaphore down"); // block thread on waitqueue
 }
 
 void _sem_up(sem_t *sem, const char *file, int line) {
-  _mtx_spin_lock(&sem->lock, file, line);
+  acquire_sem_lock(sem);
 
-  // // First check if there are any waiters
-  // waitq_chain_lock(sem);
-  // struct thread *td = LIST_FIRST(&sem->waitq->queue);
-  // if (td != NULL) {
-  //   // Remove thread from waitqueue and wake it
-  //   waitq_remove(sem->waitq, td);
-  //   waitq_chain_unlock(sem);
-  //   _mtx_spin_unlock(&sem->lock, file, line);
-  //   return;
-  // }
+  // wake up one waiter if any
+  struct waitqueue *waitq = waitq_lookup(sem);
+  if (waitq) {
+    waitq_signal(waitq);
+  } else {
+    // no waiters, increment the count
+    atomic_fetch_add(&sem->count, 1);
+  }
 
-  // No waiters, just increment count
-  atomic_fetch_add(&sem->count, 1);
-  _mtx_spin_unlock(&sem->lock, file, line);
+  release_sem_lock(sem);
 }

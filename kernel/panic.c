@@ -27,7 +27,8 @@ noreturn void panic_other_cpus(cpu_irq_stack_t *frame, cpu_registers_t *regs) {
   mtx_spin_lock(&panic_lock);
 
   kprintf(">>>> STOPPING CPU#%d <<<<\n", PERCPU_ID);
-  kprintf("thread %d:%d [{:str}]\n", curproc->pid, curthread->tid, &curthread->name);
+  kprintf("process %d [{:str}]\n", curproc->pid, &curproc->name);
+  kprintf("thread %d [{:str}]\n", curthread->tid, &curthread->name);
   debug_unwind(frame->rip, regs->rbp);
   mtx_spin_unlock(&panic_lock);
 
@@ -62,9 +63,10 @@ noreturn void panic(const char *fmt, ...) {
 
   thread_t *thread = curthread;
   if (thread) {
-    kprintf("thread %d:%d [%s]\n", curproc->pid, thread->tid, &thread->name);
+    kprintf("process %d [{:str}]\n", curproc->pid, &curproc->name);
+    kprintf("thread %d [{:str}]\n", curthread->tid, &curthread->name);
   }
-  stackframe_t *frame = (void *) __builtin_frame_address(0);
+  stackframe_t *frame = __builtin_frame_address(0);
   debug_unwind(frame->rip, (uintptr_t) frame->rbp);
   kprintf("==== kernel heap ====\n");
   kheap_dump_stats();

@@ -182,6 +182,7 @@ typedef struct vm_mapping {
 #define VM_FIXED      (1 << 12) // mapping has fixed address (hint used for address)
 #define VM_STACK      (1 << 13) // mapping grows downwards and has a guard page (only for VM_TYPE_PAGE)
 #define VM_REPLACE    (1 << 14) // mapping should replace any non-reserved mappings in the range (used with VM_FIXED)
+#define VM_ZERO       (1 << 15) // mapping should be zeroed on allocation
 /* internal flags */
 #define VM_MALLOC     (1 << 16) // mapping is a vmalloc allocation
 #define VM_MAPPED     (1 << 17) // mapping is currently active

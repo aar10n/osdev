@@ -432,7 +432,7 @@ EFI_STATUS EFIAPI LoadKernel(
   }
 
   PRINT_INFO("  kernel entry: 0x%p", KernelEntry);
-  PRINT_INFO("  memory size: %llu", MemSize);
+  PRINT_INFO("  memory size: %llu (%llu pages)", MemSize, EFI_SIZE_TO_PAGES(MemSize));
 
   // load elf segments
   PAGE_DESCRIPTOR *KernelPages = NULL;
@@ -504,7 +504,7 @@ EFI_STATUS EFIAPI LoadRawFile(
   }
 
   PRINT_INFO("  addr: 0x%p", PhysAddr);
-  PRINT_INFO("  size: %llu", BufferSize);
+  PRINT_INFO("  size: %llu (%llu pages)", BufferSize, EFI_SIZE_TO_PAGES(BufferSize));
 
   // load it at the physical address
   UINTN MemorySize = EFI_PAGES_TO_SIZE(NumPages);

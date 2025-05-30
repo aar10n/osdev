@@ -129,6 +129,7 @@ void lockq_update_priority(struct lockqueue *lockq, struct thread *td);
 
 #define WQ_SLEEP  0x1 // wchan is a sleep channel
 #define WQ_CONDV  0x2 // wchan is cond var channel
+#define WQ_SEMA   0x3 // wchan is semaphore channel
 
 /*
  * A waitqueue is a queue for threads waiting on a condition.
@@ -149,6 +150,10 @@ void waitq_free(struct waitqueue **waitqp);
 /// Locates the sleepqueue associated with the given wait channel. It returns
 /// the sleepqueue with both its lock and associated chain lock held.
 struct waitqueue *waitq_lookup(const void *wchan);
+
+/// Releases the waitq lock and the associated chain lock, moving the value
+/// out of waitqp.
+void waitq_release(struct waitqueue **waitqp);
 
 /// Locates the sleepqueue associated with the given wait channel. If one does
 /// not already exist the default sleepq is used. It returns the sleepqueue with

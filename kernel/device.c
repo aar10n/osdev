@@ -4,6 +4,7 @@
 //
 
 #include <kernel/device.h>
+#include <kernel/proc.h>
 #include <kernel/panic.h>
 #include <kernel/printf.h>
 
@@ -236,7 +237,7 @@ int register_bus_device(device_bus_t *bus, void *bus_device) {
   // look for a driver that can handle this device
   device_driver_t *driver = NULL;
   LIST_FOR_IN(drv, &type->drivers, list) {
-    if (drv->check_device(drv, dev) == 0) {
+    if (drv->check_device(drv, dev)) {
       // found a driver!
       DPRINTF("found driver '%s' for device on bus '%s.%d'\n", drv->name, bus->name, bus->number);
       driver = drv;
@@ -259,7 +260,7 @@ int register_bus_device(device_bus_t *bus, void *bus_device) {
     kfree(dev);
     return -1;
   }
-  
+
   mtx_lock(&bus->devices_lock);
   SLIST_ADD(&bus->devices, dev, bus_list);
   mtx_unlock(&bus->devices_lock);

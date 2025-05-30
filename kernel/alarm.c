@@ -17,12 +17,17 @@
 #include <rb_tree.h>
 
 #define ASSERT(x) kassert(x)
-#define DPRINTF(x, ...) kprintf("alarm: " x, ##__VA_ARGS__)
+#define DPRINTF(x, ...)
+// #define DPRINTF(x, ...) kprintf("alarm: " x, ##__VA_ARGS__)
 
 #define HANDLER_FN(fn) ((void (*)(alarm_t *, void *, void *, void *))(fn))
 
 static LIST_HEAD(alarm_source_t) alarm_sources;
+static alarm_source_t *tickless_source = NULL;
+static alarm_source_t *tick_source = NULL;
 
+static uint64_t last_tick = 0; // last tick time in nanoseconds
+static uint64_t next_tickless_expiry = 0; // next tickless expiry in nanoseconds
 // TODO: switch to a callwheel based approach for storing alarms
 //       https://people.freebsd.org/~davide/asia/calloutng.pdf
 static rb_tree_t *pending_alarms;
@@ -34,17 +39,40 @@ static mtx_t alarm_lock;
 static id_t next_alarm_id = 1; // id==0 is invalid
 
 
-static void alarm_irq_handler(struct trapframe *frame) {
+static inline void maybe_rearm_tickless_alarm(uint64_t expiry, uint64_t clock_now) {
+#ifdef TICK_PERIOD
+  uint64_t next_tick = last_tick + TICK_PERIOD;
+  bool wait_for_tick = expiry > next_tick;
+#else // tickless
+  bool wait_for_tick = false;
+#endif
+
+  int res;
+  if (!wait_for_tick && expiry > clock_now && (next_tickless_expiry == 0 || expiry < next_tickless_expiry)) {
+    // reprogram the tick source to fire at the next expiry
+    if ((res = alarm_source_setval_abs_ns(tickless_source, expiry)) < 0) {
+      panic("failed to set tickless source count: %s, value=%llu [err={:err}]", tickless_source->name, expiry, res);
+    }
+    if ((res = alarm_source_enable(tickless_source)) < 0) {
+      panic("failed to enable tickless source: %s [err={:err}]", tickless_source->name, res);
+    }
+  }
+}
+
+
+static inline void handle_expired_alarms(uint64_t clock_now, uint64_t *next_expiry) {
   thread_t *td = curthread;
-  uint64_t clock_now = clock_get_nanos();
-  DPRINTF("alarm IRQ [%llu]\n", clock_now);
 
   // handle any expired alarms
   alarm_t *alarm;
+  uint64_t min_expiry = 0;
   while ((alarm = pending_alarms->min->data) && alarm->expires_ns <= clock_now) {
     mtx_spin_lock(&alarm_lock);
     rb_tree_delete_node(pending_alarms, pending_alarms->min);
     rb_tree_delete(alarm_expiries, alarm->id);
+    if (pending_alarms->min != pending_alarms->nil) {
+      min_expiry = pending_alarms->min->key;
+    }
     mtx_spin_unlock(&alarm_lock);
 
     DPRINTF("alarm %d expired\n", alarm->id);
@@ -55,12 +83,30 @@ static void alarm_irq_handler(struct trapframe *frame) {
       mtx_spin_lock(&alarm_lock);
       rb_tree_insert(pending_alarms, alarm->expires_ns, alarm);
       rb_tree_insert(alarm_expiries, alarm->id, (void *)alarm->expires_ns);
+      if (pending_alarms->min != pending_alarms->nil) {
+        min_expiry = pending_alarms->min->key;
+      }
       mtx_spin_unlock(&alarm_lock);
     } else {
       // the alarm was a one-shot so we can now free it
       alarm_free(&alarm);
     }
   }
+
+  if (next_expiry != NULL) {
+    *next_expiry = min_expiry;
+  }
+}
+
+static void alarm_tick_irq_handler(struct trapframe *frame) {
+  thread_t *td = curthread;
+  uint64_t clock_now = clock_get_nanos();
+  DPRINTF("tick IRQ [%llu]\n", clock_now);
+
+  last_tick = clock_now;
+  uint64_t next_expiry = 0;
+  handle_expired_alarms(clock_now, &next_expiry);
+  maybe_rearm_tickless_alarm(next_expiry, clock_now);
 
   if (!TDF_IS_NOPREEMPT(td) && TD_TIMESLICE_EXPIRED(td, clock_now)) {
     DPRINTF("timeslice expired for thread {:td}\n", td);
@@ -69,13 +115,23 @@ static void alarm_irq_handler(struct trapframe *frame) {
   }
 }
 
+static void alarm_tickless_irq_handler(struct trapframe *frame) {
+  uint64_t clock_now = clock_get_nanos();
+  DPRINTF("tickless IRQ [%llu]\n", clock_now);
+
+  uint64_t next_expiry = 0;
+  handle_expired_alarms(clock_now, &next_expiry);
+  next_tickless_expiry = 0;
+  maybe_rearm_tickless_alarm(next_expiry, clock_now);
+}
+
 //
 
 void register_alarm_source(alarm_source_t *as) {
   ASSERT(as != NULL);
   as->irq_num = -1;
 
-  mtx_init(&as->lock, MTX_SPIN, "alarm_source_lock");
+  mtx_init(&as->lock, MTX_SPIN|MTX_RECURSIVE, "alarm_source_lock");
   if ((as->cap_flags & ALARM_CAP_ONE_SHOT) == 0 && (as->cap_flags & ALARM_CAP_PERIODIC) == 0) {
     panic("alarm source '%s' must support either one-shot or periodic mode", as->name);
   }
@@ -86,15 +142,7 @@ void register_alarm_source(alarm_source_t *as) {
   DPRINTF("registered alarm source '%s'\n", as->name);
 }
 
-alarm_source_t *alarm_source_get(const char *name) {
-  alarm_source_t *source;
-  LIST_FOREACH(source, &alarm_sources, list) {
-    if (strcmp(source->name, name) == 0) {
-      return source;
-    }
-  }
-  return NULL;
-}
+//
 
 void alarm_init() {
   pending_alarms = create_rb_tree();
@@ -107,30 +155,62 @@ void alarm_init() {
   }
   mtx_init(&alarm_lock, MTX_SPIN, "alarm_lock");
 
-  // TODO: take alarm source from kernel parameters
-  alarm_source_t *tick_as = alarm_source_get("hpet0");
-  if (tick_as == NULL) {
-    panic("no alarm source found");
-  }
+  // TODO: take alarm sources from kernel parameters
 
   int res;
-  if ((res = tick_as->init(tick_as, ALARM_CAP_PERIODIC, alarm_irq_handler)) < 0) {
-    panic("failed to initialize alarm source: %s [err={:err}]", tick_as->name, res);
+  if ((tickless_source = alarm_source_get("hpet0")) == NULL) {
+    panic("no tickless source found");
   }
-  if ((res = alarm_source_setval_ns(tick_as, TICK_PERIOD)) < 0) {
-    panic("failed to set alarm source value: %s [err={:err}]", tick_as->name, res);
+  if ((res = alarm_source_init(tickless_source, ALARM_CAP_ONE_SHOT, alarm_tickless_irq_handler)) < 0) {
+    panic("failed to initialize alarm source: %s [err={:err}]", tickless_source->name, res);
   }
-  if ((res = tick_as->enable(tick_as)) < 0) {
-    panic("failed to enable alarm source: %s [err={:err}]", tick_as->name, res);
+  // the tickless source is enabled when first programmed
+
+#ifdef TICK_PERIOD
+  if ((tick_source = alarm_source_get("hpet1")) == NULL) {
+    if ((tick_source = alarm_source_get("pit")) == NULL) {
+      panic("no tick source found");
+    }
   }
+  if ((res = alarm_source_init(tick_source, ALARM_CAP_PERIODIC, alarm_tick_irq_handler)) < 0) {
+    panic("failed to initialize alarm source: %s [err={:err}]", tick_source->name, res);
+  }
+  if ((res = alarm_source_setval_abs_ns(tick_source, TICK_PERIOD)) < 0) {
+    panic("failed to set alarm source value: %s [err={:err}]", tick_source->name, res);
+  }
+  // the tick source is enabled at the end of kmain
+#endif
 }
 
 //
 // MARK: Alarm Source API
 //
 
+alarm_source_t *alarm_source_get(const char *name) {
+  alarm_source_t *source;
+  LIST_FOREACH(source, &alarm_sources, list) {
+    if (strcmp(source->name, name) == 0) {
+      return source;
+    }
+  }
+  return NULL;
+}
+
+alarm_source_t *alarm_tickless_source() {
+  ASSERT(tickless_source != NULL);
+  return tickless_source;
+}
+
+alarm_source_t *alarm_tick_source() {
+  // tick_source can be NULL if tickless mode is enabled
+  return tick_source;
+}
+
 int alarm_source_init(alarm_source_t *as, int mode, irq_handler_t handler) {
-  ASSERT(as != NULL);
+  if (as == NULL) {
+    return -EINVAL;
+  }
+
   if (mode != ALARM_CAP_ONE_SHOT && mode != ALARM_CAP_PERIODIC) {
     DPRINTF("invalid alarm mode\n");
     return -EINVAL;
@@ -159,7 +239,11 @@ LABEL(ret);
 }
 
 int alarm_source_enable(alarm_source_t *as) {
-  ASSERT(as != NULL);
+  if (as == NULL) {
+    return -1;
+  }
+
+  DPRINTF("enabling alarm source '%s'\n", as->name);
   mtx_spin_lock(&as->lock);
   int res = as->enable(as);
   if (res < 0) {
@@ -180,13 +264,24 @@ int alarm_source_disable(alarm_source_t *as) {
   return res;
 }
 
-int alarm_source_setval_ns(alarm_source_t *as, uint64_t ns) {
-  ASSERT(as != NULL);
-  if (as->setval == NULL) {
-    return -ENOTSUP;
+int alarm_source_setval_abs_ns(alarm_source_t *as, uint64_t abs_ns) {
+  if (as == NULL) {
+    return -EINVAL;
   }
 
-  uint64_t value = ns / as->scale_ns;
+  DPRINTF("alarm source '%s' setval_abs_ns: %llu\n", as->name, abs_ns);
+  uint64_t value = abs_ns / as->scale_ns;
+  if (!(as->cap_flags & ALARM_CAP_ABSOLUTE)) {
+    // correct the value to be relative current time
+    uint64_t clock_now = clock_get_nanos();
+    if (value < clock_now) {
+      DPRINTF("alarm source '%s' value %llu is in the past [%llu]\n", as->name, value, clock_now);
+      return -EINVAL;
+    }
+
+    value -= clock_now;
+  }
+
   if (value < as->scale_ns || value > as->value_mask) {
     DPRINTF("alarm source '%s' value %llu out of range [min=%llu, max=%llu]\n",
             as->name, value, as->scale_ns, as->value_mask);
@@ -195,6 +290,32 @@ int alarm_source_setval_ns(alarm_source_t *as, uint64_t ns) {
 
   mtx_spin_lock(&as->lock);
   int res = as->setval(as, value);
+  if (res < 0) {
+    DPRINTF("alarm source '%s' failed to set value: {:err}\n", as->name, res);
+  }
+  mtx_spin_unlock(&as->lock);
+  return res;
+}
+
+int alarm_source_setval_rel_ns(alarm_source_t *as, uint64_t rel_ns) {
+  if (as == NULL) {
+    return -EINVAL;
+  }
+
+  uint64_t value = rel_ns / as->scale_ns;
+  if (as->cap_flags & ALARM_CAP_ABSOLUTE) {
+    // correct the value to be an absolute timestamp
+    value += clock_get_nanos();
+  }
+
+  if (value < as->scale_ns || value > as->value_mask) {
+    DPRINTF("alarm source '%s' value %llu out of range [min=%llu, max=%llu]\n",
+            as->name, value, as->scale_ns, as->value_mask);
+    return -ERANGE;
+  }
+
+  mtx_spin_lock(&as->lock);
+  int res = as->setval(as, rel_ns / as->scale_ns);
   if (res < 0) {
     DPRINTF("alarm source '%s' failed to set value: {:err}\n", as->name, res);
   }
@@ -243,9 +364,11 @@ id_t alarm_register(alarm_t *alarm) {
     return 0;
   }
 
+  uint64_t clock_now = clock_get_nanos();
   mtx_spin_lock(&alarm_lock);
   rb_tree_insert(pending_alarms, alarm->expires_ns, alarm);
   rb_tree_insert(alarm_expiries, alarm->id, (void *)alarm->expires_ns);
+  maybe_rearm_tickless_alarm(pending_alarms->min->key + MS_TO_NS(2), clock_now);
   mtx_spin_unlock(&alarm_lock);
   DPRINTF("alarm_register: alarm %d expires at %llu\n", alarm->id, alarm->expires_ns);
   return alarm->id;
@@ -303,7 +426,8 @@ static void alarm_cb_wakeup(alarm_t *alarm) {
 }
 
 int alarm_sleep_ms(uint64_t ms) {
-  alarm_t *alarm = alarm_alloc_relative(MS_TO_NS(ms), alarm_cb(alarm_cb_wakeup, NULL));
+  uint64_t clock_now = clock_get_nanos();
+  alarm_t *alarm = alarm_alloc_absolute(clock_now + MS_TO_NS(ms), alarm_cb(alarm_cb_wakeup, NULL));
   ASSERT(alarm != NULL);
 
   struct waitqueue *waitq = waitq_lookup_or_default(WQ_SLEEP, alarm, curthread->own_waitq);

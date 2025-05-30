@@ -10,45 +10,6 @@
 #define PCI_CONFIG_ADDR 0xCF8
 #define PCI_CONFIG_DATA 0xCFC
 
-// Device Classes
-#define PCI_STORAGE_CONTROLLER    0x01
-#define PCI_NETWORK_CONTROLLER    0x02
-#define PCI_DISPLAY_CONTROLLER    0x03
-#define PCI_BRIDGE_DEVICE         0x06
-#define PCI_BASE_PERIPHERAL       0x08
-#define PCI_SERIAL_BUS_CONTROLLER 0x0C
-
-// Mass Storage Controllers
-#define PCI_SCSI_BUS_CONTROLLER 0x00
-#define PCI_IDE_CONTROLLER 0x01
-#define PCI_FLOPPY_DISK_CONTROLLER 0x02
-#define PCI_ATA_CONTROLLER 0x05
-#define PCI_SERIAL_ATA_CONTROLLER 0x06
-
-// Network Controllers
-#define PCI_ETHERNET_CONTROLLER 0x00
-
-// Display Controllers
-#define PCI_VGA_CONTROLLER 0x00
-
-// Bridge Devices
-#define PCI_HOST_BRIDGE 0x00
-#define PCI_ISA_BRIDGE 0x01
-#define PCI_PCI_BRIDGE 0x04
-
-// Serial Bus Controllers
-#define PCI_USB_CONTROLLER 0x03
-
-#define USB_PROG_IF_UHCI 0x00
-#define USB_PROG_IF_OHCI 0x10
-#define USB_PROG_IF_EHCI 0x20 // USB2
-#define USB_PROG_IF_XHCI 0x30 // USB3
-
-
-// Capability Types
-#define PCI_CAP_MSI      0x05
-#define PCI_CAP_MSIX     0x11
-
 #define BAR_MEM_SPACE 0x0
 #define BAR_IO_SPACE 0x1
 
@@ -180,5 +141,35 @@ struct pci_header_bridge {
   uint32_t bridge_ctrl : 16;       // bridge control
 };
 static_assert(sizeof(struct pci_header_bridge) == 64);
+
+//
+// PCI Capability Structs
+//
+
+typedef volatile struct pci_cap_msix {
+  // dword 0
+  uint32_t id : 8;
+  uint32_t next_ofst : 8;
+  uint32_t tbl_sz: 11;
+  uint32_t : 3;
+  uint32_t fn_mask : 1;
+  uint32_t en : 1;
+  // dword 1
+  uint32_t bir : 3;
+  uint32_t tbl_ofst : 29;
+  // dword 2
+  uint32_t pb_bir : 3;
+  uint32_t pb_ofst : 29;
+} pci_cap_msix_t;
+
+typedef volatile struct pci_msix_entry {
+  // dword 0 & 1
+  uint64_t msg_addr;
+  // dword 2
+  uint32_t msg_data;   // destination vector
+  // dword 3
+  uint32_t masked : 1;
+  uint32_t : 31;
+} pci_msix_entry_t;
 
 #endif

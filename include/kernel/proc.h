@@ -19,6 +19,8 @@
 #include <abi/resource.h>
 #include <abi/time.h>
 
+#include <stdarg.h>
+
 struct page;
 struct ftable;
 struct ventry;
@@ -311,14 +313,14 @@ pid_t proc_alloc_pid();
 void proc_free_pid(pid_t pid);
 
 __ref proc_t *proc_alloc_new(struct pcreds *creds);
-__ref proc_t *proc_fork(__ref proc_t *proc);
+__ref proc_t *proc_alloc_fork(__ref proc_t *proc);
 void proc_cleanup(__move proc_t **procp);
 void   proc_setup_add_thread(proc_t *proc, thread_t *td);
 int    proc_setup_new_env(proc_t *proc, const char *const env[]);
 int    proc_setup_copy_env(proc_t *proc, struct pstrings *env);
 int    proc_setup_exec_args(proc_t *proc, const char *const args[]);
 int    proc_setup_exec(proc_t *proc, cstr_t path);
-int    proc_setup_entry(proc_t *proc, void (*function)(void));
+int    proc_setup_entry(proc_t *proc, uintptr_t function, int argc, ...);
 int    proc_setup_clone_fds(proc_t *proc, struct ftable *ftable);
 int    proc_setup_open_fd(proc_t *proc, int fd, cstr_t path, int flags);
 int    proc_setup_name(proc_t *proc, cstr_t name);
@@ -344,7 +346,9 @@ thread_t *thread_alloc(uint32_t flags, size_t kstack_size);
 thread_t *thread_alloc_proc0_main();
 thread_t *thread_alloc_idle();
 void thread_free_exited(thread_t **tdp);
-int    thread_setup_entry(thread_t *td, void (*function)(void));
+int    thread_setup_entry(thread_t *td, uintptr_t function, int argc, ...);
+int    thread_setup_entry_va(thread_t *td, uintptr_t function, int argc, va_list arglist);
+int    thread_setup_name(thread_t *td, cstr_t name);
 void   thread_setup_priority(thread_t *td, uint8_t base_pri);
 void   thread_finish_setup_and_submit(thread_t *td);
 void thread_kill(thread_t *td);

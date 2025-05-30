@@ -956,6 +956,12 @@ static int vmap_internal(
     }
   }
 
+  // zero the memory in the region if requested
+  if (vm->flags & VM_ZERO) {
+    vm->flags ^= VM_ZERO; // flag only applied on allocation
+    memset((void *)vm->address, 0, size);
+  }
+
   if (out_vaddr)
     *out_vaddr = virt_base + virt_off;
 
@@ -1842,13 +1848,13 @@ void *vmalloc(size_t size, uint32_t vm_flags) {
   }
 
   uintptr_t vaddr;
-  if (size <= SIZE_TO_PAGES(4)) {
+  if (size <= PAGES_TO_SIZE(4)) {
     page_t *pages = alloc_pages(SIZE_TO_PAGES(size));
     if (pages == NULL) {
-      ALLOC_ERROR("vmalloc: failed to allocate page\n");
+      ALLOC_ERROR("vmalloc: failed to allocate pages\n");
       return 0;
     }
-    vaddr = vmap_pages(moveref(pages), 0, PAGE_SIZE, vm_flags, "vmalloc");
+    vaddr = vmap_pages(moveref(pages), 0, size, vm_flags, "vmalloc");
   } else {
     vaddr = vmap_anon(size, 0, size, vm_flags, "vmalloc");
   }

@@ -6,7 +6,6 @@
 #define KERNEL_USB_SCSI_H
 
 #include <kernel/base.h>
-#include <kernel/usb/usb.h>
 
 //
 // MARK: USB
@@ -209,13 +208,5 @@ typedef struct {
 typedef struct scsi_device {
   scsi_device_info_t *info;
 } scsi_device_t;
-
-
-// MARK: USB Driver API
-int scsi_device_init(usb_device_t *device);
-int scsi_device_deinit(usb_device_t *device);
-
-ssize_t scsi_read(usb_device_t *device, uint64_t lba, uint32_t count, void *buf);
-ssize_t scsi_write(usb_device_t *device, uint64_t lba, uint32_t count, void *buf);
 
 #endif

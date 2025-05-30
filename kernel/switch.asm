@@ -75,6 +75,10 @@ extern switch_address_space
 ;   defined in mutex.c
 extern _thread_unlock
 
+; void proc_kill(proc_t *proc, int exit_code);
+;   defined in proc.c
+extern proc_kill
+
 ; trapframe_restore
 ;   defined in exception.asm
 extern trapframe_restore
@@ -301,3 +305,33 @@ switch_thread:
   swapgs
   o64 sysret
 ; end sched_switch
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;
+; void kernel_thread_entry()
+;
+global kernel_thread_entry
+kernel_thread_entry:
+  ; the stack should be set up like so:
+  ;        <arg 5>
+  ;          ...
+  ;   +16  <arg 0>
+  ;   +0   function rip
+  ;  rsp
+  ;
+  pop rax ; pop the function address
+  pop rdi ; pop arg 0
+  pop rsi ; pop arg 1
+  pop rdx ; pop arg 2
+  pop rcx ; pop arg 3
+  pop r8  ; pop arg 4
+  pop r9  ; pop arg 5
+
+  call rax ; call the function
+
+  ; if the function returns we need to exit
+  mov rdi, PERCPU_PROCESS
+  mov rsi, rax ; exit code
+  call proc_kill
+  ; unreachable

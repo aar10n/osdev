@@ -237,7 +237,11 @@ void set_current_pgtable(uintptr_t table_phys) {
 //
 
 void pgtable_update_entry_flags(uintptr_t vaddr, uint64_t *pte, uint32_t vm_flags) {
-  *pte = (*pte & PE_FRAME_MASK) | vm_flags_to_pe_flags(vm_flags);
+  int pe_flags = 0;
+  if (vm_flags != 0) {
+    vm_flags_to_pe_flags(vm_flags);
+  }
+  *pte = (*pte & PE_FRAME_MASK) | pe_flags;
   cpu_invlpg(vaddr);
 }
 

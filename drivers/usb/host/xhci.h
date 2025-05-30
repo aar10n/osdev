@@ -9,12 +9,13 @@
 #include <kernel/queue.h>
 
 #include <kernel/irq.h>
+#include <kernel/sem.h>
 #include <kernel/chan.h>
 
 #include <kernel/usb/usb.h>
 #include <kernel/bus/pci_v2.h>
 
-typedef struct xhci_trb xhci_trb_t;
+typedef union xhci_trb xhci_trb_t;
 struct xhci_input_ctrl_ctx;
 struct xhci_slot_ctx;
 struct xhci_endpoint_ctx;
@@ -30,11 +31,11 @@ typedef struct xhci_device xhci_device_t;
 
 
 typedef struct xhci_ring {
-  struct xhci_trb *base;  // ring base
+  union xhci_trb *base;   // ring base
   uint32_t index;         // ring enqueue/dequeue index
   uint32_t max_index;     // max index
-  cond_t cond;            // condition
   int cycle;              // cycle state
+  sem_t events;           // event semaphore
 } xhci_ring_t;
 
 typedef struct xhci_protocol {
@@ -104,7 +105,6 @@ typedef struct xhci_device {
   xhci_interrupter_t *interrupter;
 
   mtx_t lock;
-  struct thread *thread;
   cond_t event;
 
   xhci_endpoint_t *endpoints[MAX_ENDPOINTS];
@@ -113,6 +113,7 @@ typedef struct xhci_device {
 
 typedef struct xhci_controller {
   pci_device_t *pci_dev;
+  pid_t pid; // pid of the controller thread
 
   uintptr_t phys_addr;
   uintptr_t address;
@@ -139,8 +140,6 @@ typedef struct xhci_controller {
   chan_t *port_sts_ch;
 
   mtx_t lock;
-  struct thread *thread;
-
   LIST_ENTRY(struct xhci_controller) list;
 } xhci_controller_t;
 
@@ -149,43 +148,43 @@ typedef struct xhci_controller {
 
 void register_xhci_controller(pci_device_t *device);
 
-int xhci_usb_host_init(usb_host_t *host);
-int xhci_usb_host_start(usb_host_t *host);
-int xhci_usb_host_stop(usb_host_t *host);
-int xhci_usb_host_discover(usb_host_t *host);
+int xhci_usb_host_init(usb_host_t *usb_host);
+int xhci_usb_host_start(usb_host_t *usb_host);
+int xhci_usb_host_stop(usb_host_t *usb_host);
+int xhci_usb_host_discover(usb_host_t *usb_host);
 
-int xhci_usb_device_init(usb_device_t *device);
-int xhci_usb_device_deinit(usb_device_t *device);
-int xhci_usb_device_add_transfer(usb_device_t *device, usb_endpoint_t *endpoint, usb_transfer_t *transfer);
-int xhci_usb_device_start_transfer(usb_device_t *device, usb_endpoint_t *endpoint);
-int xhci_usb_device_await_event(usb_device_t *device, usb_endpoint_t *endpoint, usb_event_t *event);
-int xhci_usb_device_read_descriptor(usb_device_t *device, usb_device_descriptor_t **out);
+int xhci_usb_device_init(usb_device_t *usb_dev);
+int xhci_usb_device_deinit(usb_device_t *usb_dev);
+int xhci_usb_device_add_transfer(usb_device_t *usb_dev, usb_endpoint_t *endpoint, usb_transfer_t *transfer);
+int xhci_usb_device_start_transfer(usb_device_t *usb_dev, usb_endpoint_t *endpoint);
+int xhci_usb_device_await_event(usb_device_t *usb_dev, usb_endpoint_t *endpoint, usb_event_t *event);
+int xhci_usb_device_read_descriptor(usb_device_t *usb_dev, usb_device_descriptor_t **out);
 
-int xhci_usb_init_endpoint(usb_endpoint_t *endpoint);
-int xhci_usb_deinit_endpoint(usb_endpoint_t *endpoint);
+int xhci_usb_init_endpoint(usb_endpoint_t *usb_ep);
+int xhci_usb_deinit_endpoint(usb_endpoint_t *usb_ep);
 
 // MARK: Private API
 
-int xhci_setup_controller(xhci_controller_t *hc);
-int xhci_reset_controller(xhci_controller_t *hc);
-int xhci_run_controller(xhci_controller_t *hc);
-int xhci_halt_controller(xhci_controller_t *hc);
+int xhci_setup_controller(xhci_controller_t *host);
+int xhci_reset_controller(xhci_controller_t *host);
+int xhci_run_controller(xhci_controller_t *host);
+int xhci_halt_controller(xhci_controller_t *host);
 
-int xhci_enable_interrupter(xhci_controller_t *hc, xhci_interrupter_t *intr);
-int xhci_disable_interrupter(xhci_controller_t *hc, xhci_interrupter_t *intr);
-int xhci_setup_port(xhci_controller_t *hc, xhci_port_t *port);
-int xhci_enable_port(xhci_controller_t *hc, xhci_port_t *port);
+int xhci_enable_interrupter(xhci_controller_t *host, xhci_interrupter_t *intr);
+int xhci_disable_interrupter(xhci_controller_t *host, xhci_interrupter_t *intr);
+int xhci_setup_port(xhci_controller_t *host, xhci_port_t *port);
+int xhci_enable_port(xhci_controller_t *host, xhci_port_t *port);
 
 int xhci_setup_device(xhci_device_t *device);
 int xhci_add_device_endpoint(xhci_endpoint_t *ep);
 xhci_endpoint_t *xhci_get_device_endpoint(xhci_device_t *device, usb_dir_t direction);
 
-int xhci_run_command_trb(xhci_controller_t *hc, xhci_trb_t trb, xhci_trb_t *result);
-int xhci_run_noop_cmd(xhci_controller_t *hc);
-int xhci_run_enable_slot_cmd(xhci_controller_t *hc, xhci_port_t *port);
-int xhci_run_address_device_cmd(xhci_controller_t *hc, xhci_device_t *device);
-int xhci_run_configure_ep_cmd(xhci_controller_t *hc, xhci_device_t *device);
-int xhci_run_evaluate_ctx_cmd(xhci_controller_t *hc, xhci_device_t *device);
+int xhci_run_command_trb(xhci_controller_t *host, xhci_trb_t trb, xhci_trb_t *result);
+int xhci_run_noop_cmd(xhci_controller_t *host);
+int xhci_run_enable_slot_cmd(xhci_controller_t *host, xhci_port_t *port);
+int xhci_run_address_device_cmd(xhci_controller_t *host, xhci_device_t *device);
+int xhci_run_configure_ep_cmd(xhci_controller_t *host, xhci_device_t *device);
+int xhci_run_evaluate_ctx_cmd(xhci_controller_t *host, xhci_device_t *device);
 
 int xhci_queue_setup(xhci_device_t *device, usb_setup_packet_t setup, uint8_t type);
 int xhci_queue_data(xhci_device_t *device, uintptr_t buffer, uint16_t length, usb_dir_t direction);
@@ -194,13 +193,13 @@ int xhci_queue_transfer(xhci_device_t *device, xhci_endpoint_t *ep, uintptr_t bu
 int xhci_ring_start_transfer(xhci_device_t *device, xhci_endpoint_t *ep);
 int xhci_await_transfer(xhci_device_t *device, xhci_endpoint_t *ep, xhci_trb_t *result);
 
-xhci_controller_t *xhci_alloc_controller(pci_device_t *device, pci_bar_t *bar);
-xhci_protocol_t *xhci_alloc_protocols(xhci_controller_t *hc);
-xhci_port_t *xhci_alloc_ports(xhci_controller_t *hc);
+xhci_controller_t *xhci_alloc_controller(pci_device_t *pci_dev, pci_bar_t *bar);
+xhci_protocol_t *xhci_alloc_protocols(xhci_controller_t *host);
+xhci_port_t *xhci_alloc_ports(xhci_controller_t *host);
 
-xhci_interrupter_t *xhci_alloc_interrupter(xhci_controller_t *hc, irq_handler_t fn, void *data);
+xhci_interrupter_t *xhci_alloc_interrupter(xhci_controller_t *host, irq_handler_t fn, void *data);
 int xhci_free_interrupter(xhci_interrupter_t *intr);
-xhci_device_t *xhci_alloc_device(xhci_controller_t *hc, xhci_port_t *port, uint8_t slot_id);
+xhci_device_t *xhci_alloc_device(xhci_controller_t *host, xhci_port_t *port, uint8_t slot_id);
 int xhci_free_device(xhci_device_t *device);
 xhci_endpoint_t *xhci_alloc_endpoint(xhci_device_t *device, uint8_t number, uint8_t type);
 int xhci_free_endpoint(xhci_endpoint_t *ep);

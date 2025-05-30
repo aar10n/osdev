@@ -2,20 +2,16 @@
 // Created by Aaron Gill-Braun on 2021-04-17.
 //
 
-#include <kernel/usb/hid-report.h>
-#include <kernel/usb/hid-usage.h>
+#include "hid-report.h"
+#include "hid-usage.h"
 
 #include <kernel/mm.h>
 #include <kernel/printf.h>
 #include <kernel/string.h>
 
-// #define HID_DEBUG
-
-#ifdef HID_DEBUG
-#define hid_trace_debug(str, args...) kprintf("[hid] " str "\n", ##args)
-#else
-#define hid_trace_debug(str, args...)
-#endif
+#define ASSERT(x) kassert(x)
+#define DPRINTF(fmt, ...) kprintf("hid-report: " fmt, ##__VA_ARGS__)
+#define EPRINTF(fmt, ...) kprintf("hid-report: %s: " fmt, __func__, ##__VA_ARGS__)
 
 #define as_base(n) ((base_node_t *)(n))
 #define LL_ADD(p, i) p = link_node(p, i)
@@ -243,7 +239,7 @@ static void print_tag(uint8_t type, uint8_t tag, uint32_t data, parser_state_t *
 }
 
 static void print_node(void *node, int indent) {
-  int buflen = PARSER_STACK * 2 + 1;
+  int buflen = (PARSER_STACK * 2) + 1;
   char spacing[buflen];
   memset(spacing, 0, buflen);
   for (int i = 0; i < indent; i++) {
@@ -322,8 +318,8 @@ report_format_t *hid_parse_report_descriptor(uint8_t *desc, size_t length) {
   uint16_t bits_offset = 0;
   uint8_t report_size = 0;
 
-  hid_trace_debug("parsing report descriptor");
-  hid_trace_debug("report descriptor:");
+  // DPRINTF("parsing report descriptor\n");
+  // DPRINTF("report descriptor:\n");
   while (ptr < ptr_max) {
     uint8_t value = *ptr++;
     uint8_t tag = PREFIX_TAG(value);
@@ -342,17 +338,18 @@ report_format_t *hid_parse_report_descriptor(uint8_t *desc, size_t length) {
       // skip bytes
       while (size > 0) {
         if (ptr >= ptr_max) {
-          kprintf("[hid] invalid long item size\n");
+          EPRINTF("invalid long item size\n");
           continue;
         }
+        size--;
       }
 
       // do something with long item
-      kprintf("[hid] long items are not supported\n");
+      EPRINTF("long items are not supported\n");
       continue;
     }
 
-    EXPECT_COUNT(size, kprintf("[hid] invalid item size\n"));
+    EXPECT_COUNT(size, DPRINTF("invalid item size\n"));
     uint32_t data = 0;
     for (int i = 0; i < size; i++) {
       data |= ((*ptr++) << (i * sizeof(uint8_t)));
@@ -427,7 +424,7 @@ report_format_t *hid_parse_report_descriptor(uint8_t *desc, size_t length) {
             usage = NULL;
             break;
           default:
-            kprintf("[hid] invalid type/tag %#x %#x\n", type, tag);
+            EPRINTF("invalid type/tag %#x %#x\n", type, tag);
             break;
         }
         break;
@@ -463,10 +460,10 @@ report_format_t *hid_parse_report_descriptor(uint8_t *desc, size_t length) {
             break;
           case PUSH_TAG:
           case POP_TAG:
-            kprintf("[hid] tag not supported\n");
+            EPRINTF("tag not supported\n");
             break;
           default:
-            kprintf("[hid] invalid type/tag %#x %#x\n", type, tag);
+            EPRINTF("invalid type/tag %#x %#x\n", type, tag);
             break;
         }
         break;
@@ -492,15 +489,15 @@ report_format_t *hid_parse_report_descriptor(uint8_t *desc, size_t length) {
           case STRING_INDEX_TAG:
           case STRING_MINIMUM_TAG:
           case STRING_MAXIMUM_TAG:
-            kprintf("[hid] unsupported tag %#x\n", tag);
+            EPRINTF("unsupported tag %#x\n", tag);
             break;
           default:
-            kprintf("[hid] invalid type/tag %#x %#x\n", type, tag);
+            EPRINTF("invalid type/tag %#x %#x\n", type, tag);
             break;
         }
         break;
       default:
-        kprintf("[hid] invalid tag %#x\n", tag);
+        EPRINTF("invalid tag %#x\n", tag);
         break;
     }
   }
@@ -554,14 +551,14 @@ int get_usage_offset(item_node_t *node, usage_node_t *usage) {
   int offset = 0;
   usage_node_t *u = node->usages;
   while (u != usage) {
-    offset += node->report_size;
+    offset += (int)node->report_size;
     u = (usage_node_t *) u->next;
   }
   return offset / 8;
 }
 
 int get_item_size_bits(item_node_t *node) {
-  int bits = node->report_size * node->report_count;
+  int bits = (int)(node->report_size * node->report_count);
   if (bits % 8 == 0 && node->data & 1) {
     return 0;
   }

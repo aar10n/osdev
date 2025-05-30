@@ -2,15 +2,18 @@
 // Created by Aaron Gill-Braun on 2021-04-20.
 //
 
-#include <kernel/usb/keyboard.h>
-#include <kernel/usb/hid.h>
-#include <kernel/usb/hid-report.h>
-#include <kernel/usb/hid-usage.h>
+#include "keyboard.h"
+#include "hid-usage.h"
 
 #include <kernel/mm.h>
 #include <kernel/input.h>
 #include <kernel/string.h>
+
 #include <asm/bits.h>
+
+#define ASSERT(x) kassert(x)
+#define DPRINTF(x, ...) kprintf("keyboard: " x, ##__VA_ARGS__)
+#define EPRINTF(x, ...) kprintf("keyboard: %s: " x, __func__, ##__VA_ARGS__)
 
 uint16_t hid_keyboard_to_input_key[] = {
   [HID_KEYBOARD_A] = KEY_A,
@@ -151,8 +154,8 @@ hid_keyboard_t *hid_keyboard_init(report_format_t *format) {
   return keyboard;
 }
 
-void hid_keyboard_handle_input(hid_device_t *device, uint8_t *buffer) {
-  hid_keyboard_t *kb = device->data;
+void hid_keyboard_handle_input(hid_device_t *hid_dev, uint8_t *buffer) {
+  hid_keyboard_t *kb = hid_dev->data;
   uint8_t char_idx = kb->buffer_offset;
   uint8_t char_max = char_idx + kb->buffer_size;
   size_t len = kb->buffer_size - kb->buffer_offset;
@@ -204,5 +207,5 @@ void hid_keyboard_handle_input(hid_device_t *device, uint8_t *buffer) {
     input_event(EV_KEY, 0, KEY_VALUE(key, 0));
   }
 
-  memcpy(kb->prev_buffer, buffer, device->size);
+  memcpy(kb->prev_buffer, buffer, hid_dev->size);
 }

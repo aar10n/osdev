@@ -143,11 +143,16 @@ struct lockqueue *lockq_lookup(struct lock_object *lock_obj) {
   mtx_spin_lock(&chain->lock);
 
   struct lockqueue *lockq = NULL;
-  LIST_FOREACH(lockq, &chain->head, chain_list) {
-    if (lockq->lock_obj == lock_obj) {
-      mtx_spin_lock(&chain->lock);
+  LIST_FOR_IN(lq, &chain->head, chain_list) {
+    if (lq->lock_obj == lock_obj) {
+      mtx_spin_lock(&lq->lock);
+      lockq = lq;
       break;
     }
+  }
+
+  if (lockq == NULL) {
+    mtx_spin_unlock(&chain->lock);
   }
   return lockq;
 }
@@ -174,7 +179,7 @@ struct lockqueue *lockq_lookup_or_default(struct lock_object *lock_obj, struct l
 }
 
 void lockq_release(struct lockqueue **lockqp) {
-  struct lockqueue *lockq = *moveptr(lockqp);
+  struct lockqueue *lockq = moveptr(*lockqp);
   struct lockqueue_chain *chain = LQC_LOOKUP(lockq->lock_obj);
   mtx_assert(&chain->lock, MA_OWNED);
   mtx_assert(&lockq->lock, MA_OWNED);
@@ -288,7 +293,8 @@ void lockq_update_priority(struct lockqueue *lockq, struct thread *td) {
 // =================================
 
 #define WQ_ASSERT(x) kassert(x)
-#define WQ_DPRINTF(fmt, ...) kprintf("waitqueue: " fmt, ##__VA_ARGS__)
+#define WQ_DPRINTF(fmt, ...)
+// #define WQ_DPRINTF(fmt, ...) kprintf("waitqueue: " fmt, ##__VA_ARGS__)
 
 #define WQC_TABLESIZE 64 // must be power of 2
 #define WQC_HASH(wchan) (((uintptr_t)(wchan) >> 4) & (WQC_TABLESIZE - 1))
@@ -352,17 +358,33 @@ struct waitqueue *waitq_lookup(const void *wchan) {
   mtx_spin_lock(&chain->lock);
 
   struct waitqueue *waitq = NULL;
-  LIST_FOREACH(waitq, &chain->head, chain_list) {
-    if (waitq->wchan == wchan) {
-      mtx_spin_lock(&waitq->lock);
+  LIST_FOR_IN(wq, &chain->head, chain_list) {
+    if (wq->wchan == wchan) {
+      mtx_spin_lock(&wq->lock);
+      waitq = wq;
       break;
     }
   }
+
+  if (waitq == NULL) {
+    mtx_spin_unlock(&chain->lock);
+  }
+  WQ_DPRINTF("waitq_lookup: wchan=%p, waitq=%p\n", wchan, waitq);
   return waitq;
 }
 
+void waitq_release(struct waitqueue **waitqp) {
+  struct waitqueue *waitq = moveptr(*waitqp);
+  struct waitqueue_chain *chain = WQC_LOOKUP(waitq->wchan);
+  mtx_assert(&chain->lock, MA_OWNED);
+  mtx_assert(&waitq->lock, MA_OWNED);
+
+  mtx_spin_unlock(&waitq->lock);
+  mtx_spin_unlock(&chain->lock);
+}
+
 struct waitqueue *waitq_lookup_or_default(int type, const void *wchan, struct waitqueue *default_waitq) {
-  ASSERT(type == WQ_SLEEP || type == WQ_CONDV);
+  ASSERT(type == WQ_SLEEP || type == WQ_CONDV || type == WQ_SEMA);
   struct waitqueue_chain *chain = WQC_LOOKUP(wchan);
   mtx_spin_lock(&chain->lock);
 
@@ -393,6 +415,7 @@ void waitq_add(struct waitqueue *waitq, const char *wdmsg) {
 
   thread_t *td = curthread;
   td_lock(td);
+  WQ_DPRINTF("waitq_add: wchan=%p, waitq=%p, wdmsg=%s, td={:td}\n", waitq->wchan, waitq, wdmsg, td);
   if (waitq == td->own_waitq) {
     // the waitq was donated by us
     td->own_waitq = NULL;
@@ -420,6 +443,7 @@ void waitq_remove(struct waitqueue *waitq, thread_t *td) {
   mtx_assert(&chain->lock, MA_OWNED);
   mtx_assert(&waitq->lock, MA_OWNED);
 
+  WQ_DPRINTF("waitq_remove: wchan=%p, waitq=%p, td={:td}\n", waitq->wchan, waitq, td);
   waitq_remove_internal(waitq, chain, td);
   mtx_spin_unlock(&waitq->lock);
   mtx_spin_unlock(&chain->lock);
@@ -432,6 +456,7 @@ void waitq_signal(struct waitqueue *waitq) {
 
   bool preempt = false;
   thread_t *td = LIST_FIRST(&waitq->queue);
+  WQ_DPRINTF("waitq_signal: wchan=%p, waitq=%p, td={:td}\n", waitq->wchan, waitq, td);
   if (td != NULL) {
     td_lock(td);
     waitq_remove_internal(waitq, chain, td);
@@ -446,7 +471,6 @@ void waitq_signal(struct waitqueue *waitq) {
 
   mtx_spin_unlock(&waitq->lock);
   mtx_spin_unlock(&chain->lock);
-
   if (preempt) {
     sched_again(SCHED_PREEMPTED);
   }
@@ -456,6 +480,7 @@ void waitq_broadcast(struct waitqueue *waitq) {
   struct waitqueue_chain *chain = WQC_LOOKUP(waitq->wchan);
   mtx_assert(&chain->lock, MA_OWNED);
   mtx_assert(&waitq->lock, MA_OWNED);
+  WQ_DPRINTF("waitq_broadcast: wchan=%p, waitq=%p\n", waitq->wchan, waitq);
 
   bool preempt = false;
   thread_t *td = NULL;

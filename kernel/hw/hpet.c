@@ -16,7 +16,8 @@
 #include <asm/bits.h>
 
 #define ASSERT(x) kassert(x)
-#define DPRINTF(x, ...) kprintf("hpet: " x, ##__VA_ARGS__)
+#define DPRINTF(x, ...)
+// #define DPRINTF(x, ...) kprintf("hpet: " x, ##__VA_ARGS__)
 
 #define MAX_HPETS 4
 
@@ -259,6 +260,7 @@ int hpet_alarm_source_enable(alarm_source_t *as) {
     return -ENODEV;
   }
 
+  DPRINTF("[timer %d] enable\n", tn->num);
   struct hpet_device *hpet = tn->hpet;
 
   uint32_t tn_config_reg = hpet_read32(hpet->address, timer_config_reg(tn->num));
@@ -274,6 +276,7 @@ int hpet_alarm_source_disable(alarm_source_t *as) {
     return -ENODEV;
   }
 
+  DPRINTF("[timer %d] disable\n", tn->num);
   struct hpet_device *hpet = tn->hpet;
 
   uint32_t tn_config_reg = hpet_read32(hpet->address, timer_config_reg(tn->num));
@@ -283,13 +286,13 @@ int hpet_alarm_source_disable(alarm_source_t *as) {
 }
 
 int hpet_alarm_source_setval(alarm_source_t *as, uint64_t value) {
-  DPRINTF("setval: %llu\n", value);
   ASSERT(as->mode != 0);
   struct hpet_timer_device *tn = as->data;
   if (tn == NULL) {
     return -ENODEV;
   }
 
+  DPRINTF("[timer %d] setval: %llu\n", tn->num, value);
   struct hpet_device *hpet = tn->hpet;
 
   if (as->mode == ALARM_CAP_PERIODIC) {
@@ -336,7 +339,7 @@ void register_hpet_alarm_source(struct hpet_device *hpet, uint8_t n) {
   alarm_source_t *hpet_alarm_source = kmalloc(sizeof(alarm_source_t));
   hpet_alarm_source->name = kasprintf("hpet%d", n);
   hpet_alarm_source->data = hpet_timer_struct;
-  hpet_alarm_source->cap_flags = ALARM_CAP_ONE_SHOT;
+  hpet_alarm_source->cap_flags = ALARM_CAP_ONE_SHOT | ALARM_CAP_ABSOLUTE;
   hpet_alarm_source->scale_ns = hpet->clock_period_ns;
 
   uint32_t tn_config_reg = hpet_read32(hpet->address, timer_config_reg(n));
@@ -410,7 +413,6 @@ void register_hpet(uint8_t id, uintptr_t address, uint16_t min_period) {
 
     // register hpet as clock source
     clock_source_t *hpet_clock_source = kmallocz(sizeof(clock_source_t));
-    memset(hpet_clock_source, 0, sizeof(clock_source_t));
     hpet_clock_source->name = "hpet";
     hpet_clock_source->data = hpet;
     hpet_clock_source->scale_ns = hpet->clock_period_ns;
@@ -422,7 +424,9 @@ void register_hpet(uint8_t id, uintptr_t address, uint16_t min_period) {
     hpet_clock_source->read = hpet_clock_read;
 
     register_clock_source(hpet_clock_source);
-    register_hpet_alarm_source(hpet, 0); // register timer 0
+    for (int i = 0; i < hpet->max_num_timers; i++) {
+      register_hpet_alarm_source(hpet, i); // register timer
+    }
   }
 
   num_hpets += 1;

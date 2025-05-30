@@ -6,8 +6,8 @@
 #define KERNEL_USB_MOUSE_H
 
 #include <kernel/base.h>
-#include <kernel/usb/hid.h>
-#include <kernel/usb/hid-report.h>
+
+#include "hid.h"
 
 typedef struct {
   uint8_t buttons_offset;
@@ -19,6 +19,6 @@ typedef struct {
 
 
 hid_mouse_t *hid_mouse_init(report_format_t *format);
-void hid_mouse_handle_input(hid_device_t *device, const uint8_t *buffer);
+void hid_mouse_handle_input(hid_device_t *hid_dev, const uint8_t *buffer);
 
 #endif

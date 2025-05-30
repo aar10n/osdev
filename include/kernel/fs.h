@@ -14,8 +14,8 @@ struct proc;
 struct page;
 struct vm_file;
 
-void fs_static_init();
 void fs_init();
+void fs_setup_final();
 
 int fs_register_type(fs_type_t *fs_type);
 fs_type_t *fs_get_type(const char *type);

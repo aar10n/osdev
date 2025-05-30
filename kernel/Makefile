@@ -23,7 +23,7 @@ kernel += entry.asm exception.asm memory.asm sigtramp.asm smpboot.asm syscall.as
 kernel += acpi/acpi.c acpi/pm_timer.c
 
 # kernel/bus
-kernel += bus/pci.c bus/pci_tables.c bus/pcie.c bus/pci_v2.c
+kernel += bus/pci_v2.c bus/pci_tables.c
 
 # kernel/cpu
 kernel += cpu/cpu.asm cpu/io.asm cpu/cpu.c cpu/gdt.c cpu/idt.c cpu/tcb.c
@@ -42,10 +42,7 @@ kernel += mm/file.c mm/heap.c mm/init.c mm/pgcache.c mm/pgtable.c mm/pmalloc.c \
  	mm/vmalloc.c
 
 # kernel/usb
-kernel += usb/usb.c usb/xhci.c \
-	usb/scsi.c usb/hid.c \
-	usb/keyboard.c usb/mouse.c \
-	usb/hid-report.c usb/hid-usage.c
+kernel += usb/usb.c
 
 # kernel/vfs
 kernel += vfs/file.c vfs/fs.c vfs/path.c vfs/vcache.c vfs/ventry.c \

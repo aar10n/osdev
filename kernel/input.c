@@ -287,7 +287,7 @@ static int input_process_key_event(uint16_t flags, uint32_t value) {
   if (pressed) {
     // format and send key event to stream
     input_key_event_t event = { .key = key, .modifiers = key_modifiers };
-    chan_send(key_event_stream, event.raw);
+    chan_send(key_event_stream, &event);
   }
   return 0;
 }
@@ -325,6 +325,6 @@ int input_key_event_to_char(input_key_event_t *event) {
 
 void input_init() {
   key_states = create_bitmap(KEY_MAX + 1);
-  key_event_stream = chan_alloc(128, 0);
+  key_event_stream = chan_alloc(128, sizeof(input_key_event_t), 0, "key_event_stream_ch");
 }
 MODULE_INIT(input_init);

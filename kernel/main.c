@@ -18,6 +18,7 @@
 #include <kernel/acpi/acpi.h>
 #include <kernel/cpu/cpu.h>
 #include <kernel/debug/debug.h>
+#include <kernel/usb/usb.h>
 
 #include <kernel/printf.h>
 #include <kernel/panic.h>
@@ -65,67 +66,49 @@ __used void kmain() {
   // debug_init();
   cpu_late_init();
 
-  // initialize the irq layer and timekeeping so the static initializers can use them.
+  // initialize the irq layer and our clock source so the static initializers can use them.
+  // we also initialize the alarm source, but it says disabled until later.
   irq_init();
   clock_init();
   alarm_init();
-  // then run the static initializers.
+
+  // now run the static initializers.
   do_static_initializers();
 
   fs_init();
   sched_init();
-
   // smp_init();
 
-  proc_alloc_pid(); // reserve pid 1
+  // run the module initializers followed by the last of the filesystem setup.
   do_module_initializers();
-  kprintf("done!\n");
-  // ---------------
-
-  mkdir("/initrd");
-  mknod("/rd0", S_IFBLK, makedev(1, 0));
-
-  mount("/rd0", "/initrd", "initrd", 0);
-  replace_root("/initrd");
-  unmount("/");
-
-  mkdir("/dev");
-  mknod("/dev/stdin", S_IFCHR, makedev(3, 0)); // null
-  mknod("/dev/stdout", S_IFCHR, makedev(2, 0)); // com1
-  mknod("/dev/stderr", S_IFCHR, makedev(2, 3)); // com4
+  fs_setup_final();
+  kprintf("[%llu] done!\n", clock_get_nanos());
   ls("/");
 
-  // probe_all_buses();
+  cpu_enable_interrupts();
+  probe_all_buses();
 
-  {
-    __ref proc_t *proc = proc_alloc_new(getref(curproc->creds));
-    proc_setup_add_thread(proc, thread_alloc(0, SIZE_16KB));
-    proc_setup_new_env(proc, (const char *[]){"PWD=/", "PATH=/bin:/sbin", NULL});
-    proc_setup_exec_args(proc, (const char *[]){"hello", "world", NULL});
-    proc_setup_exec(proc, cstr_make("/sbin/init"));
-    proc_setup_open_fd(proc, 0, cstr_make("/dev/stdin"), O_RDONLY);
-    proc_setup_open_fd(proc, 1, cstr_make("/dev/stdout"), O_WRONLY);
-    proc_setup_open_fd(proc, 2, cstr_make("/dev/stderr"), O_WRONLY);
-    proc_finish_setup_and_submit_all(moveref(proc));
-  }
+  // {
+  //   __ref proc_t *proc = proc_alloc_new(getref(curproc->creds));
+  //   proc_setup_add_thread(proc, thread_alloc(0, SIZE_16KB));
+  //   proc_setup_new_env(proc, (const char *[]){"PWD=/", "PATH=/bin:/sbin", NULL});
+  //   proc_setup_exec_args(proc, (const char *[]){"hello", "world", NULL});
+  //   proc_setup_exec(proc, cstr_make("/sbin/init"));
+  //   proc_setup_open_fd(proc, 0, cstr_make("/dev/stdin"), O_RDONLY);
+  //   proc_setup_open_fd(proc, 1, cstr_make("/dev/stdout"), O_WRONLY);
+  //   proc_setup_open_fd(proc, 2, cstr_make("/dev/stderr"), O_WRONLY);
+  //   proc_finish_setup_and_submit_all(moveref(proc));
+  // }
 
   // {
   //   __ref proc_t *kproc1 = proc_alloc_new(getref(curproc->creds));
   //   proc_setup_add_thread(kproc1, thread_alloc(TDF_KTHREAD, SIZE_16KB));
-  //   proc_setup_entry(kproc1, kernel_process1);
+  //   proc_setup_entry(kproc1, (uintptr_t) kernel_process1, 0);
   //   proc_setup_name(kproc1, cstr_make("kernel_process1"));
   //   proc_finish_setup_and_submit_all(moveref(kproc1));
   // }
-  //
-  // {
-  //   __ref proc_t *kproc2 = proc_alloc_new(getref(curproc->creds));
-  //   proc_setup_add_thread(kproc2, thread_alloc(TDF_KTHREAD, SIZE_16KB));
-  //   proc_setup_entry(kproc2, kernel_process2);
-  //   proc_setup_name(kproc2, cstr_make("kernel_process2"));
-  //   proc_finish_setup_and_submit_all(moveref(kproc2));
-  // }
 
-  vm_print_address_space_v2();
+  alarm_source_enable(alarm_tick_source());
   sched_again(SCHED_BLOCKED);
   unreachable;
 }
@@ -158,24 +141,10 @@ void kernel_process1() {
   PRINTF("sleeping for 1 second\n");
   alarm_sleep_ms(1000);
   PRINTF("done!\n");
-  WHILE_TRUE;
-#undef PRINTF
-}
 
-void kernel_process2() {
-#define PRINTF(fmt, ...) kprintf("kernel_process2: " fmt, ##__VA_ARGS__)
-  PRINTF("==============> {:td}\n", curthread);
-  sched_again(SCHED_YIELDED);
-  PRINTF("stopping kernel_process1\n");
-  pid_signal(2, SIGSTOP, 0, (union sigval) {0});
-  alarm_sleep_ms(5000);
-  PRINTF("contiuing kernel_process1\n");
-  pid_signal(2, SIGCONT, 0, (union sigval) {0});
+  PRINTF("sleeping for 10 ms\n");
+  alarm_sleep_ms(10);
   PRINTF("done!\n");
-  PRINTF("sleeping for 1 second\n");
-  alarm_sleep_ms(1000);
-  PRINTF("killing kernel_process1\n");
-  pid_signal(2, SIGKILL, 0, (union sigval) {0});
   WHILE_TRUE;
 #undef PRINTF
 }

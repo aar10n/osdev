@@ -90,4 +90,7 @@ typedef struct pci_device {
 
 void register_pci_segment_group(uint16_t number, uint8_t start_bus, uint8_t end_bus, uintptr_t address);
 
+void pci_enable_msi_vector(pci_device_t *pci_dev, uint8_t index, uint8_t vector);
+void pci_disable_msi_vector(pci_device_t *pci_dev, uint8_t index);
+
 #endif

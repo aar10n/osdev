@@ -2,14 +2,16 @@
 // Created by Aaron Gill-Braun on 2021-09-11.
 //
 
-#include <kernel/usb/mouse.h>
-#include <kernel/usb/hid.h>
-#include <kernel/usb/hid-report.h>
-#include <kernel/usb/hid-usage.h>
+#include "mouse.h"
+#include "hid-usage.h"
 
 #include <kernel/mm.h>
 #include <kernel/string.h>
 #include <kernel/printf.h>
+
+#define ASSERT(x) kassert(x)
+#define DPRINTF(x, ...) kprintf("mouse: " x, ##__VA_ARGS__)
+#define EPRINTF(x, ...) kprintf("mouse: %s: " x, __func__, ##__VA_ARGS__)
 
 uint16_t mouse_x = 0;
 uint16_t mouse_y = 0;
@@ -56,17 +58,17 @@ hid_mouse_t *hid_mouse_init(report_format_t *format) {
   return mouse;
 }
 
-void hid_mouse_handle_input(hid_device_t *device, const uint8_t *buffer) {
-  hid_mouse_t *mouse = device->data;
+void hid_mouse_handle_input(hid_device_t *hid_dev, const uint8_t *buffer) {
+  hid_mouse_t *mouse = hid_dev->data;
   uint8_t buttons = buffer[mouse->buttons_offset];
-  int8_t pos_x = buffer[mouse->x_offset];
-  int8_t pos_y = buffer[mouse->y_offset];
+  int8_t pos_x = (int8_t)buffer[mouse->x_offset];
+  int8_t pos_y = (int8_t)buffer[mouse->y_offset];
 
   mouse_x = min(mouse_x + pos_x, boot_info_v2->fb_width);
   mouse_y = min(mouse_y + pos_y, boot_info_v2->fb_height);
   mouse_buttons = buttons;
-  // kprintf("MOUSE\n");
-  // kprintf("  buttons: %b\n", buttons);
-  // kprintf("  x: %d\n", pos_x);
-  // kprintf("  y: %d\n", pos_y);
+  DPRINTF("MOUSE\n");
+  DPRINTF("  buttons: %b\n", buttons);
+  DPRINTF("  x: %d\n", pos_x);
+  DPRINTF("  y: %d\n", pos_y);
 }

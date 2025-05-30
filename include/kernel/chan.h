@@ -7,7 +7,7 @@
 
 #include <kernel/base.h>
 #include <kernel/mutex.h>
-#include <kernel/sem.h>
+#include <kernel/cond.h>
 
 // -------- Channels --------
 
@@ -16,41 +16,46 @@
 // not received.
 typedef void (*chan_free_cb_t)(void *data);
 
-
-#define chan_u64(p) ((uint64_t)(p))
-#define chan_voidp(p) ((uint64_t *)((void *)(p)))
+#define CHAN_CAPACITY_MAX UINT16_MAX
+#define CHAN_OBJSIZE_MAX UINT16_MAX
 
 
 // flags
-#define CHAN_CLOSED 0x01  // channel has been closed by writer
-
+#define CHAN_NOBLOCK 0x01  // channel operations do not block
 
 typedef struct chan {
-  const char *name;
   uint32_t flags;
-  uint16_t capacity;
-  uint16_t read_idx;
-  uint16_t write_idx;
-  uint64_t *buffer;
+  const char *name;
 
   mtx_t lock;
-  sem_t empty;
-  sem_t full;
+  cond_t send_cond;
+  cond_t recv_cond;
+
+  uint16_t capacity;
+  uint16_t objsize;
+  uint16_t read_idx;
+  uint16_t write_idx;
+  void *buffer;
+
   chan_free_cb_t free_cb;
 } chan_t;
 
 // Public API
 
-chan_t *chan_alloc(uint16_t capacity, uint32_t flags);
-int chan_free(chan_t *chan);
-int chan_set_free_cb(chan_t *chan, chan_free_cb_t fn);
+chan_t *chan_alloc(size_t  capacity, size_t objsize, uint32_t flags, const char *name);
+int chan_set_free_cb(chan_t *ch, chan_free_cb_t fn);
+int chan_free(chan_t *ch);
 
-int chan_send(chan_t *chan, uint64_t data);
-int chan_recv(chan_t *chan, uint64_t *result);
-int chan_recv_noblock(chan_t *chan, uint64_t *result);
-int chan_wait(chan_t *chan);
-int chan_close(chan_t *chan);
+int _chan_send(chan_t *ch, void *obj, size_t objsz);
+#define chan_send(ch, obj) _chan_send(ch, obj, sizeof(*(obj)))
+int _chan_recv(chan_t *ch, void *obj, size_t objsz);
+#define chan_recv(ch, obj) _chan_recv(ch, obj, sizeof(*(obj)))
+int _chan_recvn(chan_t *ch, size_t n, void *results, size_t objsz);
+#define chan_recvn(ch, n, results) _chan_recvn(ch, n, results, sizeof(*(results)))
+int _chan_recv_noblock(chan_t *ch, void *obj, size_t objsz);
+#define chan_recv_noblock(ch, obj) _chan_recv_noblock(ch, obj, sizeof(*(obj)))
+int chan_wait(chan_t *ch);
+int chan_close(chan_t *ch);
 
-void chan_free_cb_kfree(void *data);
 
 #endif

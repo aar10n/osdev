@@ -56,6 +56,7 @@ void _mtx_wait_unlock(mtx_t *mtx, const char *file, int line);
 #define mtx_init(m,o,n) _mtx_init(m, o, n)
 #define mtx_destroy(m) _mtx_destroy(m)
 #define mtx_owner(m) _mtx_owner(m)
+#define mtx_name(m) ((m)->lo.name)
 #define mtx_assert(m, w) _mtx_assert(m, w, __FILE__, __LINE__)
 
 #define mtx_trylock(m) _mtx_wait_trylock(m, __FILE__, __LINE__)

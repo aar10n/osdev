@@ -27,6 +27,8 @@ noreturn void idle_thread_entry();
 extern uintptr_t entry_initial_stack;
 extern uintptr_t entry_initial_stack_top;
 
+extern void kernel_thread_entry();
+
 // #define ASSERT(x)
 #define ASSERT(x) kassert(x)
 #define ASSERTF(x, fmt, ...) kassertf(x, fmt, ##__VA_ARGS__)
@@ -64,10 +66,12 @@ void proc0_init() {
   mtx_init(&proc0_ap_lock, MTX_SPIN, "proc0_ap_lock");
 
   thread_t *maintd = thread_alloc_proc0_main();
+  maintd->name = str_from("proc0_main");
   proc_setup_add_thread(proc0, maintd);
   pgrp_setup_add_proc(pgroup0, proc0);
 
   proc0->state = PRS_ACTIVE;
+  proc0->name = str_from("proc0");
 
   set_curthread(maintd);
   set_curproc(proc0);
@@ -397,7 +401,7 @@ __ref proc_t *proc_alloc_new(struct pcreds *creds) {
   );
 }
 
-__ref proc_t *proc_fork(proc_t *proc) {
+__ref proc_t *proc_alloc_fork(proc_t *proc) {
   ASSERT(PRS_IS_ALIVE(proc));
   mtx_lock(&proc->lock);
   address_space_t *space = proc->space;
@@ -565,16 +569,22 @@ LABEL(ret);
   return res;
 }
 
-int proc_setup_entry(proc_t *proc, void (*function)(void)) {
+int proc_setup_entry(proc_t *proc, uintptr_t function, int argc, ...) {
   ASSERT(PRS_IS_EMPTY(proc));
   ASSERT(pr_main_thread(proc) != NULL);
   ASSERT(proc->args == NULL);
   ASSERT(proc->env == NULL);
 
   thread_t *td = pr_main_thread(proc);
-  thread_setup_entry(td, function);
+
+  va_list args;
+  va_start(args, argc);
+  thread_setup_entry_va(td, function, argc, args);
+  va_end(args);
   return 0;
 }
+
+// int proc_setup_
 
 int proc_setup_clone_fds(proc_t *proc, struct ftable *ftable) {
   ASSERT(PRS_IS_EMPTY(proc));
@@ -633,6 +643,7 @@ __ref proc_t *proc_lookup(pid_t pid) {
 }
 
 void proc_add_thread(proc_t *proc, thread_t *td) {
+  ASSERT(PRS_IS_ALIVE(proc));
   ASSERT(TDS_IS_EMPTY(td));
   ASSERT(td->proc == NULL);
 
@@ -643,7 +654,10 @@ void proc_add_thread(proc_t *proc, thread_t *td) {
     return;
   }
 
+  td_lock(td);
   proc_do_add_thread(proc, td);
+  sched_submit_new_thread(td);
+  td_unlock(td);
   pr_unlock(proc);
 }
 
@@ -893,7 +907,8 @@ thread_t *thread_alloc_idle() {
   // this is called once by each cpu during scheduler initialization
   thread_t *td = thread_alloc(TDF_KTHREAD|TDF_IDLE|TDF_NOPREEMPT, SIZE_8KB);
   td->name = str_fmt("idle thread [CPU#%d]", curcpu_id);
-  thread_setup_entry(td, idle_thread_entry);
+
+  thread_setup_entry(td, (uintptr_t) idle_thread_entry, 0);
 
   mtx_spin_lock(&proc0_ap_lock);
   proc_do_add_thread(proc0, td);
@@ -921,64 +936,59 @@ void thread_free_exited(thread_t **tdp) {
   *tdp = NULL;
 }
 
-int thread_setup_entry(thread_t *td, void (*entry)(void)) {
+int thread_setup_entry(thread_t *td, uintptr_t function, int argc, ...) {
+  va_list arglist;
+  va_start(arglist, argc);
+  int res = thread_setup_entry_va(td, function, argc, arglist);
+  va_end(arglist);
+  return res;
+}
+
+int thread_setup_entry_va(thread_t *td, uintptr_t function, int argc, va_list arglist) {
   ASSERT(TDS_IS_EMPTY(td));
   ASSERT(td->tcb->rip == 0);
+  ASSERT(TDF_IS_KTHREAD(td));
 
-  td->tcb->rip = (uintptr_t) entry;
-  if (is_userspace_ptr((uintptr_t) entry)) {
-    td->tcb->tcb_flags |= TCB_SYSRET;
-  } else {
-    td->tcb->tcb_flags |= TCB_KERNEL;
+  if (argc > 6) {
+    DPRINTF("thread_setup_entry_args: too many arguments\n");
+    return -EINVAL;
   }
 
+  void *args[6] = {0};
+  for (int i = 0; i < argc; i++) {
+    args[i] = va_arg(arglist, void *);
+  }
+
+  if (str_isnull(td->name)) {
+    td->name = str_from_charp(debug_function_name(function));
+  }
+
+  if (!is_kernel_code_ptr(function)) {
+    DPRINTF("warning: kernel thread entry point is not a kernel code pointer\n");
+  }
+
+  td->tcb->tcb_flags |= TCB_KERNEL;
+  td->tcb->rflags = 0x202; // IF=1, IOPL=0
+  td->tcb->rip = (uintptr_t) kernel_thread_entry;
+
+  uintptr_t rsp = thread_get_kstack_top(td);
+  rsp -= sizeof(void *) * 7; // function + 6 args
+  ((void **) rsp)[0] = (void *) function;
+  for (int i = 0; i < 6; i++) {
+    ((void **) rsp)[i + 1] = args[i];
+  }
+
+  td->tcb->rsp = rsp;
+  return 0;
+}
+
+int thread_setup_name(thread_t *td, cstr_t name) {
+  ASSERT(TDS_IS_EMPTY(td));
   if (!str_isnull(td->name)) {
-    td->name = str_from_charp(debug_function_name((uintptr_t) entry));
+    str_free(&td->name);
   }
 
-  td->tcb->rip = (uintptr_t) entry;
-  if (TDF_IS_KTHREAD(td)) {
-    // this is a kernel thread
-    if (!is_kernel_code_ptr((uintptr_t) entry)) {
-      DPRINTF("warning: kernel thread entry point is not a kernel code pointer\n");
-    }
-
-    // this is a kernel thread so we can use the kernel stack
-    td->tcb->rsp = thread_get_kstack_top(td);
-    td->tcb->rflags = 0x202; // IF=1, IOPL=0
-  } else {
-    // this is a user thread
-    if (!is_userspace_ptr((uintptr_t) entry)) {
-      DPRINTF("warning: user thread entry point is not a userspace pointer\n");
-    }
-
-    if (td->ustack_base == 0) {
-      // allocate a new user stack for the thread
-      page_t *ustack_pages = alloc_pages(SIZE_TO_PAGES(PROC_USTACK_SIZE));
-      if (ustack_pages == NULL) {
-        DPRINTF("failed to allocate user stack pages\n");
-        return -ENOMEM;
-      }
-
-      uintptr_t ustack_base = vmap_pages(
-        moveref(ustack_pages),
-        PROC_USTACK_BASE,
-        PROC_USTACK_SIZE,
-        VM_RDWR|VM_USER|VM_STACK,
-        "user stack"
-      );
-      if (ustack_base == 0) {
-        DPRINTF("failed to allocate user stack\n");
-        return -ENOMEM;
-      }
-
-      td->ustack_base = ustack_base;
-      td->ustack_size = PROC_USTACK_SIZE;
-    }
-
-    td->tcb->rsp = td->ustack_base + td->ustack_size;
-    td->tcb->rflags |= 0x3202; // IF=1, IOPL=3
-  }
+  td->name = str_from_cstr(name);
   return 0;
 }
 

@@ -2,16 +2,44 @@
 // Created by Aaron Gill-Braun on 2021-04-22.
 //
 
-#include <kernel/usb/scsi.h>
-#include <kernel/usb/usb.h>
-#include <kernel/printf.h>
+#include "scsi.h"
+
 #include <kernel/mm.h>
+#include <kernel/usb/usb.h>
+
+#include <kernel/printf.h>
 #include <kernel/panic.h>
 #include <kernel/string.h>
 
+#define ASSERT(x) kassert(x)
+#define DPRINTF(x, ...) kprintf("scsi: " x, ##__VA_ARGS__)
+#define EPRINTF(x, ...) kprintf("scsi: %s: " x, __func__, ##__VA_ARGS__)
+
 #define SCSI_MAX_XFER 64
 
-char sd_suffix = 'a';
+int scsi_device_init(usb_device_t *device);
+int scsi_device_deinit(usb_device_t *device);
+ssize_t scsi_read(usb_device_t *device, uint64_t lba, uint32_t count, void *buf);
+ssize_t scsi_write(usb_device_t *device, uint64_t lba, uint32_t count, void *buf);
+
+usb_driver_t scsi_driver = {
+  .name = "Mass Storage Driver",
+  .dev_class = USB_CLASS_STORAGE,
+  .dev_subclass = USB_SUBCLASS_SCSI,
+
+  .init = scsi_device_init,
+  .deinit = scsi_device_deinit,
+};
+
+void module_init_register_scsi_driver(void *_) {
+  if (usb_register_driver(&scsi_driver) < 0) {
+    EPRINTF("failed to register SCSI driver\n");
+    return;
+  }
+};
+MODULE_INIT(module_init_register_scsi_driver);
+
+//
 
 void setup_command_block(usb_ms_cbw_t *cbw, void *cb, size_t size, size_t trnsf_len, bool dir) {
   memset(cbw, 0, sizeof(usb_ms_cbw_t));
@@ -27,7 +55,7 @@ void setup_command_block(usb_ms_cbw_t *cbw, void *cb, size_t size, size_t trnsf_
 //
 
 int scsi_device_init(usb_device_t *device) {
-  kprintf("scsi: device init\n");
+  DPRINTF("device init\n");
   scsi_device_t *scsi_dev = kmalloc(sizeof(scsi_device_t));
 
   scsi_inquiry_cmd_t inquiry_cmd = {
@@ -48,7 +76,7 @@ int scsi_device_init(usb_device_t *device) {
 
   usb_add_transfer(device, USB_OUT, kheap_ptr_to_phys(cbw), sizeof(usb_ms_cbw_t));
   if (usb_start_await_transfer(device, USB_OUT) < 0) {
-    kprintf("scsi: failed to send command\n");
+    EPRINTF("failed to send command\n");
     kfree(cbw);
     kfree(csw);
     return -1;
@@ -56,7 +84,7 @@ int scsi_device_init(usb_device_t *device) {
 
   usb_add_transfer(device, USB_IN, virt_to_phys(info), sizeof(scsi_device_info_t));
   if (usb_start_await_transfer(device, USB_IN) < 0) {
-    kprintf("scsi: failed to read device info\n");
+    EPRINTF("failed to read device info\n");
     kfree(cbw);
     kfree(csw);
     return -1;
@@ -64,7 +92,7 @@ int scsi_device_init(usb_device_t *device) {
 
   usb_add_transfer(device, USB_IN, kheap_ptr_to_phys(csw), sizeof(usb_ms_csw_t));
   if (usb_start_await_transfer(device, USB_IN) < 0) {
-    kprintf("scsi: failed to read command status\n");
+    EPRINTF("failed to read command status\n");
     kfree(cbw);
     kfree(csw);
     return -1;
@@ -88,7 +116,7 @@ int scsi_device_init(usb_device_t *device) {
   // }
 
   device->driver_data = scsi_dev;
-  kprintf("scsi: device init finished!\n");
+  DPRINTF("device init finished!\n");
   return 0;
 }
 
@@ -100,9 +128,9 @@ int scsi_device_deinit(usb_device_t *device) {
 // internal read/write
 
 ssize_t scsi_read_internal(usb_device_t *device, uint64_t lba, uint32_t count, void *buf) {
-  kassert(count)
-  kassert(count > 0 && count <= SCSI_MAX_XFER);
-  // kprintf("scsi: read [lba = %llu, count = %u]\n", lba, count);
+  ASSERT(count)
+  ASSERT(count > 0 && count <= SCSI_MAX_XFER);
+  // DPRINTF("read [lba = %llu, count = %u]\n", lba, count);
 
   uint64_t size = (uint64_t)count * 512;
   scsi_read16_cmd_t read_cmd = {
@@ -141,19 +169,18 @@ ssize_t scsi_read_internal(usb_device_t *device, uint64_t lba, uint32_t count, v
 
   kfree(cbw);
   kfree(csw);
-  // kprintf("scsi: read successful\n");
+  // DPRINTF("read successful\n");
   return (ssize_t) size;
 
 LABEL(FAIL);
   kfree(cbw);
   kfree(csw);
-  kprintf("scsi: read failed\n");
+  DPRINTF("read failed\n");
   return -EIO;
 }
 
 ssize_t scsi_write_internal(usb_device_t *device, uint64_t lba, uint32_t count, void *buf) {
-  kassert(count)
-  kassert(count > 0 && count <= SCSI_MAX_XFER);
+  ASSERT(count > 0 && count <= SCSI_MAX_XFER);
 
   uint64_t size = (uint64_t) count * 512;
   scsi_write16_cmd_t write_cmd = {
@@ -191,13 +218,13 @@ ssize_t scsi_write_internal(usb_device_t *device, uint64_t lba, uint32_t count, 
 
   kfree(cbw);
   kfree(csw);
-  // kprintf("[scsi] write successful\n");
+  // DPRINTF("write successful\n");
   return (ssize_t) size;
 
 LABEL(FAIL);
   kfree(cbw);
   kfree(csw);
-  // kprintf("[scsi] write failed\n");
+  // DPRINTF("write failed\n");
   return -EIO;
 }
 
@@ -208,12 +235,12 @@ ssize_t scsi_read(usb_device_t *device, uint64_t lba, uint32_t count, void *buf)
     return 0;
   }
 
-  // kprintf("scsi: read (%u blocks)\n", count);
+  // DPRINTF("read (%u blocks)\n", count);
   size_t buf_offset = 0;
   size_t lba_offset = 0;
   while (count > 0) {
     size_t ccount = min(count, SCSI_MAX_XFER);
-    // kprintf("scsi: read -> %u\n", count);
+    // DPRINTF("read -> %u\n", count);
     ssize_t result = scsi_read_internal(device, lba + lba_offset, ccount, buf + buf_offset);
     if (result < 0) {
       return -1;
@@ -232,6 +259,7 @@ ssize_t scsi_write(usb_device_t *device, uint64_t lba, uint32_t count, void *buf
     return 0;
   }
 
+  // DPRINTF("write (%u blocks)\n", count);
   size_t buf_offset = 0;
   size_t lba_offset = 0;
   while (count > 0) {

@@ -300,8 +300,6 @@ int irq_disable_interrupt(uint8_t irq) {
 }
 
 int irq_enable_msi_interrupt(uint8_t irq, uint8_t index, struct pci_device *device) {
-  todo();
-
   ASSERT(irq > irq_external_max);
   if (irq >= NUM_INTERRUPTS) {
     return -ERANGE;
@@ -313,13 +311,11 @@ int irq_enable_msi_interrupt(uint8_t irq, uint8_t index, struct pci_device *devi
   }
 
   uint8_t vector = IRQ_TO_VECTOR(get_real_irqnum(irq));
-  //pcie_enable_msi_vector(device, index, vector);
+  pci_enable_msi_vector(device, index, vector);
   return 0;
 }
 
 int irq_disable_msi_interrupt(uint8_t irq, uint8_t index, struct pci_device *device) {
-  todo();
-
   ASSERT(irq > irq_external_max);
   if (irq >= NUM_INTERRUPTS) {
     return -ERANGE;
@@ -330,7 +326,7 @@ int irq_disable_msi_interrupt(uint8_t irq, uint8_t index, struct pci_device *dev
     return result;
   }
 
-  // pcie_disable_msi_vector(device, index);
+  pci_disable_msi_vector(device, index);
   return 0;
 }
 

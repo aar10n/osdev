@@ -50,7 +50,8 @@ void cond_signal(cond_t *cond) {
   }
 
   struct waitqueue *waitq = waitq_lookup(cond);
-  waitq_signal(waitq);
+  if (waitq != NULL)
+    waitq_signal(waitq);
 }
 
 void cond_broadcast(cond_t *cond) {
@@ -59,5 +60,6 @@ void cond_broadcast(cond_t *cond) {
   }
 
   struct waitqueue *waitq = waitq_lookup(cond);
-  waitq_broadcast(waitq);
+  if (waitq != NULL)
+    waitq_broadcast(waitq);
 }

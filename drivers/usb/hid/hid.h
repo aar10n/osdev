@@ -2,13 +2,12 @@
 // Created by Aaron Gill-Braun on 2021-04-17.
 //
 
-#ifndef KERNEL_USB_HID_H
-#define KERNEL_USB_HID_H
+#ifndef DRIVERS_USB_HID_HID_H
+#define DRIVERS_USB_HID_HID_H
 
 #include <kernel/base.h>
-#include <kernel/usb/usb.h>
-#include <kernel/usb/xhci.h>
-#include <kernel/usb/hid-report.h>
+
+#include "hid-report.h"
 
 //
 // Requests
@@ -30,7 +29,7 @@
   .request = USB_GET_DESCRIPTOR,              \
   .value = ((REPORT_DESCRIPTOR) << 8),        \
   .index = 0,                                 \
-  .length = l,\
+  .length = (l),\
 })
 
 #define GET_REPORT(t, i, f, l) ((usb_setup_packet_t){ \
@@ -40,9 +39,9 @@
     .direction = USB_SETUP_DEV_TO_HOST,       \
   },                                          \
   .request = HID_GET_REPORT,                  \
-  .value = ((t) << 8) | (i & 0xFF),           \
-  .index = f,                                 \
-  .length = l,\
+  .value = ((t) << 8) | ((i) & 0xFF),         \
+  .index = (f),                               \
+  .length = (l),                               \
 })
 
 #define SET_REPORT(t, i, f, l) ((usb_setup_packet_t){ \
@@ -52,9 +51,9 @@
     .direction = USB_SETUP_HOST_TO_DEV,       \
   },                                          \
   .request = HID_SET_REPORT,                  \
-  .value = ((t) << 8) | (i & 0xFF),           \
-  .index = f,                                 \
-  .length = l,\
+  .value = ((t) << 8) | ((i) & 0xFF),         \
+  .index = (f),                               \
+  .length = (l),                              \
 })
 
 #define GET_IDLE(i, f) ((usb_setup_packet_t){ \
@@ -64,9 +63,9 @@
     .direction = USB_SETUP_DEV_TO_HOST,       \
   },                                          \
   .request = HID_GET_IDLE,                    \
-  .value = (i & 0xFF),                        \
-  .index = f,                                 \
-  .length = 1,\
+  .value = ((i) & 0xFF),                      \
+  .index = (f),                               \
+  .length = 1,                                \
 })
 
 #define SET_IDLE(d, i, f) ((usb_setup_packet_t){ \
@@ -76,8 +75,8 @@
     .direction = USB_SETUP_HOST_TO_DEV    \
   },                                      \
   .request = HID_SET_IDLE,                \
-  .value = ((d) << 8) | (i & 0xFF),       \
-  .index = f,                             \
+  .value = ((d) << 8) | ((i) & 0xFF),     \
+  .index = (f),                           \
   .length = 0,                            \
 })
 
@@ -110,21 +109,15 @@ typedef struct hid_buffer {
 } hid_buffer_t;
 
 typedef struct hid_device {
+  pid_t pid; // process id of the device driver
   hid_descriptor_t *desc;
   report_format_t *format;
   hid_buffer_t *buffer;
   size_t size;
 
-  struct thread *thread;
-
   void *data;
   void (*handle_input)(struct hid_device *device, uint8_t *buffer);
 } hid_device_t;
-
-
-int hid_device_init(usb_device_t *device);
-int hid_device_deinit(usb_device_t *device);
-int hid_device_handle_event(usb_event_t *event);
 
 // void *hid_device_init(usb_dev_t *dev);
 // void hid_handle_event(usb_event_t *event, void *data);
