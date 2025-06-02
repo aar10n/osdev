@@ -11,14 +11,17 @@
 #include <kernel/printf.h>
 
 #define ASSERT(x) kassert(x)
-// #define DPRINTF(fmt, ...) kprintf("vnode: %s: " fmt, __func__, ##__VA_ARGS__)
+// #define DPRINTF(fmt, ...) kprintf("vnode: " fmt, ##__VA_ARGS__)
 #define DPRINTF(fmt, ...)
+#define EPRINTF(fmt, ...) kprintf("vnode: %s: " fmt, __func__, ##__VA_ARGS__)
 
 #define CHECK_SAMEDEV(vn1, vn2) if ((vn1)->vfs != (vn2)->vfs) return -EXDEV;
 #define CHECK_WRITE(vn) if (VFS_ISRDONLY((vn)->vfs)) return -EROFS;
 #define CHECK_DIR(vn) if ((vn)->type != V_DIR) return -ENOTDIR;
 #define CHECK_NAMELEN(name) if (cstr_len(name) > NAME_MAX) return -ENAMETOOLONG;
 #define CHECK_SUPPORTED(vn, op) if (!(vn)->ops->op) return -ENOTSUP;
+
+#define goto_res(lbl, err) do { res = err; goto lbl; } while (0)
 
 static inline mode_t vn_to_mode(vnode_t *vnode) {
   mode_t mode = 0;
@@ -35,6 +38,169 @@ static inline mode_t vn_to_mode(vnode_t *vnode) {
   return mode;
 }
 
+
+//
+// MARK: Vnode File Operations
+//
+
+int vn_f_close(file_t *file) {
+  int res;
+  vnode_t *vn = file->data;
+  if (!vn_lock(vn)) {
+    return -EIO; // vnode is dead
+  }
+
+  if (V_ISDEV(vn)) {
+    device_t *device = vn->v_dev;
+    ASSERT(device != NULL);
+
+    // device close
+    res = d_close(device);
+  } else {
+    // close the file
+    res = vn_close(vn);
+  }
+
+  vn->flags &= ~VN_OPEN; // clear open flag
+  vn_unlock(vn);
+  return res;
+}
+
+int vn_f_getpage(file_t *file, off_t off, bool cached, __move page_t **page) {
+  vnode_t *vn = file->data;
+  if (V_ISDIR(vn)) {
+    return -EISDIR; // file is a directory
+  } else if (!vn_lock(vn)) {
+    return -EIO; // vnode is dead
+  }
+
+  int res;
+  if (V_ISDEV(vn)) {
+    device_t *device = vn->v_dev;
+    ASSERT(device != NULL);
+
+    // device getpage
+    page_t *out = d_getpage(device, off);
+    if (out == NULL) {
+      res = -EIO; // device failed to get page
+    } else {
+      *page = out; // move the page to caller
+      res = 0; // success
+    }
+  } else {
+    // getpage from vnode
+    res = vn_getpage(vn, off, cached, page);
+  }
+
+  vn_unlock(vn);
+  return res;
+}
+
+ssize_t vn_f_read(file_t *file, kio_t *kio) {
+  ssize_t res;
+  vnode_t *vn = file->data;
+  if (V_ISDIR(vn)) {
+    return -EISDIR; // file is a directory
+  } else if (!vn_lock(vn)) {
+    return -EIO; // vnode is dead
+  }
+
+  if (V_ISDEV(vn)) {
+    device_t *device = vn->v_dev;
+    ASSERT(device != NULL);
+
+    // device read
+    res = d_read(device, file->offset, kio);
+  } else {
+    // read the file
+    vn_begin_data_read(vn);
+    res = vn_read(vn, file->offset, kio);
+    vn_end_data_read(vn);
+  }
+
+  vn_unlock(vn);
+  return res;
+}
+
+ssize_t vn_f_write(file_t *file, kio_t *kio) {
+  vnode_t *vn = file->data;
+  if (V_ISDIR(vn)) {
+    return -EISDIR; // file is a directory
+  } else if (file->flags & O_RDONLY) {
+    return -EBADF; // file is not open for writing
+  } else if (!vn_lock(vn)) {
+    return -EIO; // vnode is dead
+  }
+
+  ssize_t res;
+  if (V_ISDEV(vn)) {
+    device_t *device = vn->v_dev;
+    ASSERT(device != NULL);
+
+    // device write
+    res = d_write(device, file->offset, kio);
+  } else {
+    // write the file
+    vn_begin_data_write(vn);
+    res = vn_write(vn, file->offset, kio);
+    vn_end_data_write(vn);
+  }
+
+  vn_unlock(vn);
+  return res;
+}
+
+int vn_f_ioctl(file_t *file, unsigned long request, void *arg) {
+  vnode_t *vn = file->data;
+  if (!vn_lock(vn)) {
+    return -EIO; // vnode is dead
+  }
+
+  int res;
+  if (V_ISDEV(vn)) {
+    device_t *device = vn->v_dev;
+    ASSERT(device != NULL);
+
+    // device ioctl
+    res = d_ioctl(device, request, arg);
+  } else {
+    // vnode ioctl
+    res = vn_ioctl(vn, request, arg);
+  }
+
+  vn_unlock(vn);
+  return res;
+}
+
+int vn_f_stat(file_t *file, struct stat *statbuf) {
+  vnode_t *vn = file->data;
+  if (!vn_lock(vn)) {
+    return -EIO; // vnode is dead
+  }
+
+  // get the vnode stat
+  vn_stat(vn, statbuf);
+  vn_unlock(vn);
+  return 0;
+}
+
+void vn_f_cleanup(file_t *file) {
+  vnode_t *vn = moveptr(file->data);
+  vn_release(&vn);
+}
+
+
+struct file_ops vnode_file_ops = {
+  .f_close = vn_f_close,
+  .f_read = vn_f_read,
+  .f_write = vn_f_write,
+  .f_ioctl = vn_f_ioctl,
+  .f_stat = vn_f_stat,
+  .f_cleanup = vn_f_cleanup,
+};
+
+//
+// Vnode API
 //
 
 __ref vnode_t *vn_alloc_empty(enum vtype type) {
@@ -69,21 +235,6 @@ __ref struct pgcache *vn_get_pgcache(vnode_t *vn) {
   struct pgcache *pgcache = getref(vn->pgcache);
   vn_unlock(vn);
   return pgcache;
-}
-
-void vn_stat(vnode_t *vn, struct stat *statbuf) {
-  memset(statbuf, 0, sizeof(struct stat));
-  statbuf->st_ino = vn->id;
-  statbuf->st_mode = vn_to_mode(vn);
-  statbuf->st_size = (off_t) vn->size;
-  statbuf->st_blocks = (blkcnt_t) vn->blocks;
-  statbuf->st_nlink = vn->nlink;
-  statbuf->st_rdev = vn->device ? make_dev(vn->device) : 0;
-  if (vn->type == V_BLK || vn->type == V_CHR) {
-    statbuf->st_dev = make_dev(vn->v_dev);
-  }
-
-  // TODO: rest of the fields
 }
 
 void vn_cleanup(__move vnode_t **vnref) {
@@ -127,6 +278,28 @@ int vn_close(vnode_t *vn) {
   return 0;
 }
 
+int vn_getpage(vnode_t *vn, off_t off, bool cached, __move page_t **result) {
+  if (!VN_OPS(vn)->v_getpage) return -ENOTSUP;
+  if (off < 0) return -EINVAL;
+  if (off >= vn->size)
+    return 0;
+
+  page_t *page;
+  if (cached && vn->pgcache && (page = pgcache_lookup(vn->pgcache, off)) != NULL) {
+    *result = page;
+    return 0;
+  }
+
+  // filesystem getpage
+  int res = VN_OPS(vn)->v_getpage(vn, off, &page);
+  if (res < 0) {
+    return res;
+  }
+
+  *result = page;
+  return 0;
+}
+
 ssize_t vn_read(vnode_t *vn, off_t off, kio_t *kio) {
   if (!VN_OPS(vn)->v_read) return -ENOTSUP;
   if (off < 0) return -EINVAL;
@@ -148,26 +321,34 @@ ssize_t vn_write(vnode_t *vn, off_t off, kio_t *kio) {
   return VN_OPS(vn)->v_write(vn, off, kio);
 }
 
-int vn_getpage(vnode_t *vn, off_t off, bool pgcache, __move page_t **result) {
-  if (!VN_OPS(vn)->v_getpage) return -ENOTSUP;
-  if (off < 0) return -EINVAL;
-  if (off >= vn->size)
-    return 0;
+int vn_ioctl(vnode_t *vn, unsigned long request, void *arg) {
+  DPRINTF("ioctl(%d, %#llx, %p)\n", fd, request, argp);
+  DPRINTF("TODO: implement ioct (%s:%d)\n", __FILE__, __LINE__);
+  return -EOPNOTSUPP; // not implemented yet
+}
 
-  page_t *page;
-  if (pgcache && vn->pgcache && (page = pgcache_lookup(vn->pgcache, off)) != NULL) {
-    *result = page;
-    return 0;
+int vn_fallocate(vnode_t *vn, off_t length) {
+  CHECK_WRITE(vn);
+  if (length < 0) return -EINVAL;
+  if (!VN_OPS(vn)->v_falloc) return -ENOTSUP;
+
+  // filesystem fallocate
+  return VN_OPS(vn)->v_falloc(vn, length - vn->size);
+}
+
+void vn_stat(vnode_t *vn, struct stat *statbuf) {
+  memset(statbuf, 0, sizeof(struct stat));
+  statbuf->st_ino = vn->id;
+  statbuf->st_mode = vn_to_mode(vn);
+  statbuf->st_size = (off_t) vn->size;
+  statbuf->st_blocks = (blkcnt_t) vn->blocks;
+  statbuf->st_nlink = vn->nlink;
+  statbuf->st_rdev = vn->device ? make_dev(vn->device) : 0;
+  if (vn->type == V_BLK || vn->type == V_CHR) {
+    statbuf->st_dev = make_dev(vn->v_dev);
   }
 
-  // filesystem getpage
-  int res = VN_OPS(vn)->v_getpage(vn, off, &page);
-  if (res < 0) {
-    return res;
-  }
-
-  *result = page;
-  return 0;
+  // TODO: rest of the fields
 }
 
 //

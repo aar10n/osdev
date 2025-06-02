@@ -10,6 +10,18 @@
 #include <bitmap.h>
 #include <rb_tree.h>
 
+#define ASSERT(x) kassert(x)
+#define DPRINTF(fmt, ...)
+// #define DPRINTF(fmt, ...) kprintf("file: " fmt, ##__VA_ARGS__)
+#define EPRINTF(fmt, ...) kprintf("file: %s: " fmt, __func__, ##__VA_ARGS__)
+
+#define FTABLE_MAX_FILES 1024
+
+#define FTABLE_LOCK(ftable) mtx_spin_lock(&(ftable)->lock)
+#define FTABLE_UNLOCK(ftable) mtx_spin_unlock(&(ftable)->lock)
+
+extern struct file_ops vnode_file_ops;
+
 typedef struct ftable {
   rb_tree_t *tree;
   bitmap_t *bitmap;
@@ -17,26 +29,24 @@ typedef struct ftable {
   mtx_t lock;
 } ftable_t;
 
-#define ASSERT(x) kassert(x)
-#define DPRINTF(fmt, ...)
-// #define DPRINTF(fmt, ...) kprintf("file: %s: " fmt, __func__, ##__VA_ARGS__)
-
-#define FTABLE_MAX_FILES 1024
-
-#define FTABLE_LOCK(ftable) mtx_spin_lock(&(ftable)->lock)
-#define FTABLE_UNLOCK(ftable) mtx_spin_unlock(&(ftable)->lock)
-
 //
 
-__ref file_t *f_alloc(int fd, int flags, vnode_t *vnode, cstr_t real_path) {
+__ref file_t *f_alloc(int fd, int flags, enum ftype type, void *data, struct file_ops *ops) {
   file_t *file = kmallocz(sizeof(file_t));
   file->fd = fd;
   file->flags = flags;
-  file->type = vnode->type;
-  file->vnode = vn_getref(vnode);
-  file->real_path = str_from_cstr(real_path);
+  file->type = type;
+  file->data = data;
+  file->ops = ops;
+  file->real_path = str_null;
   mtx_init(&file->lock, 0, "file_struct_lock");
   ref_init(&file->refcount);
+  return file;
+}
+
+__ref file_t *f_alloc_vn(int fd, int flags, vnode_t *vnode, cstr_t real_path) {
+  file_t *file = f_alloc(fd, flags, FT_VNODE, vn_getref(vnode), &vnode_file_ops);
+  file->real_path = str_from_cstr(real_path);
   return file;
 }
 
@@ -45,20 +55,24 @@ __ref file_t *f_dup(file_t *f) {
   dup->fd = f->fd;
   dup->flags = f->flags;
   dup->type = f->type;
-  dup->vnode = vn_getref(f->vnode);
+  if (f->type == FT_VNODE) {
+    dup->data = vn_getref(f->data); // data is a vnode
+  } else {
+    dup->data = f->data; // other types just share the data
+  }
   mtx_init(&dup->lock, 0, "file_struct_lock");
   ref_init(&dup->refcount);
   return dup;
 }
 
 void f_cleanup(__move file_t **fref) {
-  file_t *file = *fref;
+  file_t *file = moveref(*fref);
   ASSERT(file != NULL);
   ASSERT(file->closed);
   ASSERT(ref_count(&file->refcount) == 0);
   DPRINTF("!!! file cleanup {:file} !!!\n", file);
 
-  vn_release(&file->vnode);
+  F_OPS(file)->f_cleanup(file);
   str_free(&file->real_path);
   kfree(file);
 }

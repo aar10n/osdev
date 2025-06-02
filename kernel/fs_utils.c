@@ -157,7 +157,7 @@ void stat(const char *path) {
 
 void ls(const char *path) {
   kprintf(">>> ls(\"%s\")\n", path);
-  int fd = fs_opendir(cstr_make(path));
+  int fd = fs_open(cstr_make(path), O_RDONLY|O_DIRECTORY, 0);
   if (fd < 0) {
     FAIL("%s: {:err}\n", path, fd);
   }
@@ -178,7 +178,7 @@ void ls(const char *path) {
     FAIL("%s: readdir failed: {:err}\n", path, nread);
   }
 
-  int res = fs_closedir(fd);
+  int res = fs_close(fd);
   if (res < 0) {
     FAIL("%s: closedir failed: {:err}\n", path, res);
   }

@@ -90,6 +90,17 @@ int ramfs_vn_getpage(vnode_t *vn, off_t off, __move page_t **result) {
   return -EIO;
 }
 
+int ramfs_vn_falloc(vnode_t *vn, size_t len) {
+  ramfs_node_t *node = vn->data;
+  memfile_t *memf = node->n_file;
+
+  int res;
+  if ((res = memfile_falloc(memf, len)) < 0) {
+    return res; // failed to resize the file
+  }
+  return 0;
+}
+
 //
 
 int ramfs_vn_readlink(vnode_t *vn, struct kio *kio) {

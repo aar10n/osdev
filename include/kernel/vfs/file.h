@@ -7,26 +7,13 @@
 
 #include <kernel/vfs_types.h>
 
+#define F_OPS(f) __type_checked(struct file *, f, (f)->ops)
+
 typedef struct ftable ftable_t;
 
-/**
- * file is a file descriptor.
- */
-typedef struct file {
-  int fd;               // file descriptor
-  int flags;            // open flags
-  enum vtype type;      // vnode type
-  vnode_t *vnode;       // vnode reference
-  str_t real_path;      // full path to file
-
-  mtx_t lock;           // file lock
-  refcount_t refcount;  // reference count
-  off_t offset;         // current file offset
-  bool closed;          // file closed
-} file_t;
-
-__move file_t *f_alloc(int fd, int flags, vnode_t *vnode, cstr_t real_path);
-__move file_t *f_dup(file_t *f);
+__ref file_t *f_alloc(int fd, int flags, enum ftype type, void *data, struct file_ops *ops);
+__ref file_t *f_alloc_vn(int fd, int flags, vnode_t *vnode, cstr_t real_path);
+__ref file_t *f_dup(file_t *f);
 void f_cleanup(__move file_t **fref);
 
 ftable_t *ftable_alloc();
@@ -36,16 +23,14 @@ bool ftable_empty(ftable_t *ftable);
 int ftable_alloc_fd(ftable_t *ftable);
 int ftable_claim_fd(ftable_t *ftable, int fd);
 void ftable_free_fd(ftable_t *ftable, int fd);
-file_t *ftable_get_file(ftable_t *ftable, int fd) __move;
-file_t *ftable_get_remove_file(ftable_t *ftable, int fd) __move;
-void ftable_add_file(ftable_t *ftable, __move file_t *file);
+__ref file_t *ftable_get_file(ftable_t *ftable, int fd);
+__ref file_t *ftable_get_remove_file(ftable_t *ftable, int fd);
+void ftable_add_file(ftable_t *ftable, __ref file_t *file);
 void ftable_remove_file(ftable_t *ftable, int fd);
-
-//
-//
 
 // #define F_DPRINTF(fmt, ...) kprintf("file: " fmt " [%s:%d]\n", ##__VA_ARGS__, __FILE__, __LINE__)
 #define F_DPRINTF(fmt, ...)
+
 
 /// Returns a new reference to the file file.
 #define f_getref(f) ({ F_DPRINTF("f_getref {:file} refcount=%d", f, (f) ? ref_count(&(f)->refcount)+1 : 0); _f_getref(f); })

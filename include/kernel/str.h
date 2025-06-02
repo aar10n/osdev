@@ -116,7 +116,7 @@ static inline str_t str_alloc_empty(size_t len) {
 }
 
 static inline str_t str_new(const char *str, size_t len) {
-  if (!str)
+  if (!str || len == 0)
     return str_null;
 
   char *buf = kmalloc(len + 1);

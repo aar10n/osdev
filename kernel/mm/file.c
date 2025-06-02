@@ -19,7 +19,7 @@ static __ref page_t *vnode_getpage_missing(vm_file_t *file, size_t off) {
   int res;
   page_t *page;
   vnode_t *vn = file->vnode;
-  if ((res = vn_getpage(vn, (off_t) off, /*pgcache=*/false, &page)) < 0) {
+  if ((res = vn_getpage(vn, (off_t) off, /*cached=*/false, &page)) < 0) {
     return NULL;
   }
   return page;

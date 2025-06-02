@@ -114,6 +114,7 @@ struct vnode_ops ramfs_vnode_ops = {
   .v_read = ramfs_vn_read,
   .v_write = ramfs_vn_write,
   .v_getpage = ramfs_vn_getpage,
+  .v_falloc = ramfs_vn_falloc,
 
   .v_readlink = ramfs_vn_readlink,
   .v_readdir = ramfs_vn_readdir,

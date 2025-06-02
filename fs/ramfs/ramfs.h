@@ -78,6 +78,7 @@ void ramfs_vfs_cleanup(vfs_t *vfs);
 ssize_t ramfs_vn_read(vnode_t *vn, off_t off, kio_t *kio);
 ssize_t ramfs_vn_write(vnode_t *vn, off_t off, kio_t *kio);
 int ramfs_vn_getpage(vnode_t *vn, off_t off, __move page_t **result);
+int ramfs_vn_falloc(vnode_t *vn, size_t len);
 
 int ramfs_vn_readlink(vnode_t *vn, kio_t *kio);
 ssize_t ramfs_vn_readdir(vnode_t *vn, off_t off, kio_t *kio);

@@ -28,6 +28,8 @@ struct vfs_ops;
 struct ventry;
 struct ventry_ops;
 struct vtable;
+struct file;
+struct file_ops;
 struct ftable;
 
 typedef struct vcache vcache_t;
@@ -129,10 +131,10 @@ enum vtype {
   V_LNK,  // symbolic link
   V_BLK,  // block device
   V_CHR,  // character device
-  V_FIFO, // fifo
+  V_FIFO, // named pipe
   V_SOCK, // socket
 };
-#define V_TYPE_MAX V_MNT
+#define V_TYPE_MAX V_SOCK
 
 #define V_ISREG(v) ((v)->type == V_REG)
 #define V_ISDIR(v) ((v)->type == V_DIR)
@@ -208,16 +210,16 @@ struct vnode_ops {
   // file operations
   int (*v_open)(struct vnode *vn, int flags);
   int (*v_close)(struct vnode *vn);
-  ssize_t (*v_read)(struct vnode *vn, off_t off, struct kio *kio);
-  ssize_t (*v_write)(struct vnode *vn, off_t off, struct kio *kio);
+  ssize_t (*v_read)(struct vnode *vn, off_t off, kio_t *kio);
+  ssize_t (*v_write)(struct vnode *vn, off_t off, kio_t *kio);
   int (*v_getpage)(struct vnode *vn, off_t off, __move struct page **result);
   int (*v_falloc)(struct vnode *vn, size_t len);
 
   // node operations
   int (*v_load)(struct vnode *vn);
   int (*v_save)(struct vnode *vn);
-  int (*v_readlink)(struct vnode *vn, struct kio *kio);
-  ssize_t (*v_readdir)(struct vnode *vn, off_t off, struct kio *dirbuf);
+  int (*v_readlink)(struct vnode *vn, kio_t *kio);
+  ssize_t (*v_readdir)(struct vnode *vn, off_t off, kio_t *dirbuf);
 
   // directory operations
   int (*v_lookup)(struct vnode *dir, cstr_t name, __move struct ventry **result);
@@ -278,11 +280,11 @@ typedef struct ventry {
 
 // ventry flags
 #define VE_LINKED  0x01  /// ventry has been linked to a vnode
-#define   VE_ISLINKED(ve) __type_checked(struct ventry *, ve, ((ve)->flags & VE_LINKED))
+#define   VE_ISLINKED(ve) __type_checked(struct ventry*, ve, ((ve)->flags & VE_LINKED))
 #define VE_MOUNT   0x02 /// ventry is a mount point
-#define   VE_ISMOUNT(ve) __type_checked(struct ventry *, ve, ((ve)->flags & VE_MOUNT))
+#define   VE_ISMOUNT(ve) __type_checked(struct ventry*, ve, ((ve)->flags & VE_MOUNT))
 #define VE_FSROOT  0x04 /// ventry is the filesystem root
-#define   VE_ISFSROOT(ve) __type_checked(struct ventry *, ve, ((ve)->flags & VE_FSROOT))
+#define   VE_ISFSROOT(ve) __type_checked(struct ventry*, ve, ((ve)->flags & VE_FSROOT))
 
 
 struct ventry_ops {
@@ -290,6 +292,49 @@ struct ventry_ops {
   bool (*v_cmp)(struct ventry *ve, cstr_t name);
 
   void (*v_cleanup)(struct ventry *ve);
+};
+
+
+// =================================
+//              file
+// =================================
+
+enum ftype {
+  FT_VNODE, // file
+  FT_PIPE,  // pipe
+  FT_PTS,   // pseudo-terminal slave
+};
+
+#define F_ISVNODE(f) ((f)->type == FT_VNODE)
+#define F_ISPIPE(f) ((f)->type == FT_PIPE)
+#define F_ISPTS(f) ((f)->type == FT_PTS)
+
+/*
+ * An open file descriptor.
+ */
+typedef struct file {
+  int fd;               // file descriptor
+  int flags;            // open flags (flags from open())
+  enum ftype type;      // file type
+  str_t real_path;      // full path to file
+
+  void *data;           // file private data
+  struct file_ops *ops; // file operations
+
+  mtx_t lock;           // file lock
+  refcount_t refcount;  // reference count
+  off_t offset;         // current file offset
+  bool closed;          // file closed
+} file_t;
+
+
+struct file_ops {
+  int (*f_close)(file_t *file);
+  ssize_t (*f_read)(file_t *file, kio_t *kio);
+  ssize_t (*f_write)(file_t *file, kio_t *kio);
+  int (*f_ioctl)(file_t *file, unsigned long request, void *arg);
+  int (*f_stat)(file_t *file, struct stat *statbuf);
+  void (*f_cleanup)(file_t *file);
 };
 
 

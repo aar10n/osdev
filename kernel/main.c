@@ -17,8 +17,6 @@
 
 #include <kernel/acpi/acpi.h>
 #include <kernel/cpu/cpu.h>
-#include <kernel/debug/debug.h>
-#include <kernel/usb/usb.h>
 
 #include <kernel/printf.h>
 #include <kernel/panic.h>
@@ -29,9 +27,6 @@
 bool is_smp_enabled = false;
 bool is_debug_enabled = true;
 boot_info_v2_t __boot_data *boot_info_v2;
-
-void kernel_process1();
-void kernel_process2();
 
 //
 // Kernel entry
@@ -126,8 +121,6 @@ __used void ap_main() {
   unreachable;
 }
 
-//
-//
 //
 
 void kernel_process1() {

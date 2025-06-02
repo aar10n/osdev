@@ -598,6 +598,29 @@ static size_t format_vtype(fmt_buffer_t *buffer, const fmt_spec_t *spec) {
   }
 }
 
+static size_t format_ftype(fmt_buffer_t *buffer, const fmt_spec_t *spec) {
+  enum ftype ftype = spec->value.uint64_value;
+  bool upper = (spec->flags & FMT_FLAG_UPPER) != 0;
+
+  size_t n = 0;
+  switch (ftype) {
+    case FT_VNODE:
+      n += fmtlib_buffer_write(buffer, (upper ? "VNODE" : "vnode"), 6);
+      return n;
+    case FT_PIPE:
+      n += fmtlib_buffer_write(buffer, (upper ? "PIPE" : "pipe"), 5);
+      return n;
+    case FT_PTS:
+      n += fmtlib_buffer_write(buffer, (upper ? "PTS" : "pts"), 6);
+      return n;
+    default:
+      n += fmtlib_buffer_write(buffer, upper ? "INVALID FTYPE<" : "invalid ftype<", 14);
+      n += fmtlib_buffer_write_u64(buffer, ftype);
+      n += fmtlib_buffer_write_char(buffer, '>');
+      return n;
+  }
+}
+
 static size_t format_vattr(fmt_buffer_t *buffer, const fmt_spec_t *spec) {
   // {<type>,<mode>}
   const struct vattr *vattr = spec->value.voidptr_value;
@@ -686,8 +709,8 @@ static size_t format_ventry(fmt_buffer_t *buffer, const fmt_spec_t *spec) {
 }
 
 static size_t format_file(fmt_buffer_t *buffer, const fmt_spec_t *spec) {
-  // <<fd>:<vtype>:<vnode>>
-  // <<fd>:<vtype>:<vnode>><pointer>    '+' flag
+  // <<fd>:<ftype>:<data pointer>>
+  // <<fd>:<ftype>:<data pointer>><pointer>    '+' flag
   const file_t *f = spec->value.voidptr_value;
   bool plus = (spec->flags & FMT_FLAG_SIGN) != 0;
   if (f == NULL) {
@@ -698,9 +721,9 @@ static size_t format_file(fmt_buffer_t *buffer, const fmt_spec_t *spec) {
   n += fmtlib_buffer_write_char(buffer, '<');
   n += format_signed(buffer, &mk_fmtlib_spec_u64(f->fd, 0));
   n += fmtlib_buffer_write_char(buffer, ':');
-  n += format_vtype(buffer, &mk_fmtlib_spec_u64(f->type, 0));
+  n += format_ftype(buffer, &mk_fmtlib_spec_u64(f->type, 0));
   n += fmtlib_buffer_write_char(buffer, ':');
-  n += format_vnode(buffer, &mk_fmtlib_spec_voidp(f->vnode));
+  n += format_signed(buffer, &mk_fmtlib_spec_pointer(f->data));
   n += fmtlib_buffer_write_char(buffer, '>');
 
   if (plus) {

@@ -59,7 +59,7 @@ struct device_ops {
   int (*d_close)(struct device *device);
   ssize_t (*d_read)(struct device *device, size_t off, size_t nmax, struct kio *kio);
   ssize_t (*d_write)(struct device *device, size_t off, size_t nmax, struct kio *kio);
-  // int (*d_ioctl)(struct device *device, int cmd, void *arg);
+  int (*d_ioctl)(struct device *device, unsigned long cmd, void *arg);
   __ref page_t *(*d_getpage)(struct device *device, size_t off);
   int (*d_putpage)(struct device *device, size_t off, __ref page_t *page);
 };
@@ -228,10 +228,37 @@ int register_dev(const char *dev_type, device_t *dev);
 
 // MARK: Device Operations
 
-int d_open(device_t *device, int flags);
-int d_close(device_t *device);
-ssize_t d_nread(device_t *device, size_t off, size_t nmax, kio_t *kio);
-ssize_t d_nwrite(device_t *device, size_t off, size_t nmax, kio_t *kio);
+static inline int d_open(device_t *device, int flags) {
+  if (device->ops->d_open == NULL)
+    return 0;
+  return device->ops->d_open(device, flags);
+}
+static inline int d_close(device_t *device) {
+  if (device->ops->d_close == NULL)
+    return 0;
+  return device->ops->d_close(device);
+}
+static inline ssize_t d_nread(device_t *device, size_t off, size_t nmax, kio_t *kio) {
+  if (device->ops->d_read == NULL)
+    return -ENOTSUP;
+  return device->ops->d_read(device, off, nmax, kio);
+}
+static inline ssize_t d_nwrite(device_t *device, size_t off, size_t nmax, kio_t *kio) {
+  if (device->ops->d_write == NULL)
+    return -ENOTSUP;
+  return device->ops->d_write(device, off, nmax, kio);
+}
+static inline int d_ioctl(device_t *device, unsigned long request, void *arg) {
+  if (device->ops->d_ioctl == NULL) {
+    return -ENOTSUP;
+  }
+  return device->ops->d_ioctl(device, request, arg);
+}
+static inline __ref page_t *d_getpage(device_t *device, size_t off) {
+  if (device->ops->d_getpage == NULL)
+    return NULL;
+  return device->ops->d_getpage(device, off);
+}
 
 static inline ssize_t d_read(device_t *device, size_t off, kio_t *kio) {
   return d_nread(device, off, kio_remaining(kio), kio);
@@ -249,12 +276,6 @@ static inline ssize_t d_read_n(device_t *device, size_t off, void *buf, size_t l
 static inline ssize_t d_write_n(device_t *device, size_t off, const void *buf, size_t len) {
   kio_t tmp = kio_new_readable(buf, len);
   return d_write(device, off, &tmp);
-}
-
-static inline __ref page_t *d_getpage(device_t *device, size_t off) {
-  if (device->ops->d_getpage == NULL)
-    return NULL;
-  return device->ops->d_getpage(device, off);
 }
 
 #endif

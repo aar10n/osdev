@@ -7,6 +7,9 @@
 #include <kernel/printf.h>
 #include <kernel/panic.h>
 
+#define ASSERT(x) kassert(x)
+#define DPRINTF(x, ...) kprintf("input: " x, ##__VA_ARGS__)
+
 static const char *input_code_to_name[] = {
   [BTN_MOUSE1] = "BTN_MOUSE1",
   [BTN_MOUSE2] = "BTN_MOUSE2",
@@ -262,7 +265,7 @@ static int input_process_key_event(uint16_t flags, uint32_t value) {
     return -1;
   }
 
-  kprintf("input: key event %s (%d) [pressed = %d]\n", input_code_to_name[key], key, pressed);
+  DPRINTF("input: key event %s (%d) [pressed = %d]\n", input_code_to_name[key], key, pressed);
 
   // update keymap state
   if (pressed) {
@@ -286,8 +289,12 @@ static int input_process_key_event(uint16_t flags, uint32_t value) {
 
   if (pressed) {
     // format and send key event to stream
+    int res;
     input_key_event_t event = { .key = key, .modifiers = key_modifiers };
-    chan_send(key_event_stream, &event);
+    if ((res = chan_send(key_event_stream, &event)) < 0) {
+      DPRINTF("input: failed to send key event to stream: {:err}\n", res);
+      return res;
+    }
   }
   return 0;
 }

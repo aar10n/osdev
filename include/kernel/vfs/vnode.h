@@ -20,20 +20,22 @@
 //   w = vnode data lock (write)
 //
 // comments after the function indicate the expected lock state of the parameters.
-// unless marked with a __move or __ref all pointer parameters are assumed to be
-// references held by the caller.
+// unless marked with a __ref all pointer parameters are assumed to be pointers to
+// a reference held by the caller.
 
 __ref vnode_t *vn_alloc_empty(enum vtype type);
 __ref vnode_t *vn_alloc(id_t id, struct vattr *vattr);
 __ref struct pgcache *vn_get_pgcache(vnode_t *vn); // vn = _
-void vn_stat(vnode_t *vn, struct stat *statbuf); // vn = l
 void vn_cleanup(__move vnode_t **vnref); // vnref = _
 
-int vn_open(vnode_t *vn, int flags); // vn = _
-int vn_close(vnode_t *vn); // vn = _
+int vn_open(vnode_t *vn, int flags); // vn = l
+int vn_close(vnode_t *vn); // vn = l
+int vn_getpage(vnode_t *vn, off_t off, bool cached, __move page_t **result); // vn = _
 ssize_t vn_read(vnode_t *vn, off_t off, kio_t *kio); // vn = r
 ssize_t vn_write(vnode_t *vn, off_t off, kio_t *kio); // vn = w
-int vn_getpage(vnode_t *vn, off_t off, bool pgcache, __move page_t **result); // vn = _
+int vn_ioctl(vnode_t *vn, unsigned long request, void *arg); // vn = l
+int vn_fallocate(vnode_t *vn, off_t length); // vn = w
+void vn_stat(vnode_t *vn, struct stat *statbuf); // vn = l
 
 int vn_load(vnode_t *vn); // vn = l
 int vn_save(vnode_t *vn); // vn = l

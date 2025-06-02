@@ -1268,7 +1268,7 @@ void *vm_mmap(uintptr_t addr, size_t len, int prot, int flags, int fd, off_t off
     return (void *) res;
   }
 
-  vm_file_t *vm_file = fs_get_vm_file(fd, off, len);
+  vm_file_t *vm_file = fs_get_vmfile(fd, off, len);
   uintptr_t res = vmap_file(vm_file, addr, 0, vm_flags, "mmap file");
   if (res == 0) {
     DPRINTF("failed to map file\n");
