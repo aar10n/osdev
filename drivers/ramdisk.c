@@ -19,18 +19,18 @@ struct ramdisk {
 
 // MARK: Device API
 
-int ramdisk_d_open(device_t *device, int flags) {
-  struct ramdisk *rd = device->data;
+int ramdisk_d_open(device_t *dev, int flags) {
+  struct ramdisk *rd = dev->data;
   return 0;
 }
 
-int ramdisk_d_close(device_t *device) {
-  struct ramdisk *rd = device->data;
+int ramdisk_d_close(device_t *dev) {
+  struct ramdisk *rd = dev->data;
   return 0;
 }
 
-ssize_t ramdisk_d_read(device_t *device, size_t off, size_t nmax, kio_t *kio) {
-  struct ramdisk *rd = device->data;
+ssize_t ramdisk_d_read(device_t *dev, size_t off, size_t nmax, kio_t *kio) {
+  struct ramdisk *rd = dev->data;
   if (off >= rd->size) {
     return 0;
   }
@@ -41,8 +41,8 @@ ssize_t ramdisk_d_read(device_t *device, size_t off, size_t nmax, kio_t *kio) {
   return (ssize_t) kio_nwrite_in(kio, (void *)rd->base, rd->size, off, nmax);
 }
 
-ssize_t ramdisk_d_write(device_t *device, size_t off, size_t nmax, kio_t *kio) {
-  struct ramdisk *rd = device->data;
+ssize_t ramdisk_d_write(device_t *dev, size_t off, size_t nmax, kio_t *kio) {
+  struct ramdisk *rd = dev->data;
   if (off >= rd->size) {
     return 0;
   }
@@ -51,15 +51,15 @@ ssize_t ramdisk_d_write(device_t *device, size_t off, size_t nmax, kio_t *kio) {
   return (ssize_t) kio_nread_out((void *)rd->base, len, off, nmax, kio);
 }
 
-__ref page_t *ramdisk_d_getpage(device_t *device, size_t off) {
-  struct ramdisk *rd = device->data;
+__ref page_t *ramdisk_d_getpage(device_t *dev, size_t off) {
+  struct ramdisk *rd = dev->data;
   if (off >= rd->size) {
     return NULL;
   }
   return vm_getpage_cow(rd->base + off);
 }
 
-int ramdisk_d_putpage(device_t *device, size_t off, __move page_t *page) {
+int ramdisk_d_putpage(device_t *dev, size_t off, __move page_t *page) {
   // TODO: implement
   unimplemented("ramdisk_d_putpage");
 }

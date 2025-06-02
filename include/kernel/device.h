@@ -55,13 +55,13 @@ typedef struct device {
 } device_t;
 
 struct device_ops {
-  int (*d_open)(struct device *device, int flags);
-  int (*d_close)(struct device *device);
-  ssize_t (*d_read)(struct device *device, size_t off, size_t nmax, struct kio *kio);
-  ssize_t (*d_write)(struct device *device, size_t off, size_t nmax, struct kio *kio);
-  int (*d_ioctl)(struct device *device, unsigned long cmd, void *arg);
-  __ref page_t *(*d_getpage)(struct device *device, size_t off);
-  int (*d_putpage)(struct device *device, size_t off, __ref page_t *page);
+  int (*d_open)(struct device *dev, int flags);
+  int (*d_close)(struct device *dev);
+  ssize_t (*d_read)(struct device *dev, size_t off, size_t nmax, struct kio *kio);
+  ssize_t (*d_write)(struct device *dev, size_t off, size_t nmax, struct kio *kio);
+  int (*d_ioctl)(struct device *dev, unsigned long cmd, void *arg);
+  __ref page_t *(*d_getpage)(struct device *dev, size_t off);
+  int (*d_putpage)(struct device *dev, size_t off, __ref page_t *page);
 };
 
 /**

@@ -18,14 +18,14 @@ static int default_d_close(device_t *dev) { return 0; }
 
 // MARK: Null Device
 
-static ssize_t null_d_read(device_t *device, size_t off, size_t nmax, kio_t *kio) {
+static ssize_t null_d_read(device_t *dev, size_t off, size_t nmax, kio_t *kio) {
   if (off != 0) {
     return -EINVAL;
   }
   return (ssize_t) kio_fill(kio, 0, nmax);
 }
 
-static ssize_t null_d_write(device_t *device, size_t off, size_t nmax, kio_t *kio) {
+static ssize_t null_d_write(device_t *dev, size_t off, size_t nmax, kio_t *kio) {
   if (off != 0) {
     return -EINVAL;
   }
@@ -41,11 +41,11 @@ static struct device_ops null_ops = {
 
 // MARK: Debug Device
 
-static ssize_t debug_d_read(device_t *device, size_t off, size_t nmax, kio_t *kio) {
+static ssize_t debug_d_read(device_t *dev, size_t off, size_t nmax, kio_t *kio) {
   return -EACCES;
 }
 
-static ssize_t debug_d_write(device_t *device, size_t off, size_t nmax, kio_t *kio) {
+static ssize_t debug_d_write(device_t *dev, size_t off, size_t nmax, kio_t *kio) {
   if (off != 0) {
     return -EINVAL;
   }

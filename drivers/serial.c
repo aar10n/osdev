@@ -92,29 +92,31 @@ ssize_t serial_write(int port, size_t off, size_t nmax, kio_t *kio) {
   return (ssize_t) n;
 }
 
+//
 // MARK: Device API
+//
 
-struct serial_device {
+struct serial_dev {
   int port;
 };
 
-static int serial_d_open(device_t *device, int flags) {
-  struct serial_device *dev = device->data;
+static int serial_d_open(device_t *dev, int flags) {
+  struct serial_dev *ser_dev = dev->data;
   return 0;
 }
 
-static int serial_d_close(device_t *device) {
+static int serial_d_close(device_t *dev) {
   return 0;
 }
 
-static ssize_t serial_d_read(device_t *device, size_t off, size_t nmax, kio_t *kio) {
-  struct serial_device *dev = device->data;
-  return serial_read(dev->port, off, nmax, kio);
+static ssize_t serial_d_read(device_t *dev, size_t off, size_t nmax, kio_t *kio) {
+  struct serial_dev *ser_dev = dev->data;
+  return serial_read(ser_dev->port, off, nmax, kio);
 }
 
-static ssize_t serial_d_write(device_t *device, size_t off, size_t nmax, kio_t *kio) {
-  struct serial_device *dev = device->data;
-  return serial_write(dev->port, off, nmax, kio);
+static ssize_t serial_d_write(device_t *dev, size_t off, size_t nmax, kio_t *kio) {
+  struct serial_dev *ser_dev = dev->data;
+  return serial_write(ser_dev->port, off, nmax, kio);
 }
 
 static struct device_ops serial_ops = {
@@ -124,7 +126,9 @@ static struct device_ops serial_ops = {
   .d_write = serial_d_write,
 };
 
+//
 // MARK: Device Registration
+//
 
 static void serial_module_init() {
   static const int ports[] = { COM1, COM2, COM3, COM4 };
@@ -133,7 +137,7 @@ static void serial_module_init() {
       continue;
     }
 
-    struct serial_device *serial_dev = kmallocz(sizeof(struct serial_device));
+    struct serial_dev *serial_dev = kmallocz(sizeof(struct serial_dev));
     serial_dev->port = ports[i];
 
     device_t *dev = alloc_device(serial_dev, &serial_ops);
