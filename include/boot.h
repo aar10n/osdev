@@ -84,6 +84,9 @@ typedef struct boot_info_v2 {
   uint64_t kernel_virt_addr;      // kernel virtual address
   uint32_t kernel_size;           // kernel size in bytes
   uint32_t pml4_addr;             // pml4 table address
+  // kernel command line
+  const char *cmdline;            // kernel command line parameters
+  uint32_t cmdline_len;           // length of the command line in bytes
   // memory info
   uint64_t mem_total;             // total memory
   memory_map_t mem_map;           // system memory map
@@ -103,5 +106,7 @@ typedef struct boot_info_v2 {
   uint32_t smbios_ptr;            // SMBIOS Entry Point table address
   uint32_t : 32;                  // reserved
 } boot_info_v2_t;
+
+// typedef struct
 
 #endif

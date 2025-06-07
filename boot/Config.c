@@ -13,6 +13,7 @@ typedef enum {
   IniMiddleOfLine,
   IniParseKey,
   IniParseValue,
+  IniEscapedNewline,
 } INI_STATE;
 
 typedef struct _INI_BUCKET {
@@ -168,6 +169,20 @@ EFI_STATUS EFIAPI ConfigParse(void *Buffer, UINTN BufferSize) {
       case '\n': {
         if (State == IniMiddleOfLine || State == IniParseValue) {
           goto SaveVariable;
+        } else if (State == IniEscapedNewline) {
+          if (ValueLen >= INI_MAX_VALUE_LEN) {
+            SYNTAX_ERROR("Value is too long");
+            goto EndOfLine;
+          }
+
+          // keep the newline but keep parsing a value
+          CurrentValue[ValueLen] = '\n';
+          ValueLen++;
+
+          State = IniParseValue;
+          Column = 0;
+          Line++;
+          break;
         } else if (KeyLen > 0) {
           SYNTAX_ERROR("Unexpected EOL");
         }
@@ -176,15 +191,27 @@ EFI_STATUS EFIAPI ConfigParse(void *Buffer, UINTN BufferSize) {
       }
       // assignment operator
       case '=': {
-        // check if an assignment is valid
-        if (KeyLen == 0) {
-          // invalid syntax
-          SYNTAX_ERROR("Unexepected token '='");
-          // recover by skipping line
+        if (State == IniParseKey) {
+          // check if an assignment is valid
+          if (KeyLen == 0) {
+            SYNTAX_ERROR("Unexepected token '='");
+            goto EndOfLine;
+          }
+
+          State = IniMiddleOfLine;
+        } else if (State == IniParseValue || State == IniEscapedNewline) {
+          // the equals sign is part of the value
+          if (ValueLen >= INI_MAX_VALUE_LEN) {
+            SYNTAX_ERROR("Value is too long");
+            goto EndOfLine;
+          }
+          CurrentValue[ValueLen] = *Ptr;
+          ValueLen++;
+          // continue parsing the value
+        } else {
+          SYNTAX_ERROR("Unexpected '=' at start of line");
           goto EndOfLine;
         }
-
-        State = IniMiddleOfLine;
         break;
       }
       // whitespace
@@ -201,11 +228,14 @@ EFI_STATUS EFIAPI ConfigParse(void *Buffer, UINTN BufferSize) {
             }
             break;
           }
-
-          // invalid syntax
-          SYNTAX_ERROR("Invalid whitespace in key");
-          // recover by skipping line
-          goto EndOfLine;
+        } else if (State == IniParseValue) {
+          // add whitespace to the value
+          if (ValueLen >= INI_MAX_VALUE_LEN) {
+            SYNTAX_ERROR("Value is too long");
+            goto EndOfLine;
+          }
+          CurrentValue[ValueLen] = *Ptr;
+          ValueLen++;
         }
 
         if (ValueEnd == 0) {
@@ -217,6 +247,16 @@ EFI_STATUS EFIAPI ConfigParse(void *Buffer, UINTN BufferSize) {
         }
         // fallthrough
       }
+      // newline escape
+      case '\\': {
+        if (State == IniMiddleOfLine || State == IniParseValue || State == IniEscapedNewline) {
+          State = IniEscapedNewline;
+          break;
+        } else {
+          SYNTAX_ERROR("Unexpected '\\' in key");
+          goto EndOfLine;
+        }
+      }
       default: {
         if (*Ptr != ' ' && *Ptr != '\t') {
           ValueEnd = 0;
@@ -226,9 +266,7 @@ EFI_STATUS EFIAPI ConfigParse(void *Buffer, UINTN BufferSize) {
           State = IniParseKey;
 
           if (KeyLen >= INI_MAX_KEY_LEN) {
-            // key too long
             SYNTAX_ERROR("Key is too long");
-            // recover by skipping line
             goto EndOfLine;
           }
 
@@ -238,9 +276,7 @@ EFI_STATUS EFIAPI ConfigParse(void *Buffer, UINTN BufferSize) {
           State = IniParseValue;
 
           if (ValueLen >= INI_MAX_VALUE_LEN) {
-            // key too long
             SYNTAX_ERROR("Value is too long");
-            // recover by skipping line
             goto EndOfLine;
           }
 

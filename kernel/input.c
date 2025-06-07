@@ -301,7 +301,7 @@ static int input_process_key_event(uint16_t flags, uint32_t value) {
 
 //
 
-int input_event(ev_type_t type, uint16_t flags, uint32_t value) {
+int input_event(input_evtyp_t type, uint16_t flags, uint32_t value) {
   switch (type) {
     case EV_KEY:
       return input_process_key_event(flags, value);

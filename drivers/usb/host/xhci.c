@@ -1604,6 +1604,7 @@ static struct device_driver xhci_device_driver = {
 };
 
 static void xhci_module_init() {
+  kprintf("-------->\n");
   if (register_driver("pci", &xhci_device_driver) < 0) {
     panic("xhci: failed to register driver");
   }

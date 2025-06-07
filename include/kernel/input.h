@@ -8,14 +8,13 @@
 #include <kernel/base.h>
 #include <kernel/chan.h>
 
-typedef enum packed ev_type {
+typedef enum packed input_evtyp {
   EV_KEY = 1, // keyboard or button event
   EV_MOUSE,   // mouse movement event
-} ev_type_t;
-static_assert(sizeof(ev_type_t) == 1);
+} input_evtyp_t;
 
-typedef struct ev_packet {
-  ev_type_t type;
+typedef struct input_event {
+  input_evtyp_t type;
   uint16_t flags;
   uint32_t value;
 } ev_packet_t;
@@ -164,7 +163,7 @@ static_assert(sizeof(input_key_event_t) == sizeof(uint64_t));
 
 
 /**
- * A stream of input_key_event_t objects.
+ * A channel of input_key_event_t objects.
  */
 extern chan_t *key_event_stream;
 
@@ -176,7 +175,7 @@ extern chan_t *key_event_stream;
  * @param value The event payload (use the <type>_VALUE function)
  * @return
  */
-int input_event(ev_type_t type, uint16_t flags, uint32_t value);
+int input_event(input_evtyp_t type, uint16_t flags, uint32_t value);
 
 /**
  * Returns the current state of the given key.

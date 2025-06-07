@@ -144,6 +144,25 @@ EFI_STATUS EFIMAIN UefiMain(IN EFI_HANDLE ImageHandle, IN EFI_SYSTEM_TABLE *Syst
 
   // --------------------------------------------------
 
+  // Allocate memory for the command line parameters
+  void *cmd_line = NULL;
+  UINT32 cmdline_len = 0;
+  CHAR8 *cmdline_value = ConfigGet("cmdline");
+  if (cmdline_value) {
+    UINTN len = AsciiStrLen(cmdline_value);
+    ASSERT(len <= UINT32_MAX);
+
+    cmd_line = AllocateRuntimePool(len + 1);
+    if (cmd_line == NULL) {
+      PRINT_ERROR("Failed to allocate memory for command line parameters");
+      return EFI_OUT_OF_RESOURCES;
+    }
+    cmdline_len = (UINT32) len;
+    // Copy the kernel params into the allocated memory
+    CopyMem(cmd_line, cmdline_value, len);
+    ((CHAR8 *) cmd_line)[len] = '\0'; // null-terminate the string
+  }
+
   // Allocate memory for boot structure
   boot_info_v2_t *BootInfo = NULL;
   Status = AllocateBootInfoStruct(&BootInfo);
@@ -153,6 +172,9 @@ EFI_STATUS EFIMAIN UefiMain(IN EFI_HANDLE ImageHandle, IN EFI_SYSTEM_TABLE *Syst
   BootInfo->kernel_virt_addr = KernelPages->VirtAddr;
   BootInfo->kernel_size = (UINT32) KernelSize;
   BootInfo->pml4_addr = PML4Address;
+
+  BootInfo->cmdline = cmd_line;
+  BootInfo->cmdline_len = cmdline_len;
 
   BootInfo->fb_addr = FramebufferBase;
   BootInfo->fb_size = FramebufferSize;

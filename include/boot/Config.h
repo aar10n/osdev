@@ -10,7 +10,7 @@
 
 #define INI_MAP_LEN 128
 #define INI_MAX_KEY_LEN 32
-#define INI_MAX_VALUE_LEN 128
+#define INI_MAX_VALUE_LEN 256
 
 typedef struct _INI_VARIABLE {
   CHAR8 *Key;

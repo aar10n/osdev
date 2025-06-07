@@ -2,17 +2,15 @@
 // Created by Aaron Gill-Braun on 2020-09-24.
 //
 
-#include <kernel/base.h>
-#include <kernel/irq.h>
-#include <kernel/init.h>
 #include <kernel/alarm.h>
 #include <kernel/clock.h>
-#include <kernel/mm.h>
-#include <kernel/fs.h>
-#include <kernel/exec.h>
 #include <kernel/device.h>
+#include <kernel/fs.h>
+#include <kernel/init.h>
+#include <kernel/irq.h>
+#include <kernel/mm.h>
+#include <kernel/params.h>
 #include <kernel/proc.h>
-#include <kernel/smpboot.h>
 #include <kernel/sched.h>
 
 #include <kernel/acpi/acpi.h>
@@ -21,8 +19,6 @@
 #include <kernel/printf.h>
 #include <kernel/panic.h>
 #include <kernel/fs_utils.h>
-
-#include <kernel/mm/pgtable.h>
 
 bool is_smp_enabled = false;
 bool is_debug_enabled = true;
@@ -42,6 +38,9 @@ __used void kmain() {
   cpu_early_init();
   mm_early_init();
   do_percpu_initializers();
+
+  // parse boot command line options and initalize kernel parameters.
+  init_kernel_params();
 
   // initialize acpi information while the bootloader provided identity mappings are still
   // active so we can reserve the memory we need to keep mapped while allowing the rest to
@@ -77,31 +76,11 @@ __used void kmain() {
   // run the module initializers followed by the last of the filesystem setup.
   do_module_initializers();
   fs_setup_final();
-  kprintf("[%llu] done!\n", clock_get_nanos());
+  kprintf("done at %llu!\n", clock_get_nanos());
   ls("/");
 
   cpu_enable_interrupts();
   probe_all_buses();
-
-  // {
-  //   __ref proc_t *proc = proc_alloc_new(getref(curproc->creds));
-  //   proc_setup_add_thread(proc, thread_alloc(0, SIZE_16KB));
-  //   proc_setup_new_env(proc, (const char *[]){"PWD=/", "PATH=/bin:/sbin", NULL});
-  //   proc_setup_exec_args(proc, (const char *[]){"hello", "world", NULL});
-  //   proc_setup_exec(proc, cstr_make("/sbin/init"));
-  //   proc_setup_open_fd(proc, 0, cstr_make("/dev/stdin"), O_RDONLY);
-  //   proc_setup_open_fd(proc, 1, cstr_make("/dev/stdout"), O_WRONLY);
-  //   proc_setup_open_fd(proc, 2, cstr_make("/dev/stderr"), O_WRONLY);
-  //   proc_finish_setup_and_submit_all(moveref(proc));
-  // }
-
-  // {
-  //   __ref proc_t *kproc1 = proc_alloc_new(getref(curproc->creds));
-  //   proc_setup_add_thread(kproc1, thread_alloc(TDF_KTHREAD, SIZE_16KB));
-  //   proc_setup_entry(kproc1, (uintptr_t) kernel_process1, 0);
-  //   proc_setup_name(kproc1, cstr_make("kernel_process1"));
-  //   proc_finish_setup_and_submit_all(moveref(kproc1));
-  // }
 
   alarm_source_enable(alarm_tick_source());
   sched_again(SCHED_BLOCKED);

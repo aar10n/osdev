@@ -9,7 +9,7 @@
 #include <kernel/mm.h>
 #include <kernel/fs.h>
 
-#include <drivers/serial.h>
+#include <drivers/uart.h>
 
 #include <fmt/fmt.h>
 
@@ -29,7 +29,7 @@ static int early_kprintf_puts(void *arg, const char *s) {
   struct early_kprintf *p = arg;
   mtx_spin_lock(&p->lock);
   while (*s) {
-    serial_write_char(p->port, *s);
+    uart_hw_busy_write_ch(p->port, *s);
     s++;
   }
   mtx_spin_unlock(&p->lock);
@@ -40,7 +40,7 @@ static int early_kprintf_puts(void *arg, const char *s) {
 
 void kprintf_early_init() {
   QEMU_DEBUG_CHARP("kprintf_early_init");
-  serial_init(early_kprintf.port);
+  uart_hw_init(early_kprintf.port);
   impl_arg = &early_kprintf;
   mtx_init(&early_kprintf.lock, MTX_SPIN, "early_kprintf_lock");
   kprintf_puts_impl = early_kprintf_puts;

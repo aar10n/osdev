@@ -58,9 +58,8 @@ QEMU_DEVICES ?= -device ahci,id=ahci -device qemu-xhci,id=xhci
 
 QEMU_SERIAL_DEVICES ?= \
 	-serial file:$(BUILD_DIR)/kernel.log \
-	-serial file:$(BUILD_DIR)/loader.log \
-	-serial file:$(BUILD_DIR)/tty2.log \
-	-serial file:$(BUILD_DIR)/tty3.log
+	-serial file:$(BUILD_DIR)/loader.log
+#	-serial pty
 
 ifeq ($(QEMU_DEBUG),1)
 QEMU_DEBUG_OPTIONS ?= \

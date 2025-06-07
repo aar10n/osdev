@@ -44,7 +44,7 @@ CHAR8 *ElfGetStringForSymbol(IN Elf64_Ehdr *ElfHdr, IN Elf64_Shdr *SymTabHdr, IN
     return NULL;
   }
 
-  UINTN StrTabOffset = ElfHdr->e_shentsize * SymTabHdr->sh_link;
+  UINTN StrTabOffset = (UINTN) ElfHdr->e_shentsize * SymTabHdr->sh_link;
   Elf64_Shdr *StrTab = EHDR_OFFSET(ElfHdr, ElfHdr->e_shoff + StrTabOffset);
   return EHDR_OFFSET(ElfHdr, StrTab->sh_offset + Sym->st_name);
 }
@@ -80,7 +80,7 @@ Elf64_Shdr EFIAPI *ElfLocateSectionHeaderByType(IN Elf64_Ehdr *ElfHdr, IN Elf64_
 
 VOID EFIAPI *ElfLocateSectionHeaderByName(IN Elf64_Ehdr *ElfHdr, IN CONST CHAR8 *SectionName) {
   Elf64_Shdr *Shdr = EHDR_OFFSET(ElfHdr, ElfHdr->e_shoff);
-  Elf64_Shdr *ShStrTab = EHDR_OFFSET(ElfHdr, ElfHdr->e_shoff + ElfHdr->e_shentsize * ElfHdr->e_shstrndx);
+  Elf64_Shdr *ShStrTab = EHDR_OFFSET(ElfHdr, ElfHdr->e_shoff + (UINTN) ElfHdr->e_shentsize * ElfHdr->e_shstrndx);
 
   for (UINTN Index = 0; Index < ElfHdr->e_shnum; Index++) {
     if (Shdr->sh_name == 0) {
@@ -103,7 +103,7 @@ Elf64_Sym EFIAPI *ElfLocateSymbolByName(IN Elf64_Ehdr *ElfHdr, IN CONST CHAR8 *S
     return NULL;
   }
 
-  UINTN StrTabOffset = ElfHdr->e_shentsize * SymTab->sh_link;
+  UINTN StrTabOffset = (UINTN) ElfHdr->e_shentsize * SymTab->sh_link;
   Elf64_Shdr *StrTab = EHDR_OFFSET(ElfHdr, ElfHdr->e_shoff + StrTabOffset);
   Elf64_Sym *Sym = EHDR_OFFSET(ElfHdr, SymTab->sh_offset + SymTab->sh_entsize);
   UINTN NumSymbols = SymTab->sh_size / SymTab->sh_entsize;

@@ -12,7 +12,6 @@
 #include <kernel/hw/ioapic.h>
 
 #include <kernel/bus/pci.h>
-#include <kernel/cpu/trapframe.h>
 
 #include <bitmap.h>
 

@@ -160,7 +160,7 @@
 #define __expect_true(expr) __builtin_expect((expr), 1)
 #define __expect_false(expr) __builtin_expect((expr), 0)
 
-#define todo(msg) kprintf("TODO: %s:%d: %s\n", __FILE__, __LINE__, #msg); WHILE_TRUE
+#define todo(msg) ({ kprintf("TODO: %s:%d: %s\n", __FILE__, __LINE__, #msg); WHILE_TRUE; })
 
 //
 // Special Macros

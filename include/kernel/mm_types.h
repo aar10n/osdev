@@ -21,6 +21,7 @@
 #define HUGEPAGE_SIZE SIZE_1GB
 
 #define PAGE_SHIFT 12
+#define PAGE_MASK  0xFFF
 
 #define PAGES_TO_SIZE(pages) ((pages) << PAGE_SHIFT)
 #define SIZE_TO_PAGES(size) (((size) >> PAGE_SHIFT) + (((size) & 0xFFF) ? 1 : 0))

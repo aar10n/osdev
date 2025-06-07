@@ -6,8 +6,8 @@
 #define KERNEL_INTERRUPT_H
 
 #include <kernel/base.h>
+#include <kernel/cpu/trapframe.h>
 
-struct trapframe;
 struct pci_device;
 
 #define MAX_IRQ 223
