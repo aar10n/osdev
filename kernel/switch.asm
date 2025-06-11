@@ -12,6 +12,7 @@
 %define PROCESS_SPACE(x)      [x+0x08]
 
 ; struct thread offsets
+%define THREAD_TID(x)         [x+0x00]
 %define THREAD_FLAGS(x)       [x+0x04]
 %define THREAD_LOCK(x)        [x+0x08]
 %define THREAD_TCB(x)         [x+0x20]
@@ -75,9 +76,9 @@ extern switch_address_space
 ;   defined in mutex.c
 extern _thread_unlock
 
-; void proc_kill(proc_t *proc, int exit_code);
+; void proc_kill_tid(proc_t *proc, pid_t tid, int exit_code);
 ;   defined in proc.c
-extern proc_kill
+extern proc_kill_tid
 
 ; trapframe_restore
 ;   defined in exception.asm
@@ -328,10 +329,13 @@ kernel_thread_entry:
   pop r8  ; pop arg 4
   pop r9  ; pop arg 5
 
-  call rax ; call the function
+  and rsp, -16  ; align rsp to 16 bytes
+  call rax      ; call the function
 
-  ; if the function returns we need to exit
-  mov rdi, PERCPU_PROCESS
-  mov rsi, rax ; exit code
-  call proc_kill
+  ; if the function returns we need to kill the thread (and/or process)
+  mov rdi, PERCPU_THREAD
+  mov rsi, THREAD_TID(rdi) ; rsi = tid
+  mov rdi, PERCPU_PROCESS  ; rdi = proc
+  mov rdx, rax             ; rdx = exit code
+  call proc_kill_tid
   ; unreachable

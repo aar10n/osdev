@@ -308,6 +308,7 @@ void pgrp_free_empty(pgroup_t **pgp);
 void   pgrp_setup_add_proc(pgroup_t *pg, proc_t *proc);
 void pgrp_add_proc(pgroup_t *pg, proc_t *proc);
 void pgrp_remove_proc(pgroup_t *pg, proc_t *proc);
+int pgrp_signal(pgroup_t *pg, int sig, int si_code, union sigval si_value);
 
 pid_t proc_alloc_pid();
 void proc_free_pid(pid_t pid);
@@ -328,6 +329,7 @@ void   proc_finish_setup_and_submit_all(__ref proc_t *proc);
 __ref proc_t *proc_lookup(pid_t pid);
 void proc_add_thread(proc_t *proc, thread_t *td);
 void proc_kill(proc_t *proc, int exit_code);
+void proc_kill_tid(proc_t *proc, pid_t tid, int exit_code);
 void proc_stop(proc_t *proc);
 void proc_cont(proc_t *proc);
 int proc_wait_signal(proc_t *proc);

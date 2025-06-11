@@ -210,8 +210,12 @@ common_interrupt_handler:
   mov TRAPFRAME_RDI(rax), rdi
 
   push rax
+  mov r12, rsp ; r12 = unaligned rsp
+  and rsp, -16 ; align rsp to 16 bytes
   mov rdi, rax ; rdi = trapframe pointer
+  mov rbp, r12 ; rbp = unaligned rsp
   call interrupt_handler
+  mov rsp, r12 ; restore rsp to the unaligned value
   pop r15 ; r15 = trapframe pointer
 
   ; check if we are exiting the last interrupt
