@@ -14,7 +14,7 @@ KERNEL_DEFINES = $(DEFINES) -D__KERNEL__
 
 # kernel/
 kernel += entry.asm exception.asm memory.asm sigtramp.asm smpboot.asm syscall.asm switch.asm \
-	alarm.c chan.c cond.c clock.c device.c errno.c exec.c init.c irq.c loadelf.c \
+	alarm.c chan.c cond.c console.c clock.c device.c errno.c exec.c init.c irq.c loadelf.c \
 	lock.c main.c sched.c sem.c panic.c printf.c params.c signal.c smpboot.c ipi.c \
 	string.c syscall.c input.c kio.c time.c tqueue.c proc.c percpu.c mutex.c \
 	rwlock.c fs_utils.c
@@ -40,6 +40,9 @@ kernel += gui/screen.c
 # kernel/mm
 kernel += mm/file.c mm/heap.c mm/init.c mm/pgcache.c mm/pgtable.c mm/pmalloc.c \
  	mm/vmalloc.c
+
+# kernel/tty
+kernel += tty/tty.c tty/ttydisc.c tty/ttyqueue.c
 
 # kernel/usb
 kernel += usb/usb.c

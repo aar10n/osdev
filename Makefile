@@ -114,7 +114,7 @@ USERSPACE_DIRS = sbin
 all: $(BUILD_DIR)/osdev.img
 
 run: $(BUILD_DIR)/osdev.img
-	$(QEMU) $(QEMU_OPTIONS) -monitor stdio
+	$(QEMU) $(QEMU_OPTIONS)
 
 debug: $(BUILD_DIR)/osdev.img
 	$(QEMU) -s -S $(QEMU_OPTIONS) &
@@ -148,7 +148,7 @@ clean: clean-bootloader clean-kernel clean-userspace
 $(BUILD_DIR)/osdev.img: config.ini $(BUILD_DIR)/boot$(WINARCH).efi $(BUILD_DIR)/kernel.elf $(BUILD_DIR)/initrd.img
 	dd if=/dev/zero of=$@ bs=1M count=256
 # 	256M -> 268435456 / 512 = 524288 sectors
-	mformat -i $@ -F -h 64 -s 32 -T 524288 -c 1 -v osdev ::
+	mformat -i $@ -F -h 64 -s 32 -T 524288 -c 1 -v osdev :: # format as FAT32
 	mmd -i $@ ::/EFI
 	mmd -i $@ ::/EFI/BOOT
 	mcopy -i $@ $^ ::/EFI/BOOT

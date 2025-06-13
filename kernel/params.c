@@ -9,12 +9,12 @@
 #define EPRINTF(x, ...) kprintf("params: error: " x, ##__VA_ARGS__)
 // #define EPRINTF(x, ...)
 
-LOAD_SECTION(__kernel_params_section, ".kernel_params");
-
 // the kernel_params hashmap stores all of the configurable kernel parameters.
 #define HMAP_TYPE struct kernel_param *
 #include <hash_map.h>
 hash_map_t *kernel_params;
+
+LOAD_SECTION(__kernel_params_section, ".kernel_params");
 
 
 void handle_cmdline_param(cstr_t key, cstr_t value) {
@@ -26,9 +26,9 @@ void handle_cmdline_param(cstr_t key, cstr_t value) {
 
   DPRINTF("parsed kernel parameter: {:cstr} = {:cstr}\n", &key, &value);
   switch (param->type) {
-    case KERNEL_CSTR_PARAM: {
-      cstr_t *cstr_value = (cstr_t *) param->addr;
-      *cstr_value = value;
+    case KERNEL_STR_PARAM: {
+      str_t *cstr_value = (str_t *) param->addr;
+      *cstr_value = str_from_cstr(value);
       break;
     }
     case KERNEL_INT_PARAM: {
@@ -111,7 +111,7 @@ void init_kernel_params() {
   size_t num_params = __kernel_params_section.size / sizeof(void *);
   for (size_t i = 0; i < num_params; i++) {
     struct kernel_param *param = (struct kernel_param *) params[i];
-    DPRINTF("found kernel parameter: %s at %p\n", param->name, param->addr);
+    DPRINTF("found kernel parameter: %s\n", param->name);
     hash_map_set(kernel_params, param->name, param);
   }
 

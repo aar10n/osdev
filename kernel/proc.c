@@ -336,6 +336,10 @@ void pgrp_remove_proc(pgroup_t *pg, proc_t *proc) {
   LIST_REMOVE(&pg->procs, proc, pglist);
 }
 
+int pgrp_signal(pgroup_t *pg, int sig, int si_code, union sigval si_value) {
+  todo();
+}
+
 ///////////////////
 // MARK: proc
 
@@ -704,6 +708,32 @@ void proc_kill(proc_t *proc, int exit_code) {
   pr_unlock(proc);
 }
 
+void proc_kill_tid(proc_t *proc, pid_t tid, int exit_code) {
+  pr_lock(proc);
+  if (PRS_IS_EXITED(proc)) {
+    DPRINTF("proc_kill_tid: called on dead process %d\n", proc->pid);
+    pr_unlock(proc);
+    return;
+  }
+
+  thread_t *td = LIST_FIND(_td, &proc->threads, plist, tid == _td->tid);
+  if (td == NULL) {
+    DPRINTF("proc_kill_tid: thread %d not found in process %d\n", tid, proc->pid);
+    pr_unlock(proc);
+    return;
+  }
+
+  if (proc->num_threads == 1 || td->tid == 0) {
+    // killing the last thread or the main thread
+    pr_unlock(proc);
+    proc_kill(proc, exit_code);
+  }
+
+  DPRINTF("proc %d killing thread %d\n", proc->pid, tid);
+  thread_kill(td);
+  pr_unlock(proc);
+}
+
 void proc_stop(proc_t *proc) {
   pr_lock(proc);
   if (PRS_IS_EXITED(proc)) {
@@ -1059,6 +1089,7 @@ void thread_kill(thread_t *td) {
 
   TD_SET_STATE(td, TDS_EXITED);
   atomic_fetch_add(&td->proc->num_exited, 1);
+  proc_do_remove_thread(td->proc, td);
   cond_broadcast(&td->proc->td_exit_cond);
 
 LABEL(done);

@@ -322,14 +322,26 @@ static size_t format_string(fmt_buffer_t *buffer, const fmt_spec_t *spec) {
 }
 
 static size_t format_char(fmt_buffer_t *buffer, const fmt_spec_t *spec) {
-  char c = *((char *)&spec->value);
-  const char *str = &c;
-  size_t len = 1;
-  if (c == 0) {
-    str = "\\0";
-    len = 2;
+  char c = (char)spec->value.uint64_value;
+  char tmpbuf[8];
+  unsigned tmplen = 0;
+  if (spec->flags & FMT_FLAG_ALT) {
+    // write control characters using the ^X notation
+    if (c < 0x20 || c == 0x7F) {
+      tmpbuf[tmplen++] = '^';
+      if ((unsigned char)c == 0x7F) {
+        tmpbuf[tmplen++] = '?';
+      } else {
+        tmpbuf[tmplen++] = (char)(c + '@');
+      }
+    } else {
+      tmpbuf[tmplen++] = c;
+    }
+  } else {
+    tmpbuf[tmplen++] = c;
   }
-  return fmtlib_buffer_write(buffer, str, len);
+
+  return fmtlib_buffer_write(buffer, tmpbuf, tmplen);
 }
 
 static size_t format_mem_quantity(fmt_buffer_t *buffer, const fmt_spec_t *spec) {

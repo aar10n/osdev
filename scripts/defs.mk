@@ -56,10 +56,13 @@ QEMU_MACHINE ?= q35
 
 QEMU_DEVICES ?= -device ahci,id=ahci -device qemu-xhci,id=xhci
 
+ifndef QEMU_SERIAL_DEVICES
 QEMU_SERIAL_DEVICES ?= \
 	-serial file:$(BUILD_DIR)/kernel.log \
-	-serial file:$(BUILD_DIR)/loader.log
+	-serial file:$(BUILD_DIR)/loader.log \
+ 	-serial telnet:127.0.0.1:8008,server,nowait
 #	-serial pty
+endif
 
 ifeq ($(QEMU_DEBUG),1)
 QEMU_DEBUG_OPTIONS ?= \

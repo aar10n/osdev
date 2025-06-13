@@ -200,8 +200,13 @@ static inline bool str_eq(str_t str1, str_t str2) {
   return str1.len == str2.len && strncmp(str1.str, str2.str, str1.len) == 0;
 }
 
-static inline bool str_eq_c(str_t str1, cstr_t str2) {
+static inline bool str_eq_cstr(str_t str1, cstr_t str2) {
   return str1.len == str2.len && strncmp(str1.str, str2.str, str1.len) == 0;
+}
+
+static inline bool str_eq_charp(str_t str1, const char *str2) {
+  size_t len = strlen(str2);
+  return str_len(str1) == len && strncmp(str_cptr(str1), str2, len) == 0;
 }
 
 // TODO: rest of string functions

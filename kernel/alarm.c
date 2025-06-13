@@ -13,7 +13,6 @@
 #include <kernel/printf.h>
 #include <kernel/panic.h>
 
-#include <bitmap.h>
 #include <rb_tree.h>
 
 #define ASSERT(x) kassert(x)

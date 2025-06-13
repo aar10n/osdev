@@ -95,7 +95,7 @@ ramfs_dentry_t *ramfs_lookup_dentry(ramfs_node_t *dir, cstr_t name) {
   ASSERT(dir->type == V_DIR);
   ramfs_dentry_t *dirent = NULL;
   LOCK_NODE(dir);
-  dirent = LIST_FIND(d, &dir->n_dir, list, str_eq_c(d->name, name));
+  dirent = LIST_FIND(d, &dir->n_dir, list, str_eq_cstr(d->name, name));
   UNLOCK_NODE(dir);
   return dirent;
 }

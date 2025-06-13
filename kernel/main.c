@@ -4,6 +4,7 @@
 
 #include <kernel/alarm.h>
 #include <kernel/clock.h>
+#include <kernel/console.h>
 #include <kernel/device.h>
 #include <kernel/fs.h>
 #include <kernel/init.h>
@@ -71,7 +72,7 @@ __used void kmain() {
 
   fs_init();
   sched_init();
-  // smp_init();
+  // smp_init(); // not working yet
 
   // run the module initializers followed by the last of the filesystem setup.
   do_module_initializers();
@@ -80,7 +81,8 @@ __used void kmain() {
   ls("/");
 
   cpu_enable_interrupts();
-  probe_all_buses();
+  // probe_all_buses();
+  console_init();
 
   alarm_source_enable(alarm_tick_source());
   sched_again(SCHED_BLOCKED);

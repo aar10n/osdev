@@ -195,6 +195,7 @@ int hpet_alarm_source_init(alarm_source_t *as, uint32_t mode, irq_handler_t hand
   if (tn == NULL) {
     return -ENODEV;
   }
+  DPRINTF("[timer %d] init: mode=%d\n", tn->num, mode);
 
 
   ASSERT(mode != 0);

@@ -14,8 +14,9 @@
 #define COM4 0x2E8
 
 // uart irq events
-#define UART_IRQ_RX 0x01
-#define UART_IRQ_TX 0x02
+#define UART_IRQ_RX  0x01
+#define UART_IRQ_TX  0x02
+#define UART_IRQ_DCD 0x03
 
 // uart event flags
 #define UART_EV_OR 0x01  // overrun error
@@ -26,7 +27,7 @@
 
 int uart_hw_init(int port);
 int uart_hw_configure(int port, const struct termios *termios);
-int uart_hw_set_irq_handler(int port, void (*handler)(int ev, int flags, void *data), void *data);
+int uart_hw_set_irq_handler(int port, void (*handler)(int ev, int ev_data, void *data), void *data);
 void uart_hw_unset_irq_handler(int port);
 
 int uart_hw_busy_read_ch(int port);

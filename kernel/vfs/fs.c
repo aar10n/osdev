@@ -78,7 +78,8 @@ void fs_init() {
 
 void fs_setup_final() {
   // must be called after fs_init and all module initializers have ran
-  // this function sets up the initial filesystem structure and mounts the initrd (if available)
+  // this function sets up the initial filesystem structure and mounts
+  // the initrd (if available)
   int res;
 
   if (boot_info_v2->initrd_addr != 0) {

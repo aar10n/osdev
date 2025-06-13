@@ -20,14 +20,14 @@
     .name = (_name), \
     .addr = &(_var), \
     .type = _Generic(_var, \
-      cstr_t: KERNEL_CSTR_PARAM, \
+      str_t: KERNEL_STR_PARAM, \
       int: KERNEL_INT_PARAM \
     ) \
   }; \
   static __used __attribute__((section(".kernel_params"))) void * __param_ptr_ ## _var = &__param_ ## _var; \
 
 // kernel_param types
-#define KERNEL_CSTR_PARAM  1 /* cstr_t */
+#define KERNEL_STR_PARAM   1 /* str_t */
 #define KERNEL_INT_PARAM   2 /* int */
 
 struct kernel_param {

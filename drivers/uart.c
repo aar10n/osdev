@@ -5,15 +5,19 @@
 #include "uart.h"
 
 #include <kernel/device.h>
+#include <kernel/console.h>
+#include <kernel/chan.h>
 #include <kernel/tty.h>
 #include <kernel/irq.h>
-#include <kernel/chan.h>
+#include <kernel/proc.h>
+#include <kernel/params.h>
 
 #include <kernel/printf.h>
 #include <kernel/panic.h>
 
 #define ASSERT(x) kassert(x)
-#define DPRINTF(fmt, ...) kprintf("uart: " fmt, ##__VA_ARGS__)
+// #define DPRINTF(fmt, ...) kprintf("uart: " fmt, ##__VA_ARGS__)
+#define DPRINTF(fmt, ...)
 #define EPRINTF(fmt, ...) kprintf("uart: %s: " fmt, __func__, ##__VA_ARGS__)
 
 #define IS_VALID_PORT(port) \
@@ -30,60 +34,117 @@
 #define UART_LINE_STATUS 5
 #define UART_MODEM_STATUS 6
 
+KERNEL_PARAM("console.uart.port", str_t, console_uart_port_param, str_null);
+static int console_uart_port;
+
 struct uart_dev {
   int number;
   int port;
+  pid_t tx_tid;
+};
+
+struct uart_irq {
+  int port;
+  int index;
+  int event;
+  int data;
 };
 
 static inline void io_outb(int port, uint8_t value) {
   asm volatile("out dx, al" : : "a"(value), "Nd"(port));
 }
 
-static inline uint8_t io_inb(int port) {
+static inline volatile uint8_t io_inb(int port) {
   uint8_t value;
   asm volatile("in al, dx" : "=a"(value) : "Nd"(port));
   return value;
 }
 
+static void uart_irq_handler(struct trapframe *frame);
+static int uart_softirq_handler();
+
 static mtx_t irq_lock;
 static void (*uart_irq_handlers[4])(int, int, void *) = {0};
 static void *uart_irq_handler_data[4] = {0};
-static chan_t *uart_irq_rx_chan[4] = {0};
+static chan_t *uart_softirq_chan = {0};
+pid_t uart_softirq_pid = -1;
 
-// KERNEL_PARAM(
+static void uart_static_init() {
+  if (str_eq_charp(console_uart_port_param, "com1")) {
+    console_uart_port = COM1;
+  } else if (str_eq_charp(console_uart_port_param, "com2")) {
+    console_uart_port = COM2;
+  } else if (str_eq_charp(console_uart_port_param, "com3")) {
+    console_uart_port = COM3;
+  } else if (str_eq_charp(console_uart_port_param, "com4")) {
+    console_uart_port = COM4;
+  } else {
+    EPRINTF("invalid console uart port: {:str}\n", &console_uart_port_param);
+    console_uart_port = COM4;
+  }
+
+  // initialize static variables
+  mtx_init(&irq_lock, MTX_SPIN, "uart_irq_lock");
+  memset(uart_irq_handlers, 0, ARRAY_SIZE(uart_irq_handlers));
+
+  irq_must_reserve_irqnum(UART_COM13_IRQ);
+  irq_must_reserve_irqnum(UART_COM24_IRQ);
+  irq_register_handler(UART_COM13_IRQ, uart_irq_handler, (void *)1);
+  irq_register_handler(UART_COM24_IRQ, uart_irq_handler, (void *)2);
+
+  uart_softirq_chan = chan_alloc(128, sizeof(struct uart_irq), CHAN_NOBLOCK, "uart_softirq");
+}
+STATIC_INIT(uart_static_init);
+
+static void start_softirq_handler() {
+  __ref proc_t *softirq_proc = proc_alloc_new(getref(curproc->creds));
+  uart_softirq_pid = softirq_proc->pid;
+  proc_setup_add_thread(softirq_proc, thread_alloc(TDF_KTHREAD, SIZE_16KB));
+  proc_setup_entry(softirq_proc, (uintptr_t) uart_softirq_handler, 0);
+  proc_setup_name(softirq_proc, cstr_make("uart_softirq"));
+  proc_finish_setup_and_submit_all(moveref(softirq_proc));
+}
+MODULE_INIT(start_softirq_handler);
 
 
 static void uart_irq_port_handler(int port, int index, int irr) {
-  int flags;
+  // DPRINTF("irq: port %d: irr = 0x%x\n", port, irr);
+  uint8_t status;
   int event = 0;
+  int data = 0;
   switch ((irr & 0x6) >> 1) { // bits 1 and 2 indicate interrupt state
     case 0: // modem status change
       DPRINTF("port %d: modem status change\n", port);
-      io_inb(port + UART_MODEM_STATUS); // read modem status register to clear
+      status = io_inb(port + UART_MODEM_STATUS); // read modem status register to clear
+      uint8_t dcd_delta = (status >> 3) & 1; // bit 3 indicates DCD change since last read
+      if (dcd_delta) {
+        event = UART_IRQ_DCD;
+        data = (status & 0x80) ? 1 : 0; // bit 7 indicates DCD state
+      }
       break;
-    case 1: // data received
-      DPRINTF("port %d: data received\n", port);
-      event = UART_IRQ_RX;
-      break;
-    case 2: // transmitter holding register empty
+    case 1: // transmitter holding register empty
       DPRINTF("port %d: transmitter holding register empty\n", port);
       event = UART_IRQ_TX;
       break;
+    case 2: // data received
+      DPRINTF("port %d: data received\n", port);
+      event = UART_IRQ_RX;
+      break;
     case 3: // line status change
       DPRINTF("port %d: line status change\n", port);
-      uint8_t status = io_inb(port + UART_LINE_STATUS); // read line status register to clear
+      status = io_inb(port + UART_LINE_STATUS); // read line status register to clear
       event = UART_IRQ_RX;
       if (status & 0x01) {
-        flags = UART_EV_OR; // overrun error
+        data = UART_EV_OR; // overrun error
       } else if (status & 0x02) {
-        flags = UART_EV_PE; // parity error
+        data = UART_EV_PE; // parity error
       } else if (status & 0x04) {
-        flags = UART_EV_FE; // framing error
+        data = UART_EV_FE; // framing error
       } else if (status & 0x08) {
-        flags = UART_EV_BI; // break interrupt
+        data = UART_EV_BI; // break interrupt
       } else {
         event = 0;
-        flags = 0; // no error
+        data = 0; // no error
       }
       break;
     default:
@@ -94,30 +155,34 @@ static void uart_irq_port_handler(int port, int index, int irr) {
     return;
   }
 
-  mtx_spin_lock(&irq_lock);
-  void (*handler)(int, int, void *) = uart_irq_handlers[index];
-  void *data = uart_irq_handler_data[index];
-  mtx_spin_unlock(&irq_lock);
-
-  if (handler != NULL) {
-    handler(event, flags, data);
+  // pass the irq on to the softirq handler process
+  struct uart_irq irq = {
+    .port = port,
+    .index = index,
+    .event = event,
+    .data = data,
+  };
+  if (chan_send(uart_softirq_chan, &irq) < 0) {
+    EPRINTF("failed to send uart irq to softirq handler\n");
+    return;
   }
 }
 
 static void uart_irq_handler(struct trapframe *frame) {
   int port = (int)frame->data; // this narrows down to one set of ports
+  // DPRINTF("uart irq handler: port %d\n", port);
 
   int irr;
   if (port == 1) { // irq could have come from COM1 or COM3
-    if (((irr = io_inb(COM1 + UART_FIFO_CTRL)) & 0x01)) {
+    if (!((irr = io_inb(COM1 + UART_FIFO_CTRL)) & 0x01)) {
       uart_irq_port_handler(COM1, 0, irr); // interrupt for COM1
-    } else if ((irr = io_inb(COM3 + UART_FIFO_CTRL)) & 0x01) {
+    } else if (!((irr = io_inb(COM3 + UART_FIFO_CTRL)) & 0x01)) {
       uart_irq_port_handler(COM3, 2, irr); // interrupt for COM3
     }
   } else if (port == 2) { // irq could have come from COM2 or COM4
-    if ((irr = (io_inb(COM2 + UART_FIFO_CTRL)) & 0x01)) {
+    if (!(irr = (io_inb(COM2 + UART_FIFO_CTRL)) & 0x01)) {
       uart_irq_port_handler(COM2, 1, irr); // interrupt for COM2
-    } else if ((irr = io_inb(COM4 + UART_FIFO_CTRL)) & 0x01) {
+    } else if (!((irr = io_inb(COM4 + UART_FIFO_CTRL)) & 0x01)) {
       uart_irq_port_handler(COM4, 3, irr); // interrupt for COM4
     }
   } else {
@@ -125,20 +190,28 @@ static void uart_irq_handler(struct trapframe *frame) {
   }
 }
 
-//
+static int uart_softirq_handler() {
+  DPRINTF("starting uart softirq handler\n");
 
-static void uart_irq_static_init() {
-  mtx_init(&irq_lock, MTX_SPIN, "uart_irq_lock");
-  memset(uart_irq_handlers, 0, ARRAY_SIZE(uart_irq_handlers));
+  struct uart_irq irq;
+  while (chan_recv(uart_softirq_chan, &irq) == 0) {
+    DPRINTF("softirq handler received irq: port %d, index %d, event %d, data 0x%x\n",
+            irq.port, irq.index, irq.event, irq.data);
+    mtx_spin_lock(&irq_lock);
+    void (*handler)(int, int, void *) = uart_irq_handlers[irq.index];
+    void *data = uart_irq_handler_data[irq.index];
+    mtx_spin_unlock(&irq_lock);
 
-  irq_must_reserve_irqnum(UART_COM13_IRQ);
-  irq_must_reserve_irqnum(UART_COM24_IRQ);
-  irq_register_handler(UART_COM13_IRQ, uart_irq_handler, (void *)1);
-  irq_register_handler(UART_COM24_IRQ, uart_irq_handler, (void *)2);
+    if (handler != NULL) {
+      handler(irq.event, irq.data, data);
+    }
+  }
 
+  DPRINTF("softirq channel closed, exiting handler\n");
+  return 0;
 }
-STATIC_INIT(uart_irq_static_init);
 
+//
 
 bool uart_hw_init_probe(int port) {
   if (!IS_VALID_PORT(port)) {
@@ -181,33 +254,9 @@ int uart_hw_init(int port) {
 }
 
 int uart_hw_configure(int port, const struct termios *tio) {
-  if (!IS_VALID_PORT(port)) {
-    EPRINTF("invalid port: %d\n", port);
-    return -1;
-  }
+  unsigned char lcr = 0;
 
-  // Determine baud rate divisor
-  static const int base_baud = 115200;
-  speed_t speed = tio->__c_ospeed;
-  int divisor;
-
-  switch (speed) {
-    case B115200: divisor = 1; break;
-    case B57600:  divisor = 2; break;
-    case B38400:  divisor = 3; break;
-    case B19200:  divisor = 6; break;
-    case B9600:   divisor = 12; break;
-    case B4800:   divisor = 24; break;
-    case B2400:   divisor = 48; break;
-    case B1200:   divisor = 96; break;
-    default: {
-      EPRINTF("unsupported baud rate: %d\n", speed);
-      return -1;
-    }
-  }
-
-  // line control byte
-  uint8_t lcr = 0;
+  // determine word length
   switch (tio->c_cflag & CSIZE) {
     case CS5: lcr |= 0x00; break;
     case CS6: lcr |= 0x01; break;
@@ -219,37 +268,58 @@ int uart_hw_configure(int port, const struct termios *tio) {
     }
   }
 
-  // line control byte
+  // stop bits
   if (tio->c_cflag & CSTOPB)
-    lcr |= 0x04; // 2 stop bits
-  if (tio->c_cflag & PARENB)
-    lcr |= 0x08; // parity enable
-  if ((tio->c_cflag & PARENB) && !(tio->c_cflag & PARODD))
-    lcr |= 0x10; // even parity
+    lcr |= 0x04;
 
-  // enable DLAB to set baud divisor
-  io_outb(port + UART_LINE_CTRL, lcr | 0x80); // set DLAB
-  io_outb(port + 0, divisor & 0xFF);          // LSB
-  io_outb(port + 1, (divisor >> 8) & 0xFF);   // MSB
+  // parity
+  if (tio->c_cflag & PARENB) {
+    lcr |= 0x08;
+    if (!(tio->c_cflag & PARODD))
+      lcr |= 0x10;
+  }
 
-  io_outb(port + UART_LINE_CTRL, lcr);        // clear DLAB, set line control
-  io_outb(port + UART_FIFO_CTRL, 0xC7);       // enable FIFO, clear RX/TX, 14-byte threshold
+  // baud rate
+  unsigned int baud;
+  switch (tio->__c_ospeed) {
+    case B1200: baud = 1200; break;
+    case B1800: baud = 1800; break;
+    case B2400: baud = 2400; break;
+    case B4800: baud = 4800; break;
+    case B9600: baud = 9600; break;
+    case B19200: baud = 19200; break;
+    case B38400: baud = 38400; break;
+    case B57600: baud = 57600; break;
+    case B115200: baud = 115200; break;
+    default: {
+      EPRINTF("unsupported baud rate %d\n", tio->__c_ospeed);
+      return -1;
+    }
+  }
 
-  uint8_t mcr = 0x03; // DTR and RTS
-  if (tio->c_cflag & CRTSCTS)
-    mcr |= 0x0C;      // enable RTS/CTS (RTS and OUT2)
+  unsigned short divisor = 115200 / baud;
 
-  io_outb(port + UART_MODEM_CTRL, mcr);       // normal mode, no loopback, set RTS/CTS if requested
+  // enable DLAB
+  io_outb(port + UART_LINE_CTRL, lcr | 0x80);
+  io_outb(port + UART_DATA, divisor & 0xFF);
+  io_outb(port + UART_INTR_EN, (divisor >> 8) & 0xFF);
+  io_outb(port + UART_LINE_CTRL, lcr);
+
+  // // enable FIFO, clear TX/RX queues, 14-byte threshold
+  // io_outb(port + UART_FIFO_CTRL, 0xC7);
+  io_outb(port + UART_FIFO_CTRL, 0x00); // disable FIFO
+
+  // modem control: DTR, RTS, OUT2
+  io_outb(port + UART_MODEM_CTRL, 0xf);
   return 0;
 }
 
-int uart_hw_set_irq_handler(int port, void (*handler)(int ev, int flags, void *data), void *data) {
+int uart_hw_set_irq_handler(int port, void (*handler)(int ev, int ev_data, void *data), void *data) {
   if (!IS_VALID_PORT(port)) {
     EPRINTF("invalid port: %d\n", port);
     return -1;
   }
 
-  mtx_spin_lock(&irq_lock);
   int index;
   int port_irq;
   switch (port) {
@@ -269,12 +339,14 @@ int uart_hw_set_irq_handler(int port, void (*handler)(int ev, int flags, void *d
       unreachable;
   }
 
+  mtx_spin_lock(&irq_lock);
   uart_irq_handlers[index] = handler;
   uart_irq_handler_data[index] = data;
   irq_enable_interrupt(port_irq);
 
   // enable interrupts for the port
-  io_outb(port + UART_INTR_EN, 0x01); // enable data received interrupt
+  io_outb(port + UART_INTR_EN, 0x9); // enable data received/modem status irqs
+  // io_outb(port + UART_INTR_EN, 0b1101);
   mtx_spin_unlock(&irq_lock);
   return 0;
 }
@@ -285,7 +357,6 @@ void uart_hw_unset_irq_handler(int port) {
     return;
   }
 
-  mtx_spin_lock(&irq_lock);
   int index;
   int index_compl;
   int port_irq;
@@ -306,6 +377,7 @@ void uart_hw_unset_irq_handler(int port) {
       unreachable;
   }
 
+  mtx_spin_lock(&irq_lock);
   uart_irq_handlers[index] = NULL;
   uart_irq_handler_data[index] = NULL;
   if (uart_irq_handlers[index_compl] == NULL) {
@@ -357,6 +429,17 @@ int uart_hw_modem(int port, int command, int arg) {
     return -1;
   }
 
+  if (command == 0 && arg == 0) {
+    // query current modem status
+    uint8_t status = io_inb(port + UART_MODEM_STATUS);
+    int bits = 0;
+    bits |= (status & 0x10) ? TTY_MODEM_BM_CTS : 0; // cts
+    bits |= (status & 0x20) ? TTY_MODEM_BM_DSR : 0; // dsr
+    bits |= (status & 0x80) ? TTY_MODEM_BM_DCD : 0; // dcd
+    bits |= (status & 0x40) ? TTY_MODEM_BM_RI : 0;  // ri
+    return bits;
+  }
+
   switch (command) {
     case TTY_MODEM_DTR: // data terminal ready
       if (arg)
@@ -384,45 +467,140 @@ int uart_hw_modem(int port, int command, int arg) {
 
 static void uart_tty_outwakeup(tty_t *tty);
 
-static void uart_tty_input_irq_handler(int ev, int flags, void *data) {
+static int uart_tty_transmit_thread(tty_t *tty) {
+  struct uart_dev *uart_dev = tty->dev_data;
+  DPRINTF("transmit thread started for tty on port %d\n", uart_dev->port);
+
+  if (!tty_lock(tty)) {
+    EPRINTF("tty device is gone\n");
+    return -ENXIO;
+  }
+
+  int res = 0;
+  while (true) {
+    if (ttyoutq_peek_ch(tty->outq) < 0) {
+      // no data available, wait for it
+      if ((res = tty_wait(tty, &tty->out_wait)) < 0)
+        break; // device is done
+      continue;
+    }
+
+    // write data to the uart
+    uart_tty_outwakeup(tty);
+  }
+
+  DPRINTF("transmit thread exiting\n");
+  tty_unlock(tty);
+  return res;
+}
+
+static void uart_tty_input_irq_handler(int ev, int ev_data, void *data) {
   tty_t *tty = data;
   struct uart_dev *uart_dev = tty->dev_data;
 
-  if (ev == UART_IRQ_RX) {
-    // todo: pass input to tty_disc
-    todo("uart_irq_rx");
-  } else if (ev == UART_IRQ_TX) {
-    // todo: write data to uart
-    // uart_tty_outwakeup(tty);
+  if (!tty_lock(tty)) {
+    EPRINTF("tty device is gone\n");
+    return;
   }
+
+  if (ev == UART_IRQ_RX) {
+    int discflags = 0;
+    discflags |= (ev_data & UART_EV_PE) ? TTY_IN_PARITY : 0;
+    discflags |= (ev_data & UART_EV_FE) ? TTY_IN_FRAMING : 0;
+    discflags |= (ev_data & UART_EV_BI) ? TTY_IN_BREAK : 0;
+
+    // read data from uart and pass to ttydisc
+    while (uart_hw_can_read(uart_dev->port)) {
+      int ch = uart_hw_busy_read_ch(uart_dev->port);
+      DPRINTF("received character '%#c' (%#x) on port %d\n", (char) ch, ch, uart_dev->port);
+      if (ch < 0) {
+        EPRINTF("error reading from uart port %d\n", uart_dev->port);
+        goto done;
+      }
+
+      // pass the character to the tty input handler
+      if (ttydisc_rint(tty, (uint8_t) ch, discflags) < 0) {
+        EPRINTF("error handling input character %#c\n", ch);
+        goto done;
+      }
+    }
+    ttydisc_rint_done(tty);
+  } else if (ev == UART_IRQ_TX) {
+    // not used right now
+    DPRINTF("output ready\n");
+    // TODO: signal that tty can continue writing output
+  } else if (ev == UART_IRQ_DCD) {
+    DPRINTF("data carrier detect changed (dcd=%d)\n", ev_data);
+    if (data) {
+      // data carrier connected
+      tty->flags |= TTYF_DCDRDY;
+    } else {
+      // data carrier disconnected
+      tty->flags &= ~TTYF_DCDRDY;
+    }
+    tty_wait_signal(tty, &tty->dcd_wait);
+  }
+
+LABEL(done);
+  tty_unlock(tty);
 }
 
 static int uart_tty_open(tty_t *tty) {
   struct uart_dev *uart_dev = tty->dev_data;
+  DPRINTF("opening tty on port %d\n", uart_dev->port);
+  ASSERT(uart_dev->tx_tid == -1);
   uart_hw_set_irq_handler(uart_dev->port, uart_tty_input_irq_handler, tty);
+  uart_hw_modem(uart_dev->port, TTY_MODEM_DTR, 1);
+
+  int modem = uart_hw_modem(uart_dev->port, 0, 0);
+  DPRINTF("modem status for port %d: 0x%x\n", uart_dev->port, modem);
+  if (modem & TTY_MODEM_BM_DCD) {
+    // data carrier detect is ready
+    tty->flags |= TTYF_DCDRDY;
+  }
+
+  // start a new thread under the uart process to handle transmission
+  thread_t *thread = thread_alloc(TDF_KTHREAD, SIZE_16KB);
+  thread_setup_name(thread, cstr_make("uart_tty_transmit"));
+  thread_setup_entry(thread, (uintptr_t) uart_tty_transmit_thread, 1, tty);
+
+  __ref proc_t *uart_proc = proc_lookup(uart_softirq_pid);
+  ASSERT(uart_proc != NULL);
+  proc_add_thread(uart_proc, thread);
+  uart_dev->tx_tid = thread->tid;
+  pr_putref(&uart_proc);
   return 0;
 }
 
 static void uart_tty_close(tty_t *tty) {
   struct uart_dev *uart_dev = tty->dev_data;
+  ASSERT(uart_dev->tx_tid != -1);
   uart_hw_unset_irq_handler(uart_dev->port);
+  uart_hw_modem(uart_dev->port, TTY_MODEM_DTR, 0);
+
+  __ref proc_t *uart_proc = proc_lookup(uart_softirq_pid);
+  ASSERT(uart_proc != NULL);
+  proc_kill_tid(uart_proc, uart_dev->tx_tid, 0);
+  pr_putref(&uart_proc);
+
+  uart_dev->tx_tid = -1;
 }
 
 static void uart_tty_outwakeup(tty_t *tty) {
-  // // this function is called when the output queue has data to write.
-  // struct uart_dev *uart_dev = tty->dev_data;
-  // while (tty_outq_peekch(tty->outq) >= 0) {
-  //   if (!uart_hw_can_write(uart_dev->port))
-  //     break;
-  //
-  //   int ch = tty_outq_getch(tty->outq);
-  //   if (ch < 0) {
-  //     EPRINTF("error reading from output queue\n");
-  //     break;
-  //   }
-  //
-  //   uart_hw_busy_write_ch(uart_dev->port, (char)ch);
-  // }
+  // this function is called when the output queue has data to write.
+  struct uart_dev *uart_dev = tty->dev_data;
+  while (ttyoutq_peek_ch(tty->outq) >= 0) {
+    if (!uart_hw_can_write(uart_dev->port))
+      break;
+
+    int ch = ttyoutq_get_ch(tty->outq);
+    if (ch < 0) {
+      EPRINTF("error reading from output queue\n");
+      break;
+    }
+
+    uart_hw_busy_write_ch(uart_dev->port, (char)ch);
+  }
 }
 
 static int uart_tty_ioctl(tty_t *tty, unsigned long request, void *arg) {
@@ -509,13 +687,28 @@ static void register_serial_devices() {
     struct uart_dev *uart_dev = kmallocz(sizeof(struct uart_dev));
     uart_dev->number = i + 1; // COM1 is 1, COM2 is 2, etc.
     uart_dev->port = ports[i];
+    uart_dev->tx_tid = -1;
 
     device_t *dev = alloc_device(uart_dev, &uart_ops);
     if (register_dev("serial", dev) < 0) {
-      DPRINTF("failed to register device");
+      EPRINTF("failed to register device");
       dev->data = NULL;
       free_device(dev);
       kfree(uart_dev);
+      continue;
+    }
+
+    if (ports[i] == console_uart_port) {
+      tty_t *tty = tty_alloc(&uart_ttydev_ops, uart_dev);
+      if (tty == NULL) {
+        EPRINTF("failed to allocate tty for serial port %d\n", ports[i]);
+        continue;
+      }
+
+      console_t *console = kmallocz(sizeof(console_t));
+      console->name = "uart";
+      console->tty = tty;
+      console_register(console);
     }
   }
 }
