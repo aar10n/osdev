@@ -161,6 +161,7 @@ sigtramp_entry:
   ;   rdx = struct sigcontext *ctx
   lea rax, SIGFRAME_ACT(rsp)  ; struct sigaction *act
   mov rax, SIGACT_HANDLER(rax)
+  and rsp, -16 ; align stack to 16 bytes
   call rax
 
   lea rax, SIGFRAME_ACT(rsp) ; struct sigaction *act

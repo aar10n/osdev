@@ -9,14 +9,17 @@
 #include <kernel/printf.h>
 #include <kernel/panic.h>
 
+#include <fs/devfs/devfs.h>
+
 #define ASSERT(x) kassert(x)
 #define DPRINTF(fmt, ...) kprintf("debug: %s: " fmt, __func__, ##__VA_ARGS__)
 
 static int default_d_open(device_t *dev, int flags) { return 0; }
 static int default_d_close(device_t *dev) { return 0; }
 
-
+//
 // MARK: Null Device
+//
 
 static ssize_t null_d_read(device_t *dev, size_t off, size_t nmax, kio_t *kio) {
   if (off != 0) {
@@ -39,7 +42,9 @@ static struct device_ops null_ops = {
   .d_write = null_d_write,
 };
 
+//
 // MARK: Debug Device
+//
 
 static ssize_t debug_d_read(device_t *dev, size_t off, size_t nmax, kio_t *kio) {
   return -EACCES;
@@ -67,19 +72,58 @@ static struct device_ops debug_ops = {
   .d_write = debug_d_write,
 };
 
+//
+// MARK: Loopback Device
+//
+
+static ssize_t loopback_d_read(device_t *dev, size_t off, size_t nmax, kio_t *kio) {
+  if (off != 0) {
+    return -EINVAL;
+  }
+  return (ssize_t) kio_fill(kio, 0, nmax);
+}
+
+static ssize_t loopback_d_write(device_t *dev, size_t off, size_t nmax, kio_t *kio) {
+  if (off != 0) {
+    return -EINVAL;
+  }
+  return (ssize_t) kio_drain(kio, nmax);
+}
+
+static struct device_ops loopback_ops = {
+  .d_open = default_d_open,
+  .d_close = default_d_close,
+  .d_read = loopback_d_read,
+  .d_write = loopback_d_write,
+};
+
+//
 // MARK: Device Registration
+//
 
 static void memory_module_init() {
-  device_t *devs[] = {
+  devfs_register_class(dev_major_by_name("memory"), 0, "null", 0);
+  devfs_register_class(dev_major_by_name("memory"), 1, "debug", 0);
+  devfs_register_class(dev_major_by_name("loop"), -1, "loop", DEVFS_NUMBERED);
+
+  device_t *mem_devs[] = {
     alloc_device(NULL, &null_ops),
     alloc_device(NULL, &debug_ops),
   };
-  size_t num_devs = ARRAY_SIZE(devs);
-  for (size_t i = 0; i < num_devs; i++) {
-    if (register_dev("memory", devs[i]) < 0) {
-      DPRINTF("failed to register device");
-      break;
+  for (size_t i = 0; i < ARRAY_SIZE(mem_devs); i++) {
+    if (register_dev("memory", mem_devs[i]) < 0) {
+      DPRINTF("failed to register device\n");
+      free_device(mem_devs[i]);
+      continue;
     }
+  }
+
+  device_t *loopback_dev = alloc_device(NULL, &loopback_ops);
+  if (register_dev("loop", loopback_dev) < 0) {
+    DPRINTF("failed to register loopback device\n");
+    free_device(loopback_dev);
+  } else {
+    DPRINTF("loopback device registered successfully\n");
   }
 }
 MODULE_INIT(memory_module_init);

@@ -35,7 +35,7 @@ struct vnode_ops initrd_vnode_ops = {
 
 //
 
-int initrd_vfs_mount(vfs_t *vfs, device_t *device, __move ventry_t **root) {
+int initrd_vfs_mount(vfs_t *vfs, device_t *device, ventry_t *mount_ve, __move ventry_t **root) {
   kio_t tmp;
   ssize_t res;
   initrd_header_t header;

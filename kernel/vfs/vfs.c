@@ -132,7 +132,7 @@ int vfs_mount(vfs_t *vfs, device_t *device, ventry_t *mount_ve) {
 
   // mount filesystem
   ventry_t *root_ve = NULL;
-  if ((res = VFS_OPS(vfs)->v_mount(vfs, device, &root_ve)) < 0) {
+  if ((res = VFS_OPS(vfs)->v_mount(vfs, device, mount_ve, &root_ve)) < 0) {
     EPRINTF("failed to mount filesystem\n");
     vfs_unlock(host_vfs);
     return res;

@@ -115,7 +115,7 @@ noreturn void *usb_device_connect_event_loop() {
   DPRINTF("starting device connect event loop\n");
 
   usb_device_t *device;
-  while (chan_recv(pending_usb_devices, &device) >= 0) {
+  while (chan_recv(pending_usb_devices, &device) == 0) {
     usb_host_t *host = device->host;
     DPRINTF("handling device connection\n");
 

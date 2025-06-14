@@ -22,9 +22,4 @@ typedef struct console {
 void console_register(console_t *console);
 void console_init();
 
-void console_key_input(input_key_event_t key);
-void console_write_kio(kio_t *kio);
-void console_write_str(str_t str);
-void console_write_cstr(cstr_t str);
-
 #endif

@@ -37,7 +37,7 @@ typedef struct initrd_node {
 } initrd_node_t;
 
 // vfs operations
-int initrd_vfs_mount(vfs_t *vfs, device_t *device, ventry_t **root);
+int initrd_vfs_mount(vfs_t *vfs, device_t *device, ventry_t *mount_ve, ventry_t **root);
 int initrd_vfs_stat(vfs_t *vfs, struct vfs_stat *stat);
 
 // vnode operations

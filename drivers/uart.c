@@ -15,6 +15,8 @@
 #include <kernel/printf.h>
 #include <kernel/panic.h>
 
+#include <fs/devfs/devfs.h>
+
 #define ASSERT(x) kassert(x)
 // #define DPRINTF(fmt, ...) kprintf("uart: " fmt, ##__VA_ARGS__)
 #define DPRINTF(fmt, ...)
@@ -651,9 +653,9 @@ static ssize_t uart_dev_read(device_t *dev, size_t off, size_t nmax, kio_t *kio)
   while (nmax--) {
     int ch = uart_hw_busy_read_ch(uart_dev->port);
     if (ch < 0)
-      return -1; // error reading from serial port
+      return ch; // error reading from serial port
     if (kio_write_ch(kio, (char)ch) < 0)
-      return -1; // error writing to kio
+      break; // kio buffer is full
     n++;
   }
   return n;
@@ -679,6 +681,8 @@ static struct device_ops uart_ops = {
 
 static void register_serial_devices() {
   static const int ports[] = { COM1, COM2, COM3, COM4 };
+
+  devfs_register_class(dev_major_by_name("serial"), -1, "ttyS", DEVFS_NUMBERED);
   for (int i = 0; i < ARRAY_SIZE(ports); i++) {
     if (!uart_hw_init_probe(ports[i])) {
       continue;
@@ -689,22 +693,24 @@ static void register_serial_devices() {
     uart_dev->port = ports[i];
     uart_dev->tx_tid = -1;
 
-    device_t *dev = alloc_device(uart_dev, &uart_ops);
+    tty_t *tty = tty_alloc(&uart_ttydev_ops, uart_dev);
+    if (tty == NULL) {
+      EPRINTF("failed to allocate tty for serial port %d\n", ports[i]);
+      kfree(uart_dev);
+      continue;
+    }
+
+    device_t *dev = alloc_device(tty, NULL);
     if (register_dev("serial", dev) < 0) {
       EPRINTF("failed to register device");
       dev->data = NULL;
       free_device(dev);
+      tty_free(&tty);
       kfree(uart_dev);
       continue;
     }
 
     if (ports[i] == console_uart_port) {
-      tty_t *tty = tty_alloc(&uart_ttydev_ops, uart_dev);
-      if (tty == NULL) {
-        EPRINTF("failed to allocate tty for serial port %d\n", ports[i]);
-        continue;
-      }
-
       console_t *console = kmallocz(sizeof(console_t));
       console->name = "uart";
       console->tty = tty;

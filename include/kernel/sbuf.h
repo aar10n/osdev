@@ -160,5 +160,9 @@ static inline size_t sbuf_write_str(sbuf_t *sbuf, str_t str) {
   return sbuf_write(sbuf, str_cptr(str), str_len(str));
 }
 
+static inline size_t sbuf_write_str_reverse(sbuf_t *sbuf, str_t str) {
+  return sbuf_write_reverse(sbuf, str_cptr(str), str_len(str));
+}
+
 #endif
 #endif // __SBUF_STR__

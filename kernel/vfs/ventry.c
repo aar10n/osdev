@@ -6,6 +6,7 @@
 #include <kernel/vfs/vnode.h>
 
 #include <kernel/mm.h>
+#include <kernel/fs.h>
 #include <kernel/panic.h>
 #include <kernel/printf.h>
 #include <murmur3.h>
@@ -145,6 +146,44 @@ void ve_remove_child(ventry_t *parent, ventry_t *child) {
   LIST_REMOVE(&parent->children, child, list);
   ve_release(&child); // release parent->children ref
   parent->chld_count--;
+}
+
+ssize_t ve_get_path(ventry_t *ve, sbuf_t *buf) {
+  ventry_t *root_ve = fs_root_getref();
+  // /dev
+
+  size_t pathlen = 0;
+  ve = ve_getref(ve);
+  while (ve != root_ve) {
+    size_t n;
+    if (!str_eq_charp(ve->name, "/")) {
+      n = sbuf_write_str_reverse(buf, ve->name);
+      if (n == 0) goto nametoolong;
+      pathlen += n;
+
+      n = sbuf_write_char(buf, '/');
+      if (n == 0) goto nametoolong;
+      pathlen += 1;
+    }
+
+    ventry_t *parent = ve_getref(ve->parent);
+    ve_release_swap(&ve, &parent);
+  }
+
+  // reverse the path
+  sbuf_reverse(buf);
+
+  // write a null terminator
+  sbuf_write_char(buf, 0);
+
+  ve_release(&ve);
+  ve_release(&root_ve);
+  return (ssize_t) pathlen;
+
+LABEL(nametoolong);
+  ve_release(&ve);
+  ve_release(&root_ve);
+  return -ENAMETOOLONG; // name too long
 }
 
 bool ve_syncvn(ventry_t *ve) {

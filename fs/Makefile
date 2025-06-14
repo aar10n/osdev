@@ -1,6 +1,9 @@
 # Fs sources
 $(call register,fs,KERNEL)
 
+# fs/devfs
+fs += devfs/devfs.c devfs/devfs_vfsops.c
+
 # fs/initrd
 fs += initrd/initrd.c initrd/initrd_vfsops.c initrd/initrd_vnops.c
 

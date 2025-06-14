@@ -76,7 +76,7 @@ void fs_init() {
   curproc->pwd = ve_getref(fs_root_ve);
 }
 
-void fs_setup_final() {
+void fs_setup_mounts() {
   // must be called after fs_init and all module initializers have ran
   // this function sets up the initial filesystem structure and mounts
   // the initrd (if available)
@@ -85,39 +85,39 @@ void fs_setup_final() {
   if (boot_info_v2->initrd_addr != 0) {
     // there is an initrd
     if ((res = fs_mkdir(cstr_make("/initrd"), 0777)) < 0) {
-      panic("fs_setup_final: failed to create /initrd directory [{:err}]", res);
+      panic("fs_setup_mounts: failed to create /initrd directory [{:err}]", res);
     }
     if ((res = fs_mknod(cstr_make("/rd0"), S_IFBLK, makedev(1, 0))) < 0) {
-      panic("fs_setup_final: failed to create /rd0 block device [{:err}]", res);
+      panic("fs_setup_mounts: failed to create /rd0 block device [{:err}]", res);
     }
 
     // mount the initrd and replace root
     if ((res = fs_mount(cstr_make("/rd0"), cstr_make("/initrd"), "initrd", 0)) < 0) {
-      panic("fs_setup_final: failed to mount initrd [{:err}]", res);
+      panic("fs_setup_mounts: failed to mount initrd [{:err}]", res);
     }
     if ((res = fs_replace_root(cstr_make("/initrd"))) < 0) {
-      panic("fs_setup_final: failed to replace root with initrd [{:err}]", res);
+      panic("fs_setup_mounts: failed to replace root with initrd [{:err}]", res);
     }
     if ((res = fs_unmount(cstr_make("/"))) < 0) {
-      panic("fs_setup_final: failed to unmount original root [{:err}]", res);
+      panic("fs_setup_mounts: failed to unmount original root [{:err}]", res);
     }
   }
 
- // create /dev directory and special files
+  // mount devfs at /dev
   if ((res = fs_mkdir(cstr_make("/dev"), 0777)) < 0) {
-    panic("fs_setup_final: failed to create /dev directory [{:err}]", res);
+    panic("fs_setup_mounts: failed to create /dev directory [{:err}]", res);
   }
-  if ((res = fs_mknod(cstr_make("/dev/stdin"), S_IFCHR, makedev(3, 0))) < 0) {
-    panic("fs_setup_final: failed to create /dev/stdin character device [{:err}]", res);
+  if ((res = fs_mknod(cstr_make("/loop"), S_IFBLK, makedev(4, 0))) < 0) {
+    panic("fs_setup_mounts: failed to create /dev/loop block device [{:err}]", res);
   }
-  if ((res = fs_mknod(cstr_make("/dev/stdout"), S_IFCHR, makedev(2, 0))) < 0) {
-    panic("fs_setup_final: failed to create /dev/stdout character device [{:err}]", res);
+  if ((res = fs_mount(cstr_make("/loop"), cstr_make("/dev"), "devfs", 0)) < 0) {
+    panic("fs_setup_mounts: failed to mount devfs [{:err}]", res);
   }
-  if ((res = fs_mknod(cstr_make("/dev/stderr"), S_IFCHR, makedev(2, 3))) < 0) {
-    panic("fs_setup_final: failed to create /dev/stderr character device [{:err}]", res);
+  if ((res = fs_unlink(cstr_make("/loop"))) < 0) {
+    panic("fs_setup_mounts: failed to unlink /loop [{:err}]", res);
   }
 
-  DPRINTF("fs_setup_final completed successfully\n");
+  DPRINTF("fs_setup_mounts completed successfully\n");
 }
 
 //

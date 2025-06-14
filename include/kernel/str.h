@@ -74,8 +74,8 @@ static inline bool cstr_eq_charp(cstr_t str1, const char *cstr2) {
 
 static inline size_t cstr_memcpy(cstr_t str, void *buf, size_t len) {
   size_t n = min(cstr_len(str)+1, len);
-  memcpy(buf, cstr_ptr(str), cstr_len(str));
-  ((char *)buf)[n] = '\0';
+  memcpy(buf, cstr_ptr(str), n-1);
+  ((char *)buf)[n-1] = '\0';
   return n;
 }
 

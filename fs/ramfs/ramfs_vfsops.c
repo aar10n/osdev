@@ -16,7 +16,7 @@
 
 //
 
-int ramfs_vfs_mount(vfs_t *vfs, device_t *device, __move ventry_t **rootve) {
+int ramfs_vfs_mount(vfs_t *vfs, device_t *device, ventry_t *mount_ve, __move ventry_t **rootve) {
   DPRINTF("mount vfs=%u\n", vfs->id);
   ramfs_mount_t *mount = ramfs_alloc_mount(vfs);
   vfs->data = mount;

@@ -68,7 +68,7 @@ extern struct ventry_ops ramfs_ventry_ops;
 // MARK: implementation
 
 // vfs operations
-int ramfs_vfs_mount(vfs_t *vfs, device_t *device, __move ventry_t **rootve);
+int ramfs_vfs_mount(vfs_t *vfs, device_t *device, ventry_t *mount_ve, __move ventry_t **rootve);
 int ramfs_vfs_unmount(vfs_t *vfs);
 int ramfs_vfs_sync(vfs_t *vfs);
 int ramfs_vfs_stat(vfs_t *vm, struct vfs_stat *stat);

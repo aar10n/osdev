@@ -249,11 +249,11 @@ void vcache_free(vcache_t *vcache) {
   kfree(vcache->entries);
 }
 
-ventry_t *vcache_get_root(vcache_t *vcache) __ref {
-  return vcache->root;
+__ref ventry_t *vcache_get_root(vcache_t *vcache) {
+  return ve_getref(vcache->root);
 }
 
-ventry_t *vcache_get(vcache_t *vcache, cstr_t path) __move {
+__ref ventry_t *vcache_get(vcache_t *vcache, cstr_t path) {
   VCACHE_LOCK(vcache);
   hash_t hash = ve_hash_cstr(vcache->root, path);
   struct vcache_entry *entry = vcache_find_entry(vcache, path, hash);

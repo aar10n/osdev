@@ -192,7 +192,7 @@ int vresolve_fullwalk(vcache_t *vc, ventry_t *at, cstr_t path, int flags, int de
   // get starting directory
   path_t part = path_from_cstr(path);
   if (path_is_absolute(part)) {
-    ve = ve_getref(vcache_get_root(vc));
+    ve = vcache_get_root(vc);
   } else {
     vresolve_get_ve_path(at, &curpath);
     ve = ve_getref(at);

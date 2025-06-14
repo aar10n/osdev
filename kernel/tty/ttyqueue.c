@@ -224,6 +224,7 @@ size_t ttyinq_drop(struct ttyinq *inq, size_t n) {
 }
 
 void ttyinq_del_ch(struct ttyinq *inq) {
+
   DPRINTF("TODO: ttyinq_del_ch\n");
 }
 

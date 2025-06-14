@@ -6,6 +6,7 @@
 #define KERNEL_DEVICE_H
 
 #include <kernel/mm_types.h>
+#include <kernel/chan.h>
 #include <kernel/mutex.h>
 #include <kernel/kio.h>
 
@@ -139,6 +140,18 @@ typedef struct device_bus {
   LIST_ENTRY(struct device_bus) list;
 } device_bus_t;
 
+/**
+ * An event sent over the `device_events` channel in response
+ * to changes in device state.
+ */
+struct device_event {
+  int type;
+  dev_t dev;
+};
+
+#define DEV_EVT_ADD     1
+#define DEV_EVT_REMOVE  1
+
 
 static inline dev_t makedev(uint8_t major, uint8_t minor) {
   return ((dev_t)major) | ((dev_t)minor << 8);
@@ -169,7 +182,10 @@ void probe_all_buses();
 // MARK: Public API
 //
 
+extern chan_t *device_events;
+
 device_t *device_get(dev_t dev);
+int dev_major_by_name(const char *name);
 
 /**
  * Registers a new device bus on the system.
@@ -243,10 +259,20 @@ static inline ssize_t d_nread(device_t *device, size_t off, size_t nmax, kio_t *
     return -ENOTSUP;
   return device->ops->d_read(device, off, nmax, kio);
 }
+static inline ssize_t d_read(device_t *device, size_t off, kio_t *kio) {
+  if (device->ops->d_read == NULL)
+    return -ENOTSUP;
+  return device->ops->d_read(device, off, kio_remaining(kio), kio);
+}
 static inline ssize_t d_nwrite(device_t *device, size_t off, size_t nmax, kio_t *kio) {
   if (device->ops->d_write == NULL)
     return -ENOTSUP;
   return device->ops->d_write(device, off, nmax, kio);
+}
+static inline ssize_t d_write(device_t *device, size_t off, kio_t *kio) {
+  if (device->ops->d_write == NULL)
+    return -ENOTSUP;
+  return device->ops->d_write(device, off, kio_remaining(kio), kio);
 }
 static inline int d_ioctl(device_t *device, unsigned long request, void *arg) {
   if (device->ops->d_ioctl == NULL) {
@@ -258,14 +284,6 @@ static inline __ref page_t *d_getpage(device_t *device, size_t off) {
   if (device->ops->d_getpage == NULL)
     return NULL;
   return device->ops->d_getpage(device, off);
-}
-
-static inline ssize_t d_read(device_t *device, size_t off, kio_t *kio) {
-  return d_nread(device, off, kio_remaining(kio), kio);
-}
-
-static inline ssize_t d_write(device_t *device, size_t off, kio_t *kio) {
-  return d_nwrite(device, off, kio_remaining(kio), kio);
 }
 
 static inline ssize_t d_read_n(device_t *device, size_t off, void *buf, size_t len) {

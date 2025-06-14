@@ -5,8 +5,8 @@
 #include "memfile.h"
 
 #include <kernel/mm.h>
+#include <kernel/panic.h>
 #include <kernel/printf.h>
-
 
 #define ASSERT(x) kassert(x)
 #define DPRINTF(fmt, ...) kprintf("memfile: %s: " fmt, __func__, ##__VA_ARGS__)
@@ -43,7 +43,7 @@ __ref page_t *memfile_getpage(memfile_t *memf, off_t off) {
 
 int memfile_falloc(memfile_t *memf, size_t newsize) {
   int res;
-  if ((res = vmap_resize(memf->base, memf->size, newsize, /*allow_move=*/true, &memf->base)) < 0) {
+  if ((res = vmap_resize(memf->base, memf->size, newsize, /*allow_move=*/false, &memf->base)) < 0) {
     DPRINTF("failed to resize vm mapping\n");
     return res;
   }

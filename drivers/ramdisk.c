@@ -3,11 +3,12 @@
 //
 
 #include <kernel/device.h>
-#include <kernel/fs.h>
 #include <kernel/mm.h>
 
 #include <kernel/printf.h>
 #include <kernel/panic.h>
+
+#include <fs/devfs/devfs.h>
 
 #define ASSERT(x) kassert(x)
 
@@ -47,7 +48,7 @@ ssize_t ramdisk_d_write(device_t *dev, size_t off, size_t nmax, kio_t *kio) {
     return 0;
   }
 
-  size_t len = kio_remaining(kio);
+  size_t len = max(kio_remaining(kio), rd->size - off);
   return (ssize_t) kio_nread_out((void *)rd->base, len, off, nmax, kio);
 }
 
@@ -88,6 +89,8 @@ static void ramdisk_initrd_module_init() {
   struct ramdisk *initrd = kmallocz(sizeof(struct ramdisk));
   initrd->base = vaddr;
   initrd->size = boot_info_v2->initrd_size;
+
+  devfs_register_class(dev_major_by_name("ramdisk"), -1, "rd", DEVFS_NUMBERED);
 
   kprintf("ramdisk: registering initrd\n");
   device_t *dev = alloc_device(initrd, &ramdisk_ops);

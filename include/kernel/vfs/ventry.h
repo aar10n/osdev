@@ -7,6 +7,7 @@
 
 #include <kernel/vfs_types.h>
 #include <kernel/vfs/vnode.h>
+#include <kernel/sbuf.h>
 
 #define VN(ve) __type_checked(struct ventry *, ve, ((ve)->vn))
 #define VE_OPS(ve) __type_checked(struct ventry *, ve, (ve)->ops)
@@ -37,6 +38,8 @@ void ve_replace_root(ventry_t *root_ve, ventry_t *newroot_ve); // root_ve = l, n
 void ve_add_child(ventry_t *parent, ventry_t *child); // parent = l, child = _
 /// Removes a child ventry from a parent ventry.
 void ve_remove_child(ventry_t *parent, ventry_t *child); // parent = l, child = l
+// Writes the full path to a ventry into a string buffer.
+ssize_t ve_get_path(ventry_t *ve, sbuf_t *buf); // ve = _
 /// Synchronizes a ventry with its vnode. If the vnode is dead
 bool ve_syncvn(ventry_t *ve); // ve = l
 /// Computes the hash of a ventry.

@@ -90,6 +90,8 @@ void tty_free(tty_t **ttyp);
 int tty_open(tty_t *tty);
 int tty_close(tty_t *tty);
 int tty_configure(tty_t *tty, struct termios *termios, struct winsize *winsize);
+int tty_modem(tty_t *tty, int command, int arg);
+int tty_ioctl(tty_t *tty, unsigned long request, void *arg);
 int tty_wait(tty_t *tty, cond_t *cond);
 void tty_wait_signal(tty_t *tty, cond_t *cond);
 int tty_signal_pgrp(tty_t *tty, int signal);

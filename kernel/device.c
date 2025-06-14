@@ -4,14 +4,12 @@
 //
 
 #include <kernel/device.h>
-#include <kernel/proc.h>
+#include <kernel/chan.h>
 #include <kernel/panic.h>
 #include <kernel/printf.h>
-
 #include <kernel/string.h>
-#include <rb_tree.h>
 
-#define DECLARE_DEV_TYPE(_name, _maj, _typ) [_maj] = { .name = (_name), .major = (_maj), .type = (_typ) }
+#include <rb_tree.h>
 
 #define HMAP_TYPE void *
 #include <hash_map.h>
@@ -46,13 +44,17 @@ struct bus_type bus_types[] = {
   { "usb" },
 };
 
+#define DECLARE_DEV_TYPE(_name, _maj, _typ) [_maj] = { .name = (_name), .major = (_maj), .type = (_typ) }
 struct dev_type dev_types[] = {
   { /* reserved */ },
   DECLARE_DEV_TYPE("ramdisk", 1, D_BLK),
   DECLARE_DEV_TYPE("serial" , 2, D_CHR),
   DECLARE_DEV_TYPE("memory" , 3, D_CHR),
+  DECLARE_DEV_TYPE("loop"   , 4, D_BLK),
 };
+#undef DECLARE_DEV_TYPE
 
+chan_t *device_events;
 static rb_tree_t *device_tree;
 static mtx_t device_tree_lock;
 static hash_map_t *bus_type_by_name;
@@ -89,6 +91,7 @@ static inline bool is_valid_device_driver(device_driver_t *driver) {
 //
 
 static void device_static_init() {
+  device_events = chan_alloc(256, sizeof(struct device_event), 0, "device_events");
   device_tree = create_rb_tree();
   mtx_init(&device_tree_lock, MTX_SPIN, "device_tree_lock");
 
@@ -113,7 +116,6 @@ STATIC_INIT(device_static_init);
 //
 
 device_t *alloc_device(void *data, struct device_ops *ops) {
-  ASSERT(ops != NULL); // data can be NULL
   device_t *dev = kmallocz(sizeof(device_t));
   dev->data = data;
   dev->ops = ops;
@@ -175,6 +177,17 @@ device_t *device_get(dev_t dev) {
   device_t *device = rb_tree_find(device_tree, (uint64_t) dev);
   mtx_spin_unlock(&device_tree_lock);
   return device;
+}
+
+int dev_major_by_name(const char *name) {
+  struct dev_type *type;
+  for (int i = 0; i < ARRAY_SIZE(dev_types); i++) {
+    type = &dev_types[i];
+    if (type->name && strcmp(type->name, name) == 0) {
+      return (int) type->major;
+    }
+  }
+  return -1; // not found
 }
 
 int register_bus(device_bus_t *bus) {
@@ -270,7 +283,7 @@ int register_bus_device(device_bus_t *bus, void *bus_device) {
 int register_device_ops(const char *dev_type, struct device_ops *ops) {
   struct dev_type *type = hash_map_get(dev_type_by_name, dev_type);
   if (type == NULL) {
-    DPRINTF("device type '%s' not found\n", dev_type);
+    EPRINTF("device type '%s' not found\n", dev_type);
     return -1;
   }
 
@@ -283,16 +296,13 @@ int register_device_ops(const char *dev_type, struct device_ops *ops) {
 int register_dev(const char *dev_type, device_t *dev) {
   struct dev_type *type = hash_map_get(dev_type_by_name, dev_type);
   if (type == NULL) {
-    DPRINTF("device type '%s' not found\n", dev_type);
+    EPRINTF("device type '%s' not found\n", dev_type);
     return -1;
   }
 
   if (dev->ops == NULL)
     dev->ops = type->ops;
 
-  // if (dev->data == NULL) {
-  //   panic("register_dev: dev->data is NULL. did you forget to set it?");
-  // } else
   if (dev->ops == NULL) {
     panic("register_dev: dev->ops is NULL.");
   }
@@ -311,5 +321,10 @@ int register_dev(const char *dev_type, device_t *dev) {
   mtx_spin_unlock(&device_tree_lock);
 
   kprintf("device: registered %s device %d\n", dev_type, dev->minor);
+  struct device_event event = { .type = DEV_EVT_ADD, .dev = make_dev(dev) };
+  if (chan_send(device_events, &event) < 0) {
+    EPRINTF("failed to send device event for %s device %d\n", dev_type, dev->minor);
+    // we don't fail the registration if the event cannot be sent
+  }
   return 0;
 }

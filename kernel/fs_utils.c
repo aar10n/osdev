@@ -165,7 +165,7 @@ void ls(const char *path) {
   kprintf("ls \"%s\":\n", path);
 
   ssize_t nread;
-  char buf[512];
+  char buf[1024];
   while ((nread = fs_readdir(fd, buf, sizeof(buf))) > 0) {
     struct dirent *ent = (void *) buf;
     struct dirent *end = (void *) (buf + nread);

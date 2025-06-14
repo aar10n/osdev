@@ -15,7 +15,7 @@ struct page;
 struct vm_file;
 
 void fs_init();
-void fs_setup_final();
+void fs_setup_mounts();
 
 int fs_register_type(fs_type_t *fs_type);
 fs_type_t *fs_get_type(const char *type);

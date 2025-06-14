@@ -118,23 +118,26 @@ int ramfs_vn_readlink(vnode_t *vn, struct kio *kio) {
 ssize_t ramfs_vn_readdir(vnode_t *vn, off_t off, kio_t *dirbuf) {
   DPRINTF("readdir vn={:vn} off=%lld\n", vn, off);
   ramfs_node_t *node = vn->data;
-  size_t i = 0;
+  size_t nread = 0;
 
   if (off == 0) {
     // write the dot entry
     if (!kio_write_dirent(vn->id, off, V_DIR, cstr_new(".", 1), dirbuf))
       return 0;
-    i++;
+    nread++;
+    off++;
   }
-  if (off <= 1) {
+  if (off == 1) {
     // write the dotdot entry
     if (!kio_write_dirent(vn->parent_id, off, V_DIR, cstr_new("..", 2), dirbuf))
-      return (ssize_t) i;
-    i++;
-  } else {
-    off -= 2;
+      return (ssize_t) nread;
+    nread++;
+    off++;
   }
 
+  // adjust offset to skip the dot and dotdot entries
+  off -= 2;
+  size_t i = 0;
   ramfs_dentry_t *dent = LIST_FIRST(&node->n_dir);
   while (dent) {
     // get to the right offset
@@ -149,10 +152,12 @@ ssize_t ramfs_vn_readdir(vnode_t *vn, off_t off, kio_t *dirbuf) {
       break;
 
     dent = LIST_NEXT(dent, list);
+    nread++;
+    off++;
     i++;
   }
 
-  return (ssize_t) i;
+  return (ssize_t) nread;
 }
 
 //

@@ -76,13 +76,20 @@ __used void kmain() {
 
   // run the module initializers followed by the last of the filesystem setup.
   do_module_initializers();
-  fs_setup_final();
+  fs_setup_mounts();
   kprintf("done at %llu!\n", clock_get_nanos());
   ls("/");
 
   cpu_enable_interrupts();
   // probe_all_buses();
   console_init();
+
+  sched_again(SCHED_YIELDED);
+  sched_again(SCHED_YIELDED);
+  sched_again(SCHED_YIELDED);
+  sched_again(SCHED_YIELDED);
+
+  ls("/dev");
 
   alarm_source_enable(alarm_tick_source());
   sched_again(SCHED_BLOCKED);
