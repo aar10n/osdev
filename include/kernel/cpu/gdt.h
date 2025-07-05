@@ -59,7 +59,6 @@ static_assert(sizeof(struct tss) == 100);
 #define IST_DF        1 // double fault stack
 #define IST_NMI       2 // nmi stack
 #define IST_DEBUG     3 // debug stack
-#define IST_TRAPFRAME 7 // thread trapframe
 
 void tss_set_rsp(int idx, uintptr_t rsp);
 void tss_set_ist(int ist, uintptr_t sp);

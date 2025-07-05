@@ -1,5 +1,6 @@
 # system binaries
 SBIN_PROGS = \
+	getty \
 	init
 
 .DEFAULT_GOAL := all

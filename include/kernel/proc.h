@@ -9,6 +9,7 @@
 #include <kernel/queue.h>
 #include <kernel/mutex.h>
 #include <kernel/cond.h>
+#include <kernel/chan.h>
 #include <kernel/signal.h>
 #include <kernel/ref.h>
 #include <kernel/str.h>
@@ -18,6 +19,7 @@
 
 #include <abi/resource.h>
 #include <abi/time.h>
+#include <abi/wait.h>
 
 #include <stdarg.h>
 
@@ -40,23 +42,30 @@ struct thread;
  * Session
  */
 typedef struct session {
-  pid_t sid;                          // session id
+  pid_t sid;                          // session id (immutable)
   mtx_t lock;                         // session mutex
   struct tty *tty;                    // controlling tty
+  struct proc *leader;                // session leader reference
   char login_name[LOGIN_NAME_MAX+1];  // login name of session leader
 
+  _refcount;                          // session refcount
   size_t num_pgroups;                 // number of process groups
   LIST_HEAD(struct pgroup) pgroups;   // list of process groups
 } session_t;
+
+#define sess_lock_assert(sess, what) __type_checked(session_t*, sess, mtx_assert(&(sess)->lock, what))
+#define sess_lock(sess) __type_checked(session_t*, sess, mtx_lock(&(sess)->lock))
+#define sess_unlock(sess) __type_checked(session_t*, sess, mtx_unlock(&(sess)->lock))
 
 /*
  * Process group
  */
 typedef struct pgroup {
-  pid_t pgid;                       // pgroup id
+  pid_t pgid;                       // pgroup id (immutable)
   mtx_t lock;                       // pgroup mutex
-  struct session *session;          // owning session
+  struct session *session;          // owning session (immutable)
 
+  _refcount;                        // pgroup refcount
   size_t num_procs;                 // number of processes
   LIST_HEAD(struct proc) procs;     // process list
 
@@ -95,8 +104,9 @@ typedef struct proc {
 
   mtx_t lock;                       // process lock
   mtx_t statlock;                   // process stats lock
-  cond_t td_exit_cond;              // thread exit condition
+  chan_t *wait_status_ch;           // child process wait status channel (used by wait4, etc)
   cond_t signal_cond;               // signal condition (used by sigwait, pause, etc)
+  cond_t td_exit_cond;              // thread exit condition
 
   /* starts zeroed */
   struct pstrings *args;            // process arguments
@@ -108,19 +118,21 @@ typedef struct proc {
   uintptr_t brk_max;                // process brk max address
 
   str_t name;                       // process name
-  pid_t ppid;                       // parent pid
   sigqueue_t sigqueue;              // blocked pending signals
 
   id_t pending_alarm;               // id of pending alarm or 0 if none
   struct itimerval itimer_vals[1];  // process itimers values
   id_t itimer_alarms[1];            // pending itimer alarm ids
 
-  int exit_code;                    // process exit code
-  volatile uint32_t num_exiting;    // pending thread exits
+  int exit_status;                  // process exit status
   volatile uint32_t num_exited;     // number of exited threads
   uint32_t num_threads;             // number of threads
   LIST_HEAD(struct thread) threads; // process threads
 
+  struct proc *parent;              // parent process (ref)
+  LIST_HEAD(struct proc) children;  // process children list (refs)
+
+  LIST_ENTRY(struct proc) chldlist; // process children list entry
   LIST_ENTRY(struct proc) pglist;   // process group list entry
   LIST_ENTRY(struct proc) hashlist; // ptable hash list entry
 } proc_t;
@@ -137,6 +149,7 @@ typedef struct proc {
 #define PRS_IS_ALIVE(p) ((p)->state == PRS_ACTIVE)
 #define PRS_IS_ZOMBIE(p) ((p)->state == PRS_ZOMBIE)
 #define PRS_IS_EXITED(p) ((p)->state == PRS_EXITED)
+#define PRS_IS_DEAD(p) (PRS_IS_ZOMBIE(p) || PRS_IS_EXITED(p))
 
 #define pr_main_thread(p) LIST_FIRST(&(p)->threads)
 #define pr_lock_assert(p, what) __type_checked(proc_t*, p, mtx_assert(&(p)->lock, what))
@@ -162,6 +175,12 @@ struct pstrings {
   char *kptr;           // kernel pointer to the strings
 };
 
+/* child process events sent over proc->wait_status_ch */
+struct pchild_status {
+  pid_t pid;            // child process id
+  int status;           // child wait status
+};
+
 /*
  * Thread
  */
@@ -170,7 +189,7 @@ typedef struct thread {
   uint32_t flags;                       // thread flags
   mtx_t lock;                           // thread mutex lock
   struct tcb *tcb;                      // thread context
-  struct proc *proc;                    // owning process
+  struct proc *proc;                    // owning process (ref)
   struct trapframe *frame;              // thread trapframe
   uintptr_t kstack_base;                // kernel stack base
   size_t kstack_size;                   // kernel stack size
@@ -253,8 +272,8 @@ static_assert(offsetof(thread_t, ustack_ptr) == 0x90);
 #define   TDF2_HAS_AFFINITY(td) ((td)->flags2 & TDF2_AFFINITY)
 #define TDF2_SIGPEND    0x00000008  // thread has pending signals
 #define   TDF2_HAS_SIGPEND(td) ((td)->flags2 & TDF2_SIGPEND)
-#define TDF2_PREEMPTED  0x00000010  // thread has been preempted
-#define   TDF2_IS_PREEMPTED(td) ((td)->flags2 & TDF2_PREEMPTED)
+#define TDF2_TRAPFRAME  0x00000010  // thread should be restored from trapframe
+#define   TDF2_IS_TRAPFRAME(td) ((td)->flags2 & TDF2_TRAPFRAME)
 
 
 #define TDS_IS_EMPTY(td) ((td)->state == TDS_EMPTY)
@@ -303,50 +322,77 @@ static inline void pcreds_release(__move struct pcreds **pcref) {
   }
 }
 
-pgroup_t *pgrp_alloc_empty(pid_t pgid, session_t *session);
-void pgrp_free_empty(pgroup_t **pgp);
-void   pgrp_setup_add_proc(pgroup_t *pg, proc_t *proc);
+__ref session_t *session_alloc(pid_t sid);
+void session_cleanup(__move session_t **sessref);
+void session_add_pgroup(session_t *sess, pgroup_t *pg);
+int session_leader_ctty(session_t *sess, struct tty *tty);
+
+#define sess_getref(sess) __type_checked(session_t*, sess, getref(sess))
+#define sess_putref(sessref) ({ \
+  ASSERT_IS_TYPE(session_t **, sessref); \
+  session_t *__sess = moveref(*(sessref));  \
+  if (__sess && ref_put(&__sess->refcount)) { \
+    session_cleanup(&__sess); \
+  } \
+})
+
+__ref pgroup_t *pgrp_alloc_add_proc(proc_t *proc);
+void pgrp_cleanup(__move pgroup_t **pgrpref);
+__ref proc_t *pgrp_get_leader(pgroup_t *pg);
 void pgrp_add_proc(pgroup_t *pg, proc_t *proc);
 void pgrp_remove_proc(pgroup_t *pg, proc_t *proc);
 int pgrp_signal(pgroup_t *pg, int sig, int si_code, union sigval si_value);
+
+#define pgrp_getref(pg) __type_checked(pgroup_t*, pg, getref(pg))
+#define pgrp_putref(pgrp) ({ \
+  ASSERT_IS_TYPE(pgroup_t **, pgrp); \
+  pgroup_t *__pg = moveref(*(pgrp));  \
+  if (__pg && ref_put(&__pg->refcount)) { \
+    pgrp_cleanup(&__pg); \
+  } \
+})
 
 pid_t proc_alloc_pid();
 void proc_free_pid(pid_t pid);
 
 __ref proc_t *proc_alloc_new(struct pcreds *creds);
-__ref proc_t *proc_alloc_fork(__ref proc_t *proc);
+__ref proc_t *proc_fork();
 void proc_cleanup(__move proc_t **procp);
 void   proc_setup_add_thread(proc_t *proc, thread_t *td);
-int    proc_setup_new_env(proc_t *proc, const char *const env[]);
-int    proc_setup_copy_env(proc_t *proc, struct pstrings *env);
 int    proc_setup_exec_args(proc_t *proc, const char *const args[]);
+int    proc_setup_exec_env(proc_t *proc, const char *const env[]);
 int    proc_setup_exec(proc_t *proc, cstr_t path);
 int    proc_setup_entry(proc_t *proc, uintptr_t function, int argc, ...);
-int    proc_setup_clone_fds(proc_t *proc, struct ftable *ftable);
 int    proc_setup_open_fd(proc_t *proc, int fd, cstr_t path, int flags);
 int    proc_setup_name(proc_t *proc, cstr_t name);
 void   proc_finish_setup_and_submit_all(__ref proc_t *proc);
 __ref proc_t *proc_lookup(pid_t pid);
+bool proc_is_pgrp_leader(proc_t *proc); // locked
+bool proc_is_sess_leader(proc_t *proc); // locked
 void proc_add_thread(proc_t *proc, thread_t *td);
-void proc_kill(proc_t *proc, int exit_code);
-void proc_kill_tid(proc_t *proc, pid_t tid, int exit_code);
-void proc_stop(proc_t *proc);
+void proc_terminate(proc_t *proc, int ret, int sig);
+void proc_kill_tid(proc_t *proc, pid_t tid, int ret, int sig);
+void proc_stop(proc_t *proc, int sig);
 void proc_cont(proc_t *proc);
 int proc_wait_signal(proc_t *proc);
 int proc_signal(proc_t *proc, int sig, int si_code, union sigval si_value);
 int pid_signal(pid_t pid, int sig, int si_code, union sigval si_value);
+pid_t proc_syscall_wait4(pid_t pid, int *status, int options, struct rusage *rusage);
+int proc_syscall_execve(cstr_t path, char *const argv[], char *const envp[]); // syscall only
 
 #define pr_getref(pr) __type_checked(proc_t*, pr, getref(pr))
-static inline void pr_putref(__move proc_t **pref) {
-  proc_t *pr = moveref(*pref);
-  if (pr && ref_put(&pr->refcount)) {
-    proc_cleanup(&pr);
-  }
-}
+#define pr_putref(pref) ({ \
+  ASSERT_IS_TYPE(proc_t**, pref); \
+  proc_t *__pr = moveref(*(pref));  \
+  if (__pr && ref_put(&__pr->refcount)) { \
+    proc_cleanup(&__pr); \
+  } \
+})
 
 thread_t *thread_alloc(uint32_t flags, size_t kstack_size);
 thread_t *thread_alloc_proc0_main();
 thread_t *thread_alloc_idle();
+thread_t *thread_syscall_fork(); // syscall only
 void thread_free_exited(thread_t **tdp);
 int    thread_setup_entry(thread_t *td, uintptr_t function, int argc, ...);
 int    thread_setup_entry_va(thread_t *td, uintptr_t function, int argc, va_list arglist);
@@ -359,7 +405,7 @@ void thread_cont(thread_t *td);
 int thread_signal(thread_t *td, int sig, int si_code, union sigval si_value);
 
 static inline uintptr_t thread_get_kstack_top(thread_t *td) {
-  uintptr_t stack_top_off = align(sizeof(struct tcb), 16) + sizeof(struct trapframe);
+  uintptr_t stack_top_off = align(sizeof(struct tcb), 16) + align(sizeof(struct trapframe), 16);
   return (td->kstack_base + td->kstack_size) - stack_top_off;
 }
 

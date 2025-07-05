@@ -17,6 +17,7 @@
 #include <abi/signal.h>
 #include <abi/sysinfo.h>
 #include <abi/time.h>
+#include <abi/wait.h>
 #include <abi/utsname.h>
 
 typedef uint64_t (*syscall_t)(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);

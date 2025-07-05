@@ -10,6 +10,8 @@
 #include <kernel/mm.h>
 #include <kernel/printf.h>
 
+#include <abi/termios.h>
+
 #define ASSERT(x) kassert(x)
 // #define DPRINTF(fmt, ...) kprintf("vnode: " fmt, ##__VA_ARGS__)
 #define DPRINTF(fmt, ...)
@@ -126,7 +128,7 @@ ssize_t vn_f_write(file_t *file, kio_t *kio) {
   vnode_t *vn = file->data;
   if (V_ISDIR(vn)) {
     return -EISDIR; // file is a directory
-  } else if (file->flags & O_RDONLY) {
+  } else if (file->access & O_RDONLY) {
     return -EBADF; // file is not open for writing
   } else if (!vn_lock(vn)) {
     return -EIO; // vnode is dead
@@ -158,15 +160,17 @@ int vn_f_ioctl(file_t *file, unsigned long request, void *arg) {
 
   int res;
   if (V_ISDEV(vn)) {
+    // device ioctl
     device_t *device = vn->v_dev;
     ASSERT(device != NULL);
-
-    // device ioctl
     res = d_ioctl(device, request, arg);
   } else {
     // vnode ioctl
     res = vn_ioctl(vn, request, arg);
   }
+
+  if (res == -ENOTSUP)
+    res = -ENOTTY; // not a tty device or not supported
 
   vn_unlock(vn);
   return res;
@@ -250,6 +254,22 @@ void vn_cleanup(__move vnode_t **vnref) {
 
   vfs_release(&vn->vfs);
   kfree(vn);
+}
+
+bool vn_isatty(vnode_t *vn) {
+  if (!V_ISDEV(vn)) {
+    return false; // not a character or block device
+  }
+
+  // try sending a TIOCGWINSZ ioctl to the device
+  struct winsize ws;
+  int res = vn_ioctl(vn, TIOCGWINSZ, &ws);
+  if (res < 0) {
+    // is not a tty device
+    return false;
+  }
+  // is a tty device
+  return true;
 }
 
 //

@@ -15,6 +15,7 @@
 #include <abi/dirent.h>
 #include <abi/fcntl.h>
 #include <abi/stat.h>
+#include <bits/ioctl.h>
 
 struct device;
 struct page;
@@ -312,11 +313,22 @@ enum ftype {
 /*
  * An open file descriptor.
  */
-typedef struct file {
+typedef struct fd_entry {
   int fd;               // file descriptor
-  int flags;            // open flags (flags from open())
-  enum ftype type;      // file type
+  int flags;            // open flags
   str_t real_path;      // full path to file
+  struct file *file;    // file reference
+
+  mtx_t lock;           // file descriptor lock
+  refcount_t refcount;  // reference count
+} fd_entry_t;
+
+/*
+ * A file backing a file descriptor.
+ */
+typedef struct file {
+  enum ftype type;      // file type
+  int access;           // access flags (O_RDONLY, O_WRONLY, O_RDWR)
 
   void *data;           // file private data
   struct file_ops *ops; // file operations

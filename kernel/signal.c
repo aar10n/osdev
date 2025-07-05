@@ -207,7 +207,7 @@ struct sigacts *sigacts_clone(struct sigacts *sa) {
   mtx_init(&clone->lock, 0, "sigacts_lock");
 
   mtx_lock(&sa->lock);
-  memcpy(clone, sa, sizeof(struct sigacts));
+  memcpy(clone->std_actions, sa->std_actions, sizeof(clone->std_actions));
   if (sa->rt_actions != NULL) {
     clone->rt_actions = kmalloc(sizeof(struct sigaction) * NRRTSIG);
     memcpy(clone->rt_actions, sa->rt_actions, sizeof(struct sigaction) * NRRTSIG);
@@ -224,6 +224,24 @@ void sigacts_free(struct sigacts **sap) {
     kfree(sa->rt_actions);
   }
   kfree(sa);
+}
+
+void sigacts_reset(struct sigacts *sa) {
+  mtx_lock(&sa->lock);
+  // reset standard signals to default
+  for (int i = 0; i < SIGRTMIN; i++) {
+    sa->std_actions[i] = (struct sigaction) {
+      .sa_handler = SIG_DFL,
+      .sa_flags = 0,
+      .sa_mask = {0},
+    };
+  }
+  // free realtime actions if they exist
+  if (sa->rt_actions != NULL) {
+    kfree(sa->rt_actions);
+    sa->rt_actions = NULL;
+  }
+  mtx_unlock(&sa->lock);
 }
 
 int sigacts_get(struct sigacts *sa, int sig, struct sigaction *act, enum sigdisp *disp) {

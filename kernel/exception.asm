@@ -27,7 +27,7 @@
 %define TCB_R15(x)            [x+0x38]
 %define TCB_RFLAGS(x)         [x+0x40]
 %define TCB_FSBASE(x)         [x+0x48]
-%define TCB_KGSBASE(x)        [x+0x50]
+%define TCB_GSBASE(x)         [x+0x50]
 %define TCB_DR0(x)            [x+0x58]
 %define TCB_DR1(x)            [x+0x60]
 %define TCB_DR2(x)            [x+0x68]
@@ -41,37 +41,41 @@
 
 ; struct trapframe offsets
 %define TRAPFRAME_PARENT(x)   [x+0x00]
-%define TRAPFRAME_RDI(x)      [x+0x08]
-%define TRAPFRAME_RSI(x)      [x+0x10]
-%define TRAPFRAME_RDX(x)      [x+0x18]
-%define TRAPFRAME_RCX(x)      [x+0x20]
-%define TRAPFRAME_R8(x)       [x+0x28]
-%define TRAPFRAME_R9(x)       [x+0x30]
-%define TRAPFRAME_RAX(x)      [x+0x38]
-%define TRAPFRAME_RBX(x)      [x+0x40]
-%define TRAPFRAME_RBP(x)      [x+0x48]
-%define TRAPFRAME_R10(x)      [x+0x50]
-%define TRAPFRAME_R11(x)      [x+0x58]
-%define TRAPFRAME_R12(x)      [x+0x60]
-%define TRAPFRAME_R13(x)      [x+0x68]
-%define TRAPFRAME_R14(x)      [x+0x70]
-%define TRAPFRAME_R15(x)      [x+0x78]
-%define TRAPFRAME_FS(x)       [x+0x80]
-%define TRAPFRAME_GS(x)       [x+0x82]
-%define TRAPFRAME_ES(x)       [x+0x84]
-%define TRAPFRAME_DS(x)       [x+0x86]
-%define TRAPFRAME_DATA(x)     [x+0x88]
-%define TRAPFRAME_VECTOR(x)   [x+0x90]
-%define TRAPFRAME_ERROR(x)    [x+0x98]
-%define TRAPFRAME_RIP(x)      [x+0xa0]
-%define TRAPFRAME_CS(x)       [x+0xa8]
-%define TRAPFRAME_RFLAGS(x)   [x+0xb0]
-%define TRAPFRAME_RSP(x)      [x+0xb8]
-%define TRAPFRAME_SS(x)       [x+0xc0]
+%define TRAPFRAME_FLAGS(x)    [x+0x08]
+%define TRAPFRAME_RDI(x)      [x+0x10]
+%define TRAPFRAME_RSI(x)      [x+0x18]
+%define TRAPFRAME_RDX(x)      [x+0x20]
+%define TRAPFRAME_RCX(x)      [x+0x28]
+%define TRAPFRAME_R8(x)       [x+0x30]
+%define TRAPFRAME_R9(x)       [x+0x38]
+%define TRAPFRAME_RAX(x)      [x+0x40]
+%define TRAPFRAME_RBX(x)      [x+0x48]
+%define TRAPFRAME_RBP(x)      [x+0x50]
+%define TRAPFRAME_R10(x)      [x+0x58]
+%define TRAPFRAME_R11(x)      [x+0x60]
+%define TRAPFRAME_R12(x)      [x+0x68]
+%define TRAPFRAME_R13(x)      [x+0x70]
+%define TRAPFRAME_R14(x)      [x+0x78]
+%define TRAPFRAME_R15(x)      [x+0x80]
+%define TRAPFRAME_FS(x)       [x+0x88]
+%define TRAPFRAME_GS(x)       [x+0x8a]
+%define TRAPFRAME_ES(x)       [x+0x8c]
+%define TRAPFRAME_DS(x)       [x+0x8e]
+%define TRAPFRAME_DATA(x)     [x+0x90]
+%define TRAPFRAME_VECTOR(x)   [x+0x98]
+%define TRAPFRAME_ERROR(x)    [x+0xa0]
+%define TRAPFRAME_RIP(x)      [x+0xa8]
+%define TRAPFRAME_CS(x)       [x+0xb0]
+%define TRAPFRAME_RFLAGS(x)   [x+0xb8]
+%define TRAPFRAME_RSP(x)      [x+0xc0]
+%define TRAPFRAME_SS(x)       [x+0xc8]
 
-%define TRAPFRAME_SIZE        0xc8
+%define TRAPFRAME_SIZE        0xd0
 ; amount to subtract from interrupt stack pointer to get to the bottom of the trapframe
-%define TRAPFRAME_FIX_OFF     0x88
+%define TRAPFRAME_FIX_OFF     0x90
+
+; trapframe flag bits
+%define TF_SYSRET   0 ; needs sysret
 
 %define SCHED_PREEMPTED       0
 
@@ -102,12 +106,14 @@ extern sched_again
     push qword %1 ; frame->vector
     push qword 0  ; frame->data
 
-    %if (1 << %1) & 0x106 ; vectors with an ist stack
-    stc ; CF=1
+    ; DB, NMI and DF have IST stacks
+    %if (1 << %1) & 0x106
+    push qword 1 ; has_ist=1
     %else
-    clc ; CF=0
+    push qword 0 ; has_ist=0
     %endif
 
+    push rax ; save rax on stack until we can move it to PERCPU_SCRATCH_RAX
     jmp common_interrupt_handler
   %endif
 
@@ -139,7 +145,82 @@ common_interrupt_handler:
   ; it creates a new trapframe on the kernel stack. then we store the original
   ; thread trapframe in this new frames parent field so it can be restored.
   ;
-  ; ---- top of trapframe ----
+  ; ---- top of cpu frame ----
+  ;    +72  ss
+  ;    +64  rsp
+  ;    +56  rflags
+  ;    +48  cs
+  ;    +40  rip
+  ;    +32  error
+  ;    +24  vector
+  ;    +16  data  <- start of the "real" trapframe
+  ;     +8  saved has_ist
+  ; rsp ->  saved rax
+
+  ; swapgs if we came from user mode
+  mov word ax, [rsp+48] ; ax = pushed CS
+  and ax, 3 ; mask CPL bits (CPL=0 -> ZF=1, CPL=3 -> ZF=0)
+  jz .noswapgs  ; we were in kernel mode (ZF=1)
+  swapgs        ; we were in user mode (ZF=0)
+.noswapgs:
+  pop rax ; pop saved rax
+  mov qword PERCPU_SCRATCH_RAX, rax ; move to percpu scratch
+  pop rax ; pop saved has_ist
+  ; now rsp points to the pushed frame
+
+  ; if we came from user mode, we are already using the thread trapframe
+  ; loaded from the tss rsp0. the ZF is still valid from the previous test
+  jnz .done_stack_change ; we were in user mode (ZF=0)
+
+  ; if we came from kernel mode, we only should switch stacks if
+  ; we are not already on an IST stack or in a nested interrupt.
+
+  ; check if we are on an ist stack
+  test rax, rax ; has_ist=0 -> ZF=1, has_ist=1 -> ZF=0
+  jnz .done_stack_change ; we are on an ist stack (ZF=0)
+
+  ; check if we are in a nested interrupt
+  mov word ax, PERCPU_INTR_LEVEL ; ax = percpu intr_level
+  test ax, ax ; intr_level=0 -> ZF=1, intr_level>0 -> ZF=0
+  jnz .done_stack_change ; we are in a nested interrupt (ZF=0)
+
+  ; we need to switch to the irq stack
+  mov rax, rsp ; rax = current rsp
+  mov rsp, PERCPU_IRQ_STACK_TOP ; switch to the irq stack
+
+  ; move the existing pushed state into the new trapframe on the irq stack
+  ; ---- top of old trapframe ----
+  ;    +56  ss
+  ;    +48  rsp
+  ;    +40  rflags
+  ;    +32  cs
+  ;    +24  rip
+  ;    +16  error
+  ;     +8  vector
+  ; rax ->  data
+  ;
+  ; ---- top of new trapframe ----
+  ; rsp ->  ss
+  ;         rsp
+  ;         rflags
+  ;         cs
+  ;         rip
+  ;         error
+  ;         vector
+  ;         data
+  push qword [rax+56] ; push ss
+  push qword [rax+48] ; push rsp
+  push qword [rax+40] ; push rflags
+  push qword [rax+32] ; push cs
+  push qword [rax+24] ; push rip
+  push qword [rax+16] ; push error
+  push qword [rax+8]  ; push vector
+  push qword [rax]    ; push data
+  ; the stack at rsp is now equivalent to the original frame
+
+.done_stack_change:
+  ; at this point rsp is on the correct stack
+  ; ---- top of old trapframe ----
   ;    +56  ss
   ;    +48  rsp
   ;    +40  rflags
@@ -148,81 +229,60 @@ common_interrupt_handler:
   ;    +16  error
   ;     +8  vector
   ; rsp ->  data
-  push rax ; save rax temporarily on stack
-  ; preserve the carry flag before it is clobbered by `test`
-  setc al ; al=1 (CF=1) when the vector uses an ist stack
+  inc word PERCPU_INTR_LEVEL ; increment the interrupt level
+  sub rsp, TRAPFRAME_FIX_OFF ; point rsp at the bottom of the trapframe
 
-  ; swapgs if needed
-  mov cx, ss ; SS=0 if cpl change
-  test cx, cx
-  jnz .skip_swapgs ; dont swapgs if we are already in ring 0
-  swapgs
-.skip_swapgs:
-
-  ; move original saved rax to percpu scratch
-  push rbx
-  mov rbx, [rsp+8] ; rax = saved rax
-  mov qword PERCPU_SCRATCH_RAX, rbx
-  pop rbx
-  add rsp, 8 ; "pop" the saved rax
-
-  sub rsp, TRAPFRAME_FIX_OFF  ; now rsp points at bottom of trapframe
-
-  ; if al==0 then need need to switch stacks
-  test al, al                     ;   ZF=1 if we need the irq stack
-  mov rax, rsp                    ; save current rsp in case we change
-  jnz .skip_stack_change          ; skip stack change (jump if ZF=0)
-  test word PERCPU_INTR_LEVEL, 0  ;   ZF=1 if intr_level==0
-  cmovz rsp, PERCPU_IRQ_STACK_TOP ; switch to the irq stack (move if ZF=1)
-.skip_stack_change:
-
-  inc word PERCPU_INTR_LEVEL
-  ; ============ running on irq or ist stsck ============
-  ; rax = the current trapframe
   push r14 ; preserve r14
   push r15 ; preserve r15
 
-  mov r14, PERCPU_THREAD
-  mov r15, THREAD_FRAME(r14)
-  mov TRAPFRAME_PARENT(rax), r15 ; save the original trapframe pointer
-  mov THREAD_FRAME(r14), rax     ; update the thread trapframe pointer
+  ; point the thread at current trapframe and save pointer to old one
+  mov r14, PERCPU_THREAD     ; r14 = current thread
+  mov r15, THREAD_FRAME(r14) ; r15 = old trapframe
+  mov rax, rsp ; rax = rsp
+  add rax, 16 ; fix rsp for current trapframe (above pushed r14 and r15)
+  mov THREAD_FRAME(r14), rax ; thread->frame = current trapframe
+
+  ; only set the parent pointer if it is different from the current trapframe
+  cmp rax, r15 ; compare current trapframe with the old one
+  mov rax, 0   ; rax = NULL (default)
+  cmovne rax, r15 ; rax = parent trapframe if rax != r15
 
   pop r15 ; restore r15
   pop r14 ; restore r14
-  ; save the rest of the thread state
-  mov TRAPFRAME_FS(rax),  fs
-  mov TRAPFRAME_GS(rax),  gs
-  mov TRAPFRAME_R15(rax), r15
-  mov TRAPFRAME_R14(rax), r14
-  mov TRAPFRAME_R13(rax), r13
-  mov TRAPFRAME_R12(rax), r12
-  mov TRAPFRAME_R11(rax), r11
-  mov TRAPFRAME_R10(rax), r10
-  mov TRAPFRAME_RBP(rax), rbp
-  mov TRAPFRAME_RBX(rax), rbx
-  mov rbx, PERCPU_SCRATCH_RAX
-  mov TRAPFRAME_RAX(rax), rbx ; original rax
-  mov TRAPFRAME_R9(rax),  r9
-  mov TRAPFRAME_R8(rax),  r8
-  mov TRAPFRAME_RCX(rax), rcx
-  mov TRAPFRAME_RDX(rax), rdx
-  mov TRAPFRAME_RSI(rax), rsi
-  mov TRAPFRAME_RDI(rax), rdi
 
-  push rax
-  mov r12, rsp ; r12 = unaligned rsp
+  mov TRAPFRAME_PARENT(rsp), rax ; frame->parent = rax
+  mov dword TRAPFRAME_FLAGS(rsp), 0 ; clear trapframe flags
+
+  ; save the rest of the thread state
+  mov TRAPFRAME_FS(rsp),  fs
+  mov TRAPFRAME_GS(rsp),  gs
+  mov TRAPFRAME_R15(rsp), r15
+  mov TRAPFRAME_R14(rsp), r14
+  mov TRAPFRAME_R13(rsp), r13
+  mov TRAPFRAME_R12(rsp), r12
+  mov TRAPFRAME_R11(rsp), r11
+  mov TRAPFRAME_R10(rsp), r10
+  mov TRAPFRAME_RBP(rsp), rbp
+  mov TRAPFRAME_RBX(rsp), rbx
+  mov rbx, PERCPU_SCRATCH_RAX ; restore saved rax
+  mov TRAPFRAME_RAX(rsp), rbx
+  mov TRAPFRAME_R9(rsp),  r9
+  mov TRAPFRAME_R8(rsp),  r8
+  mov TRAPFRAME_RCX(rsp), rcx
+  mov TRAPFRAME_RDX(rsp), rdx
+  mov TRAPFRAME_RSI(rsp), rsi
+  mov TRAPFRAME_RDI(rsp), rdi
+
+  mov r15, rsp ; r15 = trapframe (and unaligned rsp)
+  mov rdi, r15 ; rdi = trapframe (arg 1 for interrupt_handler)
   and rsp, -16 ; align rsp to 16 bytes
-  mov rdi, rax ; rdi = trapframe pointer
-  mov rbp, r12 ; rbp = unaligned rsp
   call interrupt_handler
-  mov rsp, r12 ; restore rsp to the unaligned value
-  pop r15 ; r15 = trapframe pointer
 
   ; check if we are exiting the last interrupt
-  sub word PERCPU_INTR_LEVEL, 1 ; ZF=1 when intr_level=0
-  setz bl
-  and byte bl, PERCPU_PREEMPTED ; ZF=0 when preempted
-  jz .do_trapframe_restore
+  sub word PERCPU_INTR_LEVEL, 1 ; intr_level=0 -> ZF=1, intr_level>0 -> ZF=0
+  setz bl ; bl = 1 if we are exiting the last interrupt
+  and byte bl, PERCPU_PREEMPTED ; bl = 1 if we are also preempted
+  jz .do_trapframe_restore ; restore if not preempted
 
   ; ============ preemption ============
   mov byte PERCPU_PREEMPTED, 0 ; clear the percput preempted flag
@@ -233,29 +293,30 @@ common_interrupt_handler:
   ; this may return but only if there are no non-idle threads to run
 
 .do_trapframe_restore:
+  mov rsp, r15 ; rsp = restored trapframe pointer
   mov r8, PERCPU_THREAD ; r8 = thread pointer
-  mov rsp, r15          ; rsp = trapframe pointer
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;
 ; trapframe_restore:
-;   rax - scratch register
 ;   rsp - trapframe pointer
 ;   r8  - thread pointer
 ;
 global trapframe_restore
 trapframe_restore:
-  mov ax, fs
-  mov TRAPFRAME_FS(rsp), ax
-  mov ax, gs
-  mov TRAPFRAME_GS(rsp), ax
+  ; restore the parent trapframe pointer
+  mov rax, TRAPFRAME_PARENT(rsp) ; rax = parent trapframe
+  mov rbx, THREAD_FRAME(r8) ; rbx = current trapframe
+  test rax, rax ; check if parent is NULL
+  cmovnz rbx, rax ; rbx = parent trapframe if rax != NULL
+  mov THREAD_FRAME(r8), rbx
 
-  ; point the thread at the parent trapframe
-  mov rax, TRAPFRAME_PARENT(rsp)
-  mov rbx, THREAD_TCB(r8)
-  mov THREAD_FRAME(rbx), rax ; restore the thread trapframe pointer
+;  mov ax, TRAPFRAME_FS(rsp)
+;  mov fs, ax
+;  mov ax, TRAPFRAME_GS(rsp)
+;  mov gs, ax
 
-  ; restore current trapframe
+  ; restore from current trapframe
   mov rdi, TRAPFRAME_RDI(rsp)
   mov rsi, TRAPFRAME_RSI(rsp)
   mov rdx, TRAPFRAME_RDX(rsp)
@@ -272,12 +333,27 @@ trapframe_restore:
   mov r14, TRAPFRAME_R14(rsp)
   mov r15, TRAPFRAME_R15(rsp)
 
+  ; check if we need to return with sysret
+  bt dword TRAPFRAME_FLAGS(rsp), TF_SYSRET
+  jc .restore_sysret
+
   ; swapgs if needed
-  mov cx, ss ; SS=0 if cpl change
-  test cx, cx
-  jnz .1
-  swapgs
-.1:
-  add rsp, TRAPFRAME_FIX_OFF
+  cmp word TRAPFRAME_CS(rsp), 0x8 ; check if we are in kernel mode
+  jz .restore_iretq ; we are in kernel mode (CS=0x8)
+  swapgs ; we are going back to user mode
+.restore_iretq:
+  add rsp, TRAPFRAME_FIX_OFF ; adjust back to pushed frame
   add rsp, 24 ; skip the error, vector, and data fields
   iretq
+
+.restore_sysret:
+    ; clear the sysret flag
+    and dword TRAPFRAME_FLAGS(rsp), ~(1 << TF_SYSRET)
+
+    mov rcx, TRAPFRAME_RIP(rsp)     ; loads rip from rcx
+    mov r11, TRAPFRAME_RFLAGS(rsp)  ; loads rflags from r11
+
+    ; restore user stack
+    mov rsp, TRAPFRAME_RSP(rsp)
+    swapgs
+    o64 sysret

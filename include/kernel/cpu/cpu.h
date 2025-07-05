@@ -7,7 +7,7 @@
 
 #include <kernel/base.h>
 
-#define MAX_CPUS 64
+#define MAX_CPUS 32
 
 #define NULL_SEG    0x00ULL
 #define KCODE_SEG   0x08ULL
@@ -17,6 +17,9 @@
 #define UCODE64_SEG 0x28ULL
 #define TSS_LO_SEG  0x30ULL
 #define TSS_HI_SEG  0x38ULL
+
+#define USER_CS     (UCODE64_SEG | 3)
+#define USER_DS     (UDATA_SEG | 3)
 
 #define IA32_TSC_MSR            0x10
 #define IA32_APIC_BASE_MSR      0x1B
@@ -220,6 +223,6 @@ uint64_t __xgetbv(uint32_t index);
 void __xsetbv(uint32_t index, uint64_t value);
 
 int syscall(int call);
-noreturn void sysret(uintptr_t rip, uintptr_t rsp);
+noreturn void sysret(uintptr_t rip, uintptr_t rsp, uint32_t rflags);
 
 #endif

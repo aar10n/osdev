@@ -21,6 +21,8 @@
 #include <kernel/panic.h>
 #include <kernel/fs_utils.h>
 
+void launch_init_process();
+
 bool is_smp_enabled = false;
 bool is_debug_enabled = true;
 boot_info_v2_t __boot_data *boot_info_v2;
@@ -77,21 +79,23 @@ __used void kmain() {
   // run the module initializers followed by the last of the filesystem setup.
   do_module_initializers();
   fs_setup_mounts();
-  kprintf("done at %llu!\n", clock_get_nanos());
-  ls("/");
 
   cpu_enable_interrupts();
   // probe_all_buses();
-  console_init();
+  // console_init();
+  kprintf("{:$=^49}\n");
+  kprintf("    kernel initialization done after {:llu}ms    \n", NS_TO_MS(clock_get_nanos()));
+  kprintf("{:$=^49}\n");
 
-  sched_again(SCHED_YIELDED);
-  sched_again(SCHED_YIELDED);
-  sched_again(SCHED_YIELDED);
+  // give other processes a chance to run including the devfs process
+  // which wll populate devices we will need shortly.
   sched_again(SCHED_YIELDED);
 
   ls("/dev");
+  ls("/sbin");
 
-  alarm_source_enable(alarm_tick_source());
+//  alarm_source_enable(alarm_tick_source());
+  launch_init_process();
   sched_again(SCHED_BLOCKED);
   unreachable;
 }
@@ -111,21 +115,34 @@ __used void ap_main() {
 
 //
 
-void kernel_process1() {
-#define PRINTF(fmt, ...) kprintf("kernel_process1: " fmt, ##__VA_ARGS__)
-  PRINTF("starting process {:td}\n", curthread);
-  PRINTF("now = %llu\n", clock_get_nanos());
-  struct spin_delay delay = new_spin_delay(SHORT_DELAY, 5);
-  while (spin_delay_wait(&delay));
-  PRINTF("now = %llu\n", clock_get_nanos());
+void launch_init_process() {
+#define FAIL_IF_ERROR(msg, ...) \
+  if (res < 0) {                \
+    kprintf("launch_init_process: " msg "\n", ##__VA_ARGS__); \
+    goto fail;                  \
+  }
 
-  PRINTF("sleeping for 1 second\n");
-  alarm_sleep_ms(1000);
-  PRINTF("done!\n");
+  int res;
+  kprintf("launching init process\n");
+  proc_t *init_proc = proc_alloc_new(getref(curproc->creds));
+  proc_setup_add_thread(init_proc, thread_alloc(0, SIZE_16KB));
 
-  PRINTF("sleeping for 10 ms\n");
-  alarm_sleep_ms(10);
-  PRINTF("done!\n");
-  WHILE_TRUE;
-#undef PRINTF
+  res = proc_setup_exec_args(init_proc, (const char *[]){"/sbin/init", "hello", "world", NULL});
+  FAIL_IF_ERROR("proc_setup_exec_args failed: {:err}", res);
+  res = proc_setup_exec_env(init_proc, (const char *[]) {"TTY=/dev/ttyS2", "SHELL=/sbin/shell", NULL});
+  FAIL_IF_ERROR("proc_setup_exec_env failed: {:err}", res);
+  res = proc_setup_exec(init_proc, cstr_make("/sbin/init"));
+  FAIL_IF_ERROR("proc_setup_exec failed: {:err}", res);
+  res = proc_setup_open_fd(init_proc, 0, cstr_make("/dev/null"), O_RDONLY);
+  FAIL_IF_ERROR("proc_setup_open_fd 0 failed: {:err}", res);
+  res = proc_setup_open_fd(init_proc, 1, cstr_make("/dev/debug"), O_RDWR);
+  FAIL_IF_ERROR("proc_setup_open_fd 1 failed: {:err}", res);
+  res = proc_setup_open_fd(init_proc, 2, cstr_make("/dev/debug"), O_RDWR);
+  FAIL_IF_ERROR("proc_setup_open_fd 2 failed: {:err}", res);
+  proc_finish_setup_and_submit_all(init_proc);
+  return;
+LABEL(fail);
+  kprintf("failed to launch init process\n");
+  pr_putref(&init_proc);
+#undef FAIL_IF_ERROR
 }

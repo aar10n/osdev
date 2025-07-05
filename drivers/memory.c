@@ -5,6 +5,7 @@
 #include <kernel/device.h>
 #include <kernel/fs.h>
 #include <kernel/mm.h>
+#include <kernel/tty.h>
 
 #include <kernel/printf.h>
 #include <kernel/panic.h>
@@ -13,6 +14,7 @@
 
 #define ASSERT(x) kassert(x)
 #define DPRINTF(fmt, ...) kprintf("debug: %s: " fmt, __func__, ##__VA_ARGS__)
+#define EPRINTF(fmt, ...) kprintf("debug: %s: " fmt, __func__, ##__VA_ARGS__)
 
 static int default_d_open(device_t *dev, int flags) { return 0; }
 static int default_d_close(device_t *dev) { return 0; }
@@ -22,16 +24,10 @@ static int default_d_close(device_t *dev) { return 0; }
 //
 
 static ssize_t null_d_read(device_t *dev, size_t off, size_t nmax, kio_t *kio) {
-  if (off != 0) {
-    return -EINVAL;
-  }
   return (ssize_t) kio_fill(kio, 0, nmax);
 }
 
 static ssize_t null_d_write(device_t *dev, size_t off, size_t nmax, kio_t *kio) {
-  if (off != 0) {
-    return -EINVAL;
-  }
   return (ssize_t) kio_drain(kio, nmax);
 }
 
@@ -51,10 +47,6 @@ static ssize_t debug_d_read(device_t *dev, size_t off, size_t nmax, kio_t *kio) 
 }
 
 static ssize_t debug_d_write(device_t *dev, size_t off, size_t nmax, kio_t *kio) {
-  if (off != 0) {
-    return -EINVAL;
-  }
-
   size_t n = 0;
   char ch;
   size_t res;
@@ -65,11 +57,31 @@ static ssize_t debug_d_write(device_t *dev, size_t off, size_t nmax, kio_t *kio)
   return (ssize_t) kio_transfered(kio);
 }
 
+static int debug_d_ioctl(device_t *dev, unsigned long request, void *arg) {
+  if (request == TIOCGWINSZ) {
+    // simulate a terminal window size
+    if (vm_validate_user_ptr((uintptr_t) arg, /*write=*/true) < 0) {
+      EPRINTF("TIOCGWINSZ ioctl requires a valid argument\n");
+      return -EINVAL; // invalid argument
+    }
+
+    *((struct winsize *)arg) = (struct winsize) {
+      .ws_row = 24, // 24 rows
+      .ws_col = 80, // 80 columns
+      .ws_xpixel = 0,
+      .ws_ypixel = 0,
+    };
+    return 0; // success
+  }
+  return -ENOTTY;
+}
+
 static struct device_ops debug_ops = {
   .d_open = default_d_open,
   .d_close = default_d_close,
   .d_read = debug_d_read,
   .d_write = debug_d_write,
+  .d_ioctl = debug_d_ioctl,
 };
 
 //
@@ -77,16 +89,10 @@ static struct device_ops debug_ops = {
 //
 
 static ssize_t loopback_d_read(device_t *dev, size_t off, size_t nmax, kio_t *kio) {
-  if (off != 0) {
-    return -EINVAL;
-  }
   return (ssize_t) kio_fill(kio, 0, nmax);
 }
 
 static ssize_t loopback_d_write(device_t *dev, size_t off, size_t nmax, kio_t *kio) {
-  if (off != 0) {
-    return -EINVAL;
-  }
   return (ssize_t) kio_drain(kio, nmax);
 }
 

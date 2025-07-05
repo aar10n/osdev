@@ -94,7 +94,7 @@ void ttydisc_close(tty_t *tty) {
 }
 
 size_t ttydisc_bytesavail(tty_t *tty) {
-  if (tty->termios.c_iflag & ICANON) {
+  if (tty->termios.c_lflag & ICANON) {
     // canonical mode: return the number of bytes in the current line
     return ttyinq_canonbytes(tty->inq);
   } else {
@@ -302,7 +302,7 @@ ssize_t ttydisc_read_raw(tty_t *tty, kio_t *kio) {
 
 ssize_t ttydisc_read(tty_t *tty, kio_t *kio) {
   tty_assert_owned(tty);
-  if (tty->termios.c_iflag & ICANON)
+  if (tty->termios.c_lflag & ICANON)
     return ttydisc_read_canonical(tty, kio);
   else if (tty->termios.c_cc[VTIME] == 0)
     return ttydisc_read_raw(tty, kio);

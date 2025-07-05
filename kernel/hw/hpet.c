@@ -337,7 +337,7 @@ void register_hpet_alarm_source(struct hpet_device *hpet, uint8_t n) {
   hpet_timer_struct->hpet = hpet;
   hpet_timer_struct->num = n;
 
-  alarm_source_t *hpet_alarm_source = kmalloc(sizeof(alarm_source_t));
+  alarm_source_t *hpet_alarm_source = kmallocz(sizeof(alarm_source_t));
   hpet_alarm_source->name = kasprintf("hpet%d", n);
   hpet_alarm_source->data = hpet_timer_struct;
   hpet_alarm_source->cap_flags = ALARM_CAP_ONE_SHOT | ALARM_CAP_ABSOLUTE;

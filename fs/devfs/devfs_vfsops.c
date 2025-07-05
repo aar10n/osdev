@@ -58,7 +58,7 @@ int devfs_vfs_unmount(vfs_t *vfs) {
   if (devfs_mount) {
     // kill the devfs process
     proc_t *proc = proc_lookup(devfs_mount->pid);
-    proc_kill(proc, 0);
+    proc_terminate(proc, 0, SIGTERM);
 
     str_free(&devfs_mount->path);
     kfree(devfs_mount);

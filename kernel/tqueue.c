@@ -23,7 +23,7 @@ void runq_add(struct runqueue *runq, thread_t *td) {
   td_lock_assert(td, MA_LOCKED);
 
   mtx_spin_lock(&runq->lock);
-  LIST_ADD_FRONT(&runq->head, td, rqlist);
+  LIST_ADD(&runq->head, td, rqlist);
   atomic_fetch_add(&runq->count, 1);
   mtx_spin_unlock(&runq->lock);
 

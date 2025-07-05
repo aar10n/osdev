@@ -11,7 +11,7 @@
 #include <kernel/irq.h>
 #include <kernel/time.h>
 
-// if commented out kernel runs in tickless mode
+// if undefined the kernel runs in tickless mode
 #define TICK_PERIOD  MS_TO_NS(50)
 
 /*

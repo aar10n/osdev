@@ -482,7 +482,7 @@ static int uart_tty_transmit_thread(tty_t *tty) {
   while (true) {
     if (ttyoutq_peek_ch(tty->outq) < 0) {
       // no data available, wait for it
-      if ((res = tty_wait(tty, &tty->out_wait)) < 0)
+      if ((res = tty_wait_cond(tty, &tty->out_wait)) < 0)
         break; // device is done
       continue;
     }
@@ -540,7 +540,7 @@ static void uart_tty_input_irq_handler(int ev, int ev_data, void *data) {
       // data carrier disconnected
       tty->flags &= ~TTYF_DCDRDY;
     }
-    tty_wait_signal(tty, &tty->dcd_wait);
+    tty_signal_cond(tty, &tty->dcd_wait);
   }
 
 LABEL(done);
@@ -582,7 +582,7 @@ static void uart_tty_close(tty_t *tty) {
 
   __ref proc_t *uart_proc = proc_lookup(uart_softirq_pid);
   ASSERT(uart_proc != NULL);
-  proc_kill_tid(uart_proc, uart_dev->tx_tid, 0);
+  proc_kill_tid(uart_proc, uart_dev->tx_tid, 0, SIGTERM);
   pr_putref(&uart_proc);
 
   uart_dev->tx_tid = -1;
@@ -607,7 +607,7 @@ static void uart_tty_outwakeup(tty_t *tty) {
 
 static int uart_tty_ioctl(tty_t *tty, unsigned long request, void *arg) {
   // no custom ioctls for now
-  return 0;
+  return -ENOTSUP;
 }
 
 static int uart_tty_update(tty_t *tty, struct termios *termios) {
@@ -695,7 +695,21 @@ static void register_serial_devices() {
 
     tty_t *tty = tty_alloc(&uart_ttydev_ops, uart_dev);
     if (tty == NULL) {
-      EPRINTF("failed to allocate tty for serial port %d\n", ports[i]);
+      EPRINTF("failed to allocate tty for serial port %d\n", i+1);
+      kfree(uart_dev);
+      continue;
+    }
+
+    int res;
+    struct termios termios = termios_make_canon(B9600);
+    struct winsize winsize = { 24, 80, 0, 0 };
+    tty_lock(tty);
+    res = tty_configure(tty, &termios, &winsize);
+    tty_unlock(tty);
+    if (res < 0) {
+      EPRINTF("failed to configure tty for serial port %d: {:err}\n", i+1, res);
+      tty_unlock(tty);
+      tty_free(&tty);
       kfree(uart_dev);
       continue;
     }

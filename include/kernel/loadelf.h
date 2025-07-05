@@ -6,11 +6,9 @@
 #define KERNEL_LOADELF_H
 
 #include <kernel/base.h>
-#include <kernel/mm_types.h>
-
-struct exec_image;
+#include <kernel/exec.h>
 
 bool elf_is_valid_file(void *file_base, size_t len);
-int elf_load_image(int fd, void *file_base, size_t len, uint32_t e_type, uintptr_t base, __inout struct exec_image *image);
+int elf_load_image(enum exec_type type, int fd, void *file_base, size_t len, uintptr_t base, __inout struct exec_image *image);
 
 #endif

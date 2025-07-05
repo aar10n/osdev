@@ -1,5 +1,4 @@
-# init
-NAME = init
+NAME = getty
 GROUP = sbin
 SRCS = main.c
 CFLAGS += -g -O0 -fPIE

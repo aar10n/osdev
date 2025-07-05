@@ -16,17 +16,10 @@
 
 #define ASSERT(x) kassert(x)
 #define DPRINTF(fmt, ...) kprintf("exec: " fmt, ##__VA_ARGS__)
+#define EPRINTF(fmt, ...) kprintf("exec: %s: " fmt, __func__, ##__VA_ARGS__)
 
 #define AUXV_COUNT 12
 #define AUX(type, val) ((Elf64_auxv_t) { .a_type = (type), .a_un.a_val = (val) })
-
-static inline int exec_type_to_et(enum exec_type type) {
-  switch (type) {
-    case EXEC_BIN: return ET_EXEC;
-    case EXEC_DYN: return ET_DYN;
-    default: unreachable;
-  }
-}
 
 static int exec_map_file_full(int fd, void **file_base, size_t *file_size) {
   int res;
@@ -38,6 +31,7 @@ static int exec_map_file_full(int fd, void **file_base, size_t *file_size) {
   size_t size = page_align(stat.st_size);
   void *addr = vm_mmap(0, size, PROT_READ, MAP_PRIVATE, fd, 0);
   if (addr == MAP_FAILED) {
+    EPRINTF("failed to map file: {:err}\n", res);
     return -ENOMEM;
   }
 
@@ -49,9 +43,21 @@ static int exec_map_file_full(int fd, void **file_base, size_t *file_size) {
 //
 
 int exec_load_image(enum exec_type type, uintptr_t base, cstr_t path, __out struct exec_image **imagep) {
+  // TEMPORARY FOR EASE OF DEBUGGING WE SELECT A HARDCODED BASE
+  // FOR SPECIFIC PIE BINARIES SO THEIR SYMBOLS CAN BE LOADED
+  // WITHOUT OVERLAPPING.
+  if (base == 0) {
+    if (cstr_eq_charp(path, "/sbin/init")) {
+      base = 0x400000;
+    } else if (cstr_eq_charp(path, "/sbin/getty")) {
+      base = 0x800000;
+    }
+    DPRINTF("exec: binary {:cstr} with base %p\n", &path, base);
+  }
+
   int fd = fs_open(path, O_RDONLY, 0);
   if (fd < 0) {
-    DPRINTF("failed to open file '%s' {:err}\n", path, fd);
+    EPRINTF("failed to open file '%s' {:err}\n", path, fd);
     return fd;
   }
 
@@ -64,15 +70,14 @@ int exec_load_image(enum exec_type type, uintptr_t base, cstr_t path, __out stru
   }
 
   // determine the kind of file is being exec'd and call the right loader
-  int etype = exec_type_to_et(type);
   struct exec_image *image = kmallocz(sizeof(struct exec_image));
   image->type = type;
   image->path = str_from_cstr(path);
   if (elf_is_valid_file(file_base, file_size)) {
-    res = elf_load_image(fd, file_base, file_size, etype, base, image);
+    res = elf_load_image(type, fd, file_base, file_size, base, image);
   } else {
     // TODO: support scripts with shebangs
-    DPRINTF("invalid executable file '%s' {:err}\n", path, res);
+    EPRINTF("invalid executable file '%s' {:err}\n", path, res);
     res = -ENOEXEC;
   }
 
@@ -82,7 +87,7 @@ int exec_load_image(enum exec_type type, uintptr_t base, cstr_t path, __out stru
     *imagep = image;
 
   if (vmap_free((uintptr_t) file_base, file_size) < 0)
-    DPRINTF("failed to free file mapping\n");
+    EPRINTF("failed to free file mapping\n");
 
   fs_close(fd);
   return res;
@@ -130,22 +135,15 @@ int exec_image_setup_stack(
 
   uintptr_t stack_top = stack_base + stack_size;
   size_t stack_off = stack_size;
-  uint64_t arg_ptrs[ARG_MAX+2] = {0}; // +1 for argv[0]
-  uint64_t env_ptrs[ARG_MAX+1] = {0};
+  uint64_t arg_ptrs[ARG_MAX+1] = {0}; // +1 for null pointer
+  uint64_t env_ptrs[ENV_MAX+1] = {0}; // +1 for null pointer
   LIST_HEAD(vm_desc_t) descs = {0};
 
   // add a descriptor for the stack
-  int stack_vm_flags = VM_STACK | VM_RDWR | ((stack_base != 0) ? VM_FIXED : 0);
+  int stack_vm_flags =  VM_RDWR | VM_USER | VM_STACK | ((stack_base != 0) ? VM_FIXED : 0);
   SLIST_ADD(&descs, vm_desc_alloc(VM_TYPE_PAGE, stack_base, stack_size, stack_vm_flags, "stack", getref(stack_pages)), next);
 
-  // copy in the argv[0] string
-  kio_t kio = kio_readonly_from_str(image->path);
-  stack_off -= align(str_len(image->path) + 1, sizeof(uint64_t));
-  rw_unmapped_pages(stack_pages, stack_off, &kio);
-
-  // argv[0] pointer
-  arg_ptrs[0] = stack_base + stack_off;
-  // arg[1..N] pointers
+  // arg[0..N] pointers
   size_t args_size = 0;
   if (args->count > 0) {
     ASSERT(args->count <= ARG_MAX);
@@ -154,13 +152,21 @@ int exec_image_setup_stack(
     size_t arg_off = 0;
     uintptr_t uptr_base = stack_base + stack_size;
     for (size_t i = 0; i < args->count; i++) {
-      arg_ptrs[i+1] = uptr_base + arg_off;
-      arg_off = strlen(args->kptr+arg_off) + 1;
+      arg_ptrs[i] = uptr_base + arg_off;
+      arg_off += strlen(args->kptr+arg_off) + 1;
     }
 
     // add a descriptor for the arg string page
     page_t *arg_pages = alloc_cow_pages(args->pages);
-    SLIST_ADD(&descs, vm_desc_alloc(VM_TYPE_PAGE, stack_top, args_size, VM_READ, "arg", moveref(arg_pages)), next);
+    SLIST_ADD(&descs, vm_desc_alloc(
+      VM_TYPE_PAGE,
+      stack_top,
+      args_size,
+      VM_USER|VM_READ|VM_FIXED,
+      "arg",
+      moveref(arg_pages)),
+      next
+    );
   }
   arg_ptrs[args->count+1] = 0; // null pointer
 
@@ -171,14 +177,22 @@ int exec_image_setup_stack(
 
     size_t env_off = 0;
     uintptr_t uptr_base = stack_base + stack_size + args_size;
-    for (size_t i = 0; i < args->count; i++) {
+    for (size_t i = 0; i < env->count; i++) {
       env_ptrs[i] = uptr_base + env_off;
-      env_off = strlen(env->kptr+env_off) + 1;
+      env_off += strlen(env->kptr+env_off) + 1;
     }
 
     // add a descriptor for the env string page
     page_t *env_pages = alloc_cow_pages(env->pages);
-    SLIST_ADD(&descs, vm_desc_alloc(VM_TYPE_PAGE, stack_top + args_size, env_size, VM_READ, "env", moveref(env_pages)), next);
+    SLIST_ADD(&descs, vm_desc_alloc(
+      VM_TYPE_PAGE,
+      stack_top+args_size,
+      env_size,
+      VM_USER|VM_READ|VM_FIXED,
+      "env",
+      moveref(env_pages)),
+      next
+    );
   }
   env_ptrs[env->count] = 0; // null pointer
 
@@ -203,22 +217,24 @@ int exec_image_setup_stack(
   };
 
   // copy in the auxv entries
-  kio = kio_new_readable(auxv, sizeof(auxv));
+  kio_t kio = kio_new_readable(auxv, sizeof(auxv));
   stack_off -= sizeof(auxv);
   rw_unmapped_pages(stack_pages, stack_off, &kio);
 
   // copy in the env pointers
-  kio = kio_new_readable(env_ptrs, (env->count+1) * sizeof(uint64_t));
-  stack_off -= (env->count+1) * sizeof(uint64_t);
+  size_t env_ptrs_size = (env->count + 1) * sizeof(uint64_t); // +1 for null pointer
+  kio = kio_new_readable(env_ptrs, env_ptrs_size);
+  stack_off -= env_ptrs_size;
   rw_unmapped_pages(stack_pages, stack_off, &kio);
 
   // copy in the arg pointers
-  kio = kio_new_readable(arg_ptrs, (args->count+1) * sizeof(uint64_t));
-  stack_off -= (args->count+1) * sizeof(uint64_t);
+  size_t arg_ptrs_size = (args->count + 1) * sizeof(uint64_t); // +1 for null pointer
+  kio = kio_new_readable(arg_ptrs, arg_ptrs_size);
+  stack_off -= arg_ptrs_size;
   rw_unmapped_pages(stack_pages, stack_off, &kio);
 
   // copy in argc
-  uint64_t argc = args->count + 1; // +1 for argv[0]
+  uint64_t argc = args->count;
   kio = kio_new_readable(&argc, sizeof(uint64_t));
   stack_off -= sizeof(uint64_t);
   rw_unmapped_pages(stack_pages, stack_off, &kio);

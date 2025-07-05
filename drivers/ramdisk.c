@@ -57,12 +57,7 @@ __ref page_t *ramdisk_d_getpage(device_t *dev, size_t off) {
   if (off >= rd->size) {
     return NULL;
   }
-  return vm_getpage_cow(rd->base + off);
-}
-
-int ramdisk_d_putpage(device_t *dev, size_t off, __move page_t *page) {
-  // TODO: implement
-  unimplemented("ramdisk_d_putpage");
+  return vm_getpage(rd->base + off);
 }
 
 static struct device_ops ramdisk_ops = {
@@ -71,7 +66,7 @@ static struct device_ops ramdisk_ops = {
   .d_read = ramdisk_d_read,
   .d_write = ramdisk_d_write,
   .d_getpage = ramdisk_d_getpage,
-  .d_putpage = ramdisk_d_putpage,
+  .d_putpage = NULL,
 };
 
 // MARK: Device Registration

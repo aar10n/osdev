@@ -383,11 +383,21 @@ int fs_proc_open(proc_t *proc, int fd, cstr_t path, int flags, mode_t mode) {
   }
 
   vn->nopen++;
+
+  if (V_ISDEV(vn) && !(flags & O_NOCTTY)) {
+    // check if this is a tty device
+    if (vn_isatty(vn)) {
+      ASSERT(proc == curproc);
+      // set it as the controlling terminal
+      fs_ioctl(fd, TIOCSCTTY, 0); // ignore errors
+    }
+  }
   vn_unlock(vn);
 
   // success
-  file_t *file = f_alloc_vn(fd, flags, vn, cstr_from_sbuf(&rpath_buf));
-  ftable_add_file(proc->files, f_moveref(&file));
+  file_t *file = f_alloc_vn(acc, vn);
+  fd_entry_t *fde = fd_entry_alloc(fd, flags, cstr_from_sbuf(&rpath_buf), moveref(file));
+  ftable_add_entry(proc->files, moveref(fde));
 
   res = fd;
 LABEL(ret_unlock);
@@ -402,33 +412,13 @@ LABEL(ret);
 }
 
 int fs_proc_close(proc_t *proc, int fd) {
-  file_t *file = NULL;
-  int res;
-
-  file = ftable_get_file(proc->files, fd);
-  if (file == NULL)
+  fd_entry_t *fde = ftable_get_remove_entry(proc->files, fd);
+  if (fde == NULL)
     return -EBADF;
 
-  if (!f_lock(file))
-    goto_res(ret, -EBADF); // file is closed
-
-  res = F_OPS(file)->f_close(file);
-  if (res < 0) {
-    DPRINTF("failed to close file {:err}\n", res);
-    goto ret_unlock;
-  }
-
-  // release the file descriptor
-  ftable_remove_file(FTABLE, fd);
-  ftable_free_fd(FTABLE, fd);
-  file->fd = -1;
-  file->closed = true;
-
-LABEL(ret_unlock);
-  f_unlock(file);
-LABEL(ret);
-  f_release(&file);
-  return res;
+  fde->fd = -1;
+  fde_putref(&fde);
+  return 0;
 }
 
 int fs_open(cstr_t path, int flags, mode_t mode) {
@@ -440,10 +430,11 @@ int fs_close(int fd) {
 }
 
 vm_file_t *fs_get_vmfile(int fd, size_t off, size_t len) {
-  file_t *file = ftable_get_file(FTABLE, fd);
-  if (file == NULL)
+  fd_entry_t *fde = ftable_get_entry(FTABLE, fd);
+  if (fde == NULL)
     return NULL;
 
+  file_t *file = fde->file;
   if (file->type != FT_VNODE)
     return NULL; // not a vnode file
   if (!f_lock(file))
@@ -451,15 +442,16 @@ vm_file_t *fs_get_vmfile(int fd, size_t off, size_t len) {
 
   vm_file_t *vm_file = vm_file_alloc_vnode(vn_getref(file->data), off, len);
   f_unlock(file);
-  f_release(&file);
+  fde_putref(&fde);
   return vm_file;
 }
 
 __ref page_t *fs_getpage(int fd, off_t off) {
-  file_t *file = ftable_get_file(FTABLE, fd);
-  if (file == NULL)
+  fd_entry_t *fde = ftable_get_entry(FTABLE, fd);
+  if (fde == NULL)
     return NULL;
 
+  file_t *file = fde->file;
   if (file->type != FT_VNODE)
     return NULL; // not a vnode file
   if (!f_lock(file))
@@ -472,20 +464,21 @@ __ref page_t *fs_getpage(int fd, off_t off) {
   }
 
   f_unlock(file);
-  f_release(&file);
+  fde_putref(&fde);
   return res;
 }
 
 ssize_t fs_kread(int fd, kio_t *kio) {
   ASSERT(kio->dir == KIO_WRITE);
-  file_t *file = ftable_get_file(FTABLE, fd);
-  if (file == NULL)
+  fd_entry_t *fde = ftable_get_entry(FTABLE, fd);
+  if (fde == NULL)
     return -EBADF;
 
   ssize_t res;
+  file_t *file = fde->file;
   if (!f_lock(file))
     goto_res(ret, -EBADF); // file is closed
-  if (file->flags & O_WRONLY)
+  if (file->access & O_WRONLY)
     goto_res(ret_unlock, -EBADF); // file is not open for reading
 
   res = F_OPS(file)->f_read(file, kio);
@@ -500,20 +493,21 @@ ssize_t fs_kread(int fd, kio_t *kio) {
 LABEL(ret_unlock);
   f_unlock(file);
 LABEL(ret);
-  f_release(&file);
+  fde_putref(&fde);
   return res;
 }
 
 ssize_t fs_kwrite(int fd, kio_t *kio) {
   ASSERT(kio->dir == KIO_READ);
-  file_t *file = ftable_get_file(FTABLE, fd);
-  if (file == NULL)
+  fd_entry_t *fde = ftable_get_entry(FTABLE, fd);
+  if (fde == NULL)
     return -EBADF;
 
   ssize_t res;
+  file_t *file = fde->file;
   if (!f_lock(file))
     goto_res(ret, -EBADF); // file is closed
-  if (file->flags & O_RDONLY)
+  if (file->access & O_RDONLY)
     goto_res(ret_unlock, -EBADF); // file is not open for writing
 
   res = F_OPS(file)->f_write(file, kio);
@@ -528,7 +522,7 @@ ssize_t fs_kwrite(int fd, kio_t *kio) {
 LABEL(ret_unlock);
   f_unlock(file);
 LABEL(ret);
-  f_release(&file);
+  fde_putref(&fde);
   return res;
 }
 
@@ -560,10 +554,11 @@ ssize_t fs_writev(int fd, const struct iovec *iov, int iovcnt) {
 
 ssize_t fs_readdir(int fd, void *dirp, size_t len) {
   ssize_t res;
-  file_t *file = ftable_get_file(FTABLE, fd);
-  if (file == NULL)
+  fd_entry_t *fde = ftable_get_entry(FTABLE, fd);
+  if (fde == NULL)
     return -EBADF;
 
+  file_t *file = fde->file;
   vnode_t *vn = file->data;
   if (!F_ISVNODE(file) || !V_ISDIR(vn))
     goto_res(ret, -ENOTDIR); // not a directory vnode
@@ -588,16 +583,17 @@ ssize_t fs_readdir(int fd, void *dirp, size_t len) {
 LABEL(ret_unlock);
   f_unlock(file);
 LABEL(ret);
-  f_release(&file);
+  fde_putref(&fde);
   return res;
 }
 
 off_t fs_lseek(int fd, off_t offset, int whence) {
   off_t res;
-  file_t *file = ftable_get_file(FTABLE, fd);
-  if (file == NULL)
+  fd_entry_t *fde = ftable_get_entry(FTABLE, fd);
+  if (fde == NULL)
     return -EBADF;
 
+  file_t *file = fde->file;
   if (!F_ISVNODE(file))
     goto_res(ret, -EINVAL); // not a vnode file
   if (!f_lock(file))
@@ -628,33 +624,45 @@ off_t fs_lseek(int fd, off_t offset, int whence) {
 LABEL(ret_unlock);
   f_unlock(file);
 LABEL(ret);
-  f_release(&file);
+  fde_putref(&fde);
   return res;
 }
 
 int fs_ioctl(int fd, unsigned long request, void *argp) {
+  DPRINTF("ioctl: fd=%d, request=%llu, argp=%p\n", fd, request, argp);
   int res;
-  file_t *file = ftable_get_file(FTABLE, fd);
-  if (file == NULL)
+  fd_entry_t *fde = ftable_get_entry(FTABLE, fd);
+  if (fde == NULL)
     return -EBADF;
 
+  if (request == 0x1111) {
+    // special memory debug ioctl
+    vm_print_address_space_v2(/*user=*/true, /*kernel=*/false);
+    goto_res(ret, 0); // success
+  }
+
+  file_t *file = fde->file;
   if (!f_lock(file))
     goto_res(ret, -EBADF); // file is closed
 
   res = F_OPS(file)->f_ioctl(file, request, argp);
-  f_unlock(file);
+  if (res < 0) {
+    EPRINTF("ioctl(%llu, %p) failed: {:err}\n", request, argp, res);
+  }
 
+  f_unlock(file);
 LABEL(ret);
-  f_release(&file);
+  fde_putref(&fde);
   return res;
 }
 
 int fs_ftruncate(int fd, off_t length) {
   int res;
-  file_t *file = ftable_get_file(FTABLE, fd);
-  if (file == NULL)
+  fd_entry_t *fde = ftable_get_entry(FTABLE, fd);
+  if (fde == NULL)
     return -EBADF;
 
+  file_t *file = fde->file;
   if (!F_ISVNODE(file))
     goto_res(ret, -EINVAL); // not a vnode file
   if (!f_lock(file))
@@ -664,56 +672,76 @@ int fs_ftruncate(int fd, off_t length) {
   vn_begin_data_write(vn);
   res = vn_fallocate(vn, length);
   vn_end_data_write(vn);
-
   f_unlock(file);
+
 LABEL(ret);
-  f_release(&file);
+  fde_putref(&fde);
   return res;
 }
 
 int fs_fstat(int fd, struct stat *stat) {
   int res;
-  file_t *file = ftable_get_file(FTABLE, fd);
-  if (file == NULL)
+  fd_entry_t *fde = ftable_get_entry(FTABLE, fd);
+  if (fde == NULL)
     return -EBADF;
 
+  file_t *file = fde->file;
   if (!f_lock(file))
     goto_res(ret, -EBADF); // file is closed
 
   res = F_OPS(file)->f_stat(file, stat);
+  f_unlock(file);
 LABEL(ret);
-  f_release(&file);
+  fde_putref(&fde);
   return res;
 }
 
 int fs_dup(int fd) {
   int res;
-  file_t *file = ftable_get_file(FTABLE, fd);
-  if (file == NULL)
+  fd_entry_t *fde = ftable_get_entry(FTABLE, fd);
+  if (fde == NULL)
     return -EBADF;
-
-  if (!f_lock(file))
-    goto_res(ret, -EBADF); // file is closed
 
   int newfd = ftable_alloc_fd(FTABLE);
   if (newfd < 0)
     goto_res(ret_unlock, -EMFILE);
 
-  int newflags = file->flags & ~O_CLOEXEC;
-  file_t *newfile = f_alloc_vn(newfd, newflags, file->data, cstr_from_str(file->real_path));
-  ftable_add_file(FTABLE, newfile);
+  fd_entry_t *newfde = fde_dup(fde, newfd);
+  newfde->flags &= ~O_CLOEXEC; // clear O_CLOEXEC for the new fd
+  ftable_add_entry(FTABLE, newfde);
 
   res = newfd; // success
 LABEL(ret_unlock);
-  f_unlock(file);
-LABEL(ret);
-  f_release(&file);
+  f_unlock(fde->file);
+  fde_putref(&fde);
   return res;
 }
 
 int fs_dup2(int fd, int newfd) {
-  // TODO: implement
-  unimplemented("dup2");
+  if (fd == newfd)
+    return fd;
+
+  fd_entry_t *fde = ftable_get_entry(FTABLE, fd);
+  if (fde == NULL)
+    return -EBADF;
+
+  int res;
+  if (newfd < 0 || newfd >= FTABLE_MAX_FILES)
+    goto_res(ret, -EBADF);
+
+  fd_entry_t *existing = ftable_get_remove_entry(FTABLE, newfd);
+  if (existing) {
+    fde_putref(&existing);
+  }
+
+  fd_entry_t *newfde = fde_dup(fde, newfd);
+  newfde->flags &= ~O_CLOEXEC; // clear O_CLOEXEC for the new fd
+  ftable_add_entry(FTABLE, newfde);
+
+  res = newfd;
+LABEL(ret);
+  fde_putref(&fde);
+  return res;
 }
 
 //
@@ -1108,6 +1136,8 @@ SYSCALL_ALIAS(stat, fs_stat);
 SYSCALL_ALIAS(ioctl, fs_ioctl);
 SYSCALL_ALIAS(ftruncate, fs_ftruncate);
 SYSCALL_ALIAS(fstat, fs_fstat);
+SYSCALL_ALIAS(dup, fs_dup);
+SYSCALL_ALIAS(dup2, fs_dup2);
 
 DEFINE_SYSCALL(open, int, const char *path, int flags, mode_t mode) {
   return fs_open(cstr_make(path), flags, mode);

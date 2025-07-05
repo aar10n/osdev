@@ -129,6 +129,7 @@ static void alarm_tickless_irq_handler(struct trapframe *frame) {
 void register_alarm_source(alarm_source_t *as) {
   ASSERT(as != NULL);
   as->irq_num = -1;
+  as->mode = 0;
 
   mtx_init(&as->lock, MTX_SPIN|MTX_RECURSIVE, "alarm_source_lock");
   if ((as->cap_flags & ALARM_CAP_ONE_SHOT) == 0 && (as->cap_flags & ALARM_CAP_PERIODIC) == 0) {
@@ -213,7 +214,8 @@ int alarm_source_init(alarm_source_t *as, int mode, irq_handler_t handler) {
   if (mode != ALARM_CAP_ONE_SHOT && mode != ALARM_CAP_PERIODIC) {
     DPRINTF("invalid alarm mode\n");
     return -EINVAL;
-  } else if ((as->cap_flags & mode) == 0) {
+  }
+  if ((as->cap_flags & mode) == 0) {
     DPRINTF("alarm source '%s' does not support this mode\n", as->name);
     return -EINVAL;
   }
@@ -222,7 +224,7 @@ int alarm_source_init(alarm_source_t *as, int mode, irq_handler_t handler) {
   mtx_spin_lock(&as->lock);
   if (as->mode != 0) {
     DPRINTF("alarm source '%s' already initialized\n", as->name);
-    mtx_unlock(&as->lock);
+    mtx_spin_unlock(&as->lock);
     res = -EBUSY;
     goto ret;
   }

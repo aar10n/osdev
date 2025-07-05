@@ -15,8 +15,6 @@ typedef __ref struct page *(*vm_getpage_t)(struct vm_file *file, size_t off);
 
 /**
  * A virtual memory file.
- *
- * The vm_file struct represents.
  */
 typedef struct vm_file {
   size_t size;                   // size of the file
@@ -31,11 +29,12 @@ typedef struct vm_file {
 
 vm_file_t *vm_file_alloc_vnode(__ref struct vnode *vn, size_t off, size_t size);
 vm_file_t *vm_file_alloc_anon(size_t size, size_t pg_size);
-
-vm_file_t *vm_file_fork(vm_file_t *file);
+vm_file_t *vm_file_alloc_copy(vm_file_t *file);
+vm_file_t *vm_file_alloc_clone(vm_file_t *file);
 void vm_file_free(vm_file_t **fileref);
 __ref page_t *vm_file_getpage(vm_file_t *file, size_t off);
 uintptr_t vm_file_getpage_phys(vm_file_t *file, size_t off);
+int vm_file_putpage(vm_file_t *file, __ref page_t *page, size_t off, __move page_t **oldpage);
 void vm_file_visit_pages(vm_file_t *file, size_t start_off, size_t end_off, pgcache_visit_t fn, void *data);
 
 vm_file_t *vm_file_split(vm_file_t *file, size_t off);

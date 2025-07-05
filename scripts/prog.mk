@@ -29,7 +29,7 @@ OBJS = $(SRCS:%=$(OBJ_DIR)/%.o)
 
 $(OBJ_DIR)/$(NAME): $(OBJS)
 	@mkdir -p $(@D)
-	$(CC) $^ -o $@ $(LIBS)
+	$(CC) $(LDFLAGS) $^ -o $@ $(LIBS)
 
 $(OBJ_DIR)/%.c.o: $(PROJECT_DIR)/$(PROG_DIR)/%.c
 	@mkdir -p $(@D)

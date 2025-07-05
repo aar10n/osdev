@@ -56,4 +56,9 @@ int ttyoutq_read(struct ttyoutq *outq, kio_t *kio);
 int ttyoutq_write_ch(struct ttyoutq *outq, char ch);
 int ttyoutq_write(struct ttyoutq *outq, kio_t *kio);
 
+static inline size_t ttyoutq_bytes(struct ttyoutq *outq) {
+  kassert(outq->read_pos <= outq->write_pos);
+  return outq->write_pos - outq->read_pos;
+}
+
 #endif

@@ -20,35 +20,36 @@
 
 ; struct trapframe offsets
 %define TRAPFRAME_PARENT(x)   [x+0x00]
-%define TRAPFRAME_RDI(x)      [x+0x08]
-%define TRAPFRAME_RSI(x)      [x+0x10]
-%define TRAPFRAME_RDX(x)      [x+0x18]
-%define TRAPFRAME_RCX(x)      [x+0x20]
-%define TRAPFRAME_R8(x)       [x+0x28]
-%define TRAPFRAME_R9(x)       [x+0x30]
-%define TRAPFRAME_RAX(x)      [x+0x38]
-%define TRAPFRAME_RBX(x)      [x+0x40]
-%define TRAPFRAME_RBP(x)      [x+0x48]
-%define TRAPFRAME_R10(x)      [x+0x50]
-%define TRAPFRAME_R11(x)      [x+0x58]
-%define TRAPFRAME_R12(x)      [x+0x60]
-%define TRAPFRAME_R13(x)      [x+0x68]
-%define TRAPFRAME_R14(x)      [x+0x70]
-%define TRAPFRAME_R15(x)      [x+0x78]
-%define TRAPFRAME_FS(x)       [x+0x80]
-%define TRAPFRAME_GS(x)       [x+0x82]
-%define TRAPFRAME_ES(x)       [x+0x84]
-%define TRAPFRAME_DS(x)       [x+0x86]
-%define TRAPFRAME_DATA(x)     [x+0x88]
-%define TRAPFRAME_VECTOR(x)   [x+0x90]
-%define TRAPFRAME_ERROR(x)    [x+0x98]
-%define TRAPFRAME_RIP(x)      [x+0xa0]
-%define TRAPFRAME_CS(x)       [x+0xa8]
-%define TRAPFRAME_RFLAGS(x)   [x+0xb0]
-%define TRAPFRAME_RSP(x)      [x+0xb8]
-%define TRAPFRAME_SS(x)       [x+0xc0]
+%define TRAPFRAME_FLAGS(x)    [x+0x08]
+%define TRAPFRAME_RDI(x)      [x+0x10]
+%define TRAPFRAME_RSI(x)      [x+0x18]
+%define TRAPFRAME_RDX(x)      [x+0x20]
+%define TRAPFRAME_RCX(x)      [x+0x28]
+%define TRAPFRAME_R8(x)       [x+0x30]
+%define TRAPFRAME_R9(x)       [x+0x38]
+%define TRAPFRAME_RAX(x)      [x+0x40]
+%define TRAPFRAME_RBX(x)      [x+0x48]
+%define TRAPFRAME_RBP(x)      [x+0x50]
+%define TRAPFRAME_R10(x)      [x+0x58]
+%define TRAPFRAME_R11(x)      [x+0x60]
+%define TRAPFRAME_R12(x)      [x+0x68]
+%define TRAPFRAME_R13(x)      [x+0x70]
+%define TRAPFRAME_R14(x)      [x+0x78]
+%define TRAPFRAME_R15(x)      [x+0x80]
+%define TRAPFRAME_FS(x)       [x+0x88]
+%define TRAPFRAME_GS(x)       [x+0x8a]
+%define TRAPFRAME_ES(x)       [x+0x8c]
+%define TRAPFRAME_DS(x)       [x+0x8e]
+%define TRAPFRAME_DATA(x)     [x+0x90]
+%define TRAPFRAME_VECTOR(x)   [x+0x98]
+%define TRAPFRAME_ERROR(x)    [x+0xa0]
+%define TRAPFRAME_RIP(x)      [x+0xa8]
+%define TRAPFRAME_CS(x)       [x+0xb0]
+%define TRAPFRAME_RFLAGS(x)   [x+0xb8]
+%define TRAPFRAME_RSP(x)      [x+0xc0]
+%define TRAPFRAME_SS(x)       [x+0xc8]
 
-%define TRAPFRAME_SIZE        0xc8
+%define TRAPFRAME_SIZE        0xd0
 
 %define NR_rt_sigreturn       15
 
@@ -72,6 +73,9 @@ syscall_handler:
   cmp rax, NR_rt_sigreturn
   je sigreturn
 
+  ; clear interrupts while we establish the trapframe
+;  cli
+
   ; swap to the kernel stack
   mov PERCPU_USER_SP, rsp
   mov rsp, PERCPU_KERNEL_SP
@@ -86,6 +90,14 @@ syscall_handler:
   mov TRAPFRAME_RSP(rsp), rax
   mov TRAPFRAME_RFLAGS(rsp), r11
   mov TRAPFRAME_RIP(rsp), rcx
+
+  ; reference thread's old trapframe
+  mov r11, PERCPU_THREAD
+  mov rax, THREAD_FRAME(r11)
+  mov THREAD_FRAME(r11), rsp        ; update the thread's trapframe pointer
+
+  mov TRAPFRAME_PARENT(rsp), rax    ; save the old trapframe pointer
+  mov dword TRAPFRAME_FLAGS(rsp), 0 ; clear flags
 
   ; linux syscall abi
   ;   rax   syscall number
@@ -124,6 +136,7 @@ syscall_handler:
   mov rdi, TRAPFRAME_RAX(rsp)
   mov rsi, rsp
   call handle_syscall
+  ; rax = return value
 
   ; ==== dispatch pending signals
   ; restore rsi and r8
@@ -136,6 +149,12 @@ syscall_handler:
   pop rax
 .skip_handle_signals:
 
+  ; restore the parent trapframe
+  mov r15, PERCPU_THREAD
+  mov r14, TRAPFRAME_PARENT(rsp)
+  mov THREAD_FRAME(r15), r14
+
+  ; restore the trapframe
   mov r15, TRAPFRAME_R15(rsp)
   mov r14, TRAPFRAME_R14(rsp)
   mov r13, TRAPFRAME_R13(rsp)

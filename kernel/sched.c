@@ -176,16 +176,47 @@ static thread_t *sched_next_thread() {
 
 //
 
-noreturn void idle_thread_entry() {
-  kprintf("starting idle thread on CPU#%d\n", curcpu_id);
-  sched_t *sched = cursched;
+// the cleanup_queue provides a way to handle deferred thread cleanup
+// after a thread has exited. this is nessecary because a thread cannot
+// free itself while it is exiting. there is a per-scheduler cleanup
+// queue that is serviced by the idle thread.
+static LIST_HEAD(struct thread) td_cleanup_queue[MAX_CPUS];
+static mtx_t td_cleanup_lock[MAX_CPUS];
 
+static void add_to_cleanup_queue(thread_t *td) {
+  if (td_lock_owner(td) != NULL) {
+    // unlock the thread if it is locked
+    td_unlock(td);
+  }
+
+  int cpu = curcpu_id;
+  mtx_spin_lock(&td_cleanup_lock[cpu]);
+  LIST_ADD(&td_cleanup_queue[cpu], td, plist);
+  mtx_spin_unlock(&td_cleanup_lock[cpu]);
+}
+
+noreturn void idle_thread_entry() {
+  sched_t *sched = cursched;
+  typeof(td_cleanup_queue[0]) *cleanup_queue = &td_cleanup_queue[curcpu_id];
+  mtx_t *cleanup_lock = &td_cleanup_lock[curcpu_id];
+
+  kprintf("starting idle thread on CPU#%d\n", curcpu_id);
 idle_wait:;
   struct spin_delay delay = new_spin_delay(SHORT_DELAY, MAX_RETRIES);
   for (;;) {
     if (sched->readymask != 0) {
       // at least one of the runqueues could have a thread
       break;
+    }
+
+    if (LIST_FIRST(cleanup_queue) != NULL) {
+      mtx_spin_lock(cleanup_lock);
+      thread_t *td;
+      while ((td = LIST_REMOVE_FIRST(cleanup_queue, plist))) {
+        DPRINTF("idle: cleaning up exited thread {:td}\n", td);
+        thread_free_exited(&td);
+      }
+      mtx_spin_unlock(cleanup_lock);
     }
 
     if (!spin_delay_wait(&delay)) {
@@ -209,6 +240,8 @@ void sched_init() {
     runq_init(&sched->queues[i]);
   }
   cpu_scheds[curcpu_id] = sched;
+  mtx_init(&td_cleanup_lock[curcpu_id], MTX_SPIN, "td_cleanup_lock");
+  LIST_INIT(&td_cleanup_queue[curcpu_id]);
 
   set_cursched(sched);
   if (curthread == NULL) {
@@ -312,25 +345,24 @@ void sched_again(sched_reason_t reason) {
     }
   }
 
-  // update thread state+stats
   switch (reason) {
     case SCHED_PREEMPTED:
       ASSERT(!curcpu_is_interrupt);
       TD_SET_STATE(oldtd, TDS_READY);
-      atomic_fetch_or(&oldtd->flags2, TDF2_PREEMPTED);
+      atomic_fetch_or(&oldtd->flags2, TDF2_TRAPFRAME);
       sched_submit_ready_thread(oldtd);
       break;
     case SCHED_YIELDED:
       TD_SET_STATE(oldtd, TDS_READY);
-      // if the thread is yielding because it was
-      // stopped do not add it back to the runqueue
       if (!TDF2_IS_STOPPED(oldtd)) {
+        // if the thread is yielding because it was
+        // stopped do not add it back to the runqueue
         sched_submit_ready_thread(oldtd);
       }
       break;
     case SCHED_BLOCKED:
       TD_SET_STATE(oldtd, TDS_BLOCKED);
-      if (oldtd->proc->pid != 0)
+      if (oldtd->proc->pid != 0) // proc0 is allowed to block forever
         ASSERT(oldtd->contested_lock != NULL);
       break;
     case SCHED_SLEEPING:
@@ -342,6 +374,8 @@ void sched_again(sched_reason_t reason) {
       TD_SET_STATE(oldtd, TDS_EXITED);
       atomic_fetch_add(&oldtd->proc->num_exited, 1);
       cond_broadcast(&oldtd->proc->td_exit_cond);
+      add_to_cleanup_queue(oldtd);
+      oldtd = NULL; // oldtd is no longer valid
       break;
     default:
       unreachable;

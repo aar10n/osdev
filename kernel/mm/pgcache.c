@@ -133,11 +133,17 @@ static struct pgcache_node *internal_lookup_leaf(struct pgcache *tree, size_t of
   return node;
 }
 
+static void pgcache_clone_cb(page_t **pageref, size_t off, void *data) {
+  struct pgcache *copy = data;
+  page_t *page = getref(*pageref);
+  pgcache_insert(copy, off, page, NULL);
+}
+
 //
 // MARK: pgcache api
 //
 
-struct pgcache *pgcache_alloc(uint16_t order, uint32_t pg_size) {
+__ref struct pgcache *pgcache_alloc(uint16_t order, uint32_t pg_size) {
   struct pgcache *tree = kmallocz(sizeof(struct pgcache));
   tree->order = order;
   tree->bits_per_lvl = log2(PGCACHE_FANOUT);
@@ -150,6 +156,12 @@ struct pgcache *pgcache_alloc(uint16_t order, uint32_t pg_size) {
     LIST_ADD(&tree->leaf_nodes, tree->root, leaf.list);
   }
   return tree;
+}
+
+__ref struct pgcache *pgcache_clone(struct pgcache *cache) {
+  struct pgcache *copy = pgcache_alloc(cache->order, cache->pg_size);
+  pgcache_visit_pages(cache, 0, cache->max_capacity, pgcache_clone_cb, copy);
+  return copy;
 }
 
 void pgcache_free(struct pgcache **cacheptr) {

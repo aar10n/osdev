@@ -21,8 +21,13 @@ static console_t *active_console = NULL;
 static LIST_HEAD(console_t) consoles = {0};
 
 
-static int console_main_loop() {
-  ASSERT(active_console != NULL);
+static int console_main() {
+  if (!active_console) {
+    DPRINTF("no active console specified, exiting\n");
+    return 0;
+  }
+
+  // start the kernel console if specified
   tty_t *tty = active_console->tty;
   DPRINTF("starting '%s' kernel console\n", active_console->name);
   if (!tty_lock(tty)) {
@@ -33,14 +38,6 @@ static int console_main_loop() {
   int res;
   if ((res = tty_open(active_console->tty)) < 0) {
     EPRINTF("failed to open tty for console driver %s: {:err}\n", active_console->name, res);
-    tty_unlock(tty);
-    return res;
-  }
-
-  struct termios termios = termios_make_canon();
-  struct winsize winsize = { 24, 80, 0, 0 };
-  if ((res = tty_configure(tty, &termios, &winsize)) < 0) {
-    EPRINTF("failed to configure tty for console driver %s: {:err}\n", active_console->name, res);
     tty_unlock(tty);
     return res;
   }
@@ -115,7 +112,7 @@ void console_init() {
   // start the console in a new process
   __ref proc_t *console_proc = proc_alloc_new(getref(curproc->creds));
   proc_setup_add_thread(console_proc, thread_alloc(TDF_KTHREAD, SIZE_16KB));
-  proc_setup_entry(console_proc, (uintptr_t) console_main_loop, 0);
+  proc_setup_entry(console_proc, (uintptr_t) console_main, 0);
   proc_setup_name(console_proc, cstr_make("console"));
   proc_finish_setup_and_submit_all(moveref(console_proc));
 }

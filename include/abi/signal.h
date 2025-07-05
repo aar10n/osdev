@@ -87,17 +87,56 @@ union sigval {
   void *sival_ptr;
 };
 
-struct siginfo {
-  int si_signo;           // signal number
-  int si_code;            // signal code
-  union sigval si_value;  // signal value
-  int si_errno;           // errno
-  pid_t si_pid;           // sending process
-  uid_t si_uid;           // sending user
-  void *si_addr;          // faulting address
-  int si_status;          // exit status
-  int si_band;            // band event
-};
+// matches siginfo_t defined in musl/include/signal.h
+typedef struct siginfo {
+  int si_signo;                       // signal number
+  int si_errno;                       // errno association
+  int si_code;                        // signal code (reason)
+  union {
+    char __pad[128 - (2 * sizeof(int)) - sizeof(long)];
+    struct {                          // generic sender-related info
+      union {
+        struct {
+          pid_t si_pid;               //   sender PID
+          uid_t si_uid;               //   sender UID
+        };
+        struct {
+          int si_timerid;             //   POSIX timer ID
+          int si_overrun;             //   timer overrun count
+        };
+      };
+      union {
+        union sigval si_value;        // user-defined value
+        struct {
+          int si_status;              //   exit status or signal
+          clock_t si_utime;           //   user CPU time
+          clock_t si_stime;           //   system CPU time
+        };
+      };
+    };
+    struct {                          // SIGSEGV, SIGBUS, SIGFPE, etc.
+      void *si_addr;                  //   faulting address
+      short si_addr_lsb;              //   least significant bit of address
+      union {
+        struct {
+          void *si_lower;             //   lower bound of violation
+          void *si_upper;             //   upper bound of violation
+        };
+        unsigned si_pkey;             //   protection key (if applicable)
+      };
+    };
+    struct {                          // SIGPOLL
+      long si_band;                   //   band event
+      int si_fd;                      //   file descriptor
+    };
+    struct {                          // SIGSYS
+      void *si_call_addr;             //   syscall instruction address
+      int si_syscall;                 //   syscall number
+      unsigned si_arch;               //   syscall architecture
+    };
+  };
+} siginfo_t;
+_Static_assert(sizeof(siginfo_t) == 128, "siginfo_t must be 128 bytes");
 
 // matches k_sigaction defined in musl/<arch>/ksigaction.h
 struct sigaction {
@@ -109,7 +148,7 @@ struct sigaction {
   void (*sa_restorer)(void);
   unsigned sa_mask[2];
 };
-static_assert(sizeof(struct sigaction) == 32);
+_Static_assert(sizeof(struct sigaction) == 32, "sigaction must be 128 bytes");
 
 /* SA_ flags in addition to ones in <bits/signal.h> */
 #define SA_KERNHAND   0x02000000 // runs in kernel space

@@ -23,6 +23,14 @@ static inline bool is_elf_magic(Elf64_Ehdr *elf) {
          elf->e_ident[EI_MAG3] == ELFMAG3;
 }
 
+static inline bool elf_is_executable(Elf64_Ehdr *ehdr) {
+  return ehdr->e_type == ET_EXEC || (ehdr->e_type == ET_DYN && ehdr->e_entry != 0);
+}
+
+static inline bool elf_is_shared_object(Elf64_Ehdr *ehdr) {
+  return ehdr->e_type == ET_DYN;
+}
+
 static size_t elf_get_image_filesz(Elf64_Ehdr *ehdr) {
   return ehdr->e_ehsize + (ehdr->e_phnum * ehdr->e_phentsize) + (ehdr->e_shnum * ehdr->e_shentsize);
 }
@@ -49,19 +57,22 @@ bool elf_is_valid_file(void *file_base, size_t len) {
   return true;
 }
 
-int elf_load_image(int fd, void *file_base, size_t len, uint32_t e_type, uintptr_t base, __inout struct exec_image *image) {
+int elf_load_image(enum exec_type type, int fd, void *file_base, size_t len, uintptr_t base, __inout struct exec_image *image) {
   Elf64_Ehdr *ehdr = file_base;
   if (len < elf_get_image_filesz(ehdr)) {
     DPRINTF("malformed elf file\n");
     return -EINVAL;
+  } else if (ehdr->e_type == ET_DYN && base == 0) {
+    // dynamic executables must have a base address specified
+    DPRINTF("dynamic executable requires a base address\n");
+    return -EINVAL;
   }
 
-  if (ehdr->e_type != e_type) {
-    if (e_type == ET_EXEC) {
-      DPRINTF("program is not an executable\n");
-    } else if (e_type == ET_DYN) {
-      DPRINTF("program is not a shared object\n");
-    }
+  if (type == EXEC_BIN && !elf_is_executable(ehdr)) {
+    DPRINTF("program is not an executable\n");
+    return -ENOEXEC;
+  } else if (type == EXEC_DYN && !elf_is_shared_object(ehdr)) {
+    DPRINTF("program is not a shared object\n");
     return -ENOEXEC;
   }
 
@@ -77,7 +88,7 @@ int elf_load_image(int fd, void *file_base, size_t len, uint32_t e_type, uintptr
       case PT_LOAD:
         break; // load the segment
       case PT_PHDR:
-        image->phdr = image->base + phdr[i].p_vaddr;
+        image->phdr = base + phdr[i].p_vaddr;
         continue;
       case PT_INTERP:
         ASSERT(str_isnull(interp));
@@ -98,7 +109,7 @@ int elf_load_image(int fd, void *file_base, size_t len, uint32_t e_type, uintptr
     uint32_t flags = phdr[i].p_flags;
     min_vaddr = min(min_vaddr, vaddr);
 
-    uint32_t vm_flags = VM_READ | VM_PRIVATE;
+    uint32_t vm_flags = VM_READ | VM_USER | VM_PRIVATE | VM_FIXED;
     if (phdr[i].p_flags & PF_X)
       vm_flags |= VM_EXEC;
     if (phdr[i].p_flags & PF_W)
@@ -113,7 +124,7 @@ int elf_load_image(int fd, void *file_base, size_t len, uint32_t e_type, uintptr
       size_t rem_filesz = filesz;
       page_t *data_pages = NULL;
       while (rem_filesz > 0) {
-        data_pages = page_list_join(moveref(data_pages), fs_getpage(fd, cur_off));
+        data_pages = raw_page_list_join(moveref(data_pages), fs_getpage(fd, cur_off));
         rem_filesz -= PAGE_SIZE;
         cur_off += PAGE_SIZE;
       }
@@ -126,14 +137,14 @@ int elf_load_image(int fd, void *file_base, size_t len, uint32_t e_type, uintptr
       size_t rem_filesz = filesz;
       page_t *data_pages = NULL;
       while (rem_filesz > 0) {
-        data_pages = page_list_join(moveref(data_pages), fs_getpage(fd, cur_off));
+        data_pages = raw_page_list_join(moveref(data_pages), fs_getpage(fd, cur_off));
         rem_filesz -= PAGE_SIZE;
         cur_off += PAGE_SIZE;
       }
 
       if (memsz > filesz) {
         // the unititialized memory spans more than just the pages from the file
-        data_pages = page_list_join(moveref(data_pages), alloc_pages(SIZE_TO_PAGES(memsz - filesz)));
+        data_pages = raw_page_list_join(moveref(data_pages), alloc_pages(SIZE_TO_PAGES(memsz - filesz)));
       }
 
       // zero any extraneous bytes at the end of the file pages

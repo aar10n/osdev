@@ -721,8 +721,8 @@ static size_t format_ventry(fmt_buffer_t *buffer, const fmt_spec_t *spec) {
 }
 
 static size_t format_file(fmt_buffer_t *buffer, const fmt_spec_t *spec) {
-  // <<fd>:<ftype>:<data pointer>>
-  // <<fd>:<ftype>:<data pointer>><pointer>    '+' flag
+  // <<ftype>:<data pointer>>
+  // <<ftype>:<data pointer>><pointer>    '+' flag
   const file_t *f = spec->value.voidptr_value;
   bool plus = (spec->flags & FMT_FLAG_SIGN) != 0;
   if (f == NULL) {
@@ -731,8 +731,6 @@ static size_t format_file(fmt_buffer_t *buffer, const fmt_spec_t *spec) {
 
   size_t n = 0;
   n += fmtlib_buffer_write_char(buffer, '<');
-  n += format_signed(buffer, &mk_fmtlib_spec_u64(f->fd, 0));
-  n += fmtlib_buffer_write_char(buffer, ':');
   n += format_ftype(buffer, &mk_fmtlib_spec_u64(f->type, 0));
   n += fmtlib_buffer_write_char(buffer, ':');
   n += format_signed(buffer, &mk_fmtlib_spec_pointer(f->data));

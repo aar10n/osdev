@@ -241,28 +241,30 @@ void _mtx_wait_lock(mtx_t *mtx, const char *file, int line) {
 
   WAIT_CLAIMS_ADD(&mtx->lo, file, line);
 
-  if (curthread != NULL && mtx_get_owner(mtx) == curthread) {
+  thread_t *td = curthread;
+  if (td != NULL && mtx_get_owner(mtx) == td) {
     MTX_DEBUGF(mtx, file, line, "wait_lock {:#Lo} recursed", mtx);
     ASSERT(mtx_get_lo(mtx) & LO_RECURSABLE, "_mtx_wait_lock() on non-recursive mutex, %s:%d", file, line);
     // recursed lock
     mtx->mtx_lock |= MTX_RECURSED;
     mtx->lo.data++;
-    curthread->lock_count++;
+    td->lock_count++;
     return;
   }
 
   for (;;) {
-    uintptr_t mtx_lock = new_mtx_lock(curthread, MTX_LOCKED);
+    uintptr_t mtx_lock = new_mtx_lock(td, MTX_LOCKED);
     if (atomic_cmpxchg_acq(&mtx->mtx_lock, MTX_UNOWNED, mtx_lock)) {
       // lock claimed
       mtx->lo.data = 1;
-      curthread->lock_count++;
+      td->lock_count++;
       return;
     }
 
     // lock is contended - wait for it
-    struct lockqueue *lockq = lockq_lookup_or_default(&mtx->lo, curthread->own_lockq);
-    lockq_wait(lockq, mtx_get_owner(mtx), LQ_EXCL);
+    struct thread *owner = mtx_get_owner(mtx);
+    struct lockqueue *lockq = lockq_lookup_or_default(&mtx->lo, td->own_lockq);
+    lockq_wait(lockq, owner, LQ_EXCL);
     // try to reacquire the lock again
   }
 }

@@ -49,6 +49,7 @@ struct pgcache {
 
 
 __ref struct pgcache *pgcache_alloc(uint16_t order, uint32_t pg_size);
+__ref struct pgcache *pgcache_clone(struct pgcache *cache);
 void pgcache_free(__move struct pgcache **cacheptr);
 void pgcache_resize(struct pgcache *cache, uint16_t new_order);
 __ref page_t *pgcache_lookup(struct pgcache *cache, size_t off);

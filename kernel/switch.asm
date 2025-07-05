@@ -24,7 +24,7 @@
 
 ; thread flags2 bits
 %define TDF2_SIGPEND          3
-%define TDF2_PREEMPTED        4
+%define TDF2_TRAPFRAME        4
 
 ; struct tcb offsets
 %define TCB_RIP(x)            [x+0x00]
@@ -37,7 +37,7 @@
 %define TCB_R15(x)            [x+0x38]
 %define TCB_RFLAGS(x)         [x+0x40]
 %define TCB_FSBASE(x)         [x+0x48]
-%define TCB_KGSBASE(x)        [x+0x50]
+%define TCB_GSBASE(x)         [x+0x50]
 %define TCB_DR0(x)            [x+0x58]
 %define TCB_DR1(x)            [x+0x60]
 %define TCB_DR2(x)            [x+0x68]
@@ -54,8 +54,7 @@
 %define TCB_SYSRET  3 ; needs sysret
 
 %define TCB_SIZE        0xa0 ; 0x98 aligned to 16 bytes
-
-%define TRAPFRAME_SIZE  0xc0
+%define TRAPFRAME_SIZE  0xd0
 
 %define FSBASE_MSR  0xC0000100
 %define GSBASE_MSR  0xC0000101
@@ -97,6 +96,9 @@ section .text
 ;   the old_td lock should be held on entry and is released once the state is saved
 global switch_thread
 switch_thread:
+  test rdi, rdi ; check if old thread is NULL (i.e. thread exit)
+  jz .restore_thread ; if NULL just restore the new thread
+
   ; ========================================
   ;            save old thread
   ; ========================================
@@ -131,7 +133,7 @@ switch_thread:
   rdmsr
   shl rdx, 32
   or rax, rdx
-  mov TCB_KGSBASE(r8), rax
+  mov TCB_GSBASE(r8), rax
 .done_save_base:
 
   ; ==== save debug registers
@@ -200,6 +202,7 @@ switch_thread:
   ; ========================================
   ;           restore new thread
   ; ========================================
+  ;  rsi = next thread
 
 .restore_thread:
   ; update curthread and curproc
@@ -212,6 +215,7 @@ switch_thread:
   sub rax, STACK_TOP_OFF ; stack starts just below tcb and trapframe
   mov PERCPU_KERNEL_SP, rax
   mov qword PERCPU_USER_SP, 0
+
   ; update tss rsp0 to point at the top of the thread trapframe
   mov rax, THREAD_FRAME(rsi)
   add rax, TRAPFRAME_SIZE
@@ -230,8 +234,8 @@ switch_thread:
   wrmsr
   ; load kgsbase
   mov ecx, KGSBASE_MSR
-  mov eax, TCB_KGSBASE(r8)
-  mov rdx, TCB_KGSBASE(r8)
+  mov eax, TCB_GSBASE(r8)
+  mov rdx, TCB_GSBASE(r8)
   shr rdx, 32
   wrmsr
 .skip_load_base:
@@ -245,12 +249,12 @@ switch_thread:
   mov r8, THREAD_TCB(rsi)
 .skip_handle_signals:
 
-  ; ==== check if we were preempted (and should restore from trapframe)
-  bt dword THREAD_FLAGS2(rsi), TDF2_PREEMPTED
+  ; ==== check if we should restore from trapframe
+  bt dword THREAD_FLAGS2(rsi), TDF2_TRAPFRAME
   jnc .skip_trapframe_restore
-  and dword THREAD_FLAGS2(rsi), ~(1 << TDF2_PREEMPTED) ; clear the flag
-  mov r8, PERCPU_THREAD
-  mov rsp, THREAD_FRAME(rsi) ; restore the trapframe
+  and dword THREAD_FLAGS2(rsi), ~(1 << TDF2_TRAPFRAME) ; clear the flag
+  mov rsp, THREAD_FRAME(rsi) ; rsp = trapframe
+  mov r8, PERCPU_THREAD      ; r8 = thread pointer
   jmp trapframe_restore
   ; unreachable
 .skip_trapframe_restore:

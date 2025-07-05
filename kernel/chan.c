@@ -232,9 +232,9 @@ int _chan_recv_noblock(chan_t *ch, void *obj, size_t objsz) {
   if (chan_count(ch) == 0) {
     int res;
     if (chan_is_closed(ch)) {
-      res = -EPIPE;
+      res = -EPIPE; // channel is closed
     } else {
-      res = -EAGAIN;
+      res = -EAGAIN; // receive operation would block
     }
     mtx_spin_unlock(&ch->lock);
     return res;
@@ -251,6 +251,14 @@ int _chan_recv_noblock(chan_t *ch, void *obj, size_t objsz) {
   cond_signal(&ch->recv_cond);
   mtx_spin_unlock(&ch->lock);
   return 0;
+}
+
+int _chan_recv_opts(chan_t *ch, void *obj, size_t objsz, int opts) {
+  if (opts & CHAN_RX_NOBLOCK) {
+    return _chan_recv_noblock(ch, obj, objsz);
+  } else {
+    return _chan_recv(ch, obj, objsz);
+  }
 }
 
 int chan_wait(chan_t *ch) {

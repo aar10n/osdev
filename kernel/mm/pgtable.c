@@ -235,25 +235,6 @@ void set_current_pgtable(uintptr_t table_phys) {
 }
 
 //
-
-void pgtable_update_entry_flags(uintptr_t vaddr, uint64_t *pte, uint32_t vm_flags) {
-  int pe_flags = 0;
-  if (vm_flags != 0) {
-    vm_flags_to_pe_flags(vm_flags);
-  }
-  *pte = (*pte & PE_FRAME_MASK) | pe_flags;
-  cpu_invlpg(vaddr);
-}
-
-bool pgtable_get_entry_dirty(const uint64_t *pte) {
-  return *pte & PE_DIRTY;
-}
-
-void pgtable_clear_entry_dirty(uint64_t *pte) {
-  *pte &= ~PE_DIRTY;
-}
-
-//
 // MARK: Recursive page table API
 //
 
@@ -311,9 +292,10 @@ void recursive_unmap_entry(uintptr_t vaddr, uint32_t vm_flags) {
 
   int index = index_for_pg_level(vaddr, level);
   get_pgtable_address(vaddr, level)[index] = 0;
+  cpu_invlpg(vaddr);
 }
 
-void recursive_update_entry(uintptr_t vaddr, uint32_t vm_flags) {
+void recursive_update_entry_flags(uintptr_t vaddr, uint32_t vm_flags) {
   pg_level_t level = PG_LEVEL_PT;
   if (vm_flags & VM_HUGE_2MB) {
     level = PG_LEVEL_PD;
@@ -324,51 +306,57 @@ void recursive_update_entry(uintptr_t vaddr, uint32_t vm_flags) {
   int index = index_for_pg_level(vaddr, level);
   uint64_t *pt = get_pgtable_address(vaddr, level);
   pt[index] = (pt[index] & PE_FRAME_MASK) | vm_flags_to_pe_flags(vm_flags);
+  cpu_invlpg(vaddr);
 }
 
-void recursive_update_range(uintptr_t vaddr, size_t size, uint32_t vm_flags) {
-  size_t pg_size = PAGE_SIZE;
+void recursive_update_entry_entry(uintptr_t vaddr, uintptr_t frame, uint32_t vm_flags) {
   pg_level_t level = PG_LEVEL_PT;
   if (vm_flags & VM_HUGE_2MB) {
-    pg_size = SIZE_2MB;
     level = PG_LEVEL_PD;
   } else if (vm_flags & VM_HUGE_1GB) {
-    pg_size = SIZE_1GB;
     level = PG_LEVEL_PDP;
   }
 
-  uintptr_t end_addr = vaddr + size;
-  while (vaddr < end_addr) {
-    int index = index_for_pg_level(vaddr, level);
-    uint64_t *pt = get_pgtable_address(vaddr, level);
-    pt[index] = (pt[index] & PE_FRAME_MASK) | vm_flags_to_pe_flags(vm_flags);
-    vaddr += pg_size;
-  }
+  int index = index_for_pg_level(vaddr, level);
+  uint64_t *pt = get_pgtable_address(vaddr, level);
+  pt[index] = (frame & PE_FRAME_MASK) | vm_flags_to_pe_flags(vm_flags);
+  cpu_invlpg(vaddr);
 }
 
 uint64_t recursive_duplicate_pgtable(
+  const uint64_t *src_table,
   pg_level_t level,
-  uint64_t *dest_parent_table,
-  uint64_t *src_parent_table,
+  uintptr_t virt_addr,
   uint16_t index,
   page_t **out_pages
 ) {
   if (level == PG_LEVEL_PT) {
-    return src_parent_table[index];
-  } else if ((src_parent_table[index] & PE_PRESENT) == 0) {
+    // this is the last level, copy the entry directly
+    return src_table[index] & ~(PE_ACCESSED | PE_DIRTY);
+  } else if ((src_table[index] & PE_PRESENT) == 0) {
     return 0;
   }
 
+  // allocate a new page for dest_table[index]
   LIST_HEAD(page_t) table_pages = {0};
   page_t *dest_page = alloc_pages(1);
-  dest_parent_table[index] = dest_page->address | PE_WRITE | PE_PRESENT;
   SLIST_ADD(&table_pages, dest_page, next);
 
-  uint64_t *src_table = get_child_pgtable_address(src_parent_table, index, level);
-  uint64_t *dest_table = get_child_pgtable_address(dest_parent_table, index, level);
+  // save the old temporary mapping and map the new page
+  uint64_t old_temp_pdpte = *TEMP_PDPTE;
+  *TEMP_PDPTE = dest_page->address | PE_WRITE | PE_PRESENT;
+  cpu_invlpg(TEMP_PTR);
+
+  uint64_t *next_src_table = get_pgtable_address(virt_addr, level-1);
+  // kprintf("recursive_duplicate_pgtable: level=%d, index=%d, virt_addr=%p, next_src_table=%p\n",
+  //         level, index, virt_addr, next_src_table);
   for (int i = 0; i < NUM_ENTRIES; i++) {
+    uintptr_t next_virt_addr = virt_addr | ((uint64_t) i << pg_level_to_shift(level-1));
+    // if (next_src_table[i] != 0)
+    //   kprintf("  next_virt_addr=%p, src_table[%d]=%p, level=%d (%p, %p)\n",
+    //           next_virt_addr, i, next_src_table[i], level-1, virt_addr, ((uint64_t)i << pg_level_to_shift(level-1)));
     page_t *page_ptr = NULL;
-    dest_table[i] = recursive_duplicate_pgtable(level - 1, dest_table, src_table, i, &page_ptr);
+    TEMP_PTR[i] = recursive_duplicate_pgtable(next_src_table, level - 1, next_virt_addr, i, &page_ptr);
     if (page_ptr != NULL) {
       SLIST_ADD_SLIST(&table_pages, page_ptr, SLIST_GET_LAST(page_ptr, next), next);
     }
@@ -378,7 +366,11 @@ uint64_t recursive_duplicate_pgtable(
     *out_pages = LIST_FIRST(&table_pages);
   }
 
-  uint16_t flags = src_parent_table[index] & PE_FLAGS_MASK;
+  *TEMP_PDPTE = old_temp_pdpte;
+  cpu_invlpg(TEMP_PTR);
+
+  uint16_t flags = src_table[index] & PE_FLAGS_MASK;
+  flags &= ~(PE_ACCESSED | PE_DIRTY);
   return dest_page->address | flags;
 }
 
@@ -615,13 +607,14 @@ uintptr_t create_new_ap_page_tables(__move page_t **out_pages) {
   return new_pml4->address;
 }
 
-uintptr_t fork_page_tables(page_t **out_pages, bool deepcopy_user) {
+uintptr_t fork_page_tables(page_t **out_pages, bool fork_user) {
   LIST_HEAD(page_t) table_pages = {0};
   page_t *new_pml4 = alloc_pages(1);
   SLIST_ADD(&table_pages, new_pml4, next);
 
   critical_enter();
   *TEMP_PDPTE = new_pml4->address | PE_WRITE | PE_PRESENT;
+  cpu_invlpg(TEMP_PTR);
   uint64_t *table_virt = TEMP_PTR;
   memset(table_virt, 0, PAGE_SIZE);
 
@@ -634,13 +627,12 @@ uintptr_t fork_page_tables(page_t **out_pages, bool deepcopy_user) {
     }
   }
 
-  // deep copy user entries if requested
-  if (deepcopy_user) {
+  // fork user entries if requested
+  if (fork_user) {
     for (int i = PML4_INDEX(USER_SPACE_START); i <= PML4_INDEX(USER_SPACE_END); i++) {
+      uintptr_t vaddr = ((uint64_t)i << pg_level_to_shift(PG_LEVEL_PML4));
       page_t *page_ptr = NULL;
-      uint64_t *src_table = (void *) get_virt_addr(R_ENTRY, R_ENTRY, R_ENTRY, i);
-      uint64_t *dest_table = TEMP_PTR;
-      ((uint64_t *)TEMP_PTR)[i] = recursive_duplicate_pgtable(PG_LEVEL_PDP, src_table, dest_table, i, &page_ptr);
+      table_virt[i] = recursive_duplicate_pgtable(PML4_PTR, PG_LEVEL_PML4, vaddr, i, &page_ptr);
       if (page_ptr != NULL) {
         SLIST_ADD_SLIST(&table_pages, page_ptr, SLIST_GET_LAST(page_ptr, next), next);
       }
@@ -692,7 +684,7 @@ void pgtable_print_debug_table(
     uintptr_t entry_vaddr = virt_addr | ((uint64_t)i << pg_level_to_shift(level));
     if ((entry_vaddr & (1ULL << 47)) != 0) {
       // sign extend the address
-      entry_vaddr |= 0xffff000000000000;
+      entry_vaddr |= 0xffff000000000000ULL;
     }
 
     uintptr_t vspace_mapped = 0;
@@ -757,6 +749,11 @@ void pgtable_print_debug_pml4(uintptr_t pml4_phys, int max_depth, int start_boun
   pgtable_print_debug_table(pml4_phys, 0x0, PG_LEVEL_PML4, min_level, start_bound, end_bound, bound_level);
 }
 
+
+void pgtable_print_debug_pml4_user(uintptr_t pml4_phys) {
+  ASSERT(is_aligned(pml4_phys, PAGE_SIZE));
+  pgtable_print_debug_table(pml4_phys, 0x0, PG_LEVEL_PML4, PG_LEVEL_PT, 0, 256, PG_LEVEL_PML4);
+}
 
 void _print_pgtable_indexes(uintptr_t addr) {
   kprintf(

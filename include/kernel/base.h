@@ -39,6 +39,7 @@
 #define US_TO_NS(us) ((uint64_t)(us) * (NS_PER_SEC / US_PER_SEC))
 #define FS_TO_NS(fs) ((uint64_t)(fs) / (FS_PER_SEC / NS_PER_SEC))
 #define MS_TO_US(ms) ((uint64_t)(ms) * (US_PER_SEC / MS_PER_SEC))
+#define NS_TO_MS(ns) ((uint64_t)(ns) / (NS_PER_SEC / MS_PER_SEC))
 
 #define SIZE_1KB  0x400ULL
 #define SIZE_2KB  0x800ULL
@@ -239,9 +240,8 @@ extern uintptr_t __kernel_code_start;
 extern uintptr_t __kernel_code_end;
 extern uintptr_t __kernel_data_end;
 
-#ifndef __PRINTF__
 void kprintf(const char *format, ...);
-#endif
+noreturn void panic(const char *fmt, ...);
 
 //
 // Debug Macros

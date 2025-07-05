@@ -10,6 +10,8 @@
 #include <kernel/printf.h>
 #include <kernel/panic.h>
 
+#include <bits/ioctl.h>
+
 #define ASSERT(x) kassert(x)
 #define DPRINTF(fmt, ...) kprintf("tty: " fmt, ##__VA_ARGS__)
 #define EPRINTF(fmt, ...) kprintf("tty: %s: " fmt, __func__, ##__VA_ARGS__)
@@ -231,15 +233,216 @@ int tty_modem(tty_t *tty, int command, int arg) {
 
 int tty_ioctl(tty_t *tty, unsigned long request, void *arg) {
   tty_assert_owned(tty);
-  if (tty->dev_ops == NULL || tty->dev_ops->tty_ioctl == NULL) {
-    EPRINTF("tty device does not support ioctl\n");
-    return -ENOSYS; // operation not supported
+  proc_t *proc = curproc;
+  switch (request) {
+    // Get and set terminal attributes
+    case TCGETS: {
+      if (vm_validate_user_ptr((uintptr_t) arg, /*write=*/true) < 0) {
+        EPRINTF("TCGETS ioctl requires a valid argument\n");
+        return -EINVAL; // invalid argument
+      }
+      struct termios *termios = (struct termios *) arg;
+      *termios = tty->termios;
+      return 0; // success
+    }
+    case TCSETS: {
+      if (vm_validate_user_ptr((uintptr_t) arg, /*write=*/false) < 0) {
+        EPRINTF("TCSETS ioctl requires a valid argument\n");
+        return -EINVAL; // invalid argument
+      }
+      // configure the terminal attributes
+      struct termios *termios = (struct termios *) arg;
+      return tty_configure(tty, termios, NULL);
+    }
+    case TCSETSW: {
+      if (vm_validate_user_ptr((uintptr_t) arg, /*write=*/false) < 0) {
+        EPRINTF("TCSETSW ioctl requires a valid argument\n");
+        return -EINVAL; // invalid argument
+      }
+
+      // drain the output queue
+      tty->dev_ops->tty_outwakeup(tty);
+
+      // configure the terminal attributes
+      struct termios *termios = (struct termios *) arg;
+      return tty_configure(tty, termios, NULL);
+    }
+    case TCSETSF: {
+      if (vm_validate_user_ptr((uintptr_t) arg, /*write=*/false) < 0) {
+        EPRINTF("TCSETSF ioctl requires a valid argument\n");
+        return -EINVAL; // invalid argument
+      }
+
+      // drain the output queue
+      tty->dev_ops->tty_outwakeup(tty);
+      // flush the input queue
+      ttyinq_flush(tty->inq);
+
+      // configure the terminal attributes
+      struct termios *termios = (struct termios *) arg;
+      return tty_configure(tty, termios, NULL);
+    }
+    // Locking the termios structure
+    case TIOCGLCKTRMIOS:
+      todo("TIOCGLCKTRMIOS ioctl not implemented");
+    case TIOCSLCKTRMIOS:
+      todo("TIOCSLCKTRMIOS ioctl not implemented");
+    // Get and set window size
+    case TIOCGWINSZ: {
+      if (vm_validate_user_ptr((uintptr_t) arg, /*write=*/true) < 0) {
+        EPRINTF("TIOCGWINSZ ioctl requires a valid argument\n");
+        return -EINVAL; // invalid argument
+      }
+      struct winsize *ws = (struct winsize *) arg;
+      ws->ws_row = tty->winsize.ws_row;
+      ws->ws_col = tty->winsize.ws_col;
+      ws->ws_xpixel = tty->winsize.ws_xpixel;
+      ws->ws_ypixel = tty->winsize.ws_ypixel;
+      return 0; // success
+    }
+    case TIOCSWINSZ: {
+      if (vm_validate_user_ptr((uintptr_t) arg, /*write=*/false) < 0) {
+        EPRINTF("TIOCSWINSZ ioctl requires a valid argument\n");
+        return -EINVAL; // invalid argument
+      }
+      struct winsize *ws = (struct winsize *) arg;
+      if (ws->ws_row == 0 || ws->ws_col == 0) {
+        EPRINTF("invalid window size: %ux%u\n", ws->ws_row, ws->ws_col);
+        return -EINVAL; // invalid window size
+      }
+      tty->winsize = *ws;
+      return 0; // success
+    }
+    // Sending a break
+    case TCSBRK:
+      todo("TCSBRK ioctl not implemented");
+    case TIOCSBRK:
+      todo("TIOCSBRK ioctl not implemented");
+    case TIOCCBRK:
+      todo("TIOCCBRK ioctl not implemented");
+    // Software flow control
+    case TCXONC:
+      todo("TCXONC ioctl not implemented");
+    // Buffer count and flushing
+    case TIOCINQ: {
+      if (vm_validate_user_ptr((uintptr_t) arg, /*write=*/true) < 0) {
+        EPRINTF("FIONREAD ioctl requires a valid argument\n");
+        return -EINVAL; // invalid argument
+      }
+      size_t bytes = ttyinq_canonbytes(tty->inq);
+      ASSERT(bytes <= INT_MAX);
+      *((int *)arg) = (int) bytes;
+      return 0; // success
+    }
+    case TIOCOUTQ: {
+      if (vm_validate_user_ptr((uintptr_t) arg, /*write=*/true) < 0) {
+        EPRINTF("TIOCOUTQ ioctl requires a valid argument\n");
+        return -EINVAL; // invalid argument
+      }
+      size_t bytes = ttyoutq_bytes(tty->outq);
+      ASSERT(bytes <= INT_MAX);
+      *((int *)arg) = (int) bytes;
+      return 0; // success
+    }
+    case TCFLSH: {
+      if (vm_validate_user_ptr((uintptr_t) arg, /*write=*/false) < 0) {
+        EPRINTF("TCFLSH ioctl requires a valid argument\n");
+        return -EINVAL; // invalid argument
+      }
+      int queue = *((int *)arg);
+      if (queue == TCIFLUSH) {
+        ttyinq_flush(tty->inq);
+      } else if (queue == TCOFLUSH) {
+        ttyoutq_flush(tty->outq);
+      } else if (queue == TCIOFLUSH) {
+        ttyinq_flush(tty->inq);
+        ttyoutq_flush(tty->outq);
+      } else {
+        EPRINTF("invalid queue for TCFLSH ioctl: %d\n", queue);
+        return -EINVAL; // invalid argument
+      }
+      return 0; // success
+    }
+    // Faking input
+    case TIOCSTI: {
+      if (vm_validate_user_ptr((uintptr_t) arg, /*write=*/false) < 0) {
+        EPRINTF("TIOCSTI ioctl requires a valid argument\n");
+        return -EINVAL; // invalid argument
+      }
+      int res;
+      char ch = *((char *)arg);
+      if ((res = ttydisc_rint(tty, ch, 0)) < 0) {
+        EPRINTF("failed to write character to input queue\n");
+        return res;
+      }
+      return 0; // success
+    }
+    // Redirecting console output
+    case TIOCCONS:
+      todo("TIOCCONS ioctl not implemented");
+    // Controlling terminal
+    case TIOCSCTTY: {
+      pr_lock(proc);
+      if (!proc_is_sess_leader(proc)) {
+        EPRINTF("process {:pr} is not a session leader\n", proc);
+        pr_unlock(proc);
+        return -EPERM; // operation not permitted
+      }
+
+      session_t *sess = proc->group->session;
+      int res = session_leader_ctty(sess, tty);
+      pr_unlock(proc);
+      return res;
+    }
+    case TIOCNOTTY: {
+      pr_lock(proc);
+      if (!proc_is_sess_leader(proc)) {
+        EPRINTF("process {:pr} is not a session leader\n", proc);
+        pr_unlock(proc);
+        return -EPERM; // operation not permitted
+      }
+
+      session_t *sess = proc->group->session;
+      int res = session_leader_ctty(sess, NULL);
+      pr_unlock(proc);
+      return res;
+    }
+    // Process group and session ID
+    case TIOCGPGRP: {
+      if (vm_validate_user_ptr((uintptr_t) arg, /*write=*/true) < 0) {
+        EPRINTF("TIOCGPGRP ioctl requires a valid argument\n");
+        return -EINVAL; // invalid argument
+      }
+      ASSERT(tty->pgrp != NULL);
+      *((pid_t *)arg) = tty->pgrp->pgid;
+      return 0; // success
+    }
+    case TIOCSPGRP:
+      todo("TIOCSPGRP ioctl not implemented");
+    case TIOCGSID:
+      todo("TIOCGSID ioctl not implemented");
+    // Exclusive mode
+    case TIOCEXCL:
+      todo("TIOCEXCL ioctl not implemented");
+    case TIOCNXCL:
+      todo("TIOCNXCL ioctl not implemented");
+    // Line discipline
+    case TIOCGETD:
+    case TIOCSETD:
+      return -ENOTTY;
+    default:
+      break;
   }
 
+  // other ioctls may be handled by the device driver
+  if (tty->dev_ops == NULL || tty->dev_ops->tty_ioctl == NULL) {
+    EPRINTF("tty device does not support ioctl\n");
+    return -ENOTSUP; // operation not supported
+  }
   return tty->dev_ops->tty_ioctl(tty, request, arg);
 }
 
-int tty_wait(tty_t *tty, cond_t *cond) {
+int tty_wait_cond(tty_t *tty, cond_t *cond) {
   tty_assert_owned(tty);
 
   cond_wait(cond, &tty->lock);
@@ -251,9 +454,9 @@ int tty_wait(tty_t *tty, cond_t *cond) {
   return 0;
 }
 
-void tty_wait_signal(tty_t *tty, cond_t *cond) {
+void tty_signal_cond(tty_t *tty, cond_t *cond) {
   tty_assert_owned(tty);
-  cond_signal(cond);
+  cond_broadcast(cond);
 }
 
 int tty_signal_pgrp(tty_t *tty, int signal) {

@@ -8,6 +8,8 @@
 #include <kernel/base.h>
 #include <kernel/mm_types.h>
 
+#define ENV_MAX 128
+
 #define LIBC_BASE_ADDR 0x7FC0000000
 
 struct pcreds;

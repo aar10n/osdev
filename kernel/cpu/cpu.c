@@ -435,12 +435,15 @@ void fpu_state_free(struct fpu_area **fp) {
 
 DEFINE_SYSCALL(arch_prctl, int, int code, unsigned long arg) {
   DPRINTF("arch_prctl code=%d arg=%p\n", code, arg);
+  thread_t *td = curthread;
   switch (code) {
     case ARCH_SET_GS:
       cpu_write_kernel_gsbase(arg);
+      td->tcb->gsbase = arg;
       break;
     case ARCH_SET_FS:
       cpu_write_fsbase(arg);
+      td->tcb->fsbase = arg;
       break;
     case ARCH_GET_FS:
       *(unsigned long *)(arg) = cpu_read_fsbase();

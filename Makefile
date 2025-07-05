@@ -114,7 +114,7 @@ USERSPACE_DIRS = sbin
 all: $(BUILD_DIR)/osdev.img
 
 run: $(BUILD_DIR)/osdev.img
-	$(QEMU) $(QEMU_OPTIONS)
+	$(QEMU) $(QEMU_OPTIONS) -monitor telnet:127.0.0.1:55544,server,nowait
 
 debug: $(BUILD_DIR)/osdev.img
 	$(QEMU) -s -S $(QEMU_OPTIONS) &

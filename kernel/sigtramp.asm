@@ -4,19 +4,11 @@
 
 ; struct sigframe offsets
 %define SIGFRAME_INFO(x)      [x+0x00]
-%define SIGFRAME_ACT(x)       [x+0x30]
-%define SIGFRAME_CTX(x)       [x+0x50]
+%define SIGFRAME_ACT(x)       [x+0x80]
+%define SIGFRAME_CTX(x)       [x+0xA0]
 
 ; struct siginfo offsets
 %define SIGINFO_SIGNO(x)      [x+0x00]
-%define SIGINFO_CODE(x)       [x+0x04]
-%define SIGINFO_VALUE(x)      [x+0x08]
-%define SIGINFO_ERRNO(x)      [x+0x10]
-%define SIGINFO_PID(x)        [x+0x14]
-%define SIGINFO_UID(x)        [x+0x18]
-%define SIGINFO_ADDR(x)       [x+0x20]
-%define SIGINFO_STATUS(x)     [x+0x28]
-%define SIGINFO_BAND(x)       [x+0x2C]
 
 ; struct sigaction offsets
 %define SIGACT_HANDLER(x)     [x+0x00]
@@ -63,8 +55,8 @@
 %define SIGCTX_CR2(x)         [x+0xB0]
 %define SIGCTX_FPSTATE(x)     [x+0xB8]
 
-%define SIGFRAME_SIZE         336
-%define SIGINFO_SIZE          48
+%define SIGFRAME_SIZE         416
+%define SIGINFO_SIZE          128
 %define SIGACT_SIZE           32
 
 %define NR_rt_sigreturn       15

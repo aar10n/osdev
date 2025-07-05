@@ -3,7 +3,7 @@
 //
 
 #include <kernel/mm/pmalloc.h>
-#include <kernel/mm/pgtable.h>
+#include <kernel/mm/vmalloc.h>
 #include <kernel/mm/init.h>
 
 #include <kernel/mutex.h>
@@ -363,12 +363,12 @@ int fa_reserve_pages(frame_allocator_t *fa, uintptr_t frame, size_t count, size_
 }
 
 void fa_free_page(page_t *page) {
-  if (page->flags & PG_COW) {
-    // drop ref to the source page
-    putref(&page->source, fa_free_page);
-  } else if (page->flags & PG_OWNING) {
+  if (page->flags & PG_OWNING) {
     frame_allocator_t *fa = page->fa;
     fa->impl->fa_free(fa, page->address, 1, pg_flags_to_size(page->flags));
+  } else if (page->flags & PG_COW) {
+    // drop ref to the source page
+    putref(&page->source, fa_free_page);
   }
 
   putref(&page->next, fa_free_page);
@@ -473,6 +473,7 @@ int reserve_pages(enum pg_rsrv_kind kind, uintptr_t address, size_t count, size_
   return fa_reserve_pages(fa, address, count, pagesize);
 }
 
+//
 // MARK: page allocation api
 //
 
@@ -533,6 +534,8 @@ __ref page_t *alloc_pages_at(uintptr_t address, size_t count, size_t pagesize) {
   return alloc_page_structs(fa, address, count, pagesize);
 }
 
+// non-owned pages are fake pages allocated to represent a region which is not
+// actually backed by page_t pages (like for example physical mappings).
 __ref page_t *alloc_nonowned_pages_at(uintptr_t address, size_t count, size_t pagesize) {
   ASSERT(address % pagesize == 0);
   if (count == 0) {
@@ -563,86 +566,255 @@ void drop_pages(__move page_t **pagesref) {
   putref(&pages, fa_free_page);
 }
 
-// MARK: page struct api
+//
+// MARK: Page list API
 //
 
-struct pte *pte_struct_alloc(page_t *page, uint64_t *entry, vm_mapping_t *vm) {
-  struct pte *pte = kmallocz(sizeof(struct pte));
-  pte->page = getref(page);
-  pte->entry = entry;
-  pte->address = vm->address;
-  return pte;
-}
+// when `count` is at or below this limit, the page list will allocate
+// the backing array using kmalloc, otherwise it allocates pages.
+#define PGLIST_MALLOC_LIMIT 512
 
-void pte_struct_free(struct pte **pteptr) {
-  struct pte *pte = moveref(*pteptr);
-  drop_pages(&pte->page);
-  kfree(pte);
-}
+static void page_list_alloc_array(page_t ***arrayref, uint32_t count, __out size_t *array_sz) {
+  page_t **array = *arrayref;
+  ASSERT(array == NULL);
 
-void page_add_mapping(page_t *page, struct pte *pte) {
-  mtx_spin_lock(&page->pg_lock);
-  pte->next = page->entries;
-  page->entries = pte;
-  mtx_spin_unlock(&page->pg_lock);
-}
-
-struct pte *page_remove_mapping(page_t *page, vm_mapping_t *vm) {
-  struct pte *prev = NULL;
-  struct pte *curr = NULL;
-  mtx_spin_lock(&page->pg_lock);
-  curr = page->entries;
-  while (curr) {
-    if (curr->address == vm->address) {
-      if (prev) {
-        prev->next = curr->next;
-      } else {
-        page->entries = curr->next;
-      }
-      break;
-    }
-    prev = curr;
-    curr = curr->next;
-  }
-  mtx_spin_unlock(&page->pg_lock);
-  return curr;
-}
-
-struct pte *page_get_mapping(page_t *page, vm_mapping_t *vm) {
-  struct pte *pte = NULL;
-  mtx_spin_lock(&page->pg_lock);
-  struct pte *curr = page->entries;
-  while (curr) {
-    if (curr->address == vm->address) {
-      pte = curr;
-      break;
-    }
-    curr = curr->next;
-  }
-  mtx_spin_unlock(&page->pg_lock);
-  return pte;
-}
-
-void page_update_flags(page_t *page, uint32_t flags) {
-  mtx_spin_lock(&page->pg_lock);
-  if (page->flags & PG_HEAD) {
-    // update all pages in the list
-    page_t *curr = page;
-    while (curr) {
-      curr->flags = (curr->flags & ~PG_SIZE_MASK) | (flags & PG_SIZE_MASK);
-      curr = curr->next;
-    }
+  size_t total_size = count * sizeof(page_t *);
+  if (count <= PGLIST_MALLOC_LIMIT) {
+    // allocate the array on the kernel heap
+    array = kmallocz(total_size);
+    ASSERT(array != NULL);
   } else {
-    page->flags = (page->flags & ~PG_SIZE_MASK) | (flags & PG_SIZE_MASK);
+    // allocate the array on pages
+    total_size = page_align(total_size);
+    page_t *pages = alloc_pages(SIZE_TO_PAGES(total_size));
+    ASSERT(pages != NULL);
+
+    uintptr_t vaddr = vmap_pages(moveref(pages), 0, total_size, VM_RDWR|VM_NOCACHE, "page_list_array");
+    ASSERT(vaddr != 0);
+
+    memset((void *) vaddr, 0, total_size);
+    array = (page_t **) vaddr;
   }
-  mtx_spin_unlock(&page->pg_lock);
+  *arrayref = array;
+  *array_sz = total_size;
+}
+
+static void page_list_free_array(page_t ***arrayref, size_t count, size_t array_sz) {
+  page_t **array = *arrayref;
+  if (array == NULL) {
+    return;
+  }
+
+  // drop all page references in the array
+  for (uint32_t i = 0; i < count; i++) {
+    drop_pages(&array[i]);
+  }
+
+  if (count <= PGLIST_MALLOC_LIMIT) {
+    // the backing array lives on the kernel heap
+    kfree(array);
+    *arrayref = NULL;
+  } else {
+    vmap_free((uintptr_t) array, array_sz);
+    *arrayref = NULL;
+  }
+}
+
+/// Resizes the page list array to the new count and returns a linked list of pages
+/// from the portion of the array that was removed.
+static __ref page_t *page_list_resize_array(page_list_t *list, size_t new_count) {
+  ASSERT(new_count > 0);
+  if (new_count == list->count) {
+    return NULL; // nothing to do
+  }
+
+  page_t **old_array = list->pages;
+  size_t old_count = list->count;
+  size_t old_size = list->array_sz;
+  size_t new_size = new_count * sizeof(page_t *);
+  if (new_count > PGLIST_MALLOC_LIMIT) {
+    new_size = page_align(new_size);
+  }
+
+  if (new_size < old_size) {
+    // only resize if the delta is significant
+    if (new_size < old_size / 2) {
+      // if new size is less than half of the old size, we can shrink the array
+      list->pages = NULL;
+      page_list_alloc_array(&list->pages, new_count, &list->array_sz);
+      list->count = new_count;
+
+      // copy the old pages to the new array
+      for (size_t i = 0; i < old_count && i < new_count; i++) {
+        list->pages[i] = moveref(old_array[i]);
+      }
+    } else {
+      // otherwise just keep the old array and update the count
+      list->count = new_count;
+    }
+
+    // collect the extra pages from the old array
+    page_t *removed_pages = NULL;
+    page_t *last_removed = NULL;
+    for (size_t i = new_count; i < old_count; i++) {
+      page_t *page = moveref(old_array[i]);
+      page->flags &= ~PG_HEAD;
+      if (removed_pages == NULL) {
+        removed_pages = moveref(page);
+        last_removed = removed_pages;
+      } else {
+        last_removed->next = moveref(page);
+        last_removed = last_removed->next;
+      }
+    }
+
+    if (removed_pages != NULL) {
+      removed_pages->flags |= PG_HEAD; // mark the first page as head
+      removed_pages->head.count = old_count - new_count; // set the count of removed pages
+      removed_pages->head.contiguous = false; // todo: check if they are actually contiguous
+    }
+    return removed_pages;
+  } else if (new_size > old_size) {
+    // if the new size is larger than the old size, we need to allocate a new array
+    list->pages = NULL;
+    page_list_alloc_array(&list->pages, new_count, &list->array_sz);
+    list->count = new_count;
+    ASSERT(list->pages != NULL);
+
+    // copy the old pages to the new array
+    for (size_t i = 0; i < old_count && i < new_count; i++) {
+      list->pages[i] = moveref(old_array[i]);
+    }
+
+    // free the old array if it was allocated on pages
+    page_list_free_array(&old_array, old_count, old_size);
+  }
+  return NULL;
 }
 
 //
+
+page_list_t *page_list_alloc_from(__ref page_t *pages) {
+  ASSERT(pages->flags & PG_HEAD);
+  page_list_t *list = kmallocz(sizeof(page_list_t));
+  ASSERT(list != NULL);
+  list->count = pages->head.count;
+  page_list_alloc_array(&list->pages, list->count, &list->array_sz);
+
+  // split up the page list and move them into the array
+  size_t count = list->count;
+  page_t *curr = moveref(pages);
+  while (curr != NULL && count > 0) {
+    page_t *next = moveref(curr->next);
+    curr->next = NULL; // break the link to the next page
+    curr->flags |= PG_HEAD;
+    curr->head.count = 1; // each page is now a head page with count 1
+    curr->head.contiguous = true;
+
+    list->pages[list->count - count] = moveref(curr);
+    curr = moveref(next);
+    count--;
+  }
+
+  if (count > 0) {
+    panic("page_list_alloc_from: not enough pages in the list");
+  } else if (curr != NULL) {
+    panic("page_list_alloc_from: too many pages in the list");
+  }
+
+  return list;
+}
+
+page_list_t *page_list_clone(page_list_t *list) {
+  ASSERT(list->count > 0);
+  ASSERT(list->pages != NULL);
+
+  page_list_t *new_list = kmallocz(sizeof(page_list_t));
+  ASSERT(new_list != NULL);
+  new_list->count = list->count;
+  page_list_alloc_array(&new_list->pages, new_list->count, &new_list->array_sz);
+
+  // copy the pages from the old list to the new list
+  for (size_t i = 0; i < list->count; i++) {
+    if (list->pages[i] == NULL) {
+      panic("page_list_clone: page at index %zu is NULL", i);
+    }
+    new_list->pages[i] = getref(list->pages[i]);
+  }
+  return new_list;
+}
+
+void page_list_free(page_list_t **listref) {
+  page_list_t *list = moveref(*listref);
+  if (list == NULL) {
+    return;
+  }
+
+  page_list_free_array(&list->pages, list->count, list->array_sz);
+  kfree(list);
+}
+
+__ref page_t *page_list_getpage(page_list_t *list, size_t index) {
+  ASSERT(index < list->count);
+
+  page_t *page = list->pages[index];
+  if (page == NULL) {
+    panic("page_list_getpage: page at index %zu is NULL", index);
+  }
+  return getref(page);
+}
+
+void page_list_putpage(page_list_t *list, size_t index, __ref page_t *page) {
+  ASSERT(index < list->count);
+  ASSERT(page != NULL);
+  ASSERT(page->flags & PG_HEAD && page->head.count == 1);
+
+  page_t *oldpage = list->pages[index];
+  if (oldpage == NULL) {
+    panic("page_list_putpage: page at index %zu is NULL", index);
+  }
+
+  drop_pages(&oldpage);
+  list->pages[index] = moveref(page);
+}
+
+void page_list_join(page_list_t *head, page_list_t **tailref) {
+  page_list_t *tail = moveref(*tailref);
+  ASSERT(head != NULL);
+  ASSERT(tail != NULL);
+  ASSERT(head->count > 0 && tail->count > 0);
+  ASSERT(head->pages != NULL && tail->pages != NULL);
+
+  size_t head_count = head->count;
+  size_t tail_count = tail->count;
+  size_t new_count = head_count + tail_count;
+  page_t *notail = page_list_resize_array(head, new_count);
+  ASSERT(notail == NULL);
+
+  // move the tail pages to the head list
+  for (size_t i = head_count; i < new_count; i++) {
+    size_t index = i - head_count;
+    ASSERT(tail->pages[index] != NULL);
+    head->pages[i] = moveref(tail->pages[index]);
+  }
+
+  // free the tail list
+  page_list_free(&tail);
+}
+
+page_list_t *page_list_split(page_list_t *list, size_t index) {
+  ASSERT(list != NULL);
+  ASSERT(index < list->count);
+
+  page_t *tail = page_list_resize_array(list, index);
+  ASSERT(tail != NULL);
+  return page_list_alloc_from(tail);
+}
+
 //
 
-// Joins two page lists together and returns a moved reference to the new head.
-__ref page_t *page_list_join(__ref page_t *head, __ref page_t *tail) {
+
+__ref page_t *raw_page_list_join(__ref page_t *head, __ref page_t *tail) {
   if (head == NULL) {
     return tail;
   } else if (tail == NULL) {
@@ -661,44 +833,5 @@ __ref page_t *page_list_join(__ref page_t *head, __ref page_t *tail) {
   tail->head.count = 0;
   tail->head.contiguous = false;
   head_last->next = moveref(tail);
-  return head;
-}
-
-// Updates the page list through the pointer with a reference to the tail,
-// and returns a moved reference to the original head of the split pages.
-__ref page_t *page_list_split(__ref page_t *head, size_t count, __out page_t **tailref) {
-  if (head == NULL || count == 0) {
-    return head;
-  }
-
-  ASSERT(head->flags & PG_HEAD);
-  ASSERT(head->head.count >= count);
-  if (head->head.count == count) {
-    // the entire list is being split
-    *tailref = NULL;
-    return head;
-  }
-
-  page_t *pptr = NULL;
-  page_t *ptr = head;
-  size_t ccount = count;
-  while (ccount > 0) {
-    ASSERT(ptr != NULL);
-    pptr = ptr;
-    ptr = ptr->next;
-    ccount--;
-  }
-
-  // grab reference to the tail list
-  page_t *newhead = getref(ptr);
-  newhead->flags |= PG_HEAD;
-  newhead->head.count = head->head.count - count;
-  newhead->head.contiguous = head->head.contiguous;
-
-  head->head.count = count;
-  if (pptr) // before releasing it from head
-    putref(&pptr->next, fa_free_page);
-
-  *tailref = moveref(newhead);
   return head;
 }

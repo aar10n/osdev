@@ -26,9 +26,10 @@
 
 #define LIST_INIT(head)   \
   ({                      \
-    (head)->first = NULL; \
-    (head)->last = NULL;  \
-    (head);               \
+    typeof(head) __head = (head); \
+    (__head)->first = NULL; \
+    (__head)->last = NULL;  \
+    (__head);               \
   })
 
 #define LIST_ENTRY_INIT(entry) \
@@ -174,7 +175,15 @@
   ({                                  \
     typeof((head)->first) __el = (head)->first; \
     if (__el) {                       \
-      LIST_REMOVE(head, __el, name);  \
+      if (__el == (head)->last) {    \
+        (head)->first = NULL;         \
+        (head)->last = NULL;          \
+      } else {                        \
+        (head)->first = __el->name.next; \
+        (head)->first->name.prev = NULL; \
+      }                               \
+      __el->name.next = NULL;         \
+      __el->name.prev = NULL;         \
     }                                 \
     __el;                             \
   })

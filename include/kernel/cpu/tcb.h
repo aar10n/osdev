@@ -19,7 +19,7 @@ struct tcb {
   uint64_t r15;
   uint64_t rflags;
   uint64_t fsbase;
-  uint64_t kgsbase;
+  uint64_t gsbase;
   uint64_t dr0;
   uint64_t dr1;
   uint64_t dr2;

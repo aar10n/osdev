@@ -15,8 +15,6 @@
 // #define DPRINTF(fmt, ...) kprintf("file: " fmt, ##__VA_ARGS__)
 #define EPRINTF(fmt, ...) kprintf("file: %s: " fmt, __func__, ##__VA_ARGS__)
 
-#define FTABLE_MAX_FILES 1024
-
 #define FTABLE_LOCK(ftable) mtx_spin_lock(&(ftable)->lock)
 #define FTABLE_UNLOCK(ftable) mtx_spin_unlock(&(ftable)->lock)
 
@@ -31,49 +29,67 @@ typedef struct ftable {
 
 //
 
-__ref file_t *f_alloc(int fd, int flags, enum ftype type, void *data, struct file_ops *ops) {
+__ref fd_entry_t *fd_entry_alloc(int fd, int flags, cstr_t real_path, __ref file_t *file) {
+  fd_entry_t *fde = kmallocz(sizeof(fd_entry_t));
+  fde->fd = fd;
+  fde->flags = flags;
+  fde->real_path = str_from_cstr(real_path);
+  fde->file = moveref(file);
+  ref_init(&fde->refcount);
+  return fde;
+}
+
+__ref fd_entry_t *fde_dup(fd_entry_t *fde, int new_fd) {
+  fd_entry_t *dup = kmallocz(sizeof(fd_entry_t));
+  dup->fd = (new_fd < 0) ? fde->fd : new_fd;
+  dup->flags = fde->flags;
+  dup->real_path = str_dup(fde->real_path);
+  dup->file = f_getref(fde->file); // duplicate the file reference
+  ref_init(&dup->refcount);
+  return dup;
+}
+
+void _fde_cleanup(__move fd_entry_t **fde_ref) {
+  fd_entry_t *fde = moveref(*fde_ref);
+  ASSERT(fde != NULL);
+  ASSERT(ref_count(&fde->refcount) == 0);
+  DPRINTF("!!! fd_entry cleanup <{:d}:{:str}> !!!\n", fde->fd, &fde->real_path);
+
+  str_free(&fde->real_path);
+  f_putref(&fde->file);
+  kfree(fde);
+}
+
+//
+
+__ref file_t *f_alloc(enum ftype type, int access, void *data, struct file_ops *ops) {
   file_t *file = kmallocz(sizeof(file_t));
-  file->fd = fd;
-  file->flags = flags;
+  file->access = access & O_ACCMODE;
   file->type = type;
   file->data = data;
   file->ops = ops;
-  file->real_path = str_null;
   mtx_init(&file->lock, 0, "file_struct_lock");
   ref_init(&file->refcount);
   return file;
 }
 
-__ref file_t *f_alloc_vn(int fd, int flags, vnode_t *vnode, cstr_t real_path) {
-  file_t *file = f_alloc(fd, flags, FT_VNODE, vn_getref(vnode), &vnode_file_ops);
-  file->real_path = str_from_cstr(real_path);
+__ref file_t *f_alloc_vn(int access, vnode_t *vnode) {
+  file_t *file = f_alloc(FT_VNODE, access, vn_getref(vnode), &vnode_file_ops);
   return file;
 }
 
-__ref file_t *f_dup(file_t *f) {
-  file_t *dup = kmallocz(sizeof(file_t));
-  dup->fd = f->fd;
-  dup->flags = f->flags;
-  dup->type = f->type;
-  if (f->type == FT_VNODE) {
-    dup->data = vn_getref(f->data); // data is a vnode
-  } else {
-    dup->data = f->data; // other types just share the data
-  }
-  mtx_init(&dup->lock, 0, "file_struct_lock");
-  ref_init(&dup->refcount);
-  return dup;
-}
-
-void f_cleanup(__move file_t **fref) {
+void _f_cleanup(__move file_t **fref) {
   file_t *file = moveref(*fref);
   ASSERT(file != NULL);
-  ASSERT(file->closed);
   ASSERT(ref_count(&file->refcount) == 0);
   DPRINTF("!!! file cleanup {:file} !!!\n", file);
 
+  int res = F_OPS(file)->f_close(file);
+  if (res < 0) {
+    EPRINTF("failed to close file {:err}\n", res);
+  }
+
   F_OPS(file)->f_cleanup(file);
-  str_free(&file->real_path);
   kfree(file);
 }
 
@@ -87,61 +103,34 @@ ftable_t *ftable_alloc() {
   return ftable;
 }
 
-static bool ftable_clone_rb_tree_pred(rb_tree_t *tree, rb_node_t *node, void *data) {
-  ftable_t *ftable = data;
-  file_t *file = node->data;
-  if (!f_lock(file)) {
-    return false; // closed
-  }
-
-  file_t *dup = f_dup(file);
-  rb_tree_insert(ftable->tree, file->fd, dup);
-  bitmap_set(ftable->bitmap, (index_t) file->fd);
-  ftable->count++;
-
-  f_unlock(file);
-  return true;
-}
-
 ftable_t *ftable_clone(ftable_t *ftable) {
   ftable_t *clone = kmallocz(sizeof(ftable_t));
-  ftable->tree = create_rb_tree();
-  ftable->bitmap = create_bitmap(FTABLE_MAX_FILES);
-  mtx_init(&ftable->lock, MTX_SPIN, "ftable_lock");
+  clone->tree = create_rb_tree();
+  mtx_init(&clone->lock, MTX_SPIN, "ftable_lock");
 
   FTABLE_LOCK(ftable);
-  ftable->bitmap = clone_bitmap(ftable->bitmap);
-
-  // typedef bool (*rb_pred_t)(struct rb_tree *, struct rb_node *, void *);
+  clone->bitmap = clone_bitmap(ftable->bitmap);
 
   rb_node_t *node = ftable->tree->min;
-  while (node != NULL) {
-    file_t *file = node->data;
-    if (!f_lock(file)) {
-      continue; // closed
-    }
-
-    file_t *dup = f_dup(file);
-    rb_tree_insert(clone->tree, file->fd, dup);
-    bitmap_set(clone->bitmap, (index_t) file->fd);
+  while (node != ftable->tree->nil) {
+    fd_entry_t *fde = node->data;
+    fd_entry_t *dup = fde_dup(fde, -1);
+    rb_tree_insert(clone->tree, fde->fd, dup);
     clone->count++;
 
-    f_unlock(file);
+    node = node->next;
   }
 
   FTABLE_UNLOCK(ftable);
   return clone;
 }
 
-void ftable_free(ftable_t *ftable) {
+void ftable_free(ftable_t **ftablep) {
+  ftable_t *ftable = moveref(*ftablep);
   ASSERT(ftable->count == 0);
   rb_tree_free(ftable->tree);
   bitmap_free(ftable->bitmap);
   kfree(ftable);
-}
-
-bool ftable_empty(ftable_t *ftable) {
-  return ftable->count == 0;
 }
 
 
@@ -180,46 +169,61 @@ void ftable_free_fd(ftable_t *ftable, int fd) {
   FTABLE_UNLOCK(ftable);
 }
 
-__ref file_t *ftable_get_file(ftable_t *ftable, int fd) {
+__ref fd_entry_t *ftable_get_entry(ftable_t *ftable, int fd) {
   FTABLE_LOCK(ftable);
-  file_t *file = rb_tree_find(ftable->tree, fd);
-  file = f_getref(file);
+  fd_entry_t *fde = rb_tree_find(ftable->tree, fd);
+  fde = fde_getref(fde);
   FTABLE_UNLOCK(ftable);
-  return file;
+  return fde;
 }
 
-__ref file_t *ftable_get_remove_file(ftable_t *ftable, int fd) {
+__ref fd_entry_t *ftable_get_remove_entry(ftable_t *ftable, int fd) {
   FTABLE_LOCK(ftable);
   rb_node_t *node = rb_tree_find_node(ftable->tree, fd);
-  if (rb_node_is_nil(node)) {
+  if (node == NULL) {
     FTABLE_UNLOCK(ftable);
-    return NULL;
+    return NULL; // entry does not exist
   }
-  file_t *file = node->data;
+
+  fd_entry_t *fde = node->data;
+  fde = moveref(fde); // move the reference to the caller
   rb_tree_delete_node(ftable->tree, node);
+  ftable->count--;
   FTABLE_UNLOCK(ftable);
-  return f_moveref(&file);
+  return fde;
 }
 
-void ftable_add_file(ftable_t *ftable, __move file_t *file) {
-  ASSERT(file->fd >= 0 && file->fd < FTABLE_MAX_FILES);
+void ftable_add_entry(ftable_t *ftable, __ref fd_entry_t *fde) {
+  ASSERT(fde->fd >= 0 && fde->fd < FTABLE_MAX_FILES);
   FTABLE_LOCK(ftable);
-  if (rb_tree_find(ftable->tree, file->fd) != NULL) {
-    panic("file already exists");
+  if (rb_tree_find(ftable->tree, fde->fd) != NULL) {
+    panic("entry already exists");
   }
-  rb_tree_insert(ftable->tree, file->fd, file);
+  rb_tree_insert(ftable->tree, fde->fd, fde);
+  bitmap_set(ftable->bitmap, (index_t) fde->fd);
   ftable->count++;
   FTABLE_UNLOCK(ftable);
 }
 
-void ftable_remove_file(ftable_t *ftable, int fd) {
-  ASSERT(fd >= 0 && fd < FTABLE_MAX_FILES);
+void ftable_exec_close(ftable_t *ftable) {
+  // close all directory streams and files opened with the O_CLOEXEC flag
   FTABLE_LOCK(ftable);
-  file_t *file = rb_tree_delete(ftable->tree, fd);
-  if (file == NULL) {
-    panic("file does not exist");
+
+  rb_node_t *node = ftable->tree->min;
+  while (node != ftable->tree->nil) {
+    rb_node_t *next = node->next;
+    fd_entry_t *fde = node->data;
+    if (fde->flags & (O_DIRECTORY | O_CLOEXEC)) {
+      // remove the entry
+      rb_tree_delete_node(ftable->tree, node);
+      bitmap_clear(ftable->bitmap, (index_t) fde->fd);
+      ftable->count--;
+      fde->fd = -1;
+      fde_putref(&fde);
+    }
+
+    node = next;
   }
-  ftable->count--;
+
   FTABLE_UNLOCK(ftable);
-  f_release(&file);
 }

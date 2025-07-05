@@ -30,6 +30,7 @@ struct address_space;
 struct frame_allocator;
 struct rb_tree;
 struct page;
+struct page_list;
 struct pte;
 struct vm_mapping;
 struct vm_file;
@@ -57,7 +58,6 @@ typedef struct page {
     struct frame_allocator *fa; // owning frame allocator (if PG_OWNING)
     struct page *source;        // source page ref (if PG_COW)
   };
-  struct pte *entries;          // s-list of pte structs (l)
   struct page *next;            // next page ref (l)
   _refcount;
 } page_t;
@@ -79,21 +79,6 @@ static always_inline size_t pg_flags_to_size(uint32_t pg_flags) {
   }
   return PAGE_SIZE;
 }
-
-/*
- * A page table entry
- *
- * The pte struct represents a mapped page in a page table. It associates a
- * page with a pointer to the pt entry that maps it and the vm mapping that
- * owns the mapping. The pte struct is used to track all places where a page
- * is actively mapped in the system.
- */
-struct pte {
-  __ref struct page *page;
-  uint64_t *entry;
-  uintptr_t address;
-  SLIST_ENTRY(struct pte) next;
-};
 
 /*
  * A virtual address space.
@@ -141,19 +126,19 @@ enum vm_type {
  * more adjacent mappings connected by the `sibling` field.
  */
 typedef struct vm_mapping {
-  enum vm_type type;        // vm type
-  uint32_t flags;           // vm flags
-  str_t name;               // name of the mapping
+  enum vm_type type;              // vm type
+  uint32_t flags;                 // vm flags
+  str_t name;                     // name of the mapping
 
-  uint64_t address;         // virtual address (start of the mapped region)
-  size_t size;              // mapping size
-  size_t virt_size;         // mapping size in the address space
+  uint64_t address;               // virtual address (start of the mapped region)
+  size_t size;                    // mapping size
+  size_t virt_size;               // mapping size in the address space
 
-  address_space_t *space;   // owning address space
+  address_space_t *space;         // owning address space
   union {
-    uintptr_t vm_phys;      // VM_TYPE_PHYS
-    struct page *vm_pages;  // VM_TYPE_PAGE
-    struct vm_file *vm_file;// VM_TYPE_FILE
+    uintptr_t vm_phys;            // VM_TYPE_PHYS
+    struct page_list *vm_pages;   // VM_TYPE_PAGE
+    struct vm_file *vm_file;      // VM_TYPE_FILE
   };
 
   LIST_ENTRY(struct vm_mapping) vm_list; // entry in list of vm mappings

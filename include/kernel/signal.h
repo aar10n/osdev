@@ -46,6 +46,7 @@ struct sigacts {
 struct sigacts *sigacts_alloc();
 struct sigacts *sigacts_clone(struct sigacts *sa);
 void sigacts_free(struct sigacts **sap);
+void sigacts_reset(struct sigacts *sa);
 int sigacts_get(struct sigacts *sa, int sig, struct sigaction *act, enum sigdisp *disp);
 int sigacts_set(struct sigacts *sa, int sig, const struct sigaction *act, struct sigaction *oact);
 

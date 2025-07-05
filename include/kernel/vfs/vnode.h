@@ -27,6 +27,7 @@ __ref vnode_t *vn_alloc_empty(enum vtype type);
 __ref vnode_t *vn_alloc(id_t id, struct vattr *vattr);
 __ref struct pgcache *vn_get_pgcache(vnode_t *vn); // vn = _
 void vn_cleanup(__move vnode_t **vnref); // vnref = _
+bool vn_isatty(vnode_t *vn); // vn = l
 
 int vn_open(vnode_t *vn, int flags); // vn = l
 int vn_close(vnode_t *vn); // vn = l

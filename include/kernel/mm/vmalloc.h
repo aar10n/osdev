@@ -19,8 +19,9 @@ void init_ap_address_space();
 uintptr_t get_default_ap_pml4();
 
 address_space_t *vm_new_space(uintptr_t min_addr, uintptr_t max_addr, uintptr_t page_table);
-address_space_t *vm_new_fork_space(address_space_t *space, bool deepcopy_user);
+address_space_t *vm_fork_space(address_space_t *space, bool fork_user);
 address_space_t *vm_new_empty_space();
+void vm_clear_user_space(address_space_t *space);
 
 //     vmap api
 //
@@ -62,7 +63,8 @@ void fill_unmapped_pages(page_t *pages, uint8_t v, size_t off, size_t len);
 //
 // The vm descriptor api provides a way to describe future vm mappings without
 // actively creating them. Each descriptor defines the type, size, address and
-// flags of the mapping, along with the type associated data.
+// flags of the mapping, along with the type associated data. The vm_desc api
+// supports operating on both the current address space and other address spaces.
 
 vm_desc_t *vm_desc_alloc(enum vm_type type, uint64_t address, size_t size, uint32_t vm_flags, const char *name, void *data);
 int vm_desc_map_space(address_space_t *uspace, vm_desc_t *descs);
@@ -81,7 +83,7 @@ void vfree(void *ptr);
 // debug
 void vm_print_address_space();
 void vm_print_mappings(address_space_t *space);
-void vm_print_address_space_v2();
+void vm_print_address_space_v2(bool user, bool kernel);
 void vm_print_format_address_space(address_space_t *space);
 
 

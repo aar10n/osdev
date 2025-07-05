@@ -228,6 +228,6 @@ global sysret
 sysret:
   mov rcx, rdi ; rip
   mov rsp, rsi ; rsp
-  mov r11, 0   ; rflags
+  mov r11, rdx ; rflags
   swapgs
   o64 sysret

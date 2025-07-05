@@ -69,16 +69,16 @@ struct ttydev_ops {
 #define TTY_MODEM_BM_DCD 0x04 // data carrier detect
 #define TTY_MODEM_BM_RI  0x08 // ring indicator
 
-
-static inline bool tty_lock(tty_t *tty) {
-  mtx_lock(&(tty)->lock);
-  if (tty->flags & TTYF_GONE) {
-    // tty is gone, cannot operate on it
-    mtx_unlock(&(tty)->lock);
-    return false;
-  }
-  return true;
-}
+#define tty_lock(tty) \
+  ({ \
+    mtx_lock(&(tty)->lock); \
+    bool _locked = true; \
+    if ((tty)->flags & TTYF_GONE) { \
+      mtx_unlock(&(tty)->lock); \
+      _locked = false; \
+    } \
+    _locked; \
+  })
 #define tty_unlock(tty) mtx_unlock(&(tty)->lock)
 #define tty_assert_locked(tty) mtx_assert(&(tty)->lock, MA_LOCKED)
 #define tty_assert_owned(tty) mtx_assert(&(tty)->lock, MA_OWNED)
@@ -92,19 +92,19 @@ int tty_close(tty_t *tty);
 int tty_configure(tty_t *tty, struct termios *termios, struct winsize *winsize);
 int tty_modem(tty_t *tty, int command, int arg);
 int tty_ioctl(tty_t *tty, unsigned long request, void *arg);
-int tty_wait(tty_t *tty, cond_t *cond);
-void tty_wait_signal(tty_t *tty, cond_t *cond);
+int tty_wait_cond(tty_t *tty, cond_t *cond);
+void tty_signal_cond(tty_t *tty, cond_t *cond);
 int tty_signal_pgrp(tty_t *tty, int signal);
 
-static inline struct termios termios_make_canon() {
+static inline struct termios termios_make_canon(speed_t speed) {
   struct termios t;
   t.c_iflag = ICRNL | IXON | BRKINT;  // input flags: translate CR to NL, enable XON/XOFF flow control
   t.c_oflag = OPOST | ONLCR;          // output flags: post-process output, translate NL to CR-NL
   t.c_cflag = CS8 | CREAD | CLOCAL;   // control flags: 8 data bits, enable receiver, ignore modem control
   t.c_lflag = ISIG | ICANON | ECHO;   // local flags: enable signals, canonical mode, echo input
   ttydisc_fill_cc_default(&t);
-  t.__c_ispeed = B9600; // default input speed
-  t.__c_ospeed = B9600; // default output speed
+  t.__c_ispeed = speed; // default input speed
+  t.__c_ospeed = speed; // default output speed
   return t;
 }
 

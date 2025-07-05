@@ -55,6 +55,21 @@ struct frame_allocator_impl {
   void (*fa_free)(frame_allocator_t *fa, uintptr_t frame, size_t count, size_t pagesize);
 };
 
+/*
+ * A non-obtrusive container for holding a list pages.
+ *
+ * The page_list struct allows for lists of pages to be stored without
+ * relying on the page_t struct's next pointer, allowing a single page
+ * to be part of multiple lists. This is the backing container for the
+ * virtual memory VM_TYPE_PAGE mappings. This container holds references
+ * to pages in the list.
+ */
+typedef struct page_list {
+  size_t count;
+  size_t array_sz;
+  page_t **pages;
+} page_list_t;
+
 void init_mem_zones();
 int reserve_pages(enum pg_rsrv_kind kind, uintptr_t address, size_t count, size_t pagesize);
 
@@ -69,17 +84,25 @@ __ref page_t *alloc_cow_pages(page_t *pages);
 __ref page_t *alloc_shared_pages(page_t *pages);
 void drop_pages(__move page_t **pagesref);
 
-// page struct api
+// page list api
 
-struct pte *pte_struct_alloc(page_t *page, uint64_t *entry, vm_mapping_t *vm);
-void pte_struct_free(struct pte **pteptr);
+page_list_t *page_list_alloc_from(__ref page_t *pages);
+page_list_t *page_list_clone(page_list_t *list);
+void page_list_free(page_list_t **listref);
+__ref page_t *page_list_getpage(page_list_t *list, size_t index);
+void page_list_putpage(page_list_t *list, size_t index, __ref page_t *page);
+void page_list_join(page_list_t *head, page_list_t **tailref);
+/// Splits the page list at the given index, modifying the list in place
+/// and returning a new page_list containing the tail portion.
+page_list_t *page_list_split(page_list_t *list, size_t index);
 
-void page_add_mapping(page_t *page, struct pte *pte);
-struct pte *page_remove_mapping(page_t *page, vm_mapping_t *vm);
-struct pte *page_get_mapping(page_t *page, vm_mapping_t *vm);
-void page_update_flags(page_t *page, uint32_t flags);
+#define page_list_foreach(var, list) \
+  size_t __i; \
+  page_t *var; \
+  for (__i = 0, var = (list)->pages[0]; __i < (list)->count; __i++, var = (list)->pages[__i])
 
-__ref page_t *page_list_join(__ref page_t *head, __ref page_t *tail);
-__ref page_t *page_list_split(__ref page_t *pages, size_t count, __out page_t **tailref);
+
+/// Joins two raw page-lists together and returns a reference to the new head.
+__ref page_t *raw_page_list_join(__ref page_t *head, __ref page_t *tail);
 
 #endif
