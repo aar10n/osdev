@@ -574,7 +574,7 @@ DEFINE_SYSCALL(getitimer, int, int which, struct itimerval *curr_value) {
     return -ENOTSUP;
   }
 
-  if (vm_validate_user_ptr((uintptr_t)curr_value, /*write=*/true) < 0) {
+  if (vm_validate_ptr((uintptr_t) curr_value, /*write=*/true) < 0) {
     return -EFAULT;
   }
 
@@ -593,8 +593,8 @@ DEFINE_SYSCALL(setitimer, int, int which, const struct itimerval *new_value, str
     return -ENOTSUP;
   }
 
-  if ((vm_validate_user_ptr((uintptr_t) new_value, /*write=*/false) < 0) ||
-      (old_value == NULL || vm_validate_user_ptr((uintptr_t) old_value, /*write=*/true) < 0)) {
+  if ((vm_validate_ptr((uintptr_t) new_value, /*write=*/false) < 0) ||
+      (old_value == NULL || vm_validate_ptr((uintptr_t) old_value, /*write=*/true) < 0)) {
     return -EFAULT;
   }
 

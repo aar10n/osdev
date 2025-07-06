@@ -47,12 +47,12 @@ typedef struct mm_heap {
 void mm_init_kheap();
 uintptr_t kheap_phys_addr();
 
-void *kmalloc(size_t size) __malloc_like;
-void *kmallocz(size_t size) __malloc_like;
-void *kmalloca(size_t size, size_t alignment) __malloc_like;
+void *kmalloc(size_t size) _malloc_like;
+void *kmallocz(size_t size) _malloc_like;
+void *kmalloca(size_t size, size_t alignment) _malloc_like;
 void kfree(void *ptr);
-void *kcalloc(size_t nmemb, size_t size) __malloc_like;
-void *kmalloc_cp(const void *obj, size_t size) __malloc_like;
+void *kcalloc(size_t nmemb, size_t size) _malloc_like;
+void *kmalloc_cp(const void *obj, size_t size) _malloc_like;
 
 
 #define kfreep(ptr) do { \

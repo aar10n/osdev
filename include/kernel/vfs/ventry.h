@@ -29,7 +29,7 @@ void ve_link_vnode(ventry_t *ve, __ref vnode_t *vn); // ve = _, vn = l
 /// Unlinks a vnode from a ventry.
 void ve_unlink_vnode(ventry_t *ve, vnode_t *vn); // ve = l, vn = l
 /// Shadows a ventry's existing vnode with a new vnode.
-void ve_shadow_mount(ventry_t *mount_ve, vnode_t *root_vn); // mount_ve = l, root_vn = _
+void ve_shadow_mount(ventry_t *mount_ve, __ref vnode_t *root_vn); // mount_ve = l, root_vn = _
 /// Unshadows a mount ventry's existing vnode returning the old mount vnode.
 __ref vnode_t *ve_unshadow_mount(ventry_t *mount_ve); // mount_ve = l
 /// Replaces the existing root mount with a new vnode, finally stacking the old mount back on top.
@@ -46,73 +46,67 @@ bool ve_syncvn(ventry_t *ve); // ve = l
 void ve_hash(ventry_t *ve); // ve = _
 
 
-void ve_cleanup(ventry_t **veref);
+void _ve_cleanup(ventry_t **veref);
 hash_t ve_hash_cstr(ventry_t *ve, cstr_t str);
 bool ve_cmp_cstr(ventry_t *ve, cstr_t str);
 
 //
 //
 
-// #define VE_DPRINTF(fmt, ...) kprintf("ventry: " fmt " [%s:%d]\n", ##__VA_ARGS__, __FILE__, __LINE__)
+// #define VE_DPRINTF(fmt, ...) kprintf("ventry: %s: " fmt " [%s:%d]\n", __func__, ##__VA_ARGS__, __FILE__, __LINE__)
 #define VE_DPRINTF(fmt, ...)
 
-/// Returns a new reference to the ventry ve.
-#define ve_getref(ve) ({ VE_DPRINTF("ve_getref {:+ve} refcount=%d", ve, (ve) ? ref_count(&(ve)->refcount)+1 : 0); _ve_getref(ve); })
-/// Moves the ref out of veref and returns it.
-#define ve_moveref(veref) _ve_moveref(veref) // ({ VE_DPRINTF("ve_moveref {:ve}", *(veref)); _ve_moveref(veref); })
-/// Moves the ref out of veref and releases it.
-#define ve_release(veref) ({ VE_DPRINTF("ve_release {:+ve} refcount=%d", *(veref), *(veref) ? (ref_count(&(*(veref))->refcount)-1) : 0); _ve_release(veref); })
-/// Replaces the ref in veref with ve and releases the old ref.
-#define ve_release_swap(veref, newref) ({ VE_DPRINTF("ve_release_swap {:+ve} refcount=%d -> {:+ve}", *(veref), *(veref) ? (ref_count(&(*(veref))->refcount)-1) : 0, *(newref)); _ve_release_swap(veref, newref); })
-/// Locks the ventry and returns true if it is alive and false if it is dead.
-#define ve_lock(ve) _ve_lock(ve, __FILE__, __LINE__)
-/// Unlocks the ventry.
-#define ve_unlock(ve) mtx_unlock(&(ve)->lock);
-/// Unlocks the ventry in veref and releases the ref.
-#define ve_unlock_release(veref) ({ mtx_unlock(&(*(veref))->lock); ve_release(veref); })
+#define ve_getref(ve) ({ \
+  ASSERT_IS_TYPE(ventry_t *, ve); \
+  ventry_t *__ve = (ve); \
+  __ve ? ref_get(&__ve->refcount) : NULL; \
+  if (__ve) {            \
+     VE_DPRINTF("getref {:+ve} [%d]", __ve, __ve->refcount); \
+  } \
+  __ve; \
+})
+#define ve_putref(veref) ({ \
+  ASSERT_IS_TYPE(ventry_t **, veref); \
+  ventry_t *__ve = *(veref); \
+  *(veref) = NULL; \
+  if (__ve) { \
+    kassert(__ve->refcount > 0); \
+    if (ref_put(&__ve->refcount)) { \
+      VE_DPRINTF("putref {:+ve} [0]", __ve); \
+      _ve_cleanup(&__ve); \
+    } else {                \
+      VE_DPRINTF("putref {:+ve} [%d]", __ve, __ve->refcount); \
+    } \
+  } \
+})
+#define ve_putref_swap(veref, newref) ({ \
+  ASSERT_IS_TYPE(ventry_t **, veref); \
+  ventry_t *__tmpve = moveref(*(veref)); \
+  *(veref) = moveref(*(newref));         \
+  ve_putref(&__tmpve); \
+})
+#define ve_lock(ve) ({ \
+  ASSERT_IS_TYPE(ventry_t *, ve); \
+  ventry_t *__ve = (ve); \
+  mtx_lock(&__ve->lock); \
+  bool _locked = true; \
+  if (V_ISDEAD(__ve)) { \
+    mtx_unlock(&__ve->lock);  \
+    _locked = false; \
+  } \
+  _locked;\
+})
+#define ve_unlock(ve) ({ \
+  ASSERT_IS_TYPE(ventry_t *, ve); \
+  mtx_unlock(&(ve)->lock); \
+})
 
+#define ve_unlock_release(veref) ({ mtx_unlock(&(*(veref))->lock); ve_putref(veref); })
+#define ve_lock_assert(ve, what) __type_checked(ventry_t *, ve, mtx_assert(&(ve)->lock, what))
 
-static inline __ref ventry_t *_ve_getref(ventry_t *ve) {
-  if (ve) ref_get(&ve->refcount);
-  return ve;
-}
-
-static inline __ref ventry_t *_ve_moveref(__move ventry_t **ref) {
-  ventry_t *ve = *ref;
-  *ref = NULL;
-  return ve;
-}
-
-static inline void _ve_release(__move ventry_t **entryref) {
-  ventry_t *ve = ve_moveref(entryref);
-  if (ve && ref_put(&ve->refcount)) {
-    ve_cleanup(&ve);
-  }
-}
-
-static inline void _ve_release_swap(__move ventry_t **entryref, __move ventry_t **newve) {
-  ventry_t *oldve = ve_moveref(entryref);
-  if (oldve && ref_put(&oldve->refcount)) {
-    ve_cleanup(&oldve);
-  }
-  *entryref = ve_moveref(newve);
-}
 
 static inline uint64_t ve_unique_id(ventry_t *ve) {
   return (uint64_t) ve->vfs_id | ((uint64_t) ve->id << 32);
-}
-
-static inline bool _ve_lock(ventry_t *ve, const char *file, int line) {
-  if (V_ISDEAD(ve))
-    return false;
-
-  _mtx_wait_lock(&ve->lock, file, line);
-  ve_syncvn(ve);
-  if (V_ISDEAD(ve)) {
-    _mtx_wait_unlock(&ve->lock, file, line);
-    return false;
-  }
-  return true;
 }
 
 static inline void assert_new_ventry_valid(ventry_t *ve) {

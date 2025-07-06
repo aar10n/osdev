@@ -86,11 +86,17 @@ static int ttydisc_write_oproc(tty_t *tty, char ch) {
 //
 
 void ttydisc_open(tty_t *tty) {
-  // todo();
+  // configure the tty with default settings
+  struct termios termios = termios_make_canon(B9600);
+  struct winsize winsize = { 24, 80, 0, 0 };
+  tty_configure(tty, &termios, &winsize);
 }
 
 void ttydisc_close(tty_t *tty) {
-  todo();
+  // flush the queues and reset the column
+  ttyinq_flush(tty->inq);
+  ttyoutq_flush(tty->outq);
+  tty->column = 0;
 }
 
 size_t ttydisc_bytesavail(tty_t *tty) {

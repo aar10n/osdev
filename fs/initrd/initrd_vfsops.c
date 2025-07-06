@@ -152,8 +152,8 @@ int initrd_vfs_mount(vfs_t *vfs, device_t *device, ventry_t *mount_ve, __move ve
   vnode_t *vn = vn_alloc(1, &make_vattr(V_DIR, 0755 | S_IFDIR));
   vn->data = mount->root;
   ventry_t *ve = ve_alloc_linked(cstr_new("/", 1), vn);
-  *root = ve_moveref(&ve);
-  vn_release(&vn);
+  *root = moveref(ve);
+  vn_putref(&vn);
   return 0;
 
 LABEL(error);

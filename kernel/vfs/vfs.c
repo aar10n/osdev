@@ -20,7 +20,7 @@ struct vtable {
 };
 
 #define ASSERT(x) kassert(x)
-// #define DPRINTF(fmt, ...) kprintf("vfs: %s: " fmt, __func__, ##__VA_ARGS__)
+//#define DPRINTF(fmt, ...) kprintf("vfs: %s: " fmt, __func__, ##__VA_ARGS__)
 #define DPRINTF(fmt, ...)
 #define EPRINTF(fmt, ...) kprintf("vfs: %s: " fmt, __func__, ##__VA_ARGS__)
 
@@ -50,6 +50,7 @@ __ref vfs_t *vfs_alloc(struct fs_type *type, int mount_flags) {
   vfs->vtable = vtable_alloc();
   mtx_init(&vfs->lock, MTX_RECURSIVE, "vfs_lock");
   ref_init(&vfs->refcount);
+  VN_DPRINTF("ref init id=%u<%p> [1]", vfs->id, vfs);
   DPRINTF("allocated vfs id=%u <%p>\n", vfs->id, vfs);
   return vfs;
 }
@@ -80,27 +81,35 @@ void vfs_add_node(vfs_t *vfs, ventry_t *ve) {
 
 void vfs_remove_node(vfs_t *vfs, vnode_t *vn) {
   DPRINTF("removing {:+vn} from vfs=%u\n", vn, vfs->id);
-  ASSERT(vn->state == V_ALIVE);
+  ASSERT(vn->state == V_ALIVE || vn->state == V_DEAD);
   vn->state = V_DEAD;
   // vn->vfs reference is released on vnode cleanup
 
   struct vtable *table = vfs->vtable;
   vnode_t *found = rb_tree_delete(table->tree, vn->id);
   ASSERT(found == vn);
-  vn_release(&found);
+  vn_putref(&found);
   table->count--;
   LIST_REMOVE(&vfs->vnodes, vn, list);
   DPRINTF("removed {:+vn} from vfs id=%u [V_ALIVE -> V_DEAD]\n", vn, vfs->id);
 }
 
-void vfs_cleanup(__move vfs_t **vfsref) {
-  vfs_t *vfs = vfs_moveref(vfsref);
-  DPRINTF("!!! vfs cleanup !!! id=%u<%p>\n", vfs->id, vfs);
+void _vfs_cleanup(__move vfs_t **vfsref) {
+  vfs_t *vfs = moveref(*vfsref);
   ASSERT(vfs->state == V_DEAD);
   ASSERT(vfs->vtable->count == 0);
   ASSERT(vfs->root_ve == NULL);
+  if (mtx_owner(&vfs->lock) != NULL) {
+    ASSERT(mtx_owner(&vfs->lock) == curthread);
+    mtx_unlock(&vfs->lock);
+  }
+
+  DPRINTF("!!! vfs cleanup !!! id=%u<%p>\n", vfs->id, vfs);
+  if (VFS_OPS(vfs)->v_cleanup)
+    VFS_OPS(vfs)->v_cleanup(vfs);
 
   vtable_free(vfs->vtable);
+  mtx_destroy(&vfs->lock);
   kfree(vfs);
 }
 
@@ -146,11 +155,11 @@ int vfs_mount(vfs_t *vfs, device_t *device, ventry_t *mount_ve) {
   root_vn->parent_id = mount_ve->id;
 
   vfs->state = V_ALIVE;
-  vfs->root_ve = ve_moveref(&root_ve);
+  vfs->root_ve = moveref(root_ve);
   vfs->device = device;
   vfs_add_node(vfs, vfs->root_ve);
 
-  ve_shadow_mount(mount_ve, root_vn);
+  ve_shadow_mount(mount_ve, getref(root_vn));
   if (host_vfs)
     vfs_unlock(host_vfs);
   return 0;
@@ -183,7 +192,7 @@ int vfs_unmount(vfs_t *vfs, ventry_t *mount_ve) {
   // set vfs to dead so that no new vnode operations can be started
   vfs->state = V_DEAD;
   // replace the root_ve parent reference to mount_ve with a self-reference
-  ve_release(&vfs->root_ve->parent);
+  ve_putref(&vfs->root_ve->parent);
   vfs->root_ve->parent = ve_getref(mount_ve);
 
   // unmount submounts
@@ -193,46 +202,52 @@ int vfs_unmount(vfs_t *vfs, ventry_t *mount_ve) {
 
     ventry_t *submount_ve = ve_getref(submount->root_ve->parent);
     if (!ve_lock(submount_ve)) {
-      ve_release(&submount_ve);
+      ve_putref(&submount_ve);
       vfs_unlock(submount);
       continue; // mount point is dead
     }
 
     res = vfs_unmount(submount, submount_ve);
     vfs_unlock(submount);
-    ve_release(&submount_ve);
+    ve_putref(&submount_ve);
     if (res < 0)
       EPRINTF("failed to unmount submount: {:err} (continuing)\n", res);
   }
 
-  // remove all the vnodes from the vfs marking them V_DEAD
-  vnode_t *vn;
-  while ((vn = LIST_FIRST(&vfs->vnodes))) {
-    // grab the vnode lock and write lock to ensure exclusive access
-    ASSERT(vn_lock(vn) && vn_begin_data_write(vn));
-
-    vn_save(vn);
-    vfs_remove_node(vfs, vn);
-
-    vn_end_data_write(vn);
-    vn_unlock(vn);
+  // mark all vnodes as dead (but dont remove them yet)
+  LIST_FOR_IN(vn, &vfs->vnodes, list) {
+    if (vn_lock(vn)) {
+      vn_begin_data_write(vn);
+      vn_save(vn);
+      vn->state = V_DEAD;  // mark as dead but keep vtable reference
+      vn_end_data_write(vn);
+      vn_unlock(vn);
+    }
   }
 
-  // unmount
+  // now we can remove them from the filesystem
+  vnode_t *vn;
+  while ((vn = LIST_FIRST(&vfs->vnodes))) {
+    vn = vn_getref(vn); // hold temp reference
+    vfs_remove_node(vfs, vn);
+    vn_putref(&vn);
+  }
+
+  // unmount filesystem
   if ((res = VFS_OPS(vfs)->v_unmount(vfs)) < 0) {
     EPRINTF("failed to unmount filesystem\n");
     return res;
   }
 
   // restore the shadowed mount vnode
-  vnode_t *root_vn = ve_unshadow_mount(mount_ve);
+  __ref vnode_t *root_vn = ve_unshadow_mount(mount_ve);
 
   // this sync causes the ventries to recursively mark themselves as dead
   // causing the ventry tree to be torn down and all sub-references released
   ve_syncvn(vfs->root_ve);
-  ve_release(&vfs->root_ve);
-  vn_release(&root_vn);
+  ve_putref(&vfs->root_ve);
 
+  vn_putref(&root_vn);
   DPRINTF("unmounted vfs id=%u\n", vfs->id);
   return 0;
 }

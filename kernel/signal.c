@@ -31,7 +31,7 @@ STATIC_INIT(static_init_setup_sigtramp);
 
 
 // called from switch.asm
-__used void signal_dispatch() {
+_used void signal_dispatch() {
   // this function executes all pending signals for the current thread
   thread_t *td = curthread;
   // save current thread tcb on the stack
@@ -350,10 +350,10 @@ int sigqueue_getpending(sigqueue_t *queue, sigset_t *set, const sigset_t *mask) 
 //
 
 DEFINE_SYSCALL(rt_sigaction, int, int sig, const struct sigaction *act, struct sigaction *oact) {
-  if (act != NULL && vm_validate_user_ptr((uintptr_t) act, /*write=*/false) < 0) {
+  if (act != NULL && vm_validate_ptr((uintptr_t) act, /*write=*/false) < 0) {
     return -EFAULT;
   }
-  if (oact != NULL && vm_validate_user_ptr((uintptr_t) oact, /*write=*/true) < 0) {
+  if (oact != NULL && vm_validate_ptr((uintptr_t) oact, /*write=*/true) < 0) {
     return -EFAULT;
   }
   return sigacts_set(curproc->sigacts, sig, act, oact);
@@ -366,10 +366,10 @@ DEFINE_SYSCALL(rt_sigprocmask, int, int how, const sigset_t *set, sigset_t *oset
     return 0;
   }
 
-  if (set != NULL && vm_validate_user_ptr((uintptr_t) set, /*write=*/false) < 0) {
+  if (set != NULL && vm_validate_ptr((uintptr_t) set, /*write=*/false) < 0) {
     return -EFAULT;
   }
-  if (oset != NULL && vm_validate_user_ptr((uintptr_t) oset, /*write=*/true) < 0) {
+  if (oset != NULL && vm_validate_ptr((uintptr_t) oset, /*write=*/true) < 0) {
     return -EFAULT;
   }
 
@@ -405,7 +405,7 @@ DEFINE_SYSCALL(rt_sigpending, int, sigset_t *set, size_t sigsetsize) {
     return -EINVAL;
   }
 
-  if (vm_validate_user_ptr((uintptr_t) set, /*write=*/true) < 0) {
+  if (vm_validate_ptr((uintptr_t) set, /*write=*/true) < 0) {
     return -EFAULT;
   }
 

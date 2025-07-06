@@ -74,18 +74,18 @@ typedef struct vfs {
   int mount_flags;                // mount flags
   void *data;                     // filesystem private data
 
+  _refcount;                      // reference count
   mtx_t lock;                     // vfs lock
   rwlock_t op_lock;               // vfs operation lock (held during vnode ops)
-  refcount_t refcount;            // reference count
 
   struct fs_type *type;           // filesystem type
   struct vfs_ops *ops;            // vfs operations
-  struct vtable *vtable;          // vtable for this vfs
+  struct vtable *vtable;          // vtable for this vfs (id -> vnode reference)
 
   /* valid while mounted */
   struct ventry *root_ve;         // root ventry reference
   struct device *device;          // device mounted on
-  struct vfs *parent;             // parent vfs (no ref)
+  struct vfs *parent;             // parent vfs (non-reference)
 
   /* fs info */
   str_t label;                    // filesystem label
@@ -94,8 +94,8 @@ typedef struct vfs {
   uint64_t avail_size;            // available size of filesystem
   uint64_t total_files;           // total number of files
 
-  LIST_HEAD(struct vnode) vnodes; // list of vnodes
-  LIST_HEAD(struct vfs) submounts;// list of submounts
+  LIST_HEAD(struct vnode) vnodes; // list of vnodes (non-references)
+  LIST_HEAD(struct vfs) submounts;// list of submounts (non-references)
 
   LIST_ENTRY(struct vfs) list;    // entry in parent's submounts list
 } vfs_t;
@@ -160,10 +160,10 @@ typedef struct vnode {
   uint16_t flags;                 // vnode flags
   void *data;                     // filesystem private data
 
+  _refcount;                      // reference count
   mtx_t lock;                     // vnode lock
   rwlock_t data_lock;             // vnode file data lock
-  refcount_t refcount;            // vnode reference count
-  uint32_t nopen;                 // number of open file descriptors
+  uint32_t nopen;                 // number of open files
   // cond_t waiters;                 // waiters for nopen == 0
 
   id_t parent_id;                 // parent vnode id
@@ -187,7 +187,7 @@ typedef struct vnode {
     struct vnode *v_shadow;       // shadowed vnode (V_DIR & VN_MOUNT)
   };
 
-  LIST_ENTRY(struct vnode) list;  // vfs vnode list
+  LIST_ENTRY(struct vnode) list;  // vfs vnode list (non-ref)
 } vnode_t;
 
 // vnode flags
@@ -262,8 +262,8 @@ typedef struct ventry {
   hash_t hash;                        // entry name hash
   void *data;                         // filesystem private data
 
+  _refcount;                          // reference count
   mtx_t lock;                         // ventry lock
-  refcount_t refcount;                // reference count
   id_t vfs_id;                        // vfs id @
 
   struct vnode *vn;                   // vnode reference
@@ -301,9 +301,9 @@ struct ventry_ops {
 // =================================
 
 enum ftype {
-  FT_VNODE, // file
-  FT_PIPE,  // pipe
-  FT_PTS,   // pseudo-terminal slave
+  FT_VNODE, // vnode file (files or devices)
+  FT_PIPE,  // pipe file
+  FT_PTS,   // pseudo-terminal slave file
 };
 
 #define F_ISVNODE(f) ((f)->type == FT_VNODE)
@@ -311,20 +311,13 @@ enum ftype {
 #define F_ISPTS(f) ((f)->type == FT_PTS)
 
 /*
- * An open file descriptor.
- */
-typedef struct fd_entry {
-  int fd;               // file descriptor
-  int flags;            // open flags
-  str_t real_path;      // full path to file
-  struct file *file;    // file reference
-
-  mtx_t lock;           // file descriptor lock
-  refcount_t refcount;  // reference count
-} fd_entry_t;
-
-/*
  * A file backing a file descriptor.
+ *
+ * Files are refcounted because they may be shared between multiple file descriptors
+ * and/or processes (e.g. caused by a fork). They also maintain a separate, lock-protected
+ * count of the number of open file descriptors that reference this file, which is used
+ * to determine when the file should be closed. A file can be closed, yet still remain
+ * a valid reference until the final reference is released.
  */
 typedef struct file {
   enum ftype type;      // file type
@@ -333,21 +326,40 @@ typedef struct file {
   void *data;           // file private data
   struct file_ops *ops; // file operations
 
+  _refcount;            // reference count
   mtx_t lock;           // file lock
-  refcount_t refcount;  // reference count
   off_t offset;         // current file offset
-  bool closed;          // file closed
+  uint32_t nopen;       // number of open file descriptors
+  bool closed;          // file is closed
 } file_t;
 
 
 struct file_ops {
+  int (*f_open)(file_t *file, int flags);
   int (*f_close)(file_t *file);
+  int (*f_allocate)(file_t *file, off_t len);
+  int (*f_getpage)(file_t *file, off_t off, __move struct page **page);
   ssize_t (*f_read)(file_t *file, kio_t *kio);
   ssize_t (*f_write)(file_t *file, kio_t *kio);
   int (*f_ioctl)(file_t *file, unsigned long request, void *arg);
   int (*f_stat)(file_t *file, struct stat *statbuf);
   void (*f_cleanup)(file_t *file);
 };
+
+/*
+ * A process file descriptor.
+ *
+ * File descriptors are refcounted to prevent premature cleanup, but
+ * no long-lived references to them are held by anything other than the
+ * process's file table.
+ */
+typedef struct fd_entry {
+  int fd;               // file descriptor
+  int flags;            // open flags
+  str_t real_path;      // full path to file
+  struct file *file;    // file reference
+  _refcount;            // reference count
+} fd_entry_t;
 
 
 #endif

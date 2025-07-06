@@ -649,14 +649,18 @@ __ref proc_t *proc_fork() {
   return new_proc; __ref
 }
 
-void proc_cleanup(__move proc_t **procp) {
+void _proc_cleanup(__move proc_t **procp) {
   proc_t *proc = moveref(*procp);
   pr_lock_assert(proc, LA_LOCKED);
   ASSERT(PRS_IS_EXITED(proc));
+  if (mtx_owner(&proc->lock) != NULL) {
+    ASSERT(mtx_owner(&proc->lock) == curthread);
+    mtx_unlock(&proc->lock);
+  }
 
   proc_free_pid(proc->pid);
   pcreds_release(&proc->creds);
-  ve_release(&proc->pwd);
+  ve_putref(&proc->pwd);
 
   ftable_free(&proc->files);
   sigacts_free(&proc->sigacts);
@@ -1409,7 +1413,10 @@ thread_t *thread_syscall_fork() {
 void thread_free_exited(thread_t **tdp) {
   thread_t *td = *tdp;
   ASSERT(TDS_IS_EXITED(td));
-  td_lock_assert(td, MA_UNLOCKED);
+  if (mtx_owner(&td->lock) != NULL) {
+    ASSERT(mtx_owner(&td->lock) == curthread);
+    td_unlock(td);
+  }
 
   pr_putref(&td->proc);
   pcreds_release(&td->creds);
@@ -1883,8 +1890,8 @@ DEFINE_SYSCALL(pause, int) {
 DEFINE_SYSCALL(wait4, pid_t, pid_t pid, int *status, int options, struct rusage *rusage) {
   DPRINTF("syscall: wait4 pid=%d status=%p options=%d rusage=%p\n", pid, status, options, rusage);
   if (
-    (status != NULL && vm_validate_user_ptr((uintptr_t) status, /*write=*/true) < 0) ||
-    (rusage != NULL && vm_validate_user_ptr((uintptr_t) rusage, /*write=*/true) < 0)
+    (status != NULL && vm_validate_ptr((uintptr_t) status, /*write=*/true) < 0) ||
+    (rusage != NULL && vm_validate_ptr((uintptr_t) rusage, /*write=*/true) < 0)
   ) {
     return -EFAULT; // invalid user pointer
   }

@@ -15,7 +15,8 @@
 #define MAX_LOOP 32 // resolve depth limit
 
 #define ASSERT(x) kassert(x)
-#define DPRINTF(fmt, ...) kprintf("vresolve: %s: " fmt, __func__, ##__VA_ARGS__)
+//#define DPRINTF(fmt, ...) kprintf("vresolve: %s: " fmt, __func__, ##__VA_ARGS__)
+#define DPRINTF(fmt, ...)
 
 #define goto_res(err) do { res = err; goto error; } while (0)
 
@@ -69,7 +70,7 @@ static int vresolve_validate_result(ventry_t *ve, int flags) {
 
 static int vresolve_follow(vcache_t *vc, __move ventry_t **veref, int flags, bool islast, int depth, sbuf_t *fullpath, __move ventry_t **realve) {
   // ve must have lock held prior to calling this function
-  ventry_t *ve = ve_moveref(veref);
+  ventry_t *ve = moveref(*veref);
   ventry_t *at_ve = ve_getref(ve->parent);
   ventry_t *next_ve = NULL; // ref
   int res;
@@ -106,7 +107,7 @@ static int vresolve_follow(vcache_t *vc, __move ventry_t **veref, int flags, boo
 
     // unlock the symlink ventry and swap refs with the target
     ve_unlock(ve);
-    ve_release_swap(&ve, &next_ve);
+    ve_putref_swap(&ve, &next_ve);
   } else if (VE_ISMOUNT(ve)) { // handle mount points
     ASSERT(V_ISDIR(ve));
 
@@ -121,19 +122,19 @@ static int vresolve_follow(vcache_t *vc, __move ventry_t **veref, int flags, boo
 
     // unlock the mount ventry and swap refs with the mount root
     ve_unlock(ve);
-    ve_release_swap(&ve, &next_ve);
+    ve_putref_swap(&ve, &next_ve);
   }
 
 LABEL(ret);
   // return locked reference
-  ve_release(&at_ve);
-  *realve = ve_moveref(&ve);
+  ve_putref(&at_ve);
+  *realve = moveref(ve);
   return 0;
 LABEL(error);
   ve_unlock(ve);
-  ve_release(&ve);
-  ve_release(&at_ve);
-  ve_release(&next_ve);
+  ve_putref(&ve);
+  ve_putref(&at_ve);
+  ve_putref(&next_ve);
   return res;
 }
 
@@ -154,7 +155,7 @@ int vresolve_cache(vcache_t *vc, cstr_t path, int flags, int depth, __move ventr
   // lock the ventry
   if (!ve_lock(ve)) {
     vcache_invalidate(vc, path);
-    ve_release(&ve);
+    ve_putref(&ve);
     return -ENOENT;
   }
 
@@ -171,12 +172,12 @@ int vresolve_cache(vcache_t *vc, cstr_t path, int flags, int depth, __move ventr
   // success
   if (flags & VR_UNLOCKED)
     ve_unlock(ve);
-  *result = ve_moveref(&ve);
+  *result = moveref(ve);
   return 0;
 
 LABEL(error);
   ve_unlock(ve);
-  ve_release(&ve);
+  ve_putref(&ve);
   return res;
 }
 
@@ -201,12 +202,12 @@ int vresolve_fullwalk(vcache_t *vc, ventry_t *at, cstr_t path, int flags, int de
   // if we are at a mount point, walk from the mount root
   if (VE_ISMOUNT(ve)) {
     ventry_t *root = ve_getref(ve->mount);
-    ve_release_swap(&ve, &root);
+    ve_putref_swap(&ve, &root);
   }
 
   // lock starting entry
   if (!ve_lock(ve)) {
-    ve_release(&ve);
+    ve_putref(&ve);
     return -ENOENT;
   }
 
@@ -244,7 +245,7 @@ int vresolve_fullwalk(vcache_t *vc, ventry_t *at, cstr_t path, int flags, int de
           if (flags & VR_UNLOCKED)
             ve_unlock(ve);
           // return the parent ventry reference
-          *result = ve_moveref(&ve);
+          *result = moveref(ve);
           return -ENOENT;
         }
       }
@@ -253,13 +254,13 @@ int vresolve_fullwalk(vcache_t *vc, ventry_t *at, cstr_t path, int flags, int de
 
   LABEL(lock_next);
     if (!ve_lock(next_ve)) {
-      ve_release(&next_ve);
+      ve_putref(&next_ve);
       goto_res(-ENOENT);
     }
 
     // unlock the current ventry and swap refs with the next
     ve_unlock(ve);
-    ve_release_swap(&ve, &next_ve);
+    ve_putref_swap(&ve, &next_ve);
 
     // write the resolved path part
     sbuf_write_char(&curpath, '/');
@@ -288,7 +289,7 @@ LABEL(success);
       ventry_t *parent = ve_getref(ve->parent);
       ve_lock(parent);
       ve_unlock(ve);
-      ve_release_swap(&ve, &parent);
+      ve_putref_swap(&ve, &parent);
     }
   }
 
@@ -306,13 +307,13 @@ LABEL(success);
     ve_unlock(ve);
 
   if (fullpath != NULL) sbuf_transfer(&curpath, fullpath); // return the fullpath
-  *result = ve_moveref(&ve); // return the ventry reference
+  *result = moveref(ve); // return the ventry reference
   return 0;
 
 LABEL(error);
   if (ve)
     ve_unlock(ve);
-  ve_release(&ve);
+  ve_putref(&ve);
   return res;
 }
 

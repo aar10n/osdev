@@ -11,8 +11,8 @@
 #include <rb_tree.h>
 
 #define ASSERT(x) kassert(x)
-#define DPRINTF(fmt, ...)
 // #define DPRINTF(fmt, ...) kprintf("file: " fmt, ##__VA_ARGS__)
+#define DPRINTF(fmt, ...)
 #define EPRINTF(fmt, ...) kprintf("file: %s: " fmt, __func__, ##__VA_ARGS__)
 
 #define FTABLE_LOCK(ftable) mtx_spin_lock(&(ftable)->lock)
@@ -40,12 +40,18 @@ __ref fd_entry_t *fd_entry_alloc(int fd, int flags, cstr_t real_path, __ref file
 }
 
 __ref fd_entry_t *fde_dup(fd_entry_t *fde, int new_fd) {
+  file_t *file = fde->file;
   fd_entry_t *dup = kmallocz(sizeof(fd_entry_t));
   dup->fd = (new_fd < 0) ? fde->fd : new_fd;
   dup->flags = fde->flags;
   dup->real_path = str_dup(fde->real_path);
-  dup->file = f_getref(fde->file); // duplicate the file reference
+  dup->file = f_getref(file); // duplicate the file reference
   ref_init(&dup->refcount);
+
+  // since the duplicated file is open we bump the file open count
+  f_lock(file);
+  file->nopen++;
+  f_unlock(file);
   return dup;
 }
 
@@ -53,8 +59,8 @@ void _fde_cleanup(__move fd_entry_t **fde_ref) {
   fd_entry_t *fde = moveref(*fde_ref);
   ASSERT(fde != NULL);
   ASSERT(ref_count(&fde->refcount) == 0);
-  DPRINTF("!!! fd_entry cleanup <{:d}:{:str}> !!!\n", fde->fd, &fde->real_path);
 
+  DPRINTF("!!! fd_entry cleanup <{:d}:{:str}> !!!\n", fde->fd, &fde->real_path);
   str_free(&fde->real_path);
   f_putref(&fde->file);
   kfree(fde);
@@ -78,18 +84,31 @@ __ref file_t *f_alloc_vn(int access, vnode_t *vnode) {
   return file;
 }
 
-void _f_cleanup(__move file_t **fref) {
-  file_t *file = moveref(*fref);
-  ASSERT(file != NULL);
-  ASSERT(ref_count(&file->refcount) == 0);
-  DPRINTF("!!! file cleanup {:file} !!!\n", file);
-
-  int res = F_OPS(file)->f_close(file);
-  if (res < 0) {
-    EPRINTF("failed to close file {:err}\n", res);
+bool f_isatty(file_t *file) {
+  if (!F_ISVNODE(file)) {
+    return false;
   }
 
+  vnode_t *vn = file->data;
+  if (V_ISDEV(vn)) {
+    vn_lock(vn);
+    bool res = vn_isatty(vn);
+    vn_unlock(vn);
+    return res;
+  }
+  return false;
+}
+
+void _f_cleanup(__move file_t **fref) {
+  file_t *file = moveref(*fref);
+  f_lock_assert(file, LA_NOTOWNED);
+  ASSERT(file->closed);
+  ASSERT(file->nopen == 0);
+  ASSERT(ref_count(&file->refcount) == 0);
+  DPRINTF("!!! file cleanup %p !!!\n", file);
+
   F_OPS(file)->f_cleanup(file);
+  mtx_destroy(&file->lock);
   kfree(file);
 }
 

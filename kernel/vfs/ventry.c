@@ -14,7 +14,7 @@
 #define MURMUR3_SEED 0xDEADBEEF
 
 #define ASSERT(x) kassert(x)
-// #define DPRINTF(fmt, ...) kprintf("ventry: %s: " fmt, __func__, ##__VA_ARGS__)
+//#define DPRINTF(fmt, ...) kprintf("ventry: %s: " fmt, __func__, ##__VA_ARGS__)
 #define DPRINTF(fmt, ...)
 
 static struct ventry_ops ve_default_ops = {
@@ -46,6 +46,7 @@ __ref ventry_t *ve_alloc_linked(cstr_t name, vnode_t *vn) {
 
   mtx_init(&entry->lock, MTX_RECURSIVE, "ventry_lock");
   ref_init(&entry->refcount);
+  VE_DPRINTF("ref init {:+ve} [1]", entry);
 
   ve_link_vnode(entry, vn);
   ve_syncvn(entry);
@@ -72,18 +73,18 @@ void ve_unlink_vnode(ventry_t *ve, vnode_t *vn) {
   vn->flags |= VN_DIRTY;
 }
 
-void ve_shadow_mount(ventry_t *mount_ve, vnode_t *root_vn) {
+void ve_shadow_mount(ventry_t *mount_ve, __ref vnode_t *root_vn) {
   ASSERT(root_vn->v_shadow == NULL);
   ASSERT(mount_ve->chld_count == 0);
 
-  root_vn->v_shadow = vn_moveref(&mount_ve->vn);
+  root_vn->v_shadow = moveref(mount_ve->vn);
   root_vn->flags |= VN_ROOT;
-  ve_release(&mount_ve->mount);
+  ve_putref(&mount_ve->mount);
   if (root_vn->vfs) {
     mount_ve->mount = ve_getref(root_vn->vfs->root_ve);
   }
 
-  mount_ve->vn = vn_moveref(&root_vn);
+  mount_ve->vn = moveref(root_vn);
   mount_ve->flags |= VE_MOUNT;
   ve_syncvn(mount_ve);
 }
@@ -96,9 +97,9 @@ __ref vnode_t *ve_unshadow_mount(ventry_t *mount_ve) {
     panic("no shadow vnode - tried to unshadow fs_root?");
   }
 
-  vnode_t *root_vn = vn_moveref(&mount_ve->vn);
-  mount_ve->vn = vn_moveref(&root_vn->v_shadow);
-  ve_release(&mount_ve->mount);
+  vnode_t *root_vn = moveref(mount_ve->vn);
+  mount_ve->vn = moveref(root_vn->v_shadow);
+  ve_putref(&mount_ve->mount);
   if (VN(mount_ve)->v_shadow == NULL) {
     // no more stacked mounts
     mount_ve->flags &= ~VE_MOUNT;
@@ -112,29 +113,28 @@ __ref vnode_t *ve_unshadow_mount(ventry_t *mount_ve) {
 
 void ve_replace_root(ventry_t *root_ve, ventry_t *newroot_ve) {
   // unshadow the oldroot vnode mount temporarily
-  vnode_t *oldroot_vn = ve_unshadow_mount(root_ve);
+  __ref vnode_t *oldroot_vn = ve_unshadow_mount(root_ve);
   // unshadow the newroot vnode from its mount ventry
-  vnode_t *newroot_vn = ve_unshadow_mount(newroot_ve);
+  __ref vnode_t *newroot_vn = ve_unshadow_mount(newroot_ve);
 
   // update the newroot root ventry parent ref
   ventry_t *newroot_root_ve = newroot_vn->vfs->root_ve;
-  ve_release(&newroot_root_ve->parent);
+  ve_putref(&newroot_root_ve->parent);
   newroot_root_ve->parent = ve_getref(root_ve);
 
   // stack the newroot vnode on top of the fs root vnode
-  ve_shadow_mount(root_ve, newroot_vn);
+  ve_shadow_mount(root_ve, moveref(newroot_vn));
   // now stack the oldroot vnode on top of the newroot vnode
-  ve_shadow_mount(root_ve, oldroot_vn);
+  ve_shadow_mount(root_ve, moveref(oldroot_vn));
 
-  vn_release(&oldroot_vn);
-  vn_release(&newroot_vn);
   ve_syncvn(newroot_ve);
 }
 
 void ve_add_child(ventry_t *parent, ventry_t *child) {
   ASSERT(!VE_ISMOUNT(parent));
+  child = ve_getref(child); // add child ref to parent->children
   child->parent = ve_getref(parent);
-  LIST_ADD(&parent->children, ve_getref(child), list);
+  LIST_ADD(&parent->children, child, list);
   parent->chld_count++;
   if (VE_ISLINKED(child)) {
     VN(child)->parent_id = parent->id;
@@ -142,9 +142,9 @@ void ve_add_child(ventry_t *parent, ventry_t *child) {
 }
 
 void ve_remove_child(ventry_t *parent, ventry_t *child) {
-  ve_release(&child->parent);
   LIST_REMOVE(&parent->children, child, list);
-  ve_release(&child); // release parent->children ref
+  ve_putref(&child->parent);
+  ve_putref(&child); // release parent->children ref
   parent->chld_count--;
 }
 
@@ -167,7 +167,7 @@ ssize_t ve_get_path(ventry_t *ve, sbuf_t *buf) {
     }
 
     ventry_t *parent = ve_getref(ve->parent);
-    ve_release_swap(&ve, &parent);
+    ve_putref_swap(&ve, &parent);
   }
 
   // reverse the path
@@ -176,13 +176,13 @@ ssize_t ve_get_path(ventry_t *ve, sbuf_t *buf) {
   // write a null terminator
   sbuf_write_char(buf, 0);
 
-  ve_release(&ve);
-  ve_release(&root_ve);
+  ve_putref(&ve);
+  ve_putref(&root_ve);
   return (ssize_t) pathlen;
 
 LABEL(nametoolong);
-  ve_release(&ve);
-  ve_release(&root_ve);
+  ve_putref(&ve);
+  ve_putref(&root_ve);
   return -ENAMETOOLONG; // name too long
 }
 
@@ -220,21 +220,26 @@ void ve_hash(ventry_t *ve) {
     ve->hash = ve_hash_default(cstr_from_str(ve->name));
 }
 
-void ve_cleanup(__move ventry_t **veref) {
+void _ve_cleanup(__move ventry_t **veref) {
   // called when last reference is released
-  ventry_t *ve = ve_moveref(veref);
-  DPRINTF("!!! ventry cleanup !!! {:+ve}\n", ve);
+  ventry_t *ve = moveref(*veref);
   ASSERT(ve != NULL);
   ASSERT(ve->state == V_DEAD);
   ASSERT(ve->chld_count == 0);
   ASSERT(ref_count(&ve->refcount) == 0);
+  if (mtx_owner(&ve->lock) != NULL) {
+    ASSERT(mtx_owner(&ve->lock) == curthread);
+    mtx_unlock(&ve->lock);
+  }
 
+  DPRINTF("!!! ventry cleanup !!! {:+ve}\n", ve);
   if (VE_OPS(ve)->v_cleanup)
     VE_OPS(ve)->v_cleanup(ve);
 
-  ve_release(&ve->parent);
-  vn_release(&ve->vn);
+  ve_putref(&ve->parent);
+  vn_putref(&ve->vn);
   str_free(&ve->name);
+  mtx_destroy(&ve->lock);
   kfree(ve);
 }
 

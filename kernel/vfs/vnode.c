@@ -13,7 +13,7 @@
 #include <abi/termios.h>
 
 #define ASSERT(x) kassert(x)
-// #define DPRINTF(fmt, ...) kprintf("vnode: " fmt, ##__VA_ARGS__)
+//#define DPRINTF(fmt, ...) kprintf("vnode: " fmt, ##__VA_ARGS__)
 #define DPRINTF(fmt, ...)
 #define EPRINTF(fmt, ...) kprintf("vnode: %s: " fmt, __func__, ##__VA_ARGS__)
 
@@ -45,7 +45,17 @@ static inline mode_t vn_to_mode(vnode_t *vnode) {
 // MARK: Vnode File Operations
 //
 
-int vn_f_close(file_t *file) {
+int vn_f_open(file_t *file, int flags) {
+  f_lock_assert(file, LA_OWNED);
+  ASSERT(F_ISVNODE(file));
+  if (file->nopen > 0) {
+    // just increment the open count
+    DPRINTF("f_open: incrementing count for file %p\n", file);
+    file->nopen++;
+    return 0;
+  }
+
+  DPRINTF("f_open: opening file %p with flags 0x%x\n", file, flags);
   int res;
   vnode_t *vn = file->data;
   if (!vn_lock(vn)) {
@@ -56,19 +66,94 @@ int vn_f_close(file_t *file) {
     device_t *device = vn->v_dev;
     ASSERT(device != NULL);
 
+    // device open
+    res = d_open(device, flags);
+  } else {
+    // vnode open
+    res = vn_open(vn, flags);
+  }
+
+  if (res >= 0) {
+    file->nopen++;
+  } else {
+    EPRINTF("failed to open vnode {:err}\n", res);
+  }
+
+  vn_unlock(vn);
+  return 0;
+}
+
+int vn_f_close(file_t *file) {
+  f_lock_assert(file, LA_OWNED);
+  ASSERT(F_ISVNODE(file));
+  if (file->nopen > 1) {
+    // just decrement the open count
+    DPRINTF("f_close: decrementing count for file %p\n", file);
+    file->nopen--;
+    return 0;
+  }
+
+  int res;
+  vnode_t *vn = file->data;
+  if (!vn_lock(vn)) {
+    return -EIO; // vnode is dead
+  }
+
+  DPRINTF("f_close: closing file %p\n", file);
+  if (V_ISDEV(vn)) {
+    device_t *device = vn->v_dev;
+    ASSERT(device != NULL);
+
     // device close
     res = d_close(device);
   } else {
-    // close the file
+    // vnode close
     res = vn_close(vn);
   }
 
-  vn->flags &= ~VN_OPEN; // clear open flag
+  if (res >= 0) {
+    file->nopen--;
+    file->closed = true;
+  } else {
+    EPRINTF("failed to close vnode {:err}\n", res);
+  }
+
   vn_unlock(vn);
   return res;
 }
 
-int vn_f_getpage(file_t *file, off_t off, bool cached, __move page_t **page) {
+int vn_f_allocate(file_t *file, off_t len) {
+  f_lock_assert(file, LA_OWNED);
+  ASSERT(F_ISVNODE(file));
+
+  vnode_t *vn = file->data;
+  if (V_ISDEV(vn)) {
+    // not supported for devices
+    return -ENOSYS;
+  } else if (!((file->access == O_WRONLY || file->access == O_RDWR))) {
+    // file must be opened for writing
+    return -EBADF; // bad file descriptor
+  }
+
+  if (!vn_lock(vn)) {
+    return -EIO; // vnode is dead
+  }
+
+  int res;
+  vn_begin_data_write(vn);
+  res = vn_fallocate(vn, len);
+  vn_end_data_write(vn);
+  if (res < 0) {
+    EPRINTF("failed to truncate vnode {:err}\n", res);
+  }
+  vn_unlock(vn);
+  return res;
+}
+
+int vn_f_getpage(file_t *file, off_t off, __move page_t **page) {
+  f_lock_assert(file, LA_OWNED);
+  ASSERT(F_ISVNODE(file));
+
   vnode_t *vn = file->data;
   if (V_ISDIR(vn)) {
     return -EISDIR; // file is a directory
@@ -86,12 +171,12 @@ int vn_f_getpage(file_t *file, off_t off, bool cached, __move page_t **page) {
     if (out == NULL) {
       res = -EIO; // device failed to get page
     } else {
-      *page = out; // move the page to caller
+      *page = moveref(out); // move the page to caller
       res = 0; // success
     }
   } else {
     // getpage from vnode
-    res = vn_getpage(vn, off, cached, page);
+    res = vn_getpage(vn, off, /*cached=*/true, page);
   }
 
   vn_unlock(vn);
@@ -99,6 +184,12 @@ int vn_f_getpage(file_t *file, off_t off, bool cached, __move page_t **page) {
 }
 
 ssize_t vn_f_read(file_t *file, kio_t *kio) {
+  f_lock_assert(file, LA_OWNED);
+  ASSERT(F_ISVNODE(file));
+
+  if (file->access & O_WRONLY)
+    return -EBADF; // file is not open for reading
+
   ssize_t res;
   vnode_t *vn = file->data;
   if (V_ISDIR(vn)) {
@@ -120,11 +211,21 @@ ssize_t vn_f_read(file_t *file, kio_t *kio) {
     vn_end_data_read(vn);
   }
 
+  if (res > 0) {
+    // update the file offset
+    file->offset += res;
+  }
+
   vn_unlock(vn);
   return res;
 }
 
 ssize_t vn_f_write(file_t *file, kio_t *kio) {
+  f_lock_assert(file, LA_OWNED);
+  ASSERT(F_ISVNODE(file));
+  if (file->access & O_RDONLY)
+    return -EBADF; // file is not open for writing
+
   vnode_t *vn = file->data;
   if (V_ISDIR(vn)) {
     return -EISDIR; // file is a directory
@@ -148,11 +249,19 @@ ssize_t vn_f_write(file_t *file, kio_t *kio) {
     vn_end_data_write(vn);
   }
 
+  if (res > 0) {
+    // update the file offset
+    file->offset += res;
+  }
+
   vn_unlock(vn);
   return res;
 }
 
 int vn_f_ioctl(file_t *file, unsigned long request, void *arg) {
+  ASSERT(F_ISVNODE(file));
+  f_lock_assert(file, LA_OWNED);
+
   vnode_t *vn = file->data;
   if (!vn_lock(vn)) {
     return -EIO; // vnode is dead
@@ -177,6 +286,9 @@ int vn_f_ioctl(file_t *file, unsigned long request, void *arg) {
 }
 
 int vn_f_stat(file_t *file, struct stat *statbuf) {
+  ASSERT(F_ISVNODE(file));
+  f_lock_assert(file, LA_OWNED);
+
   vnode_t *vn = file->data;
   if (!vn_lock(vn)) {
     return -EIO; // vnode is dead
@@ -189,13 +301,21 @@ int vn_f_stat(file_t *file, struct stat *statbuf) {
 }
 
 void vn_f_cleanup(file_t *file) {
+  ASSERT(F_ISVNODE(file));
+  if (mtx_owner(&file->lock) != NULL) {
+    ASSERT(mtx_owner(&file->lock) == curthread);
+  }
+
   vnode_t *vn = moveptr(file->data);
-  vn_release(&vn);
+  vn_putref(&vn);
 }
 
 
 struct file_ops vnode_file_ops = {
+  .f_open = vn_f_open,
   .f_close = vn_f_close,
+  .f_allocate = vn_f_allocate,
+  .f_getpage = vn_f_getpage,
   .f_read = vn_f_read,
   .f_write = vn_f_write,
   .f_ioctl = vn_f_ioctl,
@@ -216,6 +336,7 @@ __ref vnode_t *vn_alloc_empty(enum vtype type) {
   mtx_init(&vnode->lock, MTX_RECURSIVE, "vnode_lock");
   rw_init(&vnode->data_lock, 0, "vnode_data_lock");
   ref_init(&vnode->refcount);
+  VN_DPRINTF("ref init {:+vn} [1]", vnode);
   DPRINTF("allocated {:+vn}\n", vnode);
   return vnode;
 }
@@ -241,29 +362,16 @@ __ref struct pgcache *vn_get_pgcache(vnode_t *vn) {
   return pgcache;
 }
 
-void vn_cleanup(__move vnode_t **vnref) {
-  // called when last reference is released
-  vnode_t *vn = vn_moveref(vnref);
-  DPRINTF("!!! vnode cleanup !!! {:+vn}\n", vn);
-  ASSERT(vn != NULL);
-  ASSERT(vn->state == V_DEAD);
-  ASSERT(ref_count(&vn->refcount) == 0);
-
-  if (VN_OPS(vn)->v_cleanup)
-    VN_OPS(vn)->v_cleanup(vn);
-
-  vfs_release(&vn->vfs);
-  kfree(vn);
-}
-
 bool vn_isatty(vnode_t *vn) {
+  vn_lock_assert(vn, LA_OWNED);
   if (!V_ISDEV(vn)) {
     return false; // not a character or block device
   }
 
   // try sending a TIOCGWINSZ ioctl to the device
+  device_t *device = vn->v_dev;
   struct winsize ws;
-  int res = vn_ioctl(vn, TIOCGWINSZ, &ws);
+  int res = d_ioctl(device, TIOCGWINSZ, &ws);
   if (res < 0) {
     // is not a tty device
     return false;
@@ -272,29 +380,68 @@ bool vn_isatty(vnode_t *vn) {
   return true;
 }
 
+void _vn_cleanup(__move vnode_t **vnref) {
+  // called when last reference is released
+  vnode_t *vn = moveref(*vnref);
+  ASSERT(vn->state == V_DEAD);
+  ASSERT(vn->nopen == 0);
+  ASSERT(ref_count(&vn->refcount) == 0);
+  if (mtx_owner(&vn->lock) != NULL) {
+    ASSERT(mtx_owner(&vn->lock) == curthread);
+    mtx_unlock(&vn->lock);
+  }
+
+  DPRINTF("!!! vnode cleanup !!! {:+vn}\n", vn);
+  if (VN_OPS(vn)->v_cleanup)
+    VN_OPS(vn)->v_cleanup(vn);
+
+  vfs_putref(&vn->vfs);
+  mtx_destroy(&vn->lock);
+  rw_destroy(&vn->data_lock);
+  kfree(vn);
+}
+
 //
 
 int vn_open(vnode_t *vn, int flags) {
-  if (!VN_OPS(vn)->v_open)
-    return 0;
+  vn_lock_assert(vn, LA_OWNED);
+  DPRINTF("vn_open: opening vnode {:+vn} with flags 0x%x\n", vn, flags);
 
-  // filesystem open
-  int res = VN_OPS(vn)->v_open(vn, flags);
-  if (res < 0) {
-    return res;
+  // only call filesystem open on the first open
+  int res;
+  if (vn->nopen == 0) {
+    // filesystem open
+    if (VN_OPS(vn)->v_open && (res = VN_OPS(vn)->v_open(vn, flags)) < 0) {
+      return res;
+    } else {
+      vn->flags |= VN_OPEN; // set open flag
+    }
   }
+
+  // increment open count
+  vn->nopen++;
+
   return 0;
 }
 
 int vn_close(vnode_t *vn) {
-  if (!VN_OPS(vn)->v_close)
-    return 0;
+  vn_lock_assert(vn, LA_OWNED);
+  DPRINTF("vn_close: closing vnode {:+vn}\n", vn);
 
-  // filesystem close
-  int res = VN_OPS(vn)->v_close(vn);
-  if (res < 0) {
-    return res;
+  // only call filesystem close when the open count reaches zero
+  int res;
+  if (vn->nopen == 1) {
+    // filesystem close
+    if (VN_OPS(vn)->v_close && (res = VN_OPS(vn)->v_close(vn)) < 0) {
+      return res;
+    } else {
+      vn->flags &= ~VN_OPEN; // clear open flag
+    }
   }
+
+  // decrement open count
+  vn->nopen--;
+
   return 0;
 }
 
@@ -321,6 +468,9 @@ int vn_getpage(vnode_t *vn, off_t off, bool cached, __move page_t **result) {
 }
 
 ssize_t vn_read(vnode_t *vn, off_t off, kio_t *kio) {
+  vn_rwlock_assert(vn, LA_OWNED|LA_SLOCKED);
+  DPRINTF("vn_read: reading from vnode {:+vn} at offset %ld\n", vn, off);
+
   if (!VN_OPS(vn)->v_read) return -ENOTSUP;
   if (off < 0) return -EINVAL;
   if (off >= vn->size)
@@ -331,6 +481,9 @@ ssize_t vn_read(vnode_t *vn, off_t off, kio_t *kio) {
 }
 
 ssize_t vn_write(vnode_t *vn, off_t off, kio_t *kio) {
+  vn_rwlock_assert(vn, LA_OWNED|LA_XLOCKED);
+  DPRINTF("vn_write: writing to vnode {:+vn} at offset %ld\n", vn, off);
+
   if (VFS_ISRDONLY(vn->vfs)) return -EROFS;
   if (!VN_OPS(vn)->v_write) return -ENOTSUP;
   if (off < 0) return -EINVAL;
@@ -342,12 +495,16 @@ ssize_t vn_write(vnode_t *vn, off_t off, kio_t *kio) {
 }
 
 int vn_ioctl(vnode_t *vn, unsigned long request, void *arg) {
-  DPRINTF("ioctl(%d, %#llx, %p)\n", fd, request, argp);
+  vn_lock_assert(vn, LA_OWNED);
+  DPRINTF("vn_ioctl: ioctl on vnode {:+vn} with request 0x%lx\n", vn, request);
   DPRINTF("TODO: implement ioct (%s:%d)\n", __FILE__, __LINE__);
   return -EOPNOTSUPP; // not implemented yet
 }
 
 int vn_fallocate(vnode_t *vn, off_t length) {
+  vn_rwlock_assert(vn, LA_OWNED|LA_XLOCKED);
+  DPRINTF("vn_fallocate: allocating space for vnode {:+vn} with length %ld\n", vn, length);
+
   CHECK_WRITE(vn);
   if (length < 0) return -EINVAL;
   if (!VN_OPS(vn)->v_falloc) return -ENOTSUP;
@@ -357,6 +514,8 @@ int vn_fallocate(vnode_t *vn, off_t length) {
 }
 
 void vn_stat(vnode_t *vn, struct stat *statbuf) {
+  vn_lock_assert(vn, LA_OWNED);
+
   memset(statbuf, 0, sizeof(struct stat));
   statbuf->st_ino = vn->id;
   statbuf->st_mode = vn_to_mode(vn);
@@ -374,6 +533,9 @@ void vn_stat(vnode_t *vn, struct stat *statbuf) {
 //
 
 int vn_load(vnode_t *vn) {
+  vn_lock_assert(vn, LA_OWNED);
+  DPRINTF("vn_load: loading vnode {:+vn}\n", vn);
+
   if (VN_ISLOADED(vn)) return 0;
   if (!VN_OPS(vn)->v_load) return 0;
   int res;
@@ -387,6 +549,9 @@ int vn_load(vnode_t *vn) {
 }
 
 int vn_save(vnode_t *vn) {
+  vn_lock_assert(vn, LA_OWNED);
+  DPRINTF("vn_save: saving vnode {:+vn}\n", vn);
+
   CHECK_WRITE(vn);
   if (!VN_ISDIRTY(vn)) return 0;
   if (!VN_OPS(vn)->v_save) return 0;
@@ -401,6 +566,9 @@ int vn_save(vnode_t *vn) {
 }
 
 int vn_readlink(vnode_t *vn, kio_t *kio) {
+  vn_rwlock_assert(vn, LA_OWNED|LA_SLOCKED);
+  DPRINTF("vn_readlink: reading link from vnode {:+vn}\n", vn);
+
   CHECK_SUPPORTED(vn, v_readlink);
   int res;
 
@@ -424,6 +592,9 @@ int vn_readlink(vnode_t *vn, kio_t *kio) {
 }
 
 ssize_t vn_readdir(vnode_t *vn, off_t off, kio_t *dirbuf) {
+  vn_rwlock_assert(vn, LA_OWNED|LA_SLOCKED);
+  DPRINTF("vn_readdir: reading directory {:+vn} at offset %ld\n", vn, off);
+
   CHECK_DIR(vn);
   CHECK_SUPPORTED(vn, v_readdir);
   if (off < 0) return -EINVAL;
@@ -433,6 +604,10 @@ ssize_t vn_readdir(vnode_t *vn, off_t off, kio_t *dirbuf) {
 //
 
 int vn_lookup(ventry_t *dve, vnode_t *dvn, cstr_t name, __move ventry_t **result) {
+  ve_lock_assert(dve, LA_OWNED);
+  vn_rwlock_assert(dvn, LA_OWNED|LA_SLOCKED);
+  DPRINTF("vn_lookup: looking up name '{:cstr}' in directory {:+vn}\n", &name, dvn);
+
   CHECK_DIR(dvn);
   CHECK_NAMELEN(name);
   vfs_t *vfs = dvn->vfs;
@@ -465,13 +640,17 @@ int vn_lookup(ventry_t *dve, vnode_t *dvn, cstr_t name, __move ventry_t **result
   // READ END
 
   if (result)
-    *result = ve_moveref(&ve);
+    *result = moveref(ve);
   else
-    ve_release(&ve);
+    ve_putref(&ve);
   return 0;
 }
 
 int vn_create(ventry_t *dve, vnode_t *dvn, cstr_t name, mode_t mode, __move ventry_t **result) {
+  ve_lock_assert(dve, LA_OWNED);
+  vn_rwlock_assert(dvn, LA_OWNED|LA_XLOCKED);
+  DPRINTF("vn_create: creating file '{:cstr}' in directory {:+vn} with mode 0x%x\n", &name, dvn, mode);
+
   CHECK_WRITE(dvn);
   CHECK_DIR(dvn);
   CHECK_NAMELEN(name);
@@ -498,13 +677,17 @@ int vn_create(ventry_t *dve, vnode_t *dvn, cstr_t name, mode_t mode, __move vent
   // WRITE END
 
   if (result)
-    *result = ve_moveref(&ve);
+    *result = moveref(ve);
   else
-    ve_release(&ve);
+    ve_putref(&ve);
   return 0;
 }
 
 int vn_mknod(ventry_t *dve, vnode_t *dvn, cstr_t name, mode_t mode, dev_t dev, __move ventry_t **result) {
+  ve_lock_assert(dve, LA_OWNED);
+  vn_rwlock_assert(dvn, LA_OWNED|LA_XLOCKED);
+  DPRINTF("vn_mknod: creating node '{:cstr}' in directory {:+vn} with mode 0x%x and dev 0x%x\n", &name, dvn, mode, dev);
+
   CHECK_WRITE(dvn);
   CHECK_DIR(dvn);
   CHECK_NAMELEN(name);
@@ -541,13 +724,17 @@ int vn_mknod(ventry_t *dve, vnode_t *dvn, cstr_t name, mode_t mode, dev_t dev, _
   // WRITE END
 
   if (result)
-    *result = ve_moveref(&ve);
+    *result = moveref(ve);
   else
-    ve_release(&ve);
+    ve_putref(&ve);
   return 0;
 }
 
 int vn_symlink(ventry_t *dve, vnode_t *dvn, cstr_t name, cstr_t target, __move ventry_t **result) {
+  ve_lock_assert(dve, LA_OWNED);
+  vn_rwlock_assert(dvn, LA_OWNED|LA_XLOCKED);
+  DPRINTF("vn_symlink: creating symlink '{:cstr}' in directory {:+vn} with target '{:cstr}'\n", &name, dvn, &target);
+
   CHECK_WRITE(dvn);
   CHECK_DIR(dvn);
   CHECK_NAMELEN(name);
@@ -575,13 +762,18 @@ int vn_symlink(ventry_t *dve, vnode_t *dvn, cstr_t name, cstr_t target, __move v
   // WRITE END
 
   if (result)
-    *result = ve_moveref(&ve);
+    *result = moveref(ve);
   else
-    ve_release(&ve);
+    ve_putref(&ve);
   return 0;
 }
 
 int vn_hardlink(ventry_t *dve, vnode_t *dvn, cstr_t name, vnode_t *target, __move ventry_t **result) {
+  ve_lock_assert(dve, LA_OWNED);
+  vn_rwlock_assert(dvn, LA_OWNED|LA_XLOCKED);
+  vn_lock_assert(target, LA_OWNED);
+  DPRINTF("vn_hardlink: creating hardlink '{:cstr}' in directory {:+vn} to target {:+vn}\n", &name, dvn, target);
+
   CHECK_SAMEDEV(dvn, target);
   CHECK_WRITE(dvn);
   CHECK_NAMELEN(name);
@@ -606,13 +798,19 @@ int vn_hardlink(ventry_t *dve, vnode_t *dvn, cstr_t name, vnode_t *target, __mov
   // WRITE END
 
   if (result)
-    *result = ve_moveref(&ve);
+    *result = moveref(ve);
   else
-    ve_release(&ve);
+    ve_putref(&ve);
   return 0;
 }
 
 int vn_unlink(ventry_t *dve, vnode_t *dvn, ventry_t *ve, vnode_t *vn) {
+  ve_lock_assert(dve, LA_OWNED);
+  vn_rwlock_assert(dvn, LA_OWNED|LA_XLOCKED);
+  ve_lock_assert(ve, LA_OWNED);
+  vn_lock_assert(vn, LA_OWNED);
+  DPRINTF("vn_unlink: unlinking vnode {:+ve} from directory {:+dve} and vnode {:+vn}\n", ve, dve, vn);
+
   CHECK_SAMEDEV(dvn, vn);
   CHECK_WRITE(dvn);
   CHECK_DIR(dvn);
@@ -643,6 +841,10 @@ int vn_unlink(ventry_t *dve, vnode_t *dvn, ventry_t *ve, vnode_t *vn) {
 }
 
 int vn_mkdir(ventry_t *dve, vnode_t *dvn, cstr_t name, mode_t mode, __move ventry_t **result) {
+  ve_lock_assert(dve, LA_OWNED);
+  vn_rwlock_assert(dvn, LA_OWNED|LA_XLOCKED);
+  DPRINTF("vn_mkdir: creating directory '{:cstr}' in directory {:+vn} with mode 0x%x\n", &name, dvn, mode);
+
   CHECK_WRITE(dvn);
   CHECK_DIR(dvn);
   CHECK_NAMELEN(name);
@@ -669,13 +871,19 @@ int vn_mkdir(ventry_t *dve, vnode_t *dvn, cstr_t name, mode_t mode, __move ventr
   // WRITE END
 
   if (result)
-    *result = ve_moveref(&ve);
+    *result = moveref(ve);
   else
-    ve_release(&ve);
+    ve_putref(&ve);
   return 0;
 }
 
 int vn_rmdir(ventry_t *dve, vnode_t *dvn, ventry_t *ve, vnode_t *vn) {
+  ve_lock_assert(dve, LA_OWNED);
+  vn_rwlock_assert(dvn, LA_OWNED|LA_XLOCKED);
+  ve_lock_assert(ve, LA_OWNED);
+  vn_lock_assert(vn, LA_OWNED);
+  DPRINTF("vn_rmdir: removing directory {:+ve} from directory {:+dve} and vnode {:+vn}\n", ve, dve, vn);
+
   CHECK_DIR(vn);
   CHECK_WRITE(dvn);
   CHECK_SUPPORTED(dvn, v_rmdir);

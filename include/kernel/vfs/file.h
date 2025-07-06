@@ -19,6 +19,7 @@ void _fde_cleanup(__move fd_entry_t **fde_ref);
 
 __ref file_t *f_alloc(enum ftype type, int access, void *data, struct file_ops *ops);
 __ref file_t *f_alloc_vn(int access, vnode_t *vnode);
+bool f_isatty(file_t *file);
 void _f_cleanup(__move file_t **fref);
 
 ftable_t *ftable_alloc();
@@ -65,11 +66,6 @@ void ftable_exec_close(ftable_t *ftable);
     } \
   } \
 })
-
-#define f_lock_assert(f, what) ({ \
-  ASSERT_IS_TYPE(file_t *, f); \
-  mtx_assert(&(f)->lock, what); \
-})
 #define f_lock(f) ({ \
   ASSERT_IS_TYPE(file_t *, f); \
   mtx_lock(&(f)->lock); \
@@ -80,6 +76,19 @@ void ftable_exec_close(ftable_t *ftable);
   } \
   _locked;\
 })
-#define f_unlock(f) mtx_unlock(&(f)->lock)
+#define f_unlock(f) ({ \
+  ASSERT_IS_TYPE(file_t *, f); \
+  mtx_unlock(&(f)->lock); \
+})
+#define f_unlock_putref(f) ({ \
+  ASSERT_IS_TYPE(file_t *, f); \
+  f_unlock(f);                 \
+  f_putref(&(f));              \
+})
+
+#define f_lock_assert(f, what) ({ \
+  ASSERT_IS_TYPE(file_t *, f); \
+  mtx_assert(&(f)->lock, what); \
+})
 
 #endif

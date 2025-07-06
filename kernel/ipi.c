@@ -20,7 +20,7 @@ static volatile uint8_t ipi_type;
 static volatile uint64_t ipi_data;
 static volatile uint8_t ipi_ack;
 
-__used void ipi_handler(struct trapframe *frame) {
+_used void ipi_handler(struct trapframe *frame) {
   uint8_t type = ipi_type;
   uint64_t data = ipi_data;
   kassert(type < NUM_IPIS);

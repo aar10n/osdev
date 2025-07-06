@@ -14,7 +14,7 @@
 
 static int x = 0;
 static int y = 0;
-__used uint32_t *framebuf_base;
+_used uint32_t *framebuf_base;
 
 static void framebuf_static_init() {
   kprintf("framebuffer:\n");

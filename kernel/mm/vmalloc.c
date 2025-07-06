@@ -46,7 +46,7 @@ address_space_t *default_user_space;
 address_space_t *kernel_space;
 
 // called from switch.asm
-__used void switch_address_space(address_space_t *new_space) {
+_used void switch_address_space(address_space_t *new_space) {
   address_space_t *current = curspace;
   if (current != NULL && current->page_table == new_space->page_table) {
     return;
@@ -502,9 +502,6 @@ static int vm_handle_non_present_fault(vm_mapping_t *vm, size_t off) {
 }
 
 static int vm_handle_cow_fault(vm_mapping_t *vm, size_t off) {
-  const uintptr_t addr_of_interest = 0x7fc00dc768;
-  bool has_addr_of_interest = vm_contains_addr(vm, addr_of_interest);
-
   __ref page_t *page;
   if (vm->type == VM_TYPE_PAGE) {
     page = page_type_getpage_internal(vm, off);
@@ -1057,7 +1054,7 @@ static always_inline bool can_vm_handle_fault(vm_mapping_t *vm, uintptr_t fault_
   return false;
 }
 
-__used void page_fault_handler(struct trapframe *frame) {
+_used void page_fault_handler(struct trapframe *frame) {
   uint32_t id = curcpu_id;
   uint64_t fault_addr = __read_cr2();
   if (fault_addr == 0 || !curspace)
@@ -1652,16 +1649,16 @@ __ref page_t *vm_getpage_cow(uintptr_t vaddr) {
   return cow_page;
 }
 
-int vm_validate_user_ptr(uintptr_t vaddr, bool write) {
-  if (vaddr == 0 || !is_valid_pointer(vaddr)) {
+int vm_validate_space_ptr(address_space_t *space, uintptr_t ptr, bool write) {
+  if (ptr == 0 || !is_valid_pointer(ptr)) {
     return -EFAULT;
   }
 
   int res;
-  address_space_t *space = select_space(curspace, vaddr);
+  bool is_user = space != kernel_space;
   space_lock(space);
 
-  vm_mapping_t *vm = space_get_mapping(space, vaddr);
+  vm_mapping_t *vm = space_get_mapping(space, ptr);
   if (vm == NULL || vm->type == VM_TYPE_RSVD) {
     res = -EFAULT;
     goto ret;
@@ -1676,11 +1673,27 @@ int vm_validate_user_ptr(uintptr_t vaddr, bool write) {
     goto ret;
   }
 
-  res = !((vm->flags & VM_USER) && (vm->flags & VM_READ));
+  if (is_user && !(vm->flags & VM_USER)) {
+    res = -EFAULT;
+    goto ret;
+  }
+  res = !((vm->flags & VM_READ));
 LABEL(ret);
   space_unlock(space);
   return res;
+}
 
+int vm_validate_ptr(uintptr_t ptr, bool write) {
+  if (ptr >= 0 && ptr < USER_SPACE_END) {
+    // valid user space pointer
+    return vm_validate_space_ptr(curspace, ptr, write);
+  } else if (ptr >= KERNEL_SPACE_START && ptr < KERNEL_SPACE_END) {
+    // valid kernel space pointer
+    return vm_validate_space_ptr(kernel_space, ptr, write);
+  } else {
+    // invalid pointer
+    return -EFAULT;
+  }
 }
 
 //

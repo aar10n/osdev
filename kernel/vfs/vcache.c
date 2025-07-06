@@ -67,7 +67,7 @@ static inline struct vcache_entry *vcache_entry_alloc(cstr_t path, hash_t hash, 
 
 static inline void vcache_entry_free(struct vcache_entry *entry) {
   str_free(&entry->path);
-  ve_release(&entry->ve);
+  ve_putref(&entry->ve);
   kfree(entry);
 }
 
@@ -245,7 +245,7 @@ vcache_t *vcache_alloc(__ref ventry_t *root) {
 void vcache_free(vcache_t *vcache) {
   ASSERT(vcache->size == 0);
   rb_tree_free(vcache->dir_map);
-  ve_release(&vcache->root);
+  ve_putref(&vcache->root);
   kfree(vcache->entries);
 }
 

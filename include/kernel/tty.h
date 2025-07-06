@@ -23,6 +23,7 @@ struct ttydev_ops;
 typedef struct tty {
   uint32_t flags;             // tty flags
   mtx_t lock;                 // tty lock
+  uint32_t owners;            // number of owners (open count)
 
   struct ttyinq *inq;         // input queue
   struct ttyoutq *outq;       // output queue

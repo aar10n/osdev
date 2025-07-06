@@ -6,8 +6,8 @@
 #include <kernel/mm.h>
 
 // symbols added to aid in debugging
-__used struct proc **current_proc = NULL;
-__used struct thread **current_thread = NULL;
+_used struct proc **current_proc = NULL;
+_used struct thread **current_thread = NULL;
 
 static void percpu_early_init() {
   current_proc = &curcpu_area->proc;

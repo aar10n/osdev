@@ -357,7 +357,7 @@ void proc_free_pid(pid_t pid);
 
 __ref proc_t *proc_alloc_new(struct pcreds *creds);
 __ref proc_t *proc_fork();
-void proc_cleanup(__move proc_t **procp);
+void _proc_cleanup(__move proc_t **procp);
 void   proc_setup_add_thread(proc_t *proc, thread_t *td);
 int    proc_setup_exec_args(proc_t *proc, const char *const args[]);
 int    proc_setup_exec_env(proc_t *proc, const char *const env[]);
@@ -385,7 +385,7 @@ int proc_syscall_execve(cstr_t path, char *const argv[], char *const envp[]); //
   ASSERT_IS_TYPE(proc_t**, pref); \
   proc_t *__pr = moveref(*(pref));  \
   if (__pr && ref_put(&__pr->refcount)) { \
-    proc_cleanup(&__pr); \
+    _proc_cleanup(&__pr); \
   } \
 })
 

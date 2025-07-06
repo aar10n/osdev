@@ -65,12 +65,12 @@ static struct isa_irq_override irq_isa_overrides[NUM_ISA_IRQS];
 
 void page_fault_handler(struct trapframe *frame);
 
-__used noreturn void double_fault_handler() {
+_used noreturn void double_fault_handler() {
   kprintf_kputs("!!! DOUBLE FAULT !!!\n");
   WHILE_TRUE;
 }
 
-__used void interrupt_handler(struct trapframe *frame) {
+_used void interrupt_handler(struct trapframe *frame) {
   if (ignored_irqs[frame->vector])
     return;
 

@@ -35,7 +35,7 @@ vm_file_t *vm_file_alloc_vnode(__ref struct vnode *vn, size_t off, size_t size) 
   file->off = off;
   file->pg_size = PAGE_SIZE;
 
-  file->vnode = vn_moveref(&vn);
+  file->vnode = moveref(vn);
   file->pgcache = vn_get_pgcache(file->vnode);
   file->missing_page = vnode_getpage_missing;
   return file;
@@ -80,7 +80,7 @@ vm_file_t *vm_file_alloc_clone(vm_file_t *file) {
 void vm_file_free(vm_file_t **fileref) {
   vm_file_t *file = moveref(*fileref);
   if (file->vnode != NULL) {
-    vn_release(&file->vnode);
+    vn_putref(&file->vnode);
     file->pgcache = NULL;
   } else {
     pgcache_free(&file->pgcache);

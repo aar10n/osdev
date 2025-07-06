@@ -26,8 +26,8 @@ int ramfs_vfs_mount(vfs_t *vfs, device_t *device, ventry_t *mount_ve, __move ven
   vn->data = mount->root;
 
   ventry_t *ve = ve_alloc_linked(cstr_new("/", 1), vn);
-  *rootve = ve_moveref(&ve);
-  vn_release(&vn);
+  *rootve = moveref(ve);
+  vn_putref(&vn);
   return 0;
 }
 
@@ -51,5 +51,7 @@ int ramfs_vfs_stat(vfs_t *vm, struct vfs_stat *stat) {
 void ramfs_vfs_cleanup(vfs_t *vfs) {
   DPRINTF("cleanup\n");
   ramfs_mount_t *mount = vfs->data;
+  // the nodes have already been free, clear the mount reference to root
+  mount->root = NULL;
   ramfs_free_mount(mount);
 }

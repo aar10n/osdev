@@ -182,8 +182,8 @@ int ramfs_vn_lookup(vnode_t *dir, cstr_t name, __move ventry_t **result) {
   ventry_t *ve = ve_alloc_linked(name, vn);
   ve->data = dent;
 
-  *result = ve_moveref(&ve);
-  vn_release(&vn);
+  *result = moveref(ve);
+  vn_putref(&vn);
   return 0;
 }
 
@@ -206,8 +206,8 @@ int ramfs_vn_create(vnode_t *dir, cstr_t name, struct vattr *vattr, __move ventr
   ventry_t *ve = ve_alloc_linked(name, vn);
   ve->data = dent;
 
-  *result = ve_moveref(&ve);
-  vn_release(&vn);
+  *result = moveref(ve);
+  vn_putref(&vn);
   return 0;
 }
 
@@ -234,8 +234,8 @@ int ramfs_vn_mknod(vnode_t *dir, cstr_t name, struct vattr *vattr, dev_t dev, __
   ventry_t *ve = ve_alloc_linked(name, vn);
   ve->data = dent;
 
-  *result = ve_moveref(&ve);
-  vn_release(&vn);
+  *result = moveref(ve);
+  vn_putref(&vn);
   return 0;
 }
 
@@ -258,8 +258,8 @@ int ramfs_vn_symlink(vnode_t *dir, cstr_t name, struct vattr *vattr, cstr_t targ
   ventry_t *ve = ve_alloc_linked(name, vn);
   ve->data = dent;
 
-  *result = ve_moveref(&ve);
-  vn_release(&vn);
+  *result = moveref(ve);
+  vn_putref(&vn);
   return 0;
 }
 
@@ -275,7 +275,7 @@ int ramfs_vn_hardlink(vnode_t *dir, cstr_t name, vnode_t *target, __move ventry_
   ventry_t *ve = ve_alloc_linked(name, target);
   ve->data = dent;
 
-  *result = ve_moveref(&ve);
+  *result = moveref(ve);
   return 0;
 }
 
@@ -306,8 +306,8 @@ int ramfs_vn_mkdir(vnode_t *dir, cstr_t name, struct vattr *vattr, __move ventry
   ventry_t *ve = ve_alloc_linked(name, vn);
   ve->data = dent;
 
-  *result = ve_moveref(&ve);
-  vn_release(&vn);
+  *result = moveref(ve);
+  vn_putref(&vn);
   return 0;
 }
 
@@ -323,11 +323,11 @@ int ramfs_vn_rmdir(vnode_t *dir, vnode_t *vn, ventry_t *ve) {
 //
 
 void ramfs_vn_cleanup(vnode_t *vn) {
-  DPRINTF("vn_cleanup vn={:vn}\n", vn);
   ramfs_node_t *node = vn->data;
   if (!node)
     return;
 
+  DPRINTF("vn_cleanup vn={:+vn} [ramfs_node=%p]\n", vn, node);
   if (node->type == V_REG) {
     // release file resources now
     memfile_t *memf = node->n_file;
@@ -341,11 +341,12 @@ void ramfs_vn_cleanup(vnode_t *vn) {
 }
 
 void ramfs_ve_cleanup(ventry_t *ve) {
-  DPRINTF("ve_cleanup ve={:ve}\n", ve);
   ramfs_dentry_t *dent = ve->data;
   if (!dent)
     return;
 
+  DPRINTF("ve_cleanup ve={:+ve} [ramfs_dent=%p]\n", ve, dent);
   str_free(&dent->name);
   ramfs_free_dentry(dent);
+  ve->data = NULL;
 }

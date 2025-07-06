@@ -66,7 +66,7 @@ static Dwarf_Signed dwarf_aranges_count;
 
 // MARK: DWARF Object Interface
 
-static int get_section_info(unused void *obj, Dwarf_Half section_index,
+static int get_section_info(_unused void *obj, Dwarf_Half section_index,
                             Dwarf_Obj_Access_Section_a *return_section, int *error) {
   *error = 0;
   if (section_index >= num_sections) {
@@ -100,30 +100,30 @@ static int get_section_info(unused void *obj, Dwarf_Half section_index,
   return DW_DLV_OK;
 }
 
-static Dwarf_Small get_byte_order(unused void *obj) {
+static Dwarf_Small get_byte_order(_unused void *obj) {
   return DW_END_little;
 }
 
-static Dwarf_Small get_length_size(unused void *obj) {
+static Dwarf_Small get_length_size(_unused void *obj) {
   return sizeof(size_t);
 }
 
-static Dwarf_Small get_pointer_size(unused void *obj) {
+static Dwarf_Small get_pointer_size(_unused void *obj) {
   return sizeof(uintptr_t);
 }
 
-static Dwarf_Unsigned get_file_size(unused void *obj) {
+static Dwarf_Unsigned get_file_size(_unused void *obj) {
   // this is used to prealloc memory for internal libdwarf data structures.
   // it divides the value by 30
   size_t size = 50000;
   return size;
 }
 
-static Dwarf_Unsigned get_section_count(unused void *obj) {
+static Dwarf_Unsigned get_section_count(_unused void *obj) {
   return num_sections;
 }
 
-static int load_section(unused void *obj, Dwarf_Half section_index, Dwarf_Small **return_data, int *error) {
+static int load_section(_unused void *obj, Dwarf_Half section_index, Dwarf_Small **return_data, int *error) {
   *error = 0;
   if (section_index >= num_sections) {
     return DW_DLV_NO_ENTRY;
@@ -874,7 +874,7 @@ LABEL(FAIL);
 // them to a stub to avoid implementing them, as well as to satisfy the linker.
 
 #define LIBDWARF_STUB(funcname) \
-  __used void __debug_ ##funcname## _stub() { panic(">> debug stub: " #funcname); }
+  _used void __debug_ ##funcname## _stub() { panic(">> debug stub: " #funcname); }
 
 LIBDWARF_STUB(realloc);
 LIBDWARF_STUB(fclose);

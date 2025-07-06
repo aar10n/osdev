@@ -31,7 +31,7 @@ boot_info_v2_t __boot_data *boot_info_v2;
 // Kernel entry
 //
 
-__used void kmain() {
+_used void kmain() {
   // before anything else we need to make sure we can use panic, kprintf.
   panic_early_init();
   kprintf_early_init();
@@ -100,7 +100,7 @@ __used void kmain() {
   unreachable;
 }
 
-__used void ap_main() {
+_used void ap_main() {
   cpu_early_init();
   do_percpu_initializers();
   kprintf("[CPU#%d] initializing\n", curcpu_id);
@@ -135,9 +135,9 @@ void launch_init_process() {
   FAIL_IF_ERROR("proc_setup_exec failed: {:err}", res);
   res = proc_setup_open_fd(init_proc, 0, cstr_make("/dev/null"), O_RDONLY);
   FAIL_IF_ERROR("proc_setup_open_fd 0 failed: {:err}", res);
-  res = proc_setup_open_fd(init_proc, 1, cstr_make("/dev/debug"), O_RDWR);
+  res = proc_setup_open_fd(init_proc, 1, cstr_make("/dev/debug"), O_RDWR|O_NOCTTY);
   FAIL_IF_ERROR("proc_setup_open_fd 1 failed: {:err}", res);
-  res = proc_setup_open_fd(init_proc, 2, cstr_make("/dev/debug"), O_RDWR);
+  res = proc_setup_open_fd(init_proc, 2, cstr_make("/dev/debug"), O_RDWR|O_NOCTTY);
   FAIL_IF_ERROR("proc_setup_open_fd 2 failed: {:err}", res);
   proc_finish_setup_and_submit_all(init_proc);
   return;

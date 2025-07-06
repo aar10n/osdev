@@ -54,14 +54,11 @@ int tty_dev_close(device_t *dev) {
   return res;
 }
 
-ssize_t tty_dev_read(device_t *dev, size_t off, size_t nmax, kio_t *kio) {
+ssize_t tty_dev_read(device_t *dev, _unused size_t off, size_t nmax, kio_t *kio) {
   tty_t *tty = (tty_t *) dev->data;
   if (tty == NULL) {
     EPRINTF("tty device is not initialized\n");
     return -ENODEV; // device is not initialized
-  } else if (off > 0) {
-    EPRINTF("tty device does not support offset: %zu\n", off);
-    return -EINVAL; // invalid offset
   }
 
   if (!tty_lock(tty)) {
@@ -74,14 +71,11 @@ ssize_t tty_dev_read(device_t *dev, size_t off, size_t nmax, kio_t *kio) {
   return res;
 }
 
-ssize_t tty_dev_write(device_t *dev, size_t off, size_t nmax, kio_t *kio) {
+ssize_t tty_dev_write(device_t *dev, _unused size_t off, size_t nmax, kio_t *kio) {
   tty_t *tty = (tty_t *) dev->data;
   if (tty == NULL) {
     EPRINTF("tty device is not initialized\n");
     return -ENODEV; // device is not initialized
-  } else if (off > 0) {
-    EPRINTF("tty device does not support offset: %zu\n", off);
-    return -EINVAL; // offset is not supported
   }
 
   if (!tty_lock(tty)) {
@@ -237,7 +231,7 @@ int tty_ioctl(tty_t *tty, unsigned long request, void *arg) {
   switch (request) {
     // Get and set terminal attributes
     case TCGETS: {
-      if (vm_validate_user_ptr((uintptr_t) arg, /*write=*/true) < 0) {
+      if (vm_validate_ptr((uintptr_t) arg, /*write=*/true) < 0) {
         EPRINTF("TCGETS ioctl requires a valid argument\n");
         return -EINVAL; // invalid argument
       }
@@ -246,7 +240,7 @@ int tty_ioctl(tty_t *tty, unsigned long request, void *arg) {
       return 0; // success
     }
     case TCSETS: {
-      if (vm_validate_user_ptr((uintptr_t) arg, /*write=*/false) < 0) {
+      if (vm_validate_ptr((uintptr_t) arg, /*write=*/false) < 0) {
         EPRINTF("TCSETS ioctl requires a valid argument\n");
         return -EINVAL; // invalid argument
       }
@@ -255,7 +249,7 @@ int tty_ioctl(tty_t *tty, unsigned long request, void *arg) {
       return tty_configure(tty, termios, NULL);
     }
     case TCSETSW: {
-      if (vm_validate_user_ptr((uintptr_t) arg, /*write=*/false) < 0) {
+      if (vm_validate_ptr((uintptr_t) arg, /*write=*/false) < 0) {
         EPRINTF("TCSETSW ioctl requires a valid argument\n");
         return -EINVAL; // invalid argument
       }
@@ -268,7 +262,7 @@ int tty_ioctl(tty_t *tty, unsigned long request, void *arg) {
       return tty_configure(tty, termios, NULL);
     }
     case TCSETSF: {
-      if (vm_validate_user_ptr((uintptr_t) arg, /*write=*/false) < 0) {
+      if (vm_validate_ptr((uintptr_t) arg, /*write=*/false) < 0) {
         EPRINTF("TCSETSF ioctl requires a valid argument\n");
         return -EINVAL; // invalid argument
       }
@@ -289,7 +283,7 @@ int tty_ioctl(tty_t *tty, unsigned long request, void *arg) {
       todo("TIOCSLCKTRMIOS ioctl not implemented");
     // Get and set window size
     case TIOCGWINSZ: {
-      if (vm_validate_user_ptr((uintptr_t) arg, /*write=*/true) < 0) {
+      if (vm_validate_ptr((uintptr_t) arg, /*write=*/true) < 0) {
         EPRINTF("TIOCGWINSZ ioctl requires a valid argument\n");
         return -EINVAL; // invalid argument
       }
@@ -301,7 +295,7 @@ int tty_ioctl(tty_t *tty, unsigned long request, void *arg) {
       return 0; // success
     }
     case TIOCSWINSZ: {
-      if (vm_validate_user_ptr((uintptr_t) arg, /*write=*/false) < 0) {
+      if (vm_validate_ptr((uintptr_t) arg, /*write=*/false) < 0) {
         EPRINTF("TIOCSWINSZ ioctl requires a valid argument\n");
         return -EINVAL; // invalid argument
       }
@@ -325,7 +319,7 @@ int tty_ioctl(tty_t *tty, unsigned long request, void *arg) {
       todo("TCXONC ioctl not implemented");
     // Buffer count and flushing
     case TIOCINQ: {
-      if (vm_validate_user_ptr((uintptr_t) arg, /*write=*/true) < 0) {
+      if (vm_validate_ptr((uintptr_t) arg, /*write=*/true) < 0) {
         EPRINTF("FIONREAD ioctl requires a valid argument\n");
         return -EINVAL; // invalid argument
       }
@@ -335,7 +329,7 @@ int tty_ioctl(tty_t *tty, unsigned long request, void *arg) {
       return 0; // success
     }
     case TIOCOUTQ: {
-      if (vm_validate_user_ptr((uintptr_t) arg, /*write=*/true) < 0) {
+      if (vm_validate_ptr((uintptr_t) arg, /*write=*/true) < 0) {
         EPRINTF("TIOCOUTQ ioctl requires a valid argument\n");
         return -EINVAL; // invalid argument
       }
@@ -345,7 +339,7 @@ int tty_ioctl(tty_t *tty, unsigned long request, void *arg) {
       return 0; // success
     }
     case TCFLSH: {
-      if (vm_validate_user_ptr((uintptr_t) arg, /*write=*/false) < 0) {
+      if (vm_validate_ptr((uintptr_t) arg, /*write=*/false) < 0) {
         EPRINTF("TCFLSH ioctl requires a valid argument\n");
         return -EINVAL; // invalid argument
       }
@@ -365,7 +359,7 @@ int tty_ioctl(tty_t *tty, unsigned long request, void *arg) {
     }
     // Faking input
     case TIOCSTI: {
-      if (vm_validate_user_ptr((uintptr_t) arg, /*write=*/false) < 0) {
+      if (vm_validate_ptr((uintptr_t) arg, /*write=*/false) < 0) {
         EPRINTF("TIOCSTI ioctl requires a valid argument\n");
         return -EINVAL; // invalid argument
       }
@@ -409,7 +403,7 @@ int tty_ioctl(tty_t *tty, unsigned long request, void *arg) {
     }
     // Process group and session ID
     case TIOCGPGRP: {
-      if (vm_validate_user_ptr((uintptr_t) arg, /*write=*/true) < 0) {
+      if (vm_validate_ptr((uintptr_t) arg, /*write=*/true) < 0) {
         EPRINTF("TIOCGPGRP ioctl requires a valid argument\n");
         return -EINVAL; // invalid argument
       }

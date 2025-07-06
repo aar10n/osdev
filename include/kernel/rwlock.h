@@ -57,7 +57,7 @@ void _rw_wunlock(rwlock_t *rw);
 #define rw_destroy(rw) _rw_destroy(rw)
 #define rw_locked(rw) _rw_locked(rw)
 #define rw_owned(rw) _rw_owned(rw)
-#define rw_assert(rw, w, f, l) _rw_assert(rw, w, f, l)
+#define rw_assert(rw, w) _rw_assert(rw, w, __FILE__, __LINE__)
 
 #define rw_try_rlock(rw) _rw_try_rlock(rw, __FILE__, __LINE__)
 #define rw_try_wlock(rw) _rw_try_wlock(rw, __FILE__, __LINE__)

@@ -26,8 +26,8 @@
 __ref vnode_t *vn_alloc_empty(enum vtype type);
 __ref vnode_t *vn_alloc(id_t id, struct vattr *vattr);
 __ref struct pgcache *vn_get_pgcache(vnode_t *vn); // vn = _
-void vn_cleanup(__move vnode_t **vnref); // vnref = _
 bool vn_isatty(vnode_t *vn); // vn = l
+void _vn_cleanup(__move vnode_t **vnref); // vnref = _
 
 int vn_open(vnode_t *vn, int flags); // vn = l
 int vn_close(vnode_t *vn); // vn = l
@@ -56,50 +56,51 @@ int vn_rmdir(ventry_t *dve, vnode_t *dvn, ventry_t *ve, vnode_t *vn); // dve = l
 //
 //
 
-// #define VN_DPRINTF(fmt, ...) kprintf("vnode: " fmt " [%s:%d]\n", ##__VA_ARGS__, __FILE__, __LINE__)
+//#define VN_DPRINTF(fmt, ...) kprintf("vnode: %s: " fmt " [%s:%d]\n", __func__, ##__VA_ARGS__, __FILE__, __LINE__)
 #define VN_DPRINTF(fmt, ...)
 
-/// Returns a new reference to the vnode vn.
-#define vn_getref(vn) ({ VN_DPRINTF("vn_getref {:+vn} refcount=%d", vn, (vn) ? ref_count(&(vn)->refcount)+1 : 0); _vn_getref(vn); })
-/// Moves the ref out of vnref and returns it.
-#define vn_moveref(vnref) _vn_moveref(vnref) // ({ VN_DPRINTF("vn_moveref {:vn}", *(vnref)); _vn_moveref(vnref); })
-/// Moves the ref of vnref and releases it.
-#define vn_release(vnref) ({ VN_DPRINTF("vn_release {:+vn} refcount=%d", *(vnref), *(vnref) ? (ref_count(&(*(vnref))->refcount)-1) : 0); _vn_release(vnref); })
-/// Locks the vnode vn.
-#define vn_lock(vn) _vn_lock(vn, __FILE__, __LINE__)
-/// Unlocks the vnode vn.
-#define vn_unlock(vn) mtx_unlock(&(vn)->lock)
+#define vn_getref(vn) ({ \
+  ASSERT_IS_TYPE(vnode_t *, vn); \
+  vnode_t *__vn = (vn); \
+  if (__vn) kassert(__vn->refcount > 0); \
+  __vn ? ref_get(&__vn->refcount) : NULL; \
+  if (__vn) {            \
+     VN_DPRINTF("getref {:+vn} [%d]", __vn, __vn->refcount); \
+  } \
+  __vn; \
+})
+#define vn_putref(vnref) ({ \
+  ASSERT_IS_TYPE(vnode_t **, vnref); \
+  vnode_t *__vn = *(vnref); \
+  *(vnref) = NULL; \
+  if (__vn) { \
+    kassert(__vn->refcount > 0); \
+    if (ref_put(&__vn->refcount)) { \
+      VN_DPRINTF("putref {:+vn} [0]", __vn); \
+      _vn_cleanup(&__vn); \
+    } else {                \
+      VN_DPRINTF("putref {:+vn} [%d]", __vn, __vn->refcount); \
+    } \
+  } \
+})
+#define vn_lock(vn) ({ \
+  ASSERT_IS_TYPE(vnode_t *, vn); \
+  vnode_t *__vn = (vn); \
+  mtx_lock(&__vn->lock); \
+  bool _locked = true; \
+  if (V_ISDEAD(__vn)) { \
+    mtx_unlock(&__vn->lock);  \
+    _locked = false; \
+  } \
+  _locked;\
+})
+#define vn_unlock(vn) ({ \
+  ASSERT_IS_TYPE(vnode_t *, vn); \
+  mtx_unlock(&(vn)->lock); \
+})
 
-static inline vnode_t *_vn_getref(vnode_t *vn) __move {
-  if (vn)
-    ref_get(&vn->refcount);
-  return vn;
-}
-
-static inline vnode_t *_vn_moveref(__move vnode_t **vnref) __move {
-  vnode_t *vn = *vnref;
-  *vnref = NULL;
-  return vn;
-}
-
-static inline void _vn_release(__move vnode_t **vnref) {
-  vnode_t *vn = vn_moveref(vnref);
-  if (vn && ref_put(&vn->refcount)) {
-    vn_cleanup(&vn);
-  }
-}
-
-static inline bool _vn_lock(vnode_t *vn, const char *file, int line) {
-  if (V_ISDEAD(vn))
-    return false;
-
-  _mtx_wait_lock(&vn->lock, file, line);
-  if (V_ISDEAD(vn)) {
-    _mtx_wait_unlock(&vn->lock, file, line);
-    return false;
-  }
-  return true;
-}
+#define vn_lock_assert(vn, what) __type_checked(vnode_t *, vn, mtx_assert(&(vn)->lock, what))
+#define vn_rwlock_assert(vn, what) __type_checked(vnode_t *, vn, rw_assert(&(vn)->data_lock, what))
 
 static inline bool vn_begin_data_read(vnode_t *vn) {
   if (V_ISDEAD(vn)) return false;

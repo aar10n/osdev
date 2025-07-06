@@ -28,7 +28,7 @@ typedef uint64_t (*syscall_t)(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, 
 
 #define PARAM(type, name, fmt) type name
 #define SYSCALL(name, n_args, ret_type, ...) \
-  ret_type weak sys_ ##name(MACRO_JOIN(__VA_ARGS__)) { \
+  ret_type _weak sys_ ##name(MACRO_JOIN(__VA_ARGS__)) { \
     panic("syscall not implemented: " #name " (%d)", SYS_ ##name); \
   };
 #include <kernel/syscalls.def>
@@ -45,7 +45,7 @@ static const char *syscall_names[] = {
 #include <kernel/syscalls.def>
 };
 
-__used uint64_t handle_syscall(uint64_t syscall, struct trapframe *frame) {
+_used uint64_t handle_syscall(uint64_t syscall, struct trapframe *frame) {
   if (syscall < 0 || syscall > SYS_MAX) {
     DPRINTF("!!! invalid syscall: %d !!!\n", syscall);
     return -ENOSYS;

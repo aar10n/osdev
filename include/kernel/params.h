@@ -16,7 +16,7 @@
     "Kernel parameter name too long (> " __param_tostring(PARAM_NAME_MAX) ")" \
   ); \
   static _type _var = _default; \
-  static __used struct kernel_param __param_ ## _var = { \
+  static _used struct kernel_param __param_ ## _var = { \
     .name = (_name), \
     .addr = &(_var), \
     .type = _Generic(_var, \
@@ -24,7 +24,7 @@
       int: KERNEL_INT_PARAM \
     ) \
   }; \
-  static __used __attribute__((section(".kernel_params"))) void * __param_ptr_ ## _var = &__param_ ## _var; \
+  static _used __attribute__((section(".kernel_params"))) void * __param_ptr_ ## _var = &__param_ ## _var; \
 
 // kernel_param types
 #define KERNEL_STR_PARAM   1 /* str_t */

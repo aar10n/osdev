@@ -12,7 +12,7 @@
 
 struct vnode;
 
-void switch_address_space(address_space_t *new_space) __used;
+void switch_address_space(address_space_t *new_space) _used;
 
 void init_address_space();
 void init_ap_address_space();
@@ -40,7 +40,7 @@ int vmap_resize(uintptr_t vaddr, size_t old_size, size_t new_size, bool allow_mo
 
 __ref page_t *vm_getpage(uintptr_t vaddr);
 __ref page_t *vm_getpage_cow(uintptr_t vaddr);
-int vm_validate_user_ptr(uintptr_t vaddr, bool write);
+int vm_validate_ptr(uintptr_t ptr, bool write);
 uintptr_t vm_virt_to_phys(uintptr_t vaddr);
 #define virt_to_phys(virt_addr) vm_virt_to_phys((uintptr_t)(virt_addr))
 

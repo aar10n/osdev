@@ -145,7 +145,7 @@ static fs_type_t ramfs_type = {
 
 static void ramfs_static_init() {
   if (fs_register_type(&ramfs_type) < 0) {
-    DPRINTF("failed to register ramfs type\n");
+    panic("failed to register ramfs type\n");
   }
 }
 STATIC_INIT(ramfs_static_init);

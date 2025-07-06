@@ -23,11 +23,11 @@ static int default_d_close(device_t *dev) { return 0; }
 // MARK: Null Device
 //
 
-static ssize_t null_d_read(device_t *dev, size_t off, size_t nmax, kio_t *kio) {
+static ssize_t null_d_read(device_t *dev, _unused size_t off, size_t nmax, kio_t *kio) {
   return (ssize_t) kio_fill(kio, 0, nmax);
 }
 
-static ssize_t null_d_write(device_t *dev, size_t off, size_t nmax, kio_t *kio) {
+static ssize_t null_d_write(device_t *dev, _unused size_t off, size_t nmax, kio_t *kio) {
   return (ssize_t) kio_drain(kio, nmax);
 }
 
@@ -42,11 +42,11 @@ static struct device_ops null_ops = {
 // MARK: Debug Device
 //
 
-static ssize_t debug_d_read(device_t *dev, size_t off, size_t nmax, kio_t *kio) {
+static ssize_t debug_d_read(device_t *dev, _unused size_t off, size_t nmax, kio_t *kio) {
   return -EACCES;
 }
 
-static ssize_t debug_d_write(device_t *dev, size_t off, size_t nmax, kio_t *kio) {
+static ssize_t debug_d_write(device_t *dev, _unused size_t off, size_t nmax, kio_t *kio) {
   size_t n = 0;
   char ch;
   size_t res;
@@ -60,7 +60,7 @@ static ssize_t debug_d_write(device_t *dev, size_t off, size_t nmax, kio_t *kio)
 static int debug_d_ioctl(device_t *dev, unsigned long request, void *arg) {
   if (request == TIOCGWINSZ) {
     // simulate a terminal window size
-    if (vm_validate_user_ptr((uintptr_t) arg, /*write=*/true) < 0) {
+    if (vm_validate_ptr((uintptr_t) arg, /*write=*/true) < 0) {
       EPRINTF("TIOCGWINSZ ioctl requires a valid argument\n");
       return -EINVAL; // invalid argument
     }
@@ -88,11 +88,11 @@ static struct device_ops debug_ops = {
 // MARK: Loopback Device
 //
 
-static ssize_t loopback_d_read(device_t *dev, size_t off, size_t nmax, kio_t *kio) {
+static ssize_t loopback_d_read(device_t *dev, _unused size_t off, size_t nmax, kio_t *kio) {
   return (ssize_t) kio_fill(kio, 0, nmax);
 }
 
-static ssize_t loopback_d_write(device_t *dev, size_t off, size_t nmax, kio_t *kio) {
+static ssize_t loopback_d_write(device_t *dev, _unused size_t off, size_t nmax, kio_t *kio) {
   return (ssize_t) kio_drain(kio, nmax);
 }
 

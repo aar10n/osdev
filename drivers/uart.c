@@ -18,8 +18,8 @@
 #include <fs/devfs/devfs.h>
 
 #define ASSERT(x) kassert(x)
-// #define DPRINTF(fmt, ...) kprintf("uart: " fmt, ##__VA_ARGS__)
-#define DPRINTF(fmt, ...)
+ #define DPRINTF(fmt, ...) kprintf("uart: " fmt, ##__VA_ARGS__)
+//#define DPRINTF(fmt, ...)
 #define EPRINTF(fmt, ...) kprintf("uart: %s: " fmt, __func__, ##__VA_ARGS__)
 
 #define IS_VALID_PORT(port) \
@@ -647,7 +647,7 @@ static int uart_dev_close(device_t *dev) {
   return 0;
 }
 
-static ssize_t uart_dev_read(device_t *dev, size_t off, size_t nmax, kio_t *kio) {
+static ssize_t uart_dev_read(device_t *dev, _unused size_t off, size_t nmax, kio_t *kio) {
   struct uart_dev *uart_dev = dev->data;
   ssize_t n = 0;
   while (nmax--) {
@@ -661,7 +661,7 @@ static ssize_t uart_dev_read(device_t *dev, size_t off, size_t nmax, kio_t *kio)
   return n;
 }
 
-static ssize_t uart_dev_write(device_t *dev, size_t off, size_t nmax, kio_t *kio) {
+static ssize_t uart_dev_write(device_t *dev, _unused size_t off, size_t nmax, kio_t *kio) {
   struct uart_dev *uart_dev = dev->data;
   ssize_t n = 0;
   char ch;
@@ -696,20 +696,6 @@ static void register_serial_devices() {
     tty_t *tty = tty_alloc(&uart_ttydev_ops, uart_dev);
     if (tty == NULL) {
       EPRINTF("failed to allocate tty for serial port %d\n", i+1);
-      kfree(uart_dev);
-      continue;
-    }
-
-    int res;
-    struct termios termios = termios_make_canon(B9600);
-    struct winsize winsize = { 24, 80, 0, 0 };
-    tty_lock(tty);
-    res = tty_configure(tty, &termios, &winsize);
-    tty_unlock(tty);
-    if (res < 0) {
-      EPRINTF("failed to configure tty for serial port %d: {:err}\n", i+1, res);
-      tty_unlock(tty);
-      tty_free(&tty);
       kfree(uart_dev);
       continue;
     }
