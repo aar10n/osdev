@@ -16,3 +16,7 @@ Makefile.local
 
 ### macOS ###
 .DS_Store
+
+# Claude local memory
+CLAUDE.md
+.claude/

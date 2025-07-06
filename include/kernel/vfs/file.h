@@ -17,8 +17,8 @@ __ref fd_entry_t *fd_entry_alloc(int fd, int flags, cstr_t real_path, __ref file
 __ref fd_entry_t *fde_dup(fd_entry_t *fde, int new_fd);
 void _fde_cleanup(__move fd_entry_t **fde_ref);
 
-__ref file_t *f_alloc(enum ftype type, int access, void *data, struct file_ops *ops);
-__ref file_t *f_alloc_vn(int access, vnode_t *vnode);
+__ref file_t *f_alloc(enum ftype type, int flags, void *data, struct file_ops *ops);
+__ref file_t *f_alloc_vn(int flags, vnode_t *vnode);
 bool f_isatty(file_t *file);
 void _f_cleanup(__move file_t **fref);
 
@@ -50,6 +50,15 @@ void ftable_exec_close(ftable_t *ftable);
       _fde_cleanup(&__fde); \
     } \
   } \
+})
+
+#define fde_lock(fde) ({ \
+  ASSERT_IS_TYPE(fd_entry_t *, fde); \
+  mtx_lock(&(fde)->lock); \
+})
+#define fde_unlock(fde) ({ \
+  ASSERT_IS_TYPE(fd_entry_t *, fde); \
+  mtx_unlock(&(fde)->lock); \
 })
 
 #define f_getref(f) ({ \

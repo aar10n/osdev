@@ -51,6 +51,8 @@ int exec_load_image(enum exec_type type, uintptr_t base, cstr_t path, __out stru
       base = 0x400000;
     } else if (cstr_eq_charp(path, "/sbin/getty")) {
       base = 0x800000;
+    } else if (cstr_eq_charp(path, "/sbin/shell")) {
+      base = 0xC00000;
     }
     DPRINTF("exec: binary {:cstr} with base %p\n", &path, base);
   }
@@ -242,7 +244,7 @@ int exec_image_setup_stack(
   struct exec_stack *stack = kmallocz(sizeof(struct exec_stack));
   stack->base = stack_base;
   stack->size = stack_size;
-  stack->off = stack_off;
+  stack->off = stack_off & ~0xF; // align stack offset to 16 bytes
   stack->pages = moveref(stack_pages);
   stack->descs = LIST_FIRST(&descs);
 

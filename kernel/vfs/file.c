@@ -36,6 +36,7 @@ __ref fd_entry_t *fd_entry_alloc(int fd, int flags, cstr_t real_path, __ref file
   fde->real_path = str_from_cstr(real_path);
   fde->file = moveref(file);
   ref_init(&fde->refcount);
+  mtx_init(&fde->lock, 0, "fd_entry_lock");
   return fde;
 }
 
@@ -43,10 +44,16 @@ __ref fd_entry_t *fde_dup(fd_entry_t *fde, int new_fd) {
   file_t *file = fde->file;
   fd_entry_t *dup = kmallocz(sizeof(fd_entry_t));
   dup->fd = (new_fd < 0) ? fde->fd : new_fd;
+  
+  // copy flags under lock
+  mtx_lock(&fde->lock);
   dup->flags = fde->flags;
+  mtx_unlock(&fde->lock);
+  
   dup->real_path = str_dup(fde->real_path);
   dup->file = f_getref(file); // duplicate the file reference
   ref_init(&dup->refcount);
+  mtx_init(&dup->lock, 0, "fd_entry_lock");
 
   // since the duplicated file is open we bump the file open count
   f_lock(file);
@@ -63,14 +70,15 @@ void _fde_cleanup(__move fd_entry_t **fde_ref) {
   DPRINTF("!!! fd_entry cleanup <{:d}:{:str}> !!!\n", fde->fd, &fde->real_path);
   str_free(&fde->real_path);
   f_putref(&fde->file);
+  mtx_destroy(&fde->lock);
   kfree(fde);
 }
 
 //
 
-__ref file_t *f_alloc(enum ftype type, int access, void *data, struct file_ops *ops) {
+__ref file_t *f_alloc(enum ftype type, int flags, void *data, struct file_ops *ops) {
   file_t *file = kmallocz(sizeof(file_t));
-  file->access = access & O_ACCMODE;
+  file->flags = flags & ~O_CLOEXEC;
   file->type = type;
   file->data = data;
   file->ops = ops;
@@ -79,8 +87,8 @@ __ref file_t *f_alloc(enum ftype type, int access, void *data, struct file_ops *
   return file;
 }
 
-__ref file_t *f_alloc_vn(int access, vnode_t *vnode) {
-  file_t *file = f_alloc(FT_VNODE, access, vn_getref(vnode), &vnode_file_ops);
+__ref file_t *f_alloc_vn(int flags, vnode_t *vnode) {
+  file_t *file = f_alloc(FT_VNODE, flags, vn_getref(vnode), &vnode_file_ops);
   return file;
 }
 
@@ -232,7 +240,13 @@ void ftable_exec_close(ftable_t *ftable) {
   while (node != ftable->tree->nil) {
     rb_node_t *next = node->next;
     fd_entry_t *fde = node->data;
-    if (fde->flags & (O_DIRECTORY | O_CLOEXEC)) {
+    
+    // check flags under lock
+    mtx_lock(&fde->lock);
+    bool should_close = fde->flags & (O_DIRECTORY | O_CLOEXEC);
+    mtx_unlock(&fde->lock);
+    
+    if (should_close) {
       // remove the entry
       rb_tree_delete_node(ftable->tree, node);
       bitmap_clear(ftable->bitmap, (index_t) fde->fd);

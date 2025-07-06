@@ -36,33 +36,24 @@ static inline unsigned char vtype_to_dtype(enum vtype type) {
   }
 }
 
-static inline size_t kio_write_dirent(ino_t ino, off_t off, enum vtype type, cstr_t name, kio_t *kio) {
+static size_t kio_write_dirent(ino_t ino, off_t off, enum vtype type, cstr_t name, kio_t *kio) {
+  // the `name` field of the direct struct is defined as char d_name[256]; but
+  // since only getdents64 is used, we can use a variable length name
+  size_t namelen = cstr_len(name);
+  ASSERT(namelen <= NAME_MAX);
   struct dirent dirent;
   dirent.d_ino = ino;
   dirent.d_off = off;
   dirent.d_type = vtype_to_dtype(type);
-  dirent.d_reclen = sizeof(struct dirent);
-  cstr_memcpy(name, dirent.d_name, 256);
+  dirent.d_reclen = offsetof(struct dirent, d_name) + namelen + 1;
+  memcpy(dirent.d_name, cstr_ptr(name), namelen);
+  dirent.d_name[namelen] = '\0'; // null terminate
 
   if (kio_remaining(kio) < dirent.d_reclen) {
     return 0;
   }
 
-  return kio_write_in(kio, &dirent, sizeof(struct dirent), 0); // write dirent
-}
-
-static inline size_t kio_write_linux_dirent64(ino_t ino, off_t off, enum vtype type, cstr_t name, kio_t *kio) {
-  struct linux_dirent64 dirent;
-  dirent.d_ino = ino;
-  dirent.d_off = off;
-  dirent.d_type = vtype_to_dtype(type);
-  dirent.d_reclen = offsetof(struct linux_dirent64, d_name) + cstr_len(name) + 1;
-
-  size_t n = 0;
-  n += kio_write_in(kio, &dirent, offsetof(struct linux_dirent64, d_name), 0); // write dirent
-  n += kio_write_in(kio, cstr_ptr(name), cstr_len(name), 0); // write name
-  n += kio_write_in(kio, "\0", 1, 0); // write null terminator
-  return n;
+  return kio_write_in(kio, &dirent, dirent.d_reclen, 0); // write dirent
 }
 
 //

@@ -321,7 +321,7 @@ enum ftype {
  */
 typedef struct file {
   enum ftype type;      // file type
-  int access;           // access flags (O_RDONLY, O_WRONLY, O_RDWR)
+  int flags;            // file flags (O_* without O_CLOEXEC)
 
   void *data;           // file private data
   struct file_ops *ops; // file operations
@@ -359,6 +359,7 @@ typedef struct fd_entry {
   str_t real_path;      // full path to file
   struct file *file;    // file reference
   _refcount;            // reference count
+  mtx_t lock;           // protects flags field
 } fd_entry_t;
 
 

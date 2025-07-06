@@ -87,5 +87,9 @@ int main(int argc, char* argv[]) {
   fflush(stdout);
 
   // start the shell
-  perror("not implemented: exec shell");
+  execl(shell_path, shell_path, NULL);
+
+  // exec failed
+  perror("getty: failed to exec shell");
+  exit(1);
 }

@@ -1,7 +1,8 @@
 # system binaries
 SBIN_PROGS = \
 	getty \
-	init
+	init \
+	shell
 
 .DEFAULT_GOAL := all
 all: $(SBIN_PROGS:%=build-%)

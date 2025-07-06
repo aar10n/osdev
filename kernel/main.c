@@ -91,6 +91,7 @@ _used void kmain() {
   // which wll populate devices we will need shortly.
   sched_again(SCHED_YIELDED);
 
+  ls("/");
   ls("/dev");
   ls("/sbin");
 

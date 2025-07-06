@@ -7,14 +7,6 @@
 
 #include <bits/dirent.h>
 
-struct linux_dirent64 {
-  ino_t        d_ino;      /* inode number */
-  off_t        d_off;      /* offset to next structure */
-  unsigned short d_reclen; /* Size of this dirent */
-  unsigned char  d_type;   /* File type */
-  char           d_name[]; /* Filename (null-terminated) */
-};
-
 #define DT_UNKNOWN 0
 #define DT_FIFO 1
 #define DT_CHR 2

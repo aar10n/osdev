@@ -130,7 +130,7 @@ int vn_f_allocate(file_t *file, off_t len) {
   if (V_ISDEV(vn)) {
     // not supported for devices
     return -ENOSYS;
-  } else if (!((file->access == O_WRONLY || file->access == O_RDWR))) {
+  } else if (!((file->flags == O_WRONLY || file->flags == O_RDWR))) {
     // file must be opened for writing
     return -EBADF; // bad file descriptor
   }
@@ -187,7 +187,7 @@ ssize_t vn_f_read(file_t *file, kio_t *kio) {
   f_lock_assert(file, LA_OWNED);
   ASSERT(F_ISVNODE(file));
 
-  if (file->access & O_WRONLY)
+  if (file->flags & O_WRONLY)
     return -EBADF; // file is not open for reading
 
   ssize_t res;
@@ -223,13 +223,13 @@ ssize_t vn_f_read(file_t *file, kio_t *kio) {
 ssize_t vn_f_write(file_t *file, kio_t *kio) {
   f_lock_assert(file, LA_OWNED);
   ASSERT(F_ISVNODE(file));
-  if (file->access & O_RDONLY)
+  if (file->flags & O_RDONLY)
     return -EBADF; // file is not open for writing
 
   vnode_t *vn = file->data;
   if (V_ISDIR(vn)) {
     return -EISDIR; // file is a directory
-  } else if (file->access & O_RDONLY) {
+  } else if (file->flags & O_RDONLY) {
     return -EBADF; // file is not open for writing
   } else if (!vn_lock(vn)) {
     return -EIO; // vnode is dead

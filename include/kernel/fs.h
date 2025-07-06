@@ -38,6 +38,7 @@ ssize_t fs_write(int fd, const void *buf, size_t len);
 ssize_t fs_readv(int fd, const struct iovec *iov, int iovcnt);
 ssize_t fs_writev(int fd, const struct iovec *iov, int iovcnt);
 ssize_t fs_readdir(int fd, void *dirp, size_t len);
+ssize_t fs_readdir64(int fd, void *dirp, size_t len);
 off_t fs_lseek(int fd, off_t offset, int whence);
 int fs_ioctl(int fd, unsigned long request, void *argp);
 int fs_ftruncate(int fd, off_t length);

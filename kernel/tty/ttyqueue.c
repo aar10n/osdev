@@ -4,13 +4,13 @@
 
 #include <kernel/tty/ttyqueue.h>
 #include <kernel/mm.h>
-#include <kernel/proc.h>
 
 #include <kernel/printf.h>
 #include <kernel/panic.h>
 
 #define ASSERT(x) kassert(x)
-#define DPRINTF(fmt, ...) kprintf("tty_queue: " fmt, ##__VA_ARGS__)
+//#define DPRINTF(fmt, ...) kprintf("tty_queue: " fmt, ##__VA_ARGS__)
+#define DPRINTF(fmt, ...)
 #define EPRINTF(fmt, ...) kprintf("tty_queue: %s: " fmt, __func__, ##__VA_ARGS__)
 
 static void tty_queue_free(void **self, uintptr_t *data_buf, size_t data_size, uint32_t **quote_buf) {

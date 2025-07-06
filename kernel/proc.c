@@ -1281,6 +1281,7 @@ int proc_syscall_execve(cstr_t path, char *const argv[], char *const envp[]) {
   uintptr_t rip = image->interp ? image->interp->entry : image->entry;
   uintptr_t rsp = stack->base + stack->off;
   uint32_t rflags = 0x3202; // IF=1, IOPL=3
+  ASSERT(is_aligned(rsp, 16));
 
   // start running the new image
   exec_free_image(&image);

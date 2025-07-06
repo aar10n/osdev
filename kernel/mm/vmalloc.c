@@ -497,6 +497,23 @@ static int vm_handle_non_present_fault(vm_mapping_t *vm, size_t off) {
     page_t *last_page = SLIST_GET_LAST(table_pages, next);
     SLIST_ADD_SLIST(&vm->space->table_pages, table_pages, last_page, next);
   }
+
+  if (vm->flags & VM_ZERO) {
+    // zero the page if the VM_ZERO flag is set
+    size_t pg_size = pg_flags_to_size(page->flags);
+    if (vm->flags & VM_WRITE) {
+      // we can zero it normally
+      memset((void *)(vm->address + off), 0, pg_size);
+    } else {
+      // we must enter a critical section, disable write protection, then zero
+      critical_enter();
+      cpu_disable_write_protection();
+      memset((void *)(vm->address + off), 0, pg_size);
+      cpu_enable_write_protection();
+      critical_exit();
+    }
+  }
+
   drop_pages(&page);
   return 0;
 }
@@ -1007,10 +1024,22 @@ static int vmap_internal(
     }
   }
 
-  // zero the memory in the region if requested
-  if (vm->flags & VM_ZERO) {
+  if (vm->type == VM_TYPE_PAGE && vm->flags & VM_ZERO) {
+    // zero the memory in the region if requested on a page mapping.
+    // for file mappings this is done on demand
     vm->flags ^= VM_ZERO; // flag only applied on allocation
-    memset((void *)vm->address, 0, size);
+
+    if (vm->flags & VM_WRITE) {
+      // we can zero it normally
+      memset((void *)(virt_base + virt_off), 0, size);
+    } else {
+      // we must enter a critical section, disable write protection, then zero
+      critical_enter();
+      cpu_disable_write_protection();
+      memset((void *)(virt_base + virt_off), 0, size);
+      cpu_enable_write_protection();
+      critical_exit();
+    }
   }
 
   if (out_vaddr)
@@ -1338,6 +1367,7 @@ void *vm_mmap(uintptr_t addr, size_t len, int prot, int flags, int fd, off_t off
     flags |= MAP_ANON;
 
   if (flags & MAP_ANON) {
+    vm_flags |= VM_ZERO; // anonymous mappings are zeroed
     fd = -1;
     off = 0;
 

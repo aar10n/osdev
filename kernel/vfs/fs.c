@@ -351,7 +351,7 @@ int fs_proc_open(proc_t *proc, int fd, cstr_t path, int flags, mode_t mode) {
 
   // allocate and open file
   vnode_t *vn = VN(ve);
-  file_t *file = f_alloc_vn(acc, vn);
+  file_t *file = f_alloc_vn(flags, vn);
   f_lock(file);
   if ((res = F_OPS(file)->f_open(file, flags)) < 0) {
     EPRINTF("failed to open file {:err}\n", res);
@@ -507,7 +507,7 @@ ssize_t fs_kwrite(int fd, kio_t *kio) {
   file_t *file = fde->file;
   if (!f_lock(file))
     goto_res(ret, -EBADF); // file is closed
-  if (file->access & O_RDONLY)
+  if (file->flags & O_RDONLY)
     goto_res(ret_unlock, -EBADF); // file is not open for writing
 
   res = F_OPS(file)->f_write(file, kio);
@@ -576,7 +576,6 @@ ssize_t fs_readdir(int fd, void *dirp, size_t len) {
   file->offset += res;
 
   res = (ssize_t) kio_transfered(&kio);
-  kio_remfill(&kio, 0);
 LABEL(ret_unlock);
   f_unlock(file);
 LABEL(ret);
@@ -647,6 +646,101 @@ LABEL(ret);
   return res;
 }
 
+int fs_fcntl(int fd, int cmd, unsigned long arg) {
+  DPRINTF("fcntl: fd=%d, cmd=%d, arg=%lu\n", fd, cmd, arg);
+  int res;
+  fd_entry_t *fde = ftable_get_entry(FTABLE, fd);
+  if (fde == NULL)
+    return -EBADF;
+
+  switch (cmd) {
+    /* duplicate file descriptor */
+    case F_DUPFD: {
+      int newfd = ftable_alloc_fd(FTABLE);
+      if (newfd < 0)
+        goto_res(ret, -EMFILE);
+      if (newfd < (int)arg) {
+        ftable_free_fd(FTABLE, newfd);
+        for (int i = (int)arg; i < FTABLE_MAX_FILES; i++) {
+          if (ftable_claim_fd(FTABLE, i) == 0) {
+            newfd = i;
+            break;
+          }
+        }
+        if (newfd < (int)arg)
+          goto_res(ret, -EMFILE);
+      }
+      
+      fd_entry_t *newfde = fde_dup(fde, newfd);
+      newfde->flags &= ~O_CLOEXEC; // not in file table yet, no lock needed
+      ftable_add_entry(FTABLE, newfde);
+      res = newfd;
+      break;
+    }
+    /* get/set file descriptor flags */
+    case F_GETFD:
+      fde_lock(fde);
+      res = (fde->flags & O_CLOEXEC) ? FD_CLOEXEC : 0;
+      fde_unlock(fde);
+      break;
+    case F_SETFD:
+      fde_lock(fde);
+      if (arg & FD_CLOEXEC)
+        fde->flags |= O_CLOEXEC;
+      else
+        fde->flags &= ~O_CLOEXEC;
+      fde_unlock(fde);
+      res = 0;
+      break;
+    /* get/set file status flags */
+    case F_GETFL: {
+      fde_lock(fde);
+      file_t *file = fde->file;
+      if (!f_lock(file)) {
+        fde_unlock(fde);
+        goto_res(ret, -EBADF); // file is closed
+      }
+      res = file->flags | (fde->flags & O_CLOEXEC);
+      f_unlock(file);
+      fde_unlock(fde);
+      break;
+    }
+    case F_SETFL: {
+      int settable_flags = O_APPEND | O_NONBLOCK | O_ASYNC | O_DIRECT | O_NOATIME;
+      int new_flags = (int)arg & settable_flags;
+      
+      file_t *file = fde->file;
+      if (!f_lock(file))
+        goto_res(ret, -EBADF);
+      
+      file->flags = (file->flags & ~settable_flags) | new_flags;
+      f_unlock(file);
+      res = 0;
+      break;
+    }
+    /* file/record locking */
+    case F_GETLK:
+    case F_SETLK:
+    case F_SETLKW:
+      EPRINTF("fcntl command %d (file/record locking) not supported\n", cmd);
+      goto_res(ret, -ENOSYS);
+    /* signal-related commands */
+    case F_SETOWN:
+    case F_GETOWN:
+    case F_SETSIG:
+    case F_GETSIG:
+      EPRINTF("fcntl command %d (signal-related) not supported\n", cmd);
+      goto_res(ret, -ENOSYS);
+    default:
+      EPRINTF("fcntl invalid command %d\n", cmd);
+      goto_res(ret, -EINVAL);
+  }
+
+LABEL(ret);
+  fde_putref(&fde);
+  return res;
+}
+
 int fs_ftruncate(int fd, off_t length) {
   fd_entry_t *fde = ftable_get_entry(FTABLE, fd);
   if (fde == NULL)
@@ -695,7 +789,9 @@ int fs_dup(int fd) {
     goto_res(ret_unlock, -EMFILE);
 
   fd_entry_t *newfde = fde_dup(fde, newfd);
+  mtx_lock(&newfde->lock);
   newfde->flags &= ~O_CLOEXEC; // clear O_CLOEXEC for the new fd
+  mtx_unlock(&newfde->lock);
   ftable_add_entry(FTABLE, newfde);
 
   res = newfd; // success
@@ -723,7 +819,9 @@ int fs_dup2(int fd, int newfd) {
   }
 
   fd_entry_t *newfde = fde_dup(fde, newfd);
+  mtx_lock(&newfde->lock);
   newfde->flags &= ~O_CLOEXEC; // clear O_CLOEXEC for the new fd
+  mtx_unlock(&newfde->lock);
   ftable_add_entry(FTABLE, moveref(newfde));
 
   res = newfd;
@@ -1120,7 +1218,7 @@ SYSCALL_ALIAS(read, fs_read);
 SYSCALL_ALIAS(write, fs_write);
 SYSCALL_ALIAS(readv, fs_readv);
 SYSCALL_ALIAS(writev, fs_writev);
-SYSCALL_ALIAS(getdents, fs_readdir);
+SYSCALL_ALIAS(getdents64, fs_readdir);
 SYSCALL_ALIAS(lseek, fs_lseek);
 SYSCALL_ALIAS(stat, fs_stat);
 SYSCALL_ALIAS(ioctl, fs_ioctl);
@@ -1128,6 +1226,7 @@ SYSCALL_ALIAS(ftruncate, fs_ftruncate);
 SYSCALL_ALIAS(fstat, fs_fstat);
 SYSCALL_ALIAS(dup, fs_dup);
 SYSCALL_ALIAS(dup2, fs_dup2);
+SYSCALL_ALIAS(fcntl, fs_fcntl);
 
 DEFINE_SYSCALL(open, int, const char *path, int flags, mode_t mode) {
   return fs_open(cstr_make(path), flags, mode);
