@@ -157,8 +157,21 @@
 
 #define todo(msg) ({ kprintf("TODO: %s:%d: %s\n", __FILE__, __LINE__, #msg); WHILE_TRUE; })
 
+#define __assert_stack_is_aligned() ({ \
+  uintptr_t sp; \
+  __asm__ __volatile__("mov %0, rsp" : "=r"(sp)); \
+  if (sp & 0xF) { \
+    kprintf_kputs("!!! stack pointer is not aligned to 16 bytes !!!\n"); \
+    kprintf_kputs(__FILE__); \
+    kprintf_kputs(":"); \
+    kprintf_kputl(__LINE__); \
+    kprintf_kputs("\n"); \
+    WHILE_TRUE; \
+  } \
+})
+
 //
-// Special Macros
+// Initializer Function Macros
 //
 
 /**
@@ -217,7 +230,6 @@
   static_assert(SYS_ ##name >= 0);            \
   __typeof(symbol_name) sys_ ##name __attribute__((__alias__(#symbol_name)))
 
-
 //
 // Global Symbols
 //
@@ -235,6 +247,8 @@ extern uintptr_t __kernel_code_end;
 extern uintptr_t __kernel_data_end;
 
 void kprintf(const char *format, ...);
+void kprintf_kputs(const char *str);
+void kprintf_kputl(long l);
 noreturn void panic(const char *fmt, ...);
 
 //

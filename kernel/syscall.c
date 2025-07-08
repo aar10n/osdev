@@ -46,6 +46,7 @@ static const char *syscall_names[] = {
 };
 
 _used uint64_t handle_syscall(uint64_t syscall, struct trapframe *frame) {
+  __assert_stack_is_aligned();
   if (syscall < 0 || syscall > SYS_MAX) {
     DPRINTF("!!! invalid syscall: %d !!!\n", syscall);
     return -ENOSYS;

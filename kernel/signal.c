@@ -32,14 +32,13 @@ STATIC_INIT(static_init_setup_sigtramp);
 
 // called from switch.asm
 _used void signal_dispatch() {
+  __assert_stack_is_aligned();
   // this function executes all pending signals for the current thread
   thread_t *td = curthread;
-  // save current thread tcb on the stack
-  struct tcb temp_tcb;
-  memcpy(&temp_tcb, td->tcb, sizeof(struct tcb));
 
   int res;
   struct siginfo info = {};
+  bool handled_signal = false;
   while ((res = sigqueue_pop(&td->sigqueue, &info, &td->sigmask)) == 0) {
     int sig = info.si_signo;
     struct sigaction act;
@@ -53,6 +52,9 @@ _used void signal_dispatch() {
       continue;
     }
 
+    DPRINTF("dispatching signal %d for thread {:td}\n", sig, td);
+    DPRINTF("td->frame = {:p}, td->frame->parent = {:p}\n", td->frame, td->frame->parent);
+
     // execute the signal handler
     uintptr_t rsp;
     bool user_mode;
@@ -64,11 +66,11 @@ _used void signal_dispatch() {
       user_mode = true;
     }
     sigtramp_entry(&info, &act, rsp, user_mode);
-  }
-  atomic_fetch_and(&td->flags2, ~TDF2_SIGPEND);
+    handled_signal = true;
 
-  // restore the thread tcb
-  memcpy(td->tcb, &temp_tcb, sizeof(struct tcb));
+    DPRINTF("signal %d handled by thread {:td}\n", sig, td);
+    DPRINTF("td->frame = {:p}, td->frame->parent = {:p}\n", td->frame, td->frame->parent);
+  }
 }
 
 static void term_handler(int sig, struct siginfo *info, void *arg) {

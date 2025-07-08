@@ -82,11 +82,14 @@ void ftable_exec_close(ftable_t *ftable);
   if ((f)->closed) { \
     mtx_unlock(&(f)->lock);  \
     _locked = false; \
+  } else {           \
+    F_DPRINTF("f_lock: locking file %p", f); \
   } \
   _locked;\
 })
 #define f_unlock(f) ({ \
   ASSERT_IS_TYPE(file_t *, f); \
+  F_DPRINTF("f_unlock: unlocking file %p", f); \
   mtx_unlock(&(f)->lock); \
 })
 #define f_unlock_putref(f) ({ \

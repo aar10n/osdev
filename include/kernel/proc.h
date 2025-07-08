@@ -274,6 +274,8 @@ static_assert(offsetof(thread_t, ustack_ptr) == 0x90);
 #define   TDF2_HAS_SIGPEND(td) ((td)->flags2 & TDF2_SIGPEND)
 #define TDF2_TRAPFRAME  0x00000010  // thread should be restored from trapframe
 #define   TDF2_IS_TRAPFRAME(td) ((td)->flags2 & TDF2_TRAPFRAME)
+#define TDF2_SIGCTX     0x00000020  // thread is running a signal context
+#define   TDF2_IS_SIGCTX(td) ((td)->flags2 & TDF2_SIGCTX)
 
 
 #define TDS_IS_EMPTY(td) ((td)->state == TDS_EMPTY)

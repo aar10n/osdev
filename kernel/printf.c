@@ -50,9 +50,19 @@ void kprintf_kputs(const char *str) {
   kprintf_puts_impl(impl_arg, str);
 }
 
+void kprintf_kputl(long val) {
+  char str[12];
+  if (ltostr_safe(val, str, 12) < 0) {
+    kprintf_kputs("kprintf_kputl: invalid long value");
+  } else {
+    kprintf_puts_impl(impl_arg, str);
+  }
+}
+
 // MARK: Public API
 
 void kprintf(const char *format, ...) {
+  __assert_stack_is_aligned();
   char str[BUFFER_SIZE];
   va_list valist;
   va_start(valist, format);
@@ -62,12 +72,14 @@ void kprintf(const char *format, ...) {
 }
 
 void kvfprintf(const char *format, va_list valist) {
+  __assert_stack_is_aligned();
   char str[BUFFER_SIZE];
   fmt_format(format, str, BUFFER_SIZE, FMT_MAX_ARGS, valist);
   kprintf_puts_impl(impl_arg, str);
 }
 
 size_t ksprintf(char *str, const char *format, ...) {
+  __assert_stack_is_aligned();
   va_list valist;
   va_start(valist, format);
   size_t n = fmt_format(format, str, INT32_MAX, FMT_MAX_ARGS, valist);
@@ -77,10 +89,12 @@ size_t ksprintf(char *str, const char *format, ...) {
 }
 
 size_t kvsprintf(char *str, const char *format, va_list valist) {
+  __assert_stack_is_aligned();
   return fmt_format(format, str, INT32_MAX, FMT_MAX_ARGS, valist);
 }
 
 size_t ksnprintf(char *str, size_t n, const char *format, ...) {
+  __assert_stack_is_aligned();
   va_list valist;
   va_start(valist, format);
   size_t vn = fmt_format(format, str, n, FMT_MAX_ARGS, valist);
@@ -89,10 +103,12 @@ size_t ksnprintf(char *str, size_t n, const char *format, ...) {
 }
 
 size_t kvsnprintf(char *str, size_t n, const char *format, va_list valist) {
+  __assert_stack_is_aligned();
   return fmt_format(format, str, n, FMT_MAX_ARGS, valist);
 }
 
 char *kasprintf(const char *format, ...) {
+  __assert_stack_is_aligned();
   char buffer[BUFFER_SIZE];
 
   va_list valist;
@@ -106,6 +122,7 @@ char *kasprintf(const char *format, ...) {
 }
 
 char *kvasprintf(const char *format, va_list args) {
+  __assert_stack_is_aligned();
   char buffer[BUFFER_SIZE];
   size_t n = fmt_format(format, buffer, BUFFER_SIZE, FMT_MAX_ARGS, args);
   char *str = kmalloc(n + 1);
@@ -114,6 +131,7 @@ char *kvasprintf(const char *format, va_list args) {
 }
 
 int kfprintf(const char *path, const char *format, ...) {
+  __assert_stack_is_aligned();
   int fd = fs_open(cstr_make(path), O_WRONLY, 0);
   if (fd < 0) {
     return fd;
@@ -135,6 +153,7 @@ int kfprintf(const char *path, const char *format, ...) {
 }
 
 int kfdprintf(int fd, const char *format, ...) {
+  __assert_stack_is_aligned();
   char buffer[BUFFER_SIZE];
   va_list valist;
   va_start(valist, format);

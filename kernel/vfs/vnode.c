@@ -198,6 +198,8 @@ ssize_t vn_f_read(file_t *file, kio_t *kio) {
     return -EIO; // vnode is dead
   }
 
+  // this operation can block so we unlock the file during the read
+  f_unlock(file);
   if (V_ISDEV(vn)) {
     device_t *device = vn->v_dev;
     ASSERT(device != NULL);
@@ -210,6 +212,8 @@ ssize_t vn_f_read(file_t *file, kio_t *kio) {
     res = vn_read(vn, file->offset, kio);
     vn_end_data_read(vn);
   }
+  // and re-lock the file
+  f_lock(file);
 
   if (res > 0) {
     // update the file offset
@@ -235,6 +239,8 @@ ssize_t vn_f_write(file_t *file, kio_t *kio) {
     return -EIO; // vnode is dead
   }
 
+  // this operation can block so we unlock the file during the write
+  f_unlock(file);
   ssize_t res;
   if (V_ISDEV(vn)) {
     device_t *device = vn->v_dev;
@@ -248,6 +254,8 @@ ssize_t vn_f_write(file_t *file, kio_t *kio) {
     res = vn_write(vn, file->offset, kio);
     vn_end_data_write(vn);
   }
+  // and re-lock the file
+  f_lock(file);
 
   if (res > 0) {
     // update the file offset

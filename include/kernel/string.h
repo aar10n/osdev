@@ -39,6 +39,8 @@ int utf16_iconvn_ascii(char *dest, const char16_t *src, size_t n);
 
 long strtol(const char *nptr, char **endptr, int base);
 
+int ltostr_safe(long val, char *buf, size_t len);
+
 void *__memset_slow(void *dest, int val, size_t len);
 void *__memset8(void *dest, uint8_t val, size_t len);
 void *__memset32(void *dest, uint32_t val, size_t len);

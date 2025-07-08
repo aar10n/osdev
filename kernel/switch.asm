@@ -171,16 +171,16 @@ switch_thread:
   and dword PERCPU_RFLAGS, ~0x0200 ; clear the interrupt flag
 
   ; done with current thread now release the thread lock
-  ; rdi = curr
+  ; rdi = old_td
   ; rsi = file
   ; rdx = line
-  push rdi
-  push rsi
-  push rdx
+  push rdi ; preserve old_td across the call
+  push rsi ; preserve new_td across the call
+  sub rsp, 8 ; align stack to 16 bytes
   mov rsi, FILENAME
   mov rdx, __LINE__
   call _thread_unlock
-  pop rdx
+  add rsp, 8 ; restore stack alignment
   pop rsi
   pop rdi
 
@@ -195,7 +195,10 @@ switch_thread:
   mov rax, THREAD_PROCESS(rsi)
   mov r12, rsi ; next -> r12
   mov rdi, PROCESS_SPACE(rax) ; next->space
+  mov r15, rsp ; save the current stack pointer
+  and rsp, -16 ; align stack to 16 bytes
   call switch_address_space
+  mov rsp, r15 ; restore the stack pointer
   mov rsi, r12 ; next -> rsi
 .done_switch_address_space:
 
@@ -243,7 +246,10 @@ switch_thread:
   ; ==== dispatch pending signals
   bt dword THREAD_FLAGS2(rsi), TDF2_SIGPEND
   jnc .skip_handle_signals
+  mov r15, rsp ; save the current stack pointer
+  and rsp, -16 ; align stack to 16 bytes
   call signal_dispatch
+  mov rsp, r15 ; restore the stack pointer
   ; restore rsi and r8
   mov rsi, PERCPU_THREAD
   mov r8, THREAD_TCB(rsi)

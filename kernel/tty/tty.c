@@ -459,8 +459,11 @@ int tty_signal_pgrp(tty_t *tty, int signal) {
     return -ENXIO; // device is gone
   }
 
+  pgroup_t *pgrp = tty->pgrp;
+  pgrp_lock(pgrp);
   union sigval si_value = {0};
-  int res = pgrp_signal(tty->pgrp, signal, SI_KERNEL, si_value);
+  int res = pgrp_signal(pgrp, signal, SI_KERNEL, si_value);
+  pgrp_unlock(pgrp);
   tty_unlock(tty);
   if (res < 0) {
     EPRINTF("failed to signal pgrp: {:err}\n", res);

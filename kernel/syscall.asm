@@ -126,15 +126,16 @@ syscall_handler:
   mov TRAPFRAME_R15(rsp), r15
 
   ; move the user stack pointer into the thread
-  mov r15, PERCPU_THREAD
   mov rax, PERCPU_USER_SP
-  mov THREAD_USTACK_PTR(r15), rax
+  mov THREAD_USTACK_PTR(r11), rax
 
   ; systemv abi
   ;   rdi (syscall number)
   ;   rsi (trapframe)
   mov rdi, TRAPFRAME_RAX(rsp)
   mov rsi, rsp
+  mov r15, rsp        ; save trapframe pointer
+  and rsp, -16        ; align stack
   call handle_syscall
   ; rax = return value
 
@@ -144,10 +145,14 @@ syscall_handler:
   mov r8, THREAD_TCB(rsi)
   bt dword THREAD_FLAGS2(rsi), TDF2_SIGPEND
   jnc .skip_handle_signals
-  push rax
+  push rax            ; save rax, stack becomes 8-byte aligned
+  sub rsp, 8          ; make stack 16-byte aligned (8 + 8 = 16)
   call signal_dispatch
+  add rsp, 8          ; remove alignment padding
   pop rax
 .skip_handle_signals:
+
+  mov rsp, r15        ; restore trapframe pointer
 
   ; restore the parent trapframe
   mov r15, PERCPU_THREAD

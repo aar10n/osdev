@@ -6,11 +6,13 @@
 #ifndef KERNEL_PRINTF_H
 #define KERNEL_PRINTF_H
 
-#include <kernel/base.h>
+#include <kernel/types.h>
 #include <stdarg.h>
 
 void kprintf_early_init();
+
 void kprintf_kputs(const char *str);
+void kprintf_kputl(long val);
 
 /*
  * Format Strings

@@ -47,6 +47,7 @@ address_space_t *kernel_space;
 
 // called from switch.asm
 _used void switch_address_space(address_space_t *new_space) {
+  __assert_stack_is_aligned();
   address_space_t *current = curspace;
   if (current != NULL && current->page_table == new_space->page_table) {
     return;

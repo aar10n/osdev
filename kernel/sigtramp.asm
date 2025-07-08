@@ -153,8 +153,10 @@ sigtramp_entry:
   ;   rdx = struct sigcontext *ctx
   lea rax, SIGFRAME_ACT(rsp)  ; struct sigaction *act
   mov rax, SIGACT_HANDLER(rax)
-  and rsp, -16 ; align stack to 16 bytes
+  mov r15, rsp                ; save sigframe pointer
+  and rsp, -16                ; align stack to 16 bytes
   call rax
+  mov rsp, r15                ; restore sigframe pointer
 
   lea rax, SIGFRAME_ACT(rsp) ; struct sigaction *act
   mov rdi, SIGACT_FLAGS(rax)

@@ -71,6 +71,7 @@ _used noreturn void double_fault_handler() {
 }
 
 _used void interrupt_handler(struct trapframe *frame) {
+  __assert_stack_is_aligned();
   if (ignored_irqs[frame->vector])
     return;
 

@@ -166,6 +166,12 @@ typedef struct cpu_irq_stack {
 
 #define cpu_invlpg(addr) ({ uintptr_t __x = (uintptr_t)(addr); __asm volatile("invlpg [%0]" :: "r" (__x) : "memory"); })
 
+#define current_stack_pointer() ({ \
+  uintptr_t sp; \
+  __asm__ __volatile__("mov %0, rsp" : "=r"(sp)); \
+  sp; \
+})
+
 extern uint8_t cpu_bsp_id;
 
 void cpu_early_init();

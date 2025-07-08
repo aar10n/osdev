@@ -452,12 +452,14 @@ int pgrp_signal(pgroup_t *pg, int sig, int si_code, union sigval si_value) {
 
   int res = 0;
   LIST_FOR_IN(proc, &pg->procs, pglist) {
-    pr_lock_assert(proc, LA_LOCKED);
+    pr_lock(proc);
     if (proc->state == PRS_EXITED || proc->state == PRS_ZOMBIE) {
+      pr_unlock(proc);
       continue; // skip exited or zombie processes
     }
 
     res = proc_signal(proc, sig, si_code, si_value);
+    pr_unlock(proc);
     if (res < 0) {
       EPRINTF("failed to signal process {:pr}: {:err}\n", &proc, res);
       return res;
@@ -1009,7 +1011,12 @@ int proc_signal(proc_t *proc, int sig, int si_code, union sigval si_value) {
   }
 
   int res;
-  pr_lock(proc);
+  bool locked = false;
+  if (mtx_owner(&proc->lock) != curthread) {
+    pr_lock(proc);
+    locked = true;
+  }
+
   if (!PRS_IS_ALIVE(proc)) {
     EPRINTF("called on dead process {:pr}\n", proc);
     goto_res(ret, -ESRCH);
@@ -1064,7 +1071,8 @@ int proc_signal(proc_t *proc, int sig, int si_code, union sigval si_value) {
 
   res = 0; // success
 LABEL(ret);
-  pr_unlock(proc);
+  if (locked)
+    pr_unlock(proc);
   return res;
 }
 
@@ -1199,6 +1207,7 @@ int proc_syscall_execve(cstr_t path, char *const argv[], char *const envp[]) {
 
   // tear down the old process state
   pr_lock(proc);
+  td_lock(td);
 
   // 1. stop all other threads and remove them
   thread_t *other = LIST_FIRST(&proc->threads);
@@ -1276,6 +1285,19 @@ int proc_syscall_execve(cstr_t path, char *const argv[], char *const envp[]) {
   if (!str_isnull(td->name))
     str_free(&td->name);
   td->name = str_dup(proc->binpath);
+
+  // reset the threads trapframe and clear it
+  uintptr_t kstack_top = td->kstack_base + td->kstack_size;
+  kstack_top -= align(sizeof(struct tcb), 16);
+  td->tcb = (struct tcb *) kstack_top;
+  memset((void *) td->tcb, 0, sizeof(struct tcb));
+  kstack_top -= sizeof(struct trapframe);
+  td->frame = (struct trapframe *) kstack_top;
+  memset((void *) td->frame, 0, sizeof(struct trapframe));
+
+  DPRINTF("execve: thread->frame = {:p}, thread->tcb = {:p}\n", td->frame, td->tcb);
+
+  td_unlock(td);
   pr_unlock(proc);
 
   uintptr_t rip = image->interp ? image->interp->entry : image->entry;
@@ -1295,6 +1317,8 @@ LABEL(fail);
   return res;
 
 LABEL(crash);
+  td_unlock(td);
+  pr_unlock(proc);
   exec_free_image(&image);
   exec_free_stack(&stack);
   EPRINTF("execve failed, crashing process {:pr}: {:err}\n", proc, res);
@@ -1405,8 +1429,10 @@ thread_t *thread_syscall_fork() {
 
   // we want this thread to be restored from the trapframe
   copy->flags2 |= TDF2_TRAPFRAME;
-
   copy->name = str_dup(td->name);
+
+  DPRINTF("fork: thread->frame = {:p}, thread->tcb = {:p}\n", copy->frame, copy->tcb);
+
   td_unlock(td);
   return copy;
 }

@@ -38,6 +38,7 @@ entry:
   cld
   cli
 
+  and rsp, -16 ; align stack to 16 bytes
   call kmain   ; call the kernel
 .hang:
   hlt
@@ -54,6 +55,7 @@ ap_entry:
 
   cld
   cli
+  and rsp, -16 ; align stack to 16 bytes
   call ap_main ; call the kernel
 .hang:
   hlt

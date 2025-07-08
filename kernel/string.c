@@ -272,10 +272,34 @@ long strtol(const char *nptr, char **endptr, int base) {
 }
 
 
-//
-// function resolvers
-//
+int ltostr_safe(long val, char *buf, size_t len) {
+  if (!buf || len < 2) return -1;
 
-static void (*resolve_memset (void)) (void) {
-  return (void *) __memset8;
+  char *p = buf;
+  long neg = val < 0;
+
+  if (neg) {
+    val = -val;
+    *p++ = '-';
+    len--;
+  }
+
+  // count digits needed
+  long temp = val, digits = 0;
+  do {
+    digits++;
+    temp /= 10;
+  } while (temp);
+
+  if (digits >= len) return -1;
+
+  p[digits] = '\0';
+
+  // write digits backwards
+  do {
+    p[--digits] = (char)('0' + (val % 10));
+    val /= 10;
+  } while (val);
+
+  return 0;
 }

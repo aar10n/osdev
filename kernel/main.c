@@ -93,7 +93,6 @@ _used void kmain() {
 
   ls("/");
   ls("/dev");
-  ls("/sbin");
 
 //  alarm_source_enable(alarm_tick_source());
   launch_init_process();

@@ -305,5 +305,6 @@ void _thread_lock(thread_t *td, const char *file, int line) {
 }
 
 void _thread_unlock(thread_t *td, const char *file, int line) {
+  __assert_stack_is_aligned();
   _mtx_spin_unlock(&td->lock, file, line);
 }
