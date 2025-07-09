@@ -2,6 +2,13 @@
 ; Signal Trampoline
 ;
 
+; struct percpu offsets
+%define PERCPU_THREAD         gs:0x18
+
+; struct thread offsets
+%define THREAD_KSTACK_PTR(x)  [x+0x98]
+%define THREAD_USTACK_PTR(x)  [x+0xA0]
+
 ; struct sigframe offsets
 %define SIGFRAME_INFO(x)      [x+0x00]
 %define SIGFRAME_ACT(x)       [x+0x80]
@@ -75,36 +82,41 @@ global sigtramp_entry
 sigtramp_entry:
   ; rdi = struct siginfo *info
   ; rsi = struct sigaction *act
-  ; rdx = uintptr_t rsp
-  ; rcx = bool user_mode
+  ; rdx = bool user_mode
 
+  mov r8, PERCPU_THREAD ; r8 = current thread
+  cmp rdx, 0 ; check if we are in kernel mode
+  cmovz r9, THREAD_KSTACK_PTR(r8)
+  cmovnz r9, THREAD_USTACK_PTR(r8)
+
+  ; r9 contains the stack on which we will allocate the sigframe
   ; allocate a sigframe on the provided stack
-  sub rdx, SIGFRAME_SIZE
-  mov r8, rdx ; r8 = sigframe stack pointer
+
+  sub r9, SIGFRAME_SIZE ; r9 = sigframe pointer
 
   push rcx ; preserve user_mode
   push rdi ; preserve siginfo
 
   ; zero out the sigframe
   xor rax, rax                ; value (0)
-  mov rdi, r8                 ; dest
+  mov rdi, r9                 ; dest
   mov rcx, SIGFRAME_SIZE      ; size
   rep stosb
 
   ; copy sigaction into the sigframe
-  lea rdi, SIGFRAME_ACT(r8)   ; dest
+  lea rdi, SIGFRAME_ACT(r9)   ; dest
   ; rsi = act                 ; src
   mov rcx, SIGACT_SIZE        ; size
   rep movsb
 
   ; copy siginfo into the sigframe
-  lea rdi, SIGFRAME_INFO(r8)  ; dest
+  lea rdi, SIGFRAME_INFO(r9)  ; dest
   pop rsi ; siginfo           ; src
   mov rcx, SIGINFO_SIZE       ; size
   rep movsb
 
   ; ====== save context ======
-  lea rdi, SIGFRAME_CTX(r8)   ; struct sigcontext *ctx
+  lea rdi, SIGFRAME_CTX(r9)   ; rdi = struct sigcontext *
   mov SIGCTX_R12(rdi), r12
   mov SIGCTX_R13(rdi), r13
   mov SIGCTX_R14(rdi), r14
@@ -115,30 +127,36 @@ sigtramp_entry:
   pushfq
   pop rsi
   mov SIGCTX_RFLAGS(rdi), rsi
-  ; save return rip
-  mov rcx, [rsp+0x08]         ; return address
+  mov rcx, [rsp+0x08]         ; save return address
   mov SIGCTX_RIP(rdi), rcx
-  ; save return rsp
-  mov SIGCTX_RSP(rdi), rsp
-  add qword SIGCTX_RSP(rdi), 0x10   ; skip pushed rcx and return address
+  mov SIGCTX_RSP(rdi), rsp    ; save return rsp
+  add qword SIGCTX_RSP(rdi), 0x10 ; skip pushed rcx and return address
 
   ; setup trampoline arguments
   mov rdx, rdi                ; struct sigcontext *ctx (arg3)
-  lea rsi, SIGFRAME_INFO(r8)  ; struct siginfo *info   (arg2)
+  lea rsi, SIGFRAME_INFO(r9)  ; struct siginfo *info   (arg2)
   mov rdi, SIGINFO_SIGNO(rsi) ; int signo              (arg1)
 
   pop rcx                     ; pop user_mode
+
+  ; before we switch jmp to the handler we need to save THREAD_KSTACK_PTR
+  ; on the kernel stack (we we are currently on) and update it to rsp
+  push qword THREAD_KSTACK_PTR(r8)
+  mov THREAD_KSTACK_PTR(r8), rsp ; update thread's kernel stack pointer
+
   cmp rcx, 0                  ; check if we are in kernel mode
-  cmovz rsp, r8               ;   yes - update kernel stack pointer
-  jz .trampoline              ;   yes - jump to trampoline
-  ; we are in user mode
+  jz .kernel_trampoline       ;   yes - jump to trampoline
+                              ;   no - continue to sysret
 
   ; ====== sysret ======
   mov rcx, .trampoline        ; rip
-  mov rsp, r8                 ; rsp = user stack pointer
+  mov rsp, r9                 ; rsp = user stack pointer
   mov r11, 0x202              ; rflags
   swapgs
   o64 sysret
+
+.kernel_trampoline:
+  mov rsp, r9 ; update stack pointer to the sigframe
 
 .trampoline:
   ; registers on entry:

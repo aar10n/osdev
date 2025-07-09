@@ -13,7 +13,7 @@
 %define PERCPU_SCRATCH_RAX    gs:0x60
 
 ; struct thread offsets
-%define THREAD_TCB(x)         [x+0x20]
+%define THREAD_TCB(x)         [x+0x28]
 %define THREAD_FRAME(x)       [x+0x30]
 
 ; struct tcb offsets

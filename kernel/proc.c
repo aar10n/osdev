@@ -1291,9 +1291,12 @@ int proc_syscall_execve(cstr_t path, char *const argv[], char *const envp[]) {
   kstack_top -= align(sizeof(struct tcb), 16);
   td->tcb = (struct tcb *) kstack_top;
   memset((void *) td->tcb, 0, sizeof(struct tcb));
-  kstack_top -= sizeof(struct trapframe);
+  kstack_top -= align(sizeof(struct trapframe), 16);
   td->frame = (struct trapframe *) kstack_top;
   memset((void *) td->frame, 0, sizeof(struct trapframe));
+
+  // kernel stack begins just below the tcb and trapframe
+  td->kstack_ptr = kstack_top;
 
   DPRINTF("execve: thread->frame = {:p}, thread->tcb = {:p}\n", td->frame, td->tcb);
 
@@ -1372,6 +1375,9 @@ static thread_t *thread_alloc_internal(uint32_t flags, uintptr_t kstack_base, si
   kstack_top -= sizeof(struct trapframe);
   td->frame = (struct trapframe *) kstack_top;
   memset((void *) td->frame, 0, sizeof(struct trapframe));
+
+  // kernel stack begins just below the tcb and trapframe
+  td->kstack_ptr = kstack_top;
 
   if (flags & TDF_KTHREAD) {
     td->tcb->tcb_flags |= TCB_KERNEL;

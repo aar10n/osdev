@@ -14,13 +14,14 @@
 ; struct thread offsets
 %define THREAD_TID(x)         [x+0x00]
 %define THREAD_FLAGS(x)       [x+0x04]
-%define THREAD_LOCK(x)        [x+0x08]
-%define THREAD_TCB(x)         [x+0x20]
-%define THREAD_PROCESS(x)     [x+0x28]
+%define THREAD_PROC(x)        [x+0x20]
+%define THREAD_TCB(x)         [x+0x28]
 %define THREAD_FRAME(x)       [x+0x30]
 %define THREAD_KSTACK_BASE(x) [x+0x38]
 %define THREAD_KSTACK_SIZE(x) [x+0x40]
-%define THREAD_FLAGS2(x)      [x+0x88]
+%define THREAD_FLAGS2(x)      [x+0x90]
+%define THREAD_KSTACK_PTR(x)  [x+0x98]
+%define THREAD_USTACK_PTR(x)  [x+0xA0]
 
 ; thread flags2 bits
 %define TDF2_SIGPEND          3
@@ -93,7 +94,7 @@ section .text
 ;
 ; void switch_thread(thread_t *old_td, thread_t *new_td)
 ;
-;   the old_td lock should be held on entry and is released once the state is saved
+;  old_td->lock should be held on entry and is released once the state is saved
 global switch_thread
 switch_thread:
   test rdi, rdi ; check if old thread is NULL (i.e. thread exit)
@@ -184,15 +185,15 @@ switch_thread:
   pop rsi
   pop rdi
 
-  mov rax, THREAD_PROCESS(rdi)
-  test rax, THREAD_PROCESS(rsi)
+  mov rax, THREAD_PROC(rdi)
+  test rax, THREAD_PROC(rsi)
   ; if the next thread is from the same process
   ; we dont need to switch the address space
   jz .done_switch_address_space
 
   ; switch_address_space(next->space)
 .switch_address_space:
-  mov rax, THREAD_PROCESS(rsi)
+  mov rax, THREAD_PROC(rsi)
   mov r12, rsi ; next -> r12
   mov rdi, PROCESS_SPACE(rax) ; next->space
   mov r15, rsp ; save the current stack pointer
@@ -210,14 +211,11 @@ switch_thread:
 .restore_thread:
   ; update curthread and curproc
   mov PERCPU_THREAD, rsi
-  mov rax, THREAD_PROCESS(rsi)
+  mov rax, THREAD_PROC(rsi)
   mov PERCPU_PROCESS, rax
-  ; update percpu kernel_sp
-  mov rax, THREAD_KSTACK_BASE(rsi)
-  add rax, THREAD_KSTACK_SIZE(rsi)
-  sub rax, STACK_TOP_OFF ; stack starts just below tcb and trapframe
-  mov PERCPU_KERNEL_SP, rax
-  mov qword PERCPU_USER_SP, 0
+  ; update percpu user_sp
+  mov rax, THREAD_USTACK_PTR(rsi)
+  mov PERCPU_USER_SP, rax
 
   ; update tss rsp0 to point at the top of the thread trapframe
   mov rax, THREAD_FRAME(rsi)

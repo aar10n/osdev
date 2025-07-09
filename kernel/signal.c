@@ -17,7 +17,7 @@
 #define DPRINTF(x, ...) kprintf("signal: " x, ##__VA_ARGS__)
 #define EPRINTF(x, ...) kprintf("signal: %s: " x, __func__, ##__VA_ARGS__)
 
-extern void sigtramp_entry(struct siginfo *info, const struct sigaction *act, uintptr_t rsp, bool user_mode);
+extern void sigtramp_entry(struct siginfo *info, const struct sigaction *act, bool user_mode);
 
 void static_init_setup_sigtramp(void *_) {
   ASSERT(is_aligned((uintptr_t) sigtramp_entry, PAGE_SIZE));
@@ -36,41 +36,49 @@ _used void signal_dispatch() {
   // this function executes all pending signals for the current thread
   thread_t *td = curthread;
 
-  int res;
+  // hold the thread lock while we process the signal queue
+  td_lock(td);
+
+  int remaining;
   struct siginfo info = {};
-  bool handled_signal = false;
-  while ((res = sigqueue_pop(&td->sigqueue, &info, &td->sigmask)) == 0) {
+  while ((remaining = sigqueue_pop(&td->sigqueue, &info, &td->sigmask)) >= 0) {
+    // sigqueue_pop should only ever return an unmasked signal
+    ASSERT(!sigset_masked(td->sigmask, info.si_signo));
     int sig = info.si_signo;
+    int res;
+
+    // get the signal action for this signal
     struct sigaction act;
     if ((res = sigacts_get(td->proc->sigacts, sig, &act, NULL)) < 0) {
       continue;
     }
 
-    // check if the signal is masked
-    if (sigset_masked(td->sigmask, sig)) {
-      // find another thread for it?
+    if (act.sa_handler == SIG_IGN) {
+      // signal is ignored
+      DPRINTF("signal %d ignored by thread {:td}\n", sig, td);
       continue;
     }
 
     DPRINTF("dispatching signal %d for thread {:td}\n", sig, td);
-    DPRINTF("td->frame = {:p}, td->frame->parent = {:p}\n", td->frame, td->frame->parent);
 
+    uintptr_t kstack_ptr = td->kstack_ptr; // save kstack pointer
+    bool user_mode = !(act.sa_flags & SA_KERNHAND);
+    td_unlock(td); // unlock the thread while the signal is handled
     // execute the signal handler
-    uintptr_t rsp;
-    bool user_mode;
-    if (act.sa_flags & SA_KERNHAND) {
-      __asm__ __volatile__("mov %0, rsp" : "=r"(rsp));
-      user_mode = false;
-    } else {
-      rsp = td->ustack_ptr;
-      user_mode = true;
-    }
-    sigtramp_entry(&info, &act, rsp, user_mode);
-    handled_signal = true;
+    sigtramp_entry(&info, &act, user_mode);
+    td_lock(td); // relock it in case there are more signals to handle
+    td->kstack_ptr = kstack_ptr; // restore kstack pointer
 
     DPRINTF("signal %d handled by thread {:td}\n", sig, td);
-    DPRINTF("td->frame = {:p}, td->frame->parent = {:p}\n", td->frame, td->frame->parent);
   }
+
+  if (td->sigqueue.count == 0) {
+    // we can clear the thread TDF2_SIGPEND flag
+    td->flags2 &= ~TDF2_SIGPEND;
+  }
+
+  // finally unlock the thread
+  td_unlock(td);
 }
 
 static void term_handler(int sig, struct siginfo *info, void *arg) {
@@ -312,12 +320,16 @@ int sigacts_set(struct sigacts *sa, int sig, const struct sigaction *act, struct
 // MARK: sigqueue
 
 void sigqueue_init(sigqueue_t *queue) {
+  queue->count = 0;
   LIST_INIT(&queue->list);
 }
 
 void sigqueue_push(sigqueue_t *queue, struct siginfo *info) {
+  ASSERT(queue->count < INT32_MAX);
   ksiginfo_t *ksig = kmallocz(sizeof(ksiginfo_t));
+  ASSERT(ksig != NULL);
   ksig->info = *info;
+  queue->count++;
   SLIST_ADD(&queue->list, ksig, next);
 }
 
@@ -326,8 +338,14 @@ int sigqueue_pop(sigqueue_t *queue, struct siginfo *info, const sigset_t *mask) 
     return -EAGAIN;
   }
 
+  int count = 0;
   ksiginfo_t *ksig = SLIST_FIND(sig, LIST_FIRST(&queue->list), next, !sigset_masked(*mask, sig->info.si_signo));
+  if (ksig == NULL) {
+    return -EAGAIN; // no unmasked signals
+  }
   SLIST_REMOVE(&queue->list, ksig, next);
+  queue->count--;
+
   *info = ksig->info;
   kfree(ksig);
   return 0;

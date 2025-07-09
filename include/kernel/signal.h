@@ -57,6 +57,7 @@ typedef struct ksiginfo {
 } ksiginfo_t;
 
 typedef struct sigqueue {
+  int count;
   LIST_HEAD(struct ksiginfo) list;  // list of pending signals
 } sigqueue_t;
 

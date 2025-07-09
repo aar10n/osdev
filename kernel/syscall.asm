@@ -8,12 +8,11 @@
 
 ; struct thread offsets
 %define THREAD_FLAGS(x)       [x+0x04]
-%define THREAD_LOCK(x)        [x+0x08]
-%define THREAD_TCB(x)         [x+0x20]
-%define THREAD_PROCESS(x)     [x+0x28]
+%define THREAD_TCB(x)         [x+0x28]
 %define THREAD_FRAME(x)       [x+0x30]
-%define THREAD_FLAGS2(x)      [x+0x88]
-%define THREAD_USTACK_PTR(x)  [x+0x90]
+%define THREAD_FLAGS2(x)      [x+0x90]
+%define THREAD_KSTACK_PTR(x)  [x+0x98]
+%define THREAD_USTACK_PTR(x)  [x+0xA0]
 
 ; thread flags2 bits
 %define TDF2_SIGPEND          3
@@ -70,34 +69,35 @@ global syscall_handler:
 syscall_handler:
   swapgs
 
+  ; handle sigreturn as a special case
   cmp rax, NR_rt_sigreturn
   je sigreturn
 
-  ; clear interrupts while we establish the trapframe
-;  cli
+  mov PERCPU_USER_SP, rsp         ; save the current user rsp
+  mov PERCPU_SCRATCH_RAX, rax     ; save current syscall number
 
-  ; swap to the kernel stack
-  mov PERCPU_USER_SP, rsp
-  mov rsp, PERCPU_KERNEL_SP
-
-  ; preserve rax and free it up
-  mov PERCPU_SCRATCH_RAX, rax
+  mov rax, PERCPU_THREAD
+  mov rsp, THREAD_KSTACK_PTR(rax) ; swap to the thread kernel stack
 
   ; setup a trapframe
   sub rsp, TRAPFRAME_SIZE
   mov qword TRAPFRAME_SS(rsp), 0
+  ; move user rsp, rip and rflags into the trapframe
   mov rax, PERCPU_USER_SP
   mov TRAPFRAME_RSP(rsp), rax
   mov TRAPFRAME_RFLAGS(rsp), r11
   mov TRAPFRAME_RIP(rsp), rcx
 
-  ; reference thread's old trapframe
-  mov r11, PERCPU_THREAD
-  mov rax, THREAD_FRAME(r11)
-  mov THREAD_FRAME(r11), rsp        ; update the thread's trapframe pointer
+  mov rcx, PERCPU_THREAD
+  mov THREAD_KSTACK_PTR(rcx), rsp ; update the thread's kernel stack pointer
+  mov rax, PERCPU_USER_SP
+  mov THREAD_USTACK_PTR(rcx), rax ; update the thread's user stack pointer
 
+  ; point frame->parent at thread's current trapframe
+  mov rax, THREAD_FRAME(rcx)
+  mov THREAD_FRAME(rcx), rsp        ; update thread->frame to the new trapframe
   mov TRAPFRAME_PARENT(rsp), rax    ; save the old trapframe pointer
-  mov dword TRAPFRAME_FLAGS(rsp), 0 ; clear flags
+  mov dword TRAPFRAME_FLAGS(rsp), 0 ; clear trapframe flags
 
   ; linux syscall abi
   ;   rax   syscall number
@@ -125,10 +125,6 @@ syscall_handler:
   mov TRAPFRAME_R14(rsp), r14
   mov TRAPFRAME_R15(rsp), r15
 
-  ; move the user stack pointer into the thread
-  mov rax, PERCPU_USER_SP
-  mov THREAD_USTACK_PTR(r11), rax
-
   ; systemv abi
   ;   rdi (syscall number)
   ;   rsi (trapframe)
@@ -140,24 +136,21 @@ syscall_handler:
   ; rax = return value
 
   ; ==== dispatch pending signals
-  ; restore rsi and r8
-  mov rsi, PERCPU_THREAD
-  mov r8, THREAD_TCB(rsi)
-  bt dword THREAD_FLAGS2(rsi), TDF2_SIGPEND
+  mov r14, PERCPU_THREAD
+  bt dword THREAD_FLAGS2(r14), TDF2_SIGPEND
   jnc .skip_handle_signals
-  push rax            ; save rax, stack becomes 8-byte aligned
+  push rax            ; save syscall return, stack becomes 8-byte aligned
   sub rsp, 8          ; make stack 16-byte aligned (8 + 8 = 16)
   call signal_dispatch
   add rsp, 8          ; remove alignment padding
-  pop rax
+  pop rax             ; restore syscall return value
 .skip_handle_signals:
 
   mov rsp, r15        ; restore trapframe pointer
 
-  ; restore the parent trapframe
-  mov r15, PERCPU_THREAD
-  mov r14, TRAPFRAME_PARENT(rsp)
-  mov THREAD_FRAME(r15), r14
+  ; restore thread->frame to parent frame
+  mov r13, TRAPFRAME_PARENT(rsp)
+  mov THREAD_FRAME(r14), r13
 
   ; restore the trapframe
   mov r15, TRAPFRAME_R15(rsp)

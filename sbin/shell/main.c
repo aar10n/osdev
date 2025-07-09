@@ -101,8 +101,7 @@ int is_empty_line(char *line) {
 
 // signal handler for Ctrl+C
 void sigint_handler(int sig) {
-  printf("\n" PROMPT);
-  fflush(stdout);
+  write(STDOUT_FILENO, "\n" PROMPT, sizeof(PROMPT)+1);
 }
 
 // main shell loop
@@ -111,9 +110,6 @@ void shell_loop(void) {
   char **args;
   int status;
   size_t bufsize = 0;
-
-  // setup signal handler
-  signal(SIGINT, sigint_handler);
 
   do {
     printf(PROMPT);
@@ -149,6 +145,7 @@ int main(int argc, char **argv) {
   printf("Basic Shell\n");
   printf("Type 'help' for available commands.\n\n");
 
+  signal(SIGINT, sigint_handler);
   shell_loop();
 
   return EXIT_SUCCESS;

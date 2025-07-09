@@ -188,8 +188,8 @@ typedef struct thread {
   pid_t tid;                            // thread id
   uint32_t flags;                       // thread flags
   mtx_t lock;                           // thread mutex lock
-  struct tcb *tcb;                      // thread context
   struct proc *proc;                    // owning process (ref)
+  struct tcb *tcb;                      // thread context
   struct trapframe *frame;              // thread trapframe
   uintptr_t kstack_base;                // kernel stack base
   size_t kstack_size;                   // kernel stack size
@@ -215,9 +215,10 @@ typedef struct thread {
   uint16_t : 16;
   uint8_t pri_base;                     // base priority
   uint8_t priority;                     // current priority
-  uintptr_t ustack_ptr;                 // user stack pointer (on syscall entry)
+  uintptr_t kstack_ptr;                 // kernel stack pointer
 
   /* starts zeroed */
+  uintptr_t ustack_ptr;                 // user stack pointer (on syscall entry)
   str_t name;                           // thread name
   uint64_t ustack_base;                 // user stack base
   size_t ustack_size;                   // user stack size
@@ -248,10 +249,16 @@ typedef struct thread {
   LIST_ENTRY(struct thread) lqlist;     // lockq list entry
   LIST_ENTRY(struct thread) wqlist;     // waitq list entry
 } thread_t;
+static_assert(offsetof(thread_t, tid) == 0x00);
+static_assert(offsetof(thread_t, flags) == 0x04);
+static_assert(offsetof(thread_t, proc) == 0x20);
+static_assert(offsetof(thread_t, tcb) == 0x28);
+static_assert(offsetof(thread_t, frame) == 0x30);
 static_assert(offsetof(thread_t, kstack_base) == 0x38);
 static_assert(offsetof(thread_t, kstack_size) == 0x40);
-static_assert(offsetof(thread_t, flags2) == 0x88);
-static_assert(offsetof(thread_t, ustack_ptr) == 0x90);
+static_assert(offsetof(thread_t, flags2) == 0x90);
+static_assert(offsetof(thread_t, kstack_ptr) == 0x98);
+static_assert(offsetof(thread_t, ustack_ptr) == 0xA0);
 
 // thread flags
 #define TDF_KTHREAD     0x00000001  // kernel thread
