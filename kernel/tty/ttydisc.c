@@ -13,7 +13,7 @@
 #define DPRINTF(fmt, ...) kprintf("tty_disc: " fmt, ##__VA_ARGS__)
 #define EPRINTF(fmt, ...) kprintf("tty_disc: %s: " fmt, __func__, ##__VA_ARGS__)
 
-#define TTY_WRITE_STACK 256
+#define TAB_WIDTH 8
 
 // control characters that should be echoed
 #define CTL_ECHO(c, q)	(!(q) && ((c) == '\t' || (c) == '\n' || (c) == '\r' || (c) == 0x8))
@@ -32,11 +32,35 @@ static void ttydisc_get_breaks(tty_t *tty, char breaks[4]) {
   breaks[n] = '\0'; // null-terminate the string
 }
 
+static int ttydisc_write_noproc(tty_t *tty, char ch) {
+  int res = res = ttyoutq_write_ch(tty->outq, ch);
+  if (res == 0) {
+    if (ch == '\n' || ch == '\r') {
+      tty->column = 0;
+    } else if (ch == '\t') {
+      tty->column += TAB_WIDTH;
+    } else if (ch >= 0x20 && ch < 0x7f) {
+      tty->column++;
+    }
+  }
+  return res;
+}
+
 static int ttydisc_write_oproc(tty_t *tty, char ch) {
   struct termios *t = &tty->termios;
   int res;
   switch (ch) {
-    // todo: handle tab expansion
+    case '\t': {
+      // expand tab to spaces
+      for (size_t i = 0; i < TAB_WIDTH; i++) {
+        res = ttyoutq_write_ch(tty->outq, ' ');
+        if (res < 0) {
+          return res;
+        }
+      }
+      tty->column += TAB_WIDTH;
+      break;
+    }
     case '\n': {
       // newline conversion
       if (t->c_oflag & ONLCR) {
@@ -68,11 +92,19 @@ static int ttydisc_write_oproc(tty_t *tty, char ch) {
       }
 
       res = ttyoutq_write_ch(tty->outq, ch);
+      if (res == 0 && ch == '\r') {
+        // carriage return resets column to 0
+        tty->column = 0;
+      }
       break;
     }
     default: {
       // write the character as is
       res = ttyoutq_write_ch(tty->outq, ch);
+      if (res == 0 && ch >= 0x20 && ch < 0x7f) {
+        // printable character, increment column
+        tty->column++;
+      }
       break;
     }
   }
@@ -87,9 +119,11 @@ static int ttydisc_write_oproc(tty_t *tty, char ch) {
 
 void ttydisc_open(tty_t *tty) {
   // configure the tty with default settings
-  struct termios termios = termios_make_canon(B9600);
+  struct termios termios = termios_make_canon(B115200);
   struct winsize winsize = { 24, 80, 0, 0 };
-  tty_configure(tty, &termios, &winsize);
+  if (tty_configure(tty, &termios, &winsize) < 0) {
+    panic("ttydisc_open: failed to configure ttydisc");
+  }
 }
 
 void ttydisc_close(tty_t *tty) {
@@ -183,11 +217,43 @@ int ttydisc_rint(tty_t *tty, uint8_t ch, int flags) {
   if (t->c_lflag & ICANON) {
     if (ch == t->c_cc[VERASE]) {
       // handle erase character
-      ttyinq_del_ch(tty->inq);
+      if (ttyinq_linebytes(tty->inq) > 0) {
+        int del_ch = ttyinq_del_ch(tty->inq);
+        ASSERT(del_ch >= 0);
+
+        // echo the deletion if ECHO is enabled
+        if (t->c_lflag & ECHO) {
+          int char_width = 1;
+          if (del_ch == '\t') {
+            char_width = TAB_WIDTH;
+          }
+
+          for (size_t i = 0; i < char_width; i++) {
+            // write backspace, space, backspace to erase the character
+            ttyoutq_write_ch(tty->outq, '\b');
+            ttyoutq_write_ch(tty->outq, ' ');
+            ttyoutq_write_ch(tty->outq, '\b');
+          }
+
+          // update column position
+          ASSERT(tty->column >= char_width);
+          tty->column -= char_width;
+        }
+      }
       return 0;
     } else if (ch == t->c_cc[VKILL]) {
       // handle line kill
-      ttyinq_kill_line(tty->inq);
+      size_t line_chars = ttyinq_linebytes(tty->inq);
+      while (ttyinq_linebytes(tty->inq) > 0) {
+        ttyinq_del_ch(tty->inq);
+
+        // echo the deletion if ECHO is enabled
+        if (t->c_lflag & ECHO) {
+          ttyoutq_write_ch(tty->outq, '\b');
+          ttyoutq_write_ch(tty->outq, ' ');
+          ttyoutq_write_ch(tty->outq, '\b');
+        }
+      }
       return 0;
     }
     // todo: handle IEXTEN (and VWERASE, VREPRINT)
@@ -327,8 +393,7 @@ int	ttydisc_write_ch(tty_t *tty, char ch) {
     // post-process character before output
     res = ttydisc_write_oproc(tty, ch);
   } else {
-    // write the character as is
-    res = ttyoutq_write_ch(tty->outq, ch);
+    res = ttydisc_write_noproc(tty, ch);
   }
 
   if (res < 0) {
@@ -358,7 +423,12 @@ ssize_t	ttydisc_write(tty_t *tty, kio_t *kio) {
         break;
     }
   } else {
-    res = ttyoutq_write(tty->outq, kio);
+    char ch;
+    while (kio_read_ch(&ch, kio) > 0) {
+      res = ttydisc_write_noproc(tty, ch);
+      if (res < 0)
+        break;
+    }
   }
 
   if (res < 0) {
@@ -407,9 +477,22 @@ int ttydisc_echo(tty_t *tty, uint8_t ch, bool quote) {
       kio = kio_new_readable(outbuf, 2);
     }
     res = ttyoutq_write(tty->outq, &kio);
+    
+    // update column position for ^X notation (2 chars forward)
+    if (res == 0) {
+      tty->column += 2;
+    }
   } else {
     // print the character as is
     res = ttyoutq_write_ch(tty->outq, (char) ch);
+    
+    // update column position for regular characters
+    if (res == 0) {
+      if (ch >= 0x20 && ch < 0x7f) {
+        // printable character
+        tty->column++;
+      }
+    }
   }
 
   if (res < 0) {

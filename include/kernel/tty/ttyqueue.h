@@ -30,12 +30,27 @@ int ttyinq_write_ch(struct ttyinq *inq, char ch, bool quote);
 ssize_t ttyinq_write(struct ttyinq *inq, kio_t *kio, bool quote);
 ssize_t ttyinq_read(struct ttyinq *inq, kio_t *kio, size_t n);
 size_t ttyinq_drop(struct ttyinq *inq, size_t n);
-void ttyinq_del_ch(struct ttyinq *inq);
-void ttyinq_kill_line(struct ttyinq *inq);
+int ttyinq_del_ch(struct ttyinq *inq);
 
 static inline size_t ttyinq_canonbytes(struct ttyinq *inq) {
   kassert(inq->read_pos <= inq->next_line);
   return inq->next_line - inq->read_pos;
+}
+
+static inline size_t ttyinq_linebytes(struct ttyinq *inq) {
+  kassert(inq->read_pos <= inq->write_pos);
+  return inq->write_pos - inq->read_pos;
+}
+
+static inline char tty_inq_peek_ch(struct ttyinq *inq) {
+  kassert(inq->data_size > 0);
+  if (inq->read_pos == inq->write_pos) {
+    // queue is empty
+    return -1;
+  }
+  // read the character from the buffer without removing it
+  uintptr_t buf_addr = inq->data_buf + inq->read_pos;
+  return *(char *)buf_addr;
 }
 
 

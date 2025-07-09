@@ -100,7 +100,7 @@ int tty_signal_pgrp(tty_t *tty, int signal);
 static inline struct termios termios_make_canon(speed_t speed) {
   struct termios t;
   t.c_iflag = ICRNL | IXON | BRKINT;  // input flags: translate CR to NL, enable XON/XOFF flow control
-  t.c_oflag = OPOST | ONLCR;          // output flags: post-process output, translate NL to CR-NL
+  t.c_oflag = OPOST | ONLCR | XTABS;  // output flags: post-process output, translate NL to CR-NL
   t.c_cflag = CS8 | CREAD | CLOCAL;   // control flags: 8 data bits, enable receiver, ignore modem control
   t.c_lflag = ISIG | ICANON | ECHO;   // local flags: enable signals, canonical mode, echo input
   ttydisc_fill_cc_default(&t);

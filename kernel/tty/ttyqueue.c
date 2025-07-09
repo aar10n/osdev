@@ -223,13 +223,72 @@ size_t ttyinq_drop(struct ttyinq *inq, size_t n) {
   return bytes_dropped;
 }
 
-void ttyinq_del_ch(struct ttyinq *inq) {
-
-  DPRINTF("TODO: ttyinq_del_ch\n");
-}
-
-void ttyinq_kill_line(struct ttyinq *inq) {
-  todo();
+int ttyinq_del_ch(struct ttyinq *inq) {
+  ASSERT(inq != NULL);
+  ASSERT(inq->data_size > 0);
+  
+  // in canonical mode, we only delete from the current line being edited
+  // (i.e., between read_pos and write_pos, but not past next_line)
+  if (inq->write_pos == inq->read_pos) {
+    return -1;
+  }
+  
+  // check if the last character is quoted
+  uint32_t last_pos = (inq->write_pos - 1 + inq->data_size) % inq->data_size;
+  bool is_quoted = INQ_QUOTE_GET(inq, last_pos);
+  
+  if (is_quoted) {
+    // quoted characters may be multi-byte sequences
+    // we need to determine how many bytes to remove
+    uintptr_t buf_addr = inq->data_buf + last_pos;
+    char last_ch = *(char *)buf_addr;
+    
+    if ((unsigned)last_ch == 0xff) {
+      // this could be part of a 0xff 0xff sequence or 0xff 0x00 <char> sequence
+      // check if there's a preceding 0xff
+      if (inq->write_pos >= 2) {
+        uint32_t prev_pos = (inq->write_pos - 2 + inq->data_size) % inq->data_size;
+        uintptr_t prev_buf_addr = inq->data_buf + prev_pos;
+        char prev_ch = *(char *)prev_buf_addr;
+        
+        if ((unsigned)prev_ch == 0xff) {
+          // this is a 0xff 0xff sequence, remove both bytes
+          inq->write_pos = (inq->write_pos - 2 + inq->data_size) % inq->data_size;
+          INQ_QUOTE_CLEAR(inq, last_pos);
+          INQ_QUOTE_CLEAR(inq, prev_pos);
+          DPRINTF("ttyinq_del_ch: deleted quoted 0xff 0xff sequence\n");
+          return 0xff;
+        }
+      }
+    } else {
+      // this might be part of a 0xff 0x00 <char> sequence
+      // check if there are two preceding bytes: 0xff 0x00
+      if (inq->write_pos >= 3) {
+        uint32_t prev_pos1 = (inq->write_pos - 2 + inq->data_size) % inq->data_size;
+        uint32_t prev_pos2 = (inq->write_pos - 3 + inq->data_size) % inq->data_size;
+        uintptr_t prev_buf_addr1 = inq->data_buf + prev_pos1;
+        uintptr_t prev_buf_addr2 = inq->data_buf + prev_pos2;
+        char prev_ch1 = *(char *)prev_buf_addr1;
+        char prev_ch2 = *(char *)prev_buf_addr2;
+        
+        if ((unsigned)prev_ch2 == 0xff && prev_ch1 == 0x00) {
+          // this is a 0xff 0x00 <char> sequence, remove all three bytes
+          inq->write_pos = (inq->write_pos - 3 + inq->data_size) % inq->data_size;
+          INQ_QUOTE_CLEAR(inq, last_pos);
+          INQ_QUOTE_CLEAR(inq, prev_pos1);
+          INQ_QUOTE_CLEAR(inq, prev_pos2);
+          DPRINTF("ttyinq_del_ch: deleted quoted 0xff 0x00 <char> sequence\n");
+          return (int) last_ch;
+        }
+      }
+    }
+  }
+  
+  // default case: delete a single character
+  char last_ch = *(char *)(inq->data_buf + last_pos);
+  inq->write_pos = (inq->write_pos - 1 + inq->data_size) % inq->data_size;
+  INQ_QUOTE_CLEAR(inq, inq->write_pos);
+  return (int) last_ch;
 }
 
 

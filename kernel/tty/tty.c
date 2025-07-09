@@ -195,6 +195,7 @@ int tty_configure(tty_t *tty, struct termios *termios, struct winsize *winsize) 
     if (tty->termios.__c_ospeed != old_speed) {
       // speed has changed, resize out buffers accordingly
       size_t new_size = tty->termios.__c_ospeed / 10;
+      DPRINTF("resizing input and output queues to %zu bytes\n", new_size);
       if (ttyinq_setsize(tty->inq, new_size) < 0) {
         EPRINTF("failed to resize input queue to %zu bytes\n", new_size);
         return -ENOMEM; // memory allocation error
