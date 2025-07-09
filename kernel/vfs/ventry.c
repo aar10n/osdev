@@ -150,10 +150,14 @@ void ve_remove_child(ventry_t *parent, ventry_t *child) {
 
 ssize_t ve_get_path(ventry_t *ve, sbuf_t *buf) {
   ventry_t *root_ve = fs_root_getref();
-  // /dev
 
   size_t pathlen = 0;
   ve = ve_getref(ve);
+  if (ve == root_ve) {
+    sbuf_write_char(buf, '/');
+    pathlen += 1;
+  }
+
   while (ve != root_ve) {
     size_t n;
     if (!str_eq_charp(ve->name, "/")) {

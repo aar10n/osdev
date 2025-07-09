@@ -146,6 +146,10 @@ syscall_handler:
   pop rax             ; restore syscall return value
 .skip_handle_signals:
 
+  ; restore the thread's kernel stack pointer
+  mov rcx, PERCPU_THREAD
+  add qword THREAD_KSTACK_PTR(rcx), TRAPFRAME_SIZE
+
   mov rsp, r15        ; restore trapframe pointer
 
   ; restore thread->frame to parent frame

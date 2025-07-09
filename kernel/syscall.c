@@ -5,6 +5,7 @@
 #include <kernel/syscall.h>
 #include <kernel/cpu/trapframe.h>
 
+#include <kernel/proc.h>
 #include <kernel/panic.h>
 #include <kernel/printf.h>
 

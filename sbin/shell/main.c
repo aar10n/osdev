@@ -80,9 +80,12 @@ int shell_execute(char **args) {
   // first check if it's a built-in command
   for (i = 0; builtins[i].name; i++) {
     if (strcmp(args[0], builtins[i].name) == 0) {
+      printf("Executing built-in command: '%s'\n", args[0]);
       return builtins[i].func(args);
     }
   }
+
+  printf("Executing external command: '%s'\n", args[0]);
 
   // otherwise fork+exec the command
   return shell_launch(args);
@@ -130,7 +133,7 @@ void shell_loop(void) {
     if (is_empty_line(line)) {
       continue;
     }
-
+    
     // parse and execute
     args = parse_line(line);
     status = shell_execute(args);

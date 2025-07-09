@@ -1239,3 +1239,45 @@ DEFINE_SYSCALL(truncate, int, const char *path, off_t length) {
 DEFINE_SYSCALL(lstat, int, const char *path, struct stat *stat) {
   return fs_lstat(cstr_make(path), stat);
 }
+
+DEFINE_SYSCALL(chdir, int, const char *path) {
+  return fs_chdir(cstr_make(path));
+}
+
+DEFINE_SYSCALL(mknod, int, const char *path, mode_t mode, dev_t dev) {
+  return fs_mknod(cstr_make(path), mode, dev);
+}
+
+DEFINE_SYSCALL(symlink, int, const char *target, const char *linkpath) {
+  return fs_symlink(cstr_make(target), cstr_make(linkpath));
+}
+
+DEFINE_SYSCALL(link, int, const char *oldpath, const char *newpath) {
+  return fs_link(cstr_make(oldpath), cstr_make(newpath));
+}
+
+DEFINE_SYSCALL(unlink, int, const char *path) {
+  return fs_unlink(cstr_make(path));
+}
+
+DEFINE_SYSCALL(mkdir, int, const char *path, mode_t mode) {
+  return fs_mkdir(cstr_make(path), mode);
+}
+
+DEFINE_SYSCALL(getcwd, int, char *buf, size_t bufsiz) {
+  if (vm_validate_ptr((uintptr_t) buf, /*write=*/true) < 0) {
+    return -EFAULT;
+  }
+
+  ventry_t *ve = ve_getref(curproc->pwd);
+  if (ve == NULL)
+    return -ENOENT;
+
+  sbuf_t sbuf = sbuf_init(buf, bufsiz);
+  ssize_t res = ve_get_path(ve, &sbuf);
+  ve_putref(&ve);
+
+  if (res < 0)
+    return -ERANGE;
+  return (int) res;
+}
