@@ -128,8 +128,8 @@ int vn_f_allocate(file_t *file, off_t len) {
 
   vnode_t *vn = file->data;
   if (V_ISDEV(vn)) {
-    // not supported for devices
-    return -ENOSYS;
+    // ignored for devices
+    return 0;
   } else if (!((file->flags == O_WRONLY || file->flags == O_RDWR))) {
     // file must be opened for writing
     return -EBADF; // bad file descriptor
@@ -151,7 +151,7 @@ int vn_f_allocate(file_t *file, off_t len) {
 }
 
 int vn_f_getpage(file_t *file, off_t off, __move page_t **page) {
-  f_lock_assert(file, LA_OWNED);
+  // file does not need to be locked
   ASSERT(F_ISVNODE(file));
 
   vnode_t *vn = file->data;

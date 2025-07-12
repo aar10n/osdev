@@ -301,8 +301,8 @@ static void file_fork_cb(page_t **pageref, size_t off, void *data) {
   page_t *page = *pageref;
   struct file_cb_data *cb = data;
   vm_mapping_t *vm = cb->vm;
-  uint32_t cow_flags = vm->flags & ~VM_WRITE;
-  recursive_update_entry_flags(vm->address + off, cow_flags);
+  page->flags |= PG_COW;
+  recursive_update_entry_flags(vm->address + off, vm->flags & ~VM_WRITE);
 }
 
 static void file_map_update_cb(page_t **pageref, size_t off, void *data) {
@@ -1666,18 +1666,6 @@ __ref page_t *vm_getpage(uintptr_t vaddr) {
 LABEL(ret);
   space_unlock(space);
   return page;
-}
-
-__ref page_t *vm_getpage_cow(uintptr_t vaddr) {
-  page_t *page = vm_getpage(vaddr);
-  if (page == NULL) {
-    return NULL;
-  }
-
-  ASSERT(!(page->flags & PG_COW));
-  page_t *cow_page = alloc_cow_pages(page);
-  drop_pages(&page);
-  return cow_page;
 }
 
 int vm_validate_space_ptr(address_space_t *space, uintptr_t ptr, bool write) {

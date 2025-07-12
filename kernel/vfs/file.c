@@ -232,10 +232,11 @@ void ftable_add_entry(ftable_t *ftable, __ref fd_entry_t *fde) {
   FTABLE_UNLOCK(ftable);
 }
 
-void ftable_exec_close(ftable_t *ftable) {
-  // close all directory streams and files opened with the O_CLOEXEC flag
+void ftable_close_exec(ftable_t *ftable) {
+  // close directory streams and files opened with the O_CLOEXEC flag
   FTABLE_LOCK(ftable);
 
+  int res;
   rb_node_t *node = ftable->tree->min;
   while (node != ftable->tree->nil) {
     rb_node_t *next = node->next;
@@ -245,18 +246,56 @@ void ftable_exec_close(ftable_t *ftable) {
     mtx_lock(&fde->lock);
     bool should_close = fde->flags & (O_DIRECTORY | O_CLOEXEC);
     mtx_unlock(&fde->lock);
-    
-    if (should_close) {
-      // remove the entry
-      rb_tree_delete_node(ftable->tree, node);
-      bitmap_clear(ftable->bitmap, (index_t) fde->fd);
-      ftable->count--;
-      fde->fd = -1;
-      fde_putref(&fde);
+
+    if (!should_close) {
+      goto next_entry;
     }
 
+    DPRINTF("close_exec: closing file descriptor {:d} <{:str}>\n", fde->fd, &fde->real_path);
+
+    // close the file
+    file_t *file = fde->file;
+    if (f_lock(file)) {
+      F_OPS(file)->f_close(file);
+      f_unlock(file);
+    }
+
+    rb_tree_delete_node(ftable->tree, node);
+    bitmap_clear(ftable->bitmap, (index_t) fde->fd);
+    ftable->count--;
+    fde->fd = -1;
+    fde_putref(&fde);
+
+  LABEL(next_entry);
     node = next;
   }
 
   FTABLE_UNLOCK(ftable);
+}
+
+void ftable_close_all(ftable_t *ftable) {
+  // close all files in the file table
+  FTABLE_LOCK(ftable);
+
+  rb_node_t *node = ftable->tree->min;
+  while (node != ftable->tree->nil) {
+    rb_node_t *next = node->next;
+    fd_entry_t *fde = node->data;
+
+    DPRINTF("close_all: closing file descriptor {:d} <{:str}>\n", fde->fd, &fde->real_path);
+
+    // close the file
+    file_t *file = fde->file;
+    if (f_lock(file)) {
+      F_OPS(file)->f_close(file);
+      f_unlock(file);
+    }
+
+    rb_tree_delete_node(ftable->tree, node);
+    bitmap_clear(ftable->bitmap, (index_t) fde->fd);
+    ftable->count--;
+    fde_putref(&fde);
+
+    node = next;
+  }
 }

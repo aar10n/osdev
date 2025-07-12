@@ -355,7 +355,7 @@ struct file_ops {
  */
 typedef struct fd_entry {
   int fd;               // file descriptor
-  int flags;            // open flags
+  int flags;            // open flags (protected by lock)
   str_t real_path;      // full path to file
   struct file *file;    // file reference
   _refcount;            // reference count

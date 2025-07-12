@@ -1,6 +1,7 @@
 ; https://github.com/freebsd/freebsd-src/blob/main/sys/amd64/amd64/cpu_switch.S
 
 ; struct percpu offsets
+%define PERCPU_SPACE          gs:0x10
 %define PERCPU_THREAD         gs:0x18
 %define PERCPU_PROCESS        gs:0x20
 %define PERCPU_USER_SP        gs:0x40
@@ -10,6 +11,9 @@
 
 ; struct proc offsets
 %define PROCESS_SPACE(x)      [x+0x08]
+
+; struct address space offsets
+%define ADDR_SPACE_PGTABLE(x) [x+0x48]
 
 ; struct thread offsets
 %define THREAD_TID(x)         [x+0x00]
@@ -97,6 +101,7 @@ section .text
 ;  old_td->lock should be held on entry and is released once the state is saved
 global switch_thread
 switch_thread:
+  xor al, al
   test rdi, rdi ; check if old thread is NULL (i.e. thread exit)
   jz .restore_thread ; if NULL just restore the new thread
 
@@ -186,29 +191,26 @@ switch_thread:
   pop rdi
 
   mov rax, THREAD_PROC(rdi)
-  test rax, THREAD_PROC(rsi)
-  ; if the next thread is from the same process
-  ; we dont need to switch the address space
-  jz .done_switch_address_space
-
-  ; switch_address_space(next->space)
-.switch_address_space:
-  mov rax, THREAD_PROC(rsi)
-  mov r12, rsi ; next -> r12
-  mov rdi, PROCESS_SPACE(rax) ; next->space
-  mov r15, rsp ; save the current stack pointer
-  and rsp, -16 ; align stack to 16 bytes
-  call switch_address_space
-  mov rsp, r15 ; restore the stack pointer
-  mov rsi, r12 ; next -> rsi
-.done_switch_address_space:
+  test rax, THREAD_PROC(rsi) ; ZF=0 if we need to switch address space
+  setz al ; al = 0 if switch needed
 
   ; ========================================
   ;           restore new thread
   ; ========================================
   ;  rsi = next thread
+  ;  al = switch cr3
 
 .restore_thread:
+  cmp al, 0 ; check if we need to switch cr3
+  jnz .skip_cr3_switch ; al=1 if we can skip cr3 switch
+  mov rax, THREAD_PROC(rsi)
+  mov rax, PROCESS_SPACE(rax)
+  mov rbx, ADDR_SPACE_PGTABLE(rax)
+  mov cr3, rbx ; switch address space
+  mov PERCPU_SPACE, rax ; update percpu address space pointer
+.skip_cr3_switch:
+
+
   ; update curthread and curproc
   mov PERCPU_THREAD, rsi
   mov rax, THREAD_PROC(rsi)

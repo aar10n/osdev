@@ -228,7 +228,7 @@ struct sigacts *sigacts_clone(struct sigacts *sa) {
 
 void sigacts_free(struct sigacts **sap) {
   struct sigacts *sa = *moveptr(sap);
-  mtx_assert(&(*sap)->lock, MA_NOTOWNED);
+  mtx_assert(&sa->lock, MA_NOTOWNED);
   mtx_destroy(&sa->lock);
   if (sa->rt_actions != NULL) {
     kfree(sa->rt_actions);
@@ -322,6 +322,15 @@ int sigacts_set(struct sigacts *sa, int sig, const struct sigaction *act, struct
 void sigqueue_init(sigqueue_t *queue) {
   queue->count = 0;
   LIST_INIT(&queue->list);
+}
+
+void sigqueue_clear(sigqueue_t *queue) {
+  ksiginfo_t *ksig;
+  while ((ksig = LIST_FIRST(&queue->list)) != NULL) {
+    SLIST_REMOVE(&queue->list, ksig, next);
+    kfree(ksig);
+  }
+  queue->count = 0;
 }
 
 void sigqueue_push(sigqueue_t *queue, struct siginfo *info) {

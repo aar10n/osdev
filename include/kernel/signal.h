@@ -62,6 +62,7 @@ typedef struct sigqueue {
 } sigqueue_t;
 
 void sigqueue_init(sigqueue_t *queue);
+void sigqueue_clear(sigqueue_t *queue);
 void sigqueue_push(sigqueue_t *queue, struct siginfo *info);
 int sigqueue_pop(sigqueue_t *queue, struct siginfo *info, const sigset_t *mask);
 int sigqueue_getpending(sigqueue_t *queue, sigset_t *set, const sigset_t *mask);

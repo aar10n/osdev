@@ -81,7 +81,6 @@ __ref page_t *alloc_pages(size_t count);
 __ref page_t *alloc_pages_at(uintptr_t address, size_t count, size_t pagesize);
 __ref page_t *alloc_nonowned_pages_at(uintptr_t address, size_t count, size_t pagesize);
 __ref page_t *alloc_cow_pages(page_t *pages);
-__ref page_t *alloc_shared_pages(page_t *pages);
 void drop_pages(__move page_t **pagesref);
 
 // page list api

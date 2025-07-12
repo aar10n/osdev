@@ -46,6 +46,12 @@ extern void kernel_thread_entry();
 #define PROC_USTACK_BASE 0x8000000
 #define PROC_USTACK_SIZE SIZE_16KB
 
+/* child process events sent over proc->wait_status_ch */
+struct pchild_status {
+  pid_t pid;            // child process id
+  int status;           // child wait status
+};
+
 proc_t *proc_alloc_internal(
   pid_t pid,
   struct address_space *space,
@@ -119,6 +125,7 @@ static inline __ref proc_t *ptable_get_proc(pid_t pid) {
 }
 
 static inline void ptable_add_proc(pid_t pid, __ref proc_t *proc) {
+  DPRINTF("ptable_add_proc: pid=%d proc={:pr}\n", pid, proc);
   ASSERT(pid < PROCS_MAX);
   struct ptable_entry *entry = &_ptable.entries[pid_index(pid)];
   mtx_spin_lock(&entry->lock);
@@ -128,6 +135,7 @@ static inline void ptable_add_proc(pid_t pid, __ref proc_t *proc) {
 }
 
 static inline void ptable_remove_proc(pid_t pid, __ref proc_t *proc) {
+  DPRINTF("ptable_remove_proc: pid=%d proc={:pr}\n", pid, proc);
   ASSERT(proc->state == PRS_EXITED);
   ASSERT(pid < PROCS_MAX);
   struct ptable_entry *entry = &_ptable.entries[pid_index(pid)];
@@ -475,7 +483,7 @@ static inline void proc_do_add_thread(proc_t *proc, thread_t *td) {
   ASSERT(TDS_IS_EMPTY(td));
   td->proc = pr_getref(proc);
   td->creds = getref(proc->creds);
-  td->tid = (pid_t)proc->num_threads;
+  td->tid = (pid_t)proc->num_threads + 1; // tid > 0
   LIST_ADD(&proc->threads, td, plist);
   proc->num_threads++;
 }
@@ -516,11 +524,6 @@ static int proc_child_notify_parent(proc_t *proc, pid_t pid, int status) {
   pr_lock_assert(proc, LA_OWNED);
   proc_t *parent = proc->parent;
   if (parent == NULL) {
-    return 0;
-  }
-
-  // if the process is exited no need to notify the parent
-  if (proc->state == PRS_EXITED) {
     return 0;
   }
 
@@ -580,8 +583,9 @@ __ref proc_t *proc_alloc_internal(
     proc->sigacts = sigacts_alloc();
   }
 
-  ref_init(&proc->refcount);
   sigqueue_init(&proc->sigqueue);
+  ref_init(&proc->refcount);
+  PR_DPRINTF("ref init: proc={:pr} [1]", proc);
 
   mtx_init(&proc->lock, MTX_RECURSIVE, "proc_lock");
   mtx_init(&proc->statlock, MTX_SPIN, "proc_statlock");
@@ -653,13 +657,14 @@ __ref proc_t *proc_fork() {
 
 void _proc_cleanup(__move proc_t **procp) {
   proc_t *proc = moveref(*procp);
-  pr_lock_assert(proc, LA_LOCKED);
-  ASSERT(PRS_IS_EXITED(proc));
+  DPRINTF("!!! cleaning up process {:pr} !!!\n", proc);
   if (mtx_owner(&proc->lock) != NULL) {
     ASSERT(mtx_owner(&proc->lock) == curthread);
     mtx_unlock(&proc->lock);
   }
 
+  ASSERT(proc->refcount == 0);
+  ASSERT(PRS_IS_EXITED(proc));
   proc_free_pid(proc->pid);
   pcreds_release(&proc->creds);
   ve_putref(&proc->pwd);
@@ -673,6 +678,7 @@ void _proc_cleanup(__move proc_t **procp) {
 
   mtx_destroy(&proc->lock);
   mtx_destroy(&proc->statlock);
+  chan_close(proc->wait_status_ch);
   chan_free(proc->wait_status_ch);
   cond_destroy(&proc->signal_cond);
   cond_destroy(&proc->td_exit_cond);
@@ -880,15 +886,6 @@ void proc_terminate(proc_t *proc, int ret, int sig) {
   proc->state = proc_get_exit_state(proc);
   proc->exit_status = status;
 
-  if (proc->pending_alarm > 0) {
-    // cancel pending signal alarm
-    alarm_unregister(proc->pending_alarm);
-    proc->pending_alarm = 0;
-  }
-
-  // notify parent process of the termination
-  proc_child_notify_parent(proc, proc->pid, status);
-
   // terminate process threads
   LIST_FOR_IN(td, &proc->threads, plist) {
     // skip if it's the current thread, it will be killed
@@ -898,13 +895,35 @@ void proc_terminate(proc_t *proc, int ret, int sig) {
     }
   }
 
+  // close all files
+  ftable_close_all(proc->files);
+
+  // clear signal queue
+  sigqueue_clear(&proc->sigqueue);
+
+  // cancel signal and itimer alarms
+  if (proc->pending_alarm > 0) {
+    // cancel pending signal alarm
+    alarm_unregister(proc->pending_alarm);
+    proc->pending_alarm = 0;
+  }
+  for (int i = 0; i < ARRAY_SIZE(proc->itimer_alarms); i++) {
+    if (proc->itimer_alarms[i] > 0) {
+      // cancel pending interval timer alarms
+      alarm_unregister(proc->itimer_alarms[i]);
+      proc->itimer_alarms[i] = 0;
+    }
+  }
+
+  // notify parent process of the termination
+  proc_child_notify_parent(proc, proc->pid, status);
+
   if (proc == curproc) {
     // exit the current thread, this will release
     // the process lock and reference and reschedule
     thread_kill(curthread);
     unreachable;
   }
-
   pr_unlock(proc);
 }
 
@@ -923,7 +942,7 @@ void proc_kill_tid(proc_t *proc, pid_t tid, int ret, int sig) {
     return;
   }
 
-  if (proc->num_threads == 1 || td->tid == 0) {
+  if (proc->num_threads == 1 || td->tid == 1) {
     // killing the last or main thread is equivalent to
     // calling proc_kill to terminate the process
     pr_unlock(proc);
@@ -1090,19 +1109,20 @@ int pid_signal(pid_t pid, int sig, int si_code, union sigval si_value) {
 int proc_syscall_wait4(pid_t pid, int *status, int options, struct rusage *rusage) {
   proc_t *proc = curproc;
   pid_t cur_pid = proc->pid;
-  pid_t curr_pgid = proc->group->session->sid;;
+  pid_t curr_pgid = proc->group->pgid;
 
   int res;
-  pid_t child_pid;
   pid_t child_pgid;
   proc_t *child = NULL;
 
+  pid_t child_pid;
+  int wstatus;
   struct pchild_status event;
   int rx_opts = (options & WNOHANG) ? CHAN_RX_NOBLOCK : 0;
   while ((res = chan_recv_opts(proc->wait_status_ch, &event, rx_opts)) >= 0) {
     ASSERT(event.pid != 0 && event.pid != cur_pid);
     child_pid = event.pid;
-    int wstatus = event.status;
+    wstatus = event.status;
 
     child = proc_lookup(child_pid);
     if (child == NULL) {
@@ -1111,11 +1131,6 @@ int proc_syscall_wait4(pid_t pid, int *status, int options, struct rusage *rusag
     }
 
     pr_lock(child);
-    if (child->state == PRS_EXITED) {
-      // child already exited
-      goto next_child;
-    }
-
     child_pgid = child->group->pgid;
 
     // check if the child process matches the wait criteria
@@ -1164,16 +1179,27 @@ int proc_syscall_wait4(pid_t pid, int *status, int options, struct rusage *rusag
     return res; // -EPIPE
   }
 
-  // we can now reap the child process
-  ASSERT(child->parent == proc);
-  child->state = PRS_EXITED;
-  proc_t *parent = child->parent;
-  pr_lock(parent);
-  LIST_REMOVE(&parent->children, child, chldlist);
-  pr_unlock(parent);
-  pr_unlock(child);
-  ptable_remove_proc(child_pid, moveref(child));
+  if (status != NULL) {
+    *status = wstatus;
+  }
+
+  DPRINTF("wait4: wstatus = %d [exited = %d, signaled = %d]\n", wstatus, WIFEXITED(wstatus), WIFSIGNALED(wstatus));
+  if (WIFEXITED(wstatus)) {
+    // child exited, time to reap it
+    // we can now reap the child process
+    ASSERT(child->parent == proc);
+    child->state = PRS_EXITED;
+    proc_t *parent = child->parent;
+    pr_lock(parent);
+    LIST_REMOVE(&parent->children, child, chldlist);
+    pr_unlock(parent);
+    pr_unlock(child);
+    ptable_remove_proc(child_pid, moveref(child));
+  }
+
+  pr_putref(&child);
   return child_pid;
+
 }
 
 int proc_syscall_execve(cstr_t path, char *const argv[], char *const envp[]) {
@@ -1230,7 +1256,7 @@ int proc_syscall_execve(cstr_t path, char *const argv[], char *const envp[]) {
   proc->env = env;
 
   // 3. close any open directory streams and files opened with O_CLOEXEC
-  ftable_exec_close(proc->files);
+  ftable_close_exec(proc->files);
 
   // 4. reset all signal handlers to default
   sigacts_reset(proc->sigacts);
@@ -1279,7 +1305,7 @@ int proc_syscall_execve(cstr_t path, char *const argv[], char *const envp[]) {
   proc->brk_end = last_segment_end;
   proc->brk_max = last_segment_end + PROC_BRK_MAX;
 
-  td->tid = 0; // the calling thread becomes the main thread
+  td->tid = 1; // the calling thread becomes the main thread
   td->ustack_base = stack->base;
   td->ustack_size = stack->size;
   if (!str_isnull(td->name))
@@ -1346,6 +1372,7 @@ static inline uint8_t td_flags_to_base_priority(uint32_t td_flags) {
 
 static thread_t *thread_alloc_internal(uint32_t flags, uintptr_t kstack_base, size_t kstack_size) {
   thread_t *td = kmallocz(sizeof(thread_t));
+  td->tid = 0;
   td->flags = flags;
   td->flags2 = TDF2_FIRSTTIME;
 
@@ -1444,6 +1471,7 @@ thread_t *thread_syscall_fork() {
 }
 
 void thread_free_exited(thread_t **tdp) {
+  DPRINTF("!!! freeing exited thread {:td} !!!\n", *tdp);
   thread_t *td = *tdp;
   ASSERT(TDS_IS_EXITED(td));
   if (mtx_owner(&td->lock) != NULL) {

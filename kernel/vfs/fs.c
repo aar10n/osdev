@@ -355,14 +355,16 @@ int fs_proc_open(proc_t *proc, int fd, cstr_t path, int flags, mode_t mode) {
   f_lock(file);
   if ((res = F_OPS(file)->f_open(file, flags)) < 0) {
     EPRINTF("failed to open file {:err}\n", res);
+    file->closed = true;
     f_unlock_putref(file); // unlock and release the file
     goto ret_unlock;
   }
 
   // truncate the file if requested and supported
   if ((acc == O_WRONLY || acc == O_RDWR) && (flags & O_TRUNC)) {
-    if (F_OPS(file)->f_allocate && (res = F_OPS(file)->f_allocate(file, 0))) {
+    if (F_OPS(file)->f_allocate && (res = F_OPS(file)->f_allocate(file, 0)) < 0) {
       EPRINTF("failed to truncate file {:err}\n", res);
+      file->closed = true;
       f_unlock_putref(file); // unlock and release the file
       goto ret_unlock;
     }
@@ -418,7 +420,6 @@ int fs_proc_close(proc_t *proc, int fd) {
     ftable_add_entry(proc->files, fde_getref(fde));
   } else {
     ftable_free_fd(proc->files, fde->fd);
-    fde->fd = -1;
   }
 
   f_unlock(file);
@@ -458,8 +459,7 @@ __ref page_t *fs_getpage(int fd, off_t off) {
     return NULL;
 
   file_t *file = fde->file;
-  if (!f_lock(file))
-    return NULL; // file is closed
+  // no lock needed for getpage
 
   int res;
   page_t *outpage = NULL;
@@ -468,7 +468,7 @@ __ref page_t *fs_getpage(int fd, off_t off) {
     outpage = NULL;
   }
 
-  f_unlock(file);
+//  f_unlock(file);
   fde_putref(&fde);
   return outpage;
 }
@@ -632,6 +632,7 @@ int fs_ioctl(int fd, unsigned long request, void *argp) {
 
   int res;
   file_t *file = fde->file;
+  DPRINTF("ioctl: fd=%d, file=%p\n", fd, file);
   if (!f_lock(file))
     goto_res(ret, -EBADF); // file is closed
 
@@ -815,6 +816,18 @@ int fs_dup2(int fd, int newfd) {
 
   fd_entry_t *existing = ftable_get_remove_entry(FTABLE, newfd);
   if (existing) {
+//    // close and remove the existing file
+//    file_t *file = existing->file;
+//    if (f_lock(file)) {
+//      if ((res = F_OPS(file)->f_close(file)) < 0) {
+//        EPRINTF("failed to close existing file {:err}\n", res);
+//        // re-insert the entry back into the ftable
+//        ftable_add_entry(FTABLE, fde_getref(existing));
+//      } else {
+//        ftable_free_fd(FTABLE, fde->fd);
+//      }
+//      f_unlock(file);
+//    }
     fde_putref(&existing);
   }
 

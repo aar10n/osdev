@@ -31,7 +31,8 @@ void ftable_free_fd(ftable_t *ftable, int fd);
 __ref fd_entry_t *ftable_get_entry(ftable_t *ftable, int fd);
 __ref fd_entry_t *ftable_get_remove_entry(ftable_t *ftable, int fd);
 void ftable_add_entry(ftable_t *ftable, __ref fd_entry_t *fde);
-void ftable_exec_close(ftable_t *ftable);
+void ftable_close_exec(ftable_t *ftable);
+void ftable_close_all(ftable_t *ftable);
 
 // #define F_DPRINTF(fmt, ...) kprintf("file: " fmt " [%s:%d]\n", ##__VA_ARGS__, __FILE__, __LINE__)
 #define F_DPRINTF(fmt, ...)

@@ -40,6 +40,22 @@ static int exec_map_file_full(int fd, void **file_base, size_t *file_size) {
   return 0;
 }
 
+static bool exec_is_interpreter_script(void *file, size_t len) {
+  // check if the file is a script with a shebang
+  if (len < 2 || ((char *)file)[0] != '#' || ((char *)file)[1] != '!') {
+    return false;
+  }
+
+  // find the end of the line
+  char *line_ptr = (char *)file + 2; // skip the "#!"
+  while (line_ptr < (char *)(file + len) && *line_ptr != '\n' && *line_ptr != '\r') {
+    line_ptr++;
+  }
+
+  // it's an interpreter script if there is a complete line after the shebang
+  return (line_ptr < (char *)(file + len) && *line_ptr == '\n');
+}
+
 //
 
 int exec_load_image(enum exec_type type, uintptr_t base, cstr_t path, __out struct exec_image **imagep) {
@@ -54,12 +70,12 @@ int exec_load_image(enum exec_type type, uintptr_t base, cstr_t path, __out stru
     } else if (cstr_eq_charp(path, "/sbin/shell")) {
       base = 0xC00000;
     }
-    DPRINTF("exec: binary {:cstr} with base %p\n", &path, base);
+    DPRINTF("exec: binary {:str} with base %p\n", &path, base);
   }
 
   int fd = fs_open(path, O_RDONLY, 0);
   if (fd < 0) {
-    EPRINTF("failed to open file '%s' {:err}\n", path, fd);
+    EPRINTF("failed to open file '{:str}' {:err}\n", &path, fd);
     return fd;
   }
 
@@ -77,9 +93,11 @@ int exec_load_image(enum exec_type type, uintptr_t base, cstr_t path, __out stru
   image->path = str_from_cstr(path);
   if (elf_is_valid_file(file_base, file_size)) {
     res = elf_load_image(type, fd, file_base, file_size, base, image);
+  } else if (exec_is_interpreter_script(file_base, file_size)) {
+    EPRINTF("interpreter script detected, not supported yet\n");
+    res = -ENOEXEC; // TODO: handle interpreter scripts
   } else {
-    // TODO: support scripts with shebangs
-    EPRINTF("invalid executable file '%s' {:err}\n", path, res);
+    EPRINTF("invalid executable file '{:str}' {:err}\n", &path, res);
     res = -ENOEXEC;
   }
 

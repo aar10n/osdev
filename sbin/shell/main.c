@@ -9,6 +9,7 @@
 #include <sys/wait.h>
 #include <signal.h>
 #include <ctype.h>
+#include <fcntl.h>
 
 #include "builtins.h"
 
@@ -80,12 +81,9 @@ int shell_execute(char **args) {
   // first check if it's a built-in command
   for (i = 0; builtins[i].name; i++) {
     if (strcmp(args[0], builtins[i].name) == 0) {
-      printf("Executing built-in command: '%s'\n", args[0]);
       return builtins[i].func(args);
     }
   }
-
-  printf("Executing external command: '%s'\n", args[0]);
 
   // otherwise fork+exec the command
   return shell_launch(args);
@@ -108,13 +106,19 @@ void sigint_handler(int sig) {
 }
 
 // main shell loop
-void shell_loop(void) {
+void shell_loop() {
   char *line = NULL;
   char **args;
   int status;
   size_t bufsize = 0;
 
-  do {
+  FILE *debug = fopen("/dev/debug", "w");
+  if (debug == NULL) {
+    perror("fopen /dev/debug");
+    exit(EXIT_FAILURE);
+  }
+
+  while (1) {
     printf(PROMPT);
     fflush(stdout);
 
@@ -122,6 +126,7 @@ void shell_loop(void) {
     if (getline(&line, &bufsize, stdin) == -1) {
       if (feof(stdin)) {
         printf("\n");
+        fprintf(debug, "shell: EOF reached\n");
         break; // EOF
       } else {
         perror("getline");
@@ -129,18 +134,19 @@ void shell_loop(void) {
       }
     }
 
+    fprintf(debug, "shell: read line, `%s`\n", line);
+
     // skip empty lines
     if (is_empty_line(line)) {
       continue;
     }
-    
+
     // parse and execute
     args = parse_line(line);
     status = shell_execute(args);
 
     free(args);
-  } while (status);
-
+  }
   free(line);
 }
 

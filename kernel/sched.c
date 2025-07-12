@@ -184,6 +184,8 @@ static LIST_HEAD(struct thread) td_cleanup_queue[MAX_CPUS];
 static mtx_t td_cleanup_lock[MAX_CPUS];
 
 static void add_to_cleanup_queue(thread_t *td) {
+  DPRINTF("adding thread {:td} to cleanup queue\n", td);
+  ASSERT(td->plist.prev == NULL && td->plist.next == NULL);
   if (td_lock_owner(td) != NULL) {
     // unlock the thread if it is locked
     td_unlock(td);
@@ -204,11 +206,6 @@ noreturn void idle_thread_entry() {
 idle_wait:;
   struct spin_delay delay = new_spin_delay(SHORT_DELAY, MAX_RETRIES);
   for (;;) {
-    if (sched->readymask != 0) {
-      // at least one of the runqueues could have a thread
-      break;
-    }
-
     if (LIST_FIRST(cleanup_queue) != NULL) {
       mtx_spin_lock(cleanup_lock);
       thread_t *td;
@@ -217,6 +214,11 @@ idle_wait:;
         thread_free_exited(&td);
       }
       mtx_spin_unlock(cleanup_lock);
+    }
+
+    if (sched->readymask != 0) {
+      // at least one of the runqueues could have a thread
+      break;
     }
 
     if (!spin_delay_wait(&delay)) {

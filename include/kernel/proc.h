@@ -121,8 +121,8 @@ typedef struct proc {
   sigqueue_t sigqueue;              // blocked pending signals
 
   id_t pending_alarm;               // id of pending alarm or 0 if none
-  struct itimerval itimer_vals[1];  // process itimers values
   id_t itimer_alarms[1];            // pending itimer alarm ids
+  struct itimerval itimer_vals[1];  // process itimers values
 
   int exit_status;                  // process exit status
   volatile uint32_t num_exited;     // number of exited threads
@@ -173,12 +173,6 @@ struct pstrings {
   uint32_t size;        // size of all strings
   struct page *pages;   // pages containing the strings (ref)
   char *kptr;           // kernel pointer to the strings
-};
-
-/* child process events sent over proc->wait_status_ch */
-struct pchild_status {
-  pid_t pid;            // child process id
-  int status;           // child wait status
 };
 
 /*
@@ -389,12 +383,24 @@ int pid_signal(pid_t pid, int sig, int si_code, union sigval si_value);
 pid_t proc_syscall_wait4(pid_t pid, int *status, int options, struct rusage *rusage);
 int proc_syscall_execve(cstr_t path, char *const argv[], char *const envp[]); // syscall only
 
-#define pr_getref(pr) __type_checked(proc_t*, pr, getref(pr))
+// #define PR_DPRINTF(fmt, ...) kprintf("proc: " fmt " [%s:%d]\n", ##__VA_ARGS__, __FILE__, __LINE__)
+#define PR_DPRINTF(fmt, ...)
+
+#define pr_getref(pr) ({ \
+  ASSERT_IS_TYPE(proc_t*, pr); \
+  proc_t *__pr = (pr); \
+  __pr ? ref_get(&__pr->refcount) : NULL; \
+  if (__pr) PR_DPRINTF("getref: pr={:pr} [%d]", __pr, __pr->refcount); \
+  __pr; \
+})
 #define pr_putref(pref) ({ \
   ASSERT_IS_TYPE(proc_t**, pref); \
   proc_t *__pr = moveref(*(pref));  \
   if (__pr && ref_put(&__pr->refcount)) { \
+    PR_DPRINTF("putref: pr={:pr} [0]", __pr); \
     _proc_cleanup(&__pr); \
+  } else if (__pr) { \
+    PR_DPRINTF("putref: pr={:pr} [%d]", __pr, __pr->refcount); \
   } \
 })
 

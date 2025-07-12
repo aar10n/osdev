@@ -171,26 +171,6 @@ __ref static page_t *alloc_cow_structs(page_t *pages) {
   return moveref(first);
 }
 
-__ref static page_t *alloc_shared_structs(page_t *pages) {
-  // this function doesnt allocate anything it just bumps the refcounts for all pages
-  // and returns a new reference to the existing pages
-  ASSERT(pages->flags & PG_HEAD);
-
-  __ref page_t *first = NULL;
-  page_t *last = NULL;
-  page_t *curr = pages;
-  while (curr) {
-    if (first == NULL) {
-      first = getref(curr);
-    } else {
-      last->next = getref(curr);
-    }
-    last = curr;
-    curr = curr->next;
-  }
-  return moveref(first);
-}
-
 //
 // MARK: bitmap frame allocator
 //
@@ -551,10 +531,6 @@ __ref page_t *alloc_nonowned_pages_at(uintptr_t address, size_t count, size_t pa
 
 __ref page_t *alloc_cow_pages(page_t *pages) {
   return alloc_cow_structs(pages);
-}
-
-__ref page_t *alloc_shared_pages(page_t *pages) {
-  return alloc_shared_structs(pages);
 }
 
 void drop_pages(__move page_t **pagesref) {

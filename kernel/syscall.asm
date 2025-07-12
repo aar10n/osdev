@@ -133,7 +133,8 @@ syscall_handler:
   mov r15, rsp        ; save trapframe pointer
   and rsp, -16        ; align stack
   call handle_syscall
-  ; rax = return value
+  ; eax = return value
+  movsxd rax, eax ; sign-extend eax to rax
 
   ; ==== dispatch pending signals
   mov r14, PERCPU_THREAD

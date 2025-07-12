@@ -39,7 +39,6 @@ int vmap_protect(uintptr_t vaddr, size_t len, uint32_t vm_prot);
 int vmap_resize(uintptr_t vaddr, size_t old_size, size_t new_size, bool allow_move, uintptr_t *new_vaddr);
 
 __ref page_t *vm_getpage(uintptr_t vaddr);
-__ref page_t *vm_getpage_cow(uintptr_t vaddr);
 int vm_validate_ptr(uintptr_t ptr, bool write);
 uintptr_t vm_virt_to_phys(uintptr_t vaddr);
 #define virt_to_phys(virt_addr) vm_virt_to_phys((uintptr_t)(virt_addr))

@@ -231,7 +231,6 @@ uintptr_t get_current_pgtable() {
 
 void set_current_pgtable(uintptr_t table_phys) {
   __write_cr3((uint64_t) table_phys);
-  cpu_flush_tlb();
 }
 
 //
@@ -305,6 +304,7 @@ void recursive_update_entry_flags(uintptr_t vaddr, uint32_t vm_flags) {
 
   int index = index_for_pg_level(vaddr, level);
   uint64_t *pt = get_pgtable_address(vaddr, level);
+  cpu_invlpg(pt);
   pt[index] = (pt[index] & PE_FRAME_MASK) | vm_flags_to_pe_flags(vm_flags);
   cpu_invlpg(vaddr);
 }
@@ -319,6 +319,7 @@ void recursive_update_entry_entry(uintptr_t vaddr, uintptr_t frame, uint32_t vm_
 
   int index = index_for_pg_level(vaddr, level);
   uint64_t *pt = get_pgtable_address(vaddr, level);
+  cpu_invlpg(pt);
   pt[index] = (frame & PE_FRAME_MASK) | vm_flags_to_pe_flags(vm_flags);
   cpu_invlpg(vaddr);
 }
