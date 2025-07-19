@@ -25,7 +25,6 @@ USR_BIN_APPLETS = \
 
 USR_SBIN_APPLETS =
 
-BUSYBOX_APPLET_DIRS = bin sbin usr/bin usr/sbin
 
 # Required: Download and extract sources
 .PHONY: download
@@ -65,10 +64,6 @@ install-extra:
 	$(call install-applets,SBIN_APPLETS)
 	$(call install-applets,USR_BIN_APPLETS)
 	$(call install-applets,USR_SBIN_APPLETS)
-
-.PHONY: demo
-demo:
-	$(call print_applets,USR)
 
 # Optional: Clean busybox
 .PHONY: clean-extra

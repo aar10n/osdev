@@ -8,8 +8,6 @@
 #include <sys/wait.h>
 #include <signal.h>
 #include <string.h>
-#include <sys/ioctl.h>
-#include <sys/mman.h>
 
 #define GETTY_PATH "/sbin/getty"
 #define DEFAULT_TTY "/dev/ttyS0"

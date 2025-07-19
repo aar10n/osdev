@@ -14,7 +14,7 @@
 #include "builtins.h"
 
 #define MAX_ARGS 64
-#define PROMPT "> " // busybox/sh uses '#' so make it different
+#define PROMPT "> " // busybox/sh uses '#' so make it distinct
 
 
 char **parse_line(char *line) {
@@ -47,7 +47,7 @@ char **parse_line(char *line) {
     token = strtok(NULL, " \t\r\n\a");
   }
   
-  // Ensure we have space for the NULL terminator
+  // ensure we have space for the NULL terminator
   if (position >= bufsize) {
     bufsize += MAX_ARGS;
     char **new_tokens = realloc(tokens, bufsize * sizeof(char*));
@@ -149,10 +149,9 @@ void shell_loop() {
   const char *path = getenv("PATH");
   if (path == NULL) {
     fprintf(debug, "shell: PATH not set, using default\n");
-    setenv("PATH", "/bin:/usr/bin", 1); // set a default PATH if not already set
-  } else {
-    fprintf(debug, "shell: using PATH `%s`\n", path);
+    setenv("PATH", "/bin:/sbin:/usr/bin", 1);
   }
+  fprintf(debug, "shell: PATH is `%s`\n", path);
 
   while (1) {
     printf(PROMPT);
@@ -172,8 +171,10 @@ void shell_loop() {
 
     // sanitize the input to remove control characters
     sanitize_line(line);
-    
-    fprintf(debug, "shell: read line, `%s`\n", line);
+
+    char *line_end = strchr(line, '\n');
+    size_t line_len = line_end ? (line_end - line) : strlen(line);
+    fprintf(debug, "shell: read line, `%.*s`\n", (int)line_len, line);
 
     // skip empty lines
     if (is_empty_line(line)) {
