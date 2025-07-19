@@ -150,6 +150,7 @@ int _mtx_spin_trylock(mtx_t *mtx, const char *file, int line) {
 
 void _mtx_spin_lock(mtx_t *mtx, const char *file, int line) {
   thread_t *owner = mtx_get_owner(mtx);
+  int lc = mtx_get_lc(mtx);
   ASSERT(mtx->mtx_lock != MTX_DESTROYED, "_mtx_spin_lock() on destroyed mutex, %s:%d", file, line);
   ASSERT(mtx_get_lc(mtx) == SPINLOCK_LOCKCLASS, "_mtx_spin_lock() on non-spin mutex, %s:%d", file, line);
 

@@ -46,7 +46,6 @@ int fs_fstat(int fd, struct stat *stat);
 int fs_dup(int fd);
 int fs_dup2(int fd, int newfd);
 
-int fs_chdir(cstr_t path);
 int fs_stat(cstr_t path, struct stat *stat);
 int fs_lstat(cstr_t path, struct stat *stat);
 int fs_create(cstr_t path, mode_t mode);
@@ -55,6 +54,7 @@ int fs_mknod(cstr_t path, mode_t mode, dev_t dev);
 int fs_symlink(cstr_t target, cstr_t linkpath);
 int fs_link(cstr_t oldpath, cstr_t newpath);
 int fs_unlink(cstr_t path);
+int fs_chdir(cstr_t path);
 int fs_mkdir(cstr_t path, mode_t mode);
 int fs_rmdir(cstr_t path);
 int fs_rename(cstr_t oldpath, cstr_t newpath);

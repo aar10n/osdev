@@ -80,6 +80,7 @@ int shell_launch(char **args) {
     } while (!WIFEXITED(status) && !WIFSIGNALED(status));
   }
 
+  printf("Process exited with status %d\n", WEXITSTATUS(status));
   return WIFEXITED(status) && WEXITSTATUS(status) == 0;
 }
 

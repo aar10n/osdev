@@ -1417,7 +1417,7 @@ uintptr_t vmap_anon(size_t vm_size, uintptr_t hint, size_t size, uint32_t vm_fla
   int res;
   uintptr_t vaddr;
   if ((res = vmap_internal(curspace, VM_TYPE_FILE, hint, size, vm_size, vm_flags, name, file, &vaddr)) < 0) {
-    ALLOC_ERROR("vmap: failed to make anonymous mapping %s {:err}\n", name, res);
+    EPRINTF("vmap: failed to make anonymous mapping %s {:err}\n", name, res);
     vm_file_free(&file);
     return 0;
   }
@@ -2227,13 +2227,18 @@ void vm_print_format_address_space(address_space_t *space) {
 //
 
 DEFINE_SYSCALL(mmap, void *, void *addr, size_t len, int prot, int flags, int fd, off_t off) {
+  addr = (void *) page_align((uintptr_t) addr);
+  len = page_align(len);
   DPRINTF("mmap: addr=%p, len=%zu, prot=%#b, flags=%#x, fd=%d, off=%zu\n", addr, len, prot, flags, fd, off);
+
   void *res = vm_mmap((uintptr_t) addr, len, prot, flags, fd, off);
   return res;
 }
 
 DEFINE_SYSCALL(mprotect, int, void *addr, size_t len, int prot) {
+  len = page_align(len);
   DPRINTF("mprotect: addr=%p, len=%zu, prot=%d\n", addr, len, prot);
+
   uint32_t vm_prot = VM_USER;
   if (prot & PROT_READ) {
     vm_prot |= VM_READ;
@@ -2248,6 +2253,7 @@ DEFINE_SYSCALL(mprotect, int, void *addr, size_t len, int prot) {
 }
 
 DEFINE_SYSCALL(munmap, int, void *addr, size_t len) {
+  len = page_align(len);
   DPRINTF("munmap: addr=%p, len=%zu\n", addr, len);
   return vmap_free((uintptr_t) addr, len);
 }

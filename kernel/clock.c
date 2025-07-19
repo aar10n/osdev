@@ -5,6 +5,7 @@
 #include <kernel/clock.h>
 #include <kernel/time.h>
 #include <kernel/proc.h>
+#include <kernel/mm.h>
 
 #include <kernel/string.h>
 #include <kernel/printf.h>
@@ -153,4 +154,19 @@ uint64_t clock_get_micros() {
 
 uint64_t clock_get_nanos() {
   return clock_wait_sync_nanos();
+}
+
+//
+// MARK: System Calls
+//
+
+DEFINE_SYSCALL(clock_gettime, int, int clockid, struct timespec *tp) {
+  if (!vm_validate_ptr((uintptr_t) tp, /*write=*/true)) {
+    return -EFAULT; // invalid user pointer
+  }
+
+  uint64_t now_ns = clock_wait_sync_nanos();
+  tp->tv_sec = (time_t)((now_ns / NS_PER_SEC) + boot_time_epoch);
+  tp->tv_nsec = (time_t)(now_ns % NS_PER_SEC);
+  return 0;
 }

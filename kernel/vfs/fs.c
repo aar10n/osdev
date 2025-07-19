@@ -864,28 +864,6 @@ LABEL(ret);
 
 //
 
-int fs_chdir(cstr_t path) {
-  ventry_t *at_ve = ve_getref(curproc->pwd);
-  ventry_t *ve = NULL;
-  int res;
-
-  if ((res = vresolve(fs_vcache, at_ve, path, VR_NOFOLLOW|VR_DIR, &ve)) < 0) {
-    DPRINTF("failed to resolve path\n");
-    goto ret;
-  } else if (ve != at_ve) {
-    ve_unlock(ve);
-    ve_putref_swap(&curproc->pwd, &ve);
-  } else {
-    ve_unlock(ve);
-  }
-
-  res = 0; // success
-LABEL(ret);
-  ve_putref(&ve);
-  ve_putref(&at_ve);
-  return res;
-}
-
 int fs_stat(cstr_t path, struct stat *stat) {
   ventry_t *at_ve = ve_getref(curproc->pwd);
   ventry_t *ve = NULL;
@@ -1126,6 +1104,28 @@ LABEL(ret);
   return res;
 }
 
+int fs_chdir(cstr_t path) {
+  ventry_t *at_ve = ve_getref(curproc->pwd);
+  ventry_t *ve = NULL;
+  int res;
+
+  if ((res = vresolve(fs_vcache, at_ve, path, VR_NOFOLLOW|VR_DIR, &ve)) < 0) {
+    DPRINTF("failed to resolve path\n");
+    goto ret;
+  } else if (ve != at_ve) {
+    ve_unlock(ve);
+    ve_putref_swap(&curproc->pwd, &ve);
+  } else {
+    ve_unlock(ve);
+  }
+
+  res = 0; // success
+LABEL(ret);
+  ve_putref(&ve);
+  ve_putref(&at_ve);
+  return res;
+}
+
 int fs_mkdir(cstr_t path, mode_t mode) {
   ventry_t *at_ve = ve_getref(curproc->pwd);
   ventry_t *dve = NULL;
@@ -1298,7 +1298,6 @@ SYSCALL_ALIAS(readv, fs_readv);
 SYSCALL_ALIAS(writev, fs_writev);
 SYSCALL_ALIAS(getdents64, fs_readdir);
 SYSCALL_ALIAS(lseek, fs_lseek);
-SYSCALL_ALIAS(stat, fs_stat);
 SYSCALL_ALIAS(ioctl, fs_ioctl);
 SYSCALL_ALIAS(ftruncate, fs_ftruncate);
 SYSCALL_ALIAS(fstat, fs_fstat);
@@ -1310,16 +1309,12 @@ DEFINE_SYSCALL(open, int, const char *path, int flags, mode_t mode) {
   return fs_open(cstr_make(path), flags, mode);
 }
 
-DEFINE_SYSCALL(truncate, int, const char *path, off_t length) {
-  return fs_truncate(cstr_make(path), length);
+DEFINE_SYSCALL(stat, int, const char *path, struct stat *stat) {
+  return fs_stat(cstr_make(path), stat);
 }
 
 DEFINE_SYSCALL(lstat, int, const char *path, struct stat *stat) {
   return fs_lstat(cstr_make(path), stat);
-}
-
-DEFINE_SYSCALL(chdir, int, const char *path) {
-  return fs_chdir(cstr_make(path));
 }
 
 DEFINE_SYSCALL(mknod, int, const char *path, mode_t mode, dev_t dev) {
@@ -1336,6 +1331,10 @@ DEFINE_SYSCALL(link, int, const char *oldpath, const char *newpath) {
 
 DEFINE_SYSCALL(unlink, int, const char *path) {
   return fs_unlink(cstr_make(path));
+}
+
+DEFINE_SYSCALL(chdir, int, const char *path) {
+  return fs_chdir(cstr_make(path));
 }
 
 DEFINE_SYSCALL(mkdir, int, const char *path, mode_t mode) {
