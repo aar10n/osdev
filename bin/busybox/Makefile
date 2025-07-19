@@ -8,17 +8,24 @@ BUSYBOX_URL = https://github.com/mirror/busybox/archive/refs/tags/$(subst .,_,$(
 BUSYBOX_CONFIG = config
 BUSYBOX_ARCHIVE = $(NAME)-$(VERSION).tar.gz
 
-BUSYBOX_APPLETS = \
-	ash awk base32 base64 basename bunzip2 bzcat bzip2 cat cksum cmp comm \
-	cp crc32 cut date dd diff dirname echo egrep env expand expr factor \
-	false fgrep find fold grep gunzip gzip head link ln ls lzcat lzma \
-	md5sum mkdir mkfifo mknod mktemp mv nice nl nohup nproc od paste \
-	printenv printf pwd readlink realpath rm rmdir sed seq sh sha1sum \
-	sha256sum sha3sum sha512sum shred shuf sleep sort split stat stty \
-	sum tac tail tar tee test timeout touch tr true truncate tsort uname \
-	unexpand uniq unlink unlzma unxz unzip usleep uuencode wc which \
-	xargs xz xzcat yes zcat
+BIN_APPLETS = \
+	ash basename cat cp cut date dd dirname echo env expand expr false \
+	grep link ln ls mkdir mkfifo mknod mktemp mv nice nl nohup od \
+	pwd readlink rm rmdir sh sleep test touch tr true uname wc
 
+SBIN_APPLETS =
+
+USR_BIN_APPLETS = \
+	awk base32 base64 bunzip2 bzcat bzip2 cksum cmp comm crc32 diff \
+	egrep factor fgrep find fold gunzip gzip head lzcat lzma md5sum \
+	nproc paste printenv printf realpath sed seq sha1sum sha256sum \
+	sha3sum sha512sum shred shuf sort split stat stty sum tac tail tar \
+	tee timeout truncate tsort unexpand uniq unlink unlzma unxz unzip \
+	usleep uuencode which xargs xz xzcat yes zcat
+
+USR_SBIN_APPLETS =
+
+BUSYBOX_APPLET_DIRS = bin sbin usr/bin usr/sbin
 
 # Required: Download and extract sources
 .PHONY: download
@@ -53,11 +60,15 @@ build-main:
 # Optional: Install symlinks for individual applets
 .PHONY: install-extra
 install-extra:
-	@echo "Creating busybox applet symlinks..."
-	@for applet in $(BUSYBOX_APPLETS); do \
-		echo "Creating symlink: $$applet -> /bin/busybox"; \
-		cd $(INSTALL_BINDIR) && ln -sf /bin/busybox $$applet; \
-	done
+	@echo "Installing busybox applet symlinks..."
+	$(call install-applets,BIN_APPLETS)
+	$(call install-applets,SBIN_APPLETS)
+	$(call install-applets,USR_BIN_APPLETS)
+	$(call install-applets,USR_SBIN_APPLETS)
+
+.PHONY: demo
+demo:
+	$(call print_applets,USR)
 
 # Optional: Clean busybox
 .PHONY: clean-extra
@@ -65,10 +76,21 @@ clean-extra:
 	@echo "Cleaning busybox build..."
 	$(MAKE) -C $(SOURCE_PATH) clean
 
-#
-
 # Convenience target for configuration
 .PHONY: menuconfig
 menuconfig: $(DOWNLOADED_TARGET)
 	$(MAKE) -C $(SOURCE_PATH) menuconfig
 	cp $(SOURCE_PATH)/.config $(BUSYBOX_CONFIG)
+
+#
+
+# install_applets <group>
+define install-applets
+	dir="$(call lowercase,$(patsubst %_APPLETS,%,$(1)))"; \
+	dir=$$(echo "$$dir" | sed 's/_/\//g'); \
+	mkdir -p $(INSTALL_PREFIX)/$$dir; \
+	for applet in $($(1)); do \
+		echo "Installing applet: $$applet to $(INSTALL_PREFIX)/$$dir"; \
+		cd $(INSTALL_PREFIX)/$$dir && ln -sf /bin/busybox $$applet; \
+	done
+endef

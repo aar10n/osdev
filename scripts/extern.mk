@@ -33,6 +33,7 @@ endif
 
 include $(dir $(lastword $(MAKEFILE_LIST)))/../.config
 include $(PROJECT_DIR)/scripts/defs.mk
+include $(PROJECT_DIR)/scripts/utils.mk
 
 # Default values
 INSTALL_TARGETS ?= $(NAME)
