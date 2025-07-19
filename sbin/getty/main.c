@@ -82,6 +82,9 @@ int main(int argc, char* argv[]) {
   signal(SIGTERM, SIG_DFL);
   signal(SIGHUP, SIG_DFL);
 
+  // set a default PATH if not already set
+  setenv("PATH", "/bin:/usr/bin", /*overwrite=*/0);
+
   printf("\nWelcome to the system!\n");
   printf("Starting shell: %s\n\n", shell_path);
   fflush(stdout);

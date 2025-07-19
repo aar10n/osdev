@@ -54,5 +54,6 @@ int exec_image_setup_stack(
 
 int exec_free_image(struct exec_image **imagep);
 int exec_free_stack(struct exec_stack **stackp);
+void exec_print_debug_stack(uintptr_t rsp);
 
 #endif

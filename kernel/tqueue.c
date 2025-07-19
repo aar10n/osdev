@@ -354,6 +354,10 @@ void waitq_free(struct waitqueue **waitqp) {
 }
 
 struct waitqueue *waitq_lookup(const void *wchan) {
+  if (wchan == NULL) {
+    return NULL; // no waitqueue for NULL wchan
+  }
+
   struct waitqueue_chain *chain = WQC_LOOKUP(wchan);
   mtx_spin_lock(&chain->lock);
 
@@ -375,12 +379,17 @@ struct waitqueue *waitq_lookup(const void *wchan) {
 
 void waitq_release(struct waitqueue **waitqp) {
   struct waitqueue *waitq = moveptr(*waitqp);
+  if (waitq == NULL) {
+    return; // nothing to release
+  }
+
   struct waitqueue_chain *chain = WQC_LOOKUP(waitq->wchan);
   mtx_assert(&chain->lock, MA_OWNED);
   mtx_assert(&waitq->lock, MA_OWNED);
 
   mtx_spin_unlock(&waitq->lock);
   mtx_spin_unlock(&chain->lock);
+  WQ_DPRINTF("waitq_release: wchan=%p, waitq=%p\n", waitq->wchan, waitq);
 }
 
 struct waitqueue *waitq_lookup_or_default(int type, const void *wchan, struct waitqueue *default_waitq) {
@@ -415,7 +424,6 @@ void waitq_add(struct waitqueue *waitq, const char *wdmsg) {
 
   thread_t *td = curthread;
   td_lock(td);
-  WQ_DPRINTF("waitq_add: wchan=%p, waitq=%p, wdmsg=%s, td={:td}\n", waitq->wchan, waitq, wdmsg, td);
   if (waitq == td->own_waitq) {
     // the waitq was donated by us
     td->own_waitq = NULL;
@@ -434,6 +442,7 @@ void waitq_add(struct waitqueue *waitq, const char *wdmsg) {
 
   mtx_spin_unlock(&waitq->lock);
   mtx_spin_unlock(&chain->lock);
+  WQ_DPRINTF("waitq_add: wchan=%p, waitq=%p, wdmsg=%s, td={:td}\n", waitq->wchan, waitq, wdmsg, td);
   sched_again(SCHED_SLEEPING);
 }
 
@@ -443,10 +452,10 @@ void waitq_remove(struct waitqueue *waitq, thread_t *td) {
   mtx_assert(&chain->lock, MA_OWNED);
   mtx_assert(&waitq->lock, MA_OWNED);
 
-  WQ_DPRINTF("waitq_remove: wchan=%p, waitq=%p, td={:td}\n", waitq->wchan, waitq, td);
   waitq_remove_internal(waitq, chain, td);
   mtx_spin_unlock(&waitq->lock);
   mtx_spin_unlock(&chain->lock);
+  WQ_DPRINTF("waitq_remove: wchan=%p, waitq=%p, td={:td}\n", waitq->wchan, waitq, td);
 }
 
 void waitq_signal(struct waitqueue *waitq) {
@@ -456,7 +465,6 @@ void waitq_signal(struct waitqueue *waitq) {
 
   bool preempt = false;
   thread_t *td = LIST_FIRST(&waitq->queue);
-  WQ_DPRINTF("waitq_signal: wchan=%p, waitq=%p, td={:td}\n", waitq->wchan, waitq, td);
   if (td != NULL) {
     td_lock(td);
     waitq_remove_internal(waitq, chain, td);
@@ -469,6 +477,7 @@ void waitq_signal(struct waitqueue *waitq) {
     }
   }
 
+  WQ_DPRINTF("waitq_signal: wchan=%p, waitq=%p, td={:td}\n", waitq->wchan, waitq, td);
   mtx_spin_unlock(&waitq->lock);
   mtx_spin_unlock(&chain->lock);
   if (preempt) {

@@ -12,7 +12,16 @@
 
 
 static __ref page_t *anon_getpage_missing(vm_file_t *file, size_t off) {
-  return alloc_pages_size(1, file->pg_size);
+  page_t *page = alloc_pages_size(1, file->pg_size);
+  if (page != NULL) {
+    // Check if this page is being allocated for a shared page cache.
+    // If the pgcache has more than one reference, it means it's shared
+    // between parent and child after fork, so mark the page as COW.
+    if (file->pgcache->refcount > 1) {
+      page->flags |= PG_COW;
+    }
+  }
+  return page;
 }
 
 static __ref page_t *vnode_getpage_missing(vm_file_t *file, size_t off) {
@@ -59,7 +68,7 @@ vm_file_t *vm_file_alloc_copy(vm_file_t *file) {
   new_file->off = file->off;
   new_file->pg_size = file->pg_size;
 
-  new_file->vnode = getref(file->vnode);
+  new_file->vnode = vn_getref(file->vnode);
   new_file->pgcache = getref(file->pgcache);
   new_file->missing_page = file->missing_page;
   return new_file;
@@ -71,7 +80,7 @@ vm_file_t *vm_file_alloc_clone(vm_file_t *file) {
   new_file->off = file->off;
   new_file->pg_size = file->pg_size;
 
-  new_file->vnode = getref(file->vnode);
+  new_file->vnode = vn_getref(file->vnode);
   new_file->pgcache = pgcache_clone(file->pgcache);
   new_file->missing_page = file->missing_page;
   return new_file;
@@ -97,7 +106,7 @@ __ref page_t *vm_file_getpage(vm_file_t *file, size_t off) {
   if (page == NULL) {
     page = file->missing_page(file, off);
     if (page != NULL) {
-      pgcache_insert(file->pgcache, off, getref(page), NULL);
+      pgcache_insert(file->pgcache, off, pg_getref(page), NULL);
     }
   }
   return moveref(page);
@@ -107,7 +116,7 @@ uintptr_t vm_file_getpage_phys(vm_file_t *file, size_t off) {
   page_t *page = vm_file_getpage(file, off);
   ASSERT(page != NULL);
   uintptr_t phys = page->address;
-  drop_pages(&page);
+  pg_putref(&page);
   return phys;
 }
 
@@ -135,7 +144,7 @@ vm_file_t *vm_file_split(vm_file_t *file, size_t off) {
   new_file->off = file->off + off;
   new_file->pg_size = file->pg_size;
 
-  new_file->vnode = getref(file->vnode);
+  new_file->vnode = vn_getref(file->vnode);
   new_file->pgcache = getref(file->pgcache);
   new_file->missing_page = file->missing_page;
 

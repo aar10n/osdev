@@ -248,10 +248,10 @@ static int pstrings_alloc(const char *const strings[], int limit, struct pstring
   }
 
   size_t aligned_size = page_align(full_size);
-  kptr = (void *) vmap_pages(getref(pages), 0, aligned_size, VM_RDWR, "pstrings");
+  kptr = (void *) vmap_pages(pg_getref(pages), 0, aligned_size, VM_RDWR, "pstrings");
   if (kptr == NULL) {
     DPRINTF("pstrings_alloc: failed to map pages\n");
-    drop_pages(&pages);
+    pg_putref(&pages);
     res = -ENOMEM;
     goto finish;
   }
@@ -289,21 +289,25 @@ static struct pstrings *pstrings_copy(struct pstrings *pstrings) {
   if (pstrings == NULL)
     return NULL;
 
-  page_t *pages = alloc_cow_pages(pstrings->pages);
-  if (pages == NULL) {
-    DPRINTF("pstrings_copy: failed to allocate pages\n");
-    return NULL;
-  }
+  page_t *pages = NULL;
+  void *kptr = NULL;
+  if (pstrings->pages != NULL) {
+    pages = alloc_cow_pages(pstrings->pages);
+    if (pages == NULL) {
+      DPRINTF("pstrings_copy: failed to allocate pages\n");
+      return NULL;
+    }
 
-  size_t aligned_size = page_align(pstrings->size);
-  void *kptr = (void *) vmap_pages(getref(pages), 0, aligned_size, VM_RDWR, "pstrings");
-  if (kptr == NULL) {
-    DPRINTF("pstrings_copy: failed to map pages\n");
-    drop_pages(&pages);
-    return NULL;
-  }
+    size_t aligned_size = page_align(pstrings->size);
+    kptr = (void *) vmap_pages(pg_getref(pages), 0, aligned_size, VM_RDWR, "pstrings");
+    if (kptr == NULL) {
+      DPRINTF("pstrings_copy: failed to map pages\n");
+      pg_putref(&pages);
+      return NULL;
+    }
 
-  memcpy(kptr, pstrings->kptr, pstrings->size);
+    memcpy(kptr, pstrings->kptr, pstrings->size);
+  }
 
   struct pstrings *copy = kmallocz(sizeof(struct pstrings));
   copy->count = pstrings->count;
@@ -320,7 +324,7 @@ static void pstrings_free(struct pstrings **pstringp) {
     pstrings->kptr = NULL;
   }
 
-  drop_pages(&pstrings->pages);
+  pg_putref(&pstrings->pages);
   kfree(pstrings);
 }
 
@@ -336,11 +340,13 @@ __move session_t *session_alloc(pid_t sid) {
   LIST_INIT(&sess->pgroups);
   mtx_init(&sess->lock, MTX_RECURSIVE, "session_lock");
   ref_init(&sess->refcount);
+  SESS_DPRINTF("ref init: sid=%d sess=%p [1]", sid, sess);
   return sess;
 }
 
 void session_cleanup(__move session_t **sessref) {
   session_t *sess = moveref(*sessref);
+  SESS_DPRINTF("!!! session_cleanup: sid=%d sess=%p !!!", sess->sid, sess);
   ASSERT(sess->refcount == 0);
   ASSERT(sess->num_pgroups == 0);
   mtx_destroy(&sess->lock);
@@ -407,6 +413,7 @@ __ref pgroup_t *pgrp_alloc_add_proc(proc_t *proc) {
   LIST_INIT(&pgroup->procs);
   mtx_init(&pgroup->lock, 0, "pgroup_lock");
   ref_init(&pgroup->refcount);
+  PGRP_DPRINTF("ref init: pgid=%d pgrp=%p [1]", pgid, pgroup);
 
   LIST_ADD(&pgroup->procs, proc, pglist);
   pgroup->num_procs++;
@@ -421,6 +428,7 @@ __ref pgroup_t *pgrp_alloc_add_proc(proc_t *proc) {
 
 void pgrp_cleanup(pgroup_t **pgrpref) {
   pgroup_t *pgroup = moveref(*pgrpref);
+  PGRP_DPRINTF("!!! pgrp_cleanup: pgid=%d pgrp=%p !!!", pgroup->pgid, pgroup);
   ASSERT(pgroup->refcount == 0);
   ASSERT(pgroup->num_procs == 0);
   sess_putref(&pgroup->session);
@@ -454,9 +462,9 @@ void pgrp_remove_proc(pgroup_t *pg, proc_t *proc) {
   LIST_REMOVE(&pg->procs, proc, pglist);
 }
 
-int pgrp_signal(pgroup_t *pg, int sig, int si_code, union sigval si_value) {
+int pgrp_signal(pgroup_t *pg, siginfo_t *info) {
   pgrp_lock_assert(pg, MA_OWNED);
-  ASSERT(sig >= 0 && sig < NSIG);
+  ASSERT(info->si_signo >= 0 && info->si_signo < NSIG);
 
   int res = 0;
   LIST_FOR_IN(proc, &pg->procs, pglist) {
@@ -466,7 +474,7 @@ int pgrp_signal(pgroup_t *pg, int sig, int si_code, union sigval si_value) {
       continue; // skip exited or zombie processes
     }
 
-    res = proc_signal(proc, sig, si_code, si_value);
+    res = proc_signal(proc, info);
     pr_unlock(proc);
     if (res < 0) {
       EPRINTF("failed to signal process {:pr}: {:err}\n", &proc, res);
@@ -658,8 +666,8 @@ __ref proc_t *proc_fork() {
 void _proc_cleanup(__move proc_t **procp) {
   proc_t *proc = moveref(*procp);
   DPRINTF("!!! cleaning up process {:pr} !!!\n", proc);
-  if (mtx_owner(&proc->lock) != NULL) {
-    ASSERT(mtx_owner(&proc->lock) == curthread);
+  if (pr_lock_owner(proc) != NULL) {
+    ASSERT(pr_lock_owner(proc) == curthread);
     mtx_unlock(&proc->lock);
   }
 
@@ -750,6 +758,11 @@ int proc_setup_exec(proc_t *proc, cstr_t path) {
     EPRINTF("failed to map brk segment\n");
     goto_res(ret, -ENOMEM);
   }
+
+  address_space_t *oldspace = curspace;
+  switch_address_space(proc->space);
+  exec_print_debug_stack(stack->base + stack->off);
+  switch_address_space(oldspace);
 
   proc->binpath = str_move(image->path);
   proc->brk_start = last_segment_end;
@@ -879,12 +892,12 @@ void proc_terminate(proc_t *proc, int ret, int sig) {
   }
 
   // compute the exit status
-  int status = W_EXITCODE(ret, sig);
-  status |= sig_has_coredump(sig) ? W_COREDUMP : 0; // set the core dump bit if applicable
+  int wstatus = W_EXITCODE(ret, sig);
+  wstatus |= sig_has_coredump(sig) ? W_COREDUMP : 0; // set the core dump bit if applicable
 
-  DPRINTF("proc %d terminating with status %d\n", proc->pid, ret);
+  DPRINTF("proc %d terminating with status %d [%d]\n", proc->pid, ret, wstatus);
   proc->state = proc_get_exit_state(proc);
-  proc->exit_status = status;
+  proc->exit_status = wstatus;
 
   // terminate process threads
   LIST_FOR_IN(td, &proc->threads, plist) {
@@ -916,7 +929,7 @@ void proc_terminate(proc_t *proc, int ret, int sig) {
   }
 
   // notify parent process of the termination
-  proc_child_notify_parent(proc, proc->pid, status);
+  proc_child_notify_parent(proc, proc->pid, wstatus);
 
   if (proc == curproc) {
     // exit the current thread, this will release
@@ -925,6 +938,16 @@ void proc_terminate(proc_t *proc, int ret, int sig) {
     unreachable;
   }
   pr_unlock(proc);
+}
+
+void proc_coredump(proc_t *proc, siginfo_t *info) {
+  DPRINTF("core dump requested for proc {:pr} with signal %d\n", proc, info->si_signo);
+  DPRINTF("====== core dump not implemented ======\n");
+  if (info->si_signo == SIGSEGV) {
+    DPRINTF("SEGV fault at %p [%s]\n", info->si_addr,
+            info->si_code == SEGV_MAPERR ? "SEGV_MAPERR" : "SEGV_ACCERR");
+  }
+  proc_terminate(proc, 0, info->si_signo);
 }
 
 void proc_kill_tid(proc_t *proc, pid_t tid, int ret, int sig) {
@@ -973,6 +996,7 @@ void proc_stop(proc_t *proc, int sig) {
 
   // notify parent process of the stop
   proc_child_notify_parent(proc, proc->pid, W_STOPCODE(sig));
+  //  proc_signal(proc->parent, );
 
   if (proc == curproc) {
     // stop other threads first
@@ -1006,8 +1030,10 @@ void proc_cont(proc_t *proc) {
   DPRINTF("proc {:pr} continuing\n", proc);
   atomic_fetch_and(&proc->flags, ~PRF_STOPPED);
 
-  // notify parent process of the stop
+
+  // notify parent process of the continue
   proc_child_notify_parent(proc, proc->pid, W_CONTINUED);
+//  proc_signal(proc, NULL);
 
   // start all the threads
   LIST_FOR_IN(td, &proc->threads, plist) {
@@ -1016,22 +1042,15 @@ void proc_cont(proc_t *proc) {
   pr_unlock(proc);
 }
 
-int proc_wait_signal(proc_t *proc) {
-  pr_lock(proc);
-  cond_wait(&proc->signal_cond, &proc->lock);
-  // proc is locked
-  pr_unlock(proc);
-  return 0;
-}
-
-int proc_signal(proc_t *proc, int sig, int si_code, union sigval si_value) {
+int proc_signal(proc_t *proc, siginfo_t *info) {
+  int sig = info->si_signo;
   if (sig < 0 || sig >= NSIG) {
     return -EINVAL;
   }
 
   int res;
   bool locked = false;
-  if (mtx_owner(&proc->lock) != curthread) {
+  if (pr_lock_owner(proc) != curthread) {
     pr_lock(proc);
     locked = true;
   }
@@ -1042,48 +1061,43 @@ int proc_signal(proc_t *proc, int sig, int si_code, union sigval si_value) {
   }
 
   struct sigaction sa;
-  enum sigdisp disp;
-  if ((res = sigacts_get(proc->sigacts, sig, &sa, &disp)) < 0) {
+  if ((res = sigacts_get(proc->sigacts, sig, &sa)) < 0) {
     goto ret;
   }
 
+  enum sigdisp disp = sigaction_to_disp(sig, &sa);
   if (disp == SIGDISP_IGN) {
+    // signal was explicitly ignored, or the default action is to ignore it
     EPRINTF("signal %d ignored by proc {:pr}\n", sig, proc);
     goto_res(ret, 0);
-  }
-
-  if (disp == SIGDISP_TERM) {
+  } else if (disp == SIGDISP_TERM) {
     proc_terminate(proc, 0, sig);
+    goto_res(ret, 0);
+  } else if (disp == SIGDISP_CORE) {
+    proc_coredump(proc, info);
     goto_res(ret, 0);
   } else if (disp == SIGDISP_STOP) {
     proc_stop(proc, sig);
     goto_res(ret, 0);
   } else if (disp == SIGDISP_CONT) {
+    // SIGCONT allows a user handler which is invoked after the process is continued
     proc_cont(proc);
-    goto_res(ret, 0);
-  } else if (disp == SIGDISP_CORE) {
-    DPRINTF("core dump requested for proc {:pr} with signal %d\n", proc, sig);
-    DPRINTF("====== core dump not implemented ======\n");
-    proc_terminate(proc, 0, sig);
-    goto_res(ret, 0);
-  }
-
-  // the signal has a handler installed
-  // select a thread to run the handler
-  thread_t *td = NULL;
-  LIST_FOR_IN(_td, &proc->threads, plist) {
-    if (!sigset_masked(_td->sigmask, sig)) {
-      td = _td;
-      break;
+    if (sa.sa_handler == SIG_DFL || sa.sa_handler == SIG_IGN) {
+      // no user handler installed
+      goto_res(ret, 0);
     }
   }
 
+  // signal has a handler installed, select a suitable thread to send it to
+  thread_t *td = LIST_FIND(_td, &proc->threads, plist, !sigset_masked(_td->sigmask, sig));
   if (td == NULL) {
-    goto_res(ret, -ESRCH);
+    // if no thread is ready to handle it, deliver it to main thread
+    // so it may handle it when the signal is unblocked
+    td = pr_main_thread(proc);
   }
 
   // send the signal to the thread
-  if ((res = thread_signal(td, sig, si_code, si_value)) < 0) {
+  if ((res = thread_signal(td, info)) < 0) {
     goto ret;
   }
   cond_broadcast(&proc->signal_cond);
@@ -1095,15 +1109,12 @@ LABEL(ret);
   return res;
 }
 
-int pid_signal(pid_t pid, int sig, int si_code, union sigval si_value) {
-  proc_t *proc = ptable_get_proc(pid); __ref
-  if (proc == NULL) {
-    return -ESRCH;
-  }
-
-  int res = proc_signal(proc, sig, si_code, si_value);
-  pr_putref(&proc);
-  return res;
+int proc_wait_signal(proc_t *proc) {
+  pr_lock(proc);
+  cond_wait(&proc->signal_cond, &proc->lock);
+  // proc is locked
+  pr_unlock(proc);
+  return 0;
 }
 
 int proc_syscall_wait4(pid_t pid, int *status, int options, struct rusage *rusage) {
@@ -1184,7 +1195,7 @@ int proc_syscall_wait4(pid_t pid, int *status, int options, struct rusage *rusag
   }
 
   DPRINTF("wait4: wstatus = %d [exited = %d, signaled = %d]\n", wstatus, WIFEXITED(wstatus), WIFSIGNALED(wstatus));
-  if (WIFEXITED(wstatus)) {
+  if (WTERMSIG(wstatus) != SIGSTOP && WTERMSIG(wstatus) != SIGCONT) {
     // child exited, time to reap it
     // we can now reap the child process
     ASSERT(child->parent == proc);
@@ -1193,6 +1204,15 @@ int proc_syscall_wait4(pid_t pid, int *status, int options, struct rusage *rusag
     pr_lock(parent);
     LIST_REMOVE(&parent->children, child, chldlist);
     pr_unlock(parent);
+    
+    // remove from process group before removing from ptable
+    pgroup_t *pgrp = child->group;
+    if (pgrp != NULL) {
+      pgrp_lock(pgrp);
+      pgrp_remove_proc(pgrp, child);
+      pgrp_unlock(pgrp);
+    }
+    
     pr_unlock(child);
     ptable_remove_proc(child_pid, moveref(child));
   }
@@ -1334,6 +1354,9 @@ int proc_syscall_execve(cstr_t path, char *const argv[], char *const envp[]) {
   uint32_t rflags = 0x3202; // IF=1, IOPL=3
   ASSERT(is_aligned(rsp, 16));
 
+  DPRINTF("execve: starting new image {:str} at {:p} with stack at {:p}\n", &proc->binpath, rip, rsp);
+  exec_print_debug_stack(rsp);
+
   // start running the new image
   exec_free_image(&image);
   exec_free_stack(&stack);
@@ -1474,8 +1497,8 @@ void thread_free_exited(thread_t **tdp) {
   DPRINTF("!!! freeing exited thread {:td} !!!\n", *tdp);
   thread_t *td = *tdp;
   ASSERT(TDS_IS_EXITED(td));
-  if (mtx_owner(&td->lock) != NULL) {
-    ASSERT(mtx_owner(&td->lock) == curthread);
+  if (td_lock_owner(td) != NULL) {
+    ASSERT(td_lock_owner(td) == curthread);
     td_unlock(td);
   }
 
@@ -1702,20 +1725,14 @@ LABEL(done);
   td_unlock(td);
 }
 
-int thread_signal(thread_t *td, int sig, int si_code, union sigval si_value) {
-  if (sig < 0 || sig >= NSIG) {
-    return -EINVAL;
-  }
+int thread_signal(thread_t *td, siginfo_t *info) {
+  ASSERT(info->si_signo >= 0 && info->si_signo < NSIG);
 
   td_lock(td);
   // signal may be masked but we put it into the queue anyways
   // to allow the signal to be delivered when it is unmasked
-  sigqueue_push(&td->sigqueue, &(struct siginfo){
-    .si_signo = sig,
-    .si_code = si_code,
-    .si_value = si_value,
-  });
-  td->flags2 |= TDF2_SIGPEND;
+  sigqueue_push(&td->sigqueue, info);
+  atomic_fetch_or(&td->flags2, TDF2_SIGPEND);
   td_unlock(td);
   return 0;
 }

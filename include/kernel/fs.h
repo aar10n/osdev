@@ -31,6 +31,7 @@ int fs_open(cstr_t path, int flags, mode_t mode);
 int fs_close(int fd);
 struct vm_file *fs_get_vmfile(int fd, size_t off, size_t len);
 __ref struct page *fs_getpage(int fd, off_t off);
+__ref struct page *fs_getpage_cow(int fd, off_t off);
 ssize_t fs_kread(int fd, kio_t *kio);
 ssize_t fs_kwrite(int fd, kio_t *kio);
 ssize_t fs_read(int fd, void *buf, size_t len);
@@ -38,7 +39,6 @@ ssize_t fs_write(int fd, const void *buf, size_t len);
 ssize_t fs_readv(int fd, const struct iovec *iov, int iovcnt);
 ssize_t fs_writev(int fd, const struct iovec *iov, int iovcnt);
 ssize_t fs_readdir(int fd, void *dirp, size_t len);
-ssize_t fs_readdir64(int fd, void *dirp, size_t len);
 off_t fs_lseek(int fd, off_t offset, int whence);
 int fs_ioctl(int fd, unsigned long request, void *argp);
 int fs_ftruncate(int fd, off_t length);
@@ -59,6 +59,7 @@ int fs_mkdir(cstr_t path, mode_t mode);
 int fs_rmdir(cstr_t path);
 int fs_rename(cstr_t oldpath, cstr_t newpath);
 ssize_t fs_readlink(cstr_t path, char *buf, size_t bufsiz);
+ssize_t fs_realpath(cstr_t path, kio_t *buf);
 
 void fs_print_debug_vcache();
 

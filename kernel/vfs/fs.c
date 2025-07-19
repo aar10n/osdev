@@ -473,6 +473,25 @@ __ref page_t *fs_getpage(int fd, off_t off) {
   return outpage;
 }
 
+__ref page_t *fs_getpage_cow(int fd, off_t off) {
+  page_t *page = fs_getpage(fd, off);
+  if (page == NULL) {
+    EPRINTF("failed to get page\n");
+    return NULL;
+  }
+
+  // create a copy-on-write page
+  page_t *cow_page = alloc_cow_pages(page);
+  if (cow_page == NULL) {
+    EPRINTF("failed to allocate COW page\n");
+    pg_putref(&page); // release the reference
+    return NULL;
+  }
+
+  pg_putref(&page); // release the original page
+  return cow_page;
+}
+
 ssize_t fs_kread(int fd, kio_t *kio) {
   ASSERT(kio->dir == KIO_WRITE);
   fd_entry_t *fde = ftable_get_entry(FTABLE, fd);
@@ -1208,6 +1227,52 @@ ssize_t fs_readlink(cstr_t path, char *buf, size_t bufsiz) {
   if (res < 0) {
     DPRINTF("failed to read link\n");
     goto ret_unlock;
+  }
+
+  // success
+LABEL(ret_unlock);
+  ve_unlock(ve);
+LABEL(ret);
+  ve_putref(&ve);
+  ve_putref(&at_ve);
+  return res;
+}
+
+ssize_t fs_realpath(cstr_t path, kio_t *buf) {
+  ventry_t *at_ve = ve_getref(curproc->pwd);
+  ventry_t *ve = NULL;
+  ssize_t res;
+
+  if ((res = vresolve(fs_vcache, at_ve, path, 0, &ve)) < 0)
+    goto ret;
+
+  if (V_ISLNK(ve)) {
+    // the real path can be obtained by reading the symlink
+    vnode_t *vn = VN(ve);
+    vn_begin_data_read(vn);
+    res = vn_readlink(vn, buf); // read the link
+    vn_end_data_read(vn);
+    if (res < 0) {
+      DPRINTF("failed to read link\n");
+      goto ret_unlock;
+    }
+  } else {
+    char temp[PATH_MAX+1];
+    sbuf_t tempbuf = sbuf_init(temp, PATH_MAX+1);
+    res = ve_get_path(ve, &tempbuf);
+    if (res < 0) {
+      DPRINTF("failed to get path\n");
+      goto ret_unlock;
+    }
+
+    // the real path is the resolved path
+    if (sbuf_len(&tempbuf) >= kio_remaining(buf)) {
+      DPRINTF("buffer too small for realpath\n");
+      res = -ERANGE;
+      goto ret_unlock;
+    }
+
+    res = (ssize_t) sbuf_transfer_kio(&tempbuf, buf);
   }
 
   // success

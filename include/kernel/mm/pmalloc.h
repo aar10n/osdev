@@ -70,6 +70,35 @@ typedef struct page_list {
   page_t **pages;
 } page_list_t;
 
+
+//#define PG_DPRINTF(fmt, ...) kprintf("pmalloc: %s: " fmt " [%s:%d]\n", __func__, ##__VA_ARGS__, __FILE__, __LINE__)
+ #define PG_DPRINTF(fmt, ...)
+
+#define pg_getref(pg) ({ \
+  ASSERT_IS_TYPE(page_t *, pg); \
+  page_t *__pg = (page_t *)(pg); \
+  if (__pg) { \
+    __pg ? ref_get(&__pg->refcount) : NULL; \
+    PG_DPRINTF("getref %p [%p] [%d]", __pg, __pg->address, __pg->refcount); \
+  } \
+  __pg; \
+})
+#define pg_putref(pgref) ({ \
+  ASSERT_IS_TYPE(page_t **, pgref); \
+  page_t *__pg = *(pgref); \
+  *(pgref) = NULL; \
+  if (__pg) { \
+    kassert(__pg->refcount > 0); \
+    if (ref_put(&__pg->refcount)) { \
+      PG_DPRINTF("putref %p [0]", __pg); \
+      _cleanup_pages(&__pg); \
+    } else {                \
+      PG_DPRINTF("putref %p [%d]", __pg, __pg->refcount); \
+    } \
+  } \
+})
+
+
 void init_mem_zones();
 int reserve_pages(enum pg_rsrv_kind kind, uintptr_t address, size_t count, size_t pagesize);
 
@@ -81,7 +110,7 @@ __ref page_t *alloc_pages(size_t count);
 __ref page_t *alloc_pages_at(uintptr_t address, size_t count, size_t pagesize);
 __ref page_t *alloc_nonowned_pages_at(uintptr_t address, size_t count, size_t pagesize);
 __ref page_t *alloc_cow_pages(page_t *pages);
-void drop_pages(__move page_t **pagesref);
+void _cleanup_pages(__move page_t **pagesref);
 
 // page list api
 
@@ -97,8 +126,8 @@ page_list_t *page_list_split(page_list_t *list, size_t index);
 
 #define page_list_foreach(var, list) \
   size_t __i; \
-  page_t *var; \
-  for (__i = 0, var = (list)->pages[0]; __i < (list)->count; __i++, var = (list)->pages[__i])
+  page_t *(var); \
+  for (__i = 0, (var) = (list)->pages[0]; __i < (list)->count; __i++, (var) = (list)->pages[__i])
 
 
 /// Joins two raw page-lists together and returns a reference to the new head.

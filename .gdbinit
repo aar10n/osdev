@@ -127,8 +127,9 @@ add-symbol-file build/kernel.elf
 b kmain
 commands
   set variable is_debug_enabled = 0
-  add-symbol-file-all build/sbin/init/init    0x400000
-  add-symbol-file-all build/sbin/getty/getty  0x800000
-  add-symbol-file-all build/sbin/shell/shell  0xC00000
+  add-symbol-file-all build/sbin/init/init      0x400000
+  add-symbol-file-all build/sbin/getty/getty    0x800000
+  add-symbol-file-all build/sbin/shell/shell    0xC00000
+  add-symbol-file-all build/bin/busybox/busybox 0x1000000
   add-symbol-file-all build/musl/x86_64-linux-musl/lib/libc.so 0x7fc0000000
 end

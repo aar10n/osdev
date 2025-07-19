@@ -103,7 +103,7 @@ int select_cpu_for_thread(thread_t *td) {
   }
 
   if (TDF2_IS_FIRSTTIME(td) && PRF_HAS_RUN(proc)) {
-    // some other thread(s) from this process have ran on a cpu
+    // some other thread(s) from this process has ran on a cpu
     // before so we can use the same one for this new thread
     pr_lock(proc);
     thread_t *td2 = LIST_FIRST(&proc->threads);
@@ -320,7 +320,7 @@ void sched_again(sched_reason_t reason) {
   }
 
   thread_t *oldtd = curthread;
-  if (mtx_owner(&oldtd->lock) == NULL) {
+  if (td_lock_owner(oldtd) == NULL) {
     // lock the thread if it hasnt been already
     td_lock(oldtd);
   }
@@ -339,7 +339,7 @@ void sched_again(sched_reason_t reason) {
     }
 
     // dont rereschedule to idle thread if oldtd is just yielding or being preempted
-    // because we have nothing better to do
+    // because we have nothing better to do anyways
     if (reason == SCHED_PREEMPTED || reason == SCHED_YIELDED) {
       td_unlock(oldtd);
       td_unlock(newtd);

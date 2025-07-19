@@ -2,6 +2,7 @@
 // Created by Aaron Gill-Braun on 2020-09-05.
 //
 
+#define __PANIC__
 #ifndef KERNEL_PANIC_H
 #define KERNEL_PANIC_H
 

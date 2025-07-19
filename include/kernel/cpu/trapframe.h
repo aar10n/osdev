@@ -2,8 +2,8 @@
 // Created by Aaron Gill-Braun on 2024-01-02.
 //
 
-#ifndef KERNEL_CPU_FRAME_H
-#define KERNEL_CPU_FRAME_H
+#ifndef KERNEL_CPU_TRAPFRAME_H
+#define KERNEL_CPU_TRAPFRAME_H
 
 struct trapframe {
   struct trapframe *parent; // previous trapframe (if nested)

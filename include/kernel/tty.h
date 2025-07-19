@@ -102,7 +102,7 @@ static inline struct termios termios_make_canon(speed_t speed) {
   t.c_iflag = ICRNL | IXON | BRKINT;  // input flags: translate CR to NL, enable XON/XOFF flow control
   t.c_oflag = OPOST | ONLCR | XTABS;  // output flags: post-process output, translate NL to CR-NL
   t.c_cflag = CS8 | CREAD | CLOCAL;   // control flags: 8 data bits, enable receiver, ignore modem control
-  t.c_lflag = ISIG | ICANON | ECHO;   // local flags: enable signals, canonical mode, echo input
+  t.c_lflag = ISIG | ICANON | ECHO | ECHOCTL; // local flags: enable signals, canonical mode, echo input, echo control characters
   ttydisc_fill_cc_default(&t);
   t.__c_ispeed = speed; // default input speed
   t.__c_ospeed = speed; // default output speed

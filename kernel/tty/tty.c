@@ -461,9 +461,14 @@ int tty_signal_pgrp(tty_t *tty, int signal) {
   }
 
   pgroup_t *pgrp = tty->pgrp;
+  if (pgrp == NULL) {
+    EPRINTF("tty device is not associated with a process group\n");
+    tty_unlock(tty);
+    return -ENOTTY; // not a tty
+  }
+
   pgrp_lock(pgrp);
-  union sigval si_value = {0};
-  int res = pgrp_signal(pgrp, signal, SI_KERNEL, si_value);
+  int res = pgrp_signal(pgrp, &(siginfo_t){.si_signo = signal});
   pgrp_unlock(pgrp);
   tty_unlock(tty);
   if (res < 0) {

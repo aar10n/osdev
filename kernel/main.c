@@ -127,7 +127,7 @@ void launch_init_process() {
   proc_t *init_proc = proc_alloc_new(getref(curproc->creds));
   proc_setup_add_thread(init_proc, thread_alloc(0, SIZE_16KB));
 
-  res = proc_setup_exec_args(init_proc, (const char *[]){"/sbin/init", "hello", "world", NULL});
+  res = proc_setup_exec_args(init_proc, (const char *[]){"/sbin/init", NULL});
   FAIL_IF_ERROR("proc_setup_exec_args failed: {:err}", res);
   res = proc_setup_exec_env(init_proc, (const char *[]) {"TTY=/dev/ttyS2", "SHELL=/sbin/shell", NULL});
   FAIL_IF_ERROR("proc_setup_exec_env failed: {:err}", res);

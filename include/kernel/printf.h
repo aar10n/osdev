@@ -6,7 +6,7 @@
 #ifndef KERNEL_PRINTF_H
 #define KERNEL_PRINTF_H
 
-#include <kernel/types.h>
+#include <kernel/base.h>
 #include <stdarg.h>
 
 void kprintf_early_init();
@@ -157,5 +157,17 @@ int kfprintf(const char *path, const char *format, ...);
  * not closed on return.
  */
 int kfdprintf(int fd, const char *format, ...);
+
+
+size_t fmt_format(const char *format, char *buffer, size_t size, int max_args, va_list args);
+
+static inline void qemu_debug_printf(const char *fmt, ...) {
+  char buf[64];
+  va_list args;
+  va_start(args, fmt);
+  size_t len = fmt_format(fmt, buf, sizeof(buf), 0, args);
+  va_end(args);
+  qemu_debug_string(buf, len);
+}
 
 #endif

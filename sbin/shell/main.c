@@ -14,7 +14,8 @@
 #include "builtins.h"
 
 #define MAX_ARGS 64
-#define PROMPT "# "
+#define PROMPT "> " // busybox/sh uses '#' so make it different
+
 
 char **parse_line(char *line) {
   int bufsize = MAX_ARGS;
@@ -45,15 +46,26 @@ char **parse_line(char *line) {
 
     token = strtok(NULL, " \t\r\n\a");
   }
+  
+  // Ensure we have space for the NULL terminator
+  if (position >= bufsize) {
+    bufsize += MAX_ARGS;
+    char **new_tokens = realloc(tokens, bufsize * sizeof(char*));
+    if (!new_tokens) {
+      free(tokens);
+      fprintf(stderr, "memory allocation error\n");
+      exit(EXIT_FAILURE);
+    }
+    tokens = new_tokens;
+  }
+  
   tokens[position] = NULL;
   return tokens;
 }
 
 int shell_launch(char **args) {
-  pid_t pid;
   int status;
-
-  pid = fork();
+  pid_t pid = fork();
   if (pid == 0) {
     if (execvp(args[0], args) == -1) {
       perror("execvp");
@@ -105,6 +117,22 @@ void sigint_handler(int sig) {
   write(STDOUT_FILENO, "\n" PROMPT, sizeof(PROMPT)+1);
 }
 
+// sanitize input line by removing control characters
+void sanitize_line(char *line) {
+  char *read = line;
+  char *write = line;
+
+  while (*read) {
+    // skip control characters (0x00-0x1F and 0x7F)
+    // but keep tab (0x09), newline (0x0A), and carriage return (0x0D)
+    if ((*read >= 0x20 && *read < 0x7F) || *read == '\t' || *read == '\n' || *read == '\r') {
+      *write++ = *read;
+    }
+    read++;
+  }
+  *write = '\0';
+}
+
 // main shell loop
 void shell_loop() {
   char *line = NULL;
@@ -116,6 +144,14 @@ void shell_loop() {
   if (debug == NULL) {
     perror("fopen /dev/debug");
     exit(EXIT_FAILURE);
+  }
+
+  const char *path = getenv("PATH");
+  if (path == NULL) {
+    fprintf(debug, "shell: PATH not set, using default\n");
+    setenv("PATH", "/bin:/usr/bin", 1); // set a default PATH if not already set
+  } else {
+    fprintf(debug, "shell: using PATH `%s`\n", path);
   }
 
   while (1) {
@@ -134,6 +170,9 @@ void shell_loop() {
       }
     }
 
+    // sanitize the input to remove control characters
+    sanitize_line(line);
+    
     fprintf(debug, "shell: read line, `%s`\n", line);
 
     // skip empty lines
@@ -147,6 +186,8 @@ void shell_loop() {
 
     free(args);
   }
+
+  fclose(debug);
   free(line);
 }
 

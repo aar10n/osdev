@@ -49,7 +49,7 @@ _used void signal_dispatch() {
 
     // get the signal action for this signal
     struct sigaction act;
-    if ((res = sigacts_get(td->proc->sigacts, sig, &act, NULL)) < 0) {
+    if ((res = sigacts_get(td->proc->sigacts, sig, &act)) < 0) {
       continue;
     }
 
@@ -64,8 +64,7 @@ _used void signal_dispatch() {
     uintptr_t kstack_ptr = td->kstack_ptr; // save kstack pointer
     bool user_mode = !(act.sa_flags & SA_KERNHAND);
     td_unlock(td); // unlock the thread while the signal is handled
-    // execute the signal handler
-    sigtramp_entry(&info, &act, user_mode);
+    sigtramp_entry(&info, &act, user_mode); // execute the signal handler
     td_lock(td); // relock it in case there are more signals to handle
     td->kstack_ptr = kstack_ptr; // restore kstack pointer
 
@@ -81,115 +80,115 @@ _used void signal_dispatch() {
   td_unlock(td);
 }
 
-static void term_handler(int sig, struct siginfo *info, void *arg) {
-  struct sigframe *sf = arg;
-  todo();
+//
+
+const char *sig_name(int sig) {
+  ASSERT(sig > 0 && sig < NSIG);
+  switch (sig) {
+    case SIGHUP: return "SIGHUP";
+    case SIGINT: return "SIGINT";
+    case SIGQUIT: return "SIGQUIT";
+    case SIGILL: return "SIGILL";
+    case SIGTRAP: return "SIGTRAP";
+    case SIGABRT: return "SIGABRT";
+    case SIGFPE: return "SIGFPE";
+    case SIGKILL: return "SIGKILL";
+    case SIGBUS: return "SIGBUS";
+    case SIGSEGV: return "SIGSEGV";
+    case SIGPIPE: return "SIGPIPE";
+    case SIGALRM: return "SIGALRM";
+    case SIGTERM: return "SIGTERM";
+    case SIGUSR1: return "SIGUSR1";
+    case SIGUSR2: return "SIGUSR2";
+    case SIGCHLD: return "SIGCHLD";
+    case SIGCONT: return "SIGCONT";
+    case SIGSTOP: return "SIGSTOP";
+    case SIGTSTP: return "SIGTSTP";
+    case SIGTTIN: return "SIGTTIN";
+    case SIGTTOU: return "SIGTTOU";
+    default: return "UNKNOWN";
+  }
 }
 
-static void core_handler(int sig, struct siginfo *info, void *arg) {
-  struct sigframe *sf = arg;
-  todo("core_handler");
+enum sigdisp sig_to_dfl_disp(int sig) {
+  ASSERT(sig > 0 && sig < NSIG);
+  switch (sig) {
+    case SIGHUP: case SIGINT: case SIGQUIT: case SIGKILL:
+    case SIGUSR1: case SIGUSR2: case SIGPIPE: case SIGALRM:
+    case SIGTERM: case SIGVTALRM: case SIGPROF: case SIGPOLL:
+    case SIGPWR: case SIGRTMIN ... SIGRTMAX:
+      return SIGDISP_TERM;
+    case SIGILL: case SIGTRAP: case SIGABRT: case SIGBUS:
+    case SIGFPE: case SIGSEGV: case SIGXCPU: case SIGXFSZ:
+    case SIGSYS:
+      return SIGDISP_CORE;
+    case SIGSTOP: case SIGTSTP: case SIGTTIN: case SIGTTOU:
+      return SIGDISP_STOP;
+    case SIGCONT:
+      return SIGDISP_CONT;
+    case SIGCHLD: case SIGURG: case SIGWINCH:
+      return SIGDISP_IGN;
+    default:
+      unreachable;
+  }
 }
 
-static void stop_handler(int sig, struct siginfo *info, void *arg) {
-  struct sigframe *sf = arg;
-  todo("stop_handler");
-}
-
-static void cont_handler(int sig, struct siginfo *info, void *arg) {
-  struct sigframe *sf = arg;
-  todo("cont_handler");
+enum sigdisp sigaction_to_disp(int sig, const struct sigaction *sa) {
+  if (sig == SIGKILL) {
+    return SIGDISP_TERM;
+  } else if (sig == SIGSTOP) {
+    return SIGDISP_STOP;
+  } else if (sig == SIGCONT) {
+    return SIGDISP_CONT;
+  } else if (sa->sa_handler == SIG_IGN) {
+    return SIGDISP_IGN;
+  } else if (sa->sa_handler == SIG_DFL) {
+    return sig_to_dfl_disp(sig);
+  }
+  return SIGDISP_USER;
 }
 
 //
 
-static struct sigaction ign_action = {
-  .sa_handler = SIG_IGN,
-  .sa_flags = 0,
-  .sa_mask = {0},
-};
+int signal_deliver_self_sync(siginfo_t *info) {
+  thread_t *td = curthread;
+  proc_t *proc = td->proc;
+  td_lock_assert(td, LA_OWNED);
 
-static struct sigaction term_action = {
-  .sa_sigaction = term_handler,
-  .sa_flags = SA_SIGINFO|SA_KERNHAND,
-  .sa_mask = {0},
-};
-
-static struct sigaction core_action = {
-  .sa_sigaction = core_handler,
-  .sa_flags = SA_SIGINFO|SA_KERNHAND,
-  .sa_mask = {0},
-};
-
-static struct sigaction stop_action = {
-  .sa_sigaction = stop_handler,
-  .sa_flags = SA_SIGINFO|SA_KERNHAND,
-  .sa_mask = {0},
-};
-
-static struct sigaction cont_action = {
-  .sa_sigaction = cont_handler,
-  .sa_flags = SA_SIGINFO|SA_KERNHAND,
-  .sa_mask = {0},
-};
-
-static inline struct sigaction *signal_get_default_action(int sig) {
-  if (sig <= 0 || sig >= NSIG) {
-    return NULL;
+  int res;
+  struct sigaction act;
+  int sig = info->si_signo;
+  if ((res = sigacts_get(proc->sigacts, sig, &act)) < 0) {
+    EPRINTF("failed to get sigaction for signal %d: {:err}\n", sig, res);
+    return res;
   }
-  switch (sig) {
-    case SIGHUP:
-    case SIGINT:
-    case SIGQUIT:
-    case SIGKILL:
-    case SIGUSR1:
-    case SIGUSR2:
-    case SIGPIPE:
-    case SIGALRM:
-    case SIGTERM:
-    case SIGVTALRM:
-    case SIGPROF:
-    case SIGPOLL:
-    case SIGPWR:
-      return &term_action;
-    case SIGILL:
-    case SIGTRAP:
-    case SIGABRT:
-    case SIGBUS:
-    case SIGFPE:
-    case SIGSEGV:
-    case SIGXCPU:
-    case SIGXFSZ:
-    case SIGSYS:
-      return &core_action;
-    case SIGSTOP:
-    case SIGTSTP:
-    case SIGTTIN:
-    case SIGTTOU:
-      return &stop_action;
-    case SIGCONT:
-      return &cont_action;
-    default:
-      return &ign_action;
-  }
-}
 
-static inline enum sigdisp signal_action_to_disp(const struct sigaction *sa) {
-  ASSERT(sa->sa_handler != SIG_DFL);
-
-  if (sa->sa_handler == SIG_IGN) {
-    return SIGDISP_IGN;
-  } else if (sa->sa_sigaction == term_handler) {
-    return SIGDISP_TERM;
-  } else if (sa->sa_sigaction == core_handler) {
-    return SIGDISP_CORE;
-  } else if (sa->sa_sigaction == stop_handler) {
-    return SIGDISP_STOP;
-  } else if (sa->sa_sigaction == cont_handler) {
-    return SIGDISP_CONT;
-  } else {
-    return SIGDISP_HANDLER;
+  enum sigdisp disp = sigaction_to_disp(sig, &act);
+  if (disp == SIGDISP_IGN) {
+    // signal was explicitly ignored, or the default action is to ignore it
+    EPRINTF("signal %s ignored by thread {:td}\n", sig_name(sig), td);
+    return 0;
+  } else if (disp == SIGDISP_TERM) {
+    td_unlock(td);
+    proc_terminate(proc, 0, sig);
+    return 0;
+  } else if (disp == SIGDISP_CORE) {
+    td_unlock(td);
+    proc_coredump(proc, info);
+    return 0;
+  } else if (disp == SIGDISP_STOP) {
+    proc_stop(proc, sig);
+    return 0;
+  } else if (disp == SIGDISP_CONT) {
+    proc_cont(proc);
+    if (act.sa_handler == SIG_DFL || act.sa_handler == SIG_IGN) {
+      // no user handler
+      return 0;
+    }
   }
+
+  todo("synchronous user handled signals not supported");
+  return 1;
 }
 
 
@@ -254,36 +253,29 @@ void sigacts_reset(struct sigacts *sa) {
   mtx_unlock(&sa->lock);
 }
 
-int sigacts_get(struct sigacts *sa, int sig, struct sigaction *act, enum sigdisp *disp) {
+int sigacts_get(struct sigacts *sa, int sig, struct sigaction *act) {
   if (sig <= 0 || sig >= NSIG) {
     return -EINVAL;
-  } else if (act == NULL && disp == NULL) {
+  } else if (act == NULL) {
     return 0;
   }
 
   mtx_lock(&sa->lock);
-  struct sigaction *sigact;
-  enum sigdisp sigdisp = SIGDISP_IGN;
+  struct sigaction sigact = {0};
   if (sig < SIGRTMIN) {
     // standard signal
-    sigact = &sa->std_actions[sig];
+    sigact = sa->std_actions[sig];
   } else if (sa->rt_actions != NULL) {
     // realtime signal
-    sigact = &sa->rt_actions[sig];
+    sigact = sa->rt_actions[sig];
   } else {
     // no action set, use default
-    sigact = signal_get_default_action(sig);
-  }
-
-  if (sigact->sa_handler == SIG_DFL) {
-    // replace with actual default action
-    sigact = signal_get_default_action(sig);
+    sigact.sa_handler = SIG_DFL;
+    sigact.sa_flags = 0;
   }
 
   if (act != NULL)
-    memcpy(act, sigact, sizeof(struct sigaction));
-  if (disp != NULL)
-    *disp = signal_action_to_disp(sigact);
+    memcpy(act, &sigact, sizeof(struct sigaction));
 
   mtx_unlock(&sa->lock);
   return 0;
@@ -294,25 +286,34 @@ int sigacts_set(struct sigacts *sa, int sig, const struct sigaction *act, struct
     return -EINVAL;
   }
 
+  int index;
+  struct sigaction *array;
   mtx_lock(&sa->lock);
   if (sig < SIGRTMIN) {
-    // standard signal
-    if (oact != NULL) {
-      memcpy(oact, &sa->std_actions[sig], sizeof(struct sigaction));
-    }
-    memcpy(&sa->std_actions[sig], act, sizeof(struct sigaction));
+    array = sa->std_actions;
+    index = sig;
+  } else if (sa->rt_actions != NULL) {
+    array = sa->rt_actions;
+    index = sig - SIGRTMIN;
   } else {
-    // realtime signal
-    if (sa->rt_actions == NULL) {
-      sa->rt_actions = kmalloc(sizeof(struct sigaction) * NRRTSIG);
-      memset(sa->rt_actions, 0, sizeof(struct sigaction) * NRRTSIG);
-    }
-
-    if (oact != NULL) {
-      memcpy(oact, &sa->rt_actions[sig - SIGRTMIN], sizeof(struct sigaction));
-    }
-    memcpy(&sa->rt_actions[sig - SIGRTMIN], act, sizeof(struct sigaction));
+    unreachable;
   }
+
+  if (oact != NULL) {
+    // copy the old action if requested
+    memcpy(oact, &array[index], sizeof(struct sigaction));
+  }
+  if (act != NULL) {
+    memcpy(&array[index], act, sizeof(struct sigaction));
+  } else {
+    // if act is NULL, we reset the action to default
+    array[index] = (struct sigaction) {
+      .sa_handler = SIG_DFL,
+      .sa_flags = 0,
+      .sa_mask = {0},
+    };
+  }
+
   mtx_unlock(&sa->lock);
   return 0;
 }
@@ -385,6 +386,7 @@ DEFINE_SYSCALL(rt_sigaction, int, int sig, const struct sigaction *act, struct s
   if (oact != NULL && vm_validate_ptr((uintptr_t) oact, /*write=*/true) < 0) {
     return -EFAULT;
   }
+
   return sigacts_set(curproc->sigacts, sig, act, oact);
 }
 

@@ -132,7 +132,7 @@ void lockq_update_priority(struct lockqueue *lockq, struct thread *td);
 #define WQ_SEMA   0x3 // wchan is semaphore channel
 
 /*
- * A waitqueue is a queue for threads waiting on a condition.
+ * A waitqueue is a queue for threads waiting on a condition (or sleeping).
  *
  * Equivalent to FreeBSD sleepqueues.
  */

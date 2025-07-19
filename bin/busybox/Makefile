@@ -1,9 +1,7 @@
-# busybox utils
 NAME = busybox
 GROUP = bin
 VERSION = 1.36.1
 
-# Include the external program build system
 include ../../scripts/extern.mk
 
 BUSYBOX_URL = https://github.com/mirror/busybox/archive/refs/tags/$(subst .,_,$(VERSION)).tar.gz
@@ -52,7 +50,7 @@ build-main:
 		echo "Error: busybox binary not found"; exit 1; \
 	fi
 
-# Optional: Install main binary and create symlinks for individual applets
+# Optional: Install symlinks for individual applets
 .PHONY: install-extra
 install-extra:
 	@echo "Creating busybox applet symlinks..."

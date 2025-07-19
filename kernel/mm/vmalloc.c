@@ -24,7 +24,7 @@
 #include <abi/mman.h>
 
 #define ASSERT(x) kassert(x)
-#define DPRINTF(x, ...) kprintf(x, ##__VA_ARGS__)
+#define DPRINTF(x, ...) kprintf("vmalloc: " x, ##__VA_ARGS__)
 #define EPRINTF(fmt, ...) kprintf("vmalloc: %s: " fmt, __func__, ##__VA_ARGS__)
 #define DPANICF(x, ...) panic(x, ##__VA_ARGS__)
 #define ALLOC_ERROR(msg, ...) panic(msg, ##__VA_ARGS__)
@@ -241,8 +241,13 @@ static void page_type_map_internal(vm_mapping_t *vm, size_t size, size_t off) {
   page_list_t *list = vm->vm_pages;
   uintptr_t ptr = vm->address;
   page_list_foreach(page, vm->vm_pages) {
+    uint32_t vm_flags = vm->flags;
+    if (page->flags & PG_COW) {
+      vm_flags &= ~VM_WRITE;
+    }
+
     page_t *table_pages = NULL;
-    uint64_t *entry = recursive_map_entry(ptr, page->address, vm->flags, &table_pages);
+    uint64_t *entry = recursive_map_entry(ptr, page->address, vm_flags, &table_pages);
     if (table_pages != NULL) {
       page_t *last_page = SLIST_GET_LAST(table_pages, next);
       SLIST_ADD_SLIST(&vm->space->table_pages, table_pages, last_page, next);
@@ -314,8 +319,13 @@ static void file_map_update_cb(page_t **pageref, size_t off, void *data) {
   if (cb->unmap) {
     recursive_unmap_entry(vaddr, vm->flags);
   } else {
+    uint32_t vm_flags = vm->flags;
+    if (page->flags & PG_COW) {
+      vm_flags &= ~VM_WRITE;
+    }
+
     page_t *table_pages = NULL;
-    uint64_t *entry = recursive_map_entry(vm->address + cb->off, page->address, vm->flags, &table_pages);
+    uint64_t *entry = recursive_map_entry(vm->address + cb->off, page->address, vm_flags, &table_pages);
     if (table_pages != NULL) {
       page_t *last_page = SLIST_GET_LAST(table_pages, next);
       SLIST_ADD_SLIST(&vm->space->table_pages, table_pages, last_page, next);
@@ -481,14 +491,20 @@ static void vm_free_internal(vm_mapping_t *vm) {
 
 static int vm_handle_non_present_fault(vm_mapping_t *vm, size_t off) {
   if (vm->type != VM_TYPE_FILE) {
-    EPRINTF("vm_handle_non_present_fault: non-file vm type [vm={:str},off=%zu]\n", &vm->name, off);
+    EPRINTF("vm_handle_non_present_fault: non-file vm type [vm={:str}, addr=%p, off=%zu]\n", &vm->name, vm->address, off);
     return -1;
   }
 
   page_t *page = file_type_getpage_internal(vm, off);
   if (page == NULL) {
-    EPRINTF("failed to get non-present page in vm_file [vm={:str},off=%zu]\n", &vm->name, off);
+    EPRINTF("failed to get non-present page in vm_file [vm={:str}, addr=%p, off=%zu]\n", &vm->name, vm->address, off);
     return -1;
+  }
+
+  proc_t *proc = curproc;
+  if (proc->pid == 5 || proc->pid == 6) {
+    kprintf("vm_handle_non_present_fault: [vm={:str}, address=%p, off=%zu] page={:p}, flags={:x}\n",
+            &vm->name, vm->address, off, page, page->flags);
   }
 
   // map the page into the address space
@@ -515,7 +531,7 @@ static int vm_handle_non_present_fault(vm_mapping_t *vm, size_t off) {
     }
   }
 
-  drop_pages(&page);
+  pg_putref(&page);
   return 0;
 }
 
@@ -526,23 +542,41 @@ static int vm_handle_cow_fault(vm_mapping_t *vm, size_t off) {
   } else if (vm->type == VM_TYPE_FILE) {
     page = vm_file_getpage(vm->vm_file, off);
   } else {
-    EPRINTF("vm_handle_cow_fault: non-page/file vm type [vm={:str},off=%zu]\n", &vm->name, off);
+    EPRINTF("vm_handle_cow_fault: non-page/file vm type [vm={:str}, addr=%p, off=%zu]\n", &vm->name, vm->address, off);
     return -1;
   }
 
+  proc_t *proc = curproc;
+  if (proc->pid == 5 || proc->pid == 6) {
+    kprintf("vm_handle_cow_fault: [vm={:str}, address=%p, off=%zu] page={:p}, flags={:x}\n",
+            &vm->name, vm->address, off, page, page->flags);
+  }
+
   if (page == NULL) {
-    EPRINTF("failed to get page in mapping [vm={:str},off=%zu]\n", &vm->name, off);
+    EPRINTF("failed to get page in mapping [vm={:str}, addr=%p, off=%zu]\n", &vm->name, vm->address, off);
     return -1;
   }
 
   ASSERT(vm->flags & VM_WRITE);
-  ASSERT(page->flags & PG_COW);
+  
+  // check if this is a COW page. for anonymous mappings that were forked,
+  // pages faulted in after fork won't have PG_COW set. in this case, we
+  // still need to handle the COW fault if the page has more than one reference
+  // (but ignore the extra reference we currently hold so > 2).
+  bool is_cow = (page->flags & PG_COW) || (page->refcount > 2);
+  if (!is_cow) {
+    // this page is not shared, so we can just make it writable
+    recursive_update_entry_flags(vm->address + off, vm->flags);
+    pg_putref(&page);
+    return 0;
+  }
+  
   // allocate a new page to replace the current one
   size_t pg_size = pg_flags_to_size(page->flags);
   page_t *newpage = alloc_pages_size(1, pg_size);
   if (newpage == NULL) {
-    EPRINTF("failed to allocate new page for COW [vm={:str},off=%zu]\n", &vm->name, off);
-    drop_pages(&page);
+    EPRINTF("failed to allocate new page for COW [vm={:str}, addr=%p, off=%zu]\n", &vm->name, vm->address, off);
+    pg_putref(&page);
     return -1;
   }
 
@@ -559,8 +593,8 @@ static int vm_handle_cow_fault(vm_mapping_t *vm, size_t off) {
   }
 
   // update the page entry to point to the new page
-  recursive_update_entry_entry(vm->address+off, newpage_addr, vm->flags);
-  drop_pages(&page);
+  recursive_update_entry(vm->address + off, newpage_addr, vm->flags);
+  pg_putref(&page);
   return 0;
 }
 
@@ -1095,26 +1129,58 @@ _used void page_fault_handler(struct trapframe *frame) {
 
   vm_mapping_t *vm = space_get_mapping(space, fault_addr);
   if (vm == NULL || !can_vm_handle_fault(vm, fault_addr, frame->error)) {
-    goto exception_unlock;
+    goto unhandled;
   }
 
   size_t off = page_trunc(fault_addr - vm->address);
   if (!(frame->error & CPU_PF_P)) {
     // DPRINTF("non-present page fault in vm_file [vm={:str},addr=%p]\n", &vm->name, fault_addr);
     if (vm_handle_non_present_fault(vm, off) < 0)
-      goto exception_unlock;
+      goto unhandled;
     space_unlock(space);
     return; // recover
   } else if (frame->error & CPU_PF_W) {
     ASSERT(vm->type == VM_TYPE_PAGE || vm->type == VM_TYPE_FILE);
     // DPRINTF("cow page fault in vm_file [vm={:str},addr=%p]\n", &vm->name, fault_addr);
     if (vm_handle_cow_fault(vm, off) < 0)
-      goto exception_unlock;
+      goto unhandled;
     space_unlock(space);
     return; // recover
   }
 
-LABEL(exception_unlock);
+LABEL(unhandled);
+  if (frame->error & CPU_PF_U) {
+    // user space fault
+    thread_t *td = curthread;
+    siginfo_t info = {
+      .si_signo = SIGSEGV,
+      .si_code = (frame->error & (CPU_PF_W | CPU_PF_I)) ? SEGV_ACCERR : SEGV_MAPERR,
+      .si_addr = (void *) fault_addr,
+    };
+
+    if (TDF2_IS_SIGSEV(td)) {
+      // this is a fault from within a SIGSEV user handler
+      proc_coredump(curproc, &info);
+      unreachable;
+    }
+
+    // synchronously deliver the thread a SIGSEGV signal
+    td_lock(td);
+    td->flags2 |= TDF2_SIGSEV; // prevent nested SIGSEV handling
+    int res = signal_deliver_self_sync(&info);
+    td->flags2 &= ~TDF2_SIGSEV;
+    td_unlock(td);
+    if (res > 0) {
+      // fault was handled by the user
+      return; // recover
+    }
+
+    // fault not handled by the user, we need to terminate the process
+    proc_coredump(curproc, &info);
+    unreachable;
+  }
+
+  // kernel mode fault
   space_unlock(space);
 LABEL(exception);
   kprintf("================== !!! Exception !!! ==================\n");
@@ -1330,7 +1396,7 @@ uintptr_t vmap_pages(__ref page_t *pages, uintptr_t hint, size_t size, uint32_t 
   page_list_t *pagelist = page_list_alloc_from(pages);
   if ((res = vmap_internal(curspace, VM_TYPE_PAGE, hint, size, size, vm_flags, name, pagelist, &vaddr)) < 0) {
     ALLOC_ERROR("vmap: failed to make pages mapping %s [page=%p] {:err}\n", name, pages, res);
-    drop_pages(&pages); // release the reference
+    pg_putref(&pages); // release the reference
     return 0;
   }
   return vaddr;
@@ -1972,7 +2038,7 @@ void vm_desc_free_all(vm_desc_t **descp) {
     vm_desc_t *next = desc->next;
 
     if (desc->type == VM_TYPE_PAGE) {
-      drop_pages((page_t **) &desc->data);
+      pg_putref((page_t **) &desc->data);
     } else if (!desc->mapped && desc->type == VM_TYPE_FILE) {
       vm_file_free((vm_file_t **) &desc->data);
     }

@@ -26,10 +26,12 @@
 #define MTX_DEBUGF(m, file, line, fmt, ...) \
   { if (__expect_false((m)->lo.flags & LO_DEBUG)) kprintf("mtx: " fmt " [%s:%d]\n", ##__VA_ARGS__, file, line); }
 
-#define SPIN_CLAIMS_ADD(lock_obj, file, line) if (__expect_true(curcpu_spin_claims != NULL)) \
-    lock_claim_list_add(curcpu_spin_claims, lock_obj, 0, file, line)
-#define SPIN_CLAIMS_REMOVE(lock_obj) if (__expect_true(curcpu_spin_claims != NULL)) \
-    lock_claim_list_remove(curcpu_spin_claims, lock_obj)
+//#define SPIN_CLAIMS_ADD(lock_obj, file, line) if (__expect_true(curcpu_spin_claims != NULL)) \
+//    lock_claim_list_add(curcpu_spin_claims, lock_obj, 0, file, line)
+#define SPIN_CLAIMS_ADD(lock_obj, file, line)
+//#define SPIN_CLAIMS_REMOVE(lock_obj) if (__expect_true(curcpu_spin_claims != NULL)) \
+//    lock_claim_list_remove(curcpu_spin_claims, lock_obj)
+#define SPIN_CLAIMS_REMOVE(lock_obj)
 
 // #define WAIT_CLAIMS_ADD(lock_obj, file, line) if (__expect_true(curthread != NULL)) \
 //     lock_claim_list_add(curthread->wait_claims, lock_obj, 0, file, line)

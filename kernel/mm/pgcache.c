@@ -51,7 +51,7 @@ static void internal_visit_pages_iter(
 
   struct pgcache_node *root;
   if (free) {
-    root = moveref(*noderef);
+    root = moveptr(*noderef);
   } else {
     root = *noderef;
   }
@@ -71,9 +71,6 @@ static void internal_visit_pages_iter(
     int i = current->slot_index;
 
     if (i >= PGCACHE_FANOUT) {
-      if (free) {
-        kfree(node);
-      }
       top--;
       continue;
     }
@@ -94,6 +91,9 @@ static void internal_visit_pages_iter(
         };
       } else {
         fn((page_t **)&node->slots[i], slot_start, data);
+        if (free) {
+          kassert(node->slots[i] == NULL);
+        }
       }
     }
   }
@@ -135,8 +135,13 @@ static struct pgcache_node *internal_lookup_leaf(struct pgcache *tree, size_t of
 
 static void pgcache_clone_cb(page_t **pageref, size_t off, void *data) {
   struct pgcache *copy = data;
-  page_t *page = getref(*pageref);
+  page_t *page = pg_getref(*pageref);
   pgcache_insert(copy, off, page, NULL);
+}
+
+static void pgcache_putpage_cb(page_t **pageref, size_t off, void *data) {
+  page_t *page = moveref(*pageref);
+  pg_putref(&page);
 }
 
 //
@@ -167,7 +172,7 @@ __ref struct pgcache *pgcache_clone(struct pgcache *cache) {
 void pgcache_free(struct pgcache **cacheptr) {
   struct pgcache *cache = moveref(*cacheptr);
   if (cache && ref_put(&cache->refcount)) {
-    internal_visit_pages_iter(cache, &cache->root, 0, cache->max_capacity, /*free=*/true, 0, (void *) drop_pages, NULL);
+    internal_visit_pages_iter(cache, &cache->root, 0, cache->max_capacity, /*free=*/true, 0, (void *) pgcache_putpage_cb, NULL);
     kfree(cache);
   }
 }
@@ -186,12 +191,12 @@ __ref page_t *pgcache_lookup(struct pgcache *cache, size_t off) {
   if (node == NULL) {
     return NULL;
   }
-  return getref((page_t *) node->slots[idx]);
+  return pg_getref((page_t *) node->slots[idx]);
 }
 
 void pgcache_insert(struct pgcache *cache, size_t off, __ref page_t *page, __move page_t **out_old) {
   if (off >= cache->max_capacity) {
-    drop_pages(&page);
+    pg_putref(&page);
     return;
   }
 
@@ -206,7 +211,7 @@ void pgcache_insert(struct pgcache *cache, size_t off, __ref page_t *page, __mov
   if (out_old) {
     *out_old = moveref(old);
   } else {
-    drop_pages(&old);
+    pg_putref(&old);
   }
 }
 
@@ -227,7 +232,7 @@ void pgcache_remove(struct pgcache *cache, size_t off, __move page_t **out_page)
   if (out_page) {
     *out_page = moveref(node->slots[idx]);
   } else {
-    drop_pages((page_t **) &node->slots[idx]);
+    pg_putref((page_t **) &node->slots[idx]);
   }
 }
 

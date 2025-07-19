@@ -246,32 +246,26 @@ extern uintptr_t __kernel_code_start;
 extern uintptr_t __kernel_code_end;
 extern uintptr_t __kernel_data_end;
 
+#ifndef __PRINTF__
 void kprintf(const char *format, ...);
 void kprintf_kputs(const char *str);
 void kprintf_kputl(long l);
+#endif
+#ifndef __PANIC__
 noreturn void panic(const char *fmt, ...);
+#endif
 
 //
 // Debug Macros
 //
 
-#define QEMU_DEBUG_OUT_PORT   0x800
-#define QEMU_DEBUG_OUTS_PORT  0x801
-#define QEMU_DEBUG_PTR_PORT   0x808
-
-#define QEMU_DEBUG_CHAR(c) __asm__ volatile("out dx, al" : : "a"(c), "d"(QEMU_DEBUG_OUT_PORT))
-#define QEMU_DEBUG_CONST_STR(str) qemu_debug_string(str, sizeof(str))
-#define QEMU_DEBUG_CHARP(str) qemu_debug_string(str, strlen(str)+1)
-#define QEMU_DEBUG_PTR(ptr) ({ \
-  __asm__ volatile("out dx, eax" : : "a"((ptr) & UINT32_MAX), "d"(QEMU_DEBUG_PTR_PORT)); \
-  __asm__ volatile("out dx, eax" : : "a"(((ptr) >> 32) & UINT32_MAX), "d"(QEMU_DEBUG_PTR_PORT)); \
-})
+#define QEMU_DEBUG_CHARP(str) qemu_debug_string(str, strlen(str))
 
 static inline void qemu_debug_string(const char *s, uint16_t len) {
   asm volatile (
     "rep outsb"
     : "+S"(s), "+c"(len)
-    : "d"(QEMU_DEBUG_OUTS_PORT)
+    : "d"(0xe9)
     : "memory"
   );
 }

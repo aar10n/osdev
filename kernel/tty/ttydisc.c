@@ -226,6 +226,9 @@ int ttydisc_rint(tty_t *tty, uint8_t ch, int flags) {
           int char_width = 1;
           if (del_ch == '\t') {
             char_width = TAB_WIDTH;
+          } else if (t->c_lflag & ECHOCTL && CTL_PRINT(del_ch, false)) {
+            // control characters that are echoed as ^X notation take 2 columns
+            char_width = 2;
           }
 
           for (size_t i = 0; i < char_width; i++) {
@@ -252,15 +255,8 @@ int ttydisc_rint(tty_t *tty, uint8_t ch, int flags) {
           ttyoutq_write_ch(tty->outq, '\b');
           ttyoutq_write_ch(tty->outq, ' ');
           ttyoutq_write_ch(tty->outq, '\b');
+          tty->column += 1;
         }
-      }
-      return 0;
-    } else if (ch == 0x1b) {
-      // in canonical mode we don't want the receiving end to process the
-      // escape sequence, so we echo '^[' instead of the escape character
-      if (t->c_lflag & ECHO) {
-        ttyoutq_write_ch(tty->outq, '^');
-        ttyoutq_write_ch(tty->outq, '[');
       }
       return 0;
     }

@@ -447,9 +447,17 @@ int alarm_sleep_ms(uint64_t ms) {
 
 static void alarm_cb_deliver_signal(alarm_t *alarm, pid_t pid) {
   int res;
-  if ((res = pid_signal(pid, SIGALRM, 0, (union sigval){0})) < 0) {
+  proc_t *proc = proc_lookup(pid);
+  if (proc == NULL) {
+    DPRINTF("alarm_cb_deliver_signal: process %d not found\n", pid);
+    return;
+  }
+
+  if ((res = proc_signal(proc, &(siginfo_t){.si_signo = SIGALRM})) < 0) {
     DPRINTF("alarm_cb_deliver_signal: failed to deliver signal: {:err}\n", res);
   }
+
+  pr_putref(&proc);
 }
 
 static void alarm_cb_handle_itimer(alarm_t *alarm, pid_t pid, int which) {
@@ -460,7 +468,7 @@ static void alarm_cb_handle_itimer(alarm_t *alarm, pid_t pid, int which) {
   }
 
   int res;
-  if ((res = proc_signal(proc, SIGALRM, 0, (union sigval){0})) < 0) {
+  if ((res = proc_signal(proc, &(siginfo_t){.si_signo = SIGALRM})) < 0) {
     DPRINTF("alarm_cb_handle_itimer: failed to deliver signal: {:err}\n", res);
     goto done;
   }

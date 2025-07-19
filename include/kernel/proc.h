@@ -153,6 +153,7 @@ typedef struct proc {
 
 #define pr_main_thread(p) LIST_FIRST(&(p)->threads)
 #define pr_lock_assert(p, what) __type_checked(proc_t*, p, mtx_assert(&(p)->lock, what))
+#define pr_lock_owner(p) __type_checked(proc_t*, p, mtx_owner(&(p)->lock))
 #define pr_lock(p) __type_checked(proc_t*, p, mtx_lock(&(p)->lock))
 #define pr_unlock(p) __type_checked(proc_t*, p, mtx_unlock(&(p)->lock))
 
@@ -269,14 +270,18 @@ static_assert(offsetof(thread_t, ustack_ptr) == 0xA0);
 #define   TDF2_IS_FIRSTTIME(td) ((td)->flags2 & TDF2_FIRSTTIME)
 #define TDF2_STOPPED    0x00000002  // thread is stopped or exiting
 #define   TDF2_IS_STOPPED(td)   ((td)->flags2 & TDF2_STOPPED)
-#define TDF2_AFFINITY   0x00000004  // thread has cpu affinity
-#define   TDF2_HAS_AFFINITY(td) ((td)->flags2 & TDF2_AFFINITY)
+#define TDF2_WAKEABLE   0x00000004  // thread can be woken up
+#define   TDF2_IS_WAKEABLE(td) ((td)->flags2 & TDF2_WAKEABLE)
 #define TDF2_SIGPEND    0x00000008  // thread has pending signals
 #define   TDF2_HAS_SIGPEND(td) ((td)->flags2 & TDF2_SIGPEND)
 #define TDF2_TRAPFRAME  0x00000010  // thread should be restored from trapframe
 #define   TDF2_IS_TRAPFRAME(td) ((td)->flags2 & TDF2_TRAPFRAME)
-#define TDF2_SIGCTX     0x00000020  // thread is running a signal context
+#define TDF2_AFFINITY   0x00000020  // thread has cpu affinity
+#define   TDF2_HAS_AFFINITY(td) ((td)->flags2 & TDF2_AFFINITY)
+#define TDF2_SIGCTX     0x00000040  // thread is running a signal context
 #define   TDF2_IS_SIGCTX(td) ((td)->flags2 & TDF2_SIGCTX)
+#define TDF2_SIGSEV     0x00000080  // thread is trying to recover from a SIGSEV
+#define   TDF2_IS_SIGSEV(td) ((td)->flags2 & TDF2_SIGSEV)
 
 
 #define TDS_IS_EMPTY(td) ((td)->state == TDS_EMPTY)
@@ -289,7 +294,7 @@ static_assert(offsetof(thread_t, ustack_ptr) == 0xA0);
 #define TD_SET_STATE(td, s) ((td)->state = (s))
 
 #define td_lock_assert(td, what) __type_checked(thread_t*, td, mtx_assert(&(td)->lock, what))
-#define td_lock_owner(td) mtx_owner(&(td)->lock)
+#define td_lock_owner(td) __type_checked(thread_t*, td, mtx_owner(&(td)->lock))
 #define td_lock(td) _thread_lock(td, __FILE__, __LINE__)
 #define td_unlock(td) _thread_unlock(td, __FILE__, __LINE__)
 
@@ -330,12 +335,24 @@ void session_cleanup(__move session_t **sessref);
 void session_add_pgroup(session_t *sess, pgroup_t *pg);
 int session_leader_ctty(session_t *sess, struct tty *tty);
 
-#define sess_getref(sess) __type_checked(session_t*, sess, getref(sess))
+#define SESS_DPRINTF(fmt, ...) kprintf("session: " fmt " [%s:%d]\n", ##__VA_ARGS__, __FILE__, __LINE__)
+//#define SESS_DPRINTF(fmt, ...)
+
+#define sess_getref(sess) ({ \
+  ASSERT_IS_TYPE(session_t*, sess); \
+  session_t *__sess = (sess); \
+  __sess ? ref_get(&__sess->refcount) : NULL; \
+  if (__sess) SESS_DPRINTF("getref: sid=%d sess=%p [%d]", __sess->sid, __sess, __sess->refcount); \
+  __sess; \
+})
 #define sess_putref(sessref) ({ \
   ASSERT_IS_TYPE(session_t **, sessref); \
   session_t *__sess = moveref(*(sessref));  \
   if (__sess && ref_put(&__sess->refcount)) { \
+    SESS_DPRINTF("putref: sid=%d sess=%p [0]", __sess->sid, __sess); \
     session_cleanup(&__sess); \
+  } else if (__sess) { \
+    SESS_DPRINTF("putref: sid=%d sess=%p [%d]", __sess->sid, __sess, __sess->refcount); \
   } \
 })
 
@@ -344,14 +361,26 @@ void pgrp_cleanup(__move pgroup_t **pgrpref);
 __ref proc_t *pgrp_get_leader(pgroup_t *pg);
 void pgrp_add_proc(pgroup_t *pg, proc_t *proc);
 void pgrp_remove_proc(pgroup_t *pg, proc_t *proc);
-int pgrp_signal(pgroup_t *pg, int sig, int si_code, union sigval si_value);
+int pgrp_signal(pgroup_t *pg, siginfo_t *info);
 
-#define pgrp_getref(pg) __type_checked(pgroup_t*, pg, getref(pg))
+#define PGRP_DPRINTF(fmt, ...) kprintf("pgrp: " fmt " [%s:%d]\n", ##__VA_ARGS__, __FILE__, __LINE__)
+//#define PGRP_DPRINTF(fmt, ...)
+
+#define pgrp_getref(pg) ({ \
+  ASSERT_IS_TYPE(pgroup_t*, pg); \
+  pgroup_t *__pg = (pg); \
+  __pg ? ref_get(&__pg->refcount) : NULL; \
+  if (__pg) PGRP_DPRINTF("getref: pgid=%d pgrp=%p [%d]", __pg->pgid, __pg, __pg->refcount); \
+  __pg; \
+})
 #define pgrp_putref(pgrp) ({ \
   ASSERT_IS_TYPE(pgroup_t **, pgrp); \
   pgroup_t *__pg = moveref(*(pgrp));  \
   if (__pg && ref_put(&__pg->refcount)) { \
+    PGRP_DPRINTF("putref: pgid=%d pgrp=%p [0]", __pg->pgid, __pg); \
     pgrp_cleanup(&__pg); \
+  } else if (__pg) { \
+    PGRP_DPRINTF("putref: pgid=%d pgrp=%p [%d]", __pg->pgid, __pg, __pg->refcount); \
   } \
 })
 
@@ -374,14 +403,15 @@ bool proc_is_pgrp_leader(proc_t *proc); // locked
 bool proc_is_sess_leader(proc_t *proc); // locked
 void proc_add_thread(proc_t *proc, thread_t *td);
 void proc_terminate(proc_t *proc, int ret, int sig);
+void proc_coredump(proc_t *proc, siginfo_t *info);
 void proc_kill_tid(proc_t *proc, pid_t tid, int ret, int sig);
 void proc_stop(proc_t *proc, int sig);
 void proc_cont(proc_t *proc);
+int proc_signal(proc_t *proc, siginfo_t *info);
 int proc_wait_signal(proc_t *proc);
-int proc_signal(proc_t *proc, int sig, int si_code, union sigval si_value);
-int pid_signal(pid_t pid, int sig, int si_code, union sigval si_value);
+
 pid_t proc_syscall_wait4(pid_t pid, int *status, int options, struct rusage *rusage);
-int proc_syscall_execve(cstr_t path, char *const argv[], char *const envp[]); // syscall only
+int proc_syscall_execve(cstr_t path, char *const argv[], char *const envp[]);
 
 // #define PR_DPRINTF(fmt, ...) kprintf("proc: " fmt " [%s:%d]\n", ##__VA_ARGS__, __FILE__, __LINE__)
 #define PR_DPRINTF(fmt, ...)
@@ -417,7 +447,7 @@ void   thread_finish_setup_and_submit(thread_t *td);
 void thread_kill(thread_t *td);
 void thread_stop(thread_t *td);
 void thread_cont(thread_t *td);
-int thread_signal(thread_t *td, int sig, int si_code, union sigval si_value);
+int thread_signal(thread_t *td, siginfo_t *info);
 
 static inline uintptr_t thread_get_kstack_top(thread_t *td) {
   uintptr_t stack_top_off = align(sizeof(struct tcb), 16) + align(sizeof(struct trapframe), 16);

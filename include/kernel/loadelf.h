@@ -9,6 +9,7 @@
 #include <kernel/exec.h>
 
 bool elf_is_valid_file(void *file_base, size_t len);
+bool elf_needs_base(void *file_base, size_t len);
 int elf_load_image(enum exec_type type, int fd, void *file_base, size_t len, uintptr_t base, __inout struct exec_image *image);
 
 #endif

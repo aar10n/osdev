@@ -143,6 +143,26 @@ static inline path_t sbuf_to_path(sbuf_t *sbuf) {
 
 #endif
 
+#ifdef __KIO__
+#ifndef __SBUF_KIO__
+#define __SBUF_KIO__
+
+static inline size_t sbuf_transfer_kio(sbuf_t *from, kio_t *to) {
+  if (from == NULL || to == NULL)
+    return 0;
+
+  size_t size = min(sbuf_len(from), kio_remaining(to));
+  if (size == 0)
+    return 0;
+
+  size_t realsize = kio_write_in(to, from->data, size, 0);
+  from->data += realsize;
+  return realsize;
+}
+
+#endif
+#endif
+
 
 #ifdef __STR__
 #ifndef __SBUF_STR__

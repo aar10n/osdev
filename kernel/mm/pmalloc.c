@@ -5,6 +5,7 @@
 #include <kernel/mm/pmalloc.h>
 #include <kernel/mm/vmalloc.h>
 #include <kernel/mm/init.h>
+#include <kernel/proc.h>
 
 #include <kernel/mutex.h>
 #include <kernel/string.h>
@@ -13,6 +14,8 @@
 #include <bitmap.h>
 
 #define ASSERT(x) kassert(x)
+#define DPRINTF(x, ...) kprintf("pmalloc: " x, ##__VA_ARGS__)
+//#define DPRINTF(x, ...)
 
 #define ZONE_ALLOC_DEFAULT ZONE_TYPE_HIGH
 
@@ -151,7 +154,7 @@ __ref static page_t *alloc_cow_structs(page_t *pages) {
     page_t *page = kmallocz(sizeof(page_t));
     page->address = curr->address;
     page->flags = (curr->flags & PG_SIZE_MASK) | PG_COW;
-    page->source = getref(curr);
+    page->source = pg_getref(curr);
     mtx_init(&page->pg_lock, MTX_SPIN, "pg_lock");
     initref(page);
     if (first == NULL) {
@@ -533,7 +536,7 @@ __ref page_t *alloc_cow_pages(page_t *pages) {
   return alloc_cow_structs(pages);
 }
 
-void drop_pages(__move page_t **pagesref) {
+void _cleanup_pages(__move page_t **pagesref) {
   if (__expect_false(pagesref == NULL || *pagesref == NULL)) {
     return;
   }
@@ -583,7 +586,7 @@ static void page_list_free_array(page_t ***arrayref, size_t count, size_t array_
 
   // drop all page references in the array
   for (uint32_t i = 0; i < count; i++) {
-    drop_pages(&array[i]);
+    pg_putref(&array[i]);
   }
 
   if (count <= PGLIST_MALLOC_LIMIT) {
@@ -715,7 +718,7 @@ page_list_t *page_list_clone(page_list_t *list) {
     if (list->pages[i] == NULL) {
       panic("page_list_clone: page at index %zu is NULL", i);
     }
-    new_list->pages[i] = getref(list->pages[i]);
+    new_list->pages[i] = pg_getref(list->pages[i]);
   }
   return new_list;
 }
@@ -737,7 +740,7 @@ __ref page_t *page_list_getpage(page_list_t *list, size_t index) {
   if (page == NULL) {
     panic("page_list_getpage: page at index %zu is NULL", index);
   }
-  return getref(page);
+  return pg_getref(page);
 }
 
 void page_list_putpage(page_list_t *list, size_t index, __ref page_t *page) {
@@ -750,7 +753,7 @@ void page_list_putpage(page_list_t *list, size_t index, __ref page_t *page) {
     panic("page_list_putpage: page at index %zu is NULL", index);
   }
 
-  drop_pages(&oldpage);
+  pg_putref(&oldpage);
   list->pages[index] = moveref(page);
 }
 

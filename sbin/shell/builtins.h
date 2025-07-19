@@ -13,6 +13,8 @@ struct builtin_cmd {
 
 extern struct builtin_cmd builtins[];
 
+int shell_help(char **args);
+int shell_exit(char **args);
 int shell_cd(char **args);
 int shell_pwd(char **args);
 int shell_ls(char **args);
@@ -21,7 +23,7 @@ int shell_echo(char **args);
 int shell_mkdir(char **args);
 int shell_rmdir(char **args);
 int shell_rm(char **args);
-int shell_help(char **args);
-int shell_exit(char **args);
+int shell_segfault(char **args);
+int shell_test_mmap(char **args);
 
 #endif

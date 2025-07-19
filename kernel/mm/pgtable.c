@@ -52,7 +52,7 @@
 #define PE_NO_EXECUTE     (1ULL << 63)
 
 #define PE_FLAGS_MASK 0xFFF
-#define PE_FRAME_MASK 0xFFFFFFFFFFFFF000
+#define PE_FRAME_MASK 0xFFFFFFFFFFFFF000ULL
 
 typedef enum pg_level {
   PG_LEVEL_PT,
@@ -271,13 +271,14 @@ uint64_t *recursive_map_entry(uintptr_t vaddr, uintptr_t paddr, uint32_t vm_flag
   }
 
   int index = index_for_pg_level(vaddr, map_level);
-  uint64_t *table = get_pgtable_address(vaddr, map_level);
-  table[index] = paddr | entry_flags;
+  uint64_t *pt = get_pgtable_address(vaddr, map_level);
+  pt[index] = paddr | entry_flags;
   if (out_pages != NULL) {
     *out_pages = LIST_FIRST(&table_pages);
   }
   cpu_invlpg(vaddr);
-  return table + index;
+  cpu_invlpg(pt);
+  return pt + index;
 }
 
 void recursive_unmap_entry(uintptr_t vaddr, uint32_t vm_flags) {
@@ -290,8 +291,11 @@ void recursive_unmap_entry(uintptr_t vaddr, uint32_t vm_flags) {
   }
 
   int index = index_for_pg_level(vaddr, level);
-  get_pgtable_address(vaddr, level)[index] = 0;
+  uint64_t *pt = get_pgtable_address(vaddr, level);
+  pt[index] = 0;
+  barrier();
   cpu_invlpg(vaddr);
+  cpu_invlpg(pt);
 }
 
 void recursive_update_entry_flags(uintptr_t vaddr, uint32_t vm_flags) {
@@ -304,12 +308,12 @@ void recursive_update_entry_flags(uintptr_t vaddr, uint32_t vm_flags) {
 
   int index = index_for_pg_level(vaddr, level);
   uint64_t *pt = get_pgtable_address(vaddr, level);
-  cpu_invlpg(pt);
   pt[index] = (pt[index] & PE_FRAME_MASK) | vm_flags_to_pe_flags(vm_flags);
+  barrier();
   cpu_invlpg(vaddr);
 }
 
-void recursive_update_entry_entry(uintptr_t vaddr, uintptr_t frame, uint32_t vm_flags) {
+void recursive_update_entry(uintptr_t vaddr, uintptr_t frame, uint32_t vm_flags) {
   pg_level_t level = PG_LEVEL_PT;
   if (vm_flags & VM_HUGE_2MB) {
     level = PG_LEVEL_PD;
@@ -319,9 +323,10 @@ void recursive_update_entry_entry(uintptr_t vaddr, uintptr_t frame, uint32_t vm_
 
   int index = index_for_pg_level(vaddr, level);
   uint64_t *pt = get_pgtable_address(vaddr, level);
-  cpu_invlpg(pt);
   pt[index] = (frame & PE_FRAME_MASK) | vm_flags_to_pe_flags(vm_flags);
+  barrier();
   cpu_invlpg(vaddr);
+  cpu_invlpg(pt);
 }
 
 uint64_t recursive_duplicate_pgtable(
@@ -346,6 +351,7 @@ uint64_t recursive_duplicate_pgtable(
   // save the old temporary mapping and map the new page
   uint64_t old_temp_pdpte = *TEMP_PDPTE;
   *TEMP_PDPTE = dest_page->address | PE_WRITE | PE_PRESENT;
+  barrier();
   cpu_invlpg(TEMP_PTR);
 
   uint64_t *next_src_table = get_pgtable_address(virt_addr, level-1);

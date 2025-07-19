@@ -20,8 +20,14 @@ enum sigdisp {
   SIGDISP_CORE,
   SIGDISP_STOP,
   SIGDISP_CONT,
-  SIGDISP_HANDLER,
+  SIGDISP_USER,
 };
+
+const char *sig_name(int sig);
+enum sigdisp sig_to_dfl_disp(int sig);
+enum sigdisp sigaction_to_disp(int sig, const struct sigaction *sa);
+
+int signal_deliver_self_sync(siginfo_t *info);
 
 #define sigset_masked(set, sig) ((set).__bits[(sig) / 64] & (1ULL << ((sig) % 64)))
 #define sigset_mask(set, sig) ((set).__bits[(sig) / 64] |= (1ULL << ((sig) % 64)))
@@ -47,7 +53,7 @@ struct sigacts *sigacts_alloc();
 struct sigacts *sigacts_clone(struct sigacts *sa);
 void sigacts_free(struct sigacts **sap);
 void sigacts_reset(struct sigacts *sa);
-int sigacts_get(struct sigacts *sa, int sig, struct sigaction *act, enum sigdisp *disp);
+int sigacts_get(struct sigacts *sa, int sig, struct sigaction *act);
 int sigacts_set(struct sigacts *sa, int sig, const struct sigaction *act, struct sigaction *oact);
 
 typedef struct ksiginfo {

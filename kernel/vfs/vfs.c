@@ -159,7 +159,7 @@ int vfs_mount(vfs_t *vfs, device_t *device, ventry_t *mount_ve) {
   vfs->device = device;
   vfs_add_node(vfs, vfs->root_ve);
 
-  ve_shadow_mount(mount_ve, getref(root_vn));
+  ve_shadow_mount(mount_ve, vn_getref(root_vn));
   if (host_vfs)
     vfs_unlock(host_vfs);
   return 0;

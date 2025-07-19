@@ -18,7 +18,7 @@ void set_current_pgtable(uintptr_t table_phys);
 uint64_t *recursive_map_entry(uintptr_t vaddr, uintptr_t paddr, uint32_t vm_flags, __move page_t **out_pages);
 void recursive_unmap_entry(uintptr_t vaddr, uint32_t vm_flags);
 void recursive_update_entry_flags(uintptr_t vaddr, uint32_t vm_flags);
-void recursive_update_entry_entry(uintptr_t vaddr, uintptr_t frame, uint32_t vm_flags);
+void recursive_update_entry(uintptr_t vaddr, uintptr_t frame, uint32_t vm_flags);
 
 void fill_unmapped_page(page_t *page, uint8_t v, size_t off, size_t len);
 void fill_unmapped_pages(page_t *pages, uint8_t v, size_t off, size_t len);
