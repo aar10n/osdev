@@ -1,5 +1,6 @@
 # Include at the bottom of the program makefiles to add compilation rules.
 #
+# Variables:
 #   * NAME
 #   * GROUP
 #   * SRCS

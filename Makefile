@@ -107,7 +107,7 @@ include $(foreach target,$(TARGETS),$(target)/Makefile)
 $(call init-modules,$(MODULES))
 
 # directories with userspace binaries
-USERSPACE_DIRS = sbin
+USERSPACE_DIRS = sbin bin
 
 # =========== Build Rules =========== #
 
@@ -221,6 +221,7 @@ $(TOOL_ROOT)/lib/libdwarf.a:
 userspace: $(USERSPACE_DIRS:%=userspace-dir-%)
 install-userspace: $(USERSPACE_DIRS:%=userspace-dir-install-%)
 clean-userspace: $(USERSPACE_DIRS:%=userspace-dir-clean-%)
+clean-sbin: userspace-dir-clean-sbin
 
 userspace-dir-%:
 	$(MAKE) -C $*
