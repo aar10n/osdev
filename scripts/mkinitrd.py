@@ -244,23 +244,26 @@ def get_intermediate_paths(path: str) -> List[str]:
     return list(reversed(_parts))
 
 
-def sort_order_paths(_paths: Iterable[str]) -> List[str]:
-    paths_by_depth = defaultdict(list)  # type: Dict[int, List[Tuple[bool, str]]]
-
-    # find the depth of each path and sort files before directories
-    for _path in _paths:
+def sort_order_paths(_paths: Dict[str, Tuple[Directive, int]]) -> List[str]:
+    # First, create a list of all paths with their parent directories
+    all_entries = []  # type: List[Tuple[int, int, str]]  # (depth, type_priority, path)
+    
+    for _path, (directive, _) in _paths.items():
         depth = _path.count(os.sep)
-        is_file = os.path.isfile(_path)
-        paths_by_depth[depth].append((is_file, _path))
-
-    # for each depth level, sort paths such that files come first
-    for depth_level in paths_by_depth:
-        paths_by_depth[depth_level].sort(key=lambda x: (not x[0], x[1].lower()))
-
-    # get sorted keys and use them to create a final sorted list of paths
-    sorted_keys = sorted(paths_by_depth.keys())
-    sorted_paths = [p for key in sorted_keys for _, p in paths_by_depth[key]]
-    return sorted_paths
+        # Sort order: directories first (0), then files (1), then links (2)
+        if directive.isdir():
+            type_priority = 0
+        elif directive.isfile():
+            type_priority = 1
+        else:  # link
+            type_priority = 2
+        all_entries.append((depth, type_priority, _path))
+    
+    # Sort by depth first (shallowest first), then by type (directories first), then alphabetically
+    all_entries.sort(key=lambda x: (x[0], x[1], x[2].lower()))
+    
+    # Extract just the paths
+    return [path for _, _, path in all_entries]
 
 
 #
@@ -345,7 +348,15 @@ if __name__ == "__main__":
         paths[d.path] = (d, offset)
 
     # sort paths
-    path_list = sort_order_paths(paths.keys())
+    path_list = sort_order_paths(paths)
+
+    # recalculate data offsets in sorted order
+    curr_data_offset = 0
+    for p in path_list:
+        d, old_offset = paths[p]
+        if d.isfile() or d.islink():
+            paths[p] = (d, curr_data_offset)
+            curr_data_offset += d.aligned_size()
 
     # calculate metadata size
     for p in path_list:
@@ -371,15 +382,16 @@ if __name__ == "__main__":
         # pad to page size
         f.write(b'\0' * (data_start_offset - f.tell()))
 
-        # write data
-        for d in directives:
+        # write data in the same order as metadata
+        for p in path_list:
+            d, offset = paths[p]
             if d.isfile():
                 with open(d.operand, 'rb') as src:
                     f.write(src.read())
                     f.write(b'\0' * (d.aligned_size() - d.size))
             elif d.islink():
                 f.write(format_cstring(d.operand))
-                f.write(b'\0' * (d.aligned_size() - d.size - 1))
+                f.write(b'\0' * (d.aligned_size() - d.size))
 
         print(f'wrote {total_size} bytes to {output_file}')
         print(f'  entry count: {entry_count}')
