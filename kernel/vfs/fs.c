@@ -1309,6 +1309,10 @@ DEFINE_SYSCALL(open, int, const char *path, int flags, mode_t mode) {
   return fs_open(cstr_make(path), flags, mode);
 }
 
+DEFINE_SYSCALL(truncate, int, const char *path, off_t length) {
+  return fs_truncate(cstr_make(path), length);
+}
+
 DEFINE_SYSCALL(stat, int, const char *path, struct stat *stat) {
   return fs_stat(cstr_make(path), stat);
 }
