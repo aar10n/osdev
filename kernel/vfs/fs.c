@@ -326,11 +326,13 @@ int fs_proc_open(proc_t *proc, int fd, cstr_t path, int flags, mode_t mode) {
     vn_begin_data_write(dvn);
     res = vn_create(dve, dvn, name, mode, &ve); // create the file entry
     vn_end_data_write(dvn);
-    vn_unlock(dvn);
+    ve_unlock(dve);
     ve_putref(&dve);
     if (res < 0) {
       EPRINTF("failed to create file {:err}\n", res);
-      goto ret_unlock;
+      goto ret;
+    } else {
+      ve_lock(ve); // lock the new entry
     }
 
     // cache the new entry
@@ -390,6 +392,7 @@ int fs_proc_open(proc_t *proc, int fd, cstr_t path, int flags, mode_t mode) {
   f_putref(&file); // release reference, fd_entry holds a reference now
   res = fd;
 LABEL(ret_unlock);
+  if (ve)
   ve_unlock(ve);
 LABEL(ret);
   if (res < 0)
@@ -835,18 +838,14 @@ int fs_dup2(int fd, int newfd) {
 
   fd_entry_t *existing = ftable_get_remove_entry(FTABLE, newfd);
   if (existing) {
-//    // close and remove the existing file
-//    file_t *file = existing->file;
-//    if (f_lock(file)) {
-//      if ((res = F_OPS(file)->f_close(file)) < 0) {
-//        EPRINTF("failed to close existing file {:err}\n", res);
-//        // re-insert the entry back into the ftable
-//        ftable_add_entry(FTABLE, fde_getref(existing));
-//      } else {
-//        ftable_free_fd(FTABLE, fde->fd);
-//      }
-//      f_unlock(file);
-//    }
+    // close existing file
+    file_t *file = existing->file;
+    if (f_lock(file)) {
+      if ((res = F_OPS(file)->f_close(file)) < 0) {
+        EPRINTF("failed to close existing file {:err}\n", res);
+      }
+      f_unlock(file);
+    }
     fde_putref(&existing);
   }
 
@@ -859,6 +858,23 @@ int fs_dup2(int fd, int newfd) {
   res = newfd;
 LABEL(ret);
   fde_putref(&fde);
+  return res;
+}
+
+int fs_utimensat(int dirfd, cstr_t filename, struct timespec *utimes, int flags) {
+  ventry_t *at_ve = ve_getref(curproc->pwd);
+  ventry_t *ve = NULL;
+  int res;
+
+  if ((res = vresolve(fs_vcache, at_ve, filename, 0, &ve)) < 0)
+    goto ret;
+
+  DPRINTF("utimensat: TODO: not implemented yet\n");
+  res = 0; // success
+  ve_unlock(ve);
+LABEL(ret);
+  ve_putref(&ve);
+  ve_putref(&at_ve);
   return res;
 }
 
@@ -878,6 +894,7 @@ int fs_stat(cstr_t path, struct stat *stat) {
   vn_unlock(vn);
 
   res = 0; // success
+  ve_unlock(ve);
 LABEL(ret);
   ve_putref(&ve);
   ve_putref(&at_ve);
@@ -898,6 +915,7 @@ int fs_lstat(cstr_t path, struct stat *stat) {
   vn_unlock(vn);
 
   res = 0; // success
+  ve_unlock(ve);
 LABEL(ret);
   ve_putref(&ve);
   ve_putref(&at_ve);
@@ -1284,7 +1302,6 @@ LABEL(ret);
   return res;
 }
 
-
 void fs_print_debug_vcache() {
   vcache_dump(fs_vcache);
 }
@@ -1304,6 +1321,14 @@ SYSCALL_ALIAS(fstat, fs_fstat);
 SYSCALL_ALIAS(dup, fs_dup);
 SYSCALL_ALIAS(dup2, fs_dup2);
 SYSCALL_ALIAS(fcntl, fs_fcntl);
+
+DEFINE_SYSCALL(utimensat, int, int dfd, const char *filename, struct timespec *utimes, int flags) {
+  DPRINTF("utimensat: dfd=%d, filename=%s, utimes=%p, flags=%d\n", dfd, filename, utimes, flags);
+  if (vm_validate_ptr((uintptr_t) utimes, /*write=*/true) < 0) {
+    return -EFAULT;
+  }
+  return fs_utimensat(dfd, cstr_make(filename), utimes, flags);
+}
 
 DEFINE_SYSCALL(open, int, const char *path, int flags, mode_t mode) {
   return fs_open(cstr_make(path), flags, mode);

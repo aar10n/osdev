@@ -44,7 +44,7 @@ __ref ventry_t *ve_alloc_linked(cstr_t name, vnode_t *vn) {
     entry->ops = &ve_default_ops;
   }
 
-  mtx_init(&entry->lock, MTX_RECURSIVE, "ventry_lock");
+  mtx_init(&entry->lock, 0, "ventry_lock");
   ref_init(&entry->refcount);
   VE_DPRINTF("ref init {:+ve} [1]", entry);
 

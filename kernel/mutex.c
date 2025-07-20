@@ -26,12 +26,12 @@
 #define MTX_DEBUGF(m, file, line, fmt, ...) \
   { if (__expect_false((m)->lo.flags & LO_DEBUG)) kprintf("mtx: " fmt " [%s:%d]\n", ##__VA_ARGS__, file, line); }
 
-//#define SPIN_CLAIMS_ADD(lock_obj, file, line) if (__expect_true(curcpu_spin_claims != NULL)) \
-//    lock_claim_list_add(curcpu_spin_claims, lock_obj, 0, file, line)
-#define SPIN_CLAIMS_ADD(lock_obj, file, line)
-//#define SPIN_CLAIMS_REMOVE(lock_obj) if (__expect_true(curcpu_spin_claims != NULL)) \
-//    lock_claim_list_remove(curcpu_spin_claims, lock_obj)
-#define SPIN_CLAIMS_REMOVE(lock_obj)
+#define SPIN_CLAIMS_ADD(lock_obj, file, line) if (__expect_true(curcpu_spin_claims != NULL)) \
+    lock_claim_list_add(curcpu_spin_claims, lock_obj, 0, file, line)
+//#define SPIN_CLAIMS_ADD(lock_obj, file, line)
+#define SPIN_CLAIMS_REMOVE(lock_obj) if (__expect_true(curcpu_spin_claims != NULL)) \
+    lock_claim_list_remove(curcpu_spin_claims, lock_obj)
+//#define SPIN_CLAIMS_REMOVE(lock_obj)
 
 // #define WAIT_CLAIMS_ADD(lock_obj, file, line) if (__expect_true(curthread != NULL)) \
 //     lock_claim_list_add(curthread->wait_claims, lock_obj, 0, file, line)
@@ -151,8 +151,8 @@ int _mtx_spin_trylock(mtx_t *mtx, const char *file, int line) {
 void _mtx_spin_lock(mtx_t *mtx, const char *file, int line) {
   thread_t *owner = mtx_get_owner(mtx);
   int lc = mtx_get_lc(mtx);
-  ASSERT(mtx->mtx_lock != MTX_DESTROYED, "_mtx_spin_lock() on destroyed mutex, %s:%d", file, line);
-  ASSERT(mtx_get_lc(mtx) == SPINLOCK_LOCKCLASS, "_mtx_spin_lock() on non-spin mutex, %s:%d", file, line);
+  ASSERT(mtx->mtx_lock != MTX_DESTROYED, "_mtx_spin_lock() on destroyed mutex [%p] %s:%d", mtx, file, line);
+  ASSERT(mtx_get_lc(mtx) == SPINLOCK_LOCKCLASS, "_mtx_spin_lock() on non-spin mutex [%p] %s:%d", mtx, file, line);
 
   spinlock_enter();
   SPIN_CLAIMS_ADD(&mtx->lo, file, line);

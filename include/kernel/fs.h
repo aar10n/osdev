@@ -9,6 +9,7 @@
 #include <kernel/str.h>
 
 #include <abi/mman.h>
+#include <abi/poll.h>
 
 struct proc;
 struct page;
@@ -41,10 +42,12 @@ ssize_t fs_writev(int fd, const struct iovec *iov, int iovcnt);
 ssize_t fs_readdir(int fd, void *dirp, size_t len);
 off_t fs_lseek(int fd, off_t offset, int whence);
 int fs_ioctl(int fd, unsigned long request, void *argp);
+int fs_fcntl(int fd, int cmd, unsigned long arg);
 int fs_ftruncate(int fd, off_t length);
 int fs_fstat(int fd, struct stat *stat);
 int fs_dup(int fd);
 int fs_dup2(int fd, int newfd);
+int fs_utimensat(int dirfd, cstr_t filename, struct timespec *utimes, int flags);
 
 int fs_stat(cstr_t path, struct stat *stat);
 int fs_lstat(cstr_t path, struct stat *stat);

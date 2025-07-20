@@ -5,11 +5,11 @@
 #include <kernel/syscall.h>
 #include <kernel/cpu/trapframe.h>
 
-#include <kernel/proc.h>
 #include <kernel/panic.h>
 #include <kernel/printf.h>
 
 #include <abi/dirent.h>
+#include <abi/fcntl.h>
 #include <abi/poll.h>
 #include <abi/resource.h>
 #include <abi/stat.h>

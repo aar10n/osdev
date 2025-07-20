@@ -501,12 +501,6 @@ static int vm_handle_non_present_fault(vm_mapping_t *vm, size_t off) {
     return -1;
   }
 
-  proc_t *proc = curproc;
-  if (proc->pid == 5 || proc->pid == 6) {
-    kprintf("vm_handle_non_present_fault: [vm={:str}, address=%p, off=%zu] page={:p}, flags={:x}\n",
-            &vm->name, vm->address, off, page, page->flags);
-  }
-
   // map the page into the address space
   page_t *table_pages = NULL;
   uint64_t *entry = recursive_map_entry(vm->address+off, page->address, vm->flags, &table_pages);
@@ -544,12 +538,6 @@ static int vm_handle_cow_fault(vm_mapping_t *vm, size_t off) {
   } else {
     EPRINTF("vm_handle_cow_fault: non-page/file vm type [vm={:str}, addr=%p, off=%zu]\n", &vm->name, vm->address, off);
     return -1;
-  }
-
-  proc_t *proc = curproc;
-  if (proc->pid == 5 || proc->pid == 6) {
-    kprintf("vm_handle_cow_fault: [vm={:str}, address=%p, off=%zu] page={:p}, flags={:x}\n",
-            &vm->name, vm->address, off, page, page->flags);
   }
 
   if (page == NULL) {

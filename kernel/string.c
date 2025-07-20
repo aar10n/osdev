@@ -105,6 +105,22 @@ int strlen(const char *s) {
   return len;
 }
 
+size_t strlcpy(char *dest, const char *src, size_t n) {
+  size_t src_len = strlen(src);
+  if (n == 0) {
+    return src_len;
+  }
+
+  size_t copy_len = src_len < n - 1 ? src_len : n - 1;
+  char *d = dest;
+  const char *s = src;
+  while (copy_len--) {
+    *d++ = *s++;
+  }
+  *d = '\0'; // null-terminate the destination string
+  return src_len;
+}
+
 void *strcpy(char *dest, const char *src) {
   size_t len = strlen(src);
   char *d = dest;

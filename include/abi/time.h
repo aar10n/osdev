@@ -14,6 +14,11 @@ struct itimerval {
 	struct timeval it_value;
 };
 
+struct itimerspec {
+  struct timespec it_interval;
+  struct timespec it_value;
+};
+
 struct timezone {
 	int tz_minuteswest;
 	int tz_dsttime;
@@ -32,5 +37,6 @@ struct tm {
   long tm_gmtoff; /* offset from UTC in seconds */
   const char *tm_zone; /* timezone abbreviation */
 };
+
 
 #endif

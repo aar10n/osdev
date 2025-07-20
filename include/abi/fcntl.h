@@ -7,6 +7,8 @@
 
 #include <bits/fcntl.h>
 
+#define loff_t off_t
+
 struct flock {
   short l_type;
   short l_whence;
