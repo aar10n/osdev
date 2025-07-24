@@ -7,7 +7,7 @@
 #include <kernel/proc.h>
 #include <kernel/irq.h>
 #include <kernel/sched.h>
-#include <kernel/mm/vmalloc.h>
+#include <kernel/mm.h>
 
 #include <kernel/string.h>
 #include <kernel/printf.h>

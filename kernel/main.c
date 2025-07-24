@@ -94,7 +94,7 @@ _used void kmain() {
   ls("/");
   ls("/dev");
 
-//  alarm_source_enable(alarm_tick_source());
+  alarm_source_enable(alarm_tick_source());
   launch_init_process();
   sched_again(SCHED_BLOCKED);
   unreachable;

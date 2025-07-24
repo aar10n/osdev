@@ -73,6 +73,8 @@ syscall_handler:
   cmp rax, NR_rt_sigreturn
   je sigreturn
 
+  cli                             ; disable interrupts during trapframe setup
+
   mov PERCPU_USER_SP, rsp         ; save the current user rsp
   mov PERCPU_SCRATCH_RAX, rax     ; save current syscall number
 
@@ -132,6 +134,7 @@ syscall_handler:
   mov rsi, rsp
   mov r15, rsp        ; save trapframe pointer
   and rsp, -16        ; align stack
+  sti                 ; re-enable interrupts before calling C code
   call handle_syscall
   ; eax = return value
   movsxd rax, eax ; sign-extend eax to rax
@@ -146,6 +149,8 @@ syscall_handler:
   add rsp, 8          ; remove alignment padding
   pop rax             ; restore syscall return value
 .skip_handle_signals:
+
+  cli                 ; disable interrupts during trapframe restore
 
   ; restore the thread's kernel stack pointer
   mov rcx, PERCPU_THREAD
