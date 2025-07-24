@@ -27,7 +27,9 @@ void cond_init(cond_t *cond, const char *name);
 void cond_destroy(cond_t *cond);
 
 void cond_wait(cond_t *cond, mtx_t *lock);
-// int cond_timedwait(cond_t *cond, mtx_t *lock, uint64_t timeout);
+int cond_wait_timeout(cond_t *cond, mtx_t *lock, struct timespec *ts);
+int cond_wait_sig(cond_t *cond, mtx_t *lock);
+int cond_wait_sigtimeout(cond_t *cond, mtx_t *lock, struct timespec *ts);
 void cond_signal(cond_t *cond);
 void cond_broadcast(cond_t *cond);
 

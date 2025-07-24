@@ -7,6 +7,8 @@
 #include <kernel/sched.h>
 #include <kernel/panic.h>
 #include <kernel/mm.h>
+#include <kernel/alarm.h>
+#include <kernel/errno.h>
 
 #define ASSERT(x) kassert(x)
 
@@ -316,8 +318,27 @@ static void waitq_static_init() {
 }
 STATIC_INIT(waitq_static_init);
 
-// this version doesn't unlock the waitq and chainlock
-void waitq_remove_internal(struct waitqueue *waitq, struct waitqueue_chain *chain, thread_t *td) {
+
+static void waitq_add_internal(struct waitqueue *waitq, struct waitqueue_chain *chain, thread_t *td, const char *wdmsg) {
+  td_lock_assert(td, MA_OWNED);
+  if (waitq == td->own_waitq) {
+    // the waitq was donated by us
+    td->own_waitq = NULL;
+    //  - insert the waitq into the chain
+    LIST_ADD(&chain->head, waitq, chain_list);
+  } else {
+    // we are queueing onto an existing waitq
+    //  - donate ours to the free list
+    LIST_ADD(&chain->free, moveptr(td->own_waitq), chain_list);
+  }
+  //  - add the thread to the queue
+  LIST_ADD(&waitq->queue, td, wqlist);
+
+  td->wchan = waitq->wchan;
+  td->wdmsg = wdmsg;
+}
+
+static void waitq_remove_internal(struct waitqueue *waitq, struct waitqueue_chain *chain, thread_t *td) {
   td_lock_assert(td, MA_OWNED);
 
   // remove the thread from the queue
@@ -337,6 +358,41 @@ void waitq_remove_internal(struct waitqueue *waitq, struct waitqueue_chain *chai
   td->own_waitq = own_waitq;
   td->wchan = NULL;
   td->wdmsg = NULL;
+}
+
+static void waitq_timeout_callback(alarm_t *alarm, thread_t *td) {
+  // remove the thread from the waitqueue if it's still waiting
+  if (!TDS_IS_WAITING(td)) {
+    // thread already woken up normally, nothing to do
+    return;
+  }
+
+  struct waitqueue *waitq = waitq_lookup(td->wchan);
+  if (waitq == NULL) {
+    // waitqueue already destroyed
+    return;
+  }
+
+  td_lock(td);
+  if (td->wchan == NULL || !TDS_IS_WAITING(td)) {
+    // thread was already woken up, race condition
+    td_unlock(td);
+    waitq_release(&waitq);
+    return;
+  }
+
+  // remove the thread from the waitqueue
+  waitq_remove_internal(waitq, WQC_LOOKUP(waitq->wchan), td);
+
+  // mark that we timed out
+  td->errno = ETIMEDOUT;
+
+  // make thread ready
+  TD_SET_STATE(td, TDS_READY);
+  sched_submit_ready_thread(td);
+  td_unlock(td);
+
+  waitq_release(&waitq);
 }
 
 //
@@ -417,33 +473,159 @@ struct waitqueue *waitq_lookup_or_default(int type, const void *wchan, struct wa
   return waitq;
 }
 
-void waitq_add(struct waitqueue *waitq, const char *wdmsg) {
+void waitq_wait(struct waitqueue *waitq, const char *wdmsg) {
   struct waitqueue_chain *chain = WQC_LOOKUP(waitq->wchan);
   mtx_assert(&chain->lock, MA_OWNED);
   mtx_assert(&waitq->lock, MA_OWNED);
 
   thread_t *td = curthread;
   td_lock(td);
-  if (waitq == td->own_waitq) {
-    // the waitq was donated by us
-    td->own_waitq = NULL;
-    //  - insert the waitq into the chain
-    LIST_ADD(&chain->head, waitq, chain_list);
-  } else {
-    // we are queueing onto an existing waitq
-    //  - donate ours to the free list
-    LIST_ADD(&chain->free, moveptr(td->own_waitq), chain_list);
-  }
-  //  - add the thread to the queue
-  LIST_ADD(&waitq->queue, td, wqlist);
+  waitq_add_internal(waitq, chain, td, wdmsg);
+  mtx_spin_unlock(&waitq->lock);
+  mtx_spin_unlock(&chain->lock);
+  WQ_DPRINTF("waitq_wait: wchan=%p, waitq=%p, wdmsg=%s, td={:td}\n", waitq->wchan, waitq, wdmsg, td);
 
-  td->wchan = waitq->wchan;
-  td->wdmsg = wdmsg;
+  // td is locked on call to sched_again
+  sched_again(SCHED_SLEEPING);
+}
+
+int waitq_wait_timeout(struct waitqueue *waitq, const char *wdmsg, uint64_t timeout_ns) {
+  struct waitqueue_chain *chain = WQC_LOOKUP(waitq->wchan);
+  mtx_assert(&chain->lock, MA_OWNED);
+  mtx_assert(&waitq->lock, MA_OWNED);
+  
+  // create timeout alarm
+  thread_t *td = curthread;
+  alarm_t *alarm = alarm_alloc_relative(timeout_ns, alarm_cb(waitq_timeout_callback, td));
+  if (alarm == NULL) {
+    return -ENOMEM;
+  }
+
+  td_lock(td);
+  ASSERT(td->timeout_alarm_id == 0);
+
+  id_t alarm_id = alarm_register(alarm);
+  td->timeout_alarm_id = alarm_id;
+  td->errno = 0;
+  waitq_add_internal(waitq, chain, td, wdmsg);
 
   mtx_spin_unlock(&waitq->lock);
   mtx_spin_unlock(&chain->lock);
-  WQ_DPRINTF("waitq_add: wchan=%p, waitq=%p, wdmsg=%s, td={:td}\n", waitq->wchan, waitq, wdmsg, td);
+  WQ_DPRINTF("waitq_wait_timeout: wchan=%p, waitq=%p, wdmsg=%s, timeout_ns=%llu, td={:td}\n", 
+             waitq->wchan, waitq, wdmsg, timeout_ns, td);
+
+  // td is locked on call to sched_again
   sched_again(SCHED_SLEEPING);
+  // and returns with the thread unlocked, re-acquire it
+  td_lock(td);
+
+  // we're back - check if we timed out
+  int ret = 0;
+  if (td->errno == ETIMEDOUT) {
+    ret = -ETIMEDOUT;
+    td->errno = 0;
+  } else {
+    // normal wakeup, cancel the alarm
+    if (td->timeout_alarm_id != 0) {
+      alarm_unregister(td->timeout_alarm_id);
+    }
+  }
+  td->timeout_alarm_id = 0;
+
+  td_unlock(td);
+  return ret;
+}
+
+int waitq_wait_sig(struct waitqueue *waitq, const char *wdmsg) {
+  struct waitqueue_chain *chain = WQC_LOOKUP(waitq->wchan);
+  mtx_assert(&chain->lock, MA_OWNED);
+  mtx_assert(&waitq->lock, MA_OWNED);
+
+  thread_t *td = curthread;
+  td_lock(td);
+
+  td->flags |= TDF2_WAKEABLE;
+  td->errno = 0;
+  waitq_add_internal(waitq, chain, td, wdmsg);
+
+  mtx_spin_unlock(&waitq->lock);
+  mtx_spin_unlock(&chain->lock);
+
+  // td is locked on call to sched_again
+  sched_again(SCHED_SLEEPING);
+  // and returns with the thread unlocked, re-acquire it
+  td_lock(td);
+
+  // we're back - clear the wakeable flag
+  td->flags &= ~TDF2_WAKEABLE;
+
+  // check if we were interrupted
+  int ret = 0;
+  if (td->errno == EINTR) {
+    ret = -EINTR;
+    td->errno = 0;
+  }
+
+  td_unlock(td);
+  return ret;
+}
+
+int waitq_wait_sigtimeout(struct waitqueue *waitq, const char *wdmsg, uint64_t timeout_ns) {
+  struct waitqueue_chain *chain = WQC_LOOKUP(waitq->wchan);
+  mtx_assert(&chain->lock, MA_OWNED);
+  mtx_assert(&waitq->lock, MA_OWNED);
+  
+  // create timeout alarm
+  thread_t *td = curthread;
+  alarm_t *alarm = alarm_alloc_relative(timeout_ns, alarm_cb(waitq_timeout_callback, td));
+  if (alarm == NULL) {
+    return -ENOMEM;
+  }
+
+  td_lock(td);
+  ASSERT(td->timeout_alarm_id == 0);
+
+  id_t alarm_id = alarm_register(alarm);
+  td->timeout_alarm_id = alarm_id;
+  td->errno = 0;
+  td->flags |= TDF2_WAKEABLE;  // mark as interruptible by signals
+  waitq_add_internal(waitq, chain, td, wdmsg);
+
+  mtx_spin_unlock(&waitq->lock);
+  mtx_spin_unlock(&chain->lock);
+  WQ_DPRINTF("waitq_wait_sigtimeout: wchan=%p, waitq=%p, wdmsg=%s, timeout_ns=%llu, td={:td}\n", 
+             waitq->wchan, waitq, wdmsg, timeout_ns, td);
+
+  // td is locked on call to sched_again
+  sched_again(SCHED_SLEEPING);
+  // and returns with the thread unlocked, re-acquire it
+  td_lock(td);
+
+  // we're back - clear the wakeable flag
+  td->flags &= ~TDF2_WAKEABLE;
+
+  // check what happened
+  int ret = 0;
+  if (td->errno == ETIMEDOUT) {
+    ret = -ETIMEDOUT;
+    td->errno = 0;
+  } else if (td->errno == EINTR) {
+    ret = -EINTR;
+    td->errno = 0;
+    // signal interrupted us, cancel the alarm
+    if (td->timeout_alarm_id != 0) {
+      alarm_unregister(td->timeout_alarm_id);
+    }
+  } else {
+    // normal wakeup, cancel the alarm
+    if (td->timeout_alarm_id != 0) {
+      alarm_unregister(td->timeout_alarm_id);
+    }
+  }
+  td->timeout_alarm_id = 0;
+
+  td_unlock(td);
+  return ret;
 }
 
 void waitq_remove(struct waitqueue *waitq, thread_t *td) {
@@ -453,6 +635,7 @@ void waitq_remove(struct waitqueue *waitq, thread_t *td) {
   mtx_assert(&waitq->lock, MA_OWNED);
 
   waitq_remove_internal(waitq, chain, td);
+
   mtx_spin_unlock(&waitq->lock);
   mtx_spin_unlock(&chain->lock);
   WQ_DPRINTF("waitq_remove: wchan=%p, waitq=%p, td={:td}\n", waitq->wchan, waitq, td);

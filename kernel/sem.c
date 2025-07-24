@@ -77,7 +77,7 @@ void _sem_down(sem_t *sem, const char *file, int line) {
   // count is 0, add to waitqueue
   struct waitqueue *waitq = waitq_lookup_or_default(WQ_SEMA, sem, curthread->own_waitq);
   release_sem_lock(sem);  // release sem lock before adding to waitqueue
-  waitq_add(waitq, "semaphore down"); // block thread on waitqueue
+  waitq_wait(waitq, "semaphore down"); // block thread on waitqueue
 }
 
 void _sem_up(sem_t *sem, const char *file, int line) {

@@ -83,42 +83,20 @@ void lockq_release(struct lockqueue **lockqp);
 void lockq_chain_lock(struct lockqueue *lockq);
 void lockq_chain_unlock(struct lockqueue *lockq);
 
-/**
- * Blocks the calling thread on the lockqueue. This function will context switch
- * and not return until it has been woken back up (via lockq_signal);
- * @param lockq The lockqueue to block on (must be locked and chain locked).
- * @param owner The thread that owns the lock (or NULL if none).
- * @param queue The queue to block on (LQ_EXCL or LQ_SHRD).
- * This
- */
+/// Blocks the calling thread on the lockqueue. This function will context switch
+/// and not return until it has been woken back up (via lockq_signal);
 void lockq_wait(struct lockqueue *lockq, struct thread *owner, int queue);
 
-/**
- * Removes the given thread from the lockqueue.
- * @param lockq The lockqueue to remove the thread from (must be locked and chain locked).
- * @param td The thread to remove (must be locked).
- * @param queue The queue to remove the thread from (LQ_EXCL or LQ_SHRD).
- *
- * This function will return with the thread locked and in the blocked state.
- */
+/// Removes the given thread from the lockqueue. This function should be called with
+/// both the lock and chain lock held, and will return with both unlocked.
 void lockq_remove(struct lockqueue *lockq, struct thread *td, int queue);
 
-/**
- * Unblocks the first thread on the lockqueue. This function should be called
- * with both the lock and chain lock held and will return with both unlocked.
- * @param lockq
- * @param queue
- */
+/// Unblocks the first thread on the lockqueue. This function should be called
+/// with both the lock and chain lock held and will return with both unlocked.
 void lockq_signal(struct lockqueue *lockq, int queue);
 
-/**
- * Updates the priority of the lockqueue to match the given thread. This
- * function should be called with the thread locked.
- * @param lockq The lockqueue to update (must be locked and chain locked).
- * @param td
- *
- * This function will return with the both lockq and chain lock unlocked.
- */
+/// Updates the priority of the lockqueue to match the given thread. This
+/// function should be called with the thread locked.
 void lockq_update_priority(struct lockqueue *lockq, struct thread *td);
 
 // =================================
@@ -160,10 +138,31 @@ void waitq_release(struct waitqueue **waitqp);
 /// both its lock and associated chain lock held.
 struct waitqueue *waitq_lookup_or_default(int type, const void *wchan, struct waitqueue *default_waitq);
 
-/// Adds the current thread on the waitqueue. This function will context switch
+/// Blocks the current thread on the waitqueue. This function will context switch
 /// and not return until it has been woken back up. This should be called with
 /// both the lock and chain lock held, and will return with both unlocked.
-void waitq_add(struct waitqueue *waitq, const char *wdmsg);
+void waitq_wait(struct waitqueue *waitq, const char *wdmsg);
+
+/// Blocks the current thread on the waitqueue with a timeout. This function will
+/// context switch and not return until it has been woken back up or the timeout
+/// expires. This should be called with both the lock and chain lock held, and will
+/// return with both unlocked. Returns 0 on normal wakeup, -ETIMEDOUT on timeout.
+int waitq_wait_timeout(struct waitqueue *waitq, const char *wdmsg, uint64_t timeout_ns);
+
+/// Blocks the current thread on the waitqueue and allows it to be interrupted
+/// by a signal. This function will context switch and not return until it has been
+/// woken back up or interrupted by a signal. This should be called with both the
+/// lock and chain lock held, and will return with both unlocked. Returns 0 on
+/// normal wakeup, -EINTR if interrupted by a signal.
+int waitq_wait_sig(struct waitqueue *waitq, const char *wdmsg);
+
+/// Blocks the current thread on the waitqueue with a timeout and allows it to be
+/// interrupted by a signal. This function will context switch and not return until
+/// it has been woken back up, the timeout expires, or it is interrupted by a signal.
+/// This should be called with both the lock and chain lock held, and will return
+/// with both unlocked. Returns 0 on normal wakeup, -ETIMEDOUT on timeout, -EINTR
+/// if interrupted by a signal.
+int waitq_wait_sigtimeout(struct waitqueue *waitq, const char *wdmsg, uint64_t timeout_ns);
 
 /// Removes the given thread from the waitqueue. This function should be called with
 /// both the lock and chain lock held and will return with both unlocked.

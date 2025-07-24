@@ -238,6 +238,7 @@ typedef struct thread {
   int lockq_num;                        // lockq queue number (LQ_EXCL or LQ_SHRD)
   const void *wchan;                    // wait channel (if in waitqueue)
   const char *wdmsg;                    // wait debug message
+  id_t timeout_alarm_id;                // timeout alarm id (if waiting with timeout)
 
   LIST_ENTRY(struct thread) plist;      // process thread list entry
   LIST_ENTRY(struct thread) rqlist;     // runq list entry
@@ -270,7 +271,7 @@ static_assert(offsetof(thread_t, ustack_ptr) == 0xA0);
 #define   TDF2_IS_FIRSTTIME(td) ((td)->flags2 & TDF2_FIRSTTIME)
 #define TDF2_STOPPED    0x00000002  // thread is stopped or exiting
 #define   TDF2_IS_STOPPED(td)   ((td)->flags2 & TDF2_STOPPED)
-#define TDF2_WAKEABLE   0x00000004  // thread can be woken up
+#define TDF2_WAKEABLE   0x00000004  // thread can be woken up by signals
 #define   TDF2_IS_WAKEABLE(td) ((td)->flags2 & TDF2_WAKEABLE)
 #define TDF2_SIGPEND    0x00000008  // thread has pending signals
 #define   TDF2_HAS_SIGPEND(td) ((td)->flags2 & TDF2_SIGPEND)

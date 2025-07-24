@@ -27,12 +27,12 @@
 // General Definitions
 //
 
-#define MS_PER_SEC 1000LL
-#define US_PER_SEC 1000000LL
-#define NS_PER_SEC 1000000000LL
-#define NS_PER_MSEC 1000000
-#define NS_PER_USEC 1000
-#define FS_PER_SEC 1000000000000000
+#define MS_PER_SEC  1000LL
+#define US_PER_SEC  1000000LL
+#define NS_PER_SEC  1000000000LL
+#define NS_PER_MS   1000000LL
+#define NS_PER_USEC 1000LL
+#define FS_PER_SEC  1000000000000000LL
 
 #define SEC_TO_NS(sec) ((uint64_t)(sec) * NS_PER_SEC)
 #define MS_TO_NS(ms) ((uint64_t)(ms) * (NS_PER_SEC / MS_PER_SEC))
@@ -113,6 +113,9 @@
 #define SIGNATURE_32(A, B, C, D) (SIGNATURE_16(A, B) | (SIGNATURE_16(C, D) << 16))
 #define SIGNATURE_64(A, B, C, D, E, F, G, H) (SIGNATURE_32(A, B, C, D) | ((uint64_t) SIGNATURE_32(E, F, G, H) << 32))
 
+#pragma clang diagnostic push
+#pragma ide diagnostic ignored "bugprone-macro-parentheses"
+
 #define ASSERT_IS_TYPE(type, value) \
   _Static_assert(_Generic(value, type: 1, default: 0) == 1, \
   "Failed type assertion: " #value " is not of type " #type)
@@ -121,10 +124,26 @@
   _Static_assert(_Generic(value, type: 1, const type: 1, default: 0) == 1, \
   "Failed type assertion: " #value " is not of type " #type)
 
+#pragma clang diagnostic pop
+
 #define __type_checked(type, param, rest) ({ ASSERT_IS_TYPE(type, param); rest; })
 #define __const_type_checked(type, param, rest) ({ ASSERT_IS_TYPE_OR_CONST(type, param); rest; })
 
+// this doesnt need to handle char and short because they get promoted to int in _Generic
+#define CORE_TYPE_TO_STRING(x) _Generic((x), \
+    int: "int",                         \
+    unsigned int: "unsigned int",       \
+    long: "long",                       \
+    unsigned long: "unsigned long",     \
+    float: "float",                     \
+    double: "double",                   \
+    char *: "char *",                   \
+    const char *: "const char *",       \
+    default: "unknown")
+
 #define ARRAY_SIZE(a) (sizeof(a) / sizeof((a)[0]))
+
+#define goto_res(lbl, err) do { res = err; goto lbl; } while (0)
 
 //
 // Compiler Attributes
@@ -155,6 +174,10 @@
 #define __expect_true(expr) __builtin_expect((expr), 1)
 #define __expect_false(expr) __builtin_expect((expr), 0)
 
+//
+// Other Assertion/Safety Macros
+//
+
 #define todo(msg) ({ kprintf("TODO: %s:%d: %s\n", __FILE__, __LINE__, #msg); WHILE_TRUE; })
 
 #define __assert_stack_is_aligned() ({ \
@@ -169,6 +192,42 @@
     WHILE_TRUE; \
   } \
 })
+
+#define add_checked_overflow(x, v) ({ \
+    typeof(x) _x = (x); \
+    typeof(x) _v = (v);                 \
+    if (__builtin_add_overflow(_x, _v, &_x)) { \
+      panic("add_checked_overflow: overflow detected (<%s>%llu + <%s>%llu) [%s:%d]", \
+            CORE_TYPE_TO_STRING(x), (unsigned long)_x, \
+            CORE_TYPE_TO_STRING(v), (unsigned long)_v, \
+            __FILE__, __LINE__); \
+    } \
+    _x; \
+  })
+
+#define sub_checked_overflow(x, v) ({ \
+    typeof(x) _x = (x); \
+    typeof(x) _v = (v); \
+    if (__builtin_sub_overflow(_x, _v, &_x)) { \
+      panic("sub_checked_overflow: overflow detected (<%s>%lu - <%s>%lu) [%s:%d]", \
+            CORE_TYPE_TO_STRING(x), (unsigned long)_x, \
+            CORE_TYPE_TO_STRING(v), (unsigned long)_v, \
+            __FILE__, __LINE__); \
+    } \
+    _x; \
+  })
+
+#define sub_checked_overflow(x, v) do { \
+    typeof(x) _x = (x); \
+    typeof(x) _v = (v); \
+    if (__builtin_sub_overflow(_x, _v, &_x)) { \
+      panic("sub_checked_overflow: overflow detected (<%s>%llu - <%s>%llu) [%s:%d]", \
+            CORE_TYPE_TO_STRING(x), (unsigned long)_x, \
+            CORE_TYPE_TO_STRING(v), (unsigned long)_v, \
+            __FILE__, __LINE__); \
+    } \
+  } while (0)
+
 
 //
 // Initializer Function Macros

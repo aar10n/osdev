@@ -145,7 +145,7 @@ uint64_t clock_get_starttime() {
 }
 
 uint64_t clock_get_millis() {
-  return clock_get_nanos() / NS_PER_MSEC;
+  return clock_get_nanos() / NS_PER_MS;
 }
 
 uint64_t clock_get_micros() {

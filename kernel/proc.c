@@ -38,8 +38,6 @@ extern void kernel_thread_entry();
 #define DPRINTF(x, ...) kprintf("proc: " x, ##__VA_ARGS__)
 #define EPRINTF(x, ...) kprintf("proc: %s: " x, __func__, ##__VA_ARGS__)
 
-#define goto_res(lbl, err) do { res = err; goto lbl; } while (0)
-
 #define PROCS_MAX     1024
 #define PROC_BRK_MAX  SIZE_16MB
 
@@ -1727,12 +1725,33 @@ LABEL(done);
 
 int thread_signal(thread_t *td, siginfo_t *info) {
   ASSERT(info->si_signo >= 0 && info->si_signo < NSIG);
-
   td_lock(td);
+
   // signal may be masked but we put it into the queue anyways
   // to allow the signal to be delivered when it is unmasked
+  bool masked = sigset_masked(td->sigmask, info->si_signo);
   sigqueue_push(&td->sigqueue, info);
-  atomic_fetch_or(&td->flags2, TDF2_SIGPEND);
+  td->flags2 |= TDF2_SIGPEND;
+
+  // if the signal is not masked and the tread is waiting (and wakeable),
+  // we can deliver it immediately and interrupt the thread
+  if (!masked && TDS_IS_WAITING(td) && TDF2_IS_WAKEABLE(td)) {
+    struct waitqueue *waitq = waitq_lookup(td->wchan);
+    if (waitq != NULL) {
+      DPRINTF("waiting thread {:td} [%s] interrupted by signal %d\n", td, td->wdmsg, info->si_signo);
+      waitq_remove(waitq, td);
+
+      // mark as interrupted
+      td->errno = EINTR;
+      td->wchan = NULL;
+      td->wdmsg = NULL;
+
+      // make the thread ready to run
+      TD_SET_STATE(td, TDS_READY);
+      sched_submit_ready_thread(td);
+    }
+  }
+
   td_unlock(td);
   return 0;
 }

@@ -437,7 +437,7 @@ int alarm_sleep_ms(uint64_t ms) {
     alarm_free(&alarm);
     return -EINVAL;
   }
-  waitq_add(waitq, "sleeping");
+  waitq_wait(waitq, "sleeping");
   return 0;
 }
 
