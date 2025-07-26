@@ -337,13 +337,26 @@
 // alternate versions where you dont need to predeclare var
 
 #define LIST_FOR_IN(var, head, name) \
-  for (typeof(((head)->first)) (var) = ((head)->first); (var); (var) = ((var)->name.next))
+  for (typeof((head)->first) (var) = ((head)->first); (var); (var) = ((var)->name.next))
 
 #define RLIST_FOR_IN(var, el, name) \
-  for (typeof((el)) (var) = (el); (var); (var) = ((var)->name.next))
+  for (typeof(el) (var) = (el); (var); (var) = ((var)->name.next))
 
 #define SLIST_FOR_IN(var, el, name) \
-  for (typeof((el)) (var) = (el); (var); (var) = ((var)->name))
+  for (typeof(el) (var) = (el); (var); (var) = ((var)->name))
+
+// ---------------
+// safe versions where the list may be modified during iteration
+
+#define LIST_FOR_IN_SAFE(var, head, name) \
+  for (typeof((head)->first) (var) = ((head)->first), _next = (var) ? (var)->name.next : NULL; \
+       (var); \
+       (var) = _next, _next = (var) ? (var)->name.next : NULL)
+
+#define SLIST_FOR_IN_SAFE(var, el, name) \
+  for (typeof(el) (var) = (el), _next = (var) ? (var)->name : NULL; \
+       (var); \
+       (var) = _next, _next = (var) ? (var)->name : NULL)
 
 
 

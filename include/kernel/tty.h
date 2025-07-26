@@ -8,6 +8,7 @@
 #include <kernel/base.h>
 #include <kernel/mutex.h>
 #include <kernel/cond.h>
+#include <kernel/kevent.h>
 
 #include <kernel/tty/ttydisc.h>
 #include <kernel/tty/ttyqueue.h>
@@ -27,6 +28,7 @@ typedef struct tty {
 
   struct ttyinq *inq;         // input queue
   struct ttyoutq *outq;       // output queue
+  struct knlist knlist;       // associated knotes
 
   cond_t in_wait;	            // input wait cond
   cond_t out_wait;	          // output wait cond
@@ -47,7 +49,8 @@ typedef struct tty {
 #define TTYF_OPENED   0x0001    // tty is opened
 #define TTYF_GONE     0x0002    // tty device is gone
 #define TTYF_STOPPED  0x0004    // tty is stopped (output suspended)
-#define TTYF_DCDRDY   0x0008   // tty data carrier detect is ready
+#define TTYF_DCDRDY   0x0008    // tty data carrier detect is ready
+#define TTYF_NONBLOCK 0x0010    // tty is in non-blocking mode
 
 
 struct ttydev_ops {
@@ -96,6 +99,9 @@ int tty_ioctl(tty_t *tty, unsigned long request, void *arg);
 int tty_wait_cond(tty_t *tty, cond_t *cond);
 void tty_signal_cond(tty_t *tty, cond_t *cond);
 int tty_signal_pgrp(tty_t *tty, int signal);
+
+void termios_print_debug(struct termios *t);
+void winsize_print_debug(struct winsize *ws);
 
 static inline struct termios termios_make_canon(speed_t speed) {
   struct termios t;

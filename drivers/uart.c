@@ -18,7 +18,7 @@
 #include <fs/devfs/devfs.h>
 
 #define ASSERT(x) kassert(x)
- #define DPRINTF(fmt, ...) kprintf("uart: " fmt, ##__VA_ARGS__)
+#define DPRINTF(fmt, ...) kprintf("uart: " fmt, ##__VA_ARGS__)
 //#define DPRINTF(fmt, ...)
 #define EPRINTF(fmt, ...) kprintf("uart: %s: " fmt, __func__, ##__VA_ARGS__)
 
@@ -496,6 +496,7 @@ static int uart_tty_transmit_thread(tty_t *tty) {
   return res;
 }
 
+// this is run in a softirq context, so it may block
 static void uart_tty_input_irq_handler(int ev, int ev_data, void *data) {
   tty_t *tty = data;
   struct uart_dev *uart_dev = tty->dev_data;

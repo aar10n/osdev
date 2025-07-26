@@ -313,7 +313,8 @@ void ttydisc_rint_done(tty_t *tty) {
   struct termios *t = &tty->termios;
 
   // wake up any readers
-  cond_broadcast(&tty->in_wait);
+  tty_signal_cond(tty, &tty->in_wait);
+
   // wake up driver to handle echo output
   if ((t->c_cflag & CLOCAL) || (tty->flags & TTYF_DCDRDY)) {
     // wakeup ttydev for writing immediately if CLOCAL is set
@@ -333,6 +334,11 @@ ssize_t ttydisc_read_canonical(tty_t *tty, kio_t *kio) {
   for (;;) {
     size_t len = ttyinq_find_ch(tty->inq, cbreak, &lastc);
     if (len == 0) {
+      if (tty->flags & TTYF_NONBLOCK) {
+        // non-blocking mode, return immediately
+        ASSERT(kio_transfered(kio) == 0);
+        return -EAGAIN;
+      }
       // no line available, we need to wait for input
       cond_wait(&tty->in_wait, &tty->lock);
       continue;
@@ -361,19 +367,41 @@ ssize_t ttydisc_read_canonical(tty_t *tty, kio_t *kio) {
 }
 
 ssize_t ttydisc_read_raw(tty_t *tty, kio_t *kio) {
-  // if (tty_input_available(tp)) {
-  //   error = tty_copy_raw_input(tp, uio);
-  //   if (error || uio->uio_resid == 0)
-  //     break;
-  // } else if (tp->t_flags & TF_NONBLOCK) {
-  //   error = EAGAIN;
-  //   break;
-  // } else {
-  //   error = tty_wait_for_input(tp);
-  //   if (error)
-  //     break;
-  // }
-  todo();
+  tty_assert_owned(tty);
+  ssize_t total_read = 0;
+  
+  while (kio_remaining(kio) > 0) {
+    // check if input is available
+    size_t avail = ttyinq_linebytes(tty->inq);
+    if (avail > 0) {
+      // read as much as we can
+      size_t to_read = min(avail, kio_remaining(kio));
+      ssize_t nread = ttyinq_read(tty->inq, kio, to_read);
+      if (nread < 0) {
+        EPRINTF("ttyinq_read failed: {:err}\n", nread);
+        return nread;
+      }
+      total_read += nread;
+      
+      // if we've read something, we can return
+      if (total_read > 0) {
+        break;
+      }
+    } else {
+      // no data available
+      if (tty->flags & TTYF_NONBLOCK) {
+        // non-blocking mode, return immediately
+        if (total_read == 0) {
+          total_read = (ssize_t) -EAGAIN;
+        }
+        break;
+      }
+
+      // wait for input
+      cond_wait(&tty->in_wait, &tty->lock);
+    }
+  }
+  return total_read;
 }
 
 ssize_t ttydisc_read(tty_t *tty, kio_t *kio) {
@@ -418,7 +446,7 @@ ssize_t	ttydisc_write(tty_t *tty, kio_t *kio) {
   tty_assert_owned(tty);
   struct termios *t = &tty->termios;
 
-  int res;
+  int res = 0;
   if (t->c_oflag & OPOST) {
     char ch;
     while (kio_read_ch(&ch, kio) > 0) {

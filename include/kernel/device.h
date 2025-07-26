@@ -14,6 +14,7 @@ struct device;
 struct device_driver;
 struct device_bus;
 
+struct knote;
 struct ventry;
 
 #define D_OPS(d) __type_checked(struct device *, d, (d)->ops)
@@ -63,6 +64,10 @@ struct device_ops {
   int (*d_ioctl)(struct device *dev, unsigned long cmd, void *arg);
   __ref page_t *(*d_getpage)(struct device *dev, size_t off);
   int (*d_putpage)(struct device *dev, size_t off, __ref page_t *page);
+
+  int (*d_kqattach)(struct device *dev, struct knote *kn);
+  void (*d_kqdetach)(struct device *dev, struct knote *kn);
+  int (*d_kqevent)(struct device *dev, struct knote *kn);
 };
 
 /**

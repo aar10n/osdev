@@ -11,6 +11,9 @@
 
 #define F_OPS(f) __type_checked(struct file *, f, (f)->ops)
 
+#define F_O_READABLE(flags) ((flags) & (O_RDONLY | O_RDWR))
+#define F_O_WRITEABLE(flags) ((flags) & (O_WRONLY | O_RDWR))
+
 typedef struct ftable ftable_t;
 
 __ref fd_entry_t *fd_entry_alloc(int fd, int flags, cstr_t real_path, __ref file_t *file);
@@ -34,9 +37,10 @@ void ftable_add_entry(ftable_t *ftable, __ref fd_entry_t *fde);
 void ftable_close_exec(ftable_t *ftable);
 void ftable_close_all(ftable_t *ftable);
 
+
+
 // #define F_DPRINTF(fmt, ...) kprintf("file: " fmt " [%s:%d]\n", ##__VA_ARGS__, __FILE__, __LINE__)
 #define F_DPRINTF(fmt, ...)
-
 
 #define fde_getref(fde) ({ \
   ASSERT_IS_TYPE(fd_entry_t *, fde); \

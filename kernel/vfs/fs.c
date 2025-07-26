@@ -10,6 +10,7 @@
 #include <kernel/printf.h>
 #include <kernel/str.h>
 #include <kernel/kio.h>
+#include <kernel/time.h>
 
 #include <kernel/vfs/file.h>
 #include <kernel/vfs/vcache.h>
@@ -22,7 +23,6 @@
 #define DPRINTF(fmt, ...) kprintf("fs: " fmt, ##__VA_ARGS__)
 #define EPRINTF(fmt, ...) kprintf("fs: %s: " fmt, __func__, ##__VA_ARGS__)
 
-#define goto_res(lbl, err) do { res = err; goto lbl; } while (0)
 #define FTABLE (curproc->files)
 
 #define HMAP_TYPE fs_type_t *
@@ -647,25 +647,25 @@ LABEL(ret);
 }
 
 int fs_ioctl(int fd, unsigned long request, void *argp) {
-  DPRINTF("ioctl: fd=%d, request=%llu, argp=%p\n", fd, request, argp);
+  DPRINTF("ioctl: fd=%d, request=%#llx, argp=%p\n", fd, request, argp);
   fd_entry_t *fde = ftable_get_entry(FTABLE, fd);
   if (fde == NULL)
     return -EBADF;
 
   int res;
   file_t *file = fde->file;
-  DPRINTF("ioctl: fd=%d, file=%p\n", fd, file);
   if (!f_lock(file))
     goto_res(ret, -EBADF); // file is closed
 
   res = F_OPS(file)->f_ioctl(file, request, argp);
   if (res < 0) {
-    EPRINTF("ioctl(%llu, %p) failed: {:err}\n", request, argp, res);
+    EPRINTF("ioctl failed: fd=%d, request=%#llx, argp=%p, res={:err}\n", fd, request, argp, res);
   }
 
   f_unlock(file);
 LABEL(ret);
   fde_putref(&fde);
+  DPRINTF("ioctl: fd=%d, request=%#llx, res={:err}\n", fd, request, res);
   return res;
 }
 
@@ -858,6 +858,107 @@ int fs_dup2(int fd, int newfd) {
   res = newfd;
 LABEL(ret);
   fde_putref(&fde);
+  return res;
+}
+
+int fs_poll(struct pollfd *fds, size_t nfds, struct timespec *timeout) {
+  int res;
+
+  // create a temporary kqueue
+  kqueue_t *kq = kqueue_alloc();
+  if (kq == NULL) {
+    return -ENOMEM;
+  }
+
+  // allocate separate arrays for changelist and eventlist
+  // worst case: 2 events per fd (read + write)
+  struct kevent *changelist = kmallocz(sizeof(struct kevent) * nfds * 2);
+  struct kevent *eventlist = kmallocz(sizeof(struct kevent) * nfds * 2);
+  if (!changelist || !eventlist) {
+    kfree(changelist);
+    kfree(eventlist);
+    kqueue_free(&kq);
+    return -ENOMEM;
+  }
+
+  // convert pollfd events to kevents for registration
+  int nchanges = 0;
+  for (size_t i = 0; i < nfds; i++) {
+    fds[i].revents = 0;
+    if (fds[i].fd < 0) {
+      continue;
+    }
+
+    if (fds[i].events & (POLLIN | POLLRDNORM)) {
+      DPRINTF("fs_poll: adding fd %d for POLLIN\n", fds[i].fd);
+      EV_SET(&changelist[nchanges++], fds[i].fd, EVFILT_READ,
+             EV_ADD | EV_ONESHOT, 0, 0, (void *)i);
+    }
+    if (fds[i].events & (POLLOUT | POLLWRNORM)) {
+      DPRINTF("fs_poll: adding fd %d for POLLOUT\n", fds[i].fd);
+      EV_SET(&changelist[nchanges++], fds[i].fd, EVFILT_WRITE,
+             EV_ADD | EV_ONESHOT, 0, 0, (void *)i);
+    }
+    if (fds[i].events & POLLPRI) {
+      DPRINTF("fs_poll: adding fd %d for POLLPRI\n", fds[i].fd);
+      EPRINTF("POLLPRI not supported yet\n");
+      // TODO: handle POLLPRI
+      todo("fs_poll: handle POLLPRI");
+    }
+  }
+
+  // register events and wait for ready events
+  ssize_t nready = kqueue_wait(kq, changelist, nchanges, eventlist, nfds * 2, timeout);
+  if (nready < 0) {
+    EPRINTF("kqueue_wait failed: {:err}\n", nready);
+    goto_res(ret, (int)nready);
+  } else if (nready == 0) {
+    goto_res(ret, 0); // no events (timeout)
+  }
+
+  // convert kevents back to poll results
+  for (ssize_t i = 0; i < nready; i++) {
+    size_t idx = (size_t)eventlist[i].udata;
+    ASSERT(idx < nfds);
+
+    if (eventlist[i].flags & EV_ERROR) {
+      fds[idx].revents |= POLLERR;
+      continue;
+    }
+
+    switch (eventlist[i].filter) {
+      case EVFILT_READ:
+        if (eventlist[i].flags & EV_EOF)
+          fds[idx].revents |= POLLHUP;
+        else
+          fds[idx].revents |= POLLIN | POLLRDNORM;
+        break;
+      case EVFILT_WRITE:
+        if (eventlist[i].flags & EV_EOF)
+          fds[idx].revents |= POLLHUP;
+        else
+          fds[idx].revents |= POLLOUT | POLLWRNORM;
+        break;
+      default:
+        EPRINTF("unknown filter %d in kevent\n", eventlist[i].filter);
+        break;
+    }
+  }
+
+  // count how many fds have changed
+  int nfds_changed = 0;
+  for (size_t i = 0; i < nfds; i++) {
+    if (fds[i].revents != 0) {
+      nfds_changed = add_checked_overflow(nfds_changed, 1);
+    }
+  }
+
+  res = nfds_changed; // success
+LABEL(ret);
+  kqueue_drain(kq);
+  kqueue_free(&kq);
+  kfree(changelist);
+  kfree(eventlist);
   return res;
 }
 
@@ -1308,6 +1409,11 @@ void fs_print_debug_vcache() {
 
 // MARK: System Calls
 
+DEFINE_SYSCALL(open, int, const char *path, int flags, mode_t mode) {
+  DPRINTF("open: path=%s, flags=%#x, mode=%#o\n", path, flags, mode);
+  return fs_open(cstr_make(path), flags, mode);
+}
+
 SYSCALL_ALIAS(close, fs_close);
 SYSCALL_ALIAS(read, fs_read);
 SYSCALL_ALIAS(write, fs_write);
@@ -1316,11 +1422,28 @@ SYSCALL_ALIAS(writev, fs_writev);
 SYSCALL_ALIAS(getdents64, fs_readdir);
 SYSCALL_ALIAS(lseek, fs_lseek);
 SYSCALL_ALIAS(ioctl, fs_ioctl);
+SYSCALL_ALIAS(fcntl, fs_fcntl);
 SYSCALL_ALIAS(ftruncate, fs_ftruncate);
 SYSCALL_ALIAS(fstat, fs_fstat);
 SYSCALL_ALIAS(dup, fs_dup);
 SYSCALL_ALIAS(dup2, fs_dup2);
-SYSCALL_ALIAS(fcntl, fs_fcntl);
+
+DEFINE_SYSCALL(poll, int, struct pollfd *fds, nfds_t nfds, int timeout) {
+  struct timespec ts;
+  struct timespec *tsp = &ts;
+  if (timeout > 0) {
+    // wait for specified timeout
+    ts = timespec_from_nanos(MS_TO_NS(timeout));
+  } else if (timeout == 0) {
+    // return immediately if no events
+    ts = timespec_zero;
+  } else {
+    // wait indefinitely
+    tsp = NULL;
+  }
+
+  return fs_poll(fds, nfds, tsp);
+}
 
 DEFINE_SYSCALL(utimensat, int, int dfd, const char *filename, struct timespec *utimes, int flags) {
   DPRINTF("utimensat: dfd=%d, filename=%s, utimes=%p, flags=%d\n", dfd, filename, utimes, flags);
@@ -1328,10 +1451,6 @@ DEFINE_SYSCALL(utimensat, int, int dfd, const char *filename, struct timespec *u
     return -EFAULT;
   }
   return fs_utimensat(dfd, cstr_make(filename), utimes, flags);
-}
-
-DEFINE_SYSCALL(open, int, const char *path, int flags, mode_t mode) {
-  return fs_open(cstr_make(path), flags, mode);
 }
 
 DEFINE_SYSCALL(truncate, int, const char *path, off_t length) {

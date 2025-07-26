@@ -178,7 +178,7 @@
 // Other Assertion/Safety Macros
 //
 
-#define todo(msg) ({ kprintf("TODO: %s:%d: %s\n", __FILE__, __LINE__, #msg); WHILE_TRUE; })
+#define todo(msg, ...) ({ kprintf("TODO: %s:%d: " msg "\n", __FILE__, __LINE__, #msg); WHILE_TRUE; })
 
 #define __assert_stack_is_aligned() ({ \
   uintptr_t sp; \

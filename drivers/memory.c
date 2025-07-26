@@ -13,8 +13,8 @@
 #include <fs/devfs/devfs.h>
 
 #define ASSERT(x) kassert(x)
-#define DPRINTF(fmt, ...) kprintf("debug: %s: " fmt, __func__, ##__VA_ARGS__)
-#define EPRINTF(fmt, ...) kprintf("debug: %s: " fmt, __func__, ##__VA_ARGS__)
+#define DPRINTF(fmt, ...) kprintf("memory: " fmt, ##__VA_ARGS__)
+#define EPRINTF(fmt, ...) kprintf("memory: %s: " fmt, __func__, ##__VA_ARGS__)
 
 static int default_d_open(device_t *dev, int flags) { return 0; }
 static int default_d_close(device_t *dev) { return 0; }
@@ -59,6 +59,8 @@ static ssize_t debug_d_write(device_t *dev, _unused size_t off, size_t nmax, kio
 
 static int debug_d_ioctl(device_t *dev, unsigned long request, void *arg) {
   if (request == TIOCGWINSZ) {
+    DPRINTF("TIOCGWINSZ ioctl\n");
+
     // simulate a terminal window size
     if (vm_validate_ptr((uintptr_t) arg, /*write=*/true) < 0) {
       EPRINTF("TIOCGWINSZ ioctl requires a valid argument\n");

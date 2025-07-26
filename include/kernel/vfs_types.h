@@ -8,6 +8,7 @@
 #include <kernel/base.h>
 #include <kernel/mutex.h>
 #include <kernel/rwlock.h>
+#include <kernel/kevent.h>
 #include <kernel/kio.h>
 #include <kernel/ref.h>
 #include <kernel/str.h>
@@ -164,7 +165,6 @@ typedef struct vnode {
   mtx_t lock;                     // vnode lock
   rwlock_t data_lock;             // vnode file data lock
   uint32_t nopen;                 // number of open files
-  // cond_t waiters;                 // waiters for nopen == 0
 
   id_t parent_id;                 // parent vnode id
   struct vfs *vfs;                // owning vfs reference
@@ -187,6 +187,7 @@ typedef struct vnode {
     struct vnode *v_shadow;       // shadowed vnode (V_DIR & VN_MOUNT)
   };
 
+  struct knlist knlist;           // knote list
   LIST_ENTRY(struct vnode) list;  // vfs vnode list (non-ref)
 } vnode_t;
 
@@ -343,6 +344,7 @@ struct file_ops {
   ssize_t (*f_write)(file_t *file, kio_t *kio);
   int (*f_ioctl)(file_t *file, unsigned long request, void *arg);
   int (*f_stat)(file_t *file, struct stat *statbuf);
+  int (*f_kqevent)(file_t *file, knote_t *kn);
   void (*f_cleanup)(file_t *file);
 };
 

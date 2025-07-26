@@ -5,14 +5,16 @@
 #include <kernel/vfs/file.h>
 #include <kernel/vfs/vnode.h>
 
+#include <kernel/proc.h>
 #include <kernel/panic.h>
 #include <kernel/printf.h>
+
 #include <bitmap.h>
 #include <rb_tree.h>
 
 #define ASSERT(x) kassert(x)
-// #define DPRINTF(fmt, ...) kprintf("file: " fmt, ##__VA_ARGS__)
-#define DPRINTF(fmt, ...)
+ #define DPRINTF(fmt, ...) kprintf("file: " fmt, ##__VA_ARGS__)
+//#define DPRINTF(fmt, ...)
 #define EPRINTF(fmt, ...) kprintf("file: %s: " fmt, __func__, ##__VA_ARGS__)
 
 #define FTABLE_LOCK(ftable) mtx_spin_lock(&(ftable)->lock)
@@ -299,3 +301,146 @@ void ftable_close_all(ftable_t *ftable) {
     node = next;
   }
 }
+
+//
+// MARK: File Filter Ops
+//
+
+int file_kqfilt_attach(knote_t *kn) {
+  int res = 0;
+  int fd = (int)kn->event.ident;
+  int16_t filter = kn->event.filter;
+
+  fd_entry_t *fde = ftable_get_entry(curproc->files, fd);
+  if (fde == NULL)
+    return -EBADF;
+
+  fde_lock(fde);
+  file_t *file = fde->file;
+
+  if (F_ISVNODE(file)) {
+    if (filter == EVFILT_READ) {
+      // check if file is open for reading
+      if (!F_O_READABLE(fde->flags)) {
+        EPRINTF("file_kqfilt_attach: file %d is not open for reading\n", fde->fd);
+        goto_res(ret, -EINVAL);
+      }
+    } else if (filter == EVFILT_WRITE) {
+      // EVFILT_WRITE is not supported for vnode files
+      EPRINTF("EVFILT_WRITE not supported for vnode files\n");
+      goto_res(ret, -EINVAL);
+    } else {
+      panic("file_kqfilt_attach: unexpected filter %s", evfilt_to_string(filter));
+    }
+
+    vnode_t *vn = fde->file->data;
+    if (!V_ISREG(vn) && !V_ISDEV(vn)) {
+      EPRINTF("file_kqfilt_attach: vnode is not a regular file or device: {:+vn}\n", vn);
+      goto_res(ret, -EINVAL);
+    }
+
+    if (!vn_lock(vn)) {
+      EPRINTF("vnode is dead\n");
+      goto_res(ret, -EIO); // vnode is dead
+    }
+
+    if (V_ISDEV(vn) && D_OPS((device_t *)vn->v_dev)->d_kqattach) {
+      // allow devices to override the kqattach behavior
+      device_t *device = vn->v_dev;
+      res = D_OPS(device)->d_kqattach(device, kn);
+      ASSERT(kn->filt_ops_data != NULL);
+    } else {
+      kn->filt_ops_data = vn_getref(vn);
+      knlist_add(&vn->knlist, kn);
+      res = 0; // success
+    }
+
+    vn_unlock(vn);
+    if (res < 0) {
+      EPRINTF("failed to attach knote to vnode {:err}\n", res);
+      goto_res(ret, res);
+    }
+  } else {
+    // handle other file types (pipe, pts, etc.)
+    todo("file_kqfilt_attach: implement for file type: %d", file->type);
+  }
+
+  kn->fde = fde_getref(fde);
+
+LABEL(ret);
+  fde_unlock(fde);
+  fde_putref(&fde);
+  return res;
+}
+
+void file_kqfilt_detach(knote_t *kn) {
+  int res = 0;
+  fd_entry_t *fde = moveref(kn->fde);
+  ASSERT(fde != NULL);
+  ASSERT(fde->file != NULL);
+
+  file_t *file = fde->file;
+  if (F_ISVNODE(file)) {
+    vnode_t *vn = fde->file->data;
+    if (V_ISDEV(vn) && D_OPS((device_t *)vn->v_dev)->d_kqdetach) {
+      // device is responsible for detaching the knote
+      device_t *device = vn->v_dev;
+      D_OPS(device)->d_kqdetach(device, kn);
+    } else {
+      vnode_t *vnref = moveref(kn->filt_ops_data);
+      knlist_remove(&vn->knlist, kn);
+      vn_putref(&vnref);
+    }
+  } else {
+    // handle other file types (pipe, pts, etc.)
+    todo("file_kqfilt_detach: implement for file type: %d", file->type);
+  }
+
+  fde_putref(&fde);
+}
+
+int file_kqfilt_event(knote_t *kn, long hint) {
+  fd_entry_t *fde = kn->fde;
+  ASSERT(fde != NULL);
+  ASSERT(fde->file != NULL);
+
+  file_t *file = fde->file;
+  if (!f_lock(file)) {
+    EPRINTF("file is already closed\n");
+    kn->event.flags |= EV_EOF; // file is closed, report EOF
+    return 1;
+  } else if (F_OPS(file)->f_kqevent == NULL) {
+    EPRINTF("no kqevent handler for file type %d\n", file->type);
+    f_unlock(file);
+    return -ENOSYS; // no kqevent handler available
+  }
+
+  // defer to the file's kqevent handler
+  int res = F_OPS(file)->f_kqevent(file, kn);
+
+  int report = 0;
+  if (res < 0) {
+    EPRINTF("kqevent handler failed with error {:err}\n", res);
+    kn->event.flags |= EV_ERROR; // mark as error
+    kn->event.data = (intptr_t)res; // store the error code
+    report = 1;
+  } else if (res > 0) {
+    report = 1;
+  }
+
+  f_unlock(file);
+  return report;
+}
+
+
+struct filter_ops file_filter_ops = {
+  .f_attach = file_kqfilt_attach,
+  .f_detach = file_kqfilt_detach,
+  .f_event = file_kqfilt_event,
+};
+
+void vnode_static_init() {
+  register_filter_ops(EVFILT_READ, &file_filter_ops);
+  register_filter_ops(EVFILT_WRITE, &file_filter_ops);
+}
+STATIC_INIT(vnode_static_init);

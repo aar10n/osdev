@@ -147,8 +147,10 @@ static inline void ptable_remove_proc(pid_t pid, __ref proc_t *proc) {
 
 static void ptable_static_init() {
   size_t ptable_size = page_align(PROCS_MAX * sizeof(struct ptable_entry));
-  uintptr_t ptable_base = vmap_anon(0, 0, ptable_size, VM_WRITE|VM_GLOBAL, "ptable");
-  kassert(ptable_base != 0);
+  page_t *ptable_pages = alloc_pages(SIZE_TO_PAGES(ptable_size));
+  ASSERT(ptable_pages != NULL);
+  uintptr_t ptable_base = vmap_pages(moveref(ptable_pages), 0, ptable_size, VM_WRITE|VM_GLOBAL, "ptable");
+  ASSERT(ptable_base != 0);
 
   _ptable.entries = (struct ptable_entry *) ptable_base;
   _ptable.nprocs = 0;

@@ -13,11 +13,12 @@ KERNEL_DEFINES = $(DEFINES) -D__KERNEL__
 
 
 # kernel/
-kernel += entry.asm exception.asm memory.asm sigtramp.asm smpboot.asm syscall.asm switch.asm \
-	alarm.c chan.c cond.c console.c clock.c device.c errno.c exec.c init.c ipi.c irq.c loadelf.c \
-	lock.c main.c sched.c sem.c panic.c printf.c params.c signal.c smpboot.c string.c syscall.c  \
-	sysinfo.c input.c kio.c time.c tqueue.c proc.c percpu.c mutex.c \
-	rwlock.c fs_utils.c
+kernel += \
+	entry.asm exception.asm memory.asm sigtramp.asm smpboot.asm syscall.asm switch.asm \
+	alarm.c chan.c clock.c cond.c console.c device.c errno.c exec.c fs_utils.c init.c \
+	input.c ipi.c irq.c kevent.c kio.c loadelf.c lock.c main.c mutex.c panic.c params.c \
+	percpu.c printf.c proc.c rwlock.c sched.c sem.c signal.c smpboot.c string.c syscall.c \
+	sysinfo.c time.c tqueue.c
 
 # kernel/acpi
 kernel += acpi/acpi.c acpi/pm_timer.c
@@ -38,8 +39,7 @@ kernel += hw/apic.c hw/hpet.c hw/ioapic.c hw/rtc.c hw/pit.c
 kernel += gui/screen.c
 
 # kernel/mm
-kernel += mm/file.c mm/heap.c mm/init.c mm/pgcache.c mm/pgtable.c mm/pmalloc.c \
- 	mm/vmalloc.c
+kernel += mm/file.c mm/heap.c mm/init.c mm/pgcache.c mm/pmalloc.c mm/pgtable.c mm/vmalloc.c
 
 # kernel/tty
 kernel += tty/tty.c tty/ttydisc.c tty/ttyqueue.c

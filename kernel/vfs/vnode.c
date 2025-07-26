@@ -7,14 +7,16 @@
 #include <kernel/vfs/vfs.h>
 #include <kernel/vfs/file.h>
 
+#include <kernel/proc.h>
 #include <kernel/mm.h>
+#include <kernel/kevent.h>
 #include <kernel/printf.h>
 
 #include <abi/termios.h>
 
 #define ASSERT(x) kassert(x)
-//#define DPRINTF(fmt, ...) kprintf("vnode: " fmt, ##__VA_ARGS__)
-#define DPRINTF(fmt, ...)
+#define DPRINTF(fmt, ...) kprintf("vnode: " fmt, ##__VA_ARGS__)
+//#define DPRINTF(fmt, ...)
 #define EPRINTF(fmt, ...) kprintf("vnode: %s: " fmt, __func__, ##__VA_ARGS__)
 
 #define CHECK_SAMEDEV(vn1, vn2) if ((vn1)->vfs != (vn2)->vfs) return -EXDEV;
@@ -22,8 +24,6 @@
 #define CHECK_DIR(vn) if ((vn)->type != V_DIR) return -ENOTDIR;
 #define CHECK_NAMELEN(name) if (cstr_len(name) > NAME_MAX) return -ENAMETOOLONG;
 #define CHECK_SUPPORTED(vn, op) if (!(vn)->ops->op) return -ENOTSUP;
-
-#define goto_res(lbl, err) do { res = err; goto lbl; } while (0)
 
 static inline mode_t vn_to_mode(vnode_t *vnode) {
   mode_t mode = 0;
@@ -40,299 +40,8 @@ static inline mode_t vn_to_mode(vnode_t *vnode) {
   return mode;
 }
 
-
 //
-// MARK: Vnode File Operations
-//
-
-int vn_f_open(file_t *file, int flags) {
-  f_lock_assert(file, LA_OWNED);
-  ASSERT(F_ISVNODE(file));
-  if (file->nopen > 0) {
-    // just increment the open count
-    DPRINTF("f_open: incrementing count for file %p\n", file);
-    file->nopen++;
-    return 0;
-  }
-
-  DPRINTF("f_open: opening file %p with flags 0x%x\n", file, flags);
-  int res;
-  vnode_t *vn = file->data;
-  if (!vn_lock(vn)) {
-    return -EIO; // vnode is dead
-  }
-
-  if (V_ISDEV(vn)) {
-    device_t *device = vn->v_dev;
-    ASSERT(device != NULL);
-
-    // device open
-    res = d_open(device, flags);
-  } else {
-    // vnode open
-    res = vn_open(vn, flags);
-  }
-
-  if (res >= 0) {
-    file->nopen++;
-  } else {
-    EPRINTF("failed to open vnode {:err}\n", res);
-  }
-
-  vn_unlock(vn);
-  return 0;
-}
-
-int vn_f_close(file_t *file) {
-  f_lock_assert(file, LA_OWNED);
-  ASSERT(F_ISVNODE(file));
-  if (file->nopen > 1) {
-    // just decrement the open count
-    DPRINTF("f_close: decrementing count for file %p\n", file);
-    file->nopen--;
-    return 0;
-  }
-
-  int res;
-  vnode_t *vn = file->data;
-  if (!vn_lock(vn)) {
-    return -EIO; // vnode is dead
-  }
-
-  DPRINTF("f_close: closing file %p\n", file);
-  if (V_ISDEV(vn)) {
-    device_t *device = vn->v_dev;
-    ASSERT(device != NULL);
-
-    // device close
-    res = d_close(device);
-  } else {
-    // vnode close
-    res = vn_close(vn);
-  }
-
-  if (res >= 0) {
-    file->nopen--;
-    file->closed = true;
-  } else {
-    EPRINTF("failed to close vnode {:err}\n", res);
-  }
-
-  vn_unlock(vn);
-  return res;
-}
-
-int vn_f_allocate(file_t *file, off_t len) {
-  f_lock_assert(file, LA_OWNED);
-  ASSERT(F_ISVNODE(file));
-
-  vnode_t *vn = file->data;
-  if (V_ISDEV(vn)) {
-    // ignored for devices
-    return 0;
-  } else if (!((file->flags == O_WRONLY || file->flags == O_RDWR))) {
-    // file must be opened for writing
-    return -EBADF; // bad file descriptor
-  }
-
-  if (!vn_lock(vn)) {
-    return -EIO; // vnode is dead
-  }
-
-  int res;
-  vn_begin_data_write(vn);
-  res = vn_fallocate(vn, len);
-  vn_end_data_write(vn);
-  if (res < 0) {
-    EPRINTF("failed to truncate vnode {:err}\n", res);
-  }
-  vn_unlock(vn);
-  return res;
-}
-
-int vn_f_getpage(file_t *file, off_t off, __move page_t **page) {
-  // file does not need to be locked
-  ASSERT(F_ISVNODE(file));
-
-  vnode_t *vn = file->data;
-  if (V_ISDIR(vn)) {
-    return -EISDIR; // file is a directory
-  } else if (!vn_lock(vn)) {
-    return -EIO; // vnode is dead
-  }
-
-  int res;
-  if (V_ISDEV(vn)) {
-    device_t *device = vn->v_dev;
-    ASSERT(device != NULL);
-
-    // device getpage
-    page_t *out = d_getpage(device, off);
-    if (out == NULL) {
-      res = -EIO; // device failed to get page
-    } else {
-      *page = moveref(out); // move the page to caller
-      res = 0; // success
-    }
-  } else {
-    // getpage from vnode
-    res = vn_getpage(vn, off, /*cached=*/true, page);
-  }
-
-  vn_unlock(vn);
-  return res;
-}
-
-ssize_t vn_f_read(file_t *file, kio_t *kio) {
-  f_lock_assert(file, LA_OWNED);
-  ASSERT(F_ISVNODE(file));
-
-  if (file->flags & O_WRONLY)
-    return -EBADF; // file is not open for reading
-
-  ssize_t res;
-  vnode_t *vn = file->data;
-  if (V_ISDIR(vn)) {
-    return -EISDIR; // file is a directory
-  } else if (!vn_lock(vn)) {
-    return -EIO; // vnode is dead
-  }
-
-  // this operation can block so we unlock the file during the read
-  f_unlock(file);
-  if (V_ISDEV(vn)) {
-    device_t *device = vn->v_dev;
-    ASSERT(device != NULL);
-
-    // device read
-    res = d_read(device, file->offset, kio);
-  } else {
-    // read the file
-    vn_begin_data_read(vn);
-    res = vn_read(vn, file->offset, kio);
-    vn_end_data_read(vn);
-  }
-  // and re-lock the file
-  f_lock(file);
-
-  if (res > 0) {
-    // update the file offset
-    file->offset += res;
-  }
-
-  vn_unlock(vn);
-  return res;
-}
-
-ssize_t vn_f_write(file_t *file, kio_t *kio) {
-  f_lock_assert(file, LA_OWNED);
-  ASSERT(F_ISVNODE(file));
-  if (file->flags & O_RDONLY)
-    return -EBADF; // file is not open for writing
-
-  vnode_t *vn = file->data;
-  if (V_ISDIR(vn)) {
-    return -EISDIR; // file is a directory
-  } else if (file->flags & O_RDONLY) {
-    return -EBADF; // file is not open for writing
-  } else if (!vn_lock(vn)) {
-    return -EIO; // vnode is dead
-  }
-
-  // this operation can block so we unlock the file during the write
-  f_unlock(file);
-  ssize_t res;
-  if (V_ISDEV(vn)) {
-    device_t *device = vn->v_dev;
-    ASSERT(device != NULL);
-
-    // device write
-    res = d_write(device, file->offset, kio);
-  } else {
-    // write the file
-    vn_begin_data_write(vn);
-    res = vn_write(vn, file->offset, kio);
-    vn_end_data_write(vn);
-  }
-  // and re-lock the file
-  f_lock(file);
-
-  if (res > 0) {
-    // update the file offset
-    file->offset += res;
-  }
-
-  vn_unlock(vn);
-  return res;
-}
-
-int vn_f_ioctl(file_t *file, unsigned long request, void *arg) {
-  ASSERT(F_ISVNODE(file));
-  f_lock_assert(file, LA_OWNED);
-
-  vnode_t *vn = file->data;
-  if (!vn_lock(vn)) {
-    return -EIO; // vnode is dead
-  }
-
-  int res;
-  if (V_ISDEV(vn)) {
-    // device ioctl
-    device_t *device = vn->v_dev;
-    ASSERT(device != NULL);
-    res = d_ioctl(device, request, arg);
-  } else {
-    // vnode ioctl
-    res = vn_ioctl(vn, request, arg);
-  }
-
-  if (res == -ENOTSUP)
-    res = -ENOTTY; // not a tty device or not supported
-
-  vn_unlock(vn);
-  return res;
-}
-
-int vn_f_stat(file_t *file, struct stat *statbuf) {
-  ASSERT(F_ISVNODE(file));
-  f_lock_assert(file, LA_OWNED);
-
-  vnode_t *vn = file->data;
-  if (!vn_lock(vn)) {
-    return -EIO; // vnode is dead
-  }
-
-  // get the vnode stat
-  vn_stat(vn, statbuf);
-  vn_unlock(vn);
-  return 0;
-}
-
-void vn_f_cleanup(file_t *file) {
-  ASSERT(F_ISVNODE(file));
-  if (mtx_owner(&file->lock) != NULL) {
-    ASSERT(mtx_owner(&file->lock) == curthread);
-  }
-
-  vnode_t *vn = moveptr(file->data);
-  vn_putref(&vn);
-}
-
-
-struct file_ops vnode_file_ops = {
-  .f_open = vn_f_open,
-  .f_close = vn_f_close,
-  .f_allocate = vn_f_allocate,
-  .f_getpage = vn_f_getpage,
-  .f_read = vn_f_read,
-  .f_write = vn_f_write,
-  .f_ioctl = vn_f_ioctl,
-  .f_stat = vn_f_stat,
-  .f_cleanup = vn_f_cleanup,
-};
-
-//
-// Vnode API
+// MARK: Vnode API
 //
 
 __ref vnode_t *vn_alloc_empty(enum vtype type) {
@@ -344,6 +53,8 @@ __ref vnode_t *vn_alloc_empty(enum vtype type) {
   mtx_init(&vnode->lock, MTX_RECURSIVE, "vnode_lock");
   rw_init(&vnode->data_lock, 0, "vnode_data_lock");
   ref_init(&vnode->refcount);
+  knlist_init(&vnode->knlist, &vnode->lock.lo);
+
   VN_DPRINTF("ref init {:+vn} [1]", vnode);
   DPRINTF("allocated {:+vn}\n", vnode);
   return vnode;
@@ -918,3 +629,347 @@ int vn_rmdir(ventry_t *dve, vnode_t *dvn, ventry_t *ve, vnode_t *vn) {
 
   return 0;
 }
+
+//
+// MARK: Vnode File Operations
+//
+
+int vn_f_open(file_t *file, int flags) {
+  f_lock_assert(file, LA_OWNED);
+  ASSERT(F_ISVNODE(file));
+  if (file->nopen > 0) {
+    // just increment the open count
+    DPRINTF("f_open: incrementing count for file %p\n", file);
+    file->nopen++;
+    return 0;
+  }
+
+  DPRINTF("f_open: opening file %p with flags 0x%x\n", file, flags);
+  int res;
+  vnode_t *vn = file->data;
+  if (!vn_lock(vn)) {
+    return -EIO; // vnode is dead
+  }
+
+  if (V_ISDEV(vn)) {
+    device_t *device = vn->v_dev;
+    ASSERT(device != NULL);
+
+    // device open
+    res = d_open(device, flags);
+  } else {
+    // vnode open
+    res = vn_open(vn, flags);
+  }
+
+  if (res >= 0) {
+    file->nopen++;
+  } else {
+    EPRINTF("failed to open vnode {:err}\n", res);
+  }
+
+  vn_unlock(vn);
+  return 0;
+}
+
+int vn_f_close(file_t *file) {
+  f_lock_assert(file, LA_OWNED);
+  ASSERT(F_ISVNODE(file));
+  if (file->nopen > 1) {
+    // just decrement the open count
+    DPRINTF("f_close: decrementing count for file %p\n", file);
+    file->nopen--;
+    return 0;
+  }
+
+  int res;
+  vnode_t *vn = file->data;
+  if (!vn_lock(vn)) {
+    return -EIO; // vnode is dead
+  }
+
+  DPRINTF("f_close: closing file %p\n", file);
+  if (V_ISDEV(vn)) {
+    device_t *device = vn->v_dev;
+    ASSERT(device != NULL);
+
+    // device close
+    res = d_close(device);
+  } else {
+    // vnode close
+    res = vn_close(vn);
+  }
+
+  if (res >= 0) {
+    file->nopen--;
+    file->closed = true;
+  } else {
+    EPRINTF("failed to close vnode {:err}\n", res);
+  }
+
+  vn_unlock(vn);
+  return res;
+}
+
+int vn_f_allocate(file_t *file, off_t len) {
+  f_lock_assert(file, LA_OWNED);
+  ASSERT(F_ISVNODE(file));
+
+  vnode_t *vn = file->data;
+  if (V_ISDEV(vn)) {
+    // ignored for devices
+    return 0;
+  } else if (!((file->flags == O_WRONLY || file->flags == O_RDWR))) {
+    // file must be opened for writing
+    return -EBADF; // bad file descriptor
+  }
+
+  if (!vn_lock(vn)) {
+    return -EIO; // vnode is dead
+  }
+
+  int res;
+  vn_begin_data_write(vn);
+  res = vn_fallocate(vn, len);
+  vn_end_data_write(vn);
+  if (res < 0) {
+    EPRINTF("failed to truncate vnode {:err}\n", res);
+  }
+  vn_unlock(vn);
+  return res;
+}
+
+int vn_f_getpage(file_t *file, off_t off, __move page_t **page) {
+  // file does not need to be locked
+  ASSERT(F_ISVNODE(file));
+
+  vnode_t *vn = file->data;
+  if (V_ISDIR(vn)) {
+    return -EISDIR; // file is a directory
+  } else if (!vn_lock(vn)) {
+    return -EIO; // vnode is dead
+  }
+
+  int res;
+  if (V_ISDEV(vn)) {
+    device_t *device = vn->v_dev;
+    ASSERT(device != NULL);
+
+    // device getpage
+    page_t *out = d_getpage(device, off);
+    if (out == NULL) {
+      res = -EIO; // device failed to get page
+    } else {
+      *page = moveref(out); // move the page to caller
+      res = 0; // success
+    }
+  } else {
+    // getpage from vnode
+    res = vn_getpage(vn, off, /*cached=*/true, page);
+  }
+
+  vn_unlock(vn);
+  return res;
+}
+
+ssize_t vn_f_read(file_t *file, kio_t *kio) {
+  f_lock_assert(file, LA_OWNED);
+  ASSERT(F_ISVNODE(file));
+
+  if (file->flags & O_WRONLY)
+    return -EBADF; // file is not open for reading
+
+  ssize_t res;
+  vnode_t *vn = file->data;
+  if (V_ISDIR(vn)) {
+    return -EISDIR; // file is a directory
+  } else if (!vn_lock(vn)) {
+    return -EIO; // vnode is dead
+  }
+
+  // this operation can block so we unlock the file during the read
+  f_unlock(file);
+  if (V_ISDEV(vn)) {
+    device_t *device = vn->v_dev;
+    ASSERT(device != NULL);
+
+    // device read
+    res = d_read(device, file->offset, kio);
+  } else {
+    // read the file
+    vn_begin_data_read(vn);
+    res = vn_read(vn, file->offset, kio);
+    vn_end_data_read(vn);
+  }
+  // and re-lock the file
+  f_lock(file);
+
+  if (res > 0) {
+    // update the file offset
+    file->offset += res;
+  }
+
+  vn_unlock(vn);
+  return res;
+}
+
+ssize_t vn_f_write(file_t *file, kio_t *kio) {
+  f_lock_assert(file, LA_OWNED);
+  ASSERT(F_ISVNODE(file));
+  if (file->flags & O_RDONLY)
+    return -EBADF; // file is not open for writing
+
+  vnode_t *vn = file->data;
+  if (V_ISDIR(vn)) {
+    return -EISDIR; // file is a directory
+  } else if (file->flags & O_RDONLY) {
+    return -EBADF; // file is not open for writing
+  } else if (!vn_lock(vn)) {
+    return -EIO; // vnode is dead
+  }
+
+  // this operation can block so we unlock the file during the write
+  f_unlock(file);
+  ssize_t res;
+  if (V_ISDEV(vn)) {
+    device_t *device = vn->v_dev;
+    ASSERT(device != NULL);
+
+    // device write
+    res = d_write(device, file->offset, kio);
+  } else {
+    // write the file
+    vn_begin_data_write(vn);
+    res = vn_write(vn, file->offset, kio);
+    vn_end_data_write(vn);
+  }
+  // and re-lock the file
+  f_lock(file);
+
+  if (res > 0) {
+    // update the file offset
+    file->offset += res;
+  }
+
+  vn_unlock(vn);
+  return res;
+}
+
+int vn_f_ioctl(file_t *file, unsigned long request, void *arg) {
+  ASSERT(F_ISVNODE(file));
+  f_lock_assert(file, LA_OWNED);
+
+  vnode_t *vn = file->data;
+  if (!vn_lock(vn)) {
+    return -EIO; // vnode is dead
+  }
+
+  int res;
+  if (V_ISDEV(vn)) {
+    // device ioctl
+    device_t *device = vn->v_dev;
+    ASSERT(device != NULL);
+    res = d_ioctl(device, request, arg);
+  } else {
+    // vnode ioctl
+    res = vn_ioctl(vn, request, arg);
+  }
+
+  if (res == -ENOTSUP)
+    res = -ENOTTY; // not a tty device or not supported
+
+  vn_unlock(vn);
+  return res;
+}
+
+int vn_f_stat(file_t *file, struct stat *statbuf) {
+  ASSERT(F_ISVNODE(file));
+  f_lock_assert(file, LA_OWNED);
+
+  vnode_t *vn = file->data;
+  if (!vn_lock(vn)) {
+    return -EIO; // vnode is dead
+  }
+
+  // get the vnode stat
+  vn_stat(vn, statbuf);
+  vn_unlock(vn);
+  return 0;
+}
+
+int vn_f_kqevent(file_t *file, knote_t *kn) {
+  DPRINTF("vn_f_kqevent called for file %p [%s]\n", file, evfilt_to_string(kn->event.filter));
+
+  // called from the file `event` filter_ops method
+  vnode_t *vn = file->data;
+  ASSERT(vn != NULL);
+  ASSERT(kn->event.filter == EVFILT_READ);
+
+  if (!vn_lock(vn)) {
+    kn->event.flags |= EV_EOF;
+    return 1; // vnode is dead, report EOF
+  }
+
+  int event;
+  if (V_ISDEV(vn)) {
+    device_t *device = vn->v_dev;
+    if (D_OPS(device)->d_kqevent) {
+      event = D_OPS(device)->d_kqevent(device, kn);
+      DPRINTF("vn_f_kqevent: device %d kqevent returned %d\n", make_dev(device), event);
+    } else {
+      DPRINTF("vn_f_kqevent: device %d does not support kqevent\n", make_dev(device));
+      event = 0;
+    }
+  } else if (V_ISREG(vn)) {
+    // regular file handling EVFILT_READ
+    size_t f_off = kn->fde->file->offset;
+    size_t vn_size = vn->size;
+
+    // we report data as readable if the file offset is less than the size
+    // of the vnode, and return the number of bytes available to read
+    if (f_off < vn_size) {
+      kn->event.data = (intptr_t)(vn_size - f_off);
+      event = 1;
+    } else {
+      event = 0;
+    }
+    DPRINTF("vn_f_kqevent: regular file {:+vn} kqevent returned %d with data %ld\n", vn, event, kn->event.data);
+  } else {
+    todo("vn_f_kqevent: implement kqevent for {:vt}", vn->type);
+  }
+
+  vn_unlock(vn);
+  if (event < 0) {
+    EPRINTF("failed to get kqevent for vnode {:err}\n", event);
+  } else if (event == 0) {
+    kn->event.data = 0;
+    DPRINTF("no data available for vnode {:+vn}\n", vn);
+  } else {
+    DPRINTF("data available for vnode {:+vn}: %lld bytes\n", vn, kn->event.data);
+  }
+  return event;
+}
+
+void vn_f_cleanup(file_t *file) {
+  ASSERT(F_ISVNODE(file));
+  if (mtx_owner(&file->lock) != NULL) {
+    ASSERT(mtx_owner(&file->lock) == curthread);
+  }
+
+  vnode_t *vn = moveptr(file->data);
+  vn_putref(&vn);
+}
+
+
+struct file_ops vnode_file_ops = {
+  .f_open = vn_f_open,
+  .f_close = vn_f_close,
+  .f_allocate = vn_f_allocate,
+  .f_getpage = vn_f_getpage,
+  .f_read = vn_f_read,
+  .f_write = vn_f_write,
+  .f_ioctl = vn_f_ioctl,
+  .f_stat = vn_f_stat,
+  .f_kqevent = vn_f_kqevent,
+  .f_cleanup = vn_f_cleanup,
+};
