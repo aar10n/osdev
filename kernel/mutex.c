@@ -40,6 +40,24 @@
 //     lock_claim_list_remove(curthread->wait_claims, lock_obj)
 #define WAIT_CLAIMS_REMOVE(lock_obj)
 
+static struct lock_class spinlock_lockclass = {
+  .name = "spinlock",
+  .flags = SPINLOCK_LOCKCLASS,
+  .lc_lock = mtx_lockclass_lock,
+  .lc_unlock = mtx_lockclass_unlock,
+  .lc_assert = mtx_lockclass_assert,
+  .lc_owner = mtx_lockclass_owner,
+};
+
+static struct lock_class mutex_lockclass = {
+  .name = "mutex",
+  .flags = MUTEX_LOCKCLASS,
+  .lc_lock = mtx_lockclass_lock,
+  .lc_unlock = mtx_lockclass_unlock,
+  .lc_assert = mtx_lockclass_assert,
+  .lc_owner = mtx_lockclass_owner,
+};
+
 static inline void spinlock_enter() {
   if (__expect_true(curthread != NULL)) {
     atomic_fetch_add(&curthread->spin_count, 1);
@@ -57,6 +75,12 @@ static inline void spinlock_exit() {
 
 //
 
+static void mtx_static_init() {
+  lock_classes[lock_class_index(SPINLOCK_LOCKCLASS)] = &spinlock_lockclass;
+  lock_classes[lock_class_index(MUTEX_LOCKCLASS)] = &mutex_lockclass;
+}
+STATIC_INIT(mtx_static_init);
+
 uint32_t _mtx_opts_to_lockobject_flags(uint32_t opts) {
   uint32_t flags = LO_INITIALIZED;
   if (opts & MTX_SPIN) {
@@ -72,7 +96,9 @@ uint32_t _mtx_opts_to_lockobject_flags(uint32_t opts) {
   return flags;
 }
 
-// MARK: common mutex api
+//
+// MARK: Public Mutex API
+//
 
 void _mtx_init(mtx_t *mtx, uint32_t opts, const char *name) {
   mtx->lo.name = name;
@@ -87,12 +113,6 @@ void _mtx_destroy(mtx_t *mtx) {
   mtx->lo.flags = MTX_DESTROYED;
   mtx->lo.data = 0;
   mtx->mtx_lock = MTX_DESTROYED;
-}
-
-thread_t *_mtx_owner(mtx_t *mtx) {
-  uintptr_t mtx_lock = mtx->mtx_lock;
-  ASSERT(mtx_lock != MTX_DESTROYED, "_mtx_destroy() on locked mutex");
-  return mtx_lock_owner(mtx_lock);
 }
 
 void _mtx_assert(mtx_t *mtx, int what, const char *file, int line) {
@@ -114,6 +134,22 @@ void _mtx_assert(mtx_t *mtx, int what, const char *file, int line) {
   } else {
     panic("invalid mutex assertion");
   }
+}
+
+thread_t *_mtx_owner(mtx_t *mtx) {
+  uintptr_t mtx_lock = mtx->mtx_lock;
+  ASSERT(mtx_lock != MTX_DESTROYED, "_mtx_destroy() on locked mutex");
+  return mtx_lock_owner(mtx_lock);
+}
+
+struct lock_class *_mtx_get_lockclass(mtx_t *mtx) {
+  ASSERT(mtx->mtx_lock != MTX_DESTROYED, "_mtx_get_lockclass() on destroyed mutex");
+  if (mtx_get_lc(mtx) == SPINLOCK_LOCKCLASS) {
+    return &spinlock_lockclass;
+  } else if (mtx_get_lc(mtx) == MUTEX_LOCKCLASS) {
+    return &mutex_lockclass;
+  }
+  panic("unknown lock class for mutex %p", mtx);
 }
 
 /////////////////////////
@@ -300,6 +336,60 @@ void _mtx_wait_unlock(mtx_t *mtx, const char *file, int line) {
 
   WAIT_CLAIMS_REMOVE(&mtx->lo);
 }
+
+//
+// MARK: Lock Object API
+//
+
+void mtx_lockclass_lock(struct lock_object *lo, uintptr_t how, const char *file, int line) {
+  ASSERT(LO_LOCK_CLASS(lo) == LC_SPINLOCK || LO_LOCK_CLASS(lo) == LC_WAITLOCK,
+         "mtx_lockclass_lock() called on invalid lock class %s, expected spinlock or waitlock",
+         lock_class_kind_str(LO_LOCK_CLASS(lo)));
+  ASSERT(how == LC_EXCL, "mtx_lockclass_lock() called with invalid 'how' %d, expected LC_EXCL", how);
+
+  mtx_t *mtx = (mtx_t *) lo;
+  if (mtx_get_lo(mtx) & MTX_SPIN) {
+    _mtx_spin_lock(mtx, file, line);
+  } else {
+    _mtx_wait_lock(mtx, file, line);
+  }
+}
+
+void mtx_lockclass_unlock(struct lock_object *lo, const char *file, int line) {
+  ASSERT(LO_LOCK_CLASS(lo) == LC_SPINLOCK || LO_LOCK_CLASS(lo) == LC_WAITLOCK,
+         "mtx_lockclass_unlock() called on invalid lock class %s, expected spinlock or waitlock",
+         lock_class_kind_str(LO_LOCK_CLASS(lo)));
+
+  mtx_t *mtx = (mtx_t *) lo;
+  if (mtx_get_lo(mtx) & MTX_SPIN) {
+    _mtx_spin_unlock(mtx, file, line);
+  } else {
+    _mtx_wait_unlock(mtx, file, line);
+  }
+}
+
+void mtx_lockclass_assert(struct lock_object *lo, int what, const char *file, int line) {
+  ASSERT(LO_LOCK_CLASS(lo) == LC_SPINLOCK || LO_LOCK_CLASS(lo) == LC_WAITLOCK,
+         "mtx_lockclass_assert() called on invalid lock class %s, expected spinlock or waitlock",
+         lock_class_kind_str(LO_LOCK_CLASS(lo)));
+
+  mtx_t *mtx = (mtx_t *) lo;
+  _mtx_assert(mtx, what, file, line);
+}
+
+struct thread *mtx_lockclass_owner(struct lock_object *lo) {
+  ASSERT(LO_LOCK_CLASS(lo) == LC_SPINLOCK || LO_LOCK_CLASS(lo) == LC_WAITLOCK,
+         "mtx_lockclass_owner() called on invalid lock class %s, expected spinlock or waitlock",
+         lock_class_kind_str(LO_LOCK_CLASS(lo)));
+
+  mtx_t *mtx = (mtx_t *) lo;
+  return _mtx_owner(mtx);
+}
+
+ASSERT_IS_TYPE(lockclass_lock_t, mtx_lockclass_lock);
+ASSERT_IS_TYPE(lockclass_unlock_t, mtx_lockclass_unlock);
+ASSERT_IS_TYPE(lockclass_assert_t, mtx_lockclass_assert);
+ASSERT_IS_TYPE(lockclass_owner_t , mtx_lockclass_owner);
 
 //
 

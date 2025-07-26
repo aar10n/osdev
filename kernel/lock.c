@@ -11,6 +11,8 @@
 
 #define MAX_CLAIMS 8
 
+struct lock_class *lock_classes[NUM_LOCK_CLASSES];
+
 /*
  * A lock claim is a record of a lock held by an owner.
  */
