@@ -32,7 +32,8 @@ working towards getting DOOM running in userspace.
 ├── sbin          userspace system programs
 ├── scripts       build related scripts and support files
 ├── third-party   third party submodules
-└── toolchain     toolchain build files and patches 
+├── toolchain     toolchain build files and patches
+└── tools         host development tools/plugins
 ```
 
 # Toolchain
@@ -61,3 +62,10 @@ TCP server associated with the kernel console. You can do this by running:
 ```shell
 telnet 127.0.0.1 8008
 ```
+
+## QEMU Profiling Plugin
+
+This project includes a custom QEMU plugin for profiling guest execution. You can find more information
+about it in the [plugin README](tools/qemu-profile-plugin/README.md). This plugin will only be built if
+the `QEMU_BUILD_PLUGIN` option is set to `y` in `.config`. When enabled, two additional Make targets are
+available: `run-profile` and `profile-resolve`.
