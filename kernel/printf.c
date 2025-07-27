@@ -9,7 +9,7 @@
 #include <kernel/mm.h>
 #include <kernel/fs.h>
 
-#include <drivers/uart.h>
+#include <drivers/tty/uart.h>
 
 #include <fmt/fmt.h>
 

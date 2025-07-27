@@ -22,6 +22,9 @@ static void framebuf_static_init() {
   kprintf("  height: %zu\n", boot_info_v2->fb_height);
   kprintf("  size: %zu\n", boot_info_v2->fb_size);
   framebuf_base = (void *) vmap_phys(boot_info_v2->fb_addr, FRAMEBUFFER_VA, boot_info_v2->fb_size, VM_RDWR|VM_FIXED, "framebuffer");
+
+  // clear screen
+  memset((void *) FRAMEBUFFER_VA, 0x00, boot_info_v2->fb_size);
 }
 STATIC_INIT(framebuf_static_init);
 
@@ -73,11 +76,3 @@ void screen_print_str(const char *string) {
     screen_print_char(string[i]);
   }
 }
-
-//
-
-static void screen_init() {
-  // clear screen
-  __memset8((void *) FRAMEBUFFER_VA, 0x00, boot_info_v2->fb_size);
-}
-STATIC_INIT(screen_init);

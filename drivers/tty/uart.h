@@ -2,8 +2,8 @@
 // Created by Aaron Gill-Braun on 2025-06-02.
 //
 
-#ifndef DRIVERS_UART_H
-#define DRIVERS_UART_H
+#ifndef DRIVERS_TTY_UART_H
+#define DRIVERS_TTY_UART_H
 
 #include <kernel/base.h>
 #include <abi/termios.h>

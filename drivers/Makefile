@@ -2,7 +2,10 @@
 $(call register,drivers,KERNEL)
 
 # drivers/
-drivers += memory.c ramdisk.c uart.c
+drivers += memory.c ramdisk.c
+
+# drivers/tty
+drivers += tty/uart.c
 
 # drivers/usb/hid
 drivers += usb/hid/hid.c \
