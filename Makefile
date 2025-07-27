@@ -12,49 +12,19 @@ ifeq ($(call exists,.config),false)
 .DEFAULT_GOAL := setup
 
 .PHONY: setup
-setup: ARCH = x86_64
-setup: TOOLCHAIN = $(ARCH)-linux-musl
-setup: BUILD_DIR = build
-setup: TOOL_ROOT = $(BUILD_DIR)/toolchain
-setup: SYS_ROOT = $(BUILD_DIR)/sysroot
+setup: export ARCH = x86_64
+setup: export BUILD_DIR = build
 setup:
 	@echo "setting up project..."
-
-	@mkdir -p $(BUILD_DIR)
-	@mkdir -p $(TOOL_ROOT)
-	@mkdir -p $(SYS_ROOT)
+	./configure
 	cp -n toolchain/Makefile.template Makefile.local || true
 	cp -n toolchain/initrdrc.template .initrdrc || true
 	git submodule update --init --recursive
-
-	@echo
-	@echo "ARCH:        $(ARCH)"
-	@echo "TOOLCHAIN:   $(TOOLCHAIN)"
-	@echo "PROJECT_DIR: $(shell pwd)"
-	@echo "BUILD_DIR:   $(abspath $(BUILD_DIR))"
-	@echo "TOOL_ROOT:   $(abspath $(TOOL_ROOT))"
-	@echo "SYS_ROOT:    $(abspath $(SYS_ROOT))"
-	@echo
-	@printf "is this ok? (y/n) "
-	@read -r answer; \
-	if [ "$$answer" != "y" ]; then \
-		echo "aborting."; \
-		rm -f .config; \
-		exit 1; \
-	fi
-
-#   write .config file
-	$(file >  .config,ARCH := $(ARCH))
-	$(file >> .config,TOOLCHAIN := $(TOOLCHAIN))
-	$(file >> .config,PROJECT_DIR := $(shell pwd))
-	$(file >> .config,BUILD_DIR := $(abspath $(BUILD_DIR)))
-	$(file >> .config,TOOL_ROOT := $(abspath $(TOOL_ROOT)))
-	$(file >> .config,SYS_ROOT := $(abspath $(SYS_ROOT)))
-
 	@echo
 	@echo "setup complete."
 	@echo "run 'make -C toolchain all' to build the target toolchain. (this can take a while)"
 	@echo "then run 'make all' to build a bootable image, and 'make run' to run it in qemu."
+	@echo "configure additional options in Makefile.local."
 
 ifneq ($(subst setup,,$(MAKECMDGOALS)),)
 # if not running `make` or `make setup`
@@ -111,10 +81,10 @@ USERSPACE_DIRS = sbin bin
 
 # =========== Build Rules =========== #
 
-all: $(BUILD_DIR)/osdev.img
+all: $(BUILD_DIR)/osdev.img tools
 
 run: $(BUILD_DIR)/osdev.img
-	$(QEMU) $(QEMU_OPTIONS) -monitor telnet:127.0.0.1:55544,server,nowait
+	$(QEMU) $(QEMU_OPTIONS) -monitor $(QEMU_MONITOR)
 
 debug: $(BUILD_DIR)/osdev.img
 	$(QEMU) -s -S $(QEMU_OPTIONS) &
@@ -123,7 +93,33 @@ debug: $(BUILD_DIR)/osdev.img
 		-ex "add-symbol-file $(BUILD_DIR)/kernel.elf"
 
 run-debug: $(BUILD_DIR)/osdev.img
-	$(QEMU) -s -S $(QEMU_OPTIONS) -monitor telnet:127.0.0.1:55544,server,nowait 2>&1 > $(BUILD_DIR)/qemu.log &
+	$(QEMU) -s -S $(QEMU_OPTIONS) -monitor $(QEMU_MONITOR) 2>&1 > $(BUILD_DIR)/qemu.log &
+
+ifeq ($(QEMU_BUILD_PLUGIN),y)
+# if building the qemu profiling plugin add profiling targets
+
+PROFILE_SYMBOL_FILES = \
+	$(TOOL_ROOT)/usr/lib/libc.so@0x7fc0000000 \
+	$(BUILD_DIR)/sbin/init/init@0x400000 \
+	$(BUILD_DIR)/sbin/getty/getty@0x800000 \
+	$(BUILD_DIR)/sbin/shell/shell@0xC00000
+
+
+run-profile: PERIOD = 10000
+run-profile: VCPUS =
+run-profile: OPTIONS = period=$(PERIOD),vcpus=$(VCPUS),$(EXTRA_OPTIONS)
+run-profile: PROFILE = $(BUILD_DIR)/profile.folded
+run-profile: $(BUILD_DIR)/osdev.img qemu-profile-plugin
+	$(QEMU) $(QEMU_OPTIONS) -monitor $(QEMU_MONITOR) \
+		-plugin $(QEMU_PROFILE_PLUGIN),output=$(PROFILE),$(OPTIONS) 2>&1 > $(BUILD_DIR)/qemu.log
+
+profile-resolve: PROFILE = $(BUILD_DIR)/profile.folded
+profile-resolve: $(PROFILE) $(BUILD_DIR)/osdev.syms
+	@echo "Resolving profile symbols..."
+	python ./scripts/gen_syms.py -k $(BUILD_DIR)/kernel.elf $(OPTIONS) $(foreach f,$(PROFILE_SYMBOL_FILES),-p $(f)) -o $(BUILD_DIR)/osdev.syms
+	python ./scripts/resolve_profile.py $(PROFILE) $(BUILD_DIR)/osdev.syms > $(PROFILE).resolved
+
+endif
 
 remote-run: REMOTE_QEMU ?= $(QEMU)
 remote-run: REMOTE_QEMU_OPTIONS ?= $(QEMU_OPTIONS)
@@ -282,6 +278,20 @@ $(BUILD_DIR)/ext2.img: $(call pairs-src-paths, $(EXT2_DEPS))
 	scripts/mkdisk.pl -o $@ -s 256M $(EXT2_DEPS)
 
 #
+# development tools
+#
+
+tools: qemu-profile-plugin
+
+# qemu profiling plugin
+ifeq ($(QEMU_BUILD_PLUGIN),y)
+qemu-profile-plugin:
+	$(MAKE) -C tools/qemu-profile-plugin
+else
+qemu-profile-plugin:
+endif
+
+#
 # misc. targets
 #
 
@@ -333,6 +343,11 @@ $(OBJ_DIR)/%.c.o: $(PROJECT_DIR)/%.c
 	@mkdir -p $(@D)
 	$(call var,CC,$<) $(call var,INCLUDE,$<) $(call var,CFLAGS,$<) $(call var,DEFINES,$<) -o $@ -c $<
 
+$(OBJ_DIR)/%.c.d: $(PROJECT_DIR)/%.c
+	@mkdir -p $(@D)
+	$(call var,CC,$<) $(call var,INCLUDE,$<) $(call var,CFLAGS,$<) $(call var,DEFINES,$<) \
+		-MM -MT $(@:%.d=%.o) -MF $@ $<
+
 $(OBJ_DIR)/%.cpp.o: $(PROJECT_DIR)/%.cpp
 	@mkdir -p $(@D)
 	$(call var,CXX,$<) $(call var,INCLUDE,$<) $(call var,CXXFLAGS,$<) $(call var,DEFINES,$<) -o $@ -c $<
@@ -345,6 +360,6 @@ $(OBJ_DIR)/%.asm.o: $(PROJECT_DIR)/%.asm
 	@mkdir -p $(@D)
 	$(call var,NASM,$<) $(call var,INCLUDE,$<) $(call var,NASMFLAGS,$<) -o $@ $<
 
--include $(call include-module-deps,$(MODULES))
+-include $(KERNEL_OBJECTS:.o=.d)
 
 endif

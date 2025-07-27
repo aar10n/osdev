@@ -1,0 +1,111 @@
+#!/bin/bash
+
+# check required environment variables
+if [ -z "$ARCH" ] || [ -z "$BUILD_DIR" ]; then
+    echo "error: ARCH and BUILD_DIR must be set" >&2
+    exit 1
+fi
+
+CONFIG_FILE=.config
+PROJECT_DIR="$(pwd)"
+
+# defaults
+BUILD_DIR="$(realpath "$BUILD_DIR")"
+TOOL_ROOT="$BUILD_DIR/toolchain"
+SYS_ROOT="$BUILD_DIR/sysroot"
+TOOLCHAIN="$ARCH-linux-musl"
+QEMU="qemu-system-$ARCH"
+
+function prompt_yn() {
+  local prompt="$1"
+  local response
+  while true; do
+    read -n 1 -r -p "$prompt (y/n) " response
+    echo >&2
+    case "$response" in
+      y|n) printf "%s" "$response"; return ;;
+      *) echo "invalid input, please enter 'y' or 'n'" >&2 ;;
+    esac
+  done
+}
+
+function prompt_line() {
+  local prompt="$1"
+  local response
+  while true; do
+    read -r -p "$prompt" response
+    if [ -n "$response" ]; then
+      echo "$response"
+      return
+    else
+      echo "input cannot be empty" >&2
+    fi
+  done
+}
+
+# additional options
+QEMU_BUILD_PLUGIN=$(prompt_yn "build the QEMU profiling plugin?")
+if [ "$QEMU_BUILD_PLUGIN" = "y" ]; then
+  QEMU_INCLUDE_DIR=$(prompt_line "QEMU include directory: ")
+  QEMU_INCLUDE_DIR="$(realpath "$QEMU_INCLUDE_DIR")"
+fi
+
+config_content="ARCH := $ARCH
+TOOLCHAIN := $TOOLCHAIN
+PROJECT_DIR := $PROJECT_DIR
+BUILD_DIR := $BUILD_DIR
+TOOL_ROOT := $TOOL_ROOT
+SYS_ROOT := $SYS_ROOT
+QEMU := $QEMU"
+
+if [ "$QEMU_BUILD_PLUGIN" = "y" ]; then
+  config_content="$config_content
+QEMU_BUILD_PLUGIN := y"
+  if [ -n "$QEMU_INCLUDE_DIR" ]; then
+    config_content="$config_content
+QEMU_INCLUDE_DIR := $QEMU_INCLUDE_DIR"
+  fi
+else
+  config_content="$config_content
+QEMU_BUILD_PLUGIN := n"
+fi
+
+echo
+echo "configuration:"
+echo "--------------"
+echo "$config_content"
+echo
+
+# prompt for confirmation
+echo -n "confirm? (y)es/(n)o/(e)dit "
+read -r -n1 response
+echo
+case "$response" in
+  y)
+    echo "$config_content" > $CONFIG_FILE
+    echo "configuration saved to $CONFIG_FILE"
+    ;;
+  e)
+    # create temp file for editing
+    tmpfile=$(mktemp)
+    echo "$config_content" > "$tmpfile"
+
+    # open in editor
+    ${EDITOR:-vi} "$tmpfile"
+
+    # check if user saved
+    if [ $? -eq 0 ]; then
+      cp "$tmpfile" $CONFIG_FILE
+      rm -f "$tmpfile"
+      echo "configuration saved to $CONFIG_FILE"
+    else
+      echo "aborting."
+      rm -f "$tmpfile"
+      exit 1
+    fi
+    ;;
+  *)
+    echo "aborting."
+    exit 1
+    ;;
+esac
