@@ -18,13 +18,15 @@ _used uint32_t *framebuf_base;
 
 static void framebuf_static_init() {
   kprintf("framebuffer:\n");
+  kprintf("  addr: 0x%llx\n", boot_info_v2->fb_addr);
+  kprintf("  size: %zu\n", boot_info_v2->fb_size);
   kprintf("  width: %zu\n", boot_info_v2->fb_width);
   kprintf("  height: %zu\n", boot_info_v2->fb_height);
-  kprintf("  size: %zu\n", boot_info_v2->fb_size);
+
   framebuf_base = (void *) vmap_phys(boot_info_v2->fb_addr, FRAMEBUFFER_VA, boot_info_v2->fb_size, VM_RDWR|VM_FIXED, "framebuffer");
 
   // clear screen
-  memset((void *) FRAMEBUFFER_VA, 0x00, boot_info_v2->fb_size);
+  __memset32((void *) FRAMEBUFFER_VA, 0xFF000000, boot_info_v2->fb_size / sizeof(uint32_t));
 }
 STATIC_INIT(framebuf_static_init);
 

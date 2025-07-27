@@ -47,10 +47,11 @@ struct bus_type bus_types[] = {
 #define DECLARE_DEV_TYPE(_name, _maj, _typ) [_maj] = { .name = (_name), .major = (_maj), .type = (_typ) }
 struct dev_type dev_types[] = {
   { /* reserved */ },
-  DECLARE_DEV_TYPE("ramdisk", 1, D_BLK),
-  DECLARE_DEV_TYPE("serial" , 2, D_CHR),
-  DECLARE_DEV_TYPE("memory" , 3, D_CHR),
-  DECLARE_DEV_TYPE("loop"   , 4, D_BLK),
+  DECLARE_DEV_TYPE("ramdisk" , 1, D_BLK),
+  DECLARE_DEV_TYPE("serial"  , 2, D_CHR),
+  DECLARE_DEV_TYPE("memory"  , 3, D_CHR),
+  DECLARE_DEV_TYPE("loop"    , 4, D_BLK),
+  DECLARE_DEV_TYPE("framebuf", 5, D_BLK),
 };
 #undef DECLARE_DEV_TYPE
 

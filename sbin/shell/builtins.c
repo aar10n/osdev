@@ -3,11 +3,13 @@
 //
 
 #include <assert.h>
+#include <stdint.h>
 #include <dirent.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <fcntl.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
@@ -26,6 +28,7 @@ struct builtin_cmd builtins[] = {
   {"rmdir",    shell_rmdir,    "Remove directory"},
   {"rm",       shell_rm,       "Remove file"},
   {"segfault", shell_segfault, "Inject a segmentation fault"},
+  {"fill_screen", shell_fill_screen, "Fill the screen with color"},
   {"test_mmap", shell_test_mmap, "Test mmap across forks"},
   {NULL, NULL, NULL}
 };
@@ -194,6 +197,67 @@ int shell_segfault(char **args) {
   }
 
   printf("segfault command executed successfully, child exited\n");
+  return 1;
+}
+
+int shell_fill_screen(char **args) {
+  char *color_name = args[1];
+  if (color_name == NULL) {
+    fprintf(stderr, "fill_screen: expected color argument (red/green/blue)\n");
+    return 1;
+  }
+
+  uint32_t color;
+  if (strcmp(color_name, "red") == 0) {
+    color = 0xFFFF0000;
+  } else if (strcmp(color_name, "green") == 0) {
+    color = 0xFF00FF00;
+  } else if (strcmp(color_name, "blue") == 0) {
+    color = 0xFF0000FF;
+  } else {
+    fprintf(stderr, "fill_screen: unknown color '%s'\n", color_name);
+    return 1;
+  }
+
+  const char *fb_dev = getenv("FB_DEV");
+  if (fb_dev == NULL) {
+    fb_dev = "/dev/fb0"; // default framebuffer device
+  }
+
+  int fd = open(fb_dev, O_RDWR);
+  if (fd < 0) {
+    perror("fill_screen: open framebuffer device");
+    return 1;
+  }
+
+  struct stat st;
+  if (fstat(fd, &st) < 0) {
+    perror("fill_screen: fstat framebuffer device");
+    close(fd);
+    return 1;
+  }
+
+  size_t fb_size = st.st_size;
+  void *fb_ptr = mmap(NULL, fb_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+  if (fb_ptr == MAP_FAILED) {
+    perror("fill_screen: mmap framebuffer device");
+    close(fd);
+    return 1;
+  }
+
+  printf("filling screen with color %s\n", color_name);
+  size_t pixels = fb_size / sizeof(uint32_t);
+  uint32_t *fb = (uint32_t *)fb_ptr;
+  for (size_t i = 0; i < pixels; i++) {
+    fb[i] = color; // fill each pixel with the specified color
+  }
+
+  printf("screen filled with color %s\n", color_name);
+  if (munmap(fb_ptr, fb_size) < 0) {
+    perror("fill_screen: munmap framebuffer device");
+  }
+
+  close(fd);
   return 1;
 }
 

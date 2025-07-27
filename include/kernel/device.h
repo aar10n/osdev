@@ -16,6 +16,7 @@ struct device_bus;
 
 struct knote;
 struct ventry;
+struct stat;
 
 #define D_OPS(d) __type_checked(struct device *, d, (d)->ops)
 
@@ -61,6 +62,7 @@ struct device_ops {
   int (*d_close)(struct device *dev);
   ssize_t (*d_read)(struct device *dev, size_t off, size_t nmax, struct kio *kio);
   ssize_t (*d_write)(struct device *dev, size_t off, size_t nmax, struct kio *kio);
+  void (*d_stat)(struct device *dev, struct stat *statbuf);
   int (*d_ioctl)(struct device *dev, unsigned long cmd, void *arg);
   __ref page_t *(*d_getpage)(struct device *dev, size_t off);
   int (*d_putpage)(struct device *dev, size_t off, __ref page_t *page);

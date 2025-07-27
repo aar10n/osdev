@@ -66,7 +66,6 @@ static struct device_ops ramdisk_ops = {
   .d_read = ramdisk_d_read,
   .d_write = ramdisk_d_write,
   .d_getpage = ramdisk_d_getpage,
-  .d_putpage = NULL,
 };
 
 // MARK: Device Registration

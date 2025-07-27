@@ -167,8 +167,6 @@ int vn_close(vnode_t *vn) {
 int vn_getpage(vnode_t *vn, off_t off, bool cached, __move page_t **result) {
   if (!VN_OPS(vn)->v_getpage) return -ENOTSUP;
   if (off < 0) return -EINVAL;
-  if (off >= vn->size)
-    return 0;
 
   page_t *page;
   if (cached && vn->pgcache && (page = pgcache_lookup(vn->pgcache, off)) != NULL) {
@@ -176,8 +174,20 @@ int vn_getpage(vnode_t *vn, off_t off, bool cached, __move page_t **result) {
     return 0;
   }
 
-  // filesystem getpage
-  int res = VN_OPS(vn)->v_getpage(vn, off, &page);
+  int res;
+  if (V_ISDEV(vn)) {
+    if (!D_OPS(vn->v_dev)->d_getpage) {
+      return -ENOTSUP; // device does not support getpage
+    }
+
+    // device getpage
+    page = D_OPS(vn->v_dev)->d_getpage(vn->v_dev, off);
+    res = page ? 0 : -EIO;
+  } else {
+    // filesystem getpage
+    res = VN_OPS(vn)->v_getpage(vn, off, &page);
+  }
+
   if (res < 0) {
     return res;
   }
@@ -236,15 +246,21 @@ void vn_stat(vnode_t *vn, struct stat *statbuf) {
   vn_lock_assert(vn, LA_OWNED);
 
   memset(statbuf, 0, sizeof(struct stat));
+  if (V_ISDEV(vn) && D_OPS(vn->v_dev)->d_stat) {
+    D_OPS(vn->v_dev)->d_stat(vn->v_dev, statbuf);
+    statbuf->st_mode |= vn_to_mode(vn);
+    statbuf->st_dev = make_dev(vn->v_dev);
+  } else {
+    // vnode stat
+    statbuf->st_mode = vn_to_mode(vn);
+    statbuf->st_size = (off_t) vn->size;
+    statbuf->st_blocks = (blkcnt_t) vn->blocks;
+  }
+
+  // vnode only fields
   statbuf->st_ino = vn->id;
-  statbuf->st_mode = vn_to_mode(vn);
-  statbuf->st_size = (off_t) vn->size;
-  statbuf->st_blocks = (blkcnt_t) vn->blocks;
   statbuf->st_nlink = vn->nlink;
   statbuf->st_rdev = vn->device ? make_dev(vn->device) : 0;
-  if (vn->type == V_BLK || vn->type == V_CHR) {
-    statbuf->st_dev = make_dev(vn->v_dev);
-  }
 
   // TODO: rest of the fields
 }

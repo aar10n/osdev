@@ -24,6 +24,7 @@ int shell_mkdir(char **args);
 int shell_rmdir(char **args);
 int shell_rm(char **args);
 int shell_segfault(char **args);
+int shell_fill_screen(char **args);
 int shell_test_mmap(char **args);
 
 #endif
