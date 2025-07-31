@@ -216,8 +216,8 @@ static char *create_folded_stack(GArray *stack) {
   GString *folded = g_string_new(NULL);
 
   // build from root (last element) to leaf (first element)
-  for (size_t i = stack->len - 1; i >= 0; i--) {
-    if (i < stack->len - 1) {
+  for (int i = stack->len - 1; i >= 0; i--) {
+    if (i < (int)stack->len - 1) {
       g_string_append_c(folded, ';');
     }
 

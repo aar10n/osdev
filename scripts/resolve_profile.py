@@ -185,7 +185,7 @@ def main():
         print("No symbols loaded. Please provide a valid symbol file.", file=sys.stderr)
         sys.exit(1)
 
-    resolve_folded_stacks(args.folded, symbols)
+    resolve_folded_stacks(args.profile, symbols)
 
 
 if __name__ == "__main__":
