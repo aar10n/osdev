@@ -2,10 +2,30 @@
 
 This is a modern 64-bit UEFI-based UNIX-like hobby operating system. It has been an 
 ongoing project for a while, and it serves as a sandbox to learn about operating
-system design and other low-level concepts. It is not fully functional, but it does 
-currently support a simple shell, and the ability to run other programs, although
-most will not work due to missing system call implementations. I have been slowly
-working towards getting DOOM running in userspace.
+system design and other low-level concepts. The goal is to match the Linux syscall
+ABI so that we can use the [musl libc](https://musl.libc.org/) for our standard library.
+This also means that any third-party software that can be compiled with musl and
+the custom toolchain should run on the system. In practice, there are still many
+syscalls not implemented and so it is currently expected that many of the programs
+will hit a kernel panic. The operating system currently hosts the busybox toolset,
+and a couple of other userspace programs. It also now runs DOOM!
+
+# Screenshots
+
+![user shell](screenshots/user_shell.png)
+![doom game](screenshots/doom_game.png)
+
+<details>
+
+<summary>More Screenshots</summary>
+
+![bootloader logs](screenshots/boot_logs.png)
+![doom shell](screenshots/doom_shell.png)
+![doom title](screenshots/doom_title.png)
+
+</details>
+
+# Project Structure
 
 ```
 ├── bin           userspace programs
@@ -30,10 +50,12 @@ working towards getting DOOM running in userspace.
 │  └── vfs          virtual filesystem code
 ├── lib           kernel data structures, algorithms and other misc. libraries
 ├── sbin          userspace system programs
+├── screenshots   screenshots of the system
 ├── scripts       build related scripts and support files
 ├── third-party   third party submodules
 ├── toolchain     toolchain build files and patches
-└── tools         host development tools/plugins
+├── tools         host development tools/plugins
+└── usr.bin       userspace programs
 ```
 
 # Toolchain
