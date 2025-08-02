@@ -9,6 +9,10 @@
 #include <kernel/printf.h>
 #include <kernel/string.h>
 
+#include <kernel/vfs_types.h>
+#include <kernel/vfs/file.h>
+#include <kernel/vfs/vnode.h>
+
 #include <rb_tree.h>
 
 #define HMAP_TYPE void *
@@ -17,6 +21,8 @@
 #define ASSERT(x) kassert(x)
 #define DPRINTF(fmt, ...) kprintf("device: " fmt, ##__VA_ARGS__)
 #define EPRINTF(fmt, ...) kprintf("device: %s: " fmt, __func__, ##__VA_ARGS__)
+
+#define DEV_FOPS(device, op) ((device)->f_ops && (device)->f_ops->op)
 
 struct bus_type {
   const char *name;
@@ -52,6 +58,7 @@ struct dev_type dev_types[] = {
   DECLARE_DEV_TYPE("memory"  , 3, D_CHR),
   DECLARE_DEV_TYPE("loop"    , 4, D_BLK),
   DECLARE_DEV_TYPE("framebuf", 5, D_BLK),
+  DECLARE_DEV_TYPE("input"   , 6, D_CHR),
 };
 #undef DECLARE_DEV_TYPE
 
@@ -60,6 +67,8 @@ static rb_tree_t *device_tree;
 static mtx_t device_tree_lock;
 static hash_map_t *bus_type_by_name;
 static hash_map_t *dev_type_by_name;
+
+static struct device_ops dev_null_ops = {};
 
 static inline bool is_valid_device_bus(device_bus_t *bus) {
   if (bus->name == NULL) {
@@ -116,10 +125,11 @@ STATIC_INIT(device_static_init);
 // MARK: Device API
 //
 
-device_t *alloc_device(void *data, struct device_ops *ops) {
+device_t *alloc_device(void *data, struct device_ops *ops, struct file_ops *f_ops) {
   device_t *dev = kmallocz(sizeof(device_t));
   dev->data = data;
   dev->ops = ops;
+  dev->f_ops = f_ops;
   return dev;
 }
 
@@ -303,9 +313,11 @@ int register_dev(const char *dev_type, device_t *dev) {
 
   if (dev->ops == NULL)
     dev->ops = type->ops;
+  if (dev->ops == NULL)
+    dev->ops = &dev_null_ops;
 
-  if (dev->ops == NULL) {
-    panic("register_dev: dev->ops is NULL.");
+  if (dev->ops == NULL && dev->f_ops == NULL) {
+    panic("register_dev: dev->ops and dev->f_ops are both NULL for device type '%s'", dev_type);
   }
 
   mtx_lock(&type->lock);
@@ -328,4 +340,227 @@ int register_dev(const char *dev_type, device_t *dev) {
     // we don't fail the registration if the event cannot be sent
   }
   return 0;
+}
+
+//
+// MARK: Device File API
+//
+
+int dev_f_open(file_t *file, int flags) {
+  f_lock_assert(file, LA_OWNED);
+  ASSERT(file->nopen == 0);
+  ASSERT(F_ISVNODE(file));
+  ASSERT(V_ISDEV((vnode_t *)file->data));
+
+  vnode_t *vn = file->data;
+  device_t *device = vn->v_dev;
+  DPRINTF("dev_f_open: opening file %p with flags 0x%x [device %d]\n", file, flags, make_dev(device));
+
+  int res;
+  if (DEV_FOPS(device, f_open)) {
+    // device file open
+    res = device->f_ops->f_open(file, flags);
+  } else {
+    // device open
+    res = d_open(device, flags);
+  }
+
+  if (res < 0) {
+    EPRINTF("failed to open device {:err}\n", res);
+  }
+
+  return 0;
+}
+
+int dev_f_close(file_t *file) {
+  f_lock_assert(file, LA_OWNED);
+  ASSERT(file->nopen == 1);
+  ASSERT(F_ISVNODE(file));
+  ASSERT(V_ISDEV((vnode_t *)file->data));
+
+  vnode_t *vn = file->data;
+  device_t *device = vn->v_dev;
+  DPRINTF("dev_f_close: closing file %p [device %d]\n", file, make_dev(device));
+
+  // device close
+  int res = d_close(device);
+  if (res < 0) {
+    EPRINTF("failed to close file %p [device %d] {:err}\n", file, make_dev(device), res);
+  }
+
+  return res;
+}
+
+int dev_f_getpage(file_t *file, off_t off, __move page_t **page) {
+  // file does not need to be locked
+  ASSERT(F_ISVNODE(file));
+  ASSERT(V_ISDEV((vnode_t *)file->data));
+
+  vnode_t *vn = file->data;
+  device_t *device = vn->v_dev;
+  DPRINTF("dev_f_getpage: getting page for file %p at offset %lld [device %d]\n", file, off, make_dev(device));
+
+  // device getpage
+  int res = 0;
+  page_t *out = d_getpage(device, off);
+  if (out == NULL) {
+    EPRINTF("failed to get page for file %p at offset %lld [device %d] {:err}\n", file, off, make_dev(device), res);
+    res = -EIO;
+  } else {
+    *page = moveref(out);
+  }
+
+  return res;
+}
+
+ssize_t dev_f_read(file_t *file, kio_t *kio) {
+  f_lock_assert(file, LA_OWNED);
+  ASSERT(F_ISVNODE(file));
+  ASSERT(V_ISDEV((vnode_t *)file->data));
+  if (file->flags & O_WRONLY)
+    return -EBADF; // file is not open for reading
+
+  vnode_t *vn = file->data;
+  device_t *device = vn->v_dev;
+  DPRINTF("dev_f_read: reading from file %p at offset %lld [device %d]\n", file, file->offset, make_dev(device));
+
+  // this operation can block so we unlock the file during the read
+  f_unlock(file);
+  // device read
+  ssize_t res = d_read(device, file->offset, kio);
+  // and re-lock the file
+  f_lock(file);
+
+  if (res < 0) {
+    EPRINTF("failed to read from file %p at offset %lld [device %d] {:err}\n", file, file->offset, make_dev(device), res);
+  }
+  return res;
+}
+
+ssize_t dev_f_write(file_t *file, kio_t *kio) {
+  f_lock_assert(file, LA_OWNED);
+  ASSERT(F_ISVNODE(file));
+  ASSERT(V_ISDEV((vnode_t *)file->data));
+  if (file->flags & O_RDONLY)
+    return -EBADF; // file is not open for writing
+
+  vnode_t *vn = file->data;
+  device_t *device = vn->v_dev;
+  DPRINTF("dev_f_write: writing to file %p at offset %lld [device %d]\n", file, file->offset, make_dev(device));
+
+  // this operation can block so we unlock the file during the write
+  f_unlock(file);
+  // device write
+  ssize_t res = d_write(device, file->offset, kio);
+  // and re-lock the file
+  f_lock(file);
+
+  if (res < 0) {
+    EPRINTF("failed to write to file %p at offset %lld [device %d] {:err}\n", file, file->offset, make_dev(device), res);
+  }
+  return res;
+}
+
+int dev_f_ioctl(file_t *file, int request, void *arg) {
+  f_lock_assert(file, LA_OWNED);
+  ASSERT(F_ISVNODE(file));
+  ASSERT(V_ISDEV((vnode_t *)file->data));
+
+  vnode_t *vn = file->data;
+  device_t *device = vn->v_dev;
+  DPRINTF("dev_f_ioctl: ioctl on file %p with request %#llx [device %d]\n", file, request, make_dev(device));
+
+  // device ioctl
+  int res = d_ioctl(device, request, arg);
+  if (res == -ENOTSUP)
+    res = -ENOTTY; // not a tty device or not supported
+
+  return res;
+}
+
+int dev_f_stat(file_t *file, struct stat *statbuf) {
+  f_lock_assert(file, LA_OWNED);
+  ASSERT(F_ISVNODE(file));
+  ASSERT(V_ISDEV((vnode_t *)file->data));
+
+  vnode_t *vn = file->data;
+  device_t *device = vn->v_dev;
+  DPRINTF("dev_f_stat: getting stat for file %p [device %d]\n", file, make_dev(device));
+
+  // grab the vnode lock because we need to call vn_stat to populate certain
+  // fields that the device cannot fill even if it implements d_stat
+  if (!vn_lock(vn)) {
+    return -EIO; // vnode is dead
+  }
+
+  vn_stat(vn, statbuf);
+  if (D_OPS(device)->d_stat) {
+    // devices can implement d_stat to provide additional information
+    D_OPS(device)->d_stat(device, statbuf);
+  }
+
+  vn_unlock(vn);
+  return 0;
+}
+
+int dev_f_kqevent(file_t *file, knote_t *kn) {
+  ASSERT(F_ISVNODE(file));
+  ASSERT(V_ISDEV((vnode_t *)file->data));
+  ASSERT(kn->event.filter == EVFILT_READ);
+
+  // called from the file `event` filter_ops method
+  vnode_t *vn = file->data;
+  device_t *device = vn->v_dev;
+  DPRINTF("dev_f_kqevent: checking kqevent for file %p [device %d, filter %s]\n",
+          file, make_dev(device), evfilt_to_string(kn->event.filter));
+
+  int res;
+  if (D_OPS(device)->d_kqevent) {
+    res = D_OPS(device)->d_kqevent(device, kn);
+  } else {
+    DPRINTF("dev_f_kqevent: file %p does not support kqevent [device %d]\n", file, make_dev(device));
+    res = 0;
+  }
+
+  if (res < 0) {
+    EPRINTF("failed to get kqevent for file %p [device %d] {:err}\n", file, make_dev(device), res);
+  } else if (res == 0) {
+    kn->event.data = 0;
+    DPRINTF("dev_f_kqevent: no data available for file %p [device %d]\n", file, make_dev(device));
+  } else {
+    DPRINTF("dev_f_kqevent: %llu bytes available for file %p [device %d]\n", res, file, make_dev(device));
+  }
+  return res;
+}
+
+void dev_f_cleanup(file_t *file) {
+  ASSERT(F_ISVNODE(file));
+  ASSERT(V_ISDEV((vnode_t *)file->data));
+  if (mtx_owner(&file->lock) != NULL) {
+    ASSERT(mtx_owner(&file->lock) == curthread);
+  }
+
+  vnode_t *vn = moveptr(file->data);
+  vn_putref(&vn);
+}
+
+// referenced in vfs/file.c
+struct file_ops dev_file_ops = {
+  .f_open = dev_f_open,
+  .f_close = dev_f_close,
+  .f_getpage = dev_f_getpage,
+  .f_read = dev_f_read,
+  .f_write = dev_f_write,
+  .f_ioctl = dev_f_ioctl,
+  .f_stat = dev_f_stat,
+  .f_kqevent = dev_f_kqevent,
+  .f_cleanup = dev_f_cleanup,
+};
+
+struct file_ops *device_get_file_ops(device_t *device) {
+  if (device->f_ops == NULL) {
+    return &dev_file_ops;
+  } else {
+    return device->f_ops;
+  }
 }

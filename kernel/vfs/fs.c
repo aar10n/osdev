@@ -351,13 +351,13 @@ int fs_proc_open(proc_t *proc, int fd, cstr_t path, int flags, mode_t mode) {
     }
   }
 
-  // allocate and open file
   vnode_t *vn = VN(ve);
   file_t *file = f_alloc_vn(flags, vn);
   f_lock(file);
-  if ((res = F_OPS(file)->f_open(file, flags)) < 0) {
+
+  // open file
+  if ((res = f_open(file, flags)) < 0) {
     EPRINTF("failed to open file {:err}\n", res);
-    file->closed = true;
     f_unlock_putref(file); // unlock and release the file
     goto ret_unlock;
   }
@@ -417,7 +417,7 @@ int fs_proc_close(proc_t *proc, int fd) {
   }
 
   // close the file
-  if ((res = F_OPS(file)->f_close(file)) < 0) {
+  if ((res = f_close(file)) < 0) {
     EPRINTF("failed to close file {:err}\n", res);
     // re-insert the entry back into the ftable
     ftable_add_entry(proc->files, fde_getref(fde));
@@ -427,7 +427,7 @@ int fs_proc_close(proc_t *proc, int fd) {
 
   f_unlock(file);
   fde_putref(&fde);
-  return 0;
+  return res;
 }
 
 int fs_open(cstr_t path, int flags, mode_t mode) {
@@ -506,13 +506,11 @@ ssize_t fs_kread(int fd, kio_t *kio) {
   if (!f_lock(file))
     goto_res(ret, -EBADF); // file is closed
 
-  res = F_OPS(file)->f_read(file, kio);
+  res = f_read(file, kio);
   if (res < 0) {
-    DPRINTF("failed to read file {:err}\n", res);
-    goto ret_unlock;
+//    EPRINTF("failed to read file {:err}\n", res);
   }
 
-LABEL(ret_unlock);
   f_unlock(file);
 LABEL(ret);
   fde_putref(&fde);
@@ -532,10 +530,9 @@ ssize_t fs_kwrite(int fd, kio_t *kio) {
   if (file->flags & O_RDONLY)
     goto_res(ret_unlock, -EBADF); // file is not open for writing
 
-  res = F_OPS(file)->f_write(file, kio);
+  res = f_write(file, kio);
   if (res < 0) {
-    DPRINTF("failed to write file {:err}\n", res);
-    goto ret_unlock;
+    EPRINTF("failed to write file {:err}\n", res);
   }
 
 LABEL(ret_unlock);
@@ -646,7 +643,7 @@ LABEL(ret);
   return res;
 }
 
-int fs_ioctl(int fd, unsigned long request, void *argp) {
+int fs_ioctl(int fd, unsigned int request, void *argp) {
   DPRINTF("ioctl: fd=%d, request=%#llx, argp=%p\n", fd, request, argp);
   fd_entry_t *fde = ftable_get_entry(FTABLE, fd);
   if (fde == NULL)
@@ -841,7 +838,7 @@ int fs_dup2(int fd, int newfd) {
     // close existing file
     file_t *file = existing->file;
     if (f_lock(file)) {
-      if ((res = F_OPS(file)->f_close(file)) < 0) {
+      if ((res = f_close(file)) < 0) {
         EPRINTF("failed to close existing file {:err}\n", res);
       }
       f_unlock(file);

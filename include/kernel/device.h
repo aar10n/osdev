@@ -9,14 +9,17 @@
 #include <kernel/chan.h>
 #include <kernel/mutex.h>
 #include <kernel/kio.h>
+#include "vfs_types.h"
 
 struct device;
 struct device_driver;
 struct device_bus;
+struct file_ops;
 
 struct knote;
 struct ventry;
 struct stat;
+struct file;
 
 #define D_OPS(d) __type_checked(struct device *, d, (d)->ops)
 
@@ -48,7 +51,8 @@ typedef struct device {
 
   struct device_bus *bus;
   struct device_driver *driver;
-  struct device_ops *ops;
+  struct device_ops *ops;       // device interface
+  struct file_ops *f_ops;       // device file interface (optional)
 
   LIST_HEAD(struct device) children;
   LIST_HEAD(struct ventry) entries;
@@ -63,7 +67,7 @@ struct device_ops {
   ssize_t (*d_read)(struct device *dev, size_t off, size_t nmax, struct kio *kio);
   ssize_t (*d_write)(struct device *dev, size_t off, size_t nmax, struct kio *kio);
   void (*d_stat)(struct device *dev, struct stat *statbuf);
-  int (*d_ioctl)(struct device *dev, unsigned long cmd, void *arg);
+  int (*d_ioctl)(struct device *dev, unsigned int cmd, void *arg);
   __ref page_t *(*d_getpage)(struct device *dev, size_t off);
   int (*d_putpage)(struct device *dev, size_t off, __ref page_t *page);
 
@@ -83,6 +87,7 @@ typedef struct device_driver {
   const char *name;             // the driver identifier
   void *data;                   // private data
   struct device_ops *ops;       // device interface
+  struct file_ops *f_ops;       // device file interface (optional)
 
   /**
    * Checks whether the driver supports a device.
@@ -177,7 +182,7 @@ static inline uint16_t dev_unit(dev_t dev) {
   return (dev >> 16) & 0xFF;
 }
 
-device_t *alloc_device(void *data, struct device_ops *ops);
+device_t *alloc_device(void *data, struct device_ops *ops, struct file_ops *f_ops);
 device_t *free_device(device_t *dev);
 
 device_driver_t *alloc_driver(const char *name, void *data, struct device_ops *ops);
@@ -249,46 +254,60 @@ int register_device_ops(const char *dev_type, struct device_ops *ops);
  */
 int register_dev(const char *dev_type, device_t *dev);
 
-// MARK: Device Operations
+/// Get the file_ops pointer for a device.
+struct file_ops *device_get_file_ops(device_t *device);
+
+// MARK: Devie File Operations
+int dev_f_open(struct file *file, int flags);
+int dev_f_close(struct file *file);
+ssize_t dev_f_read(struct file *file, struct kio *kio);
+ssize_t dev_f_write(struct file *file, struct kio *kio);
+int dev_f_ioctl(file_t *file, int request, void *arg);
+int dev_f_getpage(struct file *file, off_t off, __move struct page **page);
+int dev_f_stat(struct file *file, struct stat *statbuf);
+int dev_f_kqevent(struct file *file, struct knote *kn);
+void dev_f_cleanup(struct file *file);
+
+// MARK: Device Operations Helpers
 
 static inline int d_open(device_t *device, int flags) {
-  if (device->ops->d_open == NULL)
+  if (!device->ops || !device->ops->d_open)
     return 0;
   return device->ops->d_open(device, flags);
 }
 static inline int d_close(device_t *device) {
-  if (device->ops->d_close == NULL)
+  if (!device->ops || !device->ops->d_close)
     return 0;
   return device->ops->d_close(device);
 }
 static inline ssize_t d_nread(device_t *device, size_t off, size_t nmax, kio_t *kio) {
-  if (device->ops->d_read == NULL)
+  if (!device->ops || !device->ops->d_read)
     return -ENOTSUP;
   return device->ops->d_read(device, off, nmax, kio);
 }
 static inline ssize_t d_read(device_t *device, size_t off, kio_t *kio) {
-  if (device->ops->d_read == NULL)
+  if (!device->ops || !device->ops->d_read)
     return -ENOTSUP;
   return device->ops->d_read(device, off, kio_remaining(kio), kio);
 }
 static inline ssize_t d_nwrite(device_t *device, size_t off, size_t nmax, kio_t *kio) {
-  if (device->ops->d_write == NULL)
+  if (!device->ops || !device->ops->d_write)
     return -ENOTSUP;
   return device->ops->d_write(device, off, nmax, kio);
 }
 static inline ssize_t d_write(device_t *device, size_t off, kio_t *kio) {
-  if (device->ops->d_write == NULL)
+  if (!device->ops || !device->ops->d_write)
     return -ENOTSUP;
   return device->ops->d_write(device, off, kio_remaining(kio), kio);
 }
-static inline int d_ioctl(device_t *device, unsigned long request, void *arg) {
-  if (device->ops->d_ioctl == NULL) {
+static inline int d_ioctl(device_t *device, unsigned int request, void *arg) {
+  if (!device->ops || !device->ops->d_ioctl) {
     return -ENOTSUP;
   }
   return device->ops->d_ioctl(device, request, arg);
 }
 static inline __ref page_t *d_getpage(device_t *device, size_t off) {
-  if (device->ops->d_getpage == NULL)
+  if (!device->ops || !device->ops->d_getpage)
     return NULL;
   return device->ops->d_getpage(device, off);
 }

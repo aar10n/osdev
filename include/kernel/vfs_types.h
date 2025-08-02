@@ -16,7 +16,7 @@
 #include <abi/dirent.h>
 #include <abi/fcntl.h>
 #include <abi/stat.h>
-#include <bits/ioctl.h>
+#include <abi/ioctl.h>
 
 struct device;
 struct page;
@@ -326,6 +326,7 @@ typedef struct file {
 
   void *data;           // file private data
   struct file_ops *ops; // file operations
+  void *udata;          // private user-related data
 
   _refcount;            // reference count
   mtx_t lock;           // file lock
@@ -342,7 +343,7 @@ struct file_ops {
   int (*f_getpage)(file_t *file, off_t off, __move struct page **page);
   ssize_t (*f_read)(file_t *file, kio_t *kio);
   ssize_t (*f_write)(file_t *file, kio_t *kio);
-  int (*f_ioctl)(file_t *file, unsigned long request, void *arg);
+  int (*f_ioctl)(file_t *file, unsigned int request, void *arg);
   int (*f_stat)(file_t *file, struct stat *statbuf);
   int (*f_kqevent)(file_t *file, knote_t *kn);
   void (*f_cleanup)(file_t *file);

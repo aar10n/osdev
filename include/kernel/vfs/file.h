@@ -21,7 +21,11 @@ __ref fd_entry_t *fde_dup(fd_entry_t *fde, int new_fd);
 void _fde_cleanup(__move fd_entry_t **fde_ref);
 
 __ref file_t *f_alloc(enum ftype type, int flags, void *data, struct file_ops *ops);
-__ref file_t *f_alloc_vn(int flags, vnode_t *vnode);
+__ref file_t *f_alloc_vn(int flags, vnode_t *vn);
+int f_open(file_t *file, int flags);
+int f_close(file_t *file);
+ssize_t f_read(file_t *file, kio_t *kio);
+ssize_t f_write(file_t *file, kio_t *kio);
 bool f_isatty(file_t *file);
 void _f_cleanup(__move file_t **fref);
 

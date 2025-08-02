@@ -57,7 +57,7 @@ static ssize_t debug_d_write(device_t *dev, _unused size_t off, size_t nmax, kio
   return (ssize_t) kio_transfered(kio);
 }
 
-static int debug_d_ioctl(device_t *dev, unsigned long request, void *arg) {
+static int debug_d_ioctl(device_t *dev, unsigned int request, void *arg) {
   if (request == TIOCGWINSZ) {
     DPRINTF("TIOCGWINSZ ioctl\n");
 
@@ -115,8 +115,8 @@ static void memory_module_init() {
   devfs_register_class(dev_major_by_name("loop"), -1, "loop", DEVFS_NUMBERED);
 
   device_t *mem_devs[] = {
-    alloc_device(NULL, &null_ops),
-    alloc_device(NULL, &debug_ops),
+    alloc_device(NULL, &null_ops, NULL),
+    alloc_device(NULL, &debug_ops, NULL),
   };
   for (size_t i = 0; i < ARRAY_SIZE(mem_devs); i++) {
     if (register_dev("memory", mem_devs[i]) < 0) {
@@ -126,7 +126,7 @@ static void memory_module_init() {
     }
   }
 
-  device_t *loopback_dev = alloc_device(NULL, &loopback_ops);
+  device_t *loopback_dev = alloc_device(NULL, &loopback_ops, NULL);
   if (register_dev("loop", loopback_dev) < 0) {
     DPRINTF("failed to register loopback device\n");
     free_device(loopback_dev);

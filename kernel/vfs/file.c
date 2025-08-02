@@ -20,6 +20,7 @@
 #define FTABLE_LOCK(ftable) mtx_spin_lock(&(ftable)->lock)
 #define FTABLE_UNLOCK(ftable) mtx_spin_unlock(&(ftable)->lock)
 
+extern struct file_ops dev_file_ops;
 extern struct file_ops vnode_file_ops;
 
 typedef struct ftable {
@@ -84,14 +85,84 @@ __ref file_t *f_alloc(enum ftype type, int flags, void *data, struct file_ops *o
   file->type = type;
   file->data = data;
   file->ops = ops;
-  mtx_init(&file->lock, 0, "file_struct_lock");
+  mtx_init(&file->lock, 0, "file_lock");
   ref_init(&file->refcount);
   return file;
 }
 
-__ref file_t *f_alloc_vn(int flags, vnode_t *vnode) {
-  file_t *file = f_alloc(FT_VNODE, flags, vn_getref(vnode), &vnode_file_ops);
+__ref file_t *f_alloc_vn(int flags, vnode_t *vn) {
+  struct file_ops *ops;
+  if (V_ISDEV(vn)) {
+    ops = device_get_file_ops(vn->v_dev);
+  } else {
+    ops = &vnode_file_ops;
+  }
+
+  file_t *file = f_alloc(FT_VNODE, flags, vn_getref(vn), ops);
   return file;
+}
+
+int f_open(file_t *file, int flags) {
+  f_lock_assert(file, LA_OWNED);
+  if (file->nopen > 1) {
+    // just increment the open count
+    DPRINTF("f_close: incrementing count for file %p [nopen %d]\n", file, file->nopen+1);
+    file->nopen++;
+    return 0;
+  }
+
+  int res;
+  if ((res = F_OPS(file)->f_open(file, flags)) < 0) {
+    EPRINTF("failed to open file {:err}\n", res);
+    file->closed = true;
+    return res;
+  }
+
+  file->nopen++;
+  ASSERT(file->nopen == 1);
+  return res;
+}
+
+int f_close(file_t *file) {
+  f_lock_assert(file, LA_OWNED);
+  ASSERT(file->nopen > 0);
+  if (file->nopen > 1) {
+    // just decrement the open count
+    DPRINTF("f_close: decrementing count for file %p [nopen %d]\n", file, file->nopen-1);
+    file->nopen--;
+    return 0; // success
+  }
+
+  // close the file
+  int res = F_OPS(file)->f_close(file);
+  if (res < 0) {
+    EPRINTF("failed to close file {:err}\n", res);
+    return res;
+  }
+
+  file->nopen--;
+  file->closed = true;
+  return 0;
+}
+
+ssize_t f_read(file_t *file, kio_t *kio) {
+  f_lock_assert(file, LA_OWNED);
+  ssize_t res = F_OPS(file)->f_read(file, kio);
+  if (res > 0 && !V_ISCHR((vnode_t *)file->data)) {
+    // update the file offset
+    file->offset += res;
+  }
+  return res;
+}
+
+ssize_t f_write(file_t *file, kio_t *kio) {
+  f_lock_assert(file, LA_OWNED);
+  ssize_t res = F_OPS(file)->f_write(file, kio);
+  if (res > 0 && !V_ISCHR((vnode_t *)file->data)) {
+    // update the file offset
+    file->offset += res;
+  }
+  return res;
 }
 
 bool f_isatty(file_t *file) {
@@ -118,6 +189,8 @@ void _f_cleanup(__move file_t **fref) {
   DPRINTF("!!! file cleanup %p !!!\n", file);
 
   F_OPS(file)->f_cleanup(file);
+  ASSERT(file->data == NULL);
+  ASSERT(file->udata == NULL);
   mtx_destroy(&file->lock);
   kfree(file);
 }
@@ -258,7 +331,7 @@ void ftable_close_exec(ftable_t *ftable) {
     // close the file
     file_t *file = fde->file;
     if (f_lock(file)) {
-      F_OPS(file)->f_close(file);
+      f_close(file);
       f_unlock(file);
     }
 
@@ -289,7 +362,7 @@ void ftable_close_all(ftable_t *ftable) {
     // close the file
     file_t *file = fde->file;
     if (f_lock(file)) {
-      F_OPS(file)->f_close(file);
+      f_close(file);
       f_unlock(file);
     }
 

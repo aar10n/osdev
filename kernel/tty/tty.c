@@ -11,8 +11,8 @@
 #include <kernel/printf.h>
 #include <kernel/panic.h>
 
+#include <abi/ioctl.h>
 #include <bits/fcntl.h>
-#include <bits/ioctl.h>
 
 #define ASSERT(x) kassert(x)
 #define DPRINTF(fmt, ...) kprintf("tty: " fmt, ##__VA_ARGS__)
@@ -520,7 +520,7 @@ ssize_t tty_dev_write(device_t *dev, _unused size_t off, size_t nmax, kio_t *kio
   return res;
 }
 
-int tty_dev_ioctl(device_t *dev, unsigned long cmd, void *arg) {
+int tty_dev_ioctl(device_t *dev, unsigned int cmd, void *arg) {
   tty_t *tty = (tty_t *) dev->data;
   if (tty == NULL) {
     EPRINTF("tty device is not initialized\n");

@@ -701,7 +701,7 @@ static void register_serial_devices() {
       continue;
     }
 
-    device_t *dev = alloc_device(tty, NULL);
+    device_t *dev = alloc_device(tty, NULL, NULL);
     if (register_dev("serial", dev) < 0) {
       EPRINTF("failed to register device");
       dev->data = NULL;

@@ -39,7 +39,13 @@ ssize_t ramdisk_d_read(device_t *dev, size_t off, size_t nmax, kio_t *kio) {
   size_t len = kio_remaining(kio);
   if (nmax > 0 && len > nmax)
     len = nmax;
-  return (ssize_t) kio_nwrite_in(kio, (void *)rd->base, rd->size, off, nmax);
+  
+  // calculate how much we can actually read
+  size_t available = rd->size - off;
+  if (len > available)
+    len = available;
+  
+  return (ssize_t) kio_nwrite_in(kio, (void *)(rd->base + off), available, 0, len);
 }
 
 ssize_t ramdisk_d_write(device_t *dev, size_t off, size_t nmax, kio_t *kio) {
@@ -87,7 +93,7 @@ static void ramdisk_initrd_module_init() {
   devfs_register_class(dev_major_by_name("ramdisk"), -1, "rd", DEVFS_NUMBERED);
 
   kprintf("ramdisk: registering initrd\n");
-  device_t *dev = alloc_device(initrd, &ramdisk_ops);
+  device_t *dev = alloc_device(initrd, &ramdisk_ops, NULL);
   if (register_dev("ramdisk", dev) < 0) {
     panic("failed to register initrd");
   }
