@@ -77,7 +77,7 @@ include $(foreach target,$(TARGETS),$(target)/Makefile)
 $(call init-modules,$(MODULES))
 
 # directories with userspace binaries
-USERSPACE_DIRS = sbin bin
+USERSPACE_DIRS = sbin bin usr.bin
 
 # =========== Build Rules =========== #
 
@@ -102,7 +102,9 @@ PROFILE_SYMBOL_FILES = \
 	$(TOOL_ROOT)/usr/lib/libc.so@0x7fc0000000 \
 	$(BUILD_DIR)/sbin/init/init@0x400000 \
 	$(BUILD_DIR)/sbin/getty/getty@0x800000 \
-	$(BUILD_DIR)/sbin/shell/shell@0xC00000
+	$(BUILD_DIR)/sbin/shell/shell@0xC00000 \
+	$(BUILD_DIR)/bin/busybox/busybox@0x1000000 \
+	$(BUILD_DIR)/usr.bin/doom/doom@0x1400000
 
 
 run-profile: PERIOD = 10000

@@ -9,7 +9,9 @@
 #     BUILD_DIR_NAME - Name of build directory under $(OBJ_DIR) (defaults to $(SOURCE_DIR))
 #     CONFIGURE_DEPS - Additional dependencies for configure step
 #     BUILD_DEPS - Additional dependencies for build step
-#     INSTALL_EXTRA - Additional install commands
+#
+#	  ALWAYS_REBUILD - Always trigger rebuild of the build target if set to "y"
+#
 #
 # Phony targets:
 #   * download - Fetch and extract sources into $(SOURCE_PATH)
@@ -35,6 +37,8 @@ include $(dir $(lastword $(MAKEFILE_LIST)))/../.config
 include $(PROJECT_DIR)/scripts/defs.mk
 include $(PROJECT_DIR)/scripts/utils.mk
 
+INCLUDE += -I$(PROJECT_DIR)/include/uapi
+
 # Default values
 INSTALL_TARGETS ?= $(NAME)
 SOURCE_DIR ?= $(NAME)-$(VERSION)
@@ -48,48 +52,42 @@ BUILD_PATH = $(OBJ_DIR)/$(BUILD_DIR_NAME)
 
 # Install paths
 INSTALL_PREFIX ?= $(SYS_ROOT)
-INSTALL_BINDIR = $(INSTALL_PREFIX)/$(GROUP)
+INSTALL_BINDIR = $(INSTALL_PREFIX)/$(subst .,/,$(GROUP))
 
 # Mark main built target
-BUILT_TARGET = $(OBJ_DIR)/.built-$(VERSION)
-CONFIGURED_TARGET = $(OBJ_DIR)/.configured-$(VERSION)
-DOWNLOADED_TARGET = $(OBJ_DIR)/.downloaded-$(VERSION)
+CONFIGURE_TARGET = $(OBJ_DIR)/.configured-$(VERSION)
+DOWNLOAD_TARGET = $(OBJ_DIR)/.downloaded-$(VERSION)
+BUILD_TARGET = $(OBJ_DIR)/.built-$(VERSION)
 
 .PHONY: all build install clean clean-all download
 
 all: build
 
-build: $(BUILT_TARGET)
+build: $(BUILD_TARGET)
 
 $(OBJ_DIR):
 	@mkdir -p $@
 
 # Download and extract sources
-$(DOWNLOADED_TARGET): | $(OBJ_DIR) download
+$(DOWNLOAD_TARGET): | $(OBJ_DIR) download
 	@touch $@
 
 # Configure step (can be overridden by defining configure-extra)
-$(CONFIGURED_TARGET): $(DOWNLOADED_TARGET) $(CONFIGURE_DEPS)
-	$(MAKE) configure-internal
-	@touch $@
-
-.PHONY: configure-internal
-configure-internal:
+$(CONFIGURE_TARGET): $(DOWNLOAD_TARGET) $(CONFIGURE_DEPS)
 	@if $(MAKE) -n configure-extra >/dev/null 2>&1; then \
 		$(MAKE) configure-extra; \
 	fi
-
-# Build step
-$(BUILT_TARGET): $(CONFIGURED_TARGET) $(BUILD_DEPS)
-	$(MAKE) build-internal
 	@touch $@
 
-.PHONY: build-internal
-build-internal:
+# Build step
+$(BUILD_TARGET): $(CONFIGURE_TARGET) $(BUILD_DEPS)
 	$(MAKE) build-main
+	@if [ ! "$(ALWAYS_REBUILD)" == "y" ]; then \
+		touch $@; \
+	fi
 
 # Install step
-install: $(BUILT_TARGET)
+install: $(BUILD_TARGET)
 	@mkdir -p $(INSTALL_BINDIR)
 	@$(foreach target,$(INSTALL_TARGETS),$(call install-target,$(target)))
 	@if $(MAKE) -n install-extra >/dev/null 2>&1; then \
@@ -98,9 +96,9 @@ install: $(BUILT_TARGET)
 
 # Clean step
 clean:
-	rm -rf $(OBJ_DIR)/.built-$(VERSION)
-	rm -rf $(OBJ_DIR)/.configured-$(VERSION)
-	rm -rf $(OBJ_DIR)/.downloaded-$(VERSION)
+	rm -rf $(CONFIGURE_TARGET)
+	rm -rf $(DOWNLOAD_TARGET)
+	rm -rf $(BUILD_TARGET)
 	@if $(MAKE) -n clean-extra >/dev/null 2>&1; then \
 		$(MAKE) clean-extra; \
 	fi

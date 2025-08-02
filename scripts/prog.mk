@@ -24,6 +24,8 @@ endif
 include $(dir $(lastword $(MAKEFILE_LIST)))/../.config
 include $(PROJECT_DIR)/scripts/defs.mk
 
+INCLUDE += -I$(PROJECT_DIR)/include/uapi
+
 PROG_DIR = $(GROUP)/$(NAME)
 OBJ_DIR = $(BUILD_DIR)/$(PROG_DIR)
 OBJS = $(SRCS:%=$(OBJ_DIR)/%.o)
@@ -41,7 +43,7 @@ build: $(OBJ_DIR)/$(NAME)
 
 .PHONY: install
 install: PREFIX = $(SYS_ROOT)
-install: BINDIR = $(PREFIX)/$(GROUP)
+install: BINDIR = $(PREFIX)/$(subst .,/,$(GROUP))
 install: build
 	@mkdir -p $(BINDIR)
 	cp $(OBJ_DIR)/$(NAME) $(BINDIR)
