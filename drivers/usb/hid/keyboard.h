@@ -89,6 +89,61 @@
 #define HID_KEYBOARD_LEFT         0x50   // left arrow
 #define HID_KEYBOARD_DOWN         0x51   // down arrow
 #define HID_KEYBOARD_UP           0x52   // up arrow
+#define HID_KEYBOARD_NUM_LOCK     0x53   // num lock
+
+// keypad keys
+#define HID_KEYBOARD_KP_SLASH     0x54   // keypad /
+#define HID_KEYBOARD_KP_ASTERISK  0x55   // keypad *
+#define HID_KEYBOARD_KP_MINUS     0x56   // keypad -
+#define HID_KEYBOARD_KP_PLUS      0x57   // keypad +
+#define HID_KEYBOARD_KP_ENTER     0x58   // keypad enter
+#define HID_KEYBOARD_KP_1         0x59   // keypad 1
+#define HID_KEYBOARD_KP_2         0x5A   // keypad 2
+#define HID_KEYBOARD_KP_3         0x5B   // keypad 3
+#define HID_KEYBOARD_KP_4         0x5C   // keypad 4
+#define HID_KEYBOARD_KP_5         0x5D   // keypad 5
+#define HID_KEYBOARD_KP_6         0x5E   // keypad 6
+#define HID_KEYBOARD_KP_7         0x5F   // keypad 7
+#define HID_KEYBOARD_KP_8         0x60   // keypad 8
+#define HID_KEYBOARD_KP_9         0x61   // keypad 9
+#define HID_KEYBOARD_KP_0         0x62   // keypad 0
+#define HID_KEYBOARD_KP_PERIOD    0x63   // keypad .
+
+// international keys
+#define HID_KEYBOARD_NON_US_BACKSLASH 0x64  // non-US \ and |
+#define HID_KEYBOARD_APPLICATION  0x65   // application key
+#define HID_KEYBOARD_POWER        0x66   // power
+#define HID_KEYBOARD_KP_EQUAL     0x67   // keypad =
+
+// function keys F13-F24
+#define HID_KEYBOARD_F13          0x68   // F13
+#define HID_KEYBOARD_F14          0x69   // F14
+#define HID_KEYBOARD_F15          0x6A   // F15
+#define HID_KEYBOARD_F16          0x6B   // F16
+#define HID_KEYBOARD_F17          0x6C   // F17
+#define HID_KEYBOARD_F18          0x6D   // F18
+#define HID_KEYBOARD_F19          0x6E   // F19
+#define HID_KEYBOARD_F20          0x6F   // F20
+#define HID_KEYBOARD_F21          0x70   // F21
+#define HID_KEYBOARD_F22          0x71   // F22
+#define HID_KEYBOARD_F23          0x72   // F23
+#define HID_KEYBOARD_F24          0x73   // F24
+
+// system keys
+#define HID_KEYBOARD_EXECUTE      0x74   // execute
+#define HID_KEYBOARD_HELP         0x75   // help
+#define HID_KEYBOARD_MENU         0x76   // menu
+#define HID_KEYBOARD_SELECT       0x77   // select
+#define HID_KEYBOARD_STOP         0x78   // stop
+#define HID_KEYBOARD_AGAIN        0x79   // again
+#define HID_KEYBOARD_UNDO         0x7A   // undo
+#define HID_KEYBOARD_CUT          0x7B   // cut
+#define HID_KEYBOARD_COPY         0x7C   // copy
+#define HID_KEYBOARD_PASTE        0x7D   // paste
+#define HID_KEYBOARD_FIND         0x7E   // find
+#define HID_KEYBOARD_MUTE         0x7F   // mute
+#define HID_KEYBOARD_VOLUME_UP    0x80   // volume up
+#define HID_KEYBOARD_VOLUME_DOWN  0x81   // volume down
 
 #define HID_KEYBOARD_LCONTROL     0xE0 // left control
 #define HID_KEYBOARD_LSHIFT       0xE1 // left shift

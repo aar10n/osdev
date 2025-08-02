@@ -181,10 +181,10 @@ static void print_tag(uint8_t type, uint8_t tag, uint32_t data, parser_state_t *
         case INPUT_TAG:
         case OUTPUT_TAG:
         case FEATURE_TAG:
-          ksprintf(buffer, "(%#x)", data);
+          ksnprintf(buffer, 32, "(%#x)", data);
           break;
         case COLLECTION_TAG:
-          ksprintf(buffer, "(%s)", collection_names[data]);
+          ksnprintf(buffer, 32, "(%s)", collection_names[data]);
           break;
         default:
           break;
@@ -193,7 +193,7 @@ static void print_tag(uint8_t type, uint8_t tag, uint32_t data, parser_state_t *
     case TYPE_GLOBAL: {
       switch (tag) {
         case USAGE_PAGE_TAG:
-          ksprintf(buffer, "(%s)", hid_get_usage_page_name(data));
+          ksnprintf(buffer, 32, "(%s)", hid_get_usage_page_name(data));
           break;
         case LOGICAL_MINIMUM_TAG:
         case LOGICAL_MAXIMUM_TAG:
@@ -201,7 +201,7 @@ static void print_tag(uint8_t type, uint8_t tag, uint32_t data, parser_state_t *
         case PHYSICAL_MAXIMUM_TAG:
         case REPORT_SIZE_TAG:
         case REPORT_COUNT_TAG:
-          ksprintf(buffer, "(%d)", data);
+          ksnprintf(buffer, 32, "(%d)", data);
           break;
         case UNIT_EXPONENT_TAG:
         case UNIT_TAG:
@@ -218,12 +218,12 @@ static void print_tag(uint8_t type, uint8_t tag, uint32_t data, parser_state_t *
           if (state->usage_page == 0) {
             ksprintf(buffer, "Unknown");
           } else {
-            ksprintf(buffer, "(%s)", hid_get_usage_name(state->usage_page, data));
+            ksnprintf(buffer, 32, "(%s)", hid_get_usage_name(state->usage_page, data));
           }
           break;
         case USAGE_MINIMUM_TAG:
         case USAGE_MAXIMUM_TAG:
-          ksprintf(buffer, "(%d)", data);
+          ksnprintf(buffer, 32, "(%d)", data);
           break;
         default:
           ksprintf(buffer, "(Not Supported)");
@@ -318,8 +318,8 @@ report_format_t *hid_parse_report_descriptor(uint8_t *desc, size_t length) {
   uint16_t bits_offset = 0;
   uint8_t report_size = 0;
 
-  // DPRINTF("parsing report descriptor\n");
-  // DPRINTF("report descriptor:\n");
+//  DPRINTF("parsing report descriptor\n");
+//  DPRINTF("report descriptor:\n");
   while (ptr < ptr_max) {
     uint8_t value = *ptr++;
     uint8_t tag = PREFIX_TAG(value);
@@ -359,13 +359,13 @@ report_format_t *hid_parse_report_descriptor(uint8_t *desc, size_t length) {
       type = TYPE_GLOBAL;
     }
 
-    // // Print the descriptor tree
-    // if (type == TYPE_MAIN && tag == END_COLLECTION_TAG) {
-    //   // super hacky way to fix indentation of END_COLLECTION tags
-    //   print_tag(type, tag, data, state, max(indent - 2, 0));
-    // } else {
-    //   print_tag(type, tag, data, state, indent);
-    // }
+//    // print the descriptor tree
+//    if (type == TYPE_MAIN && tag == END_COLLECTION_TAG) {
+//      // super hacky way to fix indentation of END_COLLECTION tags
+//      print_tag(type, tag, data, state, max(indent - 2, 0));
+//    } else {
+//      print_tag(type, tag, data, state, indent);
+//    }
 
     switch (type) {
       case TYPE_MAIN:
@@ -502,8 +502,7 @@ report_format_t *hid_parse_report_descriptor(uint8_t *desc, size_t length) {
     }
   }
 
-  // hid_trace_debug("descriptor tree:");
-  // print_node(root, 0);
+//  print_node(root, 0);
 
   report_format_t *format = kmalloc(sizeof(report_format_t));
   format->root = root;

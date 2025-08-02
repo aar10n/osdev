@@ -243,6 +243,8 @@ $(SYS_ROOT): install-userspace
 	mkdir -p $(SYS_ROOT)/usr/include
 
 	$(MAKE) -C toolchain musl-headers DESTDIR=$(SYS_ROOT)/usr
+	rm -rf $(SYS_ROOT)/usr/include/osdev
+	cp -r $(PROJECT_DIR)/include/uapi/osdev $(SYS_ROOT)/usr/include/osdev
 	cp $(TOOL_ROOT)/usr/lib/libc.so $(SYS_ROOT)/usr/lib/libc.so
 	$(STRIP) $(SYS_ROOT)/usr/lib/libc.so
 	ln -sf /usr/lib/libc.so $(SYS_ROOT)/lib/ld-musl-$(ARCH).so.1 || true

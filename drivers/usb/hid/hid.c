@@ -160,9 +160,11 @@ int hid_get_idle(usb_device_t *device) {
   return idle;
 }
 
-int hid_set_idle(usb_device_t *device, uint8_t duration) {
-  usb_setup_packet_t set_idle = SET_IDLE(duration, 0, 0);
+int hid_set_idle(usb_device_t *device, uint8_t ms) {
+  uint16_t duration = (ms + 2) / 4;
+  duration = duration > 255 ? 255 : duration;
 
+  usb_setup_packet_t set_idle = SET_IDLE(duration, 0, 0);
   DPRINTF("setting idle rate to %d\n", duration);
   if (usb_run_ctrl_transfer(device, set_idle, 0, 0) < 0) {
     EPRINTF("failed to set idle rate\n");
@@ -183,7 +185,7 @@ int hid_device_init(usb_device_t *device) {
 
   hid_descriptor_t *desc = offset_ptr(interface, interface->length);
   DPRINTF("hid descriptor:\n");
-  DPRINTF("  length = %d", desc->length);
+  DPRINTF("  length = %d\n", desc->length);
   DPRINTF("  type = %d\n", desc->type);
   DPRINTF("  hid_ver = %X\n", desc->hid_ver);
   DPRINTF("  num_descriptors = %d\n", desc->num_descriptors);

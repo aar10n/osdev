@@ -52,9 +52,9 @@ uint16_t hid_keyboard_to_input_key[] = {
   [HID_KEYBOARD_8] = KEY_8,
   [HID_KEYBOARD_9] = KEY_9,
   [HID_KEYBOARD_0] = KEY_0,
-  [HID_KEYBOARD_RETURN] = KEY_RETURN,
+  [HID_KEYBOARD_RETURN] = KEY_ENTER,
   [HID_KEYBOARD_ESCAPE] = KEY_ESCAPE,
-  [HID_KEYBOARD_DELETE] = KEY_DELETE,
+  [HID_KEYBOARD_DELETE] = KEY_BACKSPACE,
   [HID_KEYBOARD_TAB] = KEY_TAB,
   [HID_KEYBOARD_SPACE] = KEY_SPACE,
   [HID_KEYBOARD_MINUS] = KEY_MINUS,
@@ -64,7 +64,7 @@ uint16_t hid_keyboard_to_input_key[] = {
   [HID_KEYBOARD_BACKSLASH] = KEY_BACKSLASH,
   [HID_KEYBOARD_SEMICOLON] = KEY_SEMICOLON,
   [HID_KEYBOARD_APOSTROPHE] = KEY_APOSTROPHE,
-  [HID_KEYBOARD_TILDE] = KEY_TILDE,
+  [HID_KEYBOARD_TILDE] = KEY_GRAVE,
   [HID_KEYBOARD_COMMA] = KEY_COMMA,
   [HID_KEYBOARD_PERIOD] = KEY_PERIOD,
   [HID_KEYBOARD_SLASH] = KEY_SLASH,
@@ -87,13 +87,60 @@ uint16_t hid_keyboard_to_input_key[] = {
   [HID_KEYBOARD_INSERT] = KEY_INSERT,
   [HID_KEYBOARD_HOME] = KEY_HOME,
   [HID_KEYBOARD_PAGE_UP] = KEY_PAGE_UP,
-  [HID_KEYBOARD_DELETE_FWD] = KEY_DELETE_FWD,
+  [HID_KEYBOARD_DELETE_FWD] = KEY_DELETE,
   [HID_KEYBOARD_END] = KEY_END,
   [HID_KEYBOARD_PAGE_DOWN] = KEY_PAGE_DOWN,
   [HID_KEYBOARD_RIGHT] = KEY_RIGHT,
   [HID_KEYBOARD_LEFT] = KEY_LEFT,
   [HID_KEYBOARD_DOWN] = KEY_DOWN,
-  [HID_KEYBOARD_UP] = KEY_UP
+  [HID_KEYBOARD_UP] = KEY_UP,
+  [HID_KEYBOARD_NUM_LOCK] = KEY_NUM_LOCK,
+  [HID_KEYBOARD_KP_SLASH] = KEY_KP_SLASH,
+  [HID_KEYBOARD_KP_ASTERISK] = KEY_KP_ASTERISK,
+  [HID_KEYBOARD_KP_MINUS] = KEY_KP_MINUS,
+  [HID_KEYBOARD_KP_PLUS] = KEY_KP_PLUS,
+  [HID_KEYBOARD_KP_ENTER] = KEY_KP_ENTER,
+  [HID_KEYBOARD_KP_1] = KEY_KP_1,
+  [HID_KEYBOARD_KP_2] = KEY_KP_2,
+  [HID_KEYBOARD_KP_3] = KEY_KP_3,
+  [HID_KEYBOARD_KP_4] = KEY_KP_4,
+  [HID_KEYBOARD_KP_5] = KEY_KP_5,
+  [HID_KEYBOARD_KP_6] = KEY_KP_6,
+  [HID_KEYBOARD_KP_7] = KEY_KP_7,
+  [HID_KEYBOARD_KP_8] = KEY_KP_8,
+  [HID_KEYBOARD_KP_9] = KEY_KP_9,
+  [HID_KEYBOARD_KP_0] = KEY_KP_0,
+  [HID_KEYBOARD_KP_PERIOD] = KEY_KP_PERIOD,
+  [HID_KEYBOARD_NON_US_BACKSLASH] = KEY_BACKSLASH, // map to regular backslash for now
+  [HID_KEYBOARD_APPLICATION] = KEY_APPLICATION,
+  [HID_KEYBOARD_POWER] = KEY_POWER,
+  [HID_KEYBOARD_KP_EQUAL] = KEY_KP_EQUAL,
+  [HID_KEYBOARD_F13] = KEY_F13,
+  [HID_KEYBOARD_F14] = KEY_F14,
+  [HID_KEYBOARD_F15] = KEY_F15,
+  [HID_KEYBOARD_F16] = KEY_F16,
+  [HID_KEYBOARD_F17] = KEY_F17,
+  [HID_KEYBOARD_F18] = KEY_F18,
+  [HID_KEYBOARD_F19] = KEY_F19,
+  [HID_KEYBOARD_F20] = KEY_F20,
+  [HID_KEYBOARD_F21] = KEY_F21,
+  [HID_KEYBOARD_F22] = KEY_F22,
+  [HID_KEYBOARD_F23] = KEY_F23,
+  [HID_KEYBOARD_F24] = KEY_F24,
+  [HID_KEYBOARD_EXECUTE] = KEY_EXECUTE,
+  [HID_KEYBOARD_HELP] = KEY_HELP,
+  [HID_KEYBOARD_MENU] = KEY_MENU,
+  [HID_KEYBOARD_SELECT] = KEY_SELECT,
+  [HID_KEYBOARD_STOP] = KEY_STOP,
+  [HID_KEYBOARD_AGAIN] = KEY_AGAIN,
+  [HID_KEYBOARD_UNDO] = KEY_UNDO,
+  [HID_KEYBOARD_CUT] = KEY_CUT,
+  [HID_KEYBOARD_COPY] = KEY_COPY,
+  [HID_KEYBOARD_PASTE] = KEY_PASTE,
+  [HID_KEYBOARD_FIND] = KEY_FIND,
+  [HID_KEYBOARD_MUTE] = KEY_MUTE,
+  [HID_KEYBOARD_VOLUME_UP] = KEY_VOLUME_UP,
+  [HID_KEYBOARD_VOLUME_DOWN] = KEY_VOLUME_DOWN
 };
 
 uint16_t hid_modifier_bit_to_input_key[] = {
@@ -174,7 +221,7 @@ void hid_keyboard_handle_input(hid_device_t *hid_dev, uint8_t *buffer) {
 
     // emit the event
     uint16_t key = hid_modifier_bit_to_input_key[b];
-    input_event(EV_KEY, 0, KEY_VALUE(key, state));
+    input_event(EV_KEY, key, state);
 
     moddiff ^= mod;
   }
@@ -190,7 +237,7 @@ void hid_keyboard_handle_input(hid_device_t *hid_dev, uint8_t *buffer) {
 
     // emit the event
     uint16_t key = hid_keyboard_to_input_key[val];
-    input_event(EV_KEY, 0, KEY_VALUE(key, 1));
+    input_event(EV_KEY, key, 1);
   }
 
   // handle key releases
@@ -204,7 +251,7 @@ void hid_keyboard_handle_input(hid_device_t *hid_dev, uint8_t *buffer) {
 
     // emit the event
     uint16_t key = hid_keyboard_to_input_key[val];
-    input_event(EV_KEY, 0, KEY_VALUE(key, 0));
+    input_event(EV_KEY, key, 0);
   }
 
   memcpy(kb->prev_buffer, buffer, hid_dev->size);
