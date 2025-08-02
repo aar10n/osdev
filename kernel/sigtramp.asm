@@ -150,8 +150,9 @@ sigtramp_entry:
 
   ; ====== sysret ======
   mov rcx, .trampoline        ; rip
-  mov rsp, r9                 ; rsp = user stack pointer
   mov r11, 0x202              ; rflags
+  cli                         ; disable interrupts during critical swapgs sequence
+  mov rsp, r9                 ; rsp = user stack pointer
   swapgs
   o64 sysret
 

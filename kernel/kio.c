@@ -92,6 +92,10 @@ size_t kio_nread_out(void *buf, size_t len, size_t off, size_t n, kio_t *kio) {
   } else if (kio->kind == KIO_IOV) {
     const struct iovec *iov = kio->iov.arr;
     while (to_copy > 0) {
+      if (kio->iov.idx >= kio->iov.cnt) {
+        // No more iovecs available
+        break;
+      }
       size_t iov_remain = iov[kio->iov.idx].iov_len - kio->iov.off;
       if (to_copy <= iov_remain) {
         memcpy(buf + off, iov[kio->iov.idx].iov_base + kio->iov.off, to_copy);
@@ -109,6 +113,7 @@ size_t kio_nread_out(void *buf, size_t len, size_t off, size_t n, kio_t *kio) {
         to_copy -= iov_remain;
         off += iov_remain;
         kio->iov.idx++;
+        kio->iov.off = 0;
       }
     }
   } else {
@@ -140,8 +145,15 @@ size_t kio_nwrite_in(kio_t *kio, const void *buf, size_t len, size_t off, size_t
   } else if (kio->kind == KIO_IOV) {
     const struct iovec *iov = kio->iov.arr;
     while (to_copy > 0) {
+      if (kio->iov.idx >= kio->iov.cnt) {
+        // No more iovecs available
+        break;
+      }
       size_t iov_remain = iov[kio->iov.idx].iov_len - kio->iov.off;
       if (to_copy <= iov_remain) {
+        if (iov[kio->iov.idx].iov_base == NULL) {
+          panic("kio_nwrite_in: NULL iov_base at index %u", kio->iov.idx);
+        }
         memcpy(iov[kio->iov.idx].iov_base + kio->iov.off, buf + off, to_copy);
         kio->iov.off += to_copy;
         kio->iov.t_off += to_copy;
@@ -151,12 +163,16 @@ size_t kio_nwrite_in(kio_t *kio, const void *buf, size_t len, size_t off, size_t
         }
         break;
       } else {
+        if (iov[kio->iov.idx].iov_base == NULL) {
+          panic("kio_nwrite_in: NULL iov_base at index %u", kio->iov.idx);
+        }
         memcpy(iov[kio->iov.idx].iov_base + kio->iov.off, buf + off, iov_remain);
         kio->iov.off += iov_remain;
         kio->iov.t_off += iov_remain;
         to_copy -= iov_remain;
         off += iov_remain;
         kio->iov.idx++;
+        kio->iov.off = 0;
       }
     }
   } else {

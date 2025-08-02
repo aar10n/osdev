@@ -295,12 +295,9 @@ int xhci_controller_event_loop(xhci_controller_t *host) {
 
     uint64_t new_erdp = xhci_ring_device_ptr(host->evt_ring);
     uint64_t erdp = read64(host->rt_base, XHCI_INTR_ERDP(0));
-    if (old_erdp != new_erdp) {
-      erdp &= ERDP_MASK;
-      erdp |= ERDP_PTR(new_erdp) ;
-    }
-    // clear event handler busy flag
-    erdp |= ERDP_EH_BUSY;
+    erdp &= ERDP_MASK;
+    erdp |= ERDP_PTR(new_erdp);  // always update ERDP
+    erdp |= ERDP_EH_BUSY;        // clear busy flag (writing 1 clears it)
     write64(host->rt_base, XHCI_INTR_ERDP(0), erdp);
   }
 
@@ -366,11 +363,8 @@ int xhci_device_event_loop(xhci_device_t *device) {
     uint64_t new_erdp = xhci_ring_device_ptr(device->evt_ring);
     uint64_t erdp = read64(host->rt_base, XHCI_INTR_ERDP(n));
     erdp &= ERDP_MASK;
-    if (old_erdp != new_erdp) {
-      erdp |= ERDP_PTR(new_erdp) ;
-    }
-    // clear event handler busy flag
-    erdp |= ERDP_EH_BUSY;
+    erdp |= ERDP_PTR(new_erdp);  // always update ERDP
+    erdp |= ERDP_EH_BUSY;        // clear busy flag (writing 1 clears it)
     write64(host->rt_base, XHCI_INTR_ERDP(n), erdp);
   }
 
@@ -1082,11 +1076,10 @@ void xhci_free_ring(xhci_ring_t *ring) {
 
 int xhci_ring_enqueue_trb(xhci_ring_t *ring, xhci_trb_t trb) {
   ASSERT(trb.trb_type != 0);
-  trb.cycle = ring->cycle;
-  ring->base[ring->index] = trb;
-  ring->index++;
 
+  // check if we've reached the last slot (reserved for link TRB)
   if (ring->index == ring->max_index - 1) {
+    // add link TRB to last slot
     xhci_link_trb_t link;
     clear_trb(&link);
     link.trb_type = TRB_LINK;
@@ -1095,25 +1088,34 @@ int xhci_ring_enqueue_trb(xhci_ring_t *ring, xhci_trb_t trb) {
     link.rs_addr = virt_to_phys(ring->base);
     ring->base[ring->index] = cast_trb(&link);
 
+    // wrap to beginning
     ring->index = 0;
     ring->cycle = !ring->cycle;
   }
+
+  trb.cycle = ring->cycle;
+  ring->base[ring->index] = trb;
+  ring->index++;
   return 0;
 }
 
 bool xhci_ring_dequeue_trb(xhci_ring_t *ring, xhci_trb_t *out) {
   ASSERT(out != NULL);
   xhci_trb_t trb = ring->base[ring->index];
-  if (trb.trb_type == 0) {
+  if (trb.trb_type == 0 || trb.cycle != ring->cycle) {
     return false;
   }
 
+  *out = trb;
   ring->index++;
+
+  // wrap when reaching max_index
   if (ring->index == ring->max_index) {
+    DPRINTF("xhci: ring %p wrap: idx=%zu->0, cycle=%d->%d\n",
+            ring, ring->index, ring->cycle, !ring->cycle);
     ring->index = 0;
     ring->cycle = !ring->cycle;
   }
-  *out = trb;
   return true;
 }
 
@@ -1122,7 +1124,7 @@ uint64_t xhci_ring_device_ptr(xhci_ring_t *ring) {
 }
 
 size_t xhci_ring_size(xhci_ring_t *ring) {
-  return ring->max_index * sizeof(xhci_trb_t);
+  return ring->max_index;
 }
 
 //

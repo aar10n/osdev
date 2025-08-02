@@ -1,4 +1,3 @@
-*.bin
 *.fd
 *.o
 /build

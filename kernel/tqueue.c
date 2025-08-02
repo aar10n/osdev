@@ -110,8 +110,9 @@ static void lockq_remove_thread(struct lockqueue_chain *chain, struct lockqueue 
     own_lockq = LIST_REMOVE(&chain->head, lockq, chain_list);
   } else {
     // take a lockqueue from the free list
-    own_lockq = LIST_REMOVE(&chain->free, own_lockq, chain_list);
+    own_lockq = LIST_FIRST(&chain->free);
     LQ_ASSERT(own_lockq != NULL);
+    LIST_REMOVE(&chain->free, own_lockq, chain_list);
   }
 
   td->own_lockq = own_lockq;
@@ -130,7 +131,7 @@ static void lockq_unblock_thread(struct lockqueue *lockq, thread_t *td) {
 
 struct lockqueue *lockq_alloc() {
   struct lockqueue *lockq = kmallocz(sizeof(struct lockqueue));
-  mtx_init(&lockq->lock, 0, "lockqueue_lock");
+  mtx_init(&lockq->lock, MTX_SPIN, "lockqueue_lock");
   return lockq;
 }
 
@@ -544,7 +545,7 @@ int waitq_wait_sig(struct waitqueue *waitq, const char *wdmsg) {
   thread_t *td = curthread;
   td_lock(td);
 
-  td->flags |= TDF2_WAKEABLE;
+  td->flags2 |= TDF2_WAKEABLE;
   td->errno = 0;
   waitq_add_internal(waitq, chain, td, wdmsg);
 
@@ -557,7 +558,7 @@ int waitq_wait_sig(struct waitqueue *waitq, const char *wdmsg) {
   td_lock(td);
 
   // we're back - clear the wakeable flag
-  td->flags &= ~TDF2_WAKEABLE;
+  td->flags2 &= ~TDF2_WAKEABLE;
 
   // check if we were interrupted
   int ret = 0;
@@ -588,7 +589,7 @@ int waitq_wait_sigtimeout(struct waitqueue *waitq, const char *wdmsg, uint64_t t
   id_t alarm_id = alarm_register(alarm);
   td->timeout_alarm_id = alarm_id;
   td->errno = 0;
-  td->flags |= TDF2_WAKEABLE;  // mark as interruptible by signals
+  td->flags2 |= TDF2_WAKEABLE;  // mark as interruptible by signals
   waitq_add_internal(waitq, chain, td, wdmsg);
 
   mtx_spin_unlock(&waitq->lock);
@@ -602,7 +603,7 @@ int waitq_wait_sigtimeout(struct waitqueue *waitq, const char *wdmsg, uint64_t t
   td_lock(td);
 
   // we're back - clear the wakeable flag
-  td->flags &= ~TDF2_WAKEABLE;
+  td->flags2 &= ~TDF2_WAKEABLE;
 
   // check what happened
   int ret = 0;

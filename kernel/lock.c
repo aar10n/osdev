@@ -55,10 +55,13 @@ void lock_claim_list_free(struct lock_claim_list **listp) {
 }
 
 void lock_claim_list_add(struct lock_claim_list *list, struct lock_object *lock, uintptr_t how, const char *file, int line) {
-  if (list->nclaims == MAX_CLAIMS) {
-    struct lock_claim_list *next = lock_claim_list_alloc();
-    list->next = next;
-    list = next;
+  // traverse to the last node that has space
+  while (list->nclaims == MAX_CLAIMS) {
+    if (list->next == NULL) {
+      // allocate a new node
+      list->next = lock_claim_list_alloc();
+    }
+    list = list->next;
   }
 
   struct lock_claim *claim = &list->claims[list->nclaims++];
@@ -69,29 +72,27 @@ void lock_claim_list_add(struct lock_claim_list *list, struct lock_object *lock,
 }
 
 void lock_claim_list_remove(struct lock_claim_list *list, struct lock_object *lock) {
-  // get the last list in the chain
-  while (list->nclaims == MAX_CLAIMS && list->next) {
-    list = list->next;
-  }
-
-  // scan in reverse order to find the most recent claim
-  for (int i = list->nclaims - 1; i >= 0; i--) {
-    if (list->claims[i].lock == lock) {
-      list->claims[i].lock = NULL;
-      list->claims[i].how = 0;
-      list->claims[i].file = NULL;
-      list->claims[i].line = 0;
-      list->nclaims--;
-      // shift the rest of the claims down
-      if (list->nclaims == 0) {
+  // search through all nodes in the linked list
+  while (list != NULL) {
+    // scan in reverse order to find the most recent claim in this node
+    for (int i = list->nclaims - 1; i >= 0; i--) {
+      if (list->claims[i].lock == lock) {
+        // found the lock, remove it
+        list->claims[i].lock = NULL;
+        list->claims[i].how = 0;
+        list->claims[i].file = NULL;
+        list->claims[i].line = 0;
+        list->nclaims--;
+        
+        // shift the rest of the claims down
+        for (int j = i; j < list->nclaims; j++) {
+          list->claims[j] = list->claims[j + 1];
+        }
         return;
       }
-
-      for (int j = i; j < list->nclaims; j++) {
-        list->claims[j] = list->claims[j + 1];
-      }
-      return;
     }
+    // move to the next node
+    list = list->next;
   }
 
   // if we get here then the lock was not found
