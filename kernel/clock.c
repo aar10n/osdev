@@ -161,12 +161,12 @@ uint64_t clock_get_nanos() {
 //
 
 DEFINE_SYSCALL(clock_gettime, int, int clockid, struct timespec *tp) {
-  if (!vm_validate_ptr((uintptr_t) tp, /*write=*/true)) {
+  if (vm_validate_ptr((uintptr_t) tp, /*write=*/true) < 0) {
+    DPRINTF("clock_gettime: invalid user pointer %p\n", tp);
     return -EFAULT; // invalid user pointer
   }
 
   uint64_t now_ns = clock_wait_sync_nanos();
-  tp->tv_sec = (time_t)((now_ns / NS_PER_SEC) + boot_time_epoch);
-  tp->tv_nsec = (time_t)(now_ns % NS_PER_SEC);
+  *tp = timespec_from_nanos(now_ns);
   return 0;
 }

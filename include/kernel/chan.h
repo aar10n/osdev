@@ -47,6 +47,7 @@ typedef struct chan {
 chan_t *chan_alloc(size_t  capacity, size_t objsize, uint32_t flags, const char *name);
 int chan_set_free_cb(chan_t *ch, chan_free_cb_t fn);
 int chan_free(chan_t *ch);
+uint16_t chan_length(chan_t *ch);
 
 int _chan_send(chan_t *ch, void *obj, size_t objsz);
 #define chan_send(ch, obj) _chan_send(ch, obj, sizeof(*(obj)))

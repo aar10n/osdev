@@ -17,7 +17,7 @@
 
 #define ASSERT(x) kassert(x)
 #define DPRINTF(x, ...)
-// #define DPRINTF(x, ...) kprintf("alarm: " x, ##__VA_ARGS__)
+//#define DPRINTF(x, ...) kprintf("alarm: " x, ##__VA_ARGS__)
 
 #define HANDLER_FN(fn) ((void (*)(alarm_t *, void *, void *, void *))(fn))
 
@@ -39,15 +39,16 @@ static id_t next_alarm_id = 1; // id==0 is invalid
 
 
 static inline void maybe_rearm_tickless_alarm(uint64_t expiry, uint64_t clock_now) {
-#ifdef TICK_PERIOD
+#ifdef CONFIG_TICKLESS
+  bool wait_for_tick = false;
+#else // ticks enabled
   uint64_t next_tick = last_tick + TICK_PERIOD;
   bool wait_for_tick = expiry > next_tick;
-#else // tickless
-  bool wait_for_tick = false;
 #endif
 
   int res;
   if (!wait_for_tick && expiry > clock_now && (next_tickless_expiry == 0 || expiry < next_tickless_expiry)) {
+    DPRINTF("rearming tickless alarm to %llu\n", expiry);
     // reprogram the tick source to fire at the next expiry
     if ((res = alarm_source_setval_abs_ns(tickless_source, expiry)) < 0) {
       panic("failed to set tickless source count: %s, value=%llu [err={:err}]", tickless_source->name, expiry, res);
@@ -166,7 +167,7 @@ void alarm_init() {
   }
   // the tickless source is enabled when first programmed
 
-#ifdef TICK_PERIOD
+#ifndef CONFIG_TICKLESS // tickless disabled
   if ((tick_source = alarm_source_get("hpet1")) == NULL) {
     if ((tick_source = alarm_source_get("pit")) == NULL) {
       panic("no tick source found");
@@ -431,14 +432,39 @@ int alarm_sleep_ms(uint64_t ms) {
   alarm_t *alarm = alarm_alloc_absolute(clock_now + MS_TO_NS(ms), alarm_cb(alarm_cb_wakeup, NULL));
   ASSERT(alarm != NULL);
 
-  struct waitqueue *waitq = waitq_lookup_or_default(WQ_SLEEP, alarm, curthread->own_waitq);
   if (alarm_register(alarm) == 0) {
     DPRINTF("alarm_sleep_ms: failed to register alarm\n");
     alarm_free(&alarm);
     return -EINVAL;
   }
+
+  struct waitqueue *waitq = waitq_lookup_or_default(WQ_SLEEP, alarm, curthread->own_waitq);
   waitq_wait(waitq, "sleeping");
   return 0;
+}
+
+int alarm_sleep_ns(uint64_t ns) {
+  uint64_t start_time = clock_get_nanos();
+  uint64_t target_time = start_time + ns;
+  alarm_t *alarm = alarm_alloc_absolute(target_time, alarm_cb(alarm_cb_wakeup, NULL));
+  ASSERT(alarm != NULL);
+
+  id_t alarm_id = alarm_register(alarm);
+  if (alarm_id == 0) {
+    DPRINTF("alarm_sleep_ns: failed to register alarm\n");
+    alarm_free(&alarm);
+    return -EINVAL;
+  }
+
+  struct waitqueue *waitq = waitq_lookup_or_default(WQ_SLEEP, alarm, curthread->own_waitq);
+  int ret = waitq_wait_sig(waitq, "nanosleep");
+
+  // unregister the alarm if it hasn't fired yet
+  if (ret != 0) {
+    alarm_unregister(alarm_id);
+  }
+
+  return ret;
 }
 
 //
@@ -610,4 +636,40 @@ DEFINE_SYSCALL(setitimer, int, int which, const struct itimerval *new_value, str
   itimer_get_update(which, old_value, new_value);
   pr_unlock(proc);
   return 0;
+}
+
+DEFINE_SYSCALL(nanosleep, int, const struct timespec *duration, struct timespec *rem) {
+  DPRINTF("syscall: nanosleep duration=%p rem=%p\n", duration, rem);
+  if (vm_validate_ptr((uintptr_t) duration, /*write=*/false) < 0) {
+    return -EFAULT;
+  }
+  if (rem != NULL && vm_validate_ptr((uintptr_t) rem, /*write=*/true) < 0) {
+    return -EFAULT;
+  }
+  
+  // validate timespec
+  if (duration->tv_sec < 0 || duration->tv_nsec < 0 || duration->tv_nsec >= NS_PER_SEC) {
+    return -EINVAL;
+  }
+  
+  uint64_t sleep_ns = timespec_to_nanos((struct timespec *)duration);
+  if (sleep_ns == 0) {
+    return 0; // nothing to sleep
+  }
+  
+  uint64_t start_time = clock_get_nanos();
+  int ret = alarm_sleep_ns(sleep_ns);
+  
+  if (ret == -EINTR && rem != NULL) {
+    // calculate remaining time
+    uint64_t elapsed_ns = clock_get_nanos() - start_time;
+    if (elapsed_ns < sleep_ns) {
+      uint64_t remaining_ns = sleep_ns - elapsed_ns;
+      *rem = timespec_from_nanos(remaining_ns);
+    } else {
+      *rem = timespec_zero;
+    }
+  }
+  
+  return ret;
 }

@@ -11,8 +11,11 @@
 #include <kernel/irq.h>
 #include <kernel/time.h>
 
-// if undefined the kernel runs in tickless mode
+// if defined the kernel runs in tickless mode
+#define CONFIG_TICKLESS
+#ifndef CONFIG_TICKLESS
 #define TICK_PERIOD  MS_TO_NS(50)
+#endif
 
 /*
  * Alarm source
@@ -86,6 +89,7 @@ id_t alarm_register(alarm_t *alarm);
 int alarm_unregister(id_t alarm_id);
 
 int alarm_sleep_ms(uint64_t ms);
+int alarm_sleep_ns(uint64_t ns);
 
 #define __alarm_cb_args(...) __alarm_cb_args_dispatch(__alarm_cb_args_count(__VA_ARGS__), __VA_ARGS__)
 #define __alarm_cb_args_nargs(_1, _2, _3, N, ...) N

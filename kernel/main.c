@@ -81,8 +81,8 @@ _used void kmain() {
   fs_setup_mounts();
 
   cpu_enable_interrupts();
-  // probe_all_buses();
-  // console_init();
+  probe_all_buses();
+
   kprintf("{:$=^49}\n");
   kprintf("    kernel initialization done after {:llu}ms    \n", NS_TO_MS(clock_get_nanos()));
   kprintf("{:$=^49}\n");

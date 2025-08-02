@@ -108,6 +108,14 @@ int chan_free(chan_t *ch) {
   return 0;
 }
 
+uint16_t chan_length(chan_t *ch) {
+  ASSERT(ch != NULL);
+  mtx_spin_lock(&ch->lock);
+  uint16_t count = chan_count(ch);
+  mtx_spin_unlock(&ch->lock);
+  return count;
+}
+
 //
 
 int _chan_send(chan_t *ch, void *obj, size_t objsz) {
