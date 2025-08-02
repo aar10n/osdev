@@ -78,6 +78,8 @@ int exec_load_image(enum exec_type type, uintptr_t base, cstr_t path, __out stru
       base = 0xC00000;
     } else if (strncmp(realpath, "/bin/busybox", 12) == 0) {
       base = 0x1000000;
+    } else if (strncmp(realpath, "/usr/bin/doom", 12) == 0) {
+      base = 0x1400000;
     }
 
     DPRINTF("exec: binary {:str} [%s] with base %p\n", &path, realpath, base);
