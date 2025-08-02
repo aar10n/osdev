@@ -1979,6 +1979,30 @@ DEFINE_SYSCALL(exit_group, void, int error_code) {
   proc_terminate(proc, error_code, 0);
 }
 
+DEFINE_SYSCALL(tkill, int, pid_t tid, int sig) {
+  DPRINTF("syscall: tkill tid=%d sig=%d\n", tid, sig);
+  if (tid <= 0) {
+    return -ESRCH; // invalid thread id
+  }
+
+  proc_t *proc = curproc;
+  pr_lock(proc);
+  thread_t *td = LIST_FIND(_td, &proc->threads, plist, _td->tid == tid);
+  if (td == NULL) {
+    pr_unlock(proc);
+    return -ESRCH; // thread not found
+  }
+
+  int res = thread_signal(td, &(siginfo_t){
+    .si_signo = sig,
+    .si_code = SI_TKILL,
+    .si_pid = proc->pid, // the process sending the signal
+    .si_uid = proc->creds->uid, // the user id of the process
+  });
+  pr_unlock(proc);
+  return res;
+}
+
 DEFINE_SYSCALL(pause, int) {
   DPRINTF("syscall: pause\n");
   proc_t *proc = curproc;
