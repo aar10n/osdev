@@ -2,7 +2,7 @@
 $(call register,drivers,KERNEL)
 
 # drivers/
-drivers += framebuf.c memory.c ramdisk.c
+drivers += framebuf.c keyboard.c memory.c ramdisk.c
 
 # drivers/tty
 drivers += tty/uart.c
