@@ -461,7 +461,7 @@ ssize_t dev_f_write(file_t *file, kio_t *kio) {
   return res;
 }
 
-int dev_f_ioctl(file_t *file, int request, void *arg) {
+int dev_f_ioctl(file_t *file, unsigned int request, void *arg) {
   f_lock_assert(file, LA_OWNED);
   ASSERT(F_ISVNODE(file));
   ASSERT(V_ISDEV((vnode_t *)file->data));
@@ -528,7 +528,7 @@ int dev_f_kqevent(file_t *file, knote_t *kn) {
     kn->event.data = 0;
     DPRINTF("dev_f_kqevent: no data available for file %p [device %d]\n", file, make_dev(device));
   } else {
-    DPRINTF("dev_f_kqevent: %llu bytes available for file %p [device %d]\n", res, file, make_dev(device));
+    DPRINTF("dev_f_kqevent: %lld bytes available for file %p [device %d]\n", kn->event.data, file, make_dev(device));
   }
   return res;
 }

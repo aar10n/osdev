@@ -262,7 +262,7 @@ int dev_f_open(struct file *file, int flags);
 int dev_f_close(struct file *file);
 ssize_t dev_f_read(struct file *file, struct kio *kio);
 ssize_t dev_f_write(struct file *file, struct kio *kio);
-int dev_f_ioctl(file_t *file, int request, void *arg);
+int dev_f_ioctl(file_t *file, unsigned int request, void *arg);
 int dev_f_getpage(struct file *file, off_t off, __move struct page **page);
 int dev_f_stat(struct file *file, struct stat *statbuf);
 int dev_f_kqevent(struct file *file, struct knote *kn);

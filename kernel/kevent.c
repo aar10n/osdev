@@ -244,6 +244,8 @@ static void kqueue_hash_remove(kqueue_t *kq, knote_t *kn) {
 }
 
 static int kqueue_attach_knote(kqueue_t *kq, knote_t *kn) {
+  DPRINTF("kqueue_attach_knote: attaching knote for ident %p, filter %s\n",
+          kn->event.ident, evfilt_to_string(kn->event.filter));
   int res;
   ASSERT(kn->filt_ops->f_attach != NULL);
   res = kn->filt_ops->f_attach(kn);
@@ -259,6 +261,8 @@ static int kqueue_attach_knote(kqueue_t *kq, knote_t *kn) {
 }
 
 static void kqueue_detach_knote(kqueue_t *kq, knote_t *kn) {
+  DPRINTF("kqueue_detach_knote: detaching knote for ident %p, filter %s\n",
+          kn->event.ident, evfilt_to_string(kn->event.filter));
   if (kn->filt_ops && kn->filt_ops->f_detach) {
     kn->filt_ops->f_detach(kn);
   } else {
@@ -385,6 +389,10 @@ static int kqueue_register(kqueue_t *kq, struct kevent *kev) {
     kn->event.fflags = kev->fflags;
   }
 
+  if (!(kn->flags & KNF_ACTIVE) && kn->filt_ops->f_event(kn, 0)) {
+    DPRINTF("kqueue_wait: knote for ident %p, filter %s is ready\n", kev->ident, evfilt_to_string(kev->filter));
+    knlist_activate_notes(kn->knlist, 0);
+  }
   res = 0; // success
 LABEL(ret);
   mtx_unlock(&kq->lock);
