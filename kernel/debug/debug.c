@@ -9,9 +9,10 @@
 #include <kernel/queue.h>
 #include <kernel/string.h>
 #include <kernel/printf.h>
-#include <kernel/panic.h>
 
 #include <interval_tree.h>
+
+#define MAX_DEPTH 32
 
 static const char *preload_files[] = {
   "kernel/main.c",
@@ -27,6 +28,18 @@ static const char *preload_files[] = {
 static intvl_tree_t *debug_files;
 static intvl_tree_t *debug_functions;
 static bool has_debug_info = false;
+
+static bool is_sensible_pointer(uintptr_t ptr) {
+  if (is_kernel_code_ptr(ptr)) {
+    return true;
+  }
+
+  if ((ptr >= 0x400000 && ptr <= 0x41400000) || (ptr >= 0x7FC0000000 && ptr <= 0x7FFFFFFFFF)) {
+    // reasonable userspace pointer range
+    return true;
+  }
+  return false;
+}
 
 static bool matches_suffix(const char *str, const char *suffix, size_t suffix_len) {
   size_t str_len = strlen(str);
@@ -218,4 +231,21 @@ int debug_unwind(uintptr_t rip, uintptr_t rbp) {
   }
 
   return 0;
+}
+
+void debug_unwind_any(uintptr_t rip, uintptr_t rbp) {
+  stackframe_t *frame = (void *) rbp;
+  kprintf("backtrace\n");
+  kprintf("    ?? %018p\n", rip);
+  if (vm_validate_ptr(rbp, /*write=*/false) != 0) {
+    return;
+  }
+
+  for (int i = 0; i < MAX_DEPTH && is_sensible_pointer((uintptr_t) frame->rip); i++) {
+    kprintf("    ?? %018p\n", frame->rip);
+    if (vm_validate_ptr((uintptr_t) frame->rbp, /*write=*/false) != 0) {
+      break;
+    }
+    frame = frame->rbp;
+  }
 }

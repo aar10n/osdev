@@ -24,8 +24,8 @@ void panic_early_init() {
 
 noreturn void panic_other_cpus(cpu_irq_stack_t *frame, cpu_registers_t *regs) {
   cpu_disable_interrupts();
-  mtx_spin_lock(&panic_lock);
 
+  mtx_spin_lock(&panic_lock);
   kprintf(">>>> STOPPING CPU#%d <<<<\n", PERCPU_ID);
   kprintf("process %d [{:str}]\n", curproc->pid, &curproc->name);
   kprintf("thread %d [{:str}]\n", curthread->tid, &curthread->name);

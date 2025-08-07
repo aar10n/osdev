@@ -7,6 +7,7 @@
 #include <kernel/mutex.h>
 #include <kernel/printf.h>
 #include <kernel/panic.h>
+#include <kernel/debug/debug.h>
 
 #include <kernel/hw/apic.h>
 #include <kernel/hw/ioapic.h>
@@ -86,6 +87,7 @@ noreturn void default_exception_handler(struct trapframe *frame) {
   kprintf("  CPU#%d - %#llx\n", curcpu_id, frame->error);
   kprintf("  RIP = %018p  RSP = %018p\n", frame->rip, frame->rsp);
   kprintf("  CR2 = %018p\n", __read_cr2());
+  debug_unwind_any(frame->rip, frame->rbp);
   WHILE_TRUE;
 }
 

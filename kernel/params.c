@@ -38,6 +38,12 @@ void handle_cmdline_param(cstr_t key, cstr_t value) {
       }
       break;
     }
+    case KERNEL_BOOL_PARAM:
+      bool *bool_value = (bool *) param->addr;
+      if (param_parse_bool(value, bool_value) < 0) {
+        EPRINTF("expected boolean value for {:cstr}, got \"{:cstr}\"\n", &key, &value);
+      }
+      break;
     default:
       EPRINTF("unknown kernel parameter type for {:cstr}\n", &key);
       break;
@@ -151,4 +157,17 @@ int param_parse_int(cstr_t str, int *out) {
   }
   *out = value;
   return 0;
+}
+
+int param_parse_bool(cstr_t str, bool *out) {
+  if (cstr_eq_charp(str, "true") || cstr_eq_charp(str, "y") || cstr_eq_charp(str, "yes") || cstr_eq_charp(str, "1")) {
+    *out = true;
+    return 0;
+  } else if (cstr_eq_charp(str, "false") || cstr_eq_charp(str, "n") || cstr_eq_charp(str, "no") || cstr_eq_charp(str, "0")) {
+    *out = false;
+    return 0;
+  } else {
+    EPRINTF("invalid boolean parameter: {:cstr}\n", &str);
+    return -1;
+  }
 }

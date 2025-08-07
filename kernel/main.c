@@ -16,6 +16,7 @@
 
 #include <kernel/acpi/acpi.h>
 #include <kernel/cpu/cpu.h>
+#include <kernel/debug/debug.h>
 
 #include <kernel/printf.h>
 #include <kernel/panic.h>
@@ -23,9 +24,10 @@
 
 void launch_init_process();
 
-bool is_smp_enabled = false;
-bool is_debug_enabled = true;
 boot_info_v2_t __boot_data *boot_info_v2;
+
+KERNEL_PARAM("debug", bool, is_debug_enabled, false);
+bool is_smp_enabled = false;
 
 //
 // Kernel entry
@@ -60,7 +62,9 @@ _used void kmain() {
   // and finally unmap the original identity mappings.
   init_mem_zones();
   init_address_space();
-  // debug_init();
+
+  kprintf("===> is debug enabled? {:b}\n", is_debug_enabled);
+  debug_init();
   cpu_late_init();
 
   // initialize the irq layer and our clock source so the static initializers can use them.

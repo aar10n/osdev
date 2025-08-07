@@ -336,8 +336,8 @@ void session_cleanup(__move session_t **sessref);
 void session_add_pgroup(session_t *sess, pgroup_t *pg);
 int session_leader_ctty(session_t *sess, struct tty *tty);
 
-#define SESS_DPRINTF(fmt, ...) kprintf("session: " fmt " [%s:%d]\n", ##__VA_ARGS__, __FILE__, __LINE__)
-//#define SESS_DPRINTF(fmt, ...)
+//#define SESS_DPRINTF(fmt, ...) kprintf("session: " fmt " [%s:%d]\n", ##__VA_ARGS__, __FILE__, __LINE__)
+#define SESS_DPRINTF(fmt, ...)
 
 #define sess_getref(sess) ({ \
   ASSERT_IS_TYPE(session_t*, sess); \
@@ -364,8 +364,8 @@ void pgrp_add_proc(pgroup_t *pg, proc_t *proc);
 void pgrp_remove_proc(pgroup_t *pg, proc_t *proc);
 int pgrp_signal(pgroup_t *pg, siginfo_t *info);
 
-#define PGRP_DPRINTF(fmt, ...) kprintf("pgrp: " fmt " [%s:%d]\n", ##__VA_ARGS__, __FILE__, __LINE__)
-//#define PGRP_DPRINTF(fmt, ...)
+//#define PGRP_DPRINTF(fmt, ...) kprintf("pgrp: " fmt " [%s:%d]\n", ##__VA_ARGS__, __FILE__, __LINE__)
+#define PGRP_DPRINTF(fmt, ...)
 
 #define pgrp_getref(pg) ({ \
   ASSERT_IS_TYPE(pgroup_t*, pg); \
