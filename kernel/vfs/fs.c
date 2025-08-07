@@ -13,6 +13,7 @@
 #include <kernel/time.h>
 
 #include <kernel/vfs/file.h>
+#include <kernel/vfs/pipe.h>
 #include <kernel/vfs/vcache.h>
 #include <kernel/vfs/ventry.h>
 #include <kernel/vfs/vfs.h>
@@ -858,6 +859,78 @@ LABEL(ret);
   return res;
 }
 
+int fs_pipe(int pipefd[2]) {
+  return fs_pipe2(pipefd, 0);
+}
+
+int fs_pipe2(int pipefd[2], int flags) {
+  if (flags & ~(O_CLOEXEC | O_NONBLOCK)) {
+    return -EINVAL;
+  }
+
+  // allocate fs
+  int read_fd = ftable_alloc_fd(FTABLE);
+  if (read_fd < 0)
+    return -EMFILE;
+  int write_fd = ftable_alloc_fd(FTABLE);
+  if (write_fd < 0) {
+    ftable_free_fd(FTABLE, read_fd);
+    return -EMFILE;
+  }
+
+  // allocate pipe
+  pipe_t *pipe = pipe_alloc(PIPE_BUFFER_SIZE);
+  if (!pipe) {
+    ftable_free_fd(FTABLE, read_fd);
+    ftable_free_fd(FTABLE, write_fd);
+    return -ENOMEM;
+  }
+
+  int res;
+
+  // create the read and write end files
+  int read_flags = O_RDONLY | flags;
+  file_t *read_file = f_alloc(FT_PIPE, read_flags, pipe_getref(pipe), &pipe_file_ops);
+
+  int write_flags = O_WRONLY | flags;
+  file_t *write_file = f_alloc(FT_PIPE, write_flags, pipe_getref(pipe), &pipe_file_ops);
+
+  // open the files
+  f_lock(read_file);
+  res = f_open(read_file, 0);
+  f_unlock(read_file);
+  if (res < 0) {
+    goto fail;
+  }
+
+  f_lock(write_file);
+  res = f_open(write_file, 0);
+  f_unlock(write_file);
+  if (res < 0) {
+    f_close(read_file);
+    goto fail;
+  }
+
+  // add the files to the file table
+  fd_entry_t *read_fde = fd_entry_alloc(read_fd, read_flags, cstr_null, moveref(read_file));
+  fd_entry_t *write_fde = fd_entry_alloc(write_fd, write_flags, cstr_null, moveref(write_file));
+  ftable_add_entry(FTABLE, moveref(read_fde));
+  ftable_add_entry(FTABLE, moveref(write_fde));
+
+  // set the pipe file descriptors
+  pipefd[0] = read_fd;
+  pipefd[1] = write_fd;
+
+  pipe_putref(&pipe);
+  return 0;
+
+LABEL(fail);
+  pipe_putref(&pipe);
+  ftable_free_fd(FTABLE, read_fd);
+  ftable_free_fd(FTABLE, write_fd);
+  return res;
+}
+
 int fs_poll(struct pollfd *fds, size_t nfds, struct timespec *timeout) {
   int res;
 
@@ -1424,6 +1497,8 @@ SYSCALL_ALIAS(ftruncate, fs_ftruncate);
 SYSCALL_ALIAS(fstat, fs_fstat);
 SYSCALL_ALIAS(dup, fs_dup);
 SYSCALL_ALIAS(dup2, fs_dup2);
+SYSCALL_ALIAS(pipe, fs_pipe);
+SYSCALL_ALIAS(pipe2, fs_pipe2);
 
 DEFINE_SYSCALL(poll, int, struct pollfd *fds, nfds_t nfds, int timeout) {
   struct timespec ts;

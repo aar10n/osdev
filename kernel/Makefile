@@ -48,5 +48,5 @@ kernel += tty/tty.c tty/ttydisc.c tty/ttyqueue.c
 kernel += usb/usb.c
 
 # kernel/vfs
-kernel += vfs/file.c vfs/fs.c vfs/path.c vfs/vcache.c vfs/ventry.c \
+kernel += vfs/file.c vfs/fs.c vfs/path.c vfs/pipe.c vfs/vcache.c vfs/ventry.c \
 	vfs/vfs.c vfs/vnode.c vfs/vresolve.c

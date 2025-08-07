@@ -47,6 +47,8 @@ int fs_ftruncate(int fd, off_t length);
 int fs_fstat(int fd, struct stat *stat);
 int fs_dup(int fd);
 int fs_dup2(int fd, int newfd);
+int fs_pipe(int pipefd[2]);
+int fs_pipe2(int pipefd[2], int flags);
 int fs_poll(struct pollfd *fds, size_t nfds, struct timespec *timeout);
 int fs_utimensat(int dirfd, cstr_t filename, struct timespec *utimes, int flags);
 
