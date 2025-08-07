@@ -38,12 +38,13 @@ void handle_cmdline_param(cstr_t key, cstr_t value) {
       }
       break;
     }
-    case KERNEL_BOOL_PARAM:
+    case KERNEL_BOOL_PARAM: {
       bool *bool_value = (bool *) param->addr;
       if (param_parse_bool(value, bool_value) < 0) {
         EPRINTF("expected boolean value for {:cstr}, got \"{:cstr}\"\n", &key, &value);
       }
       break;
+    }
     default:
       EPRINTF("unknown kernel parameter type for {:cstr}\n", &key);
       break;

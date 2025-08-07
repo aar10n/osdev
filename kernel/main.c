@@ -26,8 +26,11 @@ void launch_init_process();
 
 boot_info_v2_t __boot_data *boot_info_v2;
 
-KERNEL_PARAM("debug", bool, is_debug_enabled, false);
 bool is_smp_enabled = false;
+KERNEL_PARAM("debug", bool, is_debug_enabled, false);
+KERNEL_PARAM("init", str_t, init_program, str_null);
+KERNEL_PARAM("init.shell", str_t, init_shell_program, str_null);
+KERNEL_PARAM("init.tty", str_t, init_tty_device, str_null);
 
 //
 // Kernel entry
@@ -119,6 +122,9 @@ _used void ap_main() {
 
 //
 
+void init_process_alloc_strings(char **out_path, char ***out_args, char ***out_env);
+void init_process_free_strings(char *path, char **args, char **env);
+
 void launch_init_process() {
 #define FAIL_IF_ERROR(msg, ...) \
   if (res < 0) {                \
@@ -126,16 +132,21 @@ void launch_init_process() {
     goto fail;                  \
   }
 
+  char *init_path = NULL;
+  char **init_args = NULL;
+  char **init_env = NULL;
+  init_process_alloc_strings(&init_path, &init_args, &init_env);
+
   int res;
   kprintf("launching init process\n");
   proc_t *init_proc = proc_alloc_new(getref(curproc->creds));
   proc_setup_add_thread(init_proc, thread_alloc(0, SIZE_16KB));
 
-  res = proc_setup_exec_args(init_proc, (const char *[]){"/sbin/init", NULL});
+  res = proc_setup_exec_args(init_proc, init_args);
   FAIL_IF_ERROR("proc_setup_exec_args failed: {:err}", res);
-  res = proc_setup_exec_env(init_proc, (const char *[]) {"TTY=/dev/ttyS2", "SHELL=/sbin/shell", NULL});
+  res = proc_setup_exec_env(init_proc, init_env);
   FAIL_IF_ERROR("proc_setup_exec_env failed: {:err}", res);
-  res = proc_setup_exec(init_proc, cstr_make("/sbin/init"));
+  res = proc_setup_exec(init_proc, cstr_make(init_path));
   FAIL_IF_ERROR("proc_setup_exec failed: {:err}", res);
   res = proc_setup_open_fd(init_proc, 0, cstr_make("/dev/null"), O_RDONLY);
   FAIL_IF_ERROR("proc_setup_open_fd 0 failed: {:err}", res);
@@ -143,10 +154,75 @@ void launch_init_process() {
   FAIL_IF_ERROR("proc_setup_open_fd 1 failed: {:err}", res);
   res = proc_setup_open_fd(init_proc, 2, cstr_make("/dev/debug"), O_RDWR|O_NOCTTY);
   FAIL_IF_ERROR("proc_setup_open_fd 2 failed: {:err}", res);
-  proc_finish_setup_and_submit_all(init_proc);
+  proc_finish_setup_and_submit_all(moveref(init_proc));
+  init_process_free_strings(init_path, init_args, init_env);
   return;
 LABEL(fail);
   kprintf("failed to launch init process\n");
+  init_process_free_strings(init_path, init_args, init_env);
   pr_putref(&init_proc);
 #undef FAIL_IF_ERROR
+}
+
+void init_process_alloc_strings(char **out_path, char ***out_args, char ***out_env) {
+  cstr_t init_path = cstr_from_str(init_program);
+  if (cstr_eq(init_path, cstr_null)) {
+    init_path = cstr_make("/sbin/init");
+  }
+  cstr_t shell_path = cstr_from_str(init_shell_program);
+  if (cstr_eq(shell_path, cstr_null)) {
+    shell_path = cstr_make("/sbin/shell");
+  }
+  cstr_t tty_dev_path = cstr_from_str(init_tty_device);
+  if (cstr_eq(tty_dev_path, cstr_null)) {
+    tty_dev_path = cstr_make("/dev/ttyS0");
+  }
+
+  // allocate a string for the path, and NULL-terminated arrays for argp and envp
+  char *path = kasprintf("{:cstr}", &init_path);
+  kassert(path != NULL && "failed to allocate path for init process");
+
+  char **args = kmallocz(sizeof(const char *) * 2);
+  kassert(args != NULL && "failed to allocate args for init process");
+  args[0] = path;
+
+  char **env = kmallocz(sizeof(const char *) * 3);
+  kassert(env != NULL && "failed to allocate env for init process");
+  env[0] = kasprintf("SHELL={:cstr}", &shell_path);
+  env[1] = kasprintf("TTY={:cstr}", &tty_dev_path);
+
+  *out_path = path;
+  *out_args = args;
+  *out_env = env;
+
+  // print out the values we are using
+  kprintf("launch init process:\n");
+  kprintf("  path: %s\n", path);
+  kprintf("  args:\n");
+  for (size_t i = 0; args[i] != NULL; i++) {
+    kprintf("    args[%zu]: %s\n", i, args[i]);
+  }
+  kprintf("  env:\n");
+  for (size_t i = 0; env[i] != NULL; i++) {
+    kprintf("    env[%zu]: %s\n", i, env[i]);
+  }
+}
+
+void init_process_free_strings(char *path, char **args, char **env) {
+  kfree(path);
+
+  // free each string in args
+  for (int i = 0; args[i] != NULL; i++) {
+    if (args[i] == path) {
+      continue;
+    }
+    kfree(args[i]);
+  }
+  kfree(args);
+
+  // free each string in env
+  for (int i = 0; env[i] != NULL; i++) {
+    kfree(env[i]);
+  }
+  kfree(env);
 }

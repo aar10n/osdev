@@ -10,8 +10,8 @@
 #include <string.h>
 
 #define GETTY_PATH "/sbin/getty"
+#define DEFAULT_SHELL "/sbin/shell"
 #define DEFAULT_TTY "/dev/ttyS0"
-#define DEFAULT_SHELL "/bin/sh"
 
 static void sigchld_handler(int sig) {
   int status;
