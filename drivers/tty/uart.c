@@ -307,9 +307,9 @@ int uart_hw_configure(int port, const struct termios *tio) {
   io_outb(port + UART_INTR_EN, (divisor >> 8) & 0xFF);
   io_outb(port + UART_LINE_CTRL, lcr);
 
-  // // enable FIFO, clear TX/RX queues, 14-byte threshold
-  // io_outb(port + UART_FIFO_CTRL, 0xC7);
-  io_outb(port + UART_FIFO_CTRL, 0x00); // disable FIFO
+  // enable FIFO, clear TX/RX queues, 14-byte threshold
+  io_outb(port + UART_FIFO_CTRL, 0xC7);
+//  io_outb(port + UART_FIFO_CTRL, 0x00); // disable FIFO
 
   // modem control: DTR, RTS, OUT2
   io_outb(port + UART_MODEM_CTRL, 0xf);
