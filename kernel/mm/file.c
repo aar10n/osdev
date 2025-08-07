@@ -13,14 +13,6 @@
 
 static __ref page_t *anon_getpage_missing(vm_file_t *file, size_t off) {
   page_t *page = alloc_pages_size(1, file->pg_size);
-  if (page != NULL) {
-    // Check if this page is being allocated for a shared page cache.
-    // If the pgcache has more than one reference, it means it's shared
-    // between parent and child after fork, so mark the page as COW.
-    if (file->pgcache->refcount > 1) {
-      page->flags |= PG_COW;
-    }
-  }
   return page;
 }
 

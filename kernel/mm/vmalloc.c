@@ -547,18 +547,6 @@ static int vm_handle_cow_fault(vm_mapping_t *vm, size_t off) {
 
   ASSERT(vm->flags & VM_WRITE);
   
-  // check if this is a COW page. for anonymous mappings that were forked,
-  // pages faulted in after fork won't have PG_COW set. in this case, we
-  // still need to handle the COW fault if the page has more than one reference
-  // (but ignore the extra reference we currently hold so > 2).
-  bool is_cow = (page->flags & PG_COW) || (page->refcount > 2);
-  if (!is_cow) {
-    // this page is not shared, so we can just make it writable
-    recursive_update_entry_flags(vm->address + off, vm->flags);
-    pg_putref(&page);
-    return 0;
-  }
-  
   // allocate a new page to replace the current one
   size_t pg_size = pg_flags_to_size(page->flags);
   page_t *newpage = alloc_pages_size(1, pg_size);
