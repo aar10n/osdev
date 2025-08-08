@@ -24,7 +24,7 @@ SRC_DOOM_PATHS = $(SRCS_DOOM:%.c=$(SOURCE_PATH)/%.c)
 OBJS = $(SRCS:%.c=$(OBJ_DIR)/%.c.o) $(SRC_DOOM_PATHS:$(SOURCE_PATH)/%.c=$(SOURCE_PATH)/%.c.o)
 
 DOOMGENERIC_URL = https://github.com/aar10n/doomgeneric/archive/refs/heads/$(VERSION).zip
-DOOMGENERIC_ARCHIVE = doomgeneric-$(VERSION).tar.gz
+DOOMGENERIC_ARCHIVE = doomgeneric-$(VERSION).zip
 
 .DEFAULT_GOAL := install
 
@@ -38,7 +38,7 @@ download:
 	fi
 	@if [ ! -d "$(SOURCE_PATH)" ]; then \
 		echo "Extracting doomgeneric..."; \
-		cd $(OBJ_DIR) && tar -xf $(DOOMGENERIC_ARCHIVE); \
+		cd $(OBJ_DIR) && unzip $(DOOMGENERIC_ARCHIVE); \
 		mv $(OBJ_DIR)/doomgeneric-$(VERSION)/doomgeneric $(SOURCE_PATH); \
 		rm -rf $(OBJ_DIR)/doomgeneric-$(VERSION); \
 	fi

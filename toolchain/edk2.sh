@@ -71,15 +71,6 @@ toolchain::edk2::build() {
   mkdir -p ${build_dir}
 
   export WORKSPACE="${edk2_dir}"
-  if [ ! -d ${edk2_dir} ]; then
-    git clone --depth 1 -c advice.detachedHead=false --branch ${EDK2_VERSION} https://github.com/tianocore/edk2.git ${edk2_dir}
-    pushd ${edk2_dir}
-      git submodule update --init
-      patch -p1 -d . < ${PROJECT_DIR}/toolchain/patches/edk2.patch
-      . edksetup.sh
-      CXX=llvm toolchain::util::make_build -C BaseTools
-    popd
-  fi
 
   local arch=""
   local package=""
@@ -115,6 +106,15 @@ toolchain::edk2::build() {
       ;;
   esac
   shift 2
+
+  if [ ! -d ${edk2_dir} ]; then
+    git clone --depth 1 -c advice.detachedHead=false --branch ${EDK2_VERSION} https://github.com/tianocore/edk2.git ${edk2_dir}
+    pushd ${edk2_dir}
+      git submodule update --init
+      patch -p1 -d . < ${PROJECT_DIR}/toolchain/patches/edk2.patch
+      (. edksetup.sh; CXX=llvm make -C BaseTools)
+    popd
+  fi
 
   if [[ ${package_name} =~ loader(-lst)? ]]; then
     echo "copying bootloader sources"

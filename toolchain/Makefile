@@ -63,16 +63,18 @@ GCC_PREFIX = $(TOOL_ROOT)
 
 GCC_CONFIG = --enable-languages=c,c++ \
 	--target=$(TOOLCHAIN) \
-    --prefix=$(GCC_PREFIX) \
-    --srcdir=$(GCC_SRC_DIR) \
-    --with-sysroot=$(TOOL_ROOT) \
-    --with-build-sysroot=$(TOOL_ROOT) \
+	--prefix=$(GCC_PREFIX) \
+	--srcdir=$(GCC_SRC_DIR) \
+	--with-sysroot=$(TOOL_ROOT) \
+	--with-build-sysroot=$(TOOL_ROOT) \
+	--enable-shared \
 	--disable-bootstrap --disable-multilib \
- 	--disable-libmpx --disable-libmudflap \
+	--disable-libmpx --disable-libmudflap \
+	--disable-libsanitizer \
 	--enable-tls --enable-initfini-array \
- 	--enable-libstdcxx-filesystem-ts \
- 	--enable-libstdcxx-time=rt \
- 	\
+	--enable-libstdcxx-filesystem-ts \
+	--enable-libstdcxx-time=rt \
+	\
 	AR_FOR_TARGET=$(CROSS_PREFIX)ar \
 	AS_FOR_TARGET=$(CROSS_PREFIX)as \
 	LD_FOR_TARGET=$(CROSS_PREFIX)ld \
@@ -148,6 +150,7 @@ $(MUSL_DIR)/.install: $(MUSL_DIR)/.build
 	cd $(@D) && $(MAKE) install $(MUSL_VARS)
     # make the important abi/bits headers available to
     # the kernel by linking them into the include path
+	mkdir -p $(TOOL_ROOT)/include
 	ln -sfn $(MUSL_PREFIX)/include/bits $(TOOL_ROOT)/include/bits
 	ln -sf $(MUSL_PREFIX)/include/features.h $(TOOL_ROOT)/include/features.h
 	ln -sf $(MUSL_PREFIX)/include/limits.h $(TOOL_ROOT)/include/limits.h
@@ -211,7 +214,7 @@ LIBDWARF_CONFIG = \
 	PKG_CONFIG=
 
 $(LIBDWARF_SRC_DIR)/.setup: | $(LIBDWARF_SRC_DIR)
-	cd $(@D) && patch -d . < $(PROJECT_DIR)/toolchain/patches/libdwarf.patch
+	cd $(@D) && patch -p 1 -d . < $(PROJECT_DIR)/toolchain/patches/libdwarf.patch
 	@touch $@
 
 $(LIBDWARF_DIR)/.configure: $(LIBDWARF_SRC_DIR)/.setup
