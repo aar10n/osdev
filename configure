@@ -1,12 +1,123 @@
 #!/bin/bash
 
+# terminal colors
+GREEN='\033[0;32m'
+RED='\033[0;31m'
+NC='\033[0m' # reset
+
+# parse command line arguments
+RECONFIGURE=0
+for arg in "$@"; do
+  if [ "$arg" = "--reconfigure" ]; then
+    RECONFIGURE=1
+  fi
+done
+
+CONFIG_FILE=.config
+
+# check if config already exists and not in reconfigure mode
+if [ -f "$CONFIG_FILE" ] && [ $RECONFIGURE -eq 0 ]; then
+  echo "${RED}error: configuration file $CONFIG_FILE already exists${NC}"
+  echo "use --reconfigure to create a new configuration"
+  exit 1
+fi
+
 # check required environment variables
 if [ -z "$ARCH" ] || [ -z "$BUILD_DIR" ]; then
-    echo "error: ARCH and BUILD_DIR must be set" >&2
+    echo "${RED}error: ARCH and BUILD_DIR must be set${NC}" >&2
     exit 1
 fi
 
-CONFIG_FILE=.config
+#
+# Check Host Dependencies
+#
+
+echo "Checking for required dependencies..."
+echo
+
+missing_deps=0
+
+# check if a command exists
+check_command() {
+  command -v "$1" &> /dev/null
+}
+
+check_dependency() {
+  local cmd=$1
+  local desc=$2
+  if [ -z "$desc" ]; then
+    desc=$cmd
+  fi
+  printf "%-20s" "$desc"
+  if check_command "$cmd"; then
+    echo -e "[${GREEN}FOUND${NC}]"
+    return 0
+  else
+    echo -e "[${RED}MISSING${NC}]"
+    missing_deps=$((missing_deps + 1))
+    return 1
+  fi
+}
+
+# check for all dependencies required to build the toolchain and os
+check_dependency "gcc"
+check_dependency "g++"
+check_dependency "ld" "binutils"
+check_dependency "pkg-config"
+check_dependency "makeinfo" "texinfo"
+check_dependency "autoconf"
+check_dependency "clang"
+check_dependency "lld-link" "lld"
+check_dependency "llvm-ar" "llvm"
+check_dependency "nasm"
+check_dependency "mformat" "mtools"
+check_dependency "iasl"
+check_dependency "unzip"
+check_dependency "wget"
+check_dependency "python"
+check_dependency "perl"
+check_dependency "qemu-system-${ARCH}"
+
+# autoconf version check
+if check_command "autoconf"; then
+  version=$(autoconf --version | head -n1 | awk '{print $NF}')
+  printf "%-20s" "autoconf 2.69"
+  if [[ "$version" == "2.69" ]]; then
+    echo -e "[${GREEN}FOUND${NC}] (v$version)"
+  else
+    echo -e "[${RED}ERROR${NC}] (found v$version, needed v2.69)"
+  fi
+fi
+
+# python version check
+if check_command "python"; then
+  py_version=$(python --version 2>&1 | awk '{print $2}')
+  printf "%-20s" "python 3.9+"
+
+  # extract major and minor version
+  py_major=$(echo $py_version | cut -d. -f1)
+  py_minor=$(echo $py_version | cut -d. -f2)
+
+  if [[ "$py_major" -gt 3 ]] || [[ "$py_major" -eq 3 && "$py_minor" -ge 9 ]]; then
+    echo -e "[${GREEN}FOUND${NC}] (v$py_version)"
+  else
+    echo -e "[${RED}ERROR${NC}] (found v$py_version, need v3.9+)"
+    missing_deps=$((missing_deps + 1))
+  fi
+fi
+
+echo ""
+if [ $missing_deps -eq 0 ]; then
+  echo -e "${GREEN}All dependencies are installed!${NC}"
+else
+  echo -e "${RED}Missing $missing_deps dependencies.${NC}"
+  exit 1
+fi
+
+#
+# Create Configuration File
+#
+
 PROJECT_DIR="$(pwd)"
 
 # defaults
