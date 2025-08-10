@@ -74,15 +74,14 @@ GCC_PREFIX = $(TOOL_ROOT)
 
 GCC_CONFIG = --enable-languages=c,c++ \
 	--target=$(TOOLCHAIN) \
-	--prefix=$(GCC_PREFIX) \
-	--srcdir=$(GCC_SRC_DIR) \
-	--with-sysroot=$(TOOL_ROOT) \
-	--with-build-sysroot=$(TOOL_ROOT) \
+    --prefix=$(GCC_PREFIX) \
+    --srcdir=$(GCC_SRC_DIR) \
+    --with-sysroot=$(TOOL_ROOT) \
+    --with-build-sysroot=$(TOOL_ROOT) \
 	--disable-shared \
 	--disable-bootstrap --disable-multilib \
 	--disable-libmpx --disable-libmudflap \
-	--disable-libsanitizer --disable-libstdcxx \
-	--disable-libgomp --disable-libssp\
+	--disable-libsanitizer \
 	--enable-tls --enable-initfini-array \
 	--enable-libstdcxx-filesystem-ts \
 	--enable-libstdcxx-time=rt \
