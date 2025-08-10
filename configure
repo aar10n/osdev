@@ -77,6 +77,7 @@ check_dependency "wget"
 check_dependency "python"
 check_dependency "perl"
 check_dependency "qemu-system-${ARCH}"
+check_dependency "iasl"
 
 # autoconf version check
 if check_command "autoconf"; then
