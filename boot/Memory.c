@@ -401,11 +401,8 @@ EFI_STATUS EFIAPI SetupKernelPageTables(IN PAGE_DESCRIPTOR *Descriptors, OUT UIN
     UINT64 PhysAddr = KernelDescriptor->PhysAddr;
     UINTN NumPages = KernelDescriptor->NumPages;
     UINT16 Flags = PageDescriptorFlagsToEntryFlags(KernelDescriptor->Flags) | PE_P;
-    // Declaration before label to avoid clang error
-    // error: label followed by a declaration is a C23 extension
-    UINTN N;
-  FILL:
-    N = MIN(NumPages, TABLE_MAX_ENTRIES - PTOffset);
+  FILL:;
+    UINTN N = MIN(NumPages, TABLE_MAX_ENTRIES - PTOffset);
     if (N > 0)
       FillTableWithEntries(UpperPTs[Index], PTOffset, N, PhysAddr, SIZE_4KB, Flags);
     NumPages -= N;

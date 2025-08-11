@@ -144,6 +144,20 @@ MUSL_CONFIG = \
 	CC="$(GCC_DIR)/gcc/xgcc -B $(GCC_DIR)/gcc" \
 	LIBCC="$(GCC_DIR)/$(TOOLCHAIN)/libgcc/libgcc.a"
 
+# We need to build MUSL again as a shared object
+# in order to make sure we have -fPIC enabled for the
+# final kernel.
+MUSL_CONFIG_SHARED = \
+	--target=$(TOOLCHAIN) \
+	--prefix= \
+	--srcdir=$(MUSL_SRC_DIR) \
+	--enable-debug \
+	--enable-shared \
+	\
+	CFLAGS="-g -O0" \
+	CC="$(GCC_DIR)/gcc/xgcc -B $(GCC_DIR)/gcc" \
+	LIBCC="$(GCC_DIR)/$(TOOLCHAIN)/libgcc/libgcc.a"
+
 MUSL_VARS = \
 	AR=$(CROSS_PREFIX)ar \
 	RANLIB=$(CROSS_PREFIX)ranlib \
@@ -173,19 +187,6 @@ $(MUSL_DIR)/.install: $(MUSL_DIR)/.build
 $(MUSL_DIR)/.install-headers: export DESTDIR = $(MUSL_PREFIX)
 $(MUSL_DIR)/.install-headers: $(MUSL_DIR)/.configure
 	cd $(@D) && $(MAKE) install-headers
-# We need to build MUSL again as a shared object
-# in order to make sure we have -fPIC enabled for the
-# final kernel.
-MUSL_CONFIG_SHARED = \
-	--target=$(TOOLCHAIN) \
-	--prefix= \
-	--srcdir=$(MUSL_SRC_DIR) \
-	--enable-debug \
-	--enable-shared \
-	\
-	CFLAGS="-g -O0" \
-	CC="$(GCC_DIR)/gcc/xgcc -B $(GCC_DIR)/gcc" \
-	LIBCC="$(GCC_DIR)/$(TOOLCHAIN)/libgcc/libgcc.a"
 
 $(MUSL_DIR)/.configure-shared: $(GCC_DIR)/.install | $(MUSL_SRC_DIR)
 	mkdir -p $(@D)
