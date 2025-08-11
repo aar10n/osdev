@@ -23,7 +23,7 @@ SRCS_DOOM = dummy.c am_map.c doomdef.c doomstat.c dstrings.c d_event.c d_items.c
 SRC_DOOM_PATHS = $(SRCS_DOOM:%.c=$(SOURCE_PATH)/%.c)
 OBJS = $(SRCS:%.c=$(OBJ_DIR)/%.c.o) $(SRC_DOOM_PATHS:$(SOURCE_PATH)/%.c=$(SOURCE_PATH)/%.c.o)
 
-DOOMGENERIC_URL = https://github.com/aar10n/doomgeneric/archive/refs/heads/$(VERSION).zip
+DOOMGENERIC_URL = https://github.com/aar10n/doomgeneric/archive/refs/heads/$(VERSION).tar.gz
 DOOMGENERIC_ARCHIVE = doomgeneric-$(VERSION).tar.gz
 
 .DEFAULT_GOAL := install

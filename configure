@@ -72,7 +72,6 @@ check_dependency "llvm-ar" "llvm"
 check_dependency "nasm"
 check_dependency "mformat" "mtools"
 check_dependency "iasl"
-check_dependency "unzip"
 check_dependency "wget"
 check_dependency "python"
 check_dependency "perl"
@@ -121,7 +120,7 @@ fi
 PROJECT_DIR="$(pwd)"
 
 # defaults
-BUILD_DIR="$(realpath "$BUILD_DIR")"
+BUILD_DIR="$BUILD_DIR/build"
 TOOL_ROOT="$BUILD_DIR/toolchain"
 SYS_ROOT="$BUILD_DIR/sysroot"
 TOOLCHAIN="$ARCH-linux-musl"

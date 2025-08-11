@@ -33,3 +33,37 @@ index f2bb624..8d03507 100755
  
  ###########################
  # CLANGPDB IA32 definitions
+diff --git a/BaseTools/Source/C/Makefiles/header.makefile b/BaseTools/Source/C/Makefiles/header.makefile
+index 0df728f..8eb9fb0 100644
+--- a/BaseTools/Source/C/Makefiles/header.makefile
++++ b/BaseTools/Source/C/Makefiles/header.makefile
+@@ -92,14 +92,14 @@ BUILD_CFLAGS = -MD -fshort-wchar -fno-strict-aliasing -fwrapv \
+ -Wno-unused-result -nostdlib -g
+ else
+ BUILD_CFLAGS = -MD -fshort-wchar -fno-strict-aliasing -fwrapv \
+--fno-delete-null-pointer-checks -Wall -Werror \
++-fno-delete-null-pointer-checks -Wall -Werror -Wno-error=use-after-free -Wno-error=dangling-pointer= \
+ -Wno-deprecated-declarations -Wno-stringop-truncation -Wno-restrict \
+ -Wno-unused-result -nostdlib -g
+ endif
+ endif
+ ifeq ($(CXX), llvm)
+ BUILD_LFLAGS =
+-BUILD_CXXFLAGS = -Wno-deprecated-register -Wno-unused-result
++BUILD_CXXFLAGS = -Wno-deprecated-register -Wno-register -Wno-unused-result
+ else
+ BUILD_LFLAGS =
+ BUILD_CXXFLAGS = -Wno-unused-result
+diff --git a/BaseTools/Source/C/VfrCompile/GNUmakefile b/BaseTools/Source/C/VfrCompile/GNUmakefile
+index fc32994..dcbf192 100644
+--- a/BaseTools/Source/C/VfrCompile/GNUmakefile
++++ b/BaseTools/Source/C/VfrCompile/GNUmakefile
+@@ -17,7 +17,7 @@ TOOL_INCLUDE = -I Pccts/h
+ OBJECTS = AParser.o DLexerBase.o ATokenBuffer.o EfiVfrParser.o VfrLexer.o VfrSyntax.o \
+           VfrFormPkg.o VfrError.o VfrUtilityLib.o VfrCompiler.o
+ ifeq ($(CXX), llvm)
+-VFR_CPPFLAGS = -Wno-deprecated-register -DPCCTS_USE_NAMESPACE_STD $(BUILD_CPPFLAGS)
++VFR_CPPFLAGS = -Wno-deprecated-register -Wno-register -DPCCTS_USE_NAMESPACE_STD $(BUILD_CPPFLAGS)
+ else
+ VFR_CPPFLAGS = -DPCCTS_USE_NAMESPACE_STD $(BUILD_CPPFLAGS)
+ endif
