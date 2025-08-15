@@ -251,6 +251,10 @@ void apic_init() {
   apic_write(APIC_SVR, svr.raw);
 
   apic_send_eoi();
+
+  // determine cpu and apic clock frequencies
+  get_cpu_clock();
+  get_apic_clock();
 }
 
 void apic_init_periodic(uint64_t ms) {

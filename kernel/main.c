@@ -13,6 +13,7 @@
 #include <kernel/params.h>
 #include <kernel/proc.h>
 #include <kernel/sched.h>
+#include <kernel/smpboot.h>
 
 #include <kernel/acpi/acpi.h>
 #include <kernel/cpu/cpu.h>
@@ -37,6 +38,7 @@ KERNEL_PARAM("init.tty", str_t, init_tty_device, str_null);
 //
 
 _used void kmain() {
+  QEMU_DEBUG_CHARP("kmain\n");
   // before anything else we need to make sure we can use panic, kprintf.
   panic_early_init();
   kprintf_early_init();
@@ -45,7 +47,7 @@ _used void kmain() {
   // heap, and early memory apis.
   cpu_early_init();
   mm_early_init();
-  do_percpu_initializers();
+  do_percpu_early_initializers();
 
   // parse boot command line options and initalize kernel parameters.
   init_kernel_params();
@@ -66,9 +68,9 @@ _used void kmain() {
   init_mem_zones();
   init_address_space();
 
-  kprintf("===> is debug enabled? {:b}\n", is_debug_enabled);
-  debug_init();
+  // perform late stage cpu related initialization that needs to allocate pages
   cpu_late_init();
+  debug_init();
 
   // initialize the irq layer and our clock source so the static initializers can use them.
   // we also initialize the alarm source, but it says disabled until later.
@@ -78,10 +80,11 @@ _used void kmain() {
 
   // now run the static initializers.
   do_static_initializers();
+  do_percpu_static_initializers();
 
   fs_init();
   sched_init();
-  // smp_init(); // not working yet
+  smp_init();
 
   // run the module initializers followed by the last of the filesystem setup.
   do_module_initializers();
@@ -90,33 +93,46 @@ _used void kmain() {
   cpu_enable_interrupts();
   probe_all_buses();
 
-  kprintf("{:$=^49}\n");
-  kprintf("    kernel initialization done after {:llu}ms    \n", NS_TO_MS(clock_get_nanos()));
-  kprintf("{:$=^49}\n");
-
   // give other processes a chance to run including the devfs process
   // which wll populate devices we will need shortly.
   sched_again(SCHED_YIELDED);
+
+  kprintf("{:$=^49}\n");
+  kprintf("    kernel initialization done after {:llu}ms    \n", NS_TO_MS(clock_get_nanos()));
+  kprintf("{:$=^49}\n");
 
   ls("/");
   ls("/dev");
 
   alarm_source_enable(alarm_tick_source());
+
   launch_init_process();
   sched_again(SCHED_BLOCKED);
   unreachable;
 }
 
 _used void ap_main() {
+  QEMU_DEBUG_CHARP("ap_main\n");
   cpu_early_init();
-  do_percpu_initializers();
+  do_percpu_early_initializers();
   kprintf("[CPU#%d] initializing\n", curcpu_id);
 
-  init_ap_address_space();
+  // the BSP has pre-allocated for us a main thread and address space to avoid
+  // lock contention on wait locks before we can initialize the scheduler. the
+  // only setup needed before we can use the memory subsystem is to attach our
+  // main thread to proc0.
+  proc0_ap_init();
+
+  // initialize the scheduler as soon as possible because running with multiple
+  // cpus can hit contention on any wait lock which results in a context switch
+  sched_init();
+
+  // now we can run the late stage cpu and any percpu static initializers
+  cpu_late_init();
+  do_percpu_static_initializers();
 
   kprintf("[CPU#%d] done!\n", curcpu_id);
-
-  sched_init();
+  sched_again(SCHED_BLOCKED);
   unreachable;
 }
 

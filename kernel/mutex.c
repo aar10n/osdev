@@ -75,11 +75,11 @@ static inline void spinlock_exit() {
 
 //
 
-static void mtx_static_init() {
+static void mtx_early_init() {
   lock_classes[lock_class_index(SPINLOCK_LOCKCLASS)] = &spinlock_lockclass;
   lock_classes[lock_class_index(MUTEX_LOCKCLASS)] = &mutex_lockclass;
 }
-STATIC_INIT(mtx_static_init);
+EARLY_INIT(mtx_early_init);
 
 uint32_t _mtx_opts_to_lockobject_flags(uint32_t opts) {
   uint32_t flags = LO_INITIALIZED;
@@ -185,6 +185,7 @@ int _mtx_spin_trylock(mtx_t *mtx, const char *file, int line) {
 }
 
 void _mtx_spin_lock(mtx_t *mtx, const char *file, int line) {
+  MTX_DEBUGF(mtx, file, line, "spin_lock {:#Lo} lock={:#x} owner={:td} curthread={:td}", mtx, mtx->mtx_lock, mtx_lock_owner(mtx->mtx_lock), curthread);
   thread_t *owner = mtx_get_owner(mtx);
   int lc = mtx_get_lc(mtx);
   ASSERT(mtx->mtx_lock != MTX_DESTROYED, "_mtx_spin_lock() on destroyed mutex [%p] %s:%d", mtx, file, line);
@@ -202,7 +203,7 @@ void _mtx_spin_lock(mtx_t *mtx, const char *file, int line) {
     return;
   }
 
-  struct spin_delay delay = new_spin_delay(SHORT_DELAY, MAX_RETRIES);
+  struct spin_delay delay = new_spin_delay(SHORT_DELAY, 100000);
   uintptr_t mtx_lock = new_mtx_lock(curthread, MTX_LOCKED);
   for (;;) {
     // https://rigtorp.se/spinlock/
@@ -223,9 +224,10 @@ void _mtx_spin_lock(mtx_t *mtx, const char *file, int line) {
 void _mtx_spin_unlock(mtx_t *mtx, const char *file, int line) {
   thread_t *owner = mtx_get_owner(mtx);
   thread_t *current = curthread;
+  MTX_DEBUGF(mtx, file, line, "wait_unlock {:#Lo} lock={:#x} owner={:td} curthread={:td}", mtx, mtx->mtx_lock, owner, curthread);
   ASSERT(mtx->mtx_lock != MTX_DESTROYED, "_mtx_spin_unlock() on destroyed mutex");
   ASSERT(mtx_get_lc(mtx) == SPINLOCK_LOCKCLASS, "_mtx_spin_unlock() on non-spin mutex");
-  ASSERT(owner == curthread, "_mtx_spin_unlock() on unowned mutex");
+  ASSERT(owner == curthread, "_mtx_spin_unlock() on unowned mutex owner={:td} curthread={:td}", owner, current);
 
   mtx->lo.data--;
   if (mtx->mtx_lock & MTX_RECURSED && mtx->lo.data > 0) {
@@ -275,8 +277,8 @@ int _mtx_wait_trylock(mtx_t *mtx, const char *file, int line) {
 
 void _mtx_wait_lock(mtx_t *mtx, const char *file, int line) {
   MTX_DEBUGF(mtx, file, line, "wait_lock {:#Lo} lock={:#x} owner={:td} curthread={:td}", mtx, mtx->mtx_lock, mtx_lock_owner(mtx->mtx_lock), curthread);
-  ASSERT(mtx->mtx_lock != MTX_DESTROYED, "_mtx_wait_lock() on destroyed mutex, %s:%d", file, line);
-  ASSERT(mtx_get_lc(mtx) == MUTEX_LOCKCLASS, "_mtx_wait_lock() on non-wait mutex, %s:%d", file, line);
+  ASSERT(mtx->mtx_lock != MTX_DESTROYED, "_mtx_wait_lock() on destroyed mutex %s, %s:%d", mtx->lo.name, file, line);
+  ASSERT(mtx_get_lc(mtx) == MUTEX_LOCKCLASS, "_mtx_wait_lock() on non-wait mutex %p %s, %s:%d", mtx, mtx->lo.name, file, line);
 
   WAIT_CLAIMS_ADD(&mtx->lo, file, line);
 
@@ -333,6 +335,12 @@ void _mtx_wait_unlock(mtx_t *mtx, const char *file, int line) {
 
   ASSERT(mtx->lo.data == 0, "_mtx_wait_unlock() expected 0 count, got %d", mtx->lo.data);
   atomic_store_release(&mtx->mtx_lock, MTX_UNOWNED);
+
+  // signal waiting threads if any
+  struct lockqueue *lockq = lockq_lookup(&mtx->lo);
+  if (lockq != NULL) {
+    lockq_signal(lockq, LQ_EXCL);
+  }
 
   WAIT_CLAIMS_REMOVE(&mtx->lo);
 }

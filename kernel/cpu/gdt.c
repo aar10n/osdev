@@ -46,6 +46,8 @@ static void gdt_percpu_init() {
   } else {
     gdt = kmallocz(sizeof(cpu0_gdt));
     tss = kmallocz(sizeof(struct tss));
+    // copy the GDT template for APs
+    memcpy(gdt, cpu0_gdt, sizeof(cpu0_gdt));
   }
 
   gdt[index(TSS_LO_SEG)] = tss_segment64_lo((uintptr_t) tss);

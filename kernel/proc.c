@@ -65,6 +65,8 @@ static mtx_t proc0_ap_lock;
 
 struct percpu *percpu0;
 
+static inline void proc_do_add_thread(proc_t *proc, thread_t *td);
+
 void proc0_init() {
   // runs just after the early initializers
   percpu0 = curcpu_area;
@@ -78,7 +80,9 @@ void proc0_init() {
   // point therefore cant use pr_lock/_unlock.
   mtx_init(&proc0_ap_lock, MTX_SPIN, "proc0_ap_lock");
 
-  thread_t *maintd = thread_alloc_proc0_main();
+  uintptr_t curr_stack_base = (uintptr_t)&entry_initial_stack;
+  uintptr_t curr_stack_top = (uintptr_t)&entry_initial_stack_top;
+  thread_t *maintd = thread_alloc_proc0_main(curr_stack_base, curr_stack_top - curr_stack_base);
   maintd->name = str_from("proc0_main");
   proc_setup_add_thread(proc0, maintd);
 
@@ -90,6 +94,21 @@ void proc0_init() {
   set_kernel_sp(thread_get_kstack_top(maintd));
   set_tss_rsp0_ptr(offset_addr(maintd->frame, sizeof(struct trapframe)));
   // we cant insert proc0 into the ptable yet since it hasnt been initialized
+}
+
+void proc0_ap_init() {
+  // smpboot already allocated us a new main thread and set curthread
+  // we just need to attach it to proc0
+  thread_t *maintd = curthread;
+  ASSERT(maintd != NULL);
+  mtx_spin_lock(&proc0_ap_lock);
+  proc_do_add_thread(proc0, maintd);
+  mtx_spin_unlock(&proc0_ap_lock);
+
+  maintd->state = TDS_RUNNING;
+  set_curproc(proc0);
+  set_kernel_sp(thread_get_kstack_top(maintd));
+  set_tss_rsp0_ptr(offset_addr(maintd->frame, sizeof(struct trapframe)));
 }
 
 /////////////////
@@ -1445,10 +1464,8 @@ thread_t *thread_alloc(uint32_t flags, size_t kstack_size) {
   return thread_alloc_internal(flags, kstack_base, kstack_size);
 }
 
-thread_t *thread_alloc_proc0_main() {
-  uintptr_t curr_stack_base = (uintptr_t)&entry_initial_stack;
-  uintptr_t curr_stack_top = (uintptr_t)&entry_initial_stack_top;
-  return thread_alloc_internal(TDF_KTHREAD|TDF_NOPREEMPT, curr_stack_base, curr_stack_top - curr_stack_base);
+thread_t *thread_alloc_proc0_main(uintptr_t kstack_base, size_t kstack_size) {
+  return thread_alloc_internal(TDF_KTHREAD|TDF_NOPREEMPT, kstack_base, kstack_size);
 }
 
 thread_t *thread_alloc_idle() {

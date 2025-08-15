@@ -39,7 +39,6 @@ static int early_kprintf_puts(void *arg, const char *s) {
 //
 
 void kprintf_early_init() {
-  QEMU_DEBUG_CHARP("kprintf_early_init");
   uart_hw_init(early_kprintf.port);
   impl_arg = &early_kprintf;
   mtx_init(&early_kprintf.lock, MTX_SPIN, "early_kprintf_lock");

@@ -6,13 +6,21 @@
 %define SMPDATA_START 0x2000
 
 ; struct smpboot offsets
-%define SMP_LOCK    0x00
-%define SMP_GATE    0x04
-%define SMP_CPU_ID  0x08
-%define SMP_COUNT   0x0C
-%define SMP_PML4    0x10
-%define SMP_STACK   0x18
-%define SMP_PERCPU  0x20
+%define SMP_INIT_ID     0x00
+%define SMP_GATE        0x04
+%define SMP_AP_ACK      0x08
+%define SMP_ACK_BMP     0x0C
+%define SMP_PML4        0x10
+%define SMP_STACK       0x18
+%define SMP_PERCPU      0x20
+%define SMP_MAIN_TD     0x28
+%define SMP_IDLE_TD     0x30
+%define SMP_SPACE       0x38
+
+; struct percpu offsets
+%define PERCPU_SPACE        gs:0x10
+%define PERCPU_THREAD       gs:0x18
+%define PERCPU_SCRATCH_RAX  gs:0x60
 
 %define CODE_SEGMENT 0x08
 %define DATA_SEGMENT 0x10
@@ -33,11 +41,16 @@ smpboot_start:
 ;   16-Bit Code     ;
 ; ----------------- ;
 
-; All APs are booted at the same time so we must
-; add a lock and gate to properly initialize them
-; one-by-one.
+; All APs are booted at the same time so we use a BSP controlled gate
+; to select individual APs to boot up one-by-one.
 bits 16
 ap_boot:
+  cli
+  xor ax, ax
+  mov ds, ax
+  mov es, ax
+  mov ss, ax
+
   ; load zero-length idt to force triple fault on NMI
   lidt [label_rel(idt_desc)]
 
@@ -48,35 +61,32 @@ ap_boot:
   shr ebx, cl
   and ebx, 0xFF
 
-  lock add dword [data_ptr(SMP_COUNT)], 1 ; increment ap count
+  lock bts dword [data_ptr(SMP_ACK_BMP)], ebx ; set bit in ack bitmap
+  mov eax, 0xDEADBEAF ; just a marker for debugging
+  mov ebp, ebx
 
-  ; ========= Exclusive lock =========
-.acquire_lock:
-  xor ax, ax
-  mov eax, 1
-  lock cmpxchg dword [data_ptr(SMP_LOCK)], eax
-  jne .lock_acquired
-.spin_lock:
+  ; ==== the APs synchronize here and wait for their turn to boot ====
+.wait_for_turn:
   pause
-  cmp dword [data_ptr(SMP_GATE)], 0 ; wait for gate to open
-  je .acquire_lock                  ; before trying to re-acquire lock
-  jmp .spin_lock
-  ; ==================================
-.lock_acquired:
+  cmp word [data_ptr(SMP_INIT_ID)], bx
+  jne .wait_for_turn
+  ; selected AP now has exclusive access
 
-  mov byte [data_ptr(SMP_CPU_ID)], bl ; set current id
-  ; wait for bsp to release gate
-.wait_for_bsp:
+  mov byte [data_ptr(SMP_AP_ACK)], 1 ; acknowledge to BSP
+  mov ebx, 0xDEADBEAF ; just a marker for debugging
+.wait_for_bsp: ; wait for bsp to release gate
   pause
-  cmp dword [data_ptr(SMP_GATE)], 1
+  cmp byte [data_ptr(SMP_GATE)], 1
   je .wait_for_bsp
+  ; AP has exclusive access and has been acknowledged by the BSP
+  mov ecx, 0xDEADBEAF ; just a marker for debugging
 
   ;
   ; Prepare to enter long mode
   ;
 
-  ; set PSE, PAE and PGE bits
-  mov eax, 0b10110000
+  ; set PSE, PAE, PGE, OSFXSR and OSXMMEXCPT bits for SSE support
+  mov eax, 0b11011110000
   mov cr4, eax
 
   ; load pml4 into cr3
@@ -121,9 +131,16 @@ ap_boot64:
   mov ecx, GSBASE_MSR
   wrmsr
 
-  ; finally close gate and release lock
+  mov rax, [data_ptr(SMP_SPACE)]      ; set per-cpu address space
+  mov PERCPU_SPACE, rax
+  mov rax, [data_ptr(SMP_MAIN_TD)]    ; set per-cpu thread
+  mov PERCPU_THREAD, rax
+  mov rax, [data_ptr(SMP_IDLE_TD)]    ; HACK: pass the idle thread through the scratch register
+  mov PERCPU_SCRATCH_RAX, rax
+
+  ; finally close gate to signal BSP that we have booted
   mov byte [data_ptr(SMP_GATE)], 1
-  mov byte [data_ptr(SMP_LOCK)], 0
+  mov byte [data_ptr(SMP_AP_ACK)], 0
 
   ; ========= Lock Released =========
   mov rax, ap_entry

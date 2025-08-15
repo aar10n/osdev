@@ -16,6 +16,7 @@ void switch_address_space(address_space_t *new_space) _used;
 
 void init_address_space();
 void init_ap_address_space();
+address_space_t *alloc_ap_address_space();
 uintptr_t get_default_ap_pml4();
 
 address_space_t *vm_new_space(uintptr_t min_addr, uintptr_t max_addr, uintptr_t page_table);

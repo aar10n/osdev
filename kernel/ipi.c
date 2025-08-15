@@ -55,7 +55,7 @@ _used void ipi_handler(struct trapframe *frame) {
 static void ipi_static_init() {
   mtx_init(&ipi_lock, MTX_SPIN, "ipi_lock");
   ipi_irqnum = irq_must_reserve_irqnum(MAX_IRQ-1);
-  ipi_vectornum = (uint8_t) irq_get_vector(ipi_vectornum);
+  ipi_vectornum = (uint8_t) irq_get_vector(ipi_irqnum);
 
   if (irq_register_handler(ipi_irqnum, ipi_handler, NULL) < 0) {
     panic("failed to register ipi handler");
@@ -94,7 +94,7 @@ int ipi_deliver_cpu_id(ipi_type_t type, uint8_t cpu_id, uint64_t data) {
   return 0;
 }
 
-int ipi_deliver_mode(ipi_type_t type, ipi_mode_t mode, uint64_t data) {
+int ipi_deliver_mode(ipi_type_t type, ipi_mode_t mode, uint64_t data, bool wait_ack) {
   kassert(type < NUM_IPIS);
   kprintf("[CPU#%d] delivering ipi using mode %d\n", PERCPU_ID, mode);
 
@@ -122,8 +122,10 @@ int ipi_deliver_mode(ipi_type_t type, ipi_mode_t mode, uint64_t data) {
   ipi_data = data;
   ipi_ack = 0;
   apic_write_icr(APIC_DM_FIXED | APIC_LVL_ASSERT | apic_flags | ipi_vectornum, 0);
-  while (ipi_ack != num_acks) {
-    cpu_pause();
+  if (wait_ack) {
+    while (ipi_ack != num_acks) {
+      cpu_pause();
+    }
   }
   mtx_spin_unlock(&ipi_lock);
   return 0;

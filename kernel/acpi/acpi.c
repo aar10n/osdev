@@ -190,7 +190,7 @@ void acpi_parse_madt() {
     }
   }
 
-  kprintf("ACPI: %d processors enabled, %d online capable\n", enabled_apic_count, online_capable_apic_count);
+  kprintf("ACPI: %d processors enabled, %d online capable [%d]\n", enabled_apic_count, online_capable_apic_count, total_apic_count);
 }
 
 void acpi_parse_mcfg() {

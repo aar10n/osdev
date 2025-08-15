@@ -10,7 +10,7 @@
 
 extern uint16_t enabled_apic_count;
 extern uint16_t online_capable_apic_count;
-extern uint16_t total_apic_count;
+extern uint16_t total_apic_count; // total number of APICs in the system
 extern uint8_t apic_id_map[];
 
 

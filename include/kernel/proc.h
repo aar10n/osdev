@@ -320,6 +320,7 @@ static_assert(offsetof(thread_t, ustack_ptr) == 0xA0);
 //
 
 void proc0_init();
+void proc0_ap_init();
 
 __ref struct pcreds *pcreds_alloc(uid_t uid, gid_t gid);
 void pcreds_cleanup(__move struct pcreds **credsp);
@@ -436,7 +437,7 @@ int proc_syscall_execve(cstr_t path, char *const argv[], char *const envp[]);
 })
 
 thread_t *thread_alloc(uint32_t flags, size_t kstack_size);
-thread_t *thread_alloc_proc0_main();
+thread_t *thread_alloc_proc0_main(uintptr_t kstack_base, size_t kstack_size);
 thread_t *thread_alloc_idle();
 thread_t *thread_syscall_fork(); // syscall only
 void thread_free_exited(thread_t **tdp);
@@ -450,9 +451,9 @@ void thread_stop(thread_t *td);
 void thread_cont(thread_t *td);
 int thread_signal(thread_t *td, siginfo_t *info);
 
+#define KSTACK_TOP_OFF (align(sizeof(struct tcb), 16) + align(sizeof(struct trapframe), 16))
 static inline uintptr_t thread_get_kstack_top(thread_t *td) {
-  uintptr_t stack_top_off = align(sizeof(struct tcb), 16) + align(sizeof(struct trapframe), 16);
-  return (td->kstack_base + td->kstack_size) - stack_top_off;
+  return (td->kstack_base + td->kstack_size) - KSTACK_TOP_OFF;
 }
 
 struct cpuset *cpuset_alloc(struct cpuset *existing);

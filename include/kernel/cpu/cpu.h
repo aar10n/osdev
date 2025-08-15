@@ -9,6 +9,8 @@
 
 #define MAX_CPUS 32
 
+#define IRQ_STACK_SIZE SIZE_16KB
+
 #define NULL_SEG    0x00ULL
 #define KCODE_SEG   0x08ULL
 #define KDATA_SEG   0x10ULL

@@ -88,14 +88,14 @@ struct lockqueue_chain {
 static struct lockqueue_chain lqc_table[LQC_TABLESIZE];
 static mtx_t td_contested_lock;
 
-static void lockq_static_init() {
+static void lockq_early_init() {
   mtx_init(&td_contested_lock, MTX_SPIN, "td_contested_lock");
   for (int i = 0; i < LQC_TABLESIZE; i++) {
     struct lockqueue_chain *chain = &lqc_table[i];
     mtx_init(&chain->lock, MTX_SPIN, "lockqueue_chain_lock");
   }
 }
-STATIC_INIT(lockq_static_init);
+EARLY_INIT(lockq_early_init);
 
 static void lockq_remove_thread(struct lockqueue_chain *chain, struct lockqueue *lockq, thread_t *td, int queue) {
   td_lock_assert(td, MA_OWNED);
@@ -117,6 +117,11 @@ static void lockq_remove_thread(struct lockqueue_chain *chain, struct lockqueue 
 
   td->own_lockq = own_lockq;
   td->contested_lock = NULL;
+  
+  // clear the lock_obj when giving back the lockqueue to thread
+  if (own_lockq != NULL) {
+    own_lockq->lock_obj = NULL;
+  }
 }
 
 static void lockq_propagate_priorirty(struct lockqueue *lockq, thread_t *td) {
@@ -173,10 +178,13 @@ struct lockqueue *lockq_lookup_or_default(struct lock_object *lock_obj, struct l
     }
   }
 
-  if (lockq == NULL && default_lockq != NULL) {
+  if (lockq == NULL) {
+    ASSERT(default_lockq != NULL);
     // use the default lockq
     lockq = default_lockq;
     mtx_spin_lock(&lockq->lock);
+    lockq->lock_obj = lock_obj;
+    lockq->owner = NULL;
   }
   return lockq;
 }
@@ -218,14 +226,21 @@ void lockq_wait(struct lockqueue *lockq, struct thread *owner, int queue) {
   thread_t *td = curthread;
   td_lock(td);
 
-  if (td->priority < lockq->owner->priority) {
+  // set the owner if not already set (for newly created lockqueues)
+  if (lockq->owner == NULL) {
+    lockq->owner = owner;
+  }
+
+  if (lockq->owner != NULL && td->priority < lockq->owner->priority) {
     // propagate the priority to the lockqueue
-    lockq_propagate_priorirty(lockq, td);
+//    lockq_propagate_priorirty(lockq, td);
   }
 
   if (lockq == td->own_lockq) {
     // the lockq was donated by us
     td->own_lockq = NULL;
+    //  - the lock object should already be set
+    ASSERT(lockq->lock_obj != NULL);
     //  - insert the lockq into the chain
     LIST_ADD(&chain->head, lockq, chain_list);
     //  - add the thread to the queue
@@ -269,11 +284,9 @@ void lockq_signal(struct lockqueue *lockq, int queue) {
   mtx_assert(&lockq->lock, MA_OWNED);
 
   thread_t *td = LIST_FIRST(&lockq->queues[queue]);
-  while (true) {
+  while (td != NULL) {
     td_lock(td);
-    if (TDF2_IS_STOPPED(td)) {
-      td_unlock(td);
-    }
+    thread_t *next = LIST_NEXT(td, lqlist);
 
     // unblock the thread
     lockq_remove_thread(chain, lockq, td, queue);
@@ -281,8 +294,11 @@ void lockq_signal(struct lockqueue *lockq, int queue) {
     TD_SET_STATE(td, TDS_READY);
     sched_submit_ready_thread(td);
     td_unlock(td);
-    break;
+    td = next;
   }
+
+  mtx_spin_unlock(&lockq->lock);
+  mtx_spin_unlock(&chain->lock);
 }
 
 void lockq_update_priority(struct lockqueue *lockq, struct thread *td) {
@@ -310,14 +326,14 @@ struct waitqueue_chain {
 };
 static struct waitqueue_chain waitq_chains[WQC_TABLESIZE];
 
-static void waitq_static_init() {
+static void waitq_early_init() {
   for (int i = 0; i < WQC_TABLESIZE; i++) {
     struct waitqueue_chain *chain = &waitq_chains[i];
     mtx_init(&chain->lock, MTX_SPIN, "waitqueue_chain_lock");
     LIST_INIT(&chain->head);
   }
 }
-STATIC_INIT(waitq_static_init);
+EARLY_INIT(waitq_early_init);
 
 
 static void waitq_add_internal(struct waitqueue *waitq, struct waitqueue_chain *chain, thread_t *td, const char *wdmsg) {

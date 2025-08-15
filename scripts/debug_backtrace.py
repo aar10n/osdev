@@ -62,10 +62,9 @@ def has_debug_symbols(path):
 
 
 def decode_address(program, addr):
-    offset = addr - program.base_addr
     try:
         result = subprocess.run(
-            [ADDR2LINE, '-e', program.path, hex(offset)],
+            [ADDR2LINE, '-e', program.path, hex(addr)],
             capture_output=True,
             text=True,
             check=True

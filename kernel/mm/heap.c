@@ -74,7 +74,7 @@ static inline void aquire_heap(mm_heap_t *heap) {
   if (__expect_false(curthread == NULL)) {
     mtx_spin_lock(&kheap_lock);
   } else {
-    mtx_lock(&heap->lock);
+    mtx_spin_lock(&heap->lock);
   }
 }
 
@@ -82,7 +82,7 @@ static inline void release_heap(mm_heap_t *heap) {
   if (__expect_false(curthread == NULL)) {
     mtx_spin_unlock(&kheap_lock);
   } else {
-    mtx_unlock(&heap->lock);
+    mtx_spin_unlock(&heap->lock);
   }
 }
 
@@ -112,7 +112,7 @@ void mm_init_kheap() {
   kheap.last_chunk = NULL;
   LIST_INIT(&kheap.chunks);
   mtx_init(&kheap_lock, MTX_SPIN|MTX_RECURSIVE, "kheap_lock");
-  mtx_init(&kheap.lock, MTX_RECURSIVE, "kheap_mutex");
+  mtx_init(&kheap.lock, MTX_SPIN|MTX_RECURSIVE, "kheap_mutex");
 
   kprintf("initialized kernel heap\n");
 }

@@ -14,8 +14,9 @@ typedef struct callback_obj {
 } callback_obj_t;
 
 LOAD_SECTION(__early_init_array, ".init_array.early");
-LOAD_SECTION(__percpu_init_array, ".init_array.percpu");
+LOAD_SECTION(__percpu_early_init_array, ".init_array.early_percpu");
 LOAD_SECTION(__static_init_array, ".init_array.static");
+LOAD_SECTION(__percpu_static_init_array, ".init_array.static_percpu");
 LOAD_SECTION(__module_init_array, ".init_array.module");
 LIST_HEAD(callback_obj_t) init_address_space_cb_list;
 
@@ -52,14 +53,14 @@ void do_early_initializers() {
   }
 }
 
-void do_percpu_initializers() {
-  // execute all of the percpu initializers
-  if (__percpu_init_array.virt_addr == 0) {
-    panic("failed to load percpu initializers");
+void do_percpu_early_initializers() {
+  // execute all of the percpu early initializers
+  if (__percpu_early_init_array.virt_addr == 0) {
+    panic("failed to load percpu early initializers");
   }
 
-  void (**init_funcs)() = (void *) __percpu_init_array.virt_addr;
-  size_t num_init_funcs = __percpu_init_array.size / sizeof(void *);
+  void (**init_funcs)() = (void *) __percpu_early_init_array.virt_addr;
+  size_t num_init_funcs = __percpu_early_init_array.size / sizeof(void *);
   for (size_t i = 0; i < num_init_funcs; i++) {
     init_funcs[i]();
   }
@@ -74,6 +75,20 @@ void do_static_initializers() {
 
   void (**init_funcs)() = (void *) __static_init_array.virt_addr;
   size_t num_init_funcs = __static_init_array.size / sizeof(void *);
+  for (size_t i = 0; i < num_init_funcs; i++) {
+    init_funcs[i]();
+  }
+}
+
+void do_percpu_static_initializers() {
+  // execute all of the percpu static initializers
+  if (__percpu_static_init_array.virt_addr == 0) {
+    // no percpu static initializers
+    return;
+  }
+
+  void (**init_funcs)() = (void *) __percpu_static_init_array.virt_addr;
+  size_t num_init_funcs = __percpu_static_init_array.size / sizeof(void *);
   for (size_t i = 0; i < num_init_funcs; i++) {
     init_funcs[i]();
   }

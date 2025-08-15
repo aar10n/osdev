@@ -1243,14 +1243,20 @@ void init_address_space() {
   vm_print_address_space();
 }
 
+address_space_t *alloc_ap_address_space() {
+  space_lock(default_user_space);
+  address_space_t *user_space = vm_fork_space(default_user_space, /*fork_user=*/true);
+  space_unlock(default_user_space);
+  return user_space;
+}
+
 void init_ap_address_space() {
-  // do not need to lock default_user_space here because after its creation during init_address_space
-  // it is only read from and never written to again
+  // smpboot already allocated us a new address space and set curspace
   space_lock(default_user_space);
   address_space_t *user_space = vm_fork_space(default_user_space, /*fork_user=*/true);
   set_curspace(user_space);
   curproc->space = user_space;
-  space_lock(default_user_space);
+  space_unlock(default_user_space);
 }
 
 uintptr_t get_default_ap_pml4() {
@@ -1271,11 +1277,9 @@ address_space_t *vm_new_space(uintptr_t min_addr, uintptr_t max_addr, uintptr_t 
 
 // the caller must have target space locked
 address_space_t *vm_fork_space(address_space_t *space, bool fork_user) {
-  ASSERT(space == curspace);
   space_lock_assert(space, MA_OWNED);
   address_space_t *newspace = vm_new_space(space->min_addr, space->max_addr, 0);
   newspace->num_mappings = space->num_mappings;
-  ASSERT(space->page_table == get_current_pgtable());
 
   // fork all the user vm_mappings
   vm_mapping_t *prev_newvm = NULL;

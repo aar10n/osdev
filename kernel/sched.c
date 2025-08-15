@@ -237,7 +237,15 @@ idle_wait:;
 void sched_init() {
   sched_t *sched = kmallocz(sizeof(sched_t));
   sched->id = curcpu_id;
-  sched->idle = thread_alloc_idle();
+  if (curcpu_is_boot) {
+    sched->idle = thread_alloc_idle();
+  } else {
+    // HACK: the APs have their pre-allocated idle threads passed
+    // via the percpu scratch rax field.
+    sched->idle = (thread_t *)curcpu_area->scratch_rax;
+    ASSERT(sched->idle != NULL);
+    curcpu_area->scratch_rax = 0;
+  }
   for (int i = 0; i < NRUNQS; i++) {
     runq_init(&sched->queues[i]);
   }
@@ -246,16 +254,6 @@ void sched_init() {
   LIST_INIT(&td_cleanup_queue[curcpu_id]);
 
   set_cursched(sched);
-  if (curthread == NULL) {
-    // have the APs switch to their idle threads
-    thread_t *td = sched->idle;
-    TD_SET_STATE(td, TDS_RUNNING);
-    td->start_time = clock_micro_time();
-    td->last_sched_ns = clock_get_nanos();
-
-    switch_thread(NULL, td);
-    unreachable;
-  }
 }
 
 void sched_submit_new_thread(thread_t *td) {
@@ -320,7 +318,7 @@ void sched_again(sched_reason_t reason) {
   }
 
   thread_t *oldtd = curthread;
-  if (td_lock_owner(oldtd) == NULL) {
+  if (td_lock_owner(oldtd) != curthread) {
     // lock the thread if it hasnt been already
     td_lock(oldtd);
   }

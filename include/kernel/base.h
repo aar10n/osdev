@@ -217,17 +217,6 @@
     _x; \
   })
 
-#define sub_checked_overflow(x, v) do { \
-    typeof(x) _x = (x); \
-    typeof(x) _v = (v); \
-    if (__builtin_sub_overflow(_x, _v, &_x)) { \
-      panic("sub_checked_overflow: overflow detected (<%s>%llu - <%s>%llu) [%s:%d]", \
-            CORE_TYPE_TO_STRING(x), (unsigned long)_x, \
-            CORE_TYPE_TO_STRING(v), (unsigned long)_v, \
-            __FILE__, __LINE__); \
-    } \
-  } while (0)
-
 
 //
 // Initializer Function Macros
@@ -260,7 +249,7 @@
  * with EARLY_INIT functions. On the boot CPU, these functions are called after the
  * normal 'early' initializers.
  */
-#define PERCPU_EARLY_INIT(fn) static __attribute__((section(".init_array.percpu"))) void (*__do_percpu_init_ ## fn)() = fn
+#define PERCPU_EARLY_INIT(fn) static __attribute__((section(".init_array.early_percpu"))) void (*__do_percpu_early_init_ ## fn)() = fn
 
 /**
  * The STATIC_INIT macro provides a way to register initializer functions that are invoked
@@ -268,6 +257,13 @@
  * irq APIs, and are called from within the proc0 context.
  */
 #define STATIC_INIT(fn) static __attribute__((section(".init_array.static"))) void (*__do_static_init_ ## fn)() = fn
+
+/**
+ * The PERCPU_STATIC_INIT macro provides a way to register initializer functions that are
+ * invoked by each CPU at the end of the 'static' phase. The same restrictions apply as
+ * with STATIC_INIT functions.
+ */
+#define PERCPU_STATIC_INIT(fn) static __attribute__((section(".init_array.static_percpu"))) void (*__do_percpu_static_init_ ## fn)() = fn
 
 /**
  * The MODULE_INIT macro provides a way to register initializer functions that are invoked

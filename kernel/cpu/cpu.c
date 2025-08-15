@@ -45,7 +45,6 @@
 #define CPU_EFER_FFXSR     (1 << 14)
 
 #define NUM_INTERRUPTS 256
-#define IRQ_STACK_SIZE SIZE_16KB
 
 uint8_t cpu_bsp_id = 0;
 uint32_t cpu_to_apic_id[MAX_CPUS];
@@ -225,7 +224,6 @@ void cpu_early_init() {
   cpu_write_msr(IA32_STAR_MSR, UCODE32_SEG << 48 | KCODE_SEG << 32);
 }
 
-// runs after virtual memory initialization and before static initializers
 void cpu_late_init() {
   struct ist_stack {
     int ist_num;
@@ -244,22 +242,19 @@ void cpu_late_init() {
     kassert(pages != NULL);
     uintptr_t stack_addr = vmap_pages(moveref(pages), 0, stack->size, VM_WRITE | VM_STACK, "ist stack");
     tss_set_ist(stack->ist_num, stack_addr + stack->size);
-    idt_set_gate_ist(stack->idt_num, stack->ist_num);
+    if (curcpu_is_boot) {
+      idt_set_gate_ist(stack->idt_num, stack->ist_num);
+    }
   }
 
-  // // set all other interrupts to use ist7 which points at the thread trapframe
-  // for (int i = 0; i < NUM_INTERRUPTS; i++) {
-  //   if (i == CPU_EXCEPTION_DB || i == CPU_EXCEPTION_NMI || i == CPU_EXCEPTION_DF) {
-  //     continue;
-  //   }
-  //   idt_set_gate_ist(i, IST_TRAPFRAME);
-  // }
-
-  // allocate a stack that we can switch to when handling irqs
-  page_t *irq_stack = alloc_pages(SIZE_TO_PAGES(IRQ_STACK_SIZE));
-  kassert(irq_stack != NULL);
-  uintptr_t irq_stack_addr = vmap_pages(moveref(irq_stack), 0, IRQ_STACK_SIZE, VM_WRITE | VM_STACK, "irq stack");
-  set_irq_stack_top(irq_stack_addr + IRQ_STACK_SIZE);
+  // APs have their IRQ stack prepopulated
+  if (curcpu_is_boot) {
+    // allocate a stack that we can switch to when handling irqs
+    page_t *irq_stack = alloc_pages(SIZE_TO_PAGES(IRQ_STACK_SIZE));
+    kassert(irq_stack != NULL);
+    uintptr_t irq_stack_addr = vmap_pages(moveref(irq_stack), 0, IRQ_STACK_SIZE, VM_WRITE | VM_STACK, "irq stack");
+    set_irq_stack_top(irq_stack_addr + IRQ_STACK_SIZE);
+  }
 }
 
 void cpu_map_topology() {
