@@ -3,6 +3,7 @@ include ../.config
 
 CROSS_PREFIX = $(TOOL_ROOT)/bin/$(TOOLCHAIN)-
 
+AUTOCONF_DIR = $(BUILD_DIR)/autoconf/build
 BINUTILS_DIR = $(BUILD_DIR)/binutils/$(TOOLCHAIN)
 GCC_DIR = $(BUILD_DIR)/gcc/$(TOOLCHAIN)
 MUSL_DIR = $(BUILD_DIR)/musl/$(TOOLCHAIN)
@@ -11,7 +12,7 @@ LIBDWARF_DIR = $(BUILD_DIR)/libdwarf/build
 
 
 .NOTPARALLEL:
-all: binutils gcc musl libdwarf musl-shared
+all: autoconf binutils gcc musl libdwarf musl-shared
 
 clean:
 	rm -rf $(BINUTILS_DIR)
@@ -23,6 +24,7 @@ clean:
 	rm -f $(GCC_SRC_DIR)/.setup
 	rm -f $(LIBDWARF_SRC_DIR)/.setup
 
+autoconf: $(AUTOCONF_DIR)/.install
 binutils: $(BINUTILS_DIR)/.install
 gcc: $(GCC_DIR)/.install
 musl: $(MUSL_DIR)/.install
@@ -30,6 +32,34 @@ musl-headers: $(MUSL_DIR)/.install-headers
 musl-shared: $(MUSL_DIR)/.install-shared
 pkg-config: $(PKGCONFIG_DIR)/.install
 libdwarf: $(LIBDWARF_DIR)/.install
+
+#
+# autoconf
+#
+
+AUTOCONF_VERSION = 2.69
+AUTOCONF_ARCHIVE = autoconf-$(AUTOCONF_VERSION).tar.gz
+AUTOCONF_SOURCE = http://ftp.gnu.org/gnu/autoconf/autoconf-$(AUTOCONF_VERSION).tar.gz
+AUTOCONF_SRC_DIR = $(BUILD_DIR)/autoconf/src
+AUTOCONF_PREFIX = $(TOOL_ROOT)
+
+AUTOCONF_CONFIG = \
+	--prefix=$(AUTOCONF_PREFIX) \
+	--srcdir=$(AUTOCONF_SRC_DIR) \
+	--with-sysroot=$(TOOL_ROOT)
+
+$(AUTOCONF_DIR)/.configure: | $(AUTOCONF_SRC_DIR)
+	mkdir -p $(@D)
+	cd $(@D) && $(AUTOCONF_SRC_DIR)/configure $(AUTOCONF_CONFIG)
+	@touch $@
+
+$(AUTOCONF_DIR)/.build: $(AUTOCONF_DIR)/.configure
+	cd $(@D) && $(MAKE)
+	@touch $@
+
+$(AUTOCONF_DIR)/.install: $(AUTOCONF_DIR)/.build
+	cd $(@D) && $(MAKE) install
+	@touch $@
 
 
 #
@@ -96,9 +126,9 @@ GCC_CONFIG = --enable-languages=c,c++ \
 	READELF_FOR_TARGET=$(CROSS_PREFIX)readelf \
 	STRIP_FOR_TARGET=$(CROSS_PREFIX)strip
 
-$(GCC_SRC_DIR)/.setup: | $(GCC_SRC_DIR)
+$(GCC_SRC_DIR)/.setup: $(AUTOCONF_DIR)/.install | $(GCC_SRC_DIR)
 	cd $(@D) && ./contrib/download_prerequisites
-	cd $(@D) && autoconf
+	cd $(@D) && $(TOOL_ROOT)/bin/autoconf
 	@touch $@
 
 $(GCC_DIR)/.configure: $(GCC_SRC_DIR)/.setup $(BINUTILS_DIR)/.install

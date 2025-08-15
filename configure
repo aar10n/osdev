@@ -65,7 +65,6 @@ check_dependency "g++"
 check_dependency "ld" "binutils"
 check_dependency "pkg-config"
 check_dependency "makeinfo" "texinfo"
-check_dependency "autoconf"
 check_dependency "clang"
 check_dependency "lld-link" "lld"
 check_dependency "llvm-ar" "llvm"
@@ -77,16 +76,6 @@ check_dependency "python"
 check_dependency "perl"
 check_dependency "qemu-system-${ARCH}"
 
-# autoconf version check
-if check_command "autoconf"; then
-  version=$(autoconf --version | head -n1 | awk '{print $NF}')
-  printf "%-20s" "autoconf 2.69"
-  if [[ "$version" == "2.69" ]]; then
-    echo -e "[${GREEN}FOUND${NC}] (v$version)"
-  else
-    echo -e "[${RED}ERROR${NC}] (found v$version, needed v2.69)"
-  fi
-fi
 
 # python version check
 if check_command "python"; then
