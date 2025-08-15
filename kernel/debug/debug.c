@@ -221,10 +221,10 @@ int debug_unwind(uintptr_t rip, uintptr_t rbp) {
       }
     }
 
-    if (virt_to_phys(frame->rbp) == 0) {
-      kprintf("    ?? %018p\n", frame->rip);
-      break;
-    }
+//    if (virt_to_phys(frame->rbp) == 0) {
+//      kprintf("    ?? %018p\n", frame->rip);
+//      break;
+//    }
 
     rip = frame->rip;
     frame = frame->rbp;
