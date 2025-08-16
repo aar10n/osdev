@@ -27,7 +27,7 @@ void launch_init_process();
 
 boot_info_v2_t __boot_data *boot_info_v2;
 
-bool is_smp_enabled = false;
+KERNEL_PARAM("smp", bool, is_smp_enabled, false); // not working yet
 KERNEL_PARAM("debug", bool, is_debug_enabled, false);
 KERNEL_PARAM("init", str_t, init_program, str_null);
 KERNEL_PARAM("init.shell", str_t, init_shell_program, str_null);
@@ -92,19 +92,19 @@ _used void kmain() {
 
   cpu_enable_interrupts();
   probe_all_buses();
-
-  // give other processes a chance to run including the devfs process
-  // which wll populate devices we will need shortly.
-  sched_again(SCHED_YIELDED);
+  alarm_source_enable(alarm_tick_source());
 
   kprintf("{:$=^49}\n");
   kprintf("    kernel initialization done after {:llu}ms    \n", NS_TO_MS(clock_get_nanos()));
   kprintf("{:$=^49}\n");
 
+  // give other processes a chance to run including the devfs process
+  // which wll populate devices we will need shortly.
+  // TODO: do this in a more robust way
+  alarm_sleep_ms(50);
+
   ls("/");
   ls("/dev");
-
-  alarm_source_enable(alarm_tick_source());
 
   launch_init_process();
   sched_again(SCHED_BLOCKED);
@@ -115,7 +115,7 @@ _used void ap_main() {
   QEMU_DEBUG_CHARP("ap_main\n");
   cpu_early_init();
   do_percpu_early_initializers();
-  kprintf("[CPU#%d] initializing\n", curcpu_id);
+  kprintf("initializing\n");
 
   // the BSP has pre-allocated for us a main thread and address space to avoid
   // lock contention on wait locks before we can initialize the scheduler. the
@@ -131,7 +131,7 @@ _used void ap_main() {
   cpu_late_init();
   do_percpu_static_initializers();
 
-  kprintf("[CPU#%d] done!\n", curcpu_id);
+  kprintf("done!\n");
   sched_again(SCHED_BLOCKED);
   unreachable;
 }

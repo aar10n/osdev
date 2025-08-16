@@ -43,8 +43,8 @@ noreturn void panic(const char *fmt, ...) {
   cpu_disable_interrupts();
   QEMU_DEBUG_CHARP("panic\n");
   if (panic_flags[id]) {
-    kprintf(">>>> nested panic <<<<\n");
-    kprintf("!!! nested panic [CPU#%d] !!!\n", id);
+    kprintf_raw(">>>> nested panic <<<<\n");
+    kprintf_raw("!!! nested panic [CPU#%d] !!!\n", id);
     va_list valist;
     va_start(valist, fmt);
     kvfprintf(fmt, valist);
@@ -59,26 +59,26 @@ noreturn void panic(const char *fmt, ...) {
   }
 
   mtx_spin_lock(&panic_lock);
-  kprintf("!!!!! PANIC CPU#%d <<<<\n", id);
-  kprintf(">>>>> ");
+  kprintf_raw("!!!!! PANIC CPU#%d <<<<\n", id);
+  kprintf_raw(">>>>> ");
   va_list valist;
   va_start(valist, fmt);
   kvfprintf(fmt, valist);
   va_end(valist);
-  kprintf(" <<<<<\n");
+  kprintf_raw(" <<<<<\n");
 
   proc_t *proc = curproc;
   thread_t *thread = curthread;
   if (proc && thread) {
-    kprintf("process %d [{:str}]\n", proc->pid, &proc->name);
-    kprintf("thread %d [{:str}]\n", thread->tid, &thread->name);
+    kprintf_raw("process %d [{:str}]\n", proc->pid, &proc->name);
+    kprintf_raw("thread %d [{:str}]\n", thread->tid, &thread->name);
   }
 
   stackframe_t *frame = __builtin_frame_address(0);
   debug_unwind(frame->rip, (uintptr_t) frame->rbp);
-  kprintf("==== kernel heap ====\n");
+  kprintf_raw("==== kernel heap ====\n");
   kheap_dump_stats();
-  kprintf(">>>> STOPPING CPU#%d <<<<\n", id);
+  kprintf_raw(">>>> STOPPING CPU#%d <<<<\n", id);
   mtx_spin_unlock(&panic_lock);
 
 LABEL(hang);

@@ -20,6 +20,7 @@
 static struct tm boot_time_tm;    // time at boot as struct tm
 static uint64_t boot_time_epoch;  // boot time in seconds since epoch
 
+static bool clock_initialized = false;
 static LIST_HEAD(clock_source_t) clock_sources;
 static clock_source_t *current_clock_source;
 volatile uint64_t current_clock_count;
@@ -99,6 +100,7 @@ void clock_init() {
 
   curthread->start_time = clock_micro_time();
   curthread->last_sched_ns = clock_get_nanos();
+  clock_initialized = true;
 }
 
 //
@@ -112,6 +114,10 @@ uint64_t clock_read_sync_nanos() {
 }
 
 uint64_t clock_wait_sync_nanos() {
+  if (__expect_false(!clock_initialized)) {
+    return 0;
+  }
+
   clock_source_t *source = current_clock_source;
 
   // use critical enter/exit so we stay in critical section even if lock is contended
@@ -136,23 +142,39 @@ uint64_t clock_wait_sync_nanos() {
 }
 
 uint64_t clock_get_uptime() {
+  if (__expect_false(!clock_initialized)) {
+    return 0;
+  }
+
   uint64_t uptime = clock_wait_sync_nanos() / NS_PER_SEC;
   return uptime;
 }
 
 uint64_t clock_get_starttime() {
+  if (__expect_false(!clock_initialized)) {
+    return 0;
+  }
   return boot_time_epoch;
 }
 
 uint64_t clock_get_millis() {
+  if (__expect_false(!clock_initialized)) {
+    return 0;
+  }
   return clock_get_nanos() / NS_PER_MS;
 }
 
 uint64_t clock_get_micros() {
+  if (__expect_false(!clock_initialized)) {
+    return 0;
+  }
   return clock_wait_sync_nanos() / NS_PER_USEC;
 }
 
 uint64_t clock_get_nanos() {
+  if (__expect_false(!clock_initialized)) {
+    return 0;
+  }
   return clock_wait_sync_nanos();
 }
 

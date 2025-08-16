@@ -6,9 +6,10 @@
 #define KERNEL_CLOCK_H
 
 #include <kernel/base.h>
-#include <kernel/queue.h>
-#include <kernel/mutex.h>
 #include <kernel/irq.h>
+#include <kernel/mutex.h>
+#include <kernel/queue.h>
+#include <kernel/time.h>
 
 
 /*
@@ -74,20 +75,23 @@ uint64_t clock_get_nanos();
  * at the specified precision.
  */
 static inline struct timeval clock_micro_time() {
-  uint64_t uptime = clock_get_uptime();
-  uint64_t micros = clock_get_micros();
+  uint64_t start_sec = clock_get_starttime();
+  uint64_t uptime_us = clock_get_micros();
 
-  uint64_t tvsec = clock_get_starttime() + uptime;
-  uint64_t tvusec = micros - (uptime * US_PER_SEC);
-  return (struct timeval){(time_t)tvsec, (time_t)tvusec};
+  struct timeval tv;
+  tv.tv_sec = (time_t)(start_sec + (uptime_us / US_PER_SEC));
+  tv.tv_usec = (time_t)(uptime_us % US_PER_SEC);
+  return tv;
 }
-static inline struct timespec clock_nano_time() {
-  uint64_t uptime = clock_get_uptime();
-  uint64_t nanos = clock_get_nanos();
 
-  uint64_t tvsec = clock_get_starttime() + uptime;
-  uint64_t tvnsec = nanos - (uptime * NS_PER_SEC);
-  return (struct timespec){(time_t)tvsec, (time_t)tvnsec};
+static inline struct timespec clock_nano_time() {
+  uint64_t start_sec = clock_get_starttime();
+  uint64_t uptime_ns = clock_get_nanos();
+
+  struct timespec ts;
+  ts.tv_sec = (time_t)(start_sec + (uptime_ns / NS_PER_SEC));
+  ts.tv_nsec = (time_t)(uptime_ns % NS_PER_SEC);
+  return ts;
 }
 
 

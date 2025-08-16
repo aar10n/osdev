@@ -1159,20 +1159,20 @@ LABEL(unhandled);
   // kernel mode fault
   space_unlock(space);
 LABEL(exception);
-  kprintf("================== !!! Exception !!! ==================\n");
-  kprintf("  Page Fault  - Error: %#b (CPU#%d)\n", (uint32_t)frame->error, curcpu_id);
-  kprintf("  CPU#%d  -  RIP: %018p    CR2: %018p\n", id, frame->rip, fault_addr);
+  kprintf_raw("================== !!! Exception !!! ==================\n");
+  kprintf_raw("  Page Fault  - Error: %#b (CPU#%d)\n", (uint32_t)frame->error, curcpu_id);
+  kprintf_raw("  CPU#%d  -  RIP: %018p    CR2: %018p\n", id, frame->rip, fault_addr);
 
   uintptr_t rip = frame->rip - 8;
   uintptr_t rbp = frame->rbp;
 
   if (frame->error & CPU_PF_U) {
-    kprintf("  User mode fault\n");
+    kprintf_raw("  User mode fault\n");
   } else {
-    kprintf("  Kernel mode fault\n");
+    kprintf_raw("  Kernel mode fault\n");
 
     char *line_str = debug_addr2line(rip);
-    kprintf("  %s\n", line_str);
+    kprintf_raw("  %s\n", line_str);
     kfree(line_str);
     debug_unwind(rip, rbp);
   }
@@ -2118,12 +2118,12 @@ static inline const char *prot_to_debug_str(uint32_t vm_flags) {
 }
 
 void vm_print_address_space() {
-  kprintf("vm: address space mappings\n");
-  kprintf("{:$=^80s}\n", " user space ");
+  kprintf_raw("vm: address space mappings\n");
+  kprintf_raw("{:$=^80s}\n", " user space ");
   vm_print_mappings(curspace);
-  kprintf("{:$=^80s}\n", " kernel space ");
+  kprintf_raw("{:$=^80s}\n", " kernel space ");
   vm_print_mappings(kernel_space);
-  kprintf("{:$=^80}\n");
+  kprintf_raw("{:$=^80}\n");
 }
 
 void vm_print_mappings(address_space_t *space) {
@@ -2135,11 +2135,11 @@ void vm_print_mappings(address_space_t *space) {
     if (vm->flags & VM_STACK) {
       // in a stack mapping the guard page comes first in memory
       // since it is at the logical end or bottom of the stack
-      kprintf("  [%018p-%018p] {:$ >10llu}  ---  guard\n",
+      kprintf_raw("  [%018p-%018p] {:$ >10llu}  ---  guard\n",
               vm->address-extra_size, vm->address, extra_size);
     }
 
-    kprintf("  [{:018p}-{:018p}] {:$ >10llu}  %.3s  {:str}\n",
+    kprintf_raw("  [{:018p}-{:018p}] {:$ >10llu}  %.3s  {:str}\n",
             vm->address, vm->address+vm->size, vm->size, prot_to_debug_str(vm->flags), &vm->name);
     vm = LIST_NEXT(vm, vm_list);
   }
@@ -2147,16 +2147,16 @@ void vm_print_mappings(address_space_t *space) {
 }
 
 void vm_print_address_space_v2(bool user, bool kernel) {
-  kprintf("vm: address space mappings\n");
+  kprintf_raw("vm: address space mappings\n");
   if (user) {
-    kprintf("{:$=^80s}\n", " user space ");
+    kprintf_raw("{:$=^80s}\n", " user space ");
     vm_print_format_address_space(curspace);
   }
   if (kernel) {
-    kprintf("{:$=^80s}\n", " kernel space ");
+    kprintf_raw("{:$=^80s}\n", " kernel space ");
     vm_print_format_address_space(kernel_space);
   }
-  kprintf("{:$=^80}\n");
+  kprintf_raw("{:$=^80}\n");
 }
 
 void vm_print_format_address_space(address_space_t *space) {
@@ -2171,7 +2171,7 @@ void vm_print_format_address_space(address_space_t *space) {
 
     size_t gap_size = intvl.start - prev_end;
     if (gap_size > 0) {
-      kprintf("{:^37s} {:$ >10M}\n", "unmapped", gap_size);
+      kprintf_raw("{:^37s} {:$ >10M}\n", "unmapped", gap_size);
     }
 
     if (vm->flags & VM_STACK) {
@@ -2180,19 +2180,19 @@ void vm_print_format_address_space(address_space_t *space) {
 
       // in stack mappings the empty space and guard page come first
       if (empty_size > 0) {
-        kprintf("{:018p}-{:018p} {:$ >10M}  ----  empty\n", empty_start, empty_start+empty_size, empty_size);
+        kprintf_raw("{:018p}-{:018p} {:$ >10M}  ----  empty\n", empty_start, empty_start+empty_size, empty_size);
       }
 
-      kprintf("{:018p}-{:018p} {:$ >10M}  ----  guard\n", guard_start, guard_start+PAGE_SIZE, PAGE_SIZE);
-      kprintf("{:018p}-{:018p} {:$ >10M}  {:.3s}  {:str}\n",
+      kprintf_raw("{:018p}-{:018p} {:$ >10M}  ----  guard\n", guard_start, guard_start+PAGE_SIZE, PAGE_SIZE);
+      kprintf_raw("{:018p}-{:018p} {:$ >10M}  {:.3s}  {:str}\n",
               vm->address, vm->address+vm->size, vm->size, prot_str, &vm->name);
     } else {
-      kprintf("{:018p}-{:018p} {:$ >10M}  {:.4s}  {:str}\n",
+      kprintf_raw("{:018p}-{:018p} {:$ >10M}  {:.4s}  {:str}\n",
                 vm->address, vm->address+vm->size, vm->size, prot_str, &vm->name);
 
       if (empty_size > 0) {
         uintptr_t empty_start = vm->address+vm->size;
-        kprintf("{:018p}-{:018p} {:$ >10M}  ----  empty\n", empty_start, empty_start+empty_size, empty_size);
+        kprintf_raw("{:018p}-{:018p} {:$ >10M}  ----  empty\n", empty_start, empty_start+empty_size, empty_size);
       }
     }
 

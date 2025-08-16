@@ -85,7 +85,6 @@ uint32_t _mtx_opts_to_lockobject_flags(uint32_t opts) {
   uint32_t flags = LO_INITIALIZED;
   if (opts & MTX_SPIN) {
     flags |= SPINLOCK_LOCKCLASS;
-    opts &= ~MTX_RECURSIVE; // not allowed
   } else {
     flags |= MUTEX_LOCKCLASS;
   }

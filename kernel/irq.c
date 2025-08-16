@@ -71,6 +71,14 @@ _used noreturn void double_fault_handler() {
   WHILE_TRUE;
 }
 
+_used noreturn void infinite_loop_handler(void *gs_base, void *kernel_gs_base) {
+  kprintf_kputs("!!! INFINITE EXCEPTION LOOP !!!\n");
+  __assert_stack_is_aligned();
+  kprintf("  CPU#%d\n", curcpu_id);
+  kprintf("  GS_BASE = %018p  KERNEL_GS_BASE = %018p\n", gs_base, kernel_gs_base);
+  WHILE_TRUE;
+}
+
 _used void interrupt_handler(struct trapframe *frame) {
   __assert_stack_is_aligned();
   if (ignored_irqs[frame->vector])
@@ -83,17 +91,17 @@ _used void interrupt_handler(struct trapframe *frame) {
 }
 
 noreturn void default_exception_handler(struct trapframe *frame) {
-  kprintf("!!! EXCEPTION %d !!!\n", frame->vector);
-  kprintf("  CPU#%d - %#llx\n", curcpu_id, frame->error);
-  kprintf("  RIP = %018p  RSP = %018p\n", frame->rip, frame->rsp);
-  kprintf("  CR2 = %018p\n", __read_cr2());
+  kprintf_raw("!!! EXCEPTION %d !!!\n", frame->vector);
+  kprintf_raw("  CPU#%d - %#llx\n", curcpu_id, frame->error);
+  kprintf_raw("  RIP = %018p  RSP = %018p\n", frame->rip, frame->rsp);
+  kprintf_raw("  CR2 = %018p\n", __read_cr2());
   debug_unwind_any(frame->rip, frame->rbp);
   WHILE_TRUE;
 }
 
 void unhandled_interrupt_handler(struct trapframe *frame) {
-  kprintf("!!! UNHANDLED INTERRUPT %d !!!\n", frame->vector);
-  kprintf("  CPU#%d\n", curcpu_id);
+  kprintf_raw("!!! UNHANDLED INTERRUPT %d !!!\n", frame->vector);
+  kprintf_raw("  CPU#%d\n", curcpu_id);
 }
 
 //

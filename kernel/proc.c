@@ -1468,10 +1468,10 @@ thread_t *thread_alloc_proc0_main(uintptr_t kstack_base, size_t kstack_size) {
   return thread_alloc_internal(TDF_KTHREAD|TDF_NOPREEMPT, kstack_base, kstack_size);
 }
 
-thread_t *thread_alloc_idle() {
+thread_t *thread_alloc_idle(uint8_t cpu_id) {
   // this is called once by each cpu during scheduler initialization
   thread_t *td = thread_alloc(TDF_KTHREAD|TDF_IDLE|TDF_NOPREEMPT, SIZE_8KB);
-  td->name = str_fmt("idle thread [CPU#%d]", curcpu_id);
+  td->name = str_fmt("idle thread [CPU#%d]", cpu_id);
 
   thread_setup_entry(td, (uintptr_t) idle_thread_entry, 0);
 

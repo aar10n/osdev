@@ -117,6 +117,7 @@ void kprintf_kputl(long val);
  * https://github.com/aar10n/fmt_c
  */
 void kprintf(const char *format, ...);
+void kprintf_raw(const char *format, ...);
 void kvfprintf(const char *format, va_list args);
 
 /**

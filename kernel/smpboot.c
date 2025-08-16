@@ -52,7 +52,7 @@ int smp_boot_ap(uint32_t id, struct smp_data *smpdata) {
 
   // pre-allocate a main thread and idle thread
   thread_t *main_td = thread_alloc_proc0_main(ap_stack_ptr, KERNEL_STACK_SIZE);
-  thread_t *idle_td = thread_alloc_idle();
+  thread_t *idle_td = thread_alloc_idle(id);
 
   smpdata->pml4_addr = (uint32_t) get_default_ap_pml4();
   smpdata->percpu_ptr = (uintptr_t) percpu_area;

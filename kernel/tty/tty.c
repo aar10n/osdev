@@ -17,7 +17,8 @@
 #define ASSERT(x) kassert(x)
 #define DPRINTF(fmt, ...) kprintf("tty: " fmt, ##__VA_ARGS__)
 #define EPRINTF(fmt, ...) kprintf("tty: %s: " fmt, __func__, ##__VA_ARGS__)
-#define DEBUG(x) x
+#define DEBUG(x)
+//#define DEBUG(x) x
 
 //
 // MARK: Public API
@@ -146,7 +147,7 @@ int tty_ioctl(tty_t *tty, unsigned long request, void *arg) {
 
       struct termios *termios = (struct termios *) arg;
       DPRINTF("TCGETS ioctl\n");
-      DPRINTF("current termios: ");
+      DEBUG(DPRINTF("current termios: "));
       DEBUG(termios_print_debug(&tty->termios));
 
       *termios = tty->termios;
@@ -160,7 +161,7 @@ int tty_ioctl(tty_t *tty, unsigned long request, void *arg) {
 
       struct termios *termios = (struct termios *) arg;
       DPRINTF("TCSETS ioctl\n");
-      DPRINTF("new termios: ");
+      DEBUG(DPRINTF("new termios: "));
       DEBUG(termios_print_debug(termios));
 
       // configure the terminal attributes
@@ -216,7 +217,7 @@ int tty_ioctl(tty_t *tty, unsigned long request, void *arg) {
 
       struct winsize *ws = (struct winsize *) arg;
       DPRINTF("TIOCGWINSZ ioctl\n");
-      DPRINTF("current window size: ");
+      DEBUG(DPRINTF("current window size: "));
       DEBUG(winsize_print_debug(&tty->winsize));
 
       ws->ws_row = tty->winsize.ws_row;
@@ -233,7 +234,7 @@ int tty_ioctl(tty_t *tty, unsigned long request, void *arg) {
 
       struct winsize *ws = (struct winsize *) arg;
       DPRINTF("TIOCSWINSZ ioctl\n");
-      DPRINTF("new window size: ");
+      DEBUG(DPRINTF("new window size: "));
       DEBUG(winsize_print_debug(ws));
 
       if (ws->ws_row == 0 || ws->ws_col == 0) {

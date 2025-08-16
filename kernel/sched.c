@@ -238,7 +238,7 @@ void sched_init() {
   sched_t *sched = kmallocz(sizeof(sched_t));
   sched->id = curcpu_id;
   if (curcpu_is_boot) {
-    sched->idle = thread_alloc_idle();
+    sched->idle = thread_alloc_idle(curcpu_id);
   } else {
     // HACK: the APs have their pre-allocated idle threads passed
     // via the percpu scratch rax field.

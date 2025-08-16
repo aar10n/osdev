@@ -9,7 +9,7 @@ PROJECT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir)
 ADDR2LINE = os.environ.get('ADDR2LINE', os.path.join(PROJECT_DIR, 'build/toolchain/bin/x86_64-linux-musl-addr2line'))
 READELF = os.environ.get('READELF', os.path.join(PROJECT_DIR, 'build/toolchain/bin/x86_64-linux-musl-readelf'))
 
-STACK_FRAME_PATTERN = re.compile(r'^\s*\?\?\s+(?P<addr>0x[0-9a-f]+)')
+STACK_FRAME_PATTERN = re.compile(r'^.*\?\?\s+(?P<addr>0x[0-9a-f]+)')
 DESCRIPTOR_PATTERN = re.compile(r'^[^@]+(@(0x[0-9a-fA-F]+|\d+))?$')
 KERNEL_BASE_ADDR = 0xffff800000000000
 

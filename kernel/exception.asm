@@ -80,12 +80,20 @@
 %define SCHED_PREEMPTED       0
 
 
-; void double_fault_handler(void)
+; void double_fault_handler()
 extern double_fault_handler
+; void infinite_loop_handler(void *gs_base, void *kernel_gs_base)
+extern infinite_loop_handler
 ; void interrupt_handler(struct trapframe *frame)
 extern interrupt_handler
 ; void sched_again(sched_reason_t reason)
 extern sched_again
+
+; DEBUGGING
+section .data
+interrupt_nest_count dq 0 ; used to track interrupt nesting level
+
+section .text
 
 ; ========================================
 ;     Interrupt Service Routine Stubs
@@ -157,6 +165,31 @@ common_interrupt_handler:
   ;     +8  saved has_ist
   ; rsp ->  saved rax
 
+  ; INTERRUPT LOOP DEBUGGING
+  inc qword [rel interrupt_nest_count] ; increment the nested interrupt count
+  cmp qword [rel interrupt_nest_count], 3 ; check if we are in a nested interrupt
+  jne .skip_loop_debug
+
+  ; load gs_base into rdi
+  mov ecx, 0xC0000101    ; IA32_GS_BASE MSR
+  rdmsr                  ; Read MSR (result in EDX:EAX)
+  shl rdx, 32            ; Shift high 32 bits
+  or rax, rdx            ; Combine into 64-bit value
+  mov rdi, rax           ; Store gs.base in rdi
+
+  ; load kernel_gs_base into rsi
+  mov ecx, 0xC0000102    ; IA32_KERNEL_GS_BASE MSR
+  rdmsr                  ; Read MSR (result in EDX:EAX)
+  shl rdx, 32            ; Shift high 32 bits
+  or rax, rdx            ; Combine into 64-bit value
+  mov rsi, rax           ; Store kernel_gs_base in rsi
+
+  ; we are in a nested interrupt loop
+  ; align rsp to 16 bytes
+  and rsp, -16
+  call infinite_loop_handler
+.skip_loop_debug:
+
   ; swapgs if we came from user mode
   mov word ax, [rsp+48] ; ax = pushed CS
   and ax, 3 ; mask CPL bits (CPL=0 -> ZF=1, CPL=3 -> ZF=0)
@@ -169,7 +202,7 @@ common_interrupt_handler:
   ; now rsp points to the pushed frame
 
   ; if we came from user mode, we are already using the thread trapframe
-  ; loaded from the tss rsp0. the ZF is still valid from the previous test
+  ; loaded from the tss rsp0. ZF is still valid from the previous test
   jnz .done_stack_change ; we were in user mode (ZF=0)
 
   ; if we came from kernel mode, we only should switch stacks if
@@ -277,6 +310,9 @@ common_interrupt_handler:
   mov rdi, r15 ; rdi = trapframe (arg 1 for interrupt_handler)
   and rsp, -16 ; align rsp to 16 bytes
   call interrupt_handler
+
+  ; INTERRUPT LOOP DEBUGGING
+  dec qword [rel interrupt_nest_count] ; decrement the nested interrupt count
 
   ; check if we are exiting the last interrupt
   sub word PERCPU_INTR_LEVEL, 1 ; intr_level=0 -> ZF=1, intr_level>0 -> ZF=0

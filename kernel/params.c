@@ -161,10 +161,12 @@ int param_parse_int(cstr_t str, int *out) {
 }
 
 int param_parse_bool(cstr_t str, bool *out) {
-  if (cstr_eq_charp(str, "true") || cstr_eq_charp(str, "y") || cstr_eq_charp(str, "yes") || cstr_eq_charp(str, "1")) {
+  if (cstr_eq_charp(str, "true") || cstr_eq_charp(str, "y") || cstr_eq_charp(str, "yes") ||
+    cstr_eq_charp(str, "on") || cstr_eq_charp(str, "1")) {
     *out = true;
     return 0;
-  } else if (cstr_eq_charp(str, "false") || cstr_eq_charp(str, "n") || cstr_eq_charp(str, "no") || cstr_eq_charp(str, "0")) {
+  } else if (cstr_eq_charp(str, "false") || cstr_eq_charp(str, "n") || cstr_eq_charp(str, "no") ||
+    cstr_eq_charp(str, "off") || cstr_eq_charp(str, "0")) {
     *out = false;
     return 0;
   } else {

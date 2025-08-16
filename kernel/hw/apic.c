@@ -143,7 +143,7 @@ void register_apic(uint8_t id) {
 //
 
 void get_cpu_clock() {
-  kprintf("[apic] determining cpu clock speed\n");
+  kprintf("apic: determining cpu clock speed\n");
 
   uint64_t ms = 5;
   uint64_t t0, t1, min;
@@ -161,14 +161,14 @@ void get_cpu_clock() {
   }
 
   cpu_clock = min * (MS_PER_SEC / ms);
-  kprintf("[apic] cpu clock ticks per second: %u\n", cpu_clock);
+  kprintf("apic: cpu clock ticks per second: %u\n", cpu_clock);
 
   double freq = (double)cpu_clock / 1e6;
-  kprintf("[apic] detected %.1f MHz cpu clock\n", freq);
+  kprintf("apic: detected %.1f MHz cpu clock\n", freq);
 }
 
 void get_apic_clock() {
-  kprintf("[apic] determining timer clock speed\n");
+  kprintf("apic: determining timer clock speed\n");
   apic_reg_lvt_timer_t timer = apic_read_timer();
   timer.mask = APIC_MASK;
   timer.timer_mode = APIC_ONE_SHOT;
@@ -194,10 +194,10 @@ void get_apic_clock() {
   }
 
   apic_clock = min * (MS_PER_SEC / ms);
-  kprintf("[apic] apic clock ticks per second: %u\n", apic_clock);
+  kprintf("apic: apic clock ticks per second: %u\n", apic_clock);
 
   double freq = apic_clock / 1e6;
-  kprintf("[apic] detected %.1f MHz timer clock\n", freq);
+  kprintf("apic: detected %.1f MHz timer clock\n", freq);
 }
 
 void poll_icr_status() {

@@ -205,24 +205,28 @@ LABEL(INVALID);
 }
 
 int debug_unwind(uintptr_t rip, uintptr_t rbp) {
-  kprintf("backtrace\n");
+  kprintf_raw("backtrace\n");
 
   stackframe_t *frame = (void *) rbp;
+  uint64_t prev_rbp = 0;
   while (is_kernel_code_ptr((uintptr_t) frame->rip)) {
     dwarf_function_t *func = locate_or_load_dwarf_function(rip);
     if (func == NULL) {
-      kprintf("    ?? %018p\n", rip);
+      kprintf_raw("    ?? %018p\n", rip);
     } else {
       dwarf_line_t *line = get_line_by_addr(func->file, rip);
       if (line == NULL) {
-        kprintf("    %s %018p\n", func->name, rip);
+        kprintf_raw("    %s %018p\n", func->name, rip);
       } else {
-        kprintf("    %s %018p [%s:%d]\n", func->name, rip, func->file->name, line->line_no);
+        kprintf_raw("    %s %018p [%s:%d]\n", func->name, rip, func->file->name, line->line_no);
       }
     }
 
+    if ((uintptr_t) frame->rbp <= prev_rbp) {
+      break;
+    }
 //    if (virt_to_phys(frame->rbp) == 0) {
-//      kprintf("    ?? %018p\n", frame->rip);
+//      kprintf_raw("    ?? %018p\n", frame->rip);
 //      break;
 //    }
 

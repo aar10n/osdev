@@ -438,7 +438,7 @@ int proc_syscall_execve(cstr_t path, char *const argv[], char *const envp[]);
 
 thread_t *thread_alloc(uint32_t flags, size_t kstack_size);
 thread_t *thread_alloc_proc0_main(uintptr_t kstack_base, size_t kstack_size);
-thread_t *thread_alloc_idle();
+thread_t *thread_alloc_idle(uint8_t cpu_id);
 thread_t *thread_syscall_fork(); // syscall only
 void thread_free_exited(thread_t **tdp);
 int    thread_setup_entry(thread_t *td, uintptr_t function, int argc, ...);

@@ -5,6 +5,7 @@
 #include <kernel/printf.h>
 #include <kernel/panic.h>
 #include <kernel/mutex.h>
+#include <kernel/clock.h>
 #include <kernel/string.h>
 #include <kernel/mm.h>
 #include <kernel/fs.h>
@@ -16,23 +17,44 @@
 #define BUFFER_SIZE 512
 
 static void *impl_arg;
+static void (*kprintf_lock_impl)(void *);
+static void (*kprintf_unlock_impl)(void *);
 static int (*kprintf_puts_impl)(void *, const char *);
 
 static struct early_kprintf {
   mtx_t lock;
   uint16_t port;
+  bool prefix;
 } early_kprintf = {
   .port = COM1,
+  .prefix = false,
 };
+
+static void early_kprintf_lock(void *arg) {
+  struct early_kprintf *p = arg;
+  mtx_spin_lock(&p->lock);
+}
+
+static void early_kprintf_unlock(void *arg) {
+  struct early_kprintf *p = arg;
+  mtx_spin_unlock(&p->lock);
+}
 
 static int early_kprintf_puts(void *arg, const char *s) {
   struct early_kprintf *p = arg;
-  mtx_spin_lock(&p->lock);
+  bool unlock = false;
+  if (mtx_owner(&p->lock) != curthread) {
+    mtx_spin_lock(&p->lock);
+    unlock = true;
+  }
+
   while (*s) {
     uart_hw_busy_write_ch(p->port, *s);
     s++;
   }
-  mtx_spin_unlock(&p->lock);
+
+  if (unlock)
+    mtx_spin_unlock(&p->lock);
   return 0;
 }
 
@@ -42,8 +64,16 @@ void kprintf_early_init() {
   uart_hw_init(early_kprintf.port);
   impl_arg = &early_kprintf;
   mtx_init(&early_kprintf.lock, MTX_SPIN, "early_kprintf_lock");
+  kprintf_lock_impl = early_kprintf_lock;
+  kprintf_unlock_impl = early_kprintf_unlock;
   kprintf_puts_impl = early_kprintf_puts;
 }
+
+static void kprintf_static_init() {
+  kprintf("kprintf: enabling log prefixes\n");
+  early_kprintf.prefix = true;
+}
+STATIC_INIT(kprintf_static_init);
 
 void kprintf_kputs(const char *str) {
   kprintf_puts_impl(impl_arg, str);
@@ -60,8 +90,46 @@ void kprintf_kputl(long val) {
 
 // MARK: Public API
 
+static size_t kprintf_fmt_format(const char *format, char *str, size_t n, int max_args, ...) {
+  va_list valist;
+  va_start(valist, max_args);
+  size_t len = fmt_format(format, str, n, max_args, valist);
+  va_end(valist);
+  return len;
+}
+
 void kprintf(const char *format, ...) {
   __assert_stack_is_aligned();
+  size_t len = strlen(format);
+  if (len == 0) {
+    return; // nothing to print
+  }
+
+  char str[BUFFER_SIZE];
+  va_list valist;
+  va_start(valist, format);
+  fmt_format(format, str, BUFFER_SIZE, FMT_MAX_ARGS, valist);
+  va_end(valist);
+
+  if (early_kprintf.prefix && format[len-1] == '\n') {
+    // treat as a log line and prepend the cpu and timestamp
+    uint64_t nanos = clock_get_nanos();
+    struct timeval time = timeval_from_nanos(nanos);
+    char prefix_buf[64];
+    size_t prefix_len = kprintf_fmt_format("[%-8lld.%06lld] CPU#%d: ", prefix_buf, sizeof(prefix_buf), FMT_MAX_ARGS,
+                                           time.tv_sec, time.tv_usec, curcpu_id);
+    kprintf_lock_impl(impl_arg);
+    kprintf_puts_impl(impl_arg, prefix_buf);
+    kprintf_puts_impl(impl_arg, str);
+    kprintf_unlock_impl(impl_arg);
+  } else {
+    kprintf_puts_impl(impl_arg, str);
+  }
+}
+
+//void kprintf(const char *format, ...) __attribute__((__alias__("kprintf_raw")));
+
+void kprintf_raw(const char *format, ...) {
   char str[BUFFER_SIZE];
   va_list valist;
   va_start(valist, format);
