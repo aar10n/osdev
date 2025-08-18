@@ -39,7 +39,7 @@ kernel += hw/apic.c hw/hpet.c hw/ioapic.c hw/rtc.c hw/pit.c
 kernel += gui/screen.c
 
 # kernel/mm
-kernel += mm/file.c mm/heap.c mm/init.c mm/pgcache.c mm/pmalloc.c mm/pgtable.c mm/vmalloc.c
+kernel += mm/file.c mm/heap.c mm/init.c mm/pgcache.c mm/pmalloc.c mm/pgtable.c mm/pool.c mm/vmalloc.c
 
 # kernel/tty
 kernel += tty/tty.c tty/ttydisc.c tty/ttyqueue.c

@@ -12,6 +12,7 @@
 #include <kernel/mm/vmalloc.h>
 #include <kernel/mm/init.h>
 #include <kernel/mm/file.h>
+#include <kernel/mm/pool.h>
 
 static inline bool is_kernel_code_ptr(uintptr_t ptr) {
   return ptr >= kernel_code_start && ptr < kernel_code_end;

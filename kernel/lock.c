@@ -3,6 +3,7 @@
 //
 
 #include <kernel/lock.h>
+#include <kernel/mm.h>
 #include <kernel/proc.h>
 #include <kernel/tqueue.h>
 #include <kernel/panic.h>
@@ -37,8 +38,33 @@ struct lock_claim_list {
 
 // MARK: lock claims
 
+static void percpu_early_init_claim_list() {
+  // this per-cpu lock lock_claim_list tracks spin lock claims
+  struct lock_claim_list *list = lock_claim_list_alloc();
+  PERCPU_AREA->spin_claims = list;
+}
+PERCPU_EARLY_INIT(percpu_early_init_claim_list);
+
+
+static pool_t *lock_claims_pool;
+
+static void lock_claims_static_init() {
+  lock_claims_pool = pool_create("lock_claims", pool_sizes(sizeof(struct lock_claim_list)), 0);
+  if (!lock_claims_pool) {
+    panic("failed to create lock_claims_pool");
+  }
+  pool_preload_cache(lock_claims_pool, sizeof(struct lock_claim_list), 8);
+}
+STATIC_INIT(lock_claims_static_init);
+
+
 struct lock_claim_list *lock_claim_list_alloc() {
-  struct lock_claim_list *list = kmallocz(sizeof(struct lock_claim_list));
+  struct lock_claim_list *list;
+  if (__expect_false(lock_claims_pool == NULL)) {
+    list = kmallocz(sizeof(struct lock_claim_list));
+  } else {
+    list = pool_alloc(lock_claims_pool, sizeof(struct lock_claim_list));
+  }
   list->nclaims = 0;
   list->next = NULL;
   return list;
@@ -48,7 +74,11 @@ void lock_claim_list_free(struct lock_claim_list **listp) {
   struct lock_claim_list *list = *listp;
   while (list) {
     struct lock_claim_list *next = list->next;
-    kfree(list);
+    if (lock_claims_pool == NULL || kheap_is_valid_ptr(list)) {
+      kfree(list);
+    } else {
+      pool_free(lock_claims_pool, list);
+    }
     list = next;
   }
   *listp = NULL;
@@ -114,12 +144,3 @@ int spin_delay_wait(struct spin_delay *delay) {
   delay->waits++;
   return 1;
 }
-
-//
-
-static void percpu_early_init_claim_list() {
-  // this per-cpu lock lock_claim_list tracks spin lock claims
-  struct lock_claim_list *list = lock_claim_list_alloc();
-  PERCPU_AREA->spin_claims = list;
-}
-PERCPU_EARLY_INIT(percpu_early_init_claim_list);
