@@ -127,8 +127,6 @@ void kprintf(const char *format, ...) {
   }
 }
 
-//void kprintf(const char *format, ...) __attribute__((__alias__("kprintf_raw")));
-
 void kprintf_raw(const char *format, ...) {
   char str[BUFFER_SIZE];
   va_list valist;

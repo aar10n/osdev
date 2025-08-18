@@ -5,7 +5,6 @@
 #include <kernel/mm/pmalloc.h>
 #include <kernel/mm/vmalloc.h>
 #include <kernel/mm/init.h>
-#include <kernel/proc.h>
 
 #include <kernel/mutex.h>
 #include <kernel/string.h>

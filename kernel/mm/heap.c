@@ -359,13 +359,13 @@ uintptr_t kheap_ptr_to_phys(void *ptr) {
 //
 
 void kheap_dump_stats() {
-  kprintf("  size = %zu\n", kheap.size);
-  kprintf("  used = %zu\n", kheap.used);
-  kprintf("  alloc count = %zu\n", kheap.stats.alloc_count);
-  kprintf("  free count = %zu\n", kheap.stats.free_count);
+  kprintf_raw("  size = %zu\n", kheap.size);
+  kprintf_raw("  used = %zu\n", kheap.used);
+  kprintf_raw("  alloc count = %zu\n", kheap.stats.alloc_count);
+  kprintf_raw("  free count = %zu\n", kheap.stats.free_count);
 
-  kprintf("  request_sizes:\n");
+  kprintf_raw("  request_sizes:\n");
   for (int i = 0; i < 8; i++) {
-    kprintf("    %s - %zu\n", hist_labels[i], kheap.stats.alloc_sizes[i]);
+    kprintf_raw("    %s - %zu\n", hist_labels[i], kheap.stats.alloc_sizes[i]);
   }
 }

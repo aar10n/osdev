@@ -16,6 +16,10 @@
 
 #include <bitmap.h>
 
+// ioapic destination modes  
+#define IOAPIC_DEST_PHYSICAL 0
+#define IOAPIC_DEST_LOGICAL  1
+
 #define ASSERT(x) kassert(x)
 #define DPRINTF(x, ...) kprintf("irq: " x, ##__VA_ARGS__)
 
@@ -272,6 +276,22 @@ int irq_register_handler(uint8_t irq, irq_handler_t handler, void *data) {
   return 0;
 }
 
+int irq_register_handler_affinity(uint8_t irq, irq_handler_t handler, void *data, uint8_t cpu_id) {
+  DPRINTF("registering handler for IRQ%d with affinity to CPU%d\n", irq, cpu_id);
+  int result = irq_register_handler(irq, handler, data);
+  if (result < 0) {
+    return result;
+  }
+  
+  // set cpu affinity if this is an external interrupt
+  uint8_t real_irq = get_real_irqnum(irq);
+  if (real_irq <= irq_external_max) {
+    return ioapic_set_irq_dest(real_irq, IOAPIC_DEST_PHYSICAL, cpu_id);
+  }
+  
+  return 0;
+}
+
 int irq_unregister_handler(uint8_t irq) {
   DPRINTF("unregistering handler for IRQ%d\n", irq);
   if (irq >= NUM_INTERRUPTS) {
@@ -307,6 +327,21 @@ int irq_disable_interrupt(uint8_t irq) {
   mask_irq(irq);
   mtx_spin_unlock(&handlers_lock);
   return 0;
+}
+
+int irq_set_affinity(uint8_t irq, uint8_t cpu_id) {
+  if (irq >= NUM_INTERRUPTS) {
+    return -ERANGE;
+  }
+
+  // only external interrupts can have their affinity set
+  irq = get_real_irqnum(irq);
+  if (irq > irq_external_max) {
+    return -EINVAL; // software interrupts don't have cpu affinity
+  }
+
+  // set the ioapic destination to the specified cpu
+  return ioapic_set_irq_dest(irq, IOAPIC_DEST_PHYSICAL, cpu_id);
 }
 
 int irq_enable_msi_interrupt(uint8_t irq, uint8_t index, struct pci_device *device) {

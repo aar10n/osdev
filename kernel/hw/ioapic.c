@@ -180,6 +180,8 @@ int ioapic_set_isa_irq_routing(uint8_t isa_irq, uint8_t vector, uint16_t flags) 
   ioapic_rentry_t rentry = { .raw = ioapic_read64(ioapic->address, get_rentry_index(isa_irq)) };
   rentry.mask = 1;
   rentry.vector = vector;
+  rentry.dest_mode = IOAPIC_DEST_PHYSICAL;
+  rentry.dest = 0; // route isa interrupts to cpu 0 by default
 
   uint8_t polarity = flags & 0x3;
   if (polarity == 0b00 || polarity == 0b11) {
@@ -213,6 +215,11 @@ int ioapic_set_irq_vector(uint8_t irq, uint8_t vector) {
   ioapic_rentry_t rentry = { .raw = ioapic_read64(ioapic->address, get_rentry_index(irq)) };
   rentry.trigger_mode = IOAPIC_EDGE;
   rentry.vector = vector;
+  // default to cpu 0 if destination not already set
+  if (rentry.dest == 0 && rentry.dest_mode == 0) {
+    rentry.dest_mode = IOAPIC_DEST_PHYSICAL;
+    rentry.dest = 0; // cpu 0 by default
+  }
   ioapic_write64(ioapic->address, get_rentry_index(irq), rentry.raw);
   return 0;
 }
