@@ -236,14 +236,19 @@ void ftable_free(ftable_t **ftablep) {
 }
 
 
-int ftable_alloc_fd(ftable_t *ftable) {
+int ftable_alloc_fd(ftable_t *ftable, int at_fd) {
   FTABLE_LOCK(ftable);
-  index_t fd = bitmap_get_set_free(ftable->bitmap);
+  index_t fd_index;
+  if (at_fd >= 0) {
+    fd_index = bitmap_get_set_free_at(ftable->bitmap, (index_t)at_fd);
+  } else {
+    fd_index = bitmap_get_set_free(ftable->bitmap);
+  }
   FTABLE_UNLOCK(ftable);
-  if (fd < 0) {
+  if (fd_index < 0) {
     return -1;
   }
-  return (int) fd;
+  return (int) fd_index;
 }
 
 int ftable_claim_fd(ftable_t *ftable, int fd) {

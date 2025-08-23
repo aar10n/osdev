@@ -32,7 +32,7 @@ void _f_cleanup(__move file_t **fref);
 ftable_t *ftable_alloc();
 ftable_t *ftable_clone(ftable_t *ftable);
 void ftable_free(ftable_t **ftablep);
-int ftable_alloc_fd(ftable_t *ftable);
+int ftable_alloc_fd(ftable_t *ftable, int at_fd);
 int ftable_claim_fd(ftable_t *ftable, int fd);
 void ftable_free_fd(ftable_t *ftable, int fd);
 __ref fd_entry_t *ftable_get_entry(ftable_t *ftable, int fd);

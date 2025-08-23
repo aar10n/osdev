@@ -19,7 +19,8 @@
 #include <hash_map.h>
 
 #define ASSERT(x) kassert(x)
-#define DPRINTF(fmt, ...) kprintf("device: " fmt, ##__VA_ARGS__)
+//#define DPRINTF(fmt, ...) kprintf("device: " fmt, ##__VA_ARGS__)
+#define DPRINTF(fmt, ...)
 #define EPRINTF(fmt, ...) kprintf("device: %s: " fmt, __func__, ##__VA_ARGS__)
 
 #define DEV_FOPS(device, op) ((device)->f_ops && (device)->f_ops->op)

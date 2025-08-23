@@ -15,48 +15,6 @@
 // #define DPRINTF(fmt, ...) kprintf("ramfs_vnops: " fmt, ##__VA_ARGS__)
 #define DPRINTF(fmt, ...)
 
-static inline unsigned char vtype_to_dtype(enum vtype type) {
-  switch (type) {
-    case V_REG:
-      return DT_REG;
-    case V_DIR:
-      return DT_DIR;
-    case V_LNK:
-      return DT_LNK;
-    case V_CHR:
-      return DT_CHR;
-    case V_BLK:
-      return DT_BLK;
-    case V_FIFO:
-      return DT_FIFO;
-    case V_SOCK:
-      return DT_SOCK;
-    default:
-      return DT_UNKNOWN;
-  }
-}
-
-static size_t kio_write_dirent(ino_t ino, off_t off, enum vtype type, cstr_t name, kio_t *kio) {
-  // the `name` field of the direct struct is defined as char d_name[256]; but
-  // since only getdents64 is used, we can use a variable length name
-  size_t namelen = cstr_len(name);
-  ASSERT(namelen <= NAME_MAX);
-  struct dirent dirent;
-  dirent.d_ino = ino;
-  dirent.d_off = off;
-  dirent.d_type = vtype_to_dtype(type);
-  dirent.d_reclen = offsetof(struct dirent, d_name) + namelen + 1;
-  memcpy(dirent.d_name, cstr_ptr(name), namelen);
-  dirent.d_name[namelen] = '\0'; // null terminate
-
-  if (kio_remaining(kio) < dirent.d_reclen) {
-    return 0;
-  }
-
-  return kio_write_in(kio, &dirent, dirent.d_reclen, 0); // write dirent
-}
-
-//
 
 ssize_t ramfs_vn_read(vnode_t *vn, off_t off, kio_t *kio) {
   ramfs_node_t *node = vn->data;
@@ -313,8 +271,38 @@ int ramfs_vn_rmdir(vnode_t *dir, vnode_t *vn, ventry_t *ve) {
 
 //
 
+int ramfs_vn_no_create(vnode_t *dir, cstr_t name, struct vattr *vattr, __move ventry_t **result) {
+  return -EPERM;
+}
+
+int ramfs_vn_no_mknod(vnode_t *dir, cstr_t name, struct vattr *vattr, dev_t dev, __move ventry_t **result) {
+  return -EPERM;
+}
+
+int ramfs_vn_no_symlink(vnode_t *dir, cstr_t name, struct vattr *vattr, cstr_t target, __move ventry_t **result) {
+  return -EPERM;
+}
+
+int ramfs_vn_no_hardlink(vnode_t *dir, cstr_t name, vnode_t *target, __move ventry_t **result) {
+  return -EPERM;
+}
+
+int ramfs_vn_no_unlink(vnode_t *dir, vnode_t *vn, ventry_t *ve) {
+  return -EPERM;
+}
+
+int ramfs_vn_no_mkdir(vnode_t *dir, cstr_t name, struct vattr *vattr, __move ventry_t **result) {
+  return -EPERM;
+}
+
+int ramfs_vn_no_rmdir(vnode_t *dir, vnode_t *vn, ventry_t *ve) {
+  return -EPERM;
+}
+
+//
+
 void ramfs_vn_cleanup(vnode_t *vn) {
-  ramfs_node_t *node = vn->data;
+  ramfs_node_t *node = moveptr(vn->data);
   if (!node)
     return;
 

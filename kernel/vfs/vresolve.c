@@ -18,6 +18,7 @@
 //#define DPRINTF(fmt, ...) kprintf("vresolve: %s: " fmt, __func__, ##__VA_ARGS__)
 #define DPRINTF(fmt, ...)
 
+#undef goto_res
 #define goto_res(err) do { res = err; goto error; } while (0)
 
 

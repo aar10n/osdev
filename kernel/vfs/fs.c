@@ -114,6 +114,15 @@ void fs_setup_mounts() {
   if ((res = fs_mount(cstr_make("/loop"), cstr_make("/dev"), "devfs", 0)) < 0) {
     panic("fs_setup_mounts: failed to mount devfs [{:err}]", res);
   }
+
+  // mount procfs at /proc
+  if ((res = fs_mkdir(cstr_make("/proc"), 0777)) < 0) {
+    panic("fs_setup_mounts: failed to create /proc directory [{:err}]", res);
+  }
+  if ((res = fs_mount(cstr_make("/loop"), cstr_make("/proc"), "procfs", 0)) < 0) {
+    panic("fs_setup_mounts: failed to mount procfs [{:err}]", res);
+  }
+
   if ((res = fs_unlink(cstr_make("/loop"))) < 0) {
     panic("fs_setup_mounts: failed to unlink /loop [{:err}]", res);
   }
@@ -280,7 +289,7 @@ int fs_proc_open(proc_t *proc, int fd, cstr_t path, int flags, mode_t mode) {
 
   if (fd < 0) {
     // allocate new fd
-    fd = ftable_alloc_fd(proc->files);
+    fd = ftable_alloc_fd(proc->files, -1);
     if (fd < 0)
       goto_res(ret, -EMFILE);
   } else {
@@ -368,6 +377,7 @@ int fs_proc_open(proc_t *proc, int fd, cstr_t path, int flags, mode_t mode) {
     if (F_OPS(file)->f_allocate && (res = F_OPS(file)->f_allocate(file, 0)) < 0) {
       EPRINTF("failed to truncate file {:err}\n", res);
       file->closed = true;
+      file->nopen--;
       f_unlock_putref(file); // unlock and release the file
       goto ret_unlock;
     }
@@ -394,7 +404,7 @@ int fs_proc_open(proc_t *proc, int fd, cstr_t path, int flags, mode_t mode) {
   res = fd;
 LABEL(ret_unlock);
   if (ve)
-  ve_unlock(ve);
+    ve_unlock(ve);
 LABEL(ret);
   if (res < 0)
     ftable_free_fd(proc->files, fd);
@@ -677,23 +687,23 @@ int fs_fcntl(int fd, int cmd, unsigned long arg) {
   switch (cmd) {
     /* duplicate file descriptor */
     case F_DUPFD: {
-      int newfd = ftable_alloc_fd(FTABLE);
+      int newfd = ftable_alloc_fd(FTABLE, (int)arg);
       if (newfd < 0)
         goto_res(ret, -EMFILE);
-      if (newfd < (int)arg) {
-        ftable_free_fd(FTABLE, newfd);
-        for (int i = (int)arg; i < FTABLE_MAX_FILES; i++) {
-          if (ftable_claim_fd(FTABLE, i) == 0) {
-            newfd = i;
-            break;
-          }
-        }
-        if (newfd < (int)arg)
-          goto_res(ret, -EMFILE);
-      }
       
       fd_entry_t *newfde = fde_dup(fde, newfd);
       newfde->flags &= ~O_CLOEXEC; // not in file table yet, no lock needed
+      ftable_add_entry(FTABLE, newfde);
+      res = newfd;
+      break;
+    }
+    case F_DUPFD_CLOEXEC: {
+      int newfd = ftable_alloc_fd(FTABLE, (int)arg);
+      if (newfd < 0)
+        goto_res(ret, -EMFILE);
+      
+      fd_entry_t *newfde = fde_dup(fde, newfd);
+      newfde->flags |= O_CLOEXEC; // set close-on-exec flag
       ftable_add_entry(FTABLE, newfde);
       res = newfd;
       break;
@@ -758,6 +768,11 @@ int fs_fcntl(int fd, int cmd, unsigned long arg) {
   }
 
 LABEL(ret);
+  if (res < 0) {
+    EPRINTF("fcntl failed: fd=%d, cmd=%d, arg=%lu, res={:err}\n", fd, cmd, arg, res);
+  } else {
+    DPRINTF("fcntl: fd=%d, cmd=%d, arg=%lu, res=%d\n", fd, cmd, arg, res);
+  }
   fde_putref(&fde);
   return res;
 }
@@ -805,7 +820,7 @@ int fs_dup(int fd) {
   if (fde == NULL)
     return -EBADF;
 
-  int newfd = ftable_alloc_fd(FTABLE);
+  int newfd = ftable_alloc_fd(FTABLE, -1);
   if (newfd < 0)
     goto_res(ret_unlock, -EMFILE);
 
@@ -869,10 +884,10 @@ int fs_pipe2(int pipefd[2], int flags) {
   }
 
   // allocate fs
-  int read_fd = ftable_alloc_fd(FTABLE);
+  int read_fd = ftable_alloc_fd(FTABLE, -1);
   if (read_fd < 0)
     return -EMFILE;
-  int write_fd = ftable_alloc_fd(FTABLE);
+  int write_fd = ftable_alloc_fd(FTABLE, -1);
   if (write_fd < 0) {
     ftable_free_fd(FTABLE, read_fd);
     return -EMFILE;

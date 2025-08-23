@@ -97,12 +97,12 @@ sub write_source_file {
     print $file "  .v_cleanup = ${name}_vfs_cleanup,\n";
     print $file "};\n";
     print $file "\n";
-    print $file "struct vnode_ops ${name}_vnode_ops = {\n";
+    print $file "struct vnode_ops ${name}_vn_ops = {\n";
     write_format_ops($file, $vnode_ops, "  .{field} = {function},");
     print $file "  .v_cleanup = ${name}_vn_cleanup,\n";
     print $file "};\n";
     print $file "\n";
-    print $file "struct ventry_ops ${name}_ventry_ops = {\n";
+    print $file "struct ventry_ops ${name}_ve_ops = {\n";
     print $file "  .v_cleanup = ${name}_ve_cleanup,\n";
     print $file "};\n";
     print $file "\n";
@@ -112,8 +112,8 @@ sub write_source_file {
         print $file "  .flags = VFS_RDONLY,\n";
     }
     print $file "  .vfs_ops = &${name}_vfs_ops,\n";
-    print $file "  .vnode_ops = &${name}_vnode_ops,\n";
-    print $file "  .ventry_ops = &${name}_ventry_ops,\n";
+    print $file "  .vn_ops = &${name}_vn_ops,\n";
+    print $file "  .ve_ops = &${name}_ve_ops,\n";
     print $file "};\n";
     print $file "\n\n";
     print $file "$static_init";

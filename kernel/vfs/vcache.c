@@ -275,6 +275,8 @@ __ref ventry_t *vcache_get(vcache_t *vcache, cstr_t path) {
 int vcache_put(vcache_t *vcache, cstr_t path, ventry_t *ve) {
   if (ve->state == V_DEAD)
     return -1;
+  else if (VE_ISNOCACHE(ve))
+    return 0; // do not cache this ventry
   if (!cstr_starts_with(path, '/')) {
     EPRINTF("skipping invalid path {:cstr}\n", &path);
     return -1;

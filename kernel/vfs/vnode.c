@@ -102,7 +102,7 @@ bool vn_isatty(vnode_t *vn) {
 void _vn_cleanup(__move vnode_t **vnref) {
   // called when last reference is released
   vnode_t *vn = moveref(*vnref);
-  ASSERT(vn->state == V_DEAD);
+  ASSERT(vn->state == V_ALIVE || vn->state == V_DEAD);
   ASSERT(vn->nopen == 0);
   ASSERT(ref_count(&vn->refcount) == 0);
   if (mtx_owner(&vn->lock) != NULL) {
@@ -110,10 +110,17 @@ void _vn_cleanup(__move vnode_t **vnref) {
     mtx_unlock(&vn->lock);
   }
 
+  // a vnode may be cleaned up when in a state other than V_DEAD. for example, when
+  // a vnode is allocated and linked with a ventry marked with the VE_NOSAVE flag,
+  // the only long-lived reference to the vnode lives in the file that opened it.
+  // when this file is closed, the vnode is cleaned up. this is used when for
+  // filesystems with transient files (e.g. procfs).
+
   DPRINTF("!!! vnode cleanup !!! {:+vn}\n", vn);
   if (VN_OPS(vn)->v_cleanup)
     VN_OPS(vn)->v_cleanup(vn);
 
+  ASSERT(vn->data == NULL);
   vfs_putref(&vn->vfs);
   mtx_destroy(&vn->lock);
   rw_destroy(&vn->data_lock);
@@ -202,8 +209,6 @@ ssize_t vn_read(vnode_t *vn, off_t off, kio_t *kio) {
 
   if (!VN_OPS(vn)->v_read) return -ENOTSUP;
   if (off < 0) return -EINVAL;
-  if (off >= vn->size)
-    return 0;
 
   // filesystem read
   return VN_OPS(vn)->v_read(vn, off, kio);
@@ -216,8 +221,6 @@ ssize_t vn_write(vnode_t *vn, off_t off, kio_t *kio) {
   if (VFS_ISRDONLY(vn->vfs)) return -EROFS;
   if (!VN_OPS(vn)->v_write) return -ENOTSUP;
   if (off < 0) return -EINVAL;
-  if (off >= vn->size)
-    return 0;
 
   // filesystem write
   return VN_OPS(vn)->v_write(vn, off, kio);
@@ -363,8 +366,12 @@ int vn_lookup(ventry_t *dve, vnode_t *dvn, cstr_t name, __move ventry_t **result
   }
 
   assert_new_ventry_valid(ve);
-  ve_add_child(dve, ve);
-  vfs_add_node(vfs, ve);
+  if (VE_ISNOSAVE(ve)) {
+    vfs_activate_node(vfs, ve);
+  } else {
+    ve_add_child(dve, ve);
+    vfs_add_node(vfs, ve);
+  }
   vfs_end_read_op(vfs);
   // READ END
 
@@ -693,7 +700,9 @@ int vn_f_allocate(file_t *file, off_t len) {
   f_lock_assert(file, LA_OWNED);
   ASSERT(F_ISVNODE(file));
   ASSERT(!V_ISDEV((vnode_t *)file->data));
-  if (!((file->flags == O_WRONLY || file->flags == O_RDWR))) {
+  int flags = file->flags & O_ACCMODE;
+  if (!((flags == O_WRONLY || flags == O_RDWR))) {
+    EPRINTF("vn_f_allocate: file %p not opened for writing (flags=0x%x)\n", file, flags);
     return -EBADF; // file must be opened for writing
   }
 
@@ -746,7 +755,7 @@ ssize_t vn_f_read(file_t *file, kio_t *kio) {
     return -EBADF; // file is not open for reading
 
   vnode_t *vn = file->data;
-//  DPRINTF("vn_f_read: reading from file %p at offset %lld [vn {:+vn}]\n", file, file->offset, vn);
+  //DPRINTF("vn_f_read: reading from file %p at offset %lld [vn {:+vn}]\n", file, file->offset, vn);
   if (V_ISDIR(vn)) {
     return -EISDIR; // file is a directory
   } else if (!vn_lock(vn)) {

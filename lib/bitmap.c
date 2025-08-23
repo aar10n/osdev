@@ -221,6 +221,61 @@ index_t bitmap_get_set_free(bitmap_t *bmp) {
   return -1;
 }
 
+index_t bitmap_get_set_free_at(bitmap_t *bmp, index_t index) {
+  if (bmp->free == 0) {
+    return -1;
+  }
+
+  size_t total_bits = (bmp->used + bmp->free);
+  if (index >= total_bits) {
+    return -1;
+  }
+
+  uint64_t *array = (uint64_t *) bmp->map;
+  size_t start_word = index / BIT_SIZE;
+  size_t start_bit = index % BIT_SIZE;
+  size_t max_words = (bmp->size / BYTE_SIZE);
+
+  // check the first word starting from the given bit
+  if (start_word < max_words) {
+    uint64_t qw = array[start_word];
+    uint64_t mask = ~((1ULL << start_bit) - 1); // mask to ignore bits before start_bit
+    uint64_t masked_qw = qw | ~mask; // set bits before start_bit to 1 (unavailable)
+    
+    if (masked_qw != MAX_NUM) {
+      // there's at least one free bit in this word
+      size_t offset = __bsf64(~masked_qw);
+      array[start_word] |= (1ULL << offset);
+      bmp->used++;
+      bmp->free--;
+      return (start_word * BIT_SIZE) + offset;
+    }
+  }
+
+  // check remaining words
+  for (size_t i = start_word + 1; i < max_words; i++) {
+    uint64_t qw = array[i];
+    if (qw == MAX_NUM) {
+      // all bits set
+      continue;
+    } else if (qw == 0) {
+      // no bits set
+      array[i] |= 1ULL;
+      bmp->used++;
+      bmp->free--;
+      return i * BIT_SIZE;
+    }
+
+    size_t offset = __bsf64(~qw);
+    array[i] |= (1ULL << offset);
+    bmp->used++;
+    bmp->free--;
+    return (i * BIT_SIZE) + offset;
+  }
+  
+  return -1;
+}
+
 /*
  * Returns the start index of the next region of `n` consecutive
  * 0 bits. If no such region could be found, `-1` is returned.

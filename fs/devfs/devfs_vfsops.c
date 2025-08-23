@@ -8,9 +8,7 @@
 #include <kernel/panic.h>
 #include <kernel/printf.h>
 
-#include <kernel/vfs/vnode.h>
 #include <kernel/vfs/ventry.h>
-#include <kernel/vfs/path.h>
 
 #include <fs/ramfs/ramfs.h>
 

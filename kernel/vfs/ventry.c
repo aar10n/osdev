@@ -228,7 +228,7 @@ void _ve_cleanup(__move ventry_t **veref) {
   // called when last reference is released
   ventry_t *ve = moveref(*veref);
   ASSERT(ve != NULL);
-  ASSERT(ve->state == V_DEAD);
+  ASSERT(ve->state == V_ALIVE || ve->state == V_DEAD);
   ASSERT(ve->chld_count == 0);
   ASSERT(ref_count(&ve->refcount) == 0);
   if (mtx_owner(&ve->lock) != NULL) {
@@ -236,10 +236,22 @@ void _ve_cleanup(__move ventry_t **veref) {
     mtx_unlock(&ve->lock);
   }
 
+  // a ventry may be cleaned up when in a state other than V_DEAD.
+  // for example, when a ventry uses the VE_NOSAVE flag it is not
+  // saved in-memory and so no other ventries reference it. in this
+  // case, we want to unlink the vnode before calling v_cleanup.
+
   DPRINTF("!!! ventry cleanup !!! {:+ve}\n", ve);
+  if (VE_ISLINKED(ve)) {
+    vnode_t *vn = VN(ve);
+    ve_unlink_vnode(ve, vn);
+    ve->state = V_DEAD;
+  }
+
   if (VE_OPS(ve)->v_cleanup)
     VE_OPS(ve)->v_cleanup(ve);
 
+  ASSERT(ve->data == NULL);
   ve_putref(&ve->parent);
   vn_putref(&ve->vn);
   str_free(&ve->name);

@@ -84,7 +84,7 @@ USERSPACE_DIRS = sbin bin usr.bin
 all: $(BUILD_DIR)/osdev.img tools
 
 run: $(BUILD_DIR)/osdev.img
-	$(QEMU) $(QEMU_OPTIONS) $(if $(QEMU_GDB),-s,) -monitor $(QEMU_MONITOR)
+	$(QEMU) $(QEMU_OPTIONS) $(if $(QEMU_GDB),-s,) -monitor $(QEMU_MONITOR) $(if $(QEMU_NOGRAPHICS),-nographic,)
 
 debug: $(BUILD_DIR)/osdev.img
 	$(QEMU) -s -S $(QEMU_OPTIONS) &

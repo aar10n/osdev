@@ -110,7 +110,7 @@ struct vfs_ops ramfs_vfs_ops = {
   .v_cleanup = ramfs_vfs_cleanup,
 };
 
-struct vnode_ops ramfs_vnode_ops = {
+struct vnode_ops ramfs_vn_ops = {
   .v_read = ramfs_vn_read,
   .v_write = ramfs_vn_write,
   .v_getpage = ramfs_vn_getpage,
@@ -131,15 +131,15 @@ struct vnode_ops ramfs_vnode_ops = {
   .v_cleanup = ramfs_vn_cleanup,
 };
 
-struct ventry_ops ramfs_ventry_ops = {
+struct ventry_ops ramfs_ve_ops = {
   .v_cleanup = ramfs_ve_cleanup,
 };
 
 static fs_type_t ramfs_type = {
   .name = "ramfs",
   .vfs_ops = &ramfs_vfs_ops,
-  .vn_ops = &ramfs_vnode_ops,
-  .ve_ops = &ramfs_ventry_ops,
+  .vn_ops = &ramfs_vn_ops,
+  .ve_ops = &ramfs_ve_ops,
 };
 
 

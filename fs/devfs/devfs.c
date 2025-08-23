@@ -190,8 +190,8 @@ static fs_type_t devfs_type = {
 
 static void devfs_static_init() {
   // a devfs filesystem is a ramfs filesystem that is automatically sycned with the device tree.
-  devfs_type.vn_ops = &ramfs_vnode_ops;
-  devfs_type.ve_ops = &ramfs_ventry_ops;
+  devfs_type.vn_ops = &ramfs_vn_ops;
+  devfs_type.ve_ops = &ramfs_ve_ops;
 
   if (fs_register_type(&devfs_type) < 0) {
     panic("failed to register devfs type\n");

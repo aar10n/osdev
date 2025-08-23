@@ -28,6 +28,10 @@ memfile_t *memfile_alloc(size_t size) {
 }
 
 void memfile_free(memfile_t *memf) {
+  if (!memf) {
+    return;
+  }
+
   if (vmap_free(memf->base, memf->size) < 0) {
     DPRINTF("failed to free vm mapping\n");
   }

@@ -15,7 +15,7 @@
 struct vfs_ops initrd_vfs_ops = {
   .v_mount = initrd_vfs_mount,
   .v_unmount = ramfs_vfs_unmount,
-  .v_stat = initrd_vfs_stat,
+  .v_stat = ramfs_vfs_stat,
   .v_cleanup = ramfs_vfs_cleanup,
 };
 
@@ -36,7 +36,7 @@ static void initrd_static_init() {
   // writable, allowing for the creation of new files and directories. for that
   // reason we set the filesystem default vnode operations to `ramfs_vnode_ops`
   // and set the initrd node operations to `initrd_vnode_ops` during mount.
-  initrd_type.vn_ops = &ramfs_vnode_ops;
+  initrd_type.vn_ops = &ramfs_vn_ops;
 
   if (fs_register_type(&initrd_type) < 0) {
     panic("failed to register initrd type\n");

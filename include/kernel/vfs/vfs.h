@@ -21,6 +21,7 @@
 // comments after the function indicate the expected lock state of the parameters.
 
 __ref vfs_t *vfs_alloc(struct fs_type *type, int mount_flags);
+void vfs_activate_node(vfs_t *vfs, ventry_t *ve);
 void vfs_add_node(vfs_t *vfs, ventry_t *ve); // vfs = l, ve = _
 void vfs_remove_node(vfs_t *vfs, vnode_t *vn); // vfs = l, vnode = l
 void _vfs_cleanup(__move vfs_t **vfsref);

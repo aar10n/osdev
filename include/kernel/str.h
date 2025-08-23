@@ -8,6 +8,8 @@
 
 #include <kernel/base.h>
 #include <kernel/string.h>
+#include <macros.h>
+#include <stdarg.h>
 
 void *kmalloc(size_t size);
 void *kmallocz(size_t size);
@@ -29,6 +31,12 @@ typedef struct cstr {
   (str) = cstr_null; \
   _str; \
 })
+
+#define cstr_list(...) ((cstr_t[]) { __VA_ARGS__, cstr_null })
+#define charp_list(...) ((const char *[]) { __VA_ARGS__, NULL })
+
+#define _charp_to_cstr(charp) cstr_make(charp)
+#define cstr_charp_list(...) ((cstr_t[]){ MACRO_MAP_LIST(_charp_to_cstr, __VA_ARGS__), cstr_null })
 
 static inline cstr_t cstr_new(const char *str, size_t len) {
   if (!str)
@@ -77,6 +85,24 @@ static inline size_t cstr_memcpy(cstr_t str, void *buf, size_t len) {
   memcpy(buf, cstr_ptr(str), n-1);
   ((char *)buf)[n-1] = '\0';
   return n;
+}
+
+static inline bool cstr_in_list(cstr_t str, cstr_t list[]) {
+  for (size_t i = 0; !cstr_isnull(list[i]); i++) {
+    if (cstr_eq(str, list[i])) {
+      return true;
+    }
+  }
+  return false;
+}
+
+static inline bool cstr_in_charp_list(cstr_t str, const char *list[]) {
+  for (size_t i = 0; list[i] != NULL; i++) {
+    if (cstr_eq_charp(str, list[i])) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /**

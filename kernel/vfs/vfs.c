@@ -55,6 +55,24 @@ __ref vfs_t *vfs_alloc(struct fs_type *type, int mount_flags) {
   return vfs;
 }
 
+void vfs_activate_node(vfs_t *vfs, ventry_t *ve) {
+  // attach the node to the vfs without saving it in the vtable
+  // this is used for VE_NOSAVE entries which are dynamic
+  ASSERT(VE_ISLINKED(ve));
+  vnode_t *vn = VN(ve);
+  ASSERT(vn->state == V_EMPTY);
+  vn->state = V_ALIVE;
+  vn->vfs = vfs_getref(vfs);
+  if (vn->ops == NULL) {
+    // allow filesystems to provide a per-vnode ops table
+    vn->ops = vfs->type->vn_ops;
+  }
+  vn->device = vfs->device;
+
+  ve_syncvn(ve);
+  DPRINTF("activated {:+ve} in vfs id=%u [V_EMPTY -> V_ALIVE]\n", ve, vfs->id);
+}
+
 void vfs_add_node(vfs_t *vfs, ventry_t *ve) {
   DPRINTF("adding {:+ve} to vfs id=%u\n", ve, vfs->id);
   ASSERT(VE_ISLINKED(ve));

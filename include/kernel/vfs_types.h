@@ -147,6 +147,28 @@ enum vtype {
 #define V_ISSOCK(v) ((v)->type == V_SOCK)
 #define V_ISDEV(v) (V_ISBLK(v) || V_ISCHR(v))
 
+static inline unsigned char vtype_to_dtype(enum vtype type) {
+  switch (type) {
+    case V_REG:
+      return DT_REG;
+    case V_DIR:
+      return DT_DIR;
+    case V_LNK:
+      return DT_LNK;
+    case V_CHR:
+      return DT_CHR;
+    case V_BLK:
+      return DT_BLK;
+    case V_FIFO:
+      return DT_FIFO;
+    case V_SOCK:
+      return DT_SOCK;
+    default:
+      return DT_UNKNOWN;
+  }
+}
+
+
 /*
  * A virtual filesystem node.
  *
@@ -287,6 +309,10 @@ typedef struct ventry {
 #define   VE_ISMOUNT(ve) __type_checked(struct ventry*, ve, ((ve)->flags & VE_MOUNT))
 #define VE_FSROOT  0x04 /// ventry is the filesystem root
 #define   VE_ISFSROOT(ve) __type_checked(struct ventry*, ve, ((ve)->flags & VE_FSROOT))
+#define VE_NOSAVE  0x08 /// ventry should not be saved in-memory
+#define   VE_ISNOSAVE(ve) __type_checked(struct ventry*, ve, ((ve)->flags & VE_NOSAVE))
+#define VE_NOCACHE 0x10 /// ventry should not be cached
+#define   VE_ISNOCACHE(ve) __type_checked(struct ventry*, ve, ((ve)->flags & VE_NOCACHE))
 
 
 struct ventry_ops {

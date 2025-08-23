@@ -8,6 +8,7 @@
 
 #include <kernel/vfs_types.h>
 #include <kernel/device.h>
+#include <abi/dirent.h>
 
 #define VN_OPS(vn) __type_checked(struct vnode *, vn, (vn)->ops)
 
@@ -135,5 +136,39 @@ static inline vnode_t *vn_get_original_vnode(vnode_t *vn) {
   while (tmp->v_shadow) tmp = tmp->v_shadow;
   return tmp;
 }
+
+static inline struct dirent dirent_make_entry(ino_t ino, off_t off, enum vtype type, cstr_t name) {
+  size_t namelen = cstr_len(name);
+  kassert(namelen <= NAME_MAX);
+  struct dirent dirent;
+  dirent.d_ino = ino;
+  dirent.d_off = off;
+  dirent.d_type = vtype_to_dtype(type);
+  dirent.d_reclen = offsetof(struct dirent, d_name) + namelen + 1;
+  memcpy(dirent.d_name, cstr_ptr(name), namelen);
+  dirent.d_name[namelen] = '\0'; // null terminate
+  return dirent;
+}
+
+static inline size_t kio_write_dirent(ino_t ino, off_t off, enum vtype type, cstr_t name, kio_t *kio) {
+  // the `name` field of the direct struct is defined as char d_name[256]; but
+  // since only getdents64 is used, we can use a variable length name
+  size_t namelen = cstr_len(name);
+  kassert(namelen <= NAME_MAX);
+  struct dirent dirent;
+  dirent.d_ino = ino;
+  dirent.d_off = off;
+  dirent.d_type = vtype_to_dtype(type);
+  dirent.d_reclen = offsetof(struct dirent, d_name) + namelen + 1;
+  memcpy(dirent.d_name, cstr_ptr(name), namelen);
+  dirent.d_name[namelen] = '\0'; // null terminate
+
+  if (kio_remaining(kio) < dirent.d_reclen) {
+    return 0;
+  }
+
+  return kio_write_in(kio, &dirent, dirent.d_reclen, 0); // write dirent
+}
+
 
 #endif

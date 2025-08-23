@@ -41,6 +41,7 @@ typedef struct ramfs_node {
     struct memfile *n_file;
     LIST_HEAD(struct ramfs_dentry) n_dir;
   };
+  LIST_ENTRY(struct ramfs_node) list; // for embedding fs to use
 } ramfs_node_t;
 
 typedef struct ramfs_dentry {
@@ -62,8 +63,8 @@ void ramfs_remove_dentry(ramfs_node_t *dir, ramfs_dentry_t *dentry);
 ramfs_dentry_t *ramfs_lookup_dentry(ramfs_node_t *dir, cstr_t name);
 
 extern struct vfs_ops ramfs_vfs_ops;
-extern struct vnode_ops ramfs_vnode_ops;
-extern struct ventry_ops ramfs_ventry_ops;
+extern struct vnode_ops ramfs_vn_ops;
+extern struct ventry_ops ramfs_ve_ops;
 
 // MARK: implementation
 
@@ -91,6 +92,15 @@ int ramfs_vn_hardlink(vnode_t *dir, cstr_t name, vnode_t *target, __move ventry_
 int ramfs_vn_unlink(vnode_t *dir, vnode_t *vn, ventry_t *ve);
 int ramfs_vn_mkdir(vnode_t *dir, cstr_t name, struct vattr *vattr, __move ventry_t **result);
 int ramfs_vn_rmdir(vnode_t *dir, vnode_t *vn, ventry_t *ve);
+
+// stubs to disallow operations
+int ramfs_vn_no_create(vnode_t *dir, cstr_t name, struct vattr *vattr, __move ventry_t **result);
+int ramfs_vn_no_mknod(vnode_t *dir, cstr_t name, struct vattr *vattr, dev_t dev, __move ventry_t **result);
+int ramfs_vn_no_symlink(vnode_t *dir, cstr_t name, struct vattr *vattr, cstr_t target, __move ventry_t **result);
+int ramfs_vn_no_hardlink(vnode_t *dir, cstr_t name, vnode_t *target, __move ventry_t **result);
+int ramfs_vn_no_unlink(vnode_t *dir, vnode_t *vn, ventry_t *ve);
+int ramfs_vn_no_mkdir(vnode_t *dir, cstr_t name, struct vattr *vattr, __move ventry_t **result);
+int ramfs_vn_no_rmdir(vnode_t *dir, vnode_t *vn, ventry_t *ve);
 
 void ramfs_vn_cleanup(vnode_t *vn);
 void ramfs_ve_cleanup(ventry_t *ve);
