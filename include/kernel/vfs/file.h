@@ -24,8 +24,13 @@ __ref file_t *f_alloc(enum ftype type, int flags, void *data, struct file_ops *o
 __ref file_t *f_alloc_vn(int flags, vnode_t *vn);
 int f_open(file_t *file, int flags);
 int f_close(file_t *file);
+int f_allocate(file_t *file, off_t length);
 ssize_t f_read(file_t *file, kio_t *kio);
 ssize_t f_write(file_t *file, kio_t *kio);
+ssize_t f_readdir(file_t *file, kio_t *kio);
+off_t f_lseek(file_t *file, off_t offset, int whence);
+int f_stat(file_t *file, struct stat *statbuf);
+int f_ioctl(file_t *file, unsigned int request, void *arg);
 bool f_isatty(file_t *file);
 void _f_cleanup(__move file_t **fref);
 

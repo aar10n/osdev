@@ -432,6 +432,11 @@ ssize_t dev_f_read(file_t *file, kio_t *kio) {
   // and re-lock the file
   f_lock(file);
 
+  if (device->dtype == D_CHR && res >= 0) {
+    // update the file offset for character devices
+    file->offset += res;
+  }
+
   if (res < 0) {
     EPRINTF("failed to read from file %p at offset %lld [device %d] {:err}\n", file, file->offset, make_dev(device), res);
   }
@@ -456,26 +461,14 @@ ssize_t dev_f_write(file_t *file, kio_t *kio) {
   // and re-lock the file
   f_lock(file);
 
+  if (device->dtype == D_CHR && res >= 0) {
+    // update the file offset for character devices
+    file->offset += res;
+  }
+
   if (res < 0) {
     EPRINTF("failed to write to file %p at offset %lld [device %d] {:err}\n", file, file->offset, make_dev(device), res);
   }
-  return res;
-}
-
-int dev_f_ioctl(file_t *file, unsigned int request, void *arg) {
-  f_lock_assert(file, LA_OWNED);
-  ASSERT(F_ISVNODE(file));
-  ASSERT(V_ISDEV((vnode_t *)file->data));
-
-  vnode_t *vn = file->data;
-  device_t *device = vn->v_dev;
-  DPRINTF("dev_f_ioctl: ioctl on file %p with request %#llx [device %d]\n", file, request, make_dev(device));
-
-  // device ioctl
-  int res = d_ioctl(device, request, arg);
-  if (res == -ENOTSUP)
-    res = -ENOTTY; // not a tty device or not supported
-
   return res;
 }
 
@@ -502,6 +495,23 @@ int dev_f_stat(file_t *file, struct stat *statbuf) {
 
   vn_unlock(vn);
   return 0;
+}
+
+int dev_f_ioctl(file_t *file, unsigned int request, void *arg) {
+  f_lock_assert(file, LA_OWNED);
+  ASSERT(F_ISVNODE(file));
+  ASSERT(V_ISDEV((vnode_t *)file->data));
+
+  vnode_t *vn = file->data;
+  device_t *device = vn->v_dev;
+  DPRINTF("dev_f_ioctl: ioctl on file %p with request %#llx [device %d]\n", file, request, make_dev(device));
+
+  // device ioctl
+  int res = d_ioctl(device, request, arg);
+  if (res == -ENOTSUP)
+    res = -ENOTTY; // not a tty device or not supported
+
+  return res;
 }
 
 int dev_f_kqevent(file_t *file, knote_t *kn) {
@@ -549,11 +559,13 @@ void dev_f_cleanup(file_t *file) {
 struct file_ops dev_file_ops = {
   .f_open = dev_f_open,
   .f_close = dev_f_close,
+  .f_allocate = NULL,
   .f_getpage = dev_f_getpage,
   .f_read = dev_f_read,
   .f_write = dev_f_write,
-  .f_ioctl = dev_f_ioctl,
+  .f_readdir = NULL,
   .f_stat = dev_f_stat,
+  .f_ioctl = dev_f_ioctl,
   .f_kqevent = dev_f_kqevent,
   .f_cleanup = dev_f_cleanup,
 };

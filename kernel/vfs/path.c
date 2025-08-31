@@ -275,6 +275,84 @@ path_t path_next_part(path_t path) {
   return path;
 }
 
+// on call with a regular path, it will return the first subpath
+// with path.view.iter set to 1. subsequent calls will return the
+// next full subpath until the end of the path is reached, at which
+// point it will return a null path. for example, given the path
+// /a/b/c, the first call will return /a, the second /a/b, and
+// the third /a/b/c.
+path_t path_next_subpath(path_t path) {
+  if (path_is_null(path)) {
+    return path;
+  }
+
+  // first call - initialize iterator and return first subpath
+  if (path.iter.valid == 0) {
+    path.iter.valid = 1;
+    // store the original full length
+    path.iter.orig_len = path.storage.len;
+    
+    // find first component
+    const char *ptr = path.storage.str;
+    const char *end = path.storage.str + path.storage.len;
+    
+    // skip leading slashes
+    while (ptr < end && *ptr == '/') {
+      ptr++;
+    }
+    
+    // if path was all slashes, return single slash
+    if (ptr >= end) {
+      path.view.off = 0;
+      path.view.len = 1;
+      return path;
+    }
+    
+    // find end of first component
+    while (ptr < end && *ptr != '/') {
+      ptr++;
+    }
+    
+    // return view from start to end of first component
+    path.view.off = 0;
+    path.view.len = ptr - path.storage.str;
+    return path;
+  }
+
+  // subsequent calls - extend view to include next component
+  
+  // check if we've already returned the full path
+  if (path.view.len >= path.iter.orig_len) {
+    return NULL_PATH;
+  }
+  
+  // find where we currently end
+  const char *current_end = path.storage.str + path.view.len;
+  const char *full_end = path.storage.str + path.iter.orig_len;
+  
+  // skip any slashes at current position
+  while (current_end < full_end && *current_end == '/') {
+    current_end++;
+  }
+  
+  // if no more components, we're done
+  if (current_end >= full_end) {
+    return NULL_PATH;
+  }
+  
+  // find end of next component
+  while (current_end < full_end && *current_end != '/') {
+    current_end++;
+  }
+  
+  // extend view to include the next component
+  // view always starts at 0 and extends to current_end
+  path.view.off = 0;
+  path.view.len = current_end - path.storage.str;
+  
+  return path;
+}
+
 bool path_iter_end(path_t path) {
   return path_is_null(path_next_part(path));
 }

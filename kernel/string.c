@@ -96,6 +96,20 @@ int strncmp(const char *s1, const char *s2, size_t n) {
   return 0;
 }
 
+char *strchr(const char *s, int c) {
+  while (*s != '\0') {
+    if (*s == (char)c) {
+      return (char *)s;
+    }
+    s++;
+  }
+  // also check for null terminator if c is 0
+  if (c == '\0') {
+    return (char *)s;
+  }
+  return NULL;
+}
+
 int strlen(const char *s) {
   int len = 0;
   while (*s != 0) {

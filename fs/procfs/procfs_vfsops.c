@@ -2,6 +2,9 @@
 // Created by Aaron Gill-Braun on 2025-08-17.
 //
 
+#define PROCFS_INTERNAL
+#include "procfs.h"
+
 #include <kernel/vfs/path.h>
 #include <kernel/vfs/vfs.h>
 #include <kernel/vfs/vnode.h>
@@ -11,9 +14,6 @@
 #include <kernel/mm.h>
 #include <kernel/panic.h>
 #include <kernel/printf.h>
-
-#define PROCFS_INTERNAL
-#include "procfs.h"
 
 #define ASSERT(x) kassert(x)
 #define DPRINTF(fmt, ...) kprintf("procfs: " fmt, ##__VA_ARGS__)

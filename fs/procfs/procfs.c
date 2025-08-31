@@ -2,6 +2,10 @@
 // Created by Aaron Gill-Braun on 2025-08-17.
 //
 
+#define PROCFS_INTERNAL
+#include "procfs.h"
+#include "seqfile.h"
+
 #include <kernel/fs.h>
 #include <kernel/mm.h>
 #include <kernel/panic.h>
@@ -9,9 +13,6 @@
 #include <kernel/vfs/path.h>
 
 #include <fs/ramfs/ramfs.h>
-
-#define PROCFS_INTERNAL
-#include "procfs.h"
 
 #define ASSERT(x) kassert(x)
 #define DPRINTF(fmt, ...) kprintf("procfs: " fmt, ##__VA_ARGS__)
@@ -24,41 +25,23 @@
 static hash_map_t *procfs_directories = NULL;
 procfs_dir_t *global_procfs_root_dir = NULL;
 
-//
-// MARK: Public API
-//
+static int procfs_ensure_dirs_exists(cstr_t dirpath) {
+  path_t subpath = path_from_cstr(dirpath);
+  while (!path_is_null(subpath = path_next_subpath(subpath))) {
+    procfs_dir_t *dir = hash_map_get_cstr(procfs_directories, cstr_from_path(subpath));
+    if (dir) {
+      // directory already exists
+      continue;
+    }
 
-static procfs_object_t *procfs_lookup_object(cstr_t path) {
-  ASSERT(!cstr_isnull(path));
-  path_t p = path_from_cstr(path);
-  if (!path_is_absolute(p)) {
-    EPRINTF("procfs_lookup_object: path must be absolute: {:cstr}\n", &path);
-    return NULL;
-  } else if (path_is_slash(p)) {
-    // root directory
-    return global_procfs_root_dir->obj;
+    // create the directory object
+    int res = procfs_register_static_dir(cstr_from_path(subpath), 0755);
+    if (res < 0) {
+      EPRINTF("failed to create directory {:path}\n", &subpath);
+      return res;
+    }
   }
-
-  cstr_t name = cstr_from_path(path_basename(p));
-  cstr_t dirpath = cstr_from_path(path_dirname(p));
-  ASSERT(!cstr_eq_charp(name, "."));
-  ASSERT(!cstr_eq_charp(name, ".."))
-
-  // get the parent directory
-  procfs_dir_t *dir = hash_map_get_cstr(procfs_directories, dirpath);
-  if (!dir) {
-    EPRINTF("procfs_lookup_object: parent directory does not exist: {:cstr}\n", &dirpath);
-    return NULL;
-  }
-
-  // find the object in the parent directory
-  procfs_dirent_t *entry = LIST_FIND(ent, &dir->entries, next, str_eq_cstr(ent->name, name));
-  if (!entry) {
-    EPRINTF("procfs_lookup_object: object does not exist in directory {:str}: {:cstr}\n", &dir->name, &name);
-    return NULL;
-  }
-
-  return entry->obj;
+  return 0;
 }
 
 static int procfs_register_object(procfs_object_t *obj) {
@@ -67,6 +50,13 @@ static int procfs_register_object(procfs_object_t *obj) {
   cstr_t dirpath = cstr_from_path(path_dirname(path_from_str(obj->path)));
   ASSERT(!cstr_eq_charp(name, "."));
   ASSERT(!cstr_eq_charp(name, ".."))
+
+  // ensure the directory exists
+  int res = procfs_ensure_dirs_exists(dirpath);
+  if (res < 0) {
+    EPRINTF("procfs_register_object: failed to ensure parent directories exist for {:cstr}\n", &obj->path);
+    return res;
+  }
 
   // get the parent directory
   procfs_dir_t *dir = hash_map_get_cstr(procfs_directories, dirpath);
@@ -114,23 +104,28 @@ static int procfs_register_object(procfs_object_t *obj) {
   return 0;
 }
 
-int procfs_register_file(cstr_t path, procfs_ops_t *ops, void *data, int mode) {
+//
+// MARK: Public API
+//
+
+int procf_register_file(cstr_t path, struct procfs_ops *ops, void *data, int mode) {
+  mode &= 0777;
   ASSERT(!cstr_isnull(path));
   ASSERT(ops != NULL);
-  if (ops->pf_read == NULL) {
-    EPRINTF("procfs_register_file: read operation is required\n");
-  } else if (ops->pf_lookup != NULL) {
-    EPRINTF("procfs_register_file: lookup operation is not allowed\n");
-  } else if (ops->pf_readdir != NULL) {
-    EPRINTF("procfs_register_file: readdir operation is not allowed\n");
+  if (ops->proc_read == NULL) {
+    EPRINTF("read operation is required\n");
+    return -EINVAL;
+  } else if (ops->proc_lookup != NULL || ops->proc_readdir != NULL) {
+    EPRINTF("directory operation are not allowed\n");
+    return -EINVAL;
   }
 
   path_t file_path = path_from_cstr(path);
   if (!path_is_absolute(file_path)) {
-    EPRINTF("procfs_register_file: path must be absolute\n");
+    EPRINTF("path must be absolute\n");
     return -EINVAL;
   } else if (path_is_slash(file_path)) {
-    EPRINTF("procfs_register_file: invalid path /\n");
+    EPRINTF("invalid path /\n");
     return -EINVAL;
   }
 
@@ -145,34 +140,37 @@ int procfs_register_file(cstr_t path, procfs_ops_t *ops, void *data, int mode) {
 
   int res;
   if ((res = procfs_register_object(obj)) < 0) {
+    str_free(&obj->path);
     kfree(obj);
-    EPRINTF("procfs_register_file: failed to register object at path {:cstr}\n", &path);
+    EPRINTF("failed to register object at path {:cstr}\n", &path);
     return res;
   }
 
-  DPRINTF("registered {:cstr}\n", &path);
+  DPRINTF("registered file {:cstr}\n", &path);
   return 0;
 }
 
-int procfs_register_dir(cstr_t path, procfs_ops_t *ops, void *data, int mode) {
+int procfs_register_dir(cstr_t path, struct procfs_ops *ops, void *data, int mode) {
+  mode &= 0777;
   ASSERT(!cstr_isnull(path));
   ASSERT(ops != NULL);
-  if (ops->pf_lookup == NULL) {
-    EPRINTF("procfs_register_dir: lookup operation is required\n");
-  } else if (ops->pf_readdir == NULL) {
-    EPRINTF("procfs_register_dir: readdir operation is required\n");
-  } else if (ops->pf_read != NULL) {
-    EPRINTF("procfs_register_dir: read operation is not allowed\n");
-  } else if (ops->pf_write != NULL) {
-    EPRINTF("procfs_register_dir: write operation is not allowed\n");
+  if (ops->proc_lookup == NULL) {
+    EPRINTF("lookup operation is required\n");
+    return -EINVAL;
+  } else if (ops->proc_readdir == NULL) {
+    EPRINTF("readdir operation is required\n");
+    return -EINVAL;
+  } else if (ops->proc_read != NULL || ops->proc_write != NULL) {
+    EPRINTF("file operations are not allowed\n");
+    return -EINVAL;
   }
 
   path_t dir_path = path_from_cstr(path);
   if (!path_is_absolute(dir_path)) {
-    EPRINTF("procfs_register_dir: path must be absolute\n");
+    EPRINTF("path must be absolute\n");
     return -EINVAL;
   } else if (path_is_slash(dir_path)) {
-    EPRINTF("procfs_register_dir: invalid path /\n");
+    EPRINTF("invalid path /\n");
     return -EINVAL;
   }
 
@@ -188,12 +186,36 @@ int procfs_register_dir(cstr_t path, procfs_ops_t *ops, void *data, int mode) {
   int res;
   if ((res = procfs_register_object(obj)) < 0) {
     kfree(obj);
-    EPRINTF("procfs_register_file: failed to register object at path {:cstr}\n", &path);
+    EPRINTF("failed to register object at path {:cstr}\n", &path);
     return res;
   }
 
-  DPRINTF("registered dir %s\n", path);
+  DPRINTF("registered directory {:cstr}\n", &path);
   return 0;
+}
+
+int procfs_register_seq_file(cstr_t path, struct seq_ops *seq_ops, void *data, int mode) {
+  ASSERT(!cstr_isnull(path));
+  ASSERT(seq_ops != NULL);
+  if (seq_ops->start == NULL || seq_ops->stop == NULL ||
+      seq_ops->next == NULL || seq_ops->show == NULL) {
+    EPRINTF("all seq_ops functions are required\n");
+    return -EINVAL;
+  }
+
+  struct seq_ctor *ctor = seq_ctor_create(seq_ops, data);
+  return procf_register_file(path, &seq_procfs_ops, ctor, mode);
+}
+
+int procfs_register_simple_file(cstr_t path, simple_show_t show, simple_write_t write, void *data, int mode) {
+  ASSERT(!cstr_isnull(path));
+  if (show == NULL) {
+    EPRINTF("show function is required\n");
+    return -EINVAL;
+  }
+
+  struct seq_ctor *ctor = simple_ctor_create(show, write, data);
+  return procf_register_file(path, &seq_procfs_ops, ctor, mode);
 }
 
 int procfs_register_static_dir(cstr_t path, int mode) {
@@ -222,14 +244,13 @@ int procfs_register_static_dir(cstr_t path, int mode) {
     return res;
   }
 
-  DPRINTF("registered static dir %s\n", path);
+  DPRINTF("registered static directory {:cstr}\n", &path);
   return 0;
 }
 
 int procfs_unregister(cstr_t path) {
   todo("procfs_unregister not implemented");
 }
-
 
 //
 // MARK: Public API for procfs objects
@@ -238,12 +259,12 @@ int procfs_unregister(cstr_t path) {
 procfs_object_t *procfs_ephemeral_object(cstr_t name, procfs_ops_t *ops, void *data, int mode, bool is_dir) {
   ASSERT(ops != NULL);
   if (is_dir) {
-    ASSERT(ops->pf_readdir != NULL && "pf_readdir is required for directories");
-    ASSERT(ops->pf_lookup != NULL && "pf_lookup is required for directories");
+    ASSERT(ops->proc_readdir != NULL && "proc_readdir is required for directories");
+    ASSERT(ops->proc_lookup != NULL && "proc_lookup is required for directories");
   } else {
-    ASSERT(ops->pf_read != NULL && "pf_read is required for files");
-    ASSERT(ops->pf_lookup == NULL && "pf_lookup is not allowed for files");
-    ASSERT(ops->pf_readdir == NULL && "pf_readdir is not allowed for files");
+    ASSERT(ops->proc_read != NULL && "proc_read is required for files");
+    ASSERT(ops->proc_lookup == NULL && "proc_lookup is not allowed for files");
+    ASSERT(ops->proc_readdir == NULL && "proc_readdir is not allowed for files");
   }
 
   // create the procfs object
@@ -267,17 +288,22 @@ void *procfs_obj_data(procfs_object_t *obj) {
   return obj->data;
 }
 
-ssize_t procfs_obj_read_string(procfs_object_t *obj, off_t off, kio_t *kio, const char *str) {
-  size_t len = strlen(str);
-  if (off >= len) {
-    return 0;
-  }
-
-  size_t to_read = min(len - off, kio_remaining(kio));
-  return (ssize_t) kio_write_in(kio, str + off, to_read, 0);
-}
-
 // MARK: fs registration
+
+struct file_ops procfs_file_ops = {
+  .f_open = procfs_f_open,
+  .f_close = procfs_f_close,
+  .f_allocate = procfs_f_allocate,
+  .f_getpage = procfs_f_getpage,
+  .f_read = procfs_f_read,
+  .f_write = procfs_f_write,
+  .f_readdir = procfs_f_readdir,
+  .f_lseek = procfs_f_lseek,
+  .f_stat = procfs_f_stat,
+  .f_ioctl = NULL,
+  .f_kqevent = NULL,
+  .f_cleanup = procfs_f_cleanup,
+};
 
 struct vfs_ops procfs_vfs_ops = {
   .v_mount = procfs_vfs_mount,
@@ -305,6 +331,7 @@ struct vnode_ops procfs_vn_ops = {
   .v_unlink = ramfs_vn_no_unlink,
   .v_mkdir = ramfs_vn_no_mkdir,
   .v_rmdir = ramfs_vn_no_rmdir,
+  .v_alloc_file = procfs_vn_alloc_file,
   .v_cleanup = procfs_vn_cleanup,
 };
 

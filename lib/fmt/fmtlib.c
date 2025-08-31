@@ -786,9 +786,12 @@ static inline size_t resolve_integral_type(fmt_spec_t *spec) {
   int flags = spec->flags;
   const char *ptr = spec->type;
 
-  if (ptr[n] == 'l' && ptr[n+1] == 'l') {
+  if (ptr[n] == 'l') {
+    n += 1;
+    if (ptr[n] == 'l') {
+      n += 1;
+    }
     argtype = FMT_ARGTYPE_INT64;
-    n += 2;
   } else if (ptr[n] == 'z') {
     argtype = FMT_ARGTYPE_SIZE;
     n += 1;
@@ -966,6 +969,11 @@ size_t fmtlib_parse_printf_type(const char *format, const char **end) {
       *end = ptr + 1;
       return 1;
     case 'l':
+      if (ptr[1] == 'd' || ptr[1] == 'u' || ptr[1] == 'b' ||
+          ptr[1] == 'o' || ptr[1] == 'x' || ptr[1] == 'X') {
+        *end = ptr + 2;
+        return 2;
+      }
       if (ptr[1] == 'l') {
         if (ptr[2] == 'd' || ptr[2] == 'u' || ptr[2] == 'b' ||
             ptr[2] == 'o' || ptr[2] == 'x' || ptr[2] == 'X') {

@@ -586,27 +586,15 @@ ssize_t fs_readdir(int fd, void *dirp, size_t len) {
     return -EBADF;
 
   file_t *file = fde->file;
-  vnode_t *vn = file->data;
-  if (!F_ISVNODE(file) || !V_ISDIR(vn))
-    goto_res(ret, -ENOTDIR); // not a directory vnode
   if (!f_lock(file))
     goto_res(ret, -EBADF); // file is closed
 
-  // read the directory
   kio_t kio = kio_new_writable(dirp, len);
-  vn_begin_data_read(vn);
-  res = vn_readdir(vn, file->offset, &kio);
-  vn_end_data_read(vn);
+  res = f_readdir(file, &kio);
   if (res < 0) {
     DPRINTF("failed to read directory\n");
-    goto ret_unlock;
   }
 
-  // update the file offset
-  file->offset += res;
-
-  res = (ssize_t) kio_transfered(&kio);
-LABEL(ret_unlock);
   f_unlock(file);
 LABEL(ret);
   fde_putref(&fde);
@@ -620,34 +608,10 @@ off_t fs_lseek(int fd, off_t offset, int whence) {
     return -EBADF;
 
   file_t *file = fde->file;
-  if (!F_ISVNODE(file))
-    goto_res(ret, -EINVAL); // not a vnode file
   if (!f_lock(file))
     goto_res(ret, -EBADF); // file is closed
 
-  // update the file offset
-  vnode_t *vn = file->data;
-  switch (whence) {
-    case SEEK_SET:
-      res = offset;
-      break;
-    case SEEK_CUR:
-      res = file->offset + offset;
-      break;
-    case SEEK_END:
-      res = (off_t) vn->size + offset;
-      break;
-    default:
-      goto_res(ret_unlock, -EINVAL); // invalid whence
-  }
-
-  if (res < 0 || res > (off_t) vn->size)
-    goto_res(ret_unlock, -EINVAL); // invalid offset
-
-  // update the file offset
-  file->offset = res;
-
-LABEL(ret_unlock);
+  res = f_lseek(file, offset, whence);
   f_unlock(file);
 LABEL(ret);
   fde_putref(&fde);
@@ -665,7 +629,7 @@ int fs_ioctl(int fd, unsigned int request, void *argp) {
   if (!f_lock(file))
     goto_res(ret, -EBADF); // file is closed
 
-  res = F_OPS(file)->f_ioctl(file, request, argp);
+  res = f_ioctl(file, request, argp);
   if (res < 0) {
     EPRINTF("ioctl failed: fd=%d, request=%#llx, argp=%p, res={:err}\n", fd, request, argp, res);
   }
@@ -787,7 +751,7 @@ int fs_ftruncate(int fd, off_t length) {
   if (!f_lock(file))
     goto_res(ret, -EBADF); // file is closed
 
-  res = F_OPS(file)->f_allocate(file, length);
+  res = f_allocate(file, length);
   if (res < 0) {
     DPRINTF("failed to truncate file {:err}\n", res);
   }
@@ -807,7 +771,7 @@ int fs_fstat(int fd, struct stat *stat) {
   if (!f_lock(file))
     goto_res(ret, -EBADF); // file is closed
 
-  res = F_OPS(file)->f_stat(file, stat);
+  res = f_stat(file, stat);
   f_unlock(file);
 LABEL(ret);
   fde_putref(&fde);

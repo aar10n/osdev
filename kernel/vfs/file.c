@@ -99,6 +99,9 @@ __ref file_t *f_alloc_vn(int flags, vnode_t *vn) {
   }
 
   file_t *file = f_alloc(FT_VNODE, flags, vn_getref(vn), ops);
+  if (VN_OPS(vn)->v_alloc_file) {
+    VN_OPS(vn)->v_alloc_file(vn, file);
+  }
   return file;
 }
 
@@ -145,24 +148,79 @@ int f_close(file_t *file) {
   return 0;
 }
 
+int f_allocate(file_t *file, off_t length) {
+  f_lock_assert(file, LA_OWNED);
+  int flags = file->flags & O_ACCMODE;
+  if (!((flags == O_WRONLY || flags == O_RDWR))) {
+    EPRINTF("f_allocate: file %p not opened for writing (flags=0x%x)\n", file, flags);
+    return -EBADF; // file must be opened for writing
+  } else if (F_OPS(file)->f_allocate == NULL) {
+    return -ENOTSUP; // allocate not implemented
+  }
+
+  return F_OPS(file)->f_allocate(file, length);
+}
+
 ssize_t f_read(file_t *file, kio_t *kio) {
   f_lock_assert(file, LA_OWNED);
-  ssize_t res = F_OPS(file)->f_read(file, kio);
-  if (res > 0 && !V_ISCHR((vnode_t *)file->data)) {
-    // update the file offset
-    file->offset += res;
+  if (file->flags & O_DIRECTORY) {
+    return -EISDIR; // file is a directory
+  } else if (file->flags & O_WRONLY) {
+    return -EBADF; // file is not open for reading
+  } else if (F_OPS(file)->f_read == NULL) {
+    return -ENOTSUP; // read not implemented
   }
-  return res;
+
+  return F_OPS(file)->f_read(file, kio);
 }
 
 ssize_t f_write(file_t *file, kio_t *kio) {
   f_lock_assert(file, LA_OWNED);
-  ssize_t res = F_OPS(file)->f_write(file, kio);
-  if (res > 0 && !V_ISCHR((vnode_t *)file->data)) {
-    // update the file offset
-    file->offset += res;
+  if (file->flags & O_DIRECTORY) {
+    return -EISDIR; // file is a directory
+  } else if (file->flags & O_RDONLY) {
+    return -EBADF; // file is not open for writing
+  } else if (F_OPS(file)->f_write == NULL) {
+    return -ENOTSUP; // write not implemented
   }
-  return res;
+
+  return F_OPS(file)->f_write(file, kio);
+}
+
+ssize_t f_readdir(file_t *file, kio_t *kio) {
+  f_lock_assert(file, LA_OWNED);
+  if (!(file->flags & O_DIRECTORY)) {
+    return -ENOTDIR; // file is not a directory
+  } else if (F_OPS(file)->f_readdir == NULL) {
+    return -ENOTSUP; // readdir not implemented
+  }
+
+  return F_OPS(file)->f_readdir(file, kio);
+}
+
+off_t f_lseek(file_t *file, off_t offset, int whence) {
+  f_lock_assert(file, LA_OWNED);
+  if (F_OPS(file)->f_lseek == NULL) {
+    return -ESPIPE; // lseek not supported
+  }
+  return F_OPS(file)->f_lseek(file, offset, whence);
+}
+
+int f_stat(file_t *file, struct stat *statbuf) {
+  f_lock_assert(file, LA_OWNED);
+  if (F_OPS(file)->f_stat == NULL) {
+    return -ENOTSUP; // stat not implemented
+  }
+
+  return F_OPS(file)->f_stat(file, statbuf);
+}
+
+int f_ioctl(file_t *file, unsigned int request, void *arg) {
+  f_lock_assert(file, LA_OWNED);
+  if (F_OPS(file)->f_ioctl == NULL) {
+    return -ENOTTY; // ioctl not supported
+  }
+  return F_OPS(file)->f_ioctl(file, request, arg);
 }
 
 bool f_isatty(file_t *file) {

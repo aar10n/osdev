@@ -751,16 +751,15 @@ ssize_t vn_f_read(file_t *file, kio_t *kio) {
   f_lock_assert(file, LA_OWNED);
   ASSERT(F_ISVNODE(file));
   ASSERT(!V_ISDEV((vnode_t *)file->data));
-  if (file->flags & O_WRONLY)
-    return -EBADF; // file is not open for reading
 
   vnode_t *vn = file->data;
-  //DPRINTF("vn_f_read: reading from file %p at offset %lld [vn {:+vn}]\n", file, file->offset, vn);
   if (V_ISDIR(vn)) {
     return -EISDIR; // file is a directory
   } else if (!vn_lock(vn)) {
     return -EIO; // vnode is dead
   }
+
+  //DPRINTF("vn_f_read: reading from file %p at offset %lld [vn {:+vn}]\n", file, file->offset, vn);
 
   // this operation can block so we unlock the file during the read
   f_unlock(file);
@@ -783,15 +782,11 @@ ssize_t vn_f_write(file_t *file, kio_t *kio) {
   f_lock_assert(file, LA_OWNED);
   ASSERT(F_ISVNODE(file));
   ASSERT(!V_ISDEV((vnode_t *)file->data));
-  if (file->flags & O_RDONLY)
-    return -EBADF; // file is not open for writing
 
   vnode_t *vn = file->data;
   DPRINTF("vn_f_write: writing to file %p at offset %lld [vn {:+vn}]\n", file, file->offset, vn);
   if (V_ISDIR(vn)) {
     return -EISDIR; // file is a directory
-  } else if (file->flags & O_RDONLY) {
-    return -EBADF; // file is not open for writing
   } else if (!vn_lock(vn)) {
     return -EIO; // vnode is dead
   }
@@ -810,7 +805,98 @@ ssize_t vn_f_write(file_t *file, kio_t *kio) {
   }
 
   vn_unlock(vn);
+
+  if (res > 0) {
+    // update the file offset
+    file->offset += res;
+  }
   return res;
+}
+
+ssize_t vn_f_readdir(file_t *file, kio_t *kio) {
+  f_lock_assert(file, LA_OWNED);
+  ASSERT(F_ISVNODE(file));
+  ASSERT(!V_ISDEV((vnode_t *)file->data));
+
+  vnode_t *vn = file->data;
+  if (!V_ISDIR(vn)) {
+    return -ENOTDIR; // file is not a directory
+  } else if (!vn_lock(vn)) {
+    return -EIO; // vnode is dead
+  }
+
+  DPRINTF("vn_f_readdir: reading directory from file %p at offset %lld [vn {:+vn}]\n", file, file->offset, vn);
+  // this operation can block so we unlock the file during the read
+  f_unlock(file);
+  // read the directory
+  vn_begin_data_read(vn);
+  ssize_t res = vn_readdir(vn, file->offset, kio);
+  vn_end_data_read(vn);
+  // and re-lock the file
+  f_lock(file);
+
+  if (res < 0) {
+    EPRINTF("failed to read directory from file %p at offset %lld [vn {:+vn}] {:err}\n", file, file->offset, vn, res);
+    return res;
+  }
+
+  // update the file offset
+  file->offset += res;
+  return (ssize_t) kio_transfered(kio);
+}
+
+off_t vn_f_lseek(file_t *file, off_t offset, int whence) {
+  f_lock_assert(file, LA_OWNED);
+  ASSERT(F_ISVNODE(file));
+  ASSERT(!V_ISDEV((vnode_t *)file->data));
+
+  vnode_t *vn = file->data;
+  if (!vn_lock(vn)) {
+    return -EIO; // vnode is dead
+  }
+
+  DPRINTF("vn_f_lseek: seeking file %p from offset %lld with whence %d [vn {:+vn}]\n", file, offset, whence, vn);
+  off_t newoff;
+  switch (whence) {
+    case SEEK_SET:
+      newoff = offset;
+      break;
+    case SEEK_CUR:
+      newoff = file->offset + offset;
+      break;
+    case SEEK_END:
+      newoff = (off_t)vn->size + offset;
+      break;
+    default:
+      vn_unlock(vn);
+      return -EINVAL; // invalid whence
+  }
+
+  if (newoff < 0) {
+    vn_unlock(vn);
+    return -EINVAL; // invalid offset
+  }
+
+  file->offset = newoff;
+  vn_unlock(vn);
+  return newoff;
+}
+
+int vn_f_stat(file_t *file, struct stat *statbuf) {
+  f_lock_assert(file, LA_OWNED);
+  ASSERT(F_ISVNODE(file));
+  ASSERT(!V_ISDEV((vnode_t *)file->data));
+
+  vnode_t *vn = file->data;
+  DPRINTF("vn_f_stat: getting stat for file %p [vn {:+vn}]\n", file, vn);
+  if (!vn_lock(vn)) {
+    return -EIO; // vnode is dead
+  }
+
+  // get the vnode stat
+  vn_stat(vn, statbuf);
+  vn_unlock(vn);
+  return 0;
 }
 
 int vn_f_ioctl(file_t *file, unsigned int request, void *arg) {
@@ -833,23 +919,6 @@ int vn_f_ioctl(file_t *file, unsigned int request, void *arg) {
 
   vn_unlock(vn);
   return res;
-}
-
-int vn_f_stat(file_t *file, struct stat *statbuf) {
-  f_lock_assert(file, LA_OWNED);
-  ASSERT(F_ISVNODE(file));
-  ASSERT(!V_ISDEV((vnode_t *)file->data));
-
-  vnode_t *vn = file->data;
-  DPRINTF("vn_f_stat: getting stat for file %p [vn {:+vn}]\n", file, vn);
-  if (!vn_lock(vn)) {
-    return -EIO; // vnode is dead
-  }
-
-  // get the vnode stat
-  vn_stat(vn, statbuf);
-  vn_unlock(vn);
-  return 0;
 }
 
 int vn_f_kqevent(file_t *file, knote_t *kn) {
@@ -917,9 +986,11 @@ struct file_ops vnode_file_ops = {
   .f_allocate = vn_f_allocate,
   .f_getpage = vn_f_getpage,
   .f_read = vn_f_read,
+  .f_readdir = vn_f_readdir,
   .f_write = vn_f_write,
-  .f_ioctl = vn_f_ioctl,
+  .f_lseek = vn_f_lseek,
   .f_stat = vn_f_stat,
+  .f_ioctl = vn_f_ioctl,
   .f_kqevent = vn_f_kqevent,
   .f_cleanup = vn_f_cleanup,
 };

@@ -71,14 +71,14 @@ ssize_t ramfs_vn_readdir(vnode_t *vn, off_t off, kio_t *dirbuf) {
 
   if (off == 0) {
     // write the dot entry
-    if (!kio_write_dirent(vn->id, off, V_DIR, cstr_new(".", 1), dirbuf))
+    if (!kio_write_new_dirent(vn->id, off, V_DIR, cstr_new(".", 1), dirbuf))
       return 0;
     nread++;
     off++;
   }
   if (off == 1) {
     // write the dotdot entry
-    if (!kio_write_dirent(vn->parent_id, off, V_DIR, cstr_new("..", 2), dirbuf))
+    if (!kio_write_new_dirent(vn->parent_id, off, V_DIR, cstr_new("..", 2), dirbuf))
       return (ssize_t) nread;
     nread++;
     off++;
@@ -97,7 +97,7 @@ ssize_t ramfs_vn_readdir(vnode_t *vn, off_t off, kio_t *dirbuf) {
     }
 
     cstr_t name = cstr_from_str(dent->name);
-    if (!kio_write_dirent(dent->node->id, (off_t)i, dent->node->type, name, dirbuf))
+    if (!kio_write_new_dirent(dent->node->id, (off_t) i, dent->node->type, name, dirbuf))
       break;
 
     dent = LIST_NEXT(dent, list);

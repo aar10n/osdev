@@ -257,6 +257,7 @@ struct vnode_ops {
   // int (*v_rename)(struct vnode *dir, struct vnode *vn, struct ventry *old_ve, struct vnode *new_dir, cstr_t new_name);
 
   // lifecycle handlers
+  void (*v_alloc_file)(struct vnode *vn, struct file *file);
   void (*v_cleanup)(struct vnode *vn);
 };
 
@@ -369,8 +370,10 @@ struct file_ops {
   int (*f_getpage)(file_t *file, off_t off, __move struct page **page);
   ssize_t (*f_read)(file_t *file, kio_t *kio);
   ssize_t (*f_write)(file_t *file, kio_t *kio);
-  int (*f_ioctl)(file_t *file, unsigned int request, void *arg);
+  ssize_t (*f_readdir)(file_t *file, kio_t *dirbuf);
+  off_t (*f_lseek)(file_t *file, off_t offset, int whence);
   int (*f_stat)(file_t *file, struct stat *statbuf);
+  int (*f_ioctl)(file_t *file, unsigned int request, void *arg);
   int (*f_kqevent)(file_t *file, knote_t *kn);
   void (*f_cleanup)(file_t *file);
 };

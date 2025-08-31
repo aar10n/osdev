@@ -54,6 +54,19 @@ int vn_mkdir(ventry_t *dve, vnode_t *dvn, cstr_t name, mode_t mode, __move ventr
 int vn_rmdir(ventry_t *dve, vnode_t *dvn, ventry_t *ve, vnode_t *vn); // dve = l, dvn = w, ve = l, vn = l
 // int vn_rename(ventry_t *dve, ventry_t *ve, cstr_t name, ventry_t *new_dve, cstr_t new_name);
 
+int vn_f_open(file_t *file, int flags);
+int vn_f_close(file_t *file);
+int vn_f_allocate(file_t *file, off_t len);
+int vn_f_getpage(file_t *file, off_t off, __move page_t **page);
+ssize_t vn_f_read(file_t *file, kio_t *kio);
+ssize_t vn_f_write(file_t *file, kio_t *kio);
+ssize_t vn_f_readdir(file_t *file, kio_t *kio);
+off_t vn_f_lseek(file_t *file, off_t offset, int whence);
+int vn_f_ioctl(file_t *file, unsigned int request, void *arg);
+int vn_f_stat(file_t *file, struct stat *statbuf);
+int vn_f_kqevent(file_t *file, knote_t *kn);
+void vn_f_cleanup(file_t *file);
+
 //
 //
 
@@ -150,7 +163,15 @@ static inline struct dirent dirent_make_entry(ino_t ino, off_t off, enum vtype t
   return dirent;
 }
 
-static inline size_t kio_write_dirent(ino_t ino, off_t off, enum vtype type, cstr_t name, kio_t *kio) {
+static inline size_t kio_write_dirent(struct dirent *dirent, kio_t *kio) {
+  if (kio_remaining(kio) < dirent->d_reclen) {
+    return 0;
+  }
+
+  return kio_write_in(kio, dirent, dirent->d_reclen, 0); // write dirent
+}
+
+static inline size_t kio_write_new_dirent(ino_t ino, off_t off, enum vtype type, cstr_t name, kio_t *kio) {
   // the `name` field of the direct struct is defined as char d_name[256]; but
   // since only getdents64 is used, we can use a variable length name
   size_t namelen = cstr_len(name);

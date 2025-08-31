@@ -11,6 +11,8 @@
 #include <kernel/panic.h>
 #include <kernel/mutex.h>
 
+#include <fs/procfs/procfs.h>
+
 
 #define END_ADDR(heap) ((heap)->virt_addr + (heap)->size)
 
@@ -369,3 +371,18 @@ void kheap_dump_stats() {
     kprintf_raw("    %s - %zu\n", hist_labels[i], kheap.stats.alloc_sizes[i]);
   }
 }
+
+// MARK: Procfs registration
+
+static int kheap_stats_show(seqfile_t *sf, void *data) {
+  // "Kernel Heap Statistics\n"
+  // "  size = %zu\n"
+  // "  used = %zu\n"
+  // "  alloc count = %zu\n"
+  // "  free count = %zu\n"
+  // "  request_sizes:\n"
+  // "    %s - %zu\n" * 8
+  return seq_puts(sf, "kheap stats:\n");
+}
+PROCFS_REGISTER_SIMPLE(version, "/kheap_stats", kheap_stats_show, NULL, 0444);
+

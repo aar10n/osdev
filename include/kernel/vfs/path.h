@@ -111,6 +111,9 @@ path_t path_dirname(path_t path);
 /// Returns the first or next component of a path. Returns NULL_PATH if there are no more.
 path_t path_next_part(path_t path);
 
+/// Returns the first or next subpath in a path. Returns NULL_PATH if there are no more.
+path_t path_next_subpath(path_t path);
+
 /// Returns whether the path iterator has reached the end.
 bool path_iter_end(path_t path);
 

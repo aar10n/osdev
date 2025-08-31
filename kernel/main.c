@@ -91,7 +91,7 @@ _used void kmain() {
   fs_setup_mounts();
 
   cpu_enable_interrupts();
-  probe_all_buses();
+//  probe_all_buses();
   alarm_source_enable(alarm_tick_source());
 
   kprintf("{:$=^49}\n");
@@ -101,6 +101,7 @@ _used void kmain() {
   // give other processes a chance to run including the devfs process
   // which wll populate devices we will need shortly.
   // TODO: do this in a more robust way
+  sched_again(SCHED_YIELDED);
   alarm_sleep_ms(50);
 
   ls("/");
