@@ -436,6 +436,8 @@ void ftable_close_all(ftable_t *ftable) {
 
     node = next;
   }
+
+  FTABLE_UNLOCK(ftable);
 }
 
 //

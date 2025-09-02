@@ -805,7 +805,6 @@ ssize_t vn_f_write(file_t *file, kio_t *kio) {
   }
 
   vn_unlock(vn);
-
   if (res > 0) {
     // update the file offset
     file->offset += res;
@@ -835,6 +834,7 @@ ssize_t vn_f_readdir(file_t *file, kio_t *kio) {
   // and re-lock the file
   f_lock(file);
 
+  vn_unlock(vn);
   if (res < 0) {
     EPRINTF("failed to read directory from file %p at offset %lld [vn {:+vn}] {:err}\n", file, file->offset, vn, res);
     return res;
