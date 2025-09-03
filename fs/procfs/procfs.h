@@ -51,7 +51,7 @@ typedef struct procfs_ops {
   /* directory operations */
 
   // read directory entry from object (required)
-  ssize_t (*proc_readdir)(procfs_handle_t *h, off_t index, struct dirent *dirent);
+  ssize_t (*proc_readdir)(procfs_handle_t *h, off_t *poff, struct dirent *dirent);
   // lookup an entry by name (required)
   // note: this function does not have access to the handle or dynamic data
   int (*proc_lookup)(procfs_object_t *obj, cstr_t name, __move procfs_object_t **result);
@@ -119,7 +119,6 @@ struct procfs_dirent {
 // file operations
 int procfs_f_open(file_t *file, int flags);
 int procfs_f_close(file_t *file);
-int procfs_f_allocate(file_t *file, off_t len);
 int procfs_f_getpage(file_t *file, off_t off, __move struct page **page);
 ssize_t procfs_f_read(file_t *file, kio_t *kio);
 ssize_t procfs_f_write(file_t *file, kio_t *kio);

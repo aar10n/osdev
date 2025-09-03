@@ -29,11 +29,13 @@ int procfs_f_open(file_t *file, int flags) {
   }
 
   void *handle_data = NULL;
-  int res = obj->ops->proc_open(obj, flags, &handle_data);
-  if (res < 0) {
-    return res;
+  int res = 0;
+  if (obj->ops->proc_open) {
+    res = obj->ops->proc_open(obj, flags, &handle_data);
+    if (res < 0) {
+      return res;
+    }
   }
-
   file->udata = handle_data;
   return 0;
 }
@@ -48,18 +50,10 @@ int procfs_f_close(file_t *file) {
 
   // move file udata out of file before passing to proc_close
   procfs_handle_t *handle = &(procfs_handle_t){obj, moveptr(file->udata)};
-  return obj->ops->proc_close(handle);
-}
-
-int procfs_f_allocate(file_t *file, off_t len) {
-  ASSERT(F_ISVNODE(file));
-  vnode_t *vn = file->data;
-  procfs_object_t *obj = PROCFS_OBJECT(vn);
-  if (!obj || obj->is_static) {
-    return vn_f_allocate(file, len);
+  if (obj->ops->proc_close) {
+    return obj->ops->proc_close(handle);
   }
-
-  return -ENOTSUP;
+  return 0;
 }
 
 int procfs_f_getpage(file_t *file, off_t off, __move struct page **page) {
@@ -123,11 +117,9 @@ ssize_t procfs_f_readdir(file_t *file, kio_t *kio) {
   procfs_handle_t *handle = &(procfs_handle_t){obj, file->udata};
   while (kio_remaining(kio) > 0) {
     struct dirent dirent;
-    res = obj->ops->proc_readdir(handle, file->offset, &dirent);
-    if (res < 0)
-      return res;
-    else if (res == 0)
-      break; // end of directory
+    res = obj->ops->proc_readdir(handle, &file->offset, &dirent);
+    if (res <= 0)
+      break;
 
     size_t n = kio_write_dirent(&dirent, kio);
     if (n != (size_t)res) {
@@ -137,9 +129,7 @@ ssize_t procfs_f_readdir(file_t *file, kio_t *kio) {
     nbytes += n;
   }
 
-  if (res > 0) {
-    file->offset += (off_t) nbytes;
-  }
+  // file offset was updated by proc_readdir
   return (ssize_t) nbytes;
 }
 

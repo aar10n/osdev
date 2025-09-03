@@ -293,7 +293,7 @@ void *procfs_obj_data(procfs_object_t *obj) {
 struct file_ops procfs_file_ops = {
   .f_open = procfs_f_open,
   .f_close = procfs_f_close,
-  .f_allocate = procfs_f_allocate,
+  .f_allocate = NULL,
   .f_getpage = procfs_f_getpage,
   .f_read = procfs_f_read,
   .f_write = procfs_f_write,

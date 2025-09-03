@@ -130,8 +130,9 @@ static procfs_ops_t dynamic_file_ops = {
   .proc_cleanup = dynamic_file_cleanup,
 };
 
-static ssize_t dynamic_dir_readdir(procfs_handle_t *h, off_t idx, struct dirent *dirent) {
+static ssize_t dynamic_dir_readdir(procfs_handle_t *h, off_t *poff, struct dirent *dirent) {
   procfs_object_t *obj = h->obj;
+  off_t idx = *poff;
 
   // simple static entries for demonstration
   const char *entries[] = {"file1", "file2", "recursive", NULL};
@@ -141,6 +142,7 @@ static ssize_t dynamic_dir_readdir(procfs_handle_t *h, off_t idx, struct dirent 
 
   enum vtype type = idx == 2 ? V_DIR : V_REG;
   *dirent = dirent_make_entry(idx+1, idx, type, cstr_make(entries[idx]));
+  (*poff)++;
   return dirent->d_reclen;
 }
 
