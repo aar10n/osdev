@@ -130,6 +130,18 @@ bool path_is_subpath(path_t path1, path_t path2) {
   }
 }
 
+bool path_starts_with_charp(path_t path, const char *str) {
+  if (path_is_null(path)) {
+    return str == NULL || *str == '\0';
+  }
+
+  size_t len = strlen(str);
+  if (path_len(path) < len) {
+    return false;
+  }
+  return memcmp(path_start(path), str, len) == 0;
+}
+
 // MARK: Path Manipulation
 
 path_t path_drop_first(path_t path) {

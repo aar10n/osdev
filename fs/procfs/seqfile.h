@@ -27,6 +27,7 @@ typedef struct seqfile {
   size_t bufsize;       // total buffer size
   size_t count;         // amount of data in buffer
   size_t from;          // current read offset in buffer
+  size_t mark;          // marked offset in buffer
   off_t index;          // iterator index
   bool full;            // buffer is full (need larger buffer)
 
@@ -76,9 +77,12 @@ struct seq_ctor *simple_ctor_create(simple_show_t show, simple_write_t write, vo
 void seq_ctor_destroy(struct seq_ctor **ctorp);
 
 // output functions
+void seq_mark_begin(seqfile_t *sf);
+int seq_mark_end(seqfile_t *sf);
 int seq_putc(seqfile_t *sf, char c);
 int seq_puts(seqfile_t *sf, const char *s);
 int seq_write(seqfile_t *sf, const void *data, size_t len);
+int seq_printf_ext(seqfile_t *sf, const char *fmt, ...);
 int seq_printf(seqfile_t *sf, const char *fmt, ...) _printf_like(2, 3);
 int seq_vprintf(seqfile_t *sf, const char *fmt, va_list args);
 int seq_escape(seqfile_t *sf, const char *s, const char *esc);

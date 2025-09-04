@@ -19,6 +19,8 @@
 #include <kernel/string.h>
 #include <kernel/printf.h>
 
+#include <fs/procfs/procfs.h>
+
 #include <interval_tree.h>
 
 #include <abi/mman.h>
@@ -366,6 +368,10 @@ static void file_type_putpage_internal(vm_mapping_t *vm, __ref page_t *page, siz
   vm_file_putpage(vm->vm_file, page, off, NULL);
 }
 
+static void file_type_resize_internal(vm_mapping_t *vm, size_t new_size) {
+  vm_file_resize(vm->vm_file, new_size);
+}
+
 static vm_file_t *file_type_split_internal(vm_mapping_t *vm, size_t off) {
   return vm_file_split(vm->vm_file, off);
 }
@@ -646,16 +652,18 @@ static bool resize_mapping_inplace(vm_mapping_t *vm, size_t new_size) {
 
   // if we are shrinking or growing within the existing empty node virtual space
   // we dont need to update the tree just the mapping size and address. for normal
-  // mappings this means just updating vm->size, for stack mappings, we need to bump
-  // vm->address up to account for the change.
+  // mappings this means just updating vm->size + vm->vm_size, for stack mappings,
+  // we need to bump vm->address up to account for the change.
   off_t delta = diff(new_size, vm->size);
   if (new_size < vm->size) {
     vm->size = new_size;
+    vm->virt_size = max(vm->virt_size, new_size);
     if (vm->flags & VM_STACK)
       vm->address += delta;
     return true;
   } else if (new_size > vm->size && new_size <= vm_empty_space(vm)) {
     vm->size = new_size;
+    vm->virt_size = max(vm->virt_size, new_size);
     if (vm->flags & VM_STACK)
       vm->address -= delta; // grow down
     return true;
@@ -676,6 +684,7 @@ static bool resize_mapping_inplace(vm_mapping_t *vm, size_t new_size) {
     intvl_tree_update_interval(space->new_tree, node, -delta, 0);
     vm->address -= new_size - vm->size;
     vm->size = new_size;
+    vm->virt_size = max(vm->virt_size, new_size);
   } else {
     vm_mapping_t *next = LIST_NEXT(vm, vm_list);
     intvl_node_t *next_node = intvl_tree_find(space->new_tree, vm_virt_interval(next));
@@ -688,6 +697,7 @@ static bool resize_mapping_inplace(vm_mapping_t *vm, size_t new_size) {
 
     intvl_tree_update_interval(space->new_tree, node, 0, delta);
     vm->size = new_size;
+    vm->virt_size = max(vm->virt_size, new_size);
   }
 
   return true;
@@ -1650,9 +1660,7 @@ int vmap_resize(uintptr_t vaddr, size_t old_size, size_t new_size, bool allow_mo
   uintptr_t old_addr = vm->address;
   if (!resize_mapping_inplace(vm, new_size)) {
     // that didnt work but maybe we can try moving the mapping
-    if (allow_move && move_mapping(vm, new_size)) {
-      *new_vaddr = vm->address;
-    } else {
+    if (!allow_move && move_mapping(vm, new_size)) {
       res = -ENOMEM;
       goto ret;
     }
@@ -1660,17 +1668,26 @@ int vmap_resize(uintptr_t vaddr, size_t old_size, size_t new_size, bool allow_mo
 
   // finally call the appropriate resize function to update the underlying mappings
   if (new_size < old_size) {
-    size_t size = old_size - new_size;
+    // unmap the excess mapping
+    size_t unmap_size = old_size - new_size;
     size_t off = new_size;
     if (vm->type == VM_TYPE_PAGE) {
-      page_type_unmap_internal(vm, size, off);
+      page_type_unmap_internal(vm, unmap_size, off);
     } else if (vm->type == VM_TYPE_FILE) {
       struct file_cb_data data = {vm, off, /*unmap=*/false};
-      vm_file_visit_pages(vm->vm_file, off, off+size, file_map_update_cb, &data);
+      vm_file_visit_pages(vm->vm_file, off, off+unmap_size, file_map_update_cb, &data);
+    }
+  } else if (new_size > old_size) {
+    // grow the underlying mapping
+    if (vm->type == VM_TYPE_PAGE) {
+      todo("handle page mapping resize\n");
+    } else if (vm->type == VM_TYPE_FILE) {
+      file_type_resize_internal(vm, new_size);
     }
   }
-
 LABEL(ret);
+  if (res == 0 && new_vaddr)
+    *new_vaddr = vm->address;
   space_unlock(space);
   return res;
 }
@@ -2100,7 +2117,7 @@ static inline const char *prot_to_debug_str(uint32_t vm_flags) {
       }
       return "urw-";
     } else if (vm_flags & VM_EXEC) {
-      return "ur-x-";
+      return "ur-x";
     }
     return "ur--";
   } else {
@@ -2110,7 +2127,7 @@ static inline const char *prot_to_debug_str(uint32_t vm_flags) {
       }
       return "krw-";
     } else if (vm_flags & VM_EXEC) {
-      return "kr-x-";
+      return "kr-x";
     }
     return "kr--";
   }
@@ -2201,6 +2218,169 @@ void vm_print_format_address_space(address_space_t *space) {
   }
   space_unlock(space);
 }
+
+//
+// MARK: Procfs Interface
+//
+
+enum vmalloc_seq_state {
+  SEQ_STATE_USER = 0,
+  SEQ_STATE_KERNEL = 1,
+  SEQ_STATE_DONE = 2
+};
+
+struct vmalloc_seq_iter {
+  address_space_t *space;
+  vm_mapping_t *current;
+  enum vmalloc_seq_state state;
+  off_t space_index;  // index within current address space
+};
+
+static const char *vm_type_to_str(enum vm_type type) {
+  switch (type) {
+    case VM_TYPE_RSVD: return "rsvd";
+    case VM_TYPE_PHYS: return "phys";
+    case VM_TYPE_PAGE: return "page";
+    case VM_TYPE_FILE: return "file";
+    default: return "????";
+  }
+}
+
+static void *vmalloc_seq_start(seqfile_t *sf, off_t *pos) {
+  struct vmalloc_seq_iter *iter = kmalloc(sizeof(*iter));
+  if (!iter) {
+    return NULL;
+  }
+
+  off_t seq_pos = sf->index;
+  
+  // count user space mappings
+  address_space_t *uspace = curspace;
+  space_lock(uspace);
+  off_t user_count = 0;
+  vm_mapping_t *vm;
+  LIST_FOREACH(vm, &uspace->mappings, vm_list) {
+    user_count++;
+  }
+  space_unlock(uspace);
+  
+  if (seq_pos < user_count) {
+    // in user space
+    iter->state = SEQ_STATE_USER;
+    iter->space = curspace;
+    iter->space_index = seq_pos;
+  } else {
+    // in kernel space
+    iter->state = SEQ_STATE_KERNEL;
+    iter->space = kernel_space;
+    iter->space_index = seq_pos - user_count;
+  }
+  
+  space_lock(iter->space);
+  iter->current = LIST_FIRST(&iter->space->mappings);
+  
+  // skip to the requested index within this space
+  off_t index = 0;
+  while (iter->current && index < iter->space_index) {
+    iter->current = LIST_NEXT(iter->current, vm_list);
+    index++;
+  }
+
+  if (!iter->current) {
+    space_unlock(iter->space);
+    kfree(iter);
+    return NULL;
+  }
+  return iter;
+}
+
+static void vmalloc_seq_stop(seqfile_t *sf, void *v) {
+  if (v) {
+    struct vmalloc_seq_iter *iter = v;
+    // only unlock if we're not in DONE state (space already unlocked in next)
+    if (iter->state != SEQ_STATE_DONE) {
+      space_unlock(iter->space);
+    }
+    kfree(iter);
+  }
+}
+
+static void *vmalloc_seq_next(seqfile_t *sf, void *v, off_t *pos) {
+  struct vmalloc_seq_iter *iter = v;
+  iter->current = LIST_NEXT(iter->current, vm_list);
+  iter->space_index++;
+  (*pos)++;
+  
+  // if we've exhausted current space, try switching to kernel space
+  if (!iter->current && iter->state == SEQ_STATE_USER) {
+    space_unlock(iter->space);
+    iter->state = SEQ_STATE_KERNEL;
+    iter->space = kernel_space;
+    iter->space_index = 0;
+    space_lock(iter->space);
+    iter->current = LIST_FIRST(&iter->space->mappings);
+  }
+  
+  if (!iter->current) {
+    // if we have no current mapping, we're done - unlock the space
+    space_unlock(iter->space);
+    iter->state = SEQ_STATE_DONE;
+    return NULL;
+  }
+  return iter;
+}
+
+static int vmalloc_seq_show(seqfile_t *sf, void *v) {
+  struct vmalloc_seq_iter *iter = v;
+  vm_mapping_t *vm = iter->current;
+
+  address_space_t *last_space = (address_space_t *)sf->data;
+  seq_mark_begin(sf);
+  if (last_space != iter->space) {
+    // only print header once at the top of the file
+    if (last_space == NULL) {
+      seq_printf(sf, "%-37s %10s %-4s %-4s %-6s %s\n",
+                 "Address Range", "Size", "Type", "Prot", "Flags", "Name");
+    }
+    sf->data = iter->space;
+  }
+  
+  // handle stack mappings with guard page
+  if (vm->flags & VM_STACK) {
+    size_t extra_size = vm->virt_size - vm->size;
+    seq_printf_ext(sf, "%018p-%018p %-10llu %-4s %-4s %-6s [stack guard]\n",
+               vm->address - extra_size, vm->address, extra_size,
+               "----", "----", "guard");
+  }
+  
+  // print the main mapping
+  seq_printf_ext(sf, "%018p-%018p %-10llu %-4s %-4s ",
+                 vm->address, vm->address + vm->size, vm->size,
+                 vm_type_to_str(vm->type), prot_to_debug_str(vm->flags));
+
+  // build flags string (6 characters: SPGN2MK)
+  char flags_str[7] = "------";
+  if (vm->flags & VM_SHARED) flags_str[0] = 'S';
+  else if (vm->flags & VM_PRIVATE) flags_str[0] = 'P';
+  
+  if (vm->flags & VM_GLOBAL) flags_str[1] = 'G';
+  if (vm->flags & VM_NOCACHE) flags_str[2] = 'N';
+  if (vm->flags & VM_HUGE_2MB) flags_str[3] = '2';
+  else if (vm->flags & VM_HUGE_1GB) flags_str[3] = '1';
+  if (vm->flags & VM_MALLOC) flags_str[4] = 'M';
+  if (vm->flags & VM_STACK) flags_str[5] = 'K';
+  
+  seq_printf_ext(sf, "%-6s {:str}\n", flags_str, &vm->name);
+  return seq_mark_end(sf);
+}
+
+static struct seq_ops vmalloc_seq_ops = {
+  .start = vmalloc_seq_start,
+  .stop = vmalloc_seq_stop,
+  .next = vmalloc_seq_next,
+  .show = vmalloc_seq_show,
+};
+PROCFS_REGISTER_SEQFILE(vmalloc, "/self/maps", &vmalloc_seq_ops, 0444);
 
 //
 // MARK: System Calls

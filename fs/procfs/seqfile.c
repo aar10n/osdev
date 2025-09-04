@@ -14,7 +14,7 @@
 #include <kernel/vfs/file.h>
 
 #define ASSERT(x) kassert(x)
-#define DPRINTF(fmt, ...) kprintf("seqfile: %s: " fmt, ##__VA_ARGS__)
+#define DPRINTF(fmt, ...) kprintf("seqfile: " fmt, ##__VA_ARGS__)
 #define EPRINTF(fmt, ...) kprintf("seqfile: %s: " fmt, __func__, ##__VA_ARGS__)
 
 // seq_ctor is used to pass constructor arguments to the open function it is
@@ -48,7 +48,9 @@ static void *seq_simple_start(seqfile_t *sf, off_t *pos) {
   return NULL; // EOF
 }
 
-static void seq_simple_stop(seqfile_t *sf, void *v) {}
+static void seq_simple_stop(seqfile_t *sf, void *v) {
+  // no-op
+}
 
 static void *seq_simple_next(seqfile_t *sf, void *v, off_t *pos) {
   // only one item
@@ -99,16 +101,18 @@ static int seq_alloc_buf(seqfile_t *sf, size_t size) {
 
   // resize existing buffer if exists
   if (sf->buf) {
+    DPRINTF("resizing buffer from %zu to %zu\n", sf->bufsize, size);
     if (size <= sf->bufsize)
       return 0; // already large enough
 
-    uintptr_t new_buf;
-    int res = vmap_resize((uintptr_t ) sf->buf, sf->bufsize, size, /*allow_move=*/true, &new_buf);
-    if (res < 0) {
-      EPRINTF("seq_alloc_buf: vmap_resize failed: {:err}\n", res);
-      return res;
-    }
+    uintptr_t new_buf = vmap_anon(size, 0, size, VM_RDWR, "seq_file");
+    if (!new_buf)
+      return -ENOMEM;
 
+    // copy existing data to new buffer
+    memcpy((void *)new_buf, sf->buf, sf->count);
+
+    vmap_free((uintptr_t)sf->buf, sf->bufsize);
     sf->buf = (void *)new_buf;
     sf->bufsize = size;
     sf->full = false;
@@ -140,12 +144,25 @@ static ssize_t seq_read(seqfile_t *sf, kio_t *kio, off_t *ppos) {
     if (n > kio_remaining(kio))
       n = kio_remaining(kio);
 
+    DPRINTF("returning buffered data: sf->count=%zu, sf->from=%zu, n=%zu, kio_remaining=%zu\n", 
+            sf->count, sf->from, n, kio_remaining(kio));
+    
+    // Debug: print first few characters being copied
+    char debug_buf[64];
+    size_t debug_len = n > 63 ? 63 : n;
+    memcpy(debug_buf, (char *)sf->buf + sf->from, debug_len);
+    debug_buf[debug_len] = '\0';
+    DPRINTF("returning buffered: '%.63s'\n", debug_buf);
+
     size_t written = kio_write_in(kio, (char *)sf->buf + sf->from, n, 0);
     sf->from += written;
     copied += written;
+    
+    DPRINTF("buffered result: written=%zu, sf->from=%zu, copied=%zu\n", written, sf->from, copied);
 
     if (sf->from >= sf->count) {
       // buffer exhausted, reset
+      DPRINTF("buffered data exhausted, resetting sf->from and sf->count\n");
       sf->from = 0;
       sf->count = 0;
     }
@@ -159,19 +176,22 @@ static ssize_t seq_read(seqfile_t *sf, kio_t *kio, off_t *ppos) {
   sf->count = 0;
   sf->index = pos;
 
-restart:;
   // start iteration
+  DPRINTF("seq_read: starting iteration at index %lld\n", sf->index);
   void *p = sf->ops->start(sf, &sf->index);
   while (p) {
+    DPRINTF("seq_read: showing item at index %lld\n", sf->index);
     int err = sf->ops->show(sf, p);
-
-    if (err < 0) {
+    DPRINTF("seq_read: show returned %d, buffer count=%zu/%zu\n", err, sf->count, sf->bufsize);
+    if (err < 0 && err != -ERESTART) {
       sf->ops->stop(sf, p);
       sf->count = 0;
       return err;
     }
 
-    if (sf->full) {
+    if (err == -ERESTART || sf->full) {
+      DPRINTF("seq_read: buffer full at index %lld, growing buffer\n", sf->index);
+
       // buffer is full, need to grow it
       sf->ops->stop(sf, p);
 
@@ -180,14 +200,22 @@ restart:;
         return -ENOMEM;
       }
 
-      sf->count = 0;
-      sf->from = 0;
-      sf->index = pos;
+      // Don't reset sf->count and sf->from since we preserved the data
+      // sf->count = 0;
+      // sf->from = 0;
+      // sf->index = pos;
 
-      // restart with larger buffer
-      goto restart;
+      // Try to show the current item again with the larger buffer
+      sf->full = false;
+      p = sf->ops->start(sf, &sf->index);
+      if (!p) {
+        break; // no more items
+      }
+      // Continue with the current item without incrementing sf->index
+      continue;
     }
 
+    DPRINTF("seq_read: calling next from index %lld\n", sf->index);
     // move to next item
     p = sf->ops->next(sf, p, &sf->index);
   }
@@ -196,13 +224,32 @@ restart:;
 
   // copy data to user
   if (sf->count) {
-    size_t n = sf->count;
+    size_t n = sf->count - sf->from;
     if (n > kio_remaining(kio))
       n = kio_remaining(kio);
 
-    size_t written = kio_write_in(kio, sf->buf, n, 0);
-    sf->from = written;
+    DPRINTF("copy data to user: sf->count=%zu, sf->from=%zu, n=%zu, kio_remaining=%zu\n", 
+            sf->count, sf->from, n, kio_remaining(kio));
+    
+    // Debug: print first few characters being copied
+    char debug_buf[64];
+    size_t debug_len = n > 63 ? 63 : n;
+    memcpy(debug_buf, (char *)sf->buf + sf->from, debug_len);
+    debug_buf[debug_len] = '\0';
+    DPRINTF("copying to user: '%.63s'\n", debug_buf);
+
+    size_t written = kio_write_in(kio, (char *)sf->buf + sf->from, n, 0);
+    sf->from += written;
     copied += written;
+    
+    DPRINTF("copy result: written=%zu, sf->from=%zu, copied=%zu\n", written, sf->from, copied);
+
+    if (sf->from >= sf->count) {
+      // buffer exhausted, reset
+      DPRINTF("buffer exhausted, resetting sf->from and sf->count\n");
+      sf->from = 0;
+      sf->count = 0;
+    }
   }
 
 done:
@@ -303,6 +350,7 @@ ssize_t seq_proc_read(procfs_handle_t *h, off_t off, kio_t *kio) {
   procfs_object_t *obj = h->obj;
   ASSERT(!obj->is_dir && !obj->is_static);
   seqfile_t *sf = h->data;
+  DPRINTF("seq_proc_read: off=%lld, kio_remaining=%zu\n", off, kio_remaining(kio));
 
   off_t pos = off;
   return seq_read(sf, kio, &pos);
@@ -377,10 +425,27 @@ void seq_ctor_destroy(struct seq_ctor **ctorp) {
 // MARK: seqfile output functions
 //
 
+void seq_mark_begin(seqfile_t *sf) {
+  ASSERT(sf != NULL);
+  sf->mark = sf->count;
+}
+
+int seq_mark_end(seqfile_t *sf) {
+  ASSERT(sf != NULL);
+  if (sf->full) {
+    // rollback to mark and indicate failure
+    sf->count = sf->mark;
+    sf->full = false;  // clear the full flag after rollback
+    return -ERESTART;
+  }
+  sf->mark = 0;
+  return 0;
+}
+
 int seq_putc(seqfile_t *sf, char c) {
   ASSERT(sf != NULL);
   
-  if (sf->count >= sf->bufsize) {
+  if (sf->full || sf->count >= sf->bufsize) {
     sf->full = true;
     return -1;
   }
@@ -392,6 +457,9 @@ int seq_putc(seqfile_t *sf, char c) {
 int seq_puts(seqfile_t *sf, const char *s) {
   ASSERT(sf != NULL);
   ASSERT(s != NULL);
+  if (sf->full) {
+    return -1;
+  }
   
   size_t len = strlen(s);
   if (sf->count + len >= sf->bufsize) {
@@ -407,7 +475,10 @@ int seq_puts(seqfile_t *sf, const char *s) {
 int seq_write(seqfile_t *sf, const void *data, size_t len) {
   ASSERT(sf != NULL);
   ASSERT(data != NULL || len == 0);
-  
+  if (sf->full) {
+    return -1;
+  }
+
   if (sf->count + len >= sf->bufsize) {
     sf->full = true;
     return -1;
@@ -421,15 +492,19 @@ int seq_write(seqfile_t *sf, const void *data, size_t len) {
 int seq_vprintf(seqfile_t *sf, const char *fmt, va_list args) {
   ASSERT(sf != NULL);
   ASSERT(fmt != NULL);
+  if (sf->full) {
+    return -1;
+  }
   
   size_t avail = sf->bufsize - sf->count;
   if (avail <= 1) {
     sf->full = true;
     return -1;
   }
-  
-  int len = kvsnprintf((char *)sf->buf + sf->count, avail, fmt, args);
+
+  size_t len = kvsnprintf((char *)sf->buf + sf->count, avail, fmt, args);
   if (len >= avail) {
+    // kvsnprintf wrote truncated data to buffer
     sf->full = true;
     return -1;
   }
@@ -445,6 +520,8 @@ int seq_printf(seqfile_t *sf, const char *fmt, ...) {
   va_end(args);
   return ret;
 }
+
+int seq_printf_ext(seqfile_t *sf, const char *fmt, ...) _alias("seq_printf");
 
 int seq_escape(seqfile_t *sf, const char *s, const char *esc) {
   ASSERT(sf != NULL);

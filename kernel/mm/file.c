@@ -125,6 +125,22 @@ void vm_file_visit_pages(vm_file_t *file, size_t start_off, size_t end_off, pgca
   pgcache_visit_pages(file->pgcache, start_off, end_off, fn, data);
 }
 
+//
+
+void vm_file_resize(vm_file_t *file, size_t new_size) {
+  if (new_size > file->size) {
+    // growing the file
+    size_t old_size = file->size;
+    file->size = new_size;
+
+    size_t old_order = pgcache_size_to_order(old_size, file->pg_size);
+    size_t new_order = pgcache_size_to_order(new_size, file->pg_size);
+    if (new_order > old_order) {
+      pgcache_resize(file->pgcache, new_order);
+    }
+  }
+}
+
 vm_file_t *vm_file_split(vm_file_t *file, size_t off) {
   ASSERT(off % file->pg_size == 0);
   if (off >= file->size) {

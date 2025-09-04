@@ -95,9 +95,11 @@ static inline bool fmtlib_buffer_full(fmt_buffer_t *b) {
 }
 
 static inline size_t fmtlib_buffer_write(fmt_buffer_t *b, const char *data, size_t size) {
-  if (b->size == 0)
-    return 0;
   size_t n = size < b->size ? size : b->size;
+  if (b->size == 0) {
+    b->written += n;
+    return 0;
+  }
   memcpy(b->data, data, n);
   b->data += n;
   b->size -= n;
@@ -106,8 +108,10 @@ static inline size_t fmtlib_buffer_write(fmt_buffer_t *b, const char *data, size
 }
 
 static inline size_t fmtlib_buffer_write_char(fmt_buffer_t *b, char c) {
-  if (b->size == 0)
+  if (b->size == 0) {
+    b->written++;
     return 0;
+  }
   *b->data = c;
   b->data++;
   b->size--;

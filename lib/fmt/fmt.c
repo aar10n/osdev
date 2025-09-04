@@ -399,7 +399,7 @@ size_t fmt_format(const char *format, char *buffer, size_t size, int max_args, v
 
   const char *ptr = format;
   const char *pass_two_start;
-  while (*ptr && !fmtlib_buffer_full(&buf)) {
+  while (*ptr) {
     // start of fmt specifier
     if (*ptr == '{' || *ptr == '%') {
       char format_char = *ptr;
@@ -521,7 +521,7 @@ size_t fmt_format(const char *format, char *buffer, size_t size, int max_args, v
   }
 
   if (single_pass)
-    return n;
+    return buf.written;
 
   // =======================
   // DOUBLE-PASS
@@ -584,7 +584,7 @@ size_t fmt_format(const char *format, char *buffer, size_t size, int max_args, v
   }
 
   va_end(args_copy);
-  return n;
+  return buf.written;
 }
 
 size_t fmt_write(fmt_buffer_t *buffer, const char *format, ...) {

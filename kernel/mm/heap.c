@@ -372,17 +372,18 @@ void kheap_dump_stats() {
   }
 }
 
-// MARK: Procfs registration
+// MARK: Procfs Interface
 
-static int kheap_stats_show(seqfile_t *sf, void *data) {
-  // "Kernel Heap Statistics\n"
-  // "  size = %zu\n"
-  // "  used = %zu\n"
-  // "  alloc count = %zu\n"
-  // "  free count = %zu\n"
-  // "  request_sizes:\n"
-  // "    %s - %zu\n" * 8
-  return seq_puts(sf, "kheap stats:\n");
+static int kheap_stats_show(seqfile_t *sf, void *_) {
+  seq_puts(sf, "kheap stats:\n");
+  seq_printf(sf, "  size = %zu\n", kheap.size);
+  seq_printf(sf, "  used = %zu\n", kheap.used);
+  seq_printf(sf, "  alloc count = %zu\n", kheap.stats.alloc_count);
+  seq_printf(sf, "  free count = %zu\n", kheap.stats.free_count);
+  seq_puts(sf, "  request_sizes:\n");
+  for (int i = 0; i < ARRAY_SIZE(hist_labels); i++) {
+    seq_printf(sf, "    %s - %zu\n", hist_labels[i], kheap.stats.alloc_sizes[i]);
+  }
+  return 0;
 }
 PROCFS_REGISTER_SIMPLE(version, "/kheap_stats", kheap_stats_show, NULL, 0444);
-

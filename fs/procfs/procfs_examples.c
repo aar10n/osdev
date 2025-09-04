@@ -178,7 +178,7 @@ static void procfs_seqfile_examples_register() {
   procfs_register_simple_file(cstr_make("/uptime"), uptime_show, NULL, NULL, 0444);
   procfs_register_simple_file(cstr_make("/cmdline"), cmdline_show, NULL, NULL, 0444);
   procfs_register_simple_file(cstr_make("/sys/kernel/hostname"), hostname_show, hostname_write, NULL, 0644);
+  procfs_register_dir(cstr_make("/sys/kernel/testdir"), &dynamic_dir_ops, NULL, 0555);
   procfs_register_seq_file(cstr_make("/test_items"), &test_items_seq_ops, &test_items_data, 0444);
-  procfs_register_dir(cstr_make("/kernel/testdir"), &dynamic_dir_ops, NULL, 0555);
 }
 MODULE_INIT(procfs_seqfile_examples_register);

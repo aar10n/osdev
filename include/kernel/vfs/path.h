@@ -71,49 +71,39 @@ size_t path_copy(char *dest, size_t size, path_t path);
 
 /// Compares two paths for equality. Returns true if the paths the same.
 bool path_eq(path_t path1, path_t path2);
-
 /// Compares the path and the string for equality. Returns true if the paths the same.
 bool path_eq_charp(path_t path, const char *str);
-
 /// Compares a path and a string with a specified length for equality. Returns true if
 /// the paths the same.
 bool path_eq_charpn(path_t path, const char *str, uint16_t len);
-
 /// Returns true if path1 is at or under path2 (i.e. /a/b/c is under /a/b).
 bool path_is_subpath(path_t path1, path_t path2);
+/// Returns true if path starts with the specified string.
+bool path_starts_with_charp(path_t path, const char *str);
 
 /// Counts the number of occurrences of a character in a path.
 int path_count_char(path_t path, char c);
 
-
 /// Returns a new path with the first character removed.
 path_t path_drop_first(path_t path);
-
 /// Returns a new path with all leading characters matching c removed.
 path_t path_strip_leading(path_t path, char c);
-
 /// Returns a new path with all trailing characters matching c removed.
 path_t path_strip_trailing(path_t path, char c);
-
 /// Returns a new path with all characters up to the first occurrence of c removed.
 path_t path_remove_until(path_t path, char c);
-
 /// Returns a new path with all characters up to the last occurrence of c removed.
 path_t path_remove_until_reverse(path_t path, char c);
 
 
 /// Returns the base name of a path.
 path_t path_basename(path_t path);
-
 /// Returns the directory name of a path.
 path_t path_dirname(path_t path);
-
 /// Returns the first or next component of a path. Returns NULL_PATH if there are no more.
 path_t path_next_part(path_t path);
-
 /// Returns the first or next subpath in a path. Returns NULL_PATH if there are no more.
 path_t path_next_subpath(path_t path);
-
 /// Returns whether the path iterator has reached the end.
 bool path_iter_end(path_t path);
 

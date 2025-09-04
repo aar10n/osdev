@@ -37,6 +37,7 @@ uintptr_t vm_file_getpage_phys(vm_file_t *file, size_t off);
 int vm_file_putpage(vm_file_t *file, __ref page_t *page, size_t off, __move page_t **oldpage);
 void vm_file_visit_pages(vm_file_t *file, size_t start_off, size_t end_off, pgcache_visit_t fn, void *data);
 
+void vm_file_resize(vm_file_t *file, size_t new_size);
 vm_file_t *vm_file_split(vm_file_t *file, size_t off);
 void vm_file_merge(vm_file_t *file, vm_file_t **otherref);
 

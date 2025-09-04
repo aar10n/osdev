@@ -127,6 +127,9 @@ int procf_register_file(cstr_t path, struct procfs_ops *ops, void *data, int mod
   } else if (path_is_slash(file_path)) {
     EPRINTF("invalid path /\n");
     return -EINVAL;
+  } else if (path_starts_with_charp(file_path, "/proc")) {
+    EPRINTF("path should be absolute from an implicit /proc root\n");
+    return -EINVAL;
   }
 
   // create the procfs object

@@ -171,5 +171,15 @@ void *procfs_obj_data(procfs_object_t *obj);
   } \
   MODULE_INIT(__register_##name)
 
+/**
+ * Helper macro to statically register a seqfile procfs file.
+ */
+#define PROCFS_REGISTER_SEQFILE(name, path, seq_ops, mode) \
+  void __register_##name(void) { \
+    if (procfs_register_seq_file(cstr_make(path), seq_ops, NULL, mode) < 0) \
+      panic("failed to register procfs entry " path "\n"); \
+  } \
+  MODULE_INIT(__register_##name)
+
 
 #endif
