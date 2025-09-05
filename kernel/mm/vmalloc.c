@@ -2339,7 +2339,7 @@ static int vmalloc_seq_show(seqfile_t *sf, void *v) {
   if (last_space != iter->space) {
     // only print header once at the top of the file
     if (last_space == NULL) {
-      seq_printf(sf, "%-37s %10s %-4s %-4s %-6s %s\n",
+      seq_printf(sf, "%-37s %-10s %-4s %-4s %-6s %s\n",
                  "Address Range", "Size", "Type", "Prot", "Flags", "Name");
     }
     sf->data = iter->space;
@@ -2380,7 +2380,7 @@ static struct seq_ops vmalloc_seq_ops = {
   .next = vmalloc_seq_next,
   .show = vmalloc_seq_show,
 };
-PROCFS_REGISTER_SEQFILE(vmalloc, "/self/maps", &vmalloc_seq_ops, 0444);
+PROCFS_REGISTER_SEQFILE(vmalloc, "/self/vmspace", &vmalloc_seq_ops, 0444);
 
 //
 // MARK: System Calls
