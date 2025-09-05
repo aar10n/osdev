@@ -4,6 +4,8 @@
 
 #include <kernel/params.h>
 
+#include <fs/procfs/procfs.h>
+
 #define DPRINTF(x, ...) kprintf("params: " x, ##__VA_ARGS__)
 // #define DPRINTF(x, ...)
 #define EPRINTF(x, ...) kprintf("params: error: " x, ##__VA_ARGS__)
@@ -172,3 +174,15 @@ int param_parse_bool(cstr_t str, bool *out) {
     return -1;
   }
 }
+
+//
+// MARK: Procfs Interface
+//
+
+static int cmdline_show(seqfile_t *sf, void *data) {
+  if (boot_info_v2->cmdline == NULL) {
+    return seq_puts(sf, "\n");
+  }
+  return seq_printf(sf, "%s\n", boot_info_v2->cmdline);
+}
+PROCFS_REGISTER_SIMPLE(cmdline, "/cmdline", cmdline_show, NULL, 0444);

@@ -14,6 +14,8 @@
 
 #include <kernel/hw/rtc.h>
 
+#include <fs/procfs/procfs.h>
+
 #define ASSERT(x) kassert(x)
 #define DPRINTF(x, ...) kprintf("clock: " x, ##__VA_ARGS__)
 
@@ -177,6 +179,17 @@ uint64_t clock_get_nanos() {
   }
   return clock_wait_sync_nanos();
 }
+
+//
+// MARK: Procfs Interface
+//
+
+static int uptime_show(seqfile_t *sf, void *data) {
+  uint64_t uptime_ms = NS_TO_MS(clock_get_nanos());
+  uint64_t uptime_sec = uptime_ms / 1000;
+  return seq_printf(sf, "%lu.%03lu\n", uptime_sec, uptime_ms % 1000);
+}
+PROCFS_REGISTER_SIMPLE(uptime, "/uptime", uptime_show, NULL, 0444);
 
 //
 // MARK: System Calls

@@ -14,51 +14,6 @@
 #define ASSERT(x) kassert(x)
 #define DPRINTF(fmt, ...) kprintf("procfs: " fmt, ##__VA_ARGS__)
 
-// example: /proc/version - kernel version
-static int version_show(seqfile_t *sf, void *data) {
-  return seq_puts(sf, "osdev 1.0.0\n");
-}
-
-// example: /proc/uptime - system uptime
-static int uptime_show(seqfile_t *sf, void *data) {
-  uint64_t uptime_ms = NS_TO_MS(clock_get_nanos());
-  uint64_t uptime_sec = uptime_ms / 1000;
-  return seq_printf(sf, "%lu.%03lu\n", uptime_sec, uptime_ms % 1000);
-}
-
-// example: /proc/cmdline - kernel command line
-static int cmdline_show(seqfile_t *sf, void *data) {
-  return seq_puts(sf, "console=ttyS0 debug\n");
-}
-
-// example: /proc/sys/kernel/hostname - system hostname
-static char hostname_new[256] = "localhost";
-
-static int hostname_show(seqfile_t *sf, void *data) {
-  return seq_printf(sf, "%s\n", hostname_new);
-}
-
-static ssize_t hostname_write(seqfile_t *sf, off_t off, kio_t *kio, void *data) {
-  if (off != 0) {
-    return -EINVAL;
-  }
-
-  DPRINTF("hostname_write: writing to hostname\n");
-  size_t len = min(kio_remaining(kio), sizeof(hostname_new) - 1);
-  size_t nbytes = kio_read_out(hostname_new, len, 0, kio);
-  if (nbytes == 0) {
-    return (ssize_t) nbytes;
-  }
-
-  // remove trailing newline if present
-  if (hostname_new[nbytes - 1] == '\n') {
-    hostname_new[nbytes - 1] = '\0';
-  } else {
-    hostname_new[nbytes] = '\0';
-  }
-  return (ssize_t) nbytes;
-}
-
 // example: multi-item file using full seq_ops iterator
 // this demonstrates a file that lists multiple items
 
@@ -174,10 +129,6 @@ static procfs_ops_t dynamic_dir_ops = {
 
 static void procfs_seqfile_examples_register() {
   DPRINTF("registering procfs seqfile examples\n");
-  procfs_register_simple_file(cstr_make("/version"), version_show, NULL, NULL, 0444);
-  procfs_register_simple_file(cstr_make("/uptime"), uptime_show, NULL, NULL, 0444);
-  procfs_register_simple_file(cstr_make("/cmdline"), cmdline_show, NULL, NULL, 0444);
-  procfs_register_simple_file(cstr_make("/sys/kernel/hostname"), hostname_show, hostname_write, NULL, 0644);
   procfs_register_dir(cstr_make("/sys/kernel/testdir"), &dynamic_dir_ops, NULL, 0555);
   procfs_register_seq_file(cstr_make("/test_items"), &test_items_seq_ops, &test_items_data, 0444);
 }
