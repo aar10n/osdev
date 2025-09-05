@@ -30,9 +30,10 @@ typedef struct tty {
   struct ttyoutq *outq;       // output queue
   struct knlist knlist;       // associated knotes
 
-  cond_t in_wait;	            // input wait cond
-  cond_t out_wait;	          // output wait cond
-  cond_t dcd_wait;            // DCD (data carrier detect) wait cond
+  cond_t in_data_cond;	      // input data available cond
+  cond_t out_data_cond;	      // output data available cond
+  cond_t outready_cond;       // output buffer has space cond
+  cond_t dcd_cond;            // data carrier detect wait cond
 
   struct termios termios;     // terminal attributes
   struct winsize winsize;     // window size

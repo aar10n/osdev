@@ -32,9 +32,10 @@ tty_t *tty_alloc(struct ttydev_ops *ops, void *data) {
   tty->dev_data = data;
 
   mtx_init(&tty->lock, MTX_RECURSIVE, "tty_lock");
-  cond_init(&tty->in_wait, "tty_in_wait");
-  cond_init(&tty->out_wait, "tty_out_wait");
-  cond_init(&tty->dcd_wait, "tty_dcd_wait");
+  cond_init(&tty->in_data_cond, "tty_in_data");
+  cond_init(&tty->out_data_cond, "tty_out_data");
+  cond_init(&tty->outready_cond, "tty_outready");
+  cond_init(&tty->dcd_cond, "tty_dcd");
   knlist_init(&tty->knlist, &tty->lock.lo);
   return tty;
 }
@@ -402,7 +403,7 @@ int tty_wait_cond(tty_t *tty, cond_t *cond) {
 
 void tty_signal_cond(tty_t *tty, cond_t *cond) {
   tty_assert_owned(tty);
-  if (cond == &tty->in_wait) {
+  if (cond == &tty->in_data_cond) {
     // we only want to signal the input wait condition if there is available
     // data to read (i.e. a full line if ICANON is set, or any data if raw mode)
     if (ttydisc_bytesavail(tty) == 0) {
@@ -412,7 +413,7 @@ void tty_signal_cond(tty_t *tty, cond_t *cond) {
 
   cond_broadcast(cond);
 
-  if (cond == &tty->in_wait) {
+  if (cond == &tty->in_data_cond) {
     // if we signaled the input wait condition, we also want to update any knotes
     // that are attached to the tty device
     DPRINTF("activating knotes for tty device\n");

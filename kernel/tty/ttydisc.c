@@ -5,12 +5,14 @@
 #include <kernel/tty/ttydisc.h>
 #include <kernel/signal.h>
 #include <kernel/tty.h>
+#include <kernel/sched.h>
 
 #include <kernel/printf.h>
 #include <kernel/panic.h>
 
 #define ASSERT(x) kassert(x)
 #define DPRINTF(fmt, ...) kprintf("tty_disc: " fmt, ##__VA_ARGS__)
+//#define DPRINTF(fmt, ...)
 #define EPRINTF(fmt, ...) kprintf("tty_disc: %s: " fmt, __func__, ##__VA_ARGS__)
 
 #define TAB_WIDTH 8
@@ -313,7 +315,7 @@ void ttydisc_rint_done(tty_t *tty) {
   struct termios *t = &tty->termios;
 
   // wake up any readers
-  tty_signal_cond(tty, &tty->in_wait);
+  tty_signal_cond(tty, &tty->in_data_cond);
 
   // wake up driver to handle echo output
   if ((t->c_cflag & CLOCAL) || (tty->flags & TTYF_DCDRDY)) {
@@ -323,7 +325,7 @@ void ttydisc_rint_done(tty_t *tty) {
   }
 }
 
-ssize_t ttydisc_read_canonical(tty_t *tty, kio_t *kio) {
+static ssize_t ttydisc_read_canonical(tty_t *tty, kio_t *kio) {
   struct termios *t = &tty->termios;
   char cbreak[4] = {0};
   ttydisc_get_breaks(tty, cbreak);
@@ -340,7 +342,10 @@ ssize_t ttydisc_read_canonical(tty_t *tty, kio_t *kio) {
         return -EAGAIN;
       }
       // no line available, we need to wait for input
-      cond_wait(&tty->in_wait, &tty->lock);
+      int res = tty_wait_cond(tty, &tty->in_data_cond);
+      if (res < 0) {
+        return res; // device is gone
+      }
       continue;
     }
 
@@ -366,7 +371,7 @@ ssize_t ttydisc_read_canonical(tty_t *tty, kio_t *kio) {
   return nread;
 }
 
-ssize_t ttydisc_read_raw(tty_t *tty, kio_t *kio) {
+static ssize_t ttydisc_read_raw(tty_t *tty, kio_t *kio) {
   tty_assert_owned(tty);
   ssize_t total_read = 0;
   
@@ -398,7 +403,13 @@ ssize_t ttydisc_read_raw(tty_t *tty, kio_t *kio) {
       }
 
       // wait for input
-      cond_wait(&tty->in_wait, &tty->lock);
+      int res = tty_wait_cond(tty, &tty->in_data_cond);
+      if (res < 0) {
+        // device is gone
+        if (total_read == 0)
+          total_read = res;
+        break;
+      }
     }
   }
   return total_read;
@@ -416,28 +427,59 @@ ssize_t ttydisc_read(tty_t *tty, kio_t *kio) {
     todo("termios.c_cc[VMIN] > 0 && termios.c_cc[VTIME] > 0 is not supported");
 }
 
-int	ttydisc_write_ch(tty_t *tty, char ch) {
-  tty_assert_owned(tty);
+static int ttydisc_do_write_ch(tty_t *tty, char ch) {
   struct termios *t = &tty->termios;
 
+LABEL(retry);
   int res;
   if (t->c_oflag & OPOST) {
     // post-process character before output
     res = ttydisc_write_oproc(tty, ch);
   } else {
+    // write character as is
     res = ttydisc_write_noproc(tty, ch);
   }
 
   if (res < 0) {
-    EPRINTF("failed to write character {:#c} to output queue: {:err}\n", ch, res);
+    // output queue is full
+    if (tty->flags & TTYF_NONBLOCK) {
+      return -EAGAIN; // non-blocking mode, return immediately
+    }
+
+    // wakeup the ttydev to try and make space in the buffer
+    tty->dev_ops->tty_outwakeup(tty);
+    if (ttyoutq_isfull(tty->outq)) {
+      // that didn't work, we need to wait for space in the output queue
+      if ((res = tty_wait_cond(tty, &tty->outready_cond)) < 0) {
+        return res; // device is gone
+      }
+    }
+
+    // attempt to write the character again
+    goto retry;
+  }
+
+  // success
+  return 0;
+}
+
+int	ttydisc_write_ch(tty_t *tty, char ch) {
+  tty_assert_owned(tty);
+  struct termios *t = &tty->termios;
+
+  int res = ttydisc_do_write_ch(tty, ch);
+  if (res < 0) {
     return res;
   }
 
   if ((t->c_cflag & CLOCAL) || (tty->flags & TTYF_DCDRDY)) {
-    // wakeup ttydev for writing immediately if CLOCAL is set
-    // (ignore control signals) or if DCD is ready
+    // wakeup ttydev for writing immediately
     tty->dev_ops->tty_outwakeup(tty);
+  } else {
+    // signal that output data is available to write
+    tty_signal_cond(tty, &tty->out_data_cond);
   }
+
   return res;
 }
 
@@ -445,34 +487,27 @@ int	ttydisc_write_ch(tty_t *tty, char ch) {
 ssize_t	ttydisc_write(tty_t *tty, kio_t *kio) {
   tty_assert_owned(tty);
   struct termios *t = &tty->termios;
+  
+  size_t initial_remaining = kio_remaining(kio);
+  DPRINTF("ttydisc_write: writing %zu bytes to TTY\n", initial_remaining);
 
-  int res = 0;
-  if (t->c_oflag & OPOST) {
-    char ch;
-    while (kio_read_ch(&ch, kio) > 0) {
-      res = ttydisc_write_oproc(tty, ch);
-      if (res < 0)
-        break;
+  char ch;
+  while (kio_read_ch(&ch, kio) > 0) {
+    int res = ttydisc_do_write_ch(tty, ch);
+    if (res < 0) {
+      return res;
     }
-  } else {
-    char ch;
-    while (kio_read_ch(&ch, kio) > 0) {
-      res = ttydisc_write_noproc(tty, ch);
-      if (res < 0)
-        break;
-    }
-  }
-
-  if (res < 0) {
-    EPRINTF("failed to write to output queue: {:err}\n", res);
-    return res;
   }
 
   if ((t->c_cflag & CLOCAL) || (tty->flags & TTYF_DCDRDY)) {
-    // wakeup ttydev for writing immediately if CLOCAL is set
-    // (ignore control signals) or if DCD is ready
+    // wakeup ttydev for writing immediately
     tty->dev_ops->tty_outwakeup(tty);
+  } else {
+    // signal that output data is available to write
+    tty_signal_cond(tty, &tty->out_data_cond);
   }
+  
+  DPRINTF("ttydisc_write: successfully wrote %zu bytes\n", kio_transfered(kio));
   return (ssize_t) kio_transfered(kio);
 }
 

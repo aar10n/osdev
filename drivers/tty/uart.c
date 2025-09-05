@@ -43,6 +43,7 @@ struct uart_dev {
   int number;
   int port;
   pid_t tx_tid;
+  cond_t tx_cond; // signaled when tx buffer is empty
 };
 
 struct uart_irq {
@@ -125,7 +126,7 @@ static void uart_irq_port_handler(int port, int index, int irr) {
       }
       break;
     case 1: // transmitter holding register empty
-      DPRINTF("port %d: transmitter holding register empty\n", port);
+//      DPRINTF("port %d: transmitter holding register empty\n", port);
       event = UART_IRQ_TX;
       break;
     case 2: // data received
@@ -197,8 +198,8 @@ static int uart_softirq_handler() {
 
   struct uart_irq irq;
   while (chan_recv(uart_softirq_chan, &irq) == 0) {
-    DPRINTF("softirq handler received irq: port %d, index %d, event %d, data 0x%x\n",
-            irq.port, irq.index, irq.event, irq.data);
+//    DPRINTF("softirq handler received irq: port %d, index %d, event %d, data 0x%x\n",
+//            irq.port, irq.index, irq.event, irq.data);
     mtx_spin_lock(&irq_lock);
     void (*handler)(int, int, void *) = uart_irq_handlers[irq.index];
     void *data = uart_irq_handler_data[irq.index];
@@ -346,8 +347,8 @@ int uart_hw_set_irq_handler(int port, void (*handler)(int ev, int ev_data, void 
   uart_irq_handler_data[index] = data;
   irq_enable_interrupt(port_irq);
 
-  // enable interrupts for the port
-  io_outb(port + UART_INTR_EN, 0x9); // enable data received/modem status irqs
+  // enable data available/can transmit/modem status irqs
+  io_outb(port + UART_INTR_EN, 0b1011);
   // io_outb(port + UART_INTR_EN, 0b1101);
   mtx_spin_unlock(&irq_lock);
   return 0;
@@ -482,12 +483,23 @@ static int uart_tty_transmit_thread(tty_t *tty) {
   while (true) {
     if (ttyoutq_peek_ch(tty->outq) < 0) {
       // no data available, wait for it
-      if ((res = tty_wait_cond(tty, &tty->out_wait)) < 0)
+      DPRINTF("transmit thread: no data, waiting on out_wait condition\n");
+      if ((res = tty_wait_cond(tty, &tty->out_data_cond)) < 0) {
+        DPRINTF("transmit thread: tty_wait_cond failed: {:err}\n", res);
         break; // device is done
+      }
+      DPRINTF("transmit thread: woken up from out_wait\n");
       continue;
     }
 
+    if (!uart_hw_can_write(uart_dev->port)) {
+      // wait for tx buffer to be empty
+      DPRINTF("transmit thread: uart tx buffer full, waiting on tx_cond\n");
+      cond_wait(&uart_dev->tx_cond, &tty->lock);
+    }
+
     // write data to the uart
+    DPRINTF("transmit thread: data available, calling outwakeup\n");
     uart_tty_outwakeup(tty);
   }
 
@@ -497,7 +509,7 @@ static int uart_tty_transmit_thread(tty_t *tty) {
 }
 
 // this is run in a softirq context, so it may block
-static void uart_tty_input_irq_handler(int ev, int ev_data, void *data) {
+static void uart_tty_irq_handler(int ev, int ev_data, void *data) {
   tty_t *tty = data;
   struct uart_dev *uart_dev = tty->dev_data;
 
@@ -529,9 +541,7 @@ static void uart_tty_input_irq_handler(int ev, int ev_data, void *data) {
     }
     ttydisc_rint_done(tty);
   } else if (ev == UART_IRQ_TX) {
-    // not used right now
-    DPRINTF("output ready\n");
-    // TODO: signal that tty can continue writing output
+    cond_signal(&uart_dev->tx_cond);
   } else if (ev == UART_IRQ_DCD) {
     DPRINTF("data carrier detect changed (dcd=%d)\n", ev_data);
     if (data) {
@@ -541,7 +551,7 @@ static void uart_tty_input_irq_handler(int ev, int ev_data, void *data) {
       // data carrier disconnected
       tty->flags &= ~TTYF_DCDRDY;
     }
-    tty_signal_cond(tty, &tty->dcd_wait);
+    tty_signal_cond(tty, &tty->dcd_cond);
   }
 
 LABEL(done);
@@ -552,7 +562,7 @@ static int uart_tty_open(tty_t *tty) {
   struct uart_dev *uart_dev = tty->dev_data;
   DPRINTF("opening tty on port %d\n", uart_dev->port);
   ASSERT(uart_dev->tx_tid == -1);
-  uart_hw_set_irq_handler(uart_dev->port, uart_tty_input_irq_handler, tty);
+  uart_hw_set_irq_handler(uart_dev->port, uart_tty_irq_handler, tty);
   uart_hw_modem(uart_dev->port, TTY_MODEM_DTR, 1);
 
   int modem = uart_hw_modem(uart_dev->port, 0, 0);
@@ -592,9 +602,14 @@ static void uart_tty_close(tty_t *tty) {
 static void uart_tty_outwakeup(tty_t *tty) {
   // this function is called when the output queue has data to write.
   struct uart_dev *uart_dev = tty->dev_data;
+  int chars_written = 0;
+
+  DPRINTF("outwakeup: starting to drain output queue\n");
   while (ttyoutq_peek_ch(tty->outq) >= 0) {
-    if (!uart_hw_can_write(uart_dev->port))
+    if (!uart_hw_can_write(uart_dev->port)) {
+      DPRINTF("outwakeup: uart hardware cannot accept more data, drained %d chars\n", chars_written);
       break;
+    }
 
     int ch = ttyoutq_get_ch(tty->outq);
     if (ch < 0) {
@@ -603,7 +618,20 @@ static void uart_tty_outwakeup(tty_t *tty) {
     }
 
     uart_hw_busy_write_ch(uart_dev->port, (char)ch);
+    chars_written++;
   }
+
+  if (ttyoutq_bytes(tty->outq) > 0) {
+    // there are still remaining bytes in the tty output queue but the uart
+    // cannot accept more data right now, so we signal the transmit thread
+    // that there is data for it to write.
+    tty_signal_cond(tty, &tty->out_data_cond);
+  } else if (!ttyoutq_isfull(tty->outq)) {
+    // the output queue has space so we signal anything waiting to write to it
+    tty_signal_cond(tty, &tty->outready_cond);
+  }
+
+  DPRINTF("outwakeup: drained %d characters from output queue\n", chars_written);
 }
 
 static int uart_tty_ioctl(tty_t *tty, unsigned long request, void *arg) {
@@ -693,6 +721,7 @@ static void register_serial_devices() {
     uart_dev->number = i + 1; // COM1 is 1, COM2 is 2, etc.
     uart_dev->port = ports[i];
     uart_dev->tx_tid = -1;
+    cond_init(&uart_dev->tx_cond, "uart_tx_cond");
 
     tty_t *tty = tty_alloc(&uart_ttydev_ops, uart_dev);
     if (tty == NULL) {

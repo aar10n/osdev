@@ -76,4 +76,8 @@ static inline size_t ttyoutq_bytes(struct ttyoutq *outq) {
   return outq->write_pos - outq->read_pos;
 }
 
+static inline bool ttyoutq_isfull(struct ttyoutq *outq) {
+  return (outq->write_pos + 1) % outq->data_size == outq->read_pos;
+}
+
 #endif
