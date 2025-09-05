@@ -79,8 +79,8 @@ To run the system in QEMU, run:
 ```shell
 make run
 ```
-This will start QEMU, but it will not launch until a connection is opened on the
-TCP server associated with the kernel console. You can do this by running:
+This will launch QEMU and start a TCP server on port 8008 for the guest's `/dev/ttyS2` serial 
+port, which is what the kernel's shell is running on. You can connect to it using telnet:
 ```shell
 telnet 127.0.0.1 8008
 ```
