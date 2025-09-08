@@ -35,7 +35,8 @@ and a couple of other userspace programs. It also now runs DOOM!
 ├── fs            filesystem types
 │  ├── devfs        device filesystem driver
 │  ├── initrd       initial ramdisk filesystem driver
-│  └── ramfs        generic in-memory filesystem driver 
+│  ├── procfs       dynamic information filesystem driver and framework
+│  └── ramfs        generic in-memory filesystem driver
 ├── include       header files
 ├── kernel        core kernel code
 │  ├── acpi         acpi drivers
