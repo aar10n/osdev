@@ -60,9 +60,20 @@ struct seq_ops {
 
 typedef int (*simple_show_t)(seqfile_t *sf, void *data);
 typedef ssize_t (*simple_write_t)(seqfile_t *sf, off_t off, kio_t *kio, void *data);
+typedef void (*simple_cleanup_t)(void *data);
+
+struct simple_ops {
+  simple_show_t show;       // show function (required)
+  simple_write_t write;     // write function (optional)
+  simple_cleanup_t cleanup; // cleanup function (optional)
+};
 
 extern struct seq_ops seq_simple_ops;
 extern struct procfs_ops seq_procfs_ops;
+
+void *seq_simple_start(seqfile_t *sf, off_t *pos);
+void seq_simple_stop(seqfile_t *sf, void *v);
+void *seq_simple_next(seqfile_t *sf, void *v, off_t *pos);
 
 // seqfile procfs operations
 int seq_proc_open(procfs_object_t *obj, int flags, void **handle_data);
@@ -73,7 +84,7 @@ off_t seq_proc_lseek(procfs_handle_t *h, off_t offset, int whence);
 void seq_proc_cleanup(procfs_object_t *obj);
 
 struct seq_ctor *seq_ctor_create(struct seq_ops *ops, void *data);
-struct seq_ctor *simple_ctor_create(simple_show_t show, simple_write_t write, void *data);
+struct seq_ctor *simple_ctor_create(struct simple_ops *ops, void *data);
 void seq_ctor_destroy(struct seq_ctor **ctorp);
 
 // output functions

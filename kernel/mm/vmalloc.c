@@ -2223,17 +2223,9 @@ void vm_print_format_address_space(address_space_t *space) {
 // MARK: Procfs Interface
 //
 
-enum vmalloc_seq_state {
-  SEQ_STATE_USER = 0,
-  SEQ_STATE_KERNEL = 1,
-  SEQ_STATE_DONE = 2
-};
-
-struct vmalloc_seq_iter {
+struct vmspace_seq_iter {
   address_space_t *space;
   vm_mapping_t *current;
-  enum vmalloc_seq_state state;
-  off_t space_index;  // index within current address space
 };
 
 static const char *vm_type_to_str(enum vm_type type) {
@@ -2246,42 +2238,27 @@ static const char *vm_type_to_str(enum vm_type type) {
   }
 }
 
-static void *vmalloc_seq_start(seqfile_t *sf, off_t *pos) {
-  struct vmalloc_seq_iter *iter = kmalloc(sizeof(*iter));
+void *vmspace_seq_start(seqfile_t *sf, off_t *pos) {
+  address_space_t *space;
+  if (sf->data != NULL) {
+    proc_t *proc = sf->data;
+    space = proc->space;
+  } else {
+    space = kernel_space;
+  }
+
+  struct vmspace_seq_iter *iter = kmalloc(sizeof(*iter));
   if (!iter) {
     return NULL;
   }
 
-  off_t seq_pos = sf->index;
-  
-  // count user space mappings
-  address_space_t *uspace = curspace;
-  space_lock(uspace);
-  off_t user_count = 0;
-  vm_mapping_t *vm;
-  LIST_FOREACH(vm, &uspace->mappings, vm_list) {
-    user_count++;
-  }
-  space_unlock(uspace);
-  
-  if (seq_pos < user_count) {
-    // in user space
-    iter->state = SEQ_STATE_USER;
-    iter->space = curspace;
-    iter->space_index = seq_pos;
-  } else {
-    // in kernel space
-    iter->state = SEQ_STATE_KERNEL;
-    iter->space = kernel_space;
-    iter->space_index = seq_pos - user_count;
-  }
-  
+  iter->space = space;
   space_lock(iter->space);
   iter->current = LIST_FIRST(&iter->space->mappings);
   
-  // skip to the requested index within this space
+  // skip to the requested position
   off_t index = 0;
-  while (iter->current && index < iter->space_index) {
+  while (iter->current && index < sf->index) {
     iter->current = LIST_NEXT(iter->current, vm_list);
     index++;
   }
@@ -2294,55 +2271,34 @@ static void *vmalloc_seq_start(seqfile_t *sf, off_t *pos) {
   return iter;
 }
 
-static void vmalloc_seq_stop(seqfile_t *sf, void *v) {
+void vmspace_seq_stop(seqfile_t *sf, void *v) {
   if (v) {
-    struct vmalloc_seq_iter *iter = v;
-    // only unlock if we're not in DONE state (space already unlocked in next)
-    if (iter->state != SEQ_STATE_DONE) {
-      space_unlock(iter->space);
-    }
+    struct vmspace_seq_iter *iter = v;
+    space_unlock(iter->space);
     kfree(iter);
   }
 }
 
-static void *vmalloc_seq_next(seqfile_t *sf, void *v, off_t *pos) {
-  struct vmalloc_seq_iter *iter = v;
+void *vmspace_seq_next(seqfile_t *sf, void *v, off_t *pos) {
+  struct vmspace_seq_iter *iter = v;
   iter->current = LIST_NEXT(iter->current, vm_list);
-  iter->space_index++;
   (*pos)++;
   
-  // if we've exhausted current space, try switching to kernel space
-  if (!iter->current && iter->state == SEQ_STATE_USER) {
-    space_unlock(iter->space);
-    iter->state = SEQ_STATE_KERNEL;
-    iter->space = kernel_space;
-    iter->space_index = 0;
-    space_lock(iter->space);
-    iter->current = LIST_FIRST(&iter->space->mappings);
-  }
-  
   if (!iter->current) {
-    // if we have no current mapping, we're done - unlock the space
-    space_unlock(iter->space);
-    iter->state = SEQ_STATE_DONE;
     return NULL;
   }
   return iter;
 }
 
-static int vmalloc_seq_show(seqfile_t *sf, void *v) {
-  struct vmalloc_seq_iter *iter = v;
+int vmspace_seq_show(seqfile_t *sf, void *v) {
+  struct vmspace_seq_iter *iter = v;
   vm_mapping_t *vm = iter->current;
-
-  address_space_t *last_space = (address_space_t *)sf->data;
   seq_mark_begin(sf);
-  if (last_space != iter->space) {
-    // only print header once at the top of the file
-    if (last_space == NULL) {
-      seq_printf(sf, "%-37s %-10s %-4s %-4s %-6s %s\n",
-                 "Address Range", "Size", "Type", "Prot", "Flags", "Name");
-    }
-    sf->data = iter->space;
+
+  // print header only at the very beginning (first item)
+  if (sf->index == 0) {
+    seq_printf(sf, "%-37s %-10s %-4s %-4s %-6s %s\n",
+               "Address Range", "Size", "Type", "Prot", "Flags", "Name");
   }
   
   // handle stack mappings with guard page
@@ -2374,13 +2330,13 @@ static int vmalloc_seq_show(seqfile_t *sf, void *v) {
   return seq_mark_end(sf);
 }
 
-static struct seq_ops vmalloc_seq_ops = {
-  .start = vmalloc_seq_start,
-  .stop = vmalloc_seq_stop,
-  .next = vmalloc_seq_next,
-  .show = vmalloc_seq_show,
+static struct seq_ops vmspace_seq_ops = {
+  .start = vmspace_seq_start,
+  .stop  = vmspace_seq_stop,
+  .next  = vmspace_seq_next,
+  .show  = vmspace_seq_show,
 };
-PROCFS_REGISTER_SEQFILE(vmalloc, "/self/vmspace", &vmalloc_seq_ops, 0444);
+PROCFS_REGISTER_SEQFILE(vmspace, "/sys/kernel/maps", &vmspace_seq_ops, 0444);
 
 //
 // MARK: System Calls

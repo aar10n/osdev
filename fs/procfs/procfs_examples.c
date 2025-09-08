@@ -107,14 +107,17 @@ static int dynamic_dir_lookup(procfs_object_t *obj, cstr_t name, __move procfs_o
   }
 
   bool is_dir = cstr_eq_charp(name, "recursive");
+  enum procfs_type type;
   procfs_ops_t *ops;
   if (is_dir) {
+    type = PROCFS_DIR;
     ops = &dynamic_dir_ops;
   } else {
+    type = PROCFS_FILE;
     ops = &dynamic_file_ops;
   }
 
-  procfs_object_t *child_obj = procfs_ephemeral_object(name, ops, NULL, 0644, is_dir);
+  procfs_object_t *child_obj = procfs_ephemeral_object(name, ops, NULL, 0644, type);
   ASSERT(child_obj != NULL);
   *result = moveptr(child_obj);
   return 0; // success

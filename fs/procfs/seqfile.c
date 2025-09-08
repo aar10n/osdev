@@ -22,71 +22,29 @@
 struct seq_ctor {
   struct seq_ops *ops;
   void *data;
-  bool is_simple;
-  simple_show_t show;
-  simple_write_t write;
-};
-
-// seqfile_simple is used to hold data for simple seqfiles. it is allocated
-// and attached to the seqfile when opened, and freed when the file is closed.
-struct seqfile_simple {
-  simple_show_t show;
-  simple_write_t write;
-  void *data;
 };
 
 //
 // MARK: simple seqfile operations
 //
 
-static void *seq_simple_start(seqfile_t *sf, off_t *pos) {
+void *seq_simple_start(seqfile_t *sf, off_t *pos) {
   off_t index = *pos;
   if (index == 0) {
     *pos = 1; // next position
-    return sf->data; // single item
+    return sf->data;
   }
   return NULL; // EOF
 }
 
-static void seq_simple_stop(seqfile_t *sf, void *v) {
+void seq_simple_stop(seqfile_t *sf, void *v) {
   // no-op
 }
 
-static void *seq_simple_next(seqfile_t *sf, void *v, off_t *pos) {
+void *seq_simple_next(seqfile_t *sf, void *v, off_t *pos) {
   // only one item
   return NULL; // EOF
 }
-
-static int seq_simple_show(seqfile_t *sf, void *v) {
-  struct seqfile_simple *sfs = sf->data;
-  ASSERT(sfs != NULL);
-  ASSERT(sfs->show != NULL);
-  return sfs->show(sf, sfs->data);
-}
-
-static ssize_t seq_simple_write(seqfile_t *sf, off_t off, kio_t *kio) {
-  struct seqfile_simple *sfs = sf->data;
-  ASSERT(sfs != NULL);
-  if (sfs->write == NULL) {
-    return -ENOTSUP;
-  }
-  return sfs->write(sf, off, kio, sfs->data);
-}
-
-static void seq_simple_cleanup(seqfile_t *sf) {
-  struct seqfile_simple *sfs = sf->data;
-  kfree(sfs);
-  sf->data = NULL;
-}
-
-struct seq_ops seq_simple_ops = {
-  .start = seq_simple_start,
-  .stop = seq_simple_stop,
-  .next = seq_simple_next,
-  .show = seq_simple_show,
-  .write = seq_simple_write,
-  .cleanup = seq_simple_cleanup,
-};
 
 //
 // MARK: core seqfile functions
@@ -200,11 +158,6 @@ static ssize_t seq_read(seqfile_t *sf, kio_t *kio, off_t *ppos) {
         return -ENOMEM;
       }
 
-      // Don't reset sf->count and sf->from since we preserved the data
-      // sf->count = 0;
-      // sf->from = 0;
-      // sf->index = pos;
-
       // Try to show the current item again with the larger buffer
       sf->full = false;
       p = sf->ops->start(sf, &sf->index);
@@ -287,7 +240,7 @@ struct procfs_ops seq_procfs_ops = {
 };
 
 int seq_proc_open(procfs_object_t *obj, int flags, void **handle_data) {
-  ASSERT(!obj->is_dir && !obj->is_static);
+  ASSERT(!(obj->type == PROCFS_DIR) && !obj->is_static);
   struct seq_ctor *ctor = obj->data;
   struct seq_ops *ops = ctor->ops;
   void *data = ctor->data;
@@ -309,23 +262,14 @@ int seq_proc_open(procfs_object_t *obj, int flags, void **handle_data) {
     return -ENOMEM;
   }
 
-  // allocate a seqfile_simple if its a simple ctor
-  if (ctor->is_simple) {
-    struct seqfile_simple *sfs = kmallocz(sizeof(struct seqfile_simple));
-    ASSERT(sfs != NULL);
-    sfs->show = ctor->show;
-    sfs->write = ctor->write;
-    sfs->data = data;
-    sf->data = sfs;
-  }
-
+  sf->data = data;
   *handle_data = sf;
   return 0;
 }
 
 int seq_proc_close(procfs_handle_t *h) {
   procfs_object_t *obj = h->obj;
-  ASSERT(!obj->is_dir && !obj->is_static);
+  ASSERT(!(obj->type == PROCFS_DIR) && !obj->is_static);
   seqfile_t *sf = moveptr(h->data);
 
   if (sf->buf)
@@ -340,15 +284,18 @@ int seq_proc_close(procfs_handle_t *h) {
 }
 
 void seq_proc_cleanup(procfs_object_t *obj) {
-  ASSERT(!obj->is_dir && !obj->is_static);
+  ASSERT(!(obj->type == PROCFS_DIR) && !obj->is_static);
   struct seq_ctor *ctor = moveptr(obj->data);
   void *data = moveptr(ctor->data);
+  if (ctor->ops->cleanup) {
+    ctor->ops->cleanup(data);
+  }
   seq_ctor_destroy(&ctor);
 }
 
 ssize_t seq_proc_read(procfs_handle_t *h, off_t off, kio_t *kio) {
   procfs_object_t *obj = h->obj;
-  ASSERT(!obj->is_dir && !obj->is_static);
+  ASSERT(!(obj->type == PROCFS_DIR) && !obj->is_static);
   seqfile_t *sf = h->data;
   DPRINTF("seq_proc_read: off=%lld, kio_remaining=%zu\n", off, kio_remaining(kio));
 
@@ -358,7 +305,7 @@ ssize_t seq_proc_read(procfs_handle_t *h, off_t off, kio_t *kio) {
 
 ssize_t seq_proc_write(procfs_handle_t *h, off_t off, kio_t *kio) {
   procfs_object_t *obj = h->obj;
-  ASSERT(!obj->is_dir && !obj->is_static);
+  ASSERT(!(obj->type == PROCFS_DIR) && !obj->is_static);
   seqfile_t *sf = h->data;
 
   if (sf->ops->write) {
@@ -369,7 +316,7 @@ ssize_t seq_proc_write(procfs_handle_t *h, off_t off, kio_t *kio) {
 
 off_t seq_proc_lseek(procfs_handle_t *h, off_t offset, int whence) {
   procfs_object_t *obj = h->obj;
-  ASSERT(!obj->is_dir && !obj->is_static);
+  ASSERT(!(obj->type == PROCFS_DIR) && !obj->is_static);
   seqfile_t *sf = h->data;
 
   return seq_lseek(sf, offset, whence);
@@ -389,26 +336,6 @@ struct seq_ctor *seq_ctor_create(struct seq_ops *ops, void *data) {
 
   ctor->ops = ops;
   ctor->data = data;
-  ctor->is_simple = false;
-  return ctor;
-}
-
-struct seq_ctor *simple_ctor_create(simple_show_t show, simple_write_t write, void *data) {
-  ASSERT(show != NULL);
-
-  struct seqfile_simple *sfs = kmallocz(sizeof(struct seqfile_simple));
-  ASSERT(sfs != NULL);
-  sfs->show = show;
-  sfs->data = data;
-
-  struct seq_ctor *ctor = kmallocz(sizeof(struct seq_ctor));
-  ASSERT(ctor != NULL);
-
-  ctor->ops = &seq_simple_ops;
-  ctor->data = sfs;
-  ctor->is_simple = true;
-  ctor->show = show;
-  ctor->write = write;
   return ctor;
 }
 

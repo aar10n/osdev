@@ -11,6 +11,7 @@
 #include <kernel/kio.h>
 
 struct vnode;
+struct seqfile;
 
 void switch_address_space(address_space_t *new_space) _used;
 
@@ -79,6 +80,12 @@ void vm_desc_free_all(vm_desc_t **descp);
 
 void *vmalloc(size_t size, uint32_t vm_flags);
 void vfree(void *ptr);
+
+// address space seqfile operations
+void *vmspace_seq_start(struct seqfile *sf, off_t *pos);
+void vmspace_seq_stop(struct seqfile *sf, void *v);
+void *vmspace_seq_next(struct seqfile *sf, void *v, off_t *pos);
+int vmspace_seq_show(struct seqfile *sf, void *v);
 
 // debug
 void vm_print_address_space();

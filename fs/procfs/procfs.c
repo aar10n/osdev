@@ -73,7 +73,7 @@ static int procfs_register_object(procfs_object_t *obj) {
   }
 
   procfs_dir_t *thisdir = NULL;
-  if (obj->is_dir) {
+  if (obj->type == PROCFS_DIR) {
     // allocate a procfs_dir if its a directory object
     thisdir = kmallocz(sizeof(procfs_dir_t));
     thisdir->name = str_from_cstr(name);
@@ -96,7 +96,7 @@ static int procfs_register_object(procfs_object_t *obj) {
   // if the parent directory is already mounted we need to create this
   // object in all the associated ramfs nodes
   LIST_FOR_IN(ramfs_dir, &dir->obj->nodes, list) {
-    enum vtype type = obj->is_dir ? V_DIR : V_REG;
+    enum vtype type = procfs_obj_vtype(obj);
     ramfs_node_t *node = ramfs_alloc_node(ramfs_dir->mount, &make_vattr(type, obj->mode));
     ramfs_dentry_t *dentry = ramfs_alloc_dentry(node, name);
     ramfs_add_dentry(ramfs_dir, dentry);
@@ -138,7 +138,7 @@ int procf_register_file(cstr_t path, struct procfs_ops *ops, void *data, int mod
   obj->ops = ops;
   obj->data = data;
   obj->mode = mode;
-  obj->is_dir = false;
+  obj->type = PROCFS_FILE;
   obj->is_static = false;
 
   int res;
@@ -183,7 +183,7 @@ int procfs_register_dir(cstr_t path, struct procfs_ops *ops, void *data, int mod
   obj->ops = ops;
   obj->data = data;
   obj->mode = mode;
-  obj->is_dir = true;
+  obj->type = PROCFS_DIR;
   obj->is_static = false;
 
   int res;
@@ -197,6 +197,44 @@ int procfs_register_dir(cstr_t path, struct procfs_ops *ops, void *data, int mod
   return 0;
 }
 
+int procfs_register_symlink(cstr_t path, struct procfs_ops *ops, void *data, int mode) {
+  mode &= 0777;
+  ASSERT(!cstr_isnull(path));
+  ASSERT(ops != NULL);
+  if (ops->proc_readlink == NULL) {
+    EPRINTF("readlink operation is required\n");
+    return -EINVAL;
+  }
+
+  path_t dir_path = path_from_cstr(path);
+  if (!path_is_absolute(dir_path)) {
+    EPRINTF("path must be absolute\n");
+    return -EINVAL;
+  } else if (path_is_slash(dir_path)) {
+    EPRINTF("invalid path /\n");
+    return -EINVAL;
+  }
+
+  // create the procfs object
+  procfs_object_t *obj = kmallocz(sizeof(procfs_object_t));
+  obj->path = str_from_cstr(path);
+  obj->ops = ops;
+  obj->data = data;
+  obj->mode = mode;
+  obj->type = PROCFS_LINK;
+  obj->is_static = false;
+
+  int res;
+  if ((res = procfs_register_object(obj)) < 0) {
+    kfree(obj);
+    EPRINTF("failed to register object at path {:cstr}\n", &path);
+    return res;
+  }
+
+  DPRINTF("registered symlink {:cstr}\n", &path);
+  return 0;
+}
+
 int procfs_register_seq_file(cstr_t path, struct seq_ops *seq_ops, void *data, int mode) {
   ASSERT(!cstr_isnull(path));
   ASSERT(seq_ops != NULL);
@@ -207,17 +245,6 @@ int procfs_register_seq_file(cstr_t path, struct seq_ops *seq_ops, void *data, i
   }
 
   struct seq_ctor *ctor = seq_ctor_create(seq_ops, data);
-  return procf_register_file(path, &seq_procfs_ops, ctor, mode);
-}
-
-int procfs_register_simple_file(cstr_t path, simple_show_t show, simple_write_t write, void *data, int mode) {
-  ASSERT(!cstr_isnull(path));
-  if (show == NULL) {
-    EPRINTF("show function is required\n");
-    return -EINVAL;
-  }
-
-  struct seq_ctor *ctor = simple_ctor_create(show, write, data);
   return procf_register_file(path, &seq_procfs_ops, ctor, mode);
 }
 
@@ -237,7 +264,7 @@ int procfs_register_static_dir(cstr_t path, int mode) {
   obj->ops = NULL;
   obj->data = NULL;
   obj->mode = mode;
-  obj->is_dir = true;
+  obj->type = PROCFS_DIR;
   obj->is_static = true;
 
   int res;
@@ -259,15 +286,17 @@ int procfs_unregister(cstr_t path) {
 // MARK: Public API for procfs objects
 //
 
-procfs_object_t *procfs_ephemeral_object(cstr_t name, procfs_ops_t *ops, void *data, int mode, bool is_dir) {
+procfs_object_t *procfs_ephemeral_object(cstr_t name, procfs_ops_t *ops, void *data, int mode, enum procfs_type type) {
   ASSERT(ops != NULL);
-  if (is_dir) {
-    ASSERT(ops->proc_readdir != NULL && "proc_readdir is required for directories");
-    ASSERT(ops->proc_lookup != NULL && "proc_lookup is required for directories");
-  } else {
+  if (type == PROCFS_FILE) {
     ASSERT(ops->proc_read != NULL && "proc_read is required for files");
     ASSERT(ops->proc_lookup == NULL && "proc_lookup is not allowed for files");
     ASSERT(ops->proc_readdir == NULL && "proc_readdir is not allowed for files");
+  } else if (type == PROCFS_DIR) {
+    ASSERT(ops->proc_readdir != NULL && "proc_readdir is required for directories");
+    ASSERT(ops->proc_lookup != NULL && "proc_lookup is required for directories");
+  } else if (type == PROCFS_LINK) {
+    ASSERT(ops->proc_readlink != NULL && "proc_readlink is required for symlinks");
   }
 
   // create the procfs object
@@ -276,10 +305,22 @@ procfs_object_t *procfs_ephemeral_object(cstr_t name, procfs_ops_t *ops, void *d
   obj->ops = ops;
   obj->data = data;
   obj->mode = mode;
-  obj->is_dir = is_dir;
-  obj->is_static = false; // ephemeral objects cannot be static
+  obj->type = type;
+  obj->is_static = false;
   obj->is_ephemeral = true;
   return obj;
+}
+
+procfs_object_t *procfs_ephemeral_seq_object(cstr_t name, struct seq_ops *seq_ops, void *data, int mode) {
+  ASSERT(seq_ops != NULL);
+  if (seq_ops->start == NULL || seq_ops->stop == NULL ||
+      seq_ops->next == NULL || seq_ops->show == NULL) {
+    EPRINTF("all seq_ops functions are required\n");
+    return NULL;
+  }
+
+  struct seq_ctor *ctor = seq_ctor_create(seq_ops, data);
+  return procfs_ephemeral_object(name, &seq_procfs_ops, ctor, mode, PROCFS_FILE);
 }
 
 cstr_t procfs_obj_name(procfs_object_t *obj) {
@@ -287,8 +328,16 @@ cstr_t procfs_obj_name(procfs_object_t *obj) {
   return cstr_from_path(basename);
 }
 
+enum procfs_type procfs_obj_type(procfs_object_t *obj) {
+  return obj->type;
+}
+
 void *procfs_obj_data(procfs_object_t *obj) {
   return obj->data;
+}
+
+void procfs_obj_data_clear(procfs_object_t *obj) {
+  obj->data = NULL;
 }
 
 // MARK: fs registration
@@ -323,7 +372,7 @@ struct vnode_ops procfs_vn_ops = {
   .v_getpage = procfs_vn_getpage,
   .v_falloc = procfs_vn_falloc,
 
-  .v_readlink = ramfs_vn_readlink,
+  .v_readlink = procfs_vn_readlink,
   .v_readdir = procfs_vn_readdir,
 
   .v_lookup = procfs_vn_lookup,
@@ -339,6 +388,7 @@ struct vnode_ops procfs_vn_ops = {
 };
 
 struct ventry_ops procfs_ve_ops = {
+  .v_validate = procfs_ve_validate,
   .v_cleanup = ramfs_ve_cleanup,
 };
 
@@ -362,7 +412,7 @@ static void procfs_static_init() {
   // allocate the procfs root directory and object
   procfs_object_t *root_object = kmallocz(sizeof(procfs_object_t));
   root_object->path = str_from_charp("/");
-  root_object->is_dir = true;
+  root_object->type = PROCFS_DIR;
   root_object->is_static = true;
   root_object->mode = 0755;
 

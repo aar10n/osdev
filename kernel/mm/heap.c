@@ -386,4 +386,4 @@ static int kheap_stats_show(seqfile_t *sf, void *_) {
   }
   return 0;
 }
-PROCFS_REGISTER_SIMPLE(version, "/kheap_stats", kheap_stats_show, NULL, 0444);
+PROCFS_REGISTER_SIMPLE(kheap_stats, "/kheap_stats", kheap_stats_show, NULL, 0444);

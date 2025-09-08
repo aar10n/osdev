@@ -21,7 +21,7 @@ static int hostname_show(seqfile_t *sf, void *data) {
   return seq_printf(sf, "%s\n", hostname);
 }
 
-static ssize_t hostname_write(seqfile_t *sf, off_t off, kio_t *kio, void *data) {
+static ssize_t hostname_write(seqfile_t *sf, off_t off, kio_t *kio) {
   if (off != 0) {
     return -EINVAL;
   }
@@ -44,7 +44,7 @@ static ssize_t hostname_write(seqfile_t *sf, off_t off, kio_t *kio, void *data) 
 PROCFS_REGISTER_SIMPLE(hostname, "/sys/kernel/hostname", hostname_show, hostname_write, 0644);
 
 static int version_show(seqfile_t *sf, void *data) {
-  return seq_puts(sf, "osdev 1.0.0\n");
+  return seq_puts(sf, "osdev 0.0.0\n");
 }
 PROCFS_REGISTER_SIMPLE(version, "/version", version_show, NULL, 0444);
 

@@ -23,7 +23,7 @@ extern struct vnode_ops procfs_vn_ops;
 
 static void procfs_reconstruct_dir(procfs_dir_t *dir, ramfs_node_t *ramfs_dir) {
   LIST_FOR_IN(entry, &dir->entries, next) {
-    enum vtype type = (entry->dir != NULL) ? V_DIR : V_REG;
+    enum vtype type = procfs_obj_vtype(entry->obj);
     ramfs_node_t *node = ramfs_alloc_node(ramfs_dir->mount, &make_vattr(type, entry->obj->mode));
     node->data = entry->obj;
     node->ops = &procfs_vn_ops;

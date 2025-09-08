@@ -49,6 +49,17 @@ int procfs_vn_falloc(vnode_t *vn, size_t len) {
   panic("procfs_vn_falloc: file operation should be called instead");
 }
 
+int procfs_vn_readlink(vnode_t *vn, kio_t *kio) {
+  procfs_object_t *obj = PROCFS_OBJECT(vn);
+  if (!obj || obj->is_static) {
+    // delegate to ramfs
+    return ramfs_vn_readlink(vn, kio);
+  }
+
+  ASSERT(obj->ops && obj->ops->proc_readlink);
+  return obj->ops->proc_readlink(obj, kio);
+}
+
 ssize_t procfs_vn_readdir(vnode_t *vn, off_t off, kio_t *dirbuf) {
   procfs_object_t *obj = PROCFS_OBJECT(vn);
   if (!obj || obj->is_static) {
@@ -75,7 +86,7 @@ int procfs_vn_lookup(vnode_t *dir, cstr_t name, __move ventry_t **result) {
   }
 
   // allocate the ramfs node and dentry for this file
-  struct vattr attr = make_vattr(child->is_dir ? V_DIR : V_REG, child->mode);
+  struct vattr attr = make_vattr(procfs_obj_vtype(child), child->mode);
   ramfs_mount_t *mount = dir->vfs->data;
   ramfs_node_t *node = ramfs_alloc_node(mount, &attr);
   node->data = child;
@@ -118,4 +129,14 @@ void procfs_vn_cleanup(vnode_t *vn) {
     kfree(obj);
   }
   ramfs_vn_cleanup(vn);
+}
+
+bool procfs_ve_validate(ventry_t *ve) {
+  ramfs_dentry_t *dent = ve->data;
+  ramfs_node_t *node = dent->node;
+  procfs_object_t *obj = node->data;
+  if (obj && obj->ops && obj->ops->proc_validate) {
+    return obj->ops->proc_validate(obj);
+  }
+  return true;
 }
