@@ -22,6 +22,8 @@
 #include <kernel/vfs/file.h>
 #include <kernel/vfs/ventry.h>
 
+#include <fs/procfs/procfs.h>
+
 #include <bitmap.h>
 
 noreturn void idle_thread_entry();
@@ -1343,13 +1345,14 @@ int proc_syscall_execve(cstr_t path, char *const argv[], char *const envp[]) {
   proc->brk_start = last_segment_end;
   proc->brk_end = last_segment_end;
   proc->brk_max = last_segment_end + PROC_BRK_MAX;
+  proc->binpath = str_dup(image->path);
 
   td->tid = 1; // the calling thread becomes the main thread
   td->ustack_base = stack->base;
   td->ustack_size = stack->size;
   if (!str_isnull(td->name))
     str_free(&td->name);
-  td->name = str_dup(proc->binpath);
+  td->name = str_dup(image->path);
 
   // reset the threads trapframe and clear it
   uintptr_t kstack_top = td->kstack_base + td->kstack_size;
@@ -1879,6 +1882,272 @@ void critical_exit() {
     temp_irq_restore(flags);
   }
 }
+
+//
+// MARK: Procfs Interface
+//
+
+enum pid_entry_kind {
+  PID_OBJ_ENTRY,
+  PID_SEQ_ENTRY,
+};
+
+/**
+ * Defines the entries in each /pid/N/ subdirectory.
+ */
+struct pid_subdir_entry {
+  const char *name;           // name of the file/directory
+  enum pid_entry_kind kind;   // kind of entry
+  enum procfs_type type;      // procfs object type
+  union {
+    procfs_ops_t *procfs_ops; // PID_OBJ_ENTRY
+    struct seq_ops *seq_ops;  // PID_SEQ_ENTRY
+  };
+  int mode;                   // permissions (e.g., 0444 for read-only file, 0555 for directory)
+};
+#define PID_PROCFS_OBJ_ENTRY(name, type, ops, mode) \
+  { name, PID_OBJ_ENTRY, type, { .procfs_ops = (ops) }, mode }
+#define PID_PROCFS_SEQ_ENTRY(name, ops, mode) \
+  { name, PID_SEQ_ENTRY, PROCFS_FILE, { .seq_ops = (ops) }, mode }
+
+
+static void proc_file_cleanup(seqfile_t *sf) {
+  proc_t *proc = moveptr(sf->data);
+  pr_putref(&proc);
+}
+
+// /pid/N/cmdline
+static int proc_cmdline_show(seqfile_t *sf, void *data) {
+  proc_t *proc = data;
+  if (proc->args == NULL || proc->args->kptr == NULL) {
+    return seq_printf(sf, "\n");
+  }
+  return seq_printf(sf, "%s\n", proc->args->kptr);
+}
+PROCFS_SIMPLE_OPS(cmdline_ops, proc_cmdline_show, NULL, proc_file_cleanup);
+
+// /pid/N/maps
+struct seq_ops vmspace_seq_ops = {
+  .start = vmspace_seq_start,
+  .stop = vmspace_seq_stop,
+  .next = vmspace_seq_next,
+  .show = vmspace_seq_show,
+  .cleanup = proc_file_cleanup,
+};
+
+// /pid/N/status
+static int proc_status_show(seqfile_t *sf, void *data) {
+  proc_t *proc = data;
+  pr_lock(proc);
+  seq_mark_begin(sf);
+
+  // basic process info
+  seq_printf_ext(sf, "Name:      {:str}\n", &proc->name);
+  seq_printf_ext(sf, "Bin Path:  {:str}\n", &proc->binpath);
+  seq_printf(sf, "State:     ");
+  switch (proc->state) {
+    case PRS_EMPTY: seq_printf(sf, "E (empty)\n"); break;
+    case PRS_ACTIVE: seq_printf(sf, "A (active)\n"); break;
+    case PRS_ZOMBIE: seq_printf(sf, "Z (zombie)\n"); break;
+    case PRS_EXITED: seq_printf(sf, "X (exited)\n"); break;
+    default: seq_printf(sf, "? (unknown)\n"); break;
+  }
+
+  seq_printf(sf, "Pid:       %d\n", proc->pid);
+  seq_printf(sf, "PPid:      %d\n", proc->parent ? proc->parent->pid : 0);
+  seq_printf(sf, "Uid:       %d\n", proc->creds->uid);
+  seq_printf(sf, "Gid:       %d\n", proc->creds->gid);
+
+  seq_printf(sf, "Threads:   %d\n", proc->num_threads);
+  LIST_FOR_IN(td, &proc->threads, plist) {
+    seq_printf_ext(sf, "  TID: %d [{:str}] State: ", td->tid, &td->name);
+    switch (td->state) {
+      case TDS_EMPTY: seq_printf(sf, "E (empty)\n"); break;
+      case TDS_READY: seq_printf(sf, "R (ready)\n"); break;
+      case TDS_RUNNING: seq_printf(sf, "R (running)\n"); break;
+      case TDS_BLOCKED: seq_printf(sf, "B (blocked)\n"); break;
+      case TDS_WAITING: seq_printf(sf, "W (waiting)\n"); break;
+      case TDS_EXITED: seq_printf(sf, "X (exited)\n"); break;
+      default: seq_printf(sf, "? (unknown)\n"); break;
+    }
+  }
+
+  pr_unlock(proc);
+  return seq_mark_end(sf);
+}
+PROCFS_SIMPLE_OPS(status_ops, proc_status_show, NULL, proc_file_cleanup);
+
+// the entries in each /pid/N/ subdirectory
+static struct pid_subdir_entry pid_subdir_entries[] = {
+  PID_PROCFS_SEQ_ENTRY("cmdline", &cmdline_ops, 0444),    // /pid/N/cmdline file
+  PID_PROCFS_SEQ_ENTRY("maps", &vmspace_seq_ops, 0444),   // /pid/N/maps file
+  PID_PROCFS_SEQ_ENTRY("status", &status_ops, 0444),      // /pid/N/status file
+  PID_PROCFS_OBJ_ENTRY(NULL, 0, NULL, 0),
+};
+
+// /pid/N/ directory operations
+
+static ssize_t pid_subdir_readdir(procfs_handle_t *h, off_t *poff, __out struct dirent *dirent) {
+  procfs_object_t *obj = h->obj;
+  proc_t *proc = procfs_obj_data(obj);
+  off_t idx = *poff;
+  
+  // count entries in our static array
+  size_t num_entries = 0;
+  while (pid_subdir_entries[num_entries].name != NULL) {
+    num_entries++;
+  }
+  
+  if (idx >= num_entries) {
+    return 0; // no more entries
+  }
+  
+  struct pid_subdir_entry *entry = &pid_subdir_entries[idx];
+  enum vtype type = procfs_obj_vtype(obj);
+  DPRINTF("pid_subdir_readdir: returning entry '{:s}' type=%d [objtype=%d]\n", entry->name, entry->type,
+          procfs_obj_type(obj));
+
+  *dirent = dirent_make_entry(idx + 1, idx, type, cstr_make(entry->name));
+  (*poff)++;
+  return dirent->d_reclen;
+}
+
+static int pid_subdir_lookup(procfs_object_t *obj, cstr_t name, __move procfs_object_t **result) {
+  DPRINTF("pid_subdir_lookup: looking for entry '{:cstr}'\n", &name);
+  proc_t *proc = procfs_obj_data(obj);
+  for (size_t i = 0; pid_subdir_entries[i].name != NULL; i++) {
+    struct pid_subdir_entry *entry = &pid_subdir_entries[i];
+    
+    if (cstr_eq_charp(name, entry->name)) {
+      // found a matching entry
+      procfs_object_t *res_obj;
+      if (entry->kind == PID_OBJ_ENTRY) {
+        res_obj = procfs_ephemeral_object(name, entry->procfs_ops, pr_getref(proc), entry->mode, entry->type);
+      } else if (entry->kind == PID_SEQ_ENTRY) {
+        res_obj = procfs_ephemeral_seq_object(name, entry->seq_ops, pr_getref(proc), entry->mode);
+      } else {
+        panic("invalid pid entry kind");
+      }
+
+      *result = moveptr(res_obj);
+      return 0;
+    }
+  }
+
+  EPRINTF("pid_subdir_lookup: entry '{:cstr}' not found\n", &name);
+  return -ENOENT; // entry not found
+}
+
+static bool pid_subdir_validate(procfs_object_t *obj) {
+  proc_t *proc = procfs_obj_data(obj);
+  if (proc == NULL) {
+    return false;
+  }
+
+  // check if the process is still active
+  pr_lock(proc);
+  bool is_active = (proc->state != PRS_EXITED && proc->state != PRS_ZOMBIE);
+  pr_unlock(proc);
+  return is_active;
+}
+
+static void pid_subdir_cleanup(procfs_object_t *obj) {
+  proc_t *proc = procfs_obj_data(obj);
+  procfs_obj_data_clear(obj);
+  pr_putref(&proc);
+}
+
+static procfs_ops_t pid_subdir_ops = {
+  .proc_readdir = pid_subdir_readdir,
+  .proc_lookup = pid_subdir_lookup,
+  .proc_validate = pid_subdir_validate,
+  .proc_cleanup = pid_subdir_cleanup,
+};
+
+// procfs /pid directory operations
+
+static ssize_t pid_dir_readdir(procfs_handle_t *h, off_t *poff, __out struct dirent *dirent) {
+  off_t idx = *poff;
+  size_t count = 0;
+
+  // iterate through all ptable entries to find active processes
+  for (int i = 0; i < PROCS_MAX; i++) {
+    struct ptable_entry *entry = &_ptable.entries[i];
+    mtx_spin_lock(&entry->lock);
+    
+    LIST_FOR_IN(proc, &entry->head, hashlist) {
+      if (proc->state == PRS_EXITED || proc->state == PRS_ZOMBIE) {
+        continue;
+      }
+
+      if (count == idx) {
+        // create directory entry for this process
+        char pid_str[16];
+        ksnprintf(pid_str, sizeof(pid_str), "%d", proc->pid);
+        *dirent = dirent_make_entry(proc->pid, idx, V_DIR, cstr_make(pid_str));
+        (*poff)++;
+        mtx_spin_unlock(&entry->lock);
+        return dirent->d_reclen;
+      }
+      count++;
+    }
+    
+    mtx_spin_unlock(&entry->lock);
+  }
+
+  return 0; // no more entries
+}
+
+static int pid_dir_lookup(procfs_object_t *obj, cstr_t name, __move procfs_object_t **result) {
+  DPRINTF("pid_dir_lookup: looking for process '{:cstr}'\n", &name);
+  // parse the object name into a pid and locate it
+  char *endptr;
+  pid_t pid = (pid_t) strtol(cstr_ptr(name), &endptr, 10);
+  size_t parsed_len = endptr - cstr_ptr(name);
+  if (parsed_len != cstr_len(name) || pid <= 0) {
+    EPRINTF("pid_dir_lookup: invalid pid '{:cstr}'\n", &name);
+    return -ENOENT; // not a valid pid
+  }
+
+  __ref proc_t *proc = proc_lookup(pid);
+  if (proc == NULL) {
+    EPRINTF("pid_dir_lookup: process with pid %d not found\n", pid);
+    return -ENOENT; // process doesn't exist
+  }
+
+  pr_lock(proc);
+  // make sure process is still active
+  bool is_active = (proc->state != PRS_EXITED && proc->state != PRS_ZOMBIE);
+  pr_unlock(proc);
+  
+  if (!is_active) {
+    pr_putref(&proc);
+    return -ENOENT; // process is not active
+  }
+
+  procfs_object_t *pid_obj = procfs_ephemeral_object(name, &pid_subdir_ops, moveref(proc), 0555, PROCFS_DIR);
+  *result = moveptr(pid_obj);
+  return 0;
+}
+
+static procfs_ops_t pid_dir_ops = {
+  .proc_readdir = pid_dir_readdir,
+  .proc_lookup = pid_dir_lookup,
+};
+PROCFS_REGISTER_DIR(pid, "/pid", &pid_dir_ops, 0555);
+
+// /proc/self symlink -> /proc/pid/N
+static int self_symlink_readlink(procfs_object_t *obj, kio_t *kio) {
+  char buf[32];
+  size_t len = ksnprintf(buf, sizeof(buf), "/proc/pid/%d", curproc->pid);
+  size_t n = kio_write_in(kio, buf, len, 0);
+  return (n == len) ? (int) n : -EIO;
+}
+
+static procfs_ops_t self_symlink_ops = {
+  .proc_readlink = self_symlink_readlink,
+};
+PROCFS_REGISTER_SYMLINK(self, "/self", &self_symlink_ops, 0777);
 
 //
 // MARK: System Calls
