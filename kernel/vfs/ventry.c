@@ -272,3 +272,9 @@ bool ve_cmp_cstr(ventry_t *ve, cstr_t str) {
     return VE_OPS(ve)->v_cmp(ve, str);
   return ve_cmp_default(ve, str);
 }
+
+bool ve_validate(ventry_t *ve) {
+  if (VE_OPS(ve)->v_validate)
+    return VE_OPS(ve)->v_validate(ve);
+  return true;
+}

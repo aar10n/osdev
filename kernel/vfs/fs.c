@@ -1384,7 +1384,7 @@ ssize_t fs_readlink(cstr_t path, char *buf, size_t bufsiz) {
   ventry_t *ve = NULL;
   ssize_t res;
 
-  if ((res = vresolve(fs_vcache, at_ve, path, VR_LNK, &ve)) < 0)
+  if ((res = vresolve(fs_vcache, at_ve, path, VR_LNK|VR_NOFOLLOW, &ve)) < 0)
     goto ret;
 
   kio_t kio = kio_new_writable(buf, bufsiz);
@@ -1396,6 +1396,8 @@ ssize_t fs_readlink(cstr_t path, char *buf, size_t bufsiz) {
     DPRINTF("failed to read link\n");
     goto ret_unlock;
   }
+
+  DPRINTF("fs_readlink link=%s res={:err}\n", buf, res);
 
   // success
 LABEL(ret_unlock);
@@ -1522,6 +1524,13 @@ DEFINE_SYSCALL(mknod, int, const char *path, mode_t mode, dev_t dev) {
 
 DEFINE_SYSCALL(symlink, int, const char *target, const char *linkpath) {
   return fs_symlink(cstr_make(target), cstr_make(linkpath));
+}
+
+DEFINE_SYSCALL(readlink, ssize_t, const char *path, char *buf, size_t bufsiz) {
+  if (vm_validate_ptr((uintptr_t) buf, /*write=*/true) < 0) {
+    return -EFAULT;
+  }
+  return fs_readlink(cstr_make(path), buf, bufsiz);
 }
 
 DEFINE_SYSCALL(link, int, const char *oldpath, const char *newpath) {

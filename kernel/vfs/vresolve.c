@@ -89,10 +89,10 @@ static int vresolve_follow(vcache_t *vc, __move ventry_t **veref, int flags, boo
     if (vn->size > PATH_MAX)
       goto_res(-ENAMETOOLONG);
 
-    char linkbuf[PATH_MAX+1] = {0};
     // READ BEGIN
     vn_begin_data_read(vn);
-    kio_t kio = kio_new_writable(linkbuf, vn->size);
+    char linkbuf[PATH_MAX+1] = {0};
+    kio_t kio = kio_new_writable(linkbuf, PATH_MAX+1);
     if ((res = vn_readlink(vn, &kio)) < 0) {
       vn_end_data_read(vn);
       goto error;
@@ -101,7 +101,8 @@ static int vresolve_follow(vcache_t *vc, __move ventry_t **veref, int flags, boo
     // READ END
 
     // follow the symlink (and get locked result)
-    if ((res = vresolve_internal(vc, at_ve, cstr_new(linkbuf, vn->size), 0, depth++, fullpath, &next_ve)) < 0) {
+    DPRINTF("following symlink '{:str}' -> '%s'\n", &ve->name, linkbuf);
+    if ((res = vresolve_internal(vc, at_ve, cstr_new(linkbuf, kio_transfered(&kio)), 0, depth++, fullpath, &next_ve)) < 0) {
       DPRINTF("failed to follow symlink: %s\n", linkbuf, res);
       goto error;
     }
@@ -183,8 +184,12 @@ LABEL(error);
 }
 
 int vresolve_fullwalk(vcache_t *vc, ventry_t *at, cstr_t path, int flags, int depth, sbuf_t *fullpath, __move ventry_t **result) {
+  DPRINTF("fullwalk: at={:+ve} path='{:cstr}' flags=0x%x depth=%d\n", at, &path, flags, depth);
   ventry_t *ve = NULL; // ref
   int res;
+  if (cstr_isnull(path)) {
+    return -EINVAL;
+  }
 
   // keep track of the current path as we walk
   // it so we can cache the intermediate paths
@@ -283,6 +288,8 @@ int vresolve_fullwalk(vcache_t *vc, ventry_t *at, cstr_t path, int flags, int de
     goto error;
 
 LABEL(success);
+  DPRINTF("resolved '{:cstr}' [len=%d] ve=%p\n", &path, cstr_len(path), ve);
+  ASSERT(ve != NULL && ve->vn != NULL);
   if (VN_ISROOT(VN(ve)) && (flags & VR_NOFOLLOW)) {
     // if the NOFOLLOW flag is set make sure we're returning the containing
     // mount ventry instead of the root ventry

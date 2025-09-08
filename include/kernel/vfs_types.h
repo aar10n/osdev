@@ -319,6 +319,7 @@ typedef struct ventry {
 struct ventry_ops {
   hash_t (*v_hash)(cstr_t name);
   bool (*v_cmp)(struct ventry *ve, cstr_t name);
+  bool (*v_validate)(struct ventry *ve);
 
   void (*v_cleanup)(struct ventry *ve);
 };

@@ -299,28 +299,21 @@ int vn_save(vnode_t *vn) {
 
 int vn_readlink(vnode_t *vn, kio_t *kio) {
   vn_rwlock_assert(vn, LA_OWNED|LA_SLOCKED);
+  CHECK_SUPPORTED(vn, v_readlink);
   DPRINTF("vn_readlink: reading link from vnode {:+vn}\n", vn);
 
-  CHECK_SUPPORTED(vn, v_readlink);
-  int res;
-
-  if (str_len(vn->v_link) == 0) {
-    // read link from filesystem
-    str_t link = str_alloc_empty(vn->size);
-    kio_t lnkio = kio_writeonly_from_str(link);
-    if ((res = VN_OPS(vn)->v_readlink(vn, &lnkio)) < 0) {
-      str_free(&link);
+  int res = 0;
+  if (!str_isnull(vn->v_link)) {
+    // copy link to kio
+    kio_t lnkio = kio_readonly_from_str(vn->v_link);
+    res = (int) kio_transfer(kio, &lnkio);
+  } else {
+    if ((res = VN_OPS(vn)->v_readlink(vn, kio)) < 0) {
       return res;
     }
-
-    // save link
-    vn->v_link = link;
   }
 
-  // copy link to kio
-  kio_t lnkio = kio_readonly_from_str(vn->v_link);
-  kio_transfer(kio, &lnkio);
-  return 0;
+  return res;
 }
 
 ssize_t vn_readdir(vnode_t *vn, off_t off, kio_t *dirbuf) {
@@ -349,7 +342,11 @@ int vn_lookup(ventry_t *dve, vnode_t *dvn, cstr_t name, __move ventry_t **result
   // check already loaded children
   LIST_FOR_IN(child, &dve->children, list) {
     if (ve_cmp_cstr(child, name)) {
-      // TODO: revalidate ventry
+      if (!ve_validate(child)) {
+        ve_remove_child(dve, child);
+        continue;
+      }
+
       *result = ve_getref(child); // move new ref to caller
       return 0;
     }

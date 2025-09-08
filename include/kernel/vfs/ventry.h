@@ -49,6 +49,7 @@ void ve_hash(ventry_t *ve); // ve = _
 void _ve_cleanup(ventry_t **veref);
 hash_t ve_hash_cstr(ventry_t *ve, cstr_t str);
 bool ve_cmp_cstr(ventry_t *ve, cstr_t str);
+bool ve_validate(ventry_t *ve);
 
 //
 //
