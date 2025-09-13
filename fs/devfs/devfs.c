@@ -68,7 +68,7 @@ str_t devfs_name_for_dev(cstr_t path, dev_t dev) {
     n += ksnprintf(buf+n, NAME_MAX-n, "%s%s", class->prefix, letters);
   }
   if (n == NAME_MAX) {
-    EPRINTF("name too long for dev %d\n", dev);
+    EPRINTF("name too long for dev %lu\n", dev);
     return str_null;
   }
 
@@ -76,7 +76,7 @@ str_t devfs_name_for_dev(cstr_t path, dev_t dev) {
   if (unit > 0) {
     n += ksnprintf(buf+n, NAME_MAX-n, "s%d", unit);
     if (n == NAME_MAX) {
-      EPRINTF("name too long for dev %d\n", dev);
+      EPRINTF("name too long for dev %lu\n", dev);
       return str_null;
     }
   }
@@ -135,7 +135,7 @@ int devfs_synchronize_main(devfs_mount_t *mount) {
   while (chan_recv(device_events, &event) == 0) {
     device_t *dev = device_get(event.dev);
     if (dev == NULL) {
-      EPRINTF("device not found for dev %d\n", event.dev);
+      EPRINTF("device not found for dev %lu\n", event.dev);
       continue;
     }
 
@@ -155,23 +155,23 @@ int devfs_synchronize_main(devfs_mount_t *mount) {
 
       res = fs_mknod(cstr_from_str(dev_path), flags, event.dev);
       if (res < 0) {
-        EPRINTF("failed to create device node {:str} for dev %d: {:err}\n", &dev_path, event.dev, res);
+        EPRINTF("failed to create device node {:str} for dev %lu: {:err}\n", &dev_path, event.dev, res);
       } else {
-        DPRINTF("created device node {:str} for dev %d\n", &dev_path, event.dev);
+        DPRINTF("created device node {:str} for dev %lu\n", &dev_path, event.dev);
       }
     } else if (event.type == DEV_EVT_REMOVE) {
       res = fs_unlink(cstr_from_str(dev_path));
       if (res < 0) {
-        EPRINTF("failed to remove device node {:str} for dev %d: {:err}\n", &dev_path, event.dev, res);
+        EPRINTF("failed to remove device node {:str} for dev %lu: {:err}\n", &dev_path, event.dev, res);
       } else {
-        DPRINTF("removed device node {:str} for dev %d\n", &dev_path, event.dev);
+        DPRINTF("removed device node {:str} for dev %lu\n", &dev_path, event.dev);
       }
     }
 
     str_free(&dev_path);
   }
 
-  DPRINTF("exiting devfs process for '{:cstr}'\n", &mount->path);
+  DPRINTF("exiting devfs process for '{:str}'\n", &mount->path);
   return 0;
 }
 

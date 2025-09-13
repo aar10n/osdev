@@ -90,7 +90,7 @@ void register_acpi_pm_timer() {
 
 int pm_timer_udelay(clock_t us) {
   uint64_t delay_ns = US_TO_NS(us);
-  uint64_t period_ns = 1 / ((double) pm_timer_frequency / NS_PER_SEC);
+  uint64_t period_ns = (uint64_t)(1 / ((double) pm_timer_frequency / NS_PER_SEC));
   uint64_t count = pm_timer_clock_source->read(pm_timer_clock_source) + (delay_ns / period_ns);
   while (pm_timer_clock_source->read(pm_timer_clock_source) < count) {
     cpu_pause();

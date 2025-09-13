@@ -448,8 +448,6 @@ int seq_printf(seqfile_t *sf, const char *fmt, ...) {
   return ret;
 }
 
-int seq_printf_ext(seqfile_t *sf, const char *fmt, ...) _alias("seq_printf");
-
 int seq_escape(seqfile_t *sf, const char *s, const char *esc) {
   ASSERT(sf != NULL);
   ASSERT(s != NULL);

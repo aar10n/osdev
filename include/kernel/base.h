@@ -168,6 +168,7 @@
 #define _ifunc(resolver) __attribute((ifunc(resolver)))
 #define _malloc_like __attribute((malloc))
 #define _printf_like(i, j) __attribute((format(printf, i, j)))
+#define _fmt_like(i, j) __attribute__((annotate("fmt_format:" #i ":" #j)))
 #define _section(name) __attribute((section(name)))
 #define _sentinel(n) __attribute((sentinel(n)))
 #define _nonnull(...) __attribute((nonnull(__VA_ARGS__)))
@@ -179,7 +180,7 @@
 // Other Assertion/Safety Macros
 //
 
-#define todo(msg, ...) ({ kprintf("TODO: %s:%d: " msg "\n", __FILE__, __LINE__, #msg); WHILE_TRUE; })
+#define todo(msg, ...) ({ kprintf("TODO: %s:%d: " msg "\n", __FILE__, __LINE__); WHILE_TRUE; })
 
 #define __assert_stack_is_aligned() ({ \
   uintptr_t sp; \

@@ -49,8 +49,7 @@ static ssize_t debug_d_read(device_t *dev, _unused size_t off, size_t nmax, kio_
 static ssize_t debug_d_write(device_t *dev, _unused size_t off, size_t nmax, kio_t *kio) {
   size_t n = 0;
   char ch;
-  size_t res;
-  while (n < nmax && (res = kio_read_ch(&ch, kio)) > 0) {
+  while (n < nmax && kio_read_ch(&ch, kio) > 0) {
     kprintf("%c", ch);
     n++;
   }

@@ -27,9 +27,9 @@ int devfs_vfs_mount(vfs_t *vfs, device_t *device, ventry_t *mount_ve, __move ven
 
   char path[PATH_MAX];
   sbuf_t pathbuf = sbuf_init(path, PATH_MAX);
-  size_t pathlen = ve_get_path(mount_ve, &pathbuf);
+  ssize_t pathlen = ve_get_path(mount_ve, &pathbuf);
   if (pathlen < 0) {
-    EPRINTF("failed to get devfs root path: {:err}\n", pathlen);
+    EPRINTF("failed to get devfs root path: {:err}\n", (int)pathlen);
     return -ENAMETOOLONG;
   }
 

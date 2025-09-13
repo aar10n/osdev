@@ -355,7 +355,7 @@ int dev_f_open(file_t *file, int flags) {
 
   vnode_t *vn = file->data;
   device_t *device = vn->v_dev;
-  DPRINTF("dev_f_open: opening file %p with flags 0x%x [device %d]\n", file, flags, make_dev(device));
+  DPRINTF("dev_f_open: opening file %p with flags 0x%x [device %lu]\n", file, flags, make_dev(device));
 
   int res;
   if (DEV_FOPS(device, f_open)) {
@@ -381,12 +381,12 @@ int dev_f_close(file_t *file) {
 
   vnode_t *vn = file->data;
   device_t *device = vn->v_dev;
-  DPRINTF("dev_f_close: closing file %p [device %d]\n", file, make_dev(device));
+  DPRINTF("dev_f_close: closing file %p [device %lu]\n", file, make_dev(device));
 
   // device close
   int res = d_close(device);
   if (res < 0) {
-    EPRINTF("failed to close file %p [device %d] {:err}\n", file, make_dev(device), res);
+    EPRINTF("failed to close file %p [device %lu] {:err}\n", file, make_dev(device), res);
   }
 
   return res;
@@ -399,13 +399,13 @@ int dev_f_getpage(file_t *file, off_t off, __move page_t **page) {
 
   vnode_t *vn = file->data;
   device_t *device = vn->v_dev;
-  DPRINTF("dev_f_getpage: getting page for file %p at offset %lld [device %d]\n", file, off, make_dev(device));
+  DPRINTF("dev_f_getpage: getting page for file %p at offset %lld [device %lu]\n", file, off, make_dev(device));
 
   // device getpage
   int res = 0;
   page_t *out = d_getpage(device, off);
   if (out == NULL) {
-    EPRINTF("failed to get page for file %p at offset %lld [device %d] {:err}\n", file, off, make_dev(device), res);
+    EPRINTF("failed to get page for file %p at offset %ld [device %lu] {:err}\n", file, off, make_dev(device), res);
     res = -EIO;
   } else {
     *page = moveref(out);
@@ -423,7 +423,7 @@ ssize_t dev_f_read(file_t *file, kio_t *kio) {
 
   vnode_t *vn = file->data;
   device_t *device = vn->v_dev;
-  DPRINTF("dev_f_read: reading from file %p at offset %lld [device %d]\n", file, file->offset, make_dev(device));
+  DPRINTF("dev_f_read: reading from file %p at offset %ld [device %lu]\n", file, file->offset, make_dev(device));
 
   // this operation can block so we unlock the file during the read
   f_unlock(file);
@@ -438,7 +438,7 @@ ssize_t dev_f_read(file_t *file, kio_t *kio) {
   }
 
   if (res < 0) {
-    EPRINTF("failed to read from file %p at offset %lld [device %d] {:err}\n", file, file->offset, make_dev(device), res);
+    EPRINTF("failed to read from file %p at offset %ld [device %lu] {:err}\n", file, file->offset, make_dev(device), (int)res);
   }
   return res;
 }
@@ -452,7 +452,7 @@ ssize_t dev_f_write(file_t *file, kio_t *kio) {
 
   vnode_t *vn = file->data;
   device_t *device = vn->v_dev;
-  DPRINTF("dev_f_write: writing to file %p at offset %lld [device %d]\n", file, file->offset, make_dev(device));
+  DPRINTF("dev_f_write: writing to file %p at offset %ld [device %lu]\n", file, file->offset, make_dev(device));
 
   // this operation can block so we unlock the file during the write
   f_unlock(file);
@@ -467,7 +467,7 @@ ssize_t dev_f_write(file_t *file, kio_t *kio) {
   }
 
   if (res < 0) {
-    EPRINTF("failed to write to file %p at offset %lld [device %d] {:err}\n", file, file->offset, make_dev(device), res);
+    EPRINTF("failed to write to file %p at offset %ld [device %lu] {:err}\n", file, file->offset, make_dev(device), (int)res);
   }
   return res;
 }
@@ -479,7 +479,7 @@ int dev_f_stat(file_t *file, struct stat *statbuf) {
 
   vnode_t *vn = file->data;
   device_t *device = vn->v_dev;
-  DPRINTF("dev_f_stat: getting stat for file %p [device %d]\n", file, make_dev(device));
+  DPRINTF("dev_f_stat: getting stat for file %p [device %lu]\n", file, make_dev(device));
 
   // grab the vnode lock because we need to call vn_stat to populate certain
   // fields that the device cannot fill even if it implements d_stat
@@ -504,7 +504,7 @@ int dev_f_ioctl(file_t *file, unsigned int request, void *arg) {
 
   vnode_t *vn = file->data;
   device_t *device = vn->v_dev;
-  DPRINTF("dev_f_ioctl: ioctl on file %p with request %#llx [device %d]\n", file, request, make_dev(device));
+  DPRINTF("dev_f_ioctl: ioctl on file %p with request %#llx [device %lu]\n", file, request, make_dev(device));
 
   // device ioctl
   int res = d_ioctl(device, request, arg);
@@ -522,24 +522,24 @@ int dev_f_kqevent(file_t *file, knote_t *kn) {
   // called from the file `event` filter_ops method
   vnode_t *vn = file->data;
   device_t *device = vn->v_dev;
-  DPRINTF("dev_f_kqevent: checking kqevent for file %p [device %d, filter %s]\n",
+  DPRINTF("dev_f_kqevent: checking kqevent for file %p [device %lu, filter %s]\n",
           file, make_dev(device), evfilt_to_string(kn->event.filter));
 
   int res;
   if (D_OPS(device)->d_kqevent) {
     res = D_OPS(device)->d_kqevent(device, kn);
   } else {
-    DPRINTF("dev_f_kqevent: file %p does not support kqevent [device %d]\n", file, make_dev(device));
+    DPRINTF("dev_f_kqevent: file %p does not support kqevent [device %lu]\n", file, make_dev(device));
     res = 0;
   }
 
   if (res < 0) {
-    EPRINTF("failed to get kqevent for file %p [device %d] {:err}\n", file, make_dev(device), res);
+    EPRINTF("failed to get kqevent for file %p [device %lu] {:err}\n", file, make_dev(device), res);
   } else if (res == 0) {
     kn->event.data = 0;
-    DPRINTF("dev_f_kqevent: no data available for file %p [device %d]\n", file, make_dev(device));
+    DPRINTF("dev_f_kqevent: no data available for file %p [device %lu]\n", file, make_dev(device));
   } else {
-    DPRINTF("dev_f_kqevent: %lld bytes available for file %p [device %d]\n", kn->event.data, file, make_dev(device));
+    DPRINTF("dev_f_kqevent: %lld bytes available for file %p [device %lu]\n", kn->event.data, file, make_dev(device));
   }
   return res;
 }

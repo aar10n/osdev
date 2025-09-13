@@ -18,10 +18,10 @@ _used uint32_t *framebuf_base;
 
 static void framebuf_static_init() {
   kprintf("framebuffer:\n");
-  kprintf("  addr: 0x%llx\n", boot_info_v2->fb_addr);
-  kprintf("  size: %zu\n", boot_info_v2->fb_size);
-  kprintf("  width: %zu\n", boot_info_v2->fb_width);
-  kprintf("  height: %zu\n", boot_info_v2->fb_height);
+  kprintf("  addr: %p\n", boot_info_v2->fb_addr);
+  kprintf("  size: %lu\n", boot_info_v2->fb_size);
+  kprintf("  width: %u\n", boot_info_v2->fb_width);
+  kprintf("  height: %u\n", boot_info_v2->fb_height);
 
   framebuf_base = (void *) vmap_phys(boot_info_v2->fb_addr, FRAMEBUFFER_VA, boot_info_v2->fb_size, VM_RDWR|VM_FIXED, "framebuffer");
 
@@ -51,7 +51,7 @@ void screen_print_char(char ch) {
       x = max(x - 1, 0);
       for (int i = 0; i < 8; i++) {
         for (int j = 0; j < 8; j++) {
-          size_t index = ((y * 8) + (i)) * WIDTH + ((x * 8) + (j));
+          size_t index = (((y * 8) + (i)) * WIDTH) + ((x * 8) + (j));
           framebuf_base[index] = 0;
         }
       }
@@ -64,7 +64,7 @@ void screen_print_char(char ch) {
   for (int i = 0; i < 8; i++) {
     for (int j = 0; j < 8; j++) {
       if (letter[i] & (1 << j)) {
-        size_t index = ((y * 8) + (i)) * WIDTH + ((x * 8) + (j));
+        size_t index = (((y * 8) + (i)) * WIDTH) + ((x * 8) + (j));
         framebuf_base[index] = UINT32_MAX;
       }
     }

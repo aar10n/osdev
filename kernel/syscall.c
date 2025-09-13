@@ -48,14 +48,14 @@ static const char *syscall_names[] = {
 
 _used uint64_t handle_syscall(uint64_t syscall, struct trapframe *frame) {
   __assert_stack_is_aligned();
-  if (syscall < 0 || syscall > SYS_MAX) {
-    DPRINTF("!!! invalid syscall: %d !!!\n", syscall);
+  if (syscall > SYS_MAX) {
+    DPRINTF("!!! invalid syscall: %lu !!!\n", syscall);
     return -ENOSYS;
   }
 
   syscall_t fn = syscall_handlers[syscall];
   if (!fn) {
-    panic("!!! syscall not implemented: %d !!! \n", syscall);
+    panic("!!! syscall not implemented: %lu !!! \n", syscall);
     return -ENOSYS;
   }
   DPRINTF("syscall: %s\n", syscall_names[syscall]);

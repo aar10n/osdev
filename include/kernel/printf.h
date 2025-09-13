@@ -116,20 +116,20 @@ void kprintf_kputl(long val);
  *
  * https://github.com/aar10n/fmt_c
  */
-void kprintf(const char *format, ...);
+void kprintf(const char *format, ...) _fmt_like(1, 2);
 void kprintf_raw(const char *format, ...);
 void kvfprintf(const char *format, va_list args);
 
 /**
  * Write formatted data to a buffer.
  */
-size_t ksprintf(char *str, const char *format, ...);
+size_t ksprintf(char *str, const char *format, ...) _fmt_like(2, 3);
 size_t kvsprintf(char *str, const char *format, va_list args);
 
 /**
  * Write formatted data to a sized buffer.
  */
-size_t ksnprintf(char *str, size_t n, const char *format, ...);
+size_t ksnprintf(char *str, size_t n, const char *format, ...) _fmt_like(3, 4);
 size_t kvsnprintf(char *str, size_t n, const char *format, va_list args);
 
 /**
@@ -139,7 +139,7 @@ size_t kvsnprintf(char *str, size_t n, const char *format, va_list args);
  * It is the callers responsibility to free the allocated
  * buffer.
  */
-char *kasprintf(const char *format, ...);
+char *kasprintf(const char *format, ...) _fmt_like(1, 2);
 char *kvasprintf(const char *format, va_list args);
 
 /**
@@ -148,7 +148,7 @@ char *kvasprintf(const char *format, va_list args);
  * If an error occurs while opening or writing to the write, the error is returned.
  * Otherwise 0 is returned on success.
  */
-int kfprintf(const char *path, const char *format, ...);
+int kfprintf(const char *path, const char *format, ...) _fmt_like(2, 3);
 
 /**
  * Writes formatted data to a file descriptor.
@@ -157,7 +157,7 @@ int kfprintf(const char *path, const char *format, ...);
  * Otherwise 0 is returned on success. The file descriptor is
  * not closed on return.
  */
-int kfdprintf(int fd, const char *format, ...);
+int kfdprintf(int fd, const char *format, ...) _fmt_like(2, 3);
 
 
 size_t fmt_format(const char *format, char *buffer, size_t size, int max_args, va_list args);

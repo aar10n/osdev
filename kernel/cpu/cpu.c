@@ -214,7 +214,7 @@ void cpu_early_init() {
 
     uint64_t cpu_ticks_per_sec = cycles * (MS_PER_SEC / ms);
     uint64_t cpu_clock_khz = cpu_ticks_per_sec / 1000;
-    kprintf("detected %d.%03d MHz processor\n", cpu_clock_khz / 1000, cpu_clock_khz % 1000);
+    kprintf("detected %ld.%03d MHz processor\n", cpu_clock_khz / 1000, cpu_clock_khz % 1000);
   }
 
   // setup the syscall handler
@@ -288,7 +288,7 @@ uint32_t cpu_get_apic_id() {
   }
   // fall back to the initial APIC id
   __get_cpuid(0x1, &a, &b, &c, &d);
-  return (b >> 24) & 0xFF;
+  return (b >> 24) & 0xFF; // NOLINT(*-core.UndefinedBinaryOperatorResult)
 }
 
 int cpu_get_is_bsp() {
@@ -429,7 +429,7 @@ void fpu_state_free(struct fpu_area **fp) {
 //
 
 DEFINE_SYSCALL(arch_prctl, int, int code, unsigned long arg) {
-  DPRINTF("arch_prctl code=%d arg=%p\n", code, arg);
+  DPRINTF("arch_prctl code=%d arg=%p\n", code, (uintptr_t)arg);
   thread_t *td = curthread;
   switch (code) {
     case ARCH_SET_GS:

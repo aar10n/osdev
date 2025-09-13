@@ -62,7 +62,7 @@ int exec_load_image(enum exec_type type, uintptr_t base, cstr_t path, __out stru
   char realpath[PATH_MAX + 1] = {0};
   kio_t realpath_kio = kio_new_writable(realpath, sizeof(realpath));
   if (fs_realpath(path, &realpath_kio) <= 0) {
-    EPRINTF("failed to resolve realpath for '{:str}'\n", &path);
+    EPRINTF("failed to resolve realpath for '{:cstr}'\n", &path);
     return -ENOENT;
   }
 
@@ -82,12 +82,12 @@ int exec_load_image(enum exec_type type, uintptr_t base, cstr_t path, __out stru
       base = 0x1400000;
     }
 
-    DPRINTF("exec: binary {:str} [%s] with base %p\n", &path, realpath, base);
+    DPRINTF("exec: binary {:cstr} [%s] with base %p\n", &path, realpath, base);
   }
 
   int fd = fs_open(path, O_RDONLY, 0);
   if (fd < 0) {
-    EPRINTF("failed to open file '{:str}' {:err}\n", &path, fd);
+    EPRINTF("failed to open file '{:cstr}' {:err}\n", &path, fd);
     return fd;
   }
 
@@ -113,7 +113,7 @@ int exec_load_image(enum exec_type type, uintptr_t base, cstr_t path, __out stru
     EPRINTF("interpreter script detected, not supported yet\n");
     res = -ENOEXEC; // TODO: handle interpreter scripts
   } else {
-    EPRINTF("invalid executable file '{:str}' {:err}\n", &path, res);
+    EPRINTF("invalid executable file '{:cstr}' {:err}\n", &path, res);
     res = -ENOEXEC;
   }
 
@@ -343,7 +343,6 @@ void exec_print_debug_stack(uintptr_t rsp) {
 
   // read argv pointers and strings
   kprintf("argv:\n");
-  uint64_t *argv_start = stack_ptr;
   for (uint64_t i = 0; i < argc; i++) {
     char *arg_str = (char *)(*stack_ptr);
     kprintf("  [%llu]: %p -> \"%s\"\n", i, (void *)(*stack_ptr), arg_str);

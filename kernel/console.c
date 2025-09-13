@@ -43,7 +43,7 @@ static int console_main() {
   }
 
   const char *prompt = "$ ";
-  char line[LINE_MAX];
+  char line[LINE_MAX] = {};
   while (true) {
     kio_t kio = kio_new_readable(prompt, 2);
     if (ttydisc_write(active_console->tty, &kio) < 0) {
@@ -52,10 +52,10 @@ static int console_main() {
     }
 
     kio = kio_new_writable(line, LINE_MAX);
-    size_t len = ttydisc_read(active_console->tty, &kio);
+    ssize_t len = ttydisc_read(active_console->tty, &kio);
     DPRINTF("console input read: {:zu} bytes\n", len);
     if (len < 0) {
-      EPRINTF("failed to read console input: {:err}\n", len);
+      EPRINTF("failed to read console input: {:err}\n", (int)len);
       break;
     } else if (len == 0) {
       DPRINTF("console received EOF\n");
@@ -76,7 +76,7 @@ static int console_main() {
   }
 
   if ((res = tty_close(active_console->tty)) < 0) {
-    EPRINTF("failed to close tty for console driver %s: {:err}\n", &active_console->name, res);
+    EPRINTF("failed to close tty for console driver %s: {:err}\n", active_console->name, res);
   }
   tty_unlock(tty);
 

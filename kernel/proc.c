@@ -921,7 +921,7 @@ void proc_terminate(proc_t *proc, int ret, int sig) {
   proc->exit_status = wstatus;
 
   // terminate process threads
-  LIST_FOR_IN(td, &proc->threads, plist) {
+  LIST_FOR_IN_SAFE(td, &proc->threads, plist) {
     // skip if it's the current thread, it will be killed
     // at the end of this function when it reschedules
     if (td != curthread) {
@@ -1942,8 +1942,8 @@ static int proc_status_show(seqfile_t *sf, void *data) {
   seq_mark_begin(sf);
 
   // basic process info
-  seq_printf_ext(sf, "Name:      {:str}\n", &proc->name);
-  seq_printf_ext(sf, "Bin Path:  {:str}\n", &proc->binpath);
+  seq_printf(sf, "Name:      {:str}\n", &proc->name);
+  seq_printf(sf, "Bin Path:  {:str}\n", &proc->binpath);
   seq_printf(sf, "State:     ");
   switch (proc->state) {
     case PRS_EMPTY: seq_printf(sf, "E (empty)\n"); break;
@@ -1960,7 +1960,7 @@ static int proc_status_show(seqfile_t *sf, void *data) {
 
   seq_printf(sf, "Threads:   %d\n", proc->num_threads);
   LIST_FOR_IN(td, &proc->threads, plist) {
-    seq_printf_ext(sf, "  TID: %d [{:str}] State: ", td->tid, &td->name);
+    seq_printf(sf, "  TID: %d [{:str}] State: ", td->tid, &td->name);
     switch (td->state) {
       case TDS_EMPTY: seq_printf(sf, "E (empty)\n"); break;
       case TDS_READY: seq_printf(sf, "R (ready)\n"); break;

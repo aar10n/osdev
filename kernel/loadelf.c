@@ -147,9 +147,9 @@ int elf_load_image(enum exec_type type, int fd, void *file_base, size_t len, uin
     min_vaddr = min(min_vaddr, vaddr);
 
     uint32_t vm_flags = VM_READ | VM_USER | VM_PRIVATE | VM_FIXED;
-    if (phdr[i].p_flags & PF_X)
+    if (flags & PF_X)
       vm_flags |= VM_EXEC;
-    if (phdr[i].p_flags & PF_W)
+    if (flags & PF_W)
       vm_flags |= VM_WRITE;
 
     if (phdr[i].p_filesz == phdr[i].p_memsz) {

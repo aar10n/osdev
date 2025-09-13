@@ -433,7 +433,7 @@ int event_stream_f_open(file_t *file, int flags) {
   
   file->udata = evs;
 
-  DPRINTFF("opening file %p with flags 0x%x [evs %p, event_stream %#x]\n", file, flags, evs, event_stream);
+  DPRINTFF("opening file %p with flags 0x%x [evs %p, event_stream %p]\n", file, flags, evs, event_stream);
   return 0;
 }
 
@@ -444,7 +444,7 @@ int event_stream_f_close(file_t *file) {
   ASSERT(V_ISDEV((vnode_t *)file->data));
 
   struct event_stream *evs = moveptr(file->udata);
-  DPRINTFF("closing file %p [evs %p, event_stream %#x]\n", file, evs, evs->stream);
+  DPRINTFF("closing file %p [evs %p, event_stream %p]\n", file, evs, evs->stream);
 
   // remove from event streams list
   mtx_lock(&ev_streams_lock);
@@ -469,11 +469,10 @@ ssize_t event_stream_f_read(file_t *file, kio_t *kio) {
   struct event_stream *evs = file->udata;
 //  DPRINTFF("reading from file %p at offset %lld [evs %p, event_stream %#x]\n", file, file->offset, evs, evs->stream);
 
-  int res;
   ssize_t nbytes = 0;
   struct input_event event;
   // read all events in the channel without blocking
-  while ((res = chan_recv_noblock(evs->chan, &event)) >= 0) {
+  while (chan_recv_noblock(evs->chan, &event) >= 0) {
     size_t n = kio_write_in(kio, &event, sizeof(event), 0);
     nbytes += (ssize_t) n;
     if (n == 0 || kio_remaining(kio) < sizeof(struct input_event)) {
@@ -490,16 +489,17 @@ ssize_t event_stream_f_read(file_t *file, kio_t *kio) {
       return -EAGAIN;
     } else {
       // return the number of bytes read
-      DPRINTFF("read %zd bytes from file %p [evs %p, event_stream %#x]\n", nbytes, file, evs, evs->stream);
+      DPRINTFF("read %zu bytes from file %p [evs %p, event_stream %p]\n", nbytes, file, evs, evs->stream);
       return nbytes;
     }
   } else if (kio_remaining(kio) < sizeof(struct input_event)) {
     // no more space in the buffer we can return
-    DPRINTFF("read %zd bytes from file %p [evs %p, event_stream %#x]\n", nbytes, file, evs, evs->stream);
+    DPRINTFF("read %zu bytes from file %p [evs %p, event_stream %p]\n", nbytes, file, evs, evs->stream);
     return nbytes;
   }
 
   // at this point we can block on the channel
+  int res;
   while ((res = chan_recv(evs->chan, &event)) >= 0) {
     size_t n = kio_write_in(kio, &event, sizeof(event), 0);
     ASSERT(n > 0);
@@ -512,12 +512,12 @@ ssize_t event_stream_f_read(file_t *file, kio_t *kio) {
 
   if (res < 0) {
     // an error occurred while reading from the channel
-    EPRINTF("failed to read from event stream file %p [evs %p, event_stream %#x] {:err}\n",
+    EPRINTF("failed to read from event stream file %p [evs %p, event_stream %p] {:err}\n",
             file, evs, evs->stream, res);
     return res;
   }
 
-  DPRINTFF("read %zd bytes from file %p [evs %p, event_stream %#x]\n", nbytes, file, evs, evs->stream);
+  DPRINTFF("read %zu bytes from file %p [evs %p, event_stream %p]\n", nbytes, file, evs, evs->stream);
   return nbytes;
 }
 
@@ -527,7 +527,7 @@ int event_stream_f_ioctl(file_t *file, unsigned int request, void *arg) {
   ASSERT(V_ISDEV((vnode_t *)file->data));
 
   struct event_stream *evs = file->udata;
-  DPRINTFF("ioctl on file %p with request %#llx [evs %p, event_stream %#x]\n",
+  DPRINTFF("ioctl on file %p with request %#llx [evs %p, event_stream %p]\n",
            file, request, evs, evs->stream);
 
   size_t req_size = _IOC_SIZE(request);
@@ -542,7 +542,7 @@ int event_stream_f_ioctl(file_t *file, unsigned int request, void *arg) {
 
     size_t name_len = sizeof(name)+1;
     if (req_size < name_len) {
-      EPRINTF("ioctl request %#llx size %d too small for name\n", request, req_size);
+      EPRINTF("ioctl request %#llx size %zu too small for name\n", request, req_size);
       return -EINVAL; // buffer too small
     }
 
@@ -562,21 +562,21 @@ int event_stream_f_kqevent(file_t *file, knote_t *kn) {
   // called from the file `event` filter_ops method
   vnode_t *vn = file->data;
   struct event_stream *evs = file->udata;
-  DPRINTFF("checking kqevent for file %p [evs %p, event_stream %#x, filter %s]\n",
+  DPRINTFF("checking kqevent for file %p [evs %p, event_stream %p, filter %s]\n",
            file, evs, evs->stream, evfilt_to_string(kn->event.filter));
 
   int res;
   todo();
 
   if (res < 0) {
-    EPRINTF("failed to get kqevent for file %p [evs %p, event_stream %#x] {:err}\n",
+    EPRINTF("failed to get kqevent for file %p [evs %p, event_stream %p] {:err}\n",
             file, evs, evs->stream, res);
   } else if (res == 0) {
     kn->event.data = 0;
-    DPRINTFF("no data available for file %p [evs %p, event_stream %#x]\n",
+    DPRINTFF("no data available for file %p [evs %p, event_stream %p]\n",
              file, evs, evs->stream);
   } else {
-    DPRINTFF("%llu bytes available for file %p [evs %p, event_stream %#x]\n",
+    DPRINTFF("%d bytes available for file %p [evs %p, event_stream %p]\n",
              res, file, evs, evs->stream);
   }
   return res;

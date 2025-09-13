@@ -1390,7 +1390,7 @@ ssize_t fs_readlink(cstr_t path, char *buf, size_t bufsiz) {
   kio_t kio = kio_new_writable(buf, bufsiz);
   vnode_t *vn = VN(ve);
   vn_begin_data_read(vn);
-  res = vn_readlink(vn, &kio); // read the link
+  res = vn_readlink(vn, &kio ); // read the link
   vn_end_data_read(vn);
   if (res < 0) {
     DPRINTF("failed to read link\n");

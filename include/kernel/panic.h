@@ -24,6 +24,6 @@
 
 void panic_early_init();
 
-noreturn void panic(const char *fmt, ...);
+noreturn void panic(const char *fmt, ...) _fmt_like(1, 2);
 
 #endif

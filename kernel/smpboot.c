@@ -107,7 +107,7 @@ void smp_init() {
 
   uintptr_t eip = virt_to_phys(code_ptr);
 
-  size_t smpboot_size = smpboot_end - smpboot_start;
+  size_t smpboot_size = (uintptr_t)smpboot_end - (uintptr_t)smpboot_start;
   kassert(smpboot_size <= PAGE_SIZE);
   kassert(sizeof(struct smp_data) <= PAGE_SIZE);
   memcpy(code_ptr, smpboot_start, smpboot_size);

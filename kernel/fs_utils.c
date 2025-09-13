@@ -82,7 +82,7 @@ void touch(const char *path) {
 }
 
 void mknod(const char *path, mode_t mode, dev_t dev) {
-  kprintf(">>> mknod(\"%s\", %o, %u)\n", path, mode, dev);
+  kprintf(">>> mknod(\"%s\", %o, %lu)\n", path, mode, dev);
   int res = fs_mknod(cstr_make(path), mode, dev);
   kprintf(">>> mknod -> {:err}\n", res);
   if (res < 0) {
@@ -150,8 +150,8 @@ void stat(const char *path) {
   }
 
   kprintf("stat \"%s\":\n", path);
-  kprintf("  type: {:$ <16s }  inode: %d\n", type, statbuf.st_ino);
-  kprintf("  size: {:$ <16zu}  links: %d\n", statbuf.st_size, statbuf.st_nlink);
+  kprintf("  type: {:$ <16s}  inode: %lu\n", type, statbuf.st_ino);
+  kprintf("  size: {:$ <16lu}  links: %lu\n", statbuf.st_size, statbuf.st_nlink);
   kprintf("  device: %d,%d\n", dev_major(statbuf.st_dev), dev_minor(statbuf.st_dev));
 }
 
@@ -170,7 +170,7 @@ void ls(const char *path) {
     struct dirent *ent = (void *) buf;
     struct dirent *end = (void *) (buf + nread);
     while (ent < end) {
-      kprintf(" {:- 4u} %s\n", ent->d_ino, ent->d_name);
+      kprintf(" {:- 4lu} %s\n", ent->d_ino, ent->d_name);
       ent = offset_ptr(ent, ent->d_reclen);
     }
   }
@@ -194,7 +194,7 @@ void cat(const char *path) {
   ssize_t nread;
   char buf[512] = {0};
   while ((nread = fs_read(fd, buf, sizeof(buf))) > 0) {
-    kprintf("{:.*s}", buf, nread);
+    kprintf("{:.*s}", (int)nread, buf);
   }
   if (nread < 0) {
     FAIL("%s: read failed: {:err}\n", path, nread);

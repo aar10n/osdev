@@ -1486,7 +1486,7 @@ int vmap_free(uintptr_t vaddr, size_t size) {
   // check that none of the mappings in the range are reserved
   for (vm_mapping_t *curr = vm; curr != LIST_NEXT(vm_end, vm_list); curr = LIST_NEXT(curr, vm_list)) {
     if (curr->type == VM_TYPE_RSVD) {
-      EPRINTF("invalid request: attempting to free reserved region [vaddr=%p, len=%zu, start=%p, size=%zu]\n",
+      EPRINTF("invalid request: attempting to free reserved region [vaddr=%p, len=%zu, start=%p, size=%lu]\n",
               vaddr, size, curr->address, curr->address + curr->size);
       return -EINVAL;
     }
@@ -1914,7 +1914,7 @@ uintptr_t vmap_other_file(address_space_t *uspace, struct vm_file *file, uintptr
 uintptr_t vmap_other_anon(address_space_t *uspace, size_t vm_size, uintptr_t vaddr, size_t size, uint32_t vm_flags, const char *name) {
   ASSERT(uspace != kernel_space);
   vm_flags |= VM_USER|VM_NOMAP|VM_FIXED;
-  DPRINTF("creating anonymous mapping [vaddr={:p}, vm_size={:d}, size={:d}, flags={:x}, name={:s}]\n",
+  DPRINTF("creating anonymous mapping [vaddr={:p}, vm_size={:zu}, size={:zu}, flags={:x}, name={:s}]\n",
           vaddr, vm_size, size, vm_flags, name);
 
   int res;
@@ -2019,7 +2019,7 @@ int vm_desc_map_space(address_space_t *uspace, vm_desc_t *descs) {
     }
 
     if (res == 0) {
-      EPRINTF("failed to map descriptor in address space [name={:str}]\n", desc->name);
+      EPRINTF("failed to map descriptor in address space [name={:s}]\n", desc->name);
       space_unlock(uspace);
       return -1;
     }
@@ -2304,15 +2304,15 @@ int vmspace_seq_show(seqfile_t *sf, void *v) {
   // handle stack mappings with guard page
   if (vm->flags & VM_STACK) {
     size_t extra_size = vm->virt_size - vm->size;
-    seq_printf_ext(sf, "%018p-%018p %-10llu %-4s %-4s %-6s [stack guard]\n",
+    seq_printf(sf, "%018p-%018p %-10llu %-4s %-4s %-6s [stack guard]\n",
                vm->address - extra_size, vm->address, extra_size,
                "----", "----", "guard");
   }
   
   // print the main mapping
-  seq_printf_ext(sf, "%018p-%018p %-10llu %-4s %-4s ",
-                 vm->address, vm->address + vm->size, vm->size,
-                 vm_type_to_str(vm->type), prot_to_debug_str(vm->flags));
+  seq_printf(sf, "%018p-%018p %-10llu %-4s %-4s ",
+             vm->address, vm->address + vm->size, vm->size,
+             vm_type_to_str(vm->type), prot_to_debug_str(vm->flags));
 
   // build flags string (6 characters: SPGN2MK)
   char flags_str[7] = "------";
@@ -2326,7 +2326,7 @@ int vmspace_seq_show(seqfile_t *sf, void *v) {
   if (vm->flags & VM_MALLOC) flags_str[4] = 'M';
   if (vm->flags & VM_STACK) flags_str[5] = 'K';
   
-  seq_printf_ext(sf, "%-6s {:str}\n", flags_str, &vm->name);
+  seq_printf(sf, "%-6s {:str}\n", flags_str, &vm->name);
   return seq_mark_end(sf);
 }
 

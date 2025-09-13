@@ -72,11 +72,11 @@ void acpi_early_init() {
   acpi_tables = (void *)((uint64_t) xsdt + sizeof(acpi_table_header_t));
 
   kprintf("ACPI %s\n", rsdp->revision == 0 ? "1.0" : "2.0");
-  kprintf("  RSDT %p (v%d %.6s)\n", rsdp->rsdt_address, rsdp->revision, rsdp->oem_id);
+  kprintf("  RSDT %p (v%d %.6s)\n", (uint64_t)rsdp->rsdt_address, rsdp->revision, rsdp->oem_id);
   kprintf("  XSDT %p (v%d %.6s)\n", rsdp->xsdt_address, xsdt->revision, xsdt->oem_id);
   for (size_t i = 0; i < acpi_num_tables; i++) {
     acpi_table_header_t *table = (void *)((uint64_t) acpi_tables[i]);
-    kprintf("  %.4s %p (v%d %.6s)\n", &table->signature, table, table->revision, table->oem_id);
+    kprintf("  %.4s %p (v%d %.6s)\n", (const char *)&table->signature, table, table->revision, table->oem_id);
   }
 
   acpi_parse_fadt();

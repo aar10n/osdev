@@ -61,8 +61,6 @@ static inline void maybe_rearm_tickless_alarm(uint64_t expiry, uint64_t clock_no
 
 
 static inline void handle_expired_alarms(uint64_t clock_now, uint64_t *next_expiry) {
-  thread_t *td = curthread;
-
   // handle any expired alarms
   alarm_t *alarm;
   uint64_t min_expiry = 0;
