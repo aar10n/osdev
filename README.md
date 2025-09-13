@@ -86,6 +86,13 @@ port, which is what the kernel's shell is running on. You can connect to it usin
 telnet 127.0.0.1 8008
 ```
 
+## Clang-tidy Plugin
+
+This project includes a custom clang-tidy plugin for linting the kernel code. You can find more information
+about it in the [plugin README](tools/clang-tidy-plugin/README.md). This plugin will only be built if the 
+`CLANG_BUILD_PLUGIN` option is set  to `y` in `.config`.
+
+
 ## QEMU Profiling Plugin
 
 This project includes a custom QEMU plugin for profiling guest execution. You can find more information
