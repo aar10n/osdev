@@ -1,5 +1,8 @@
 # This makefile is for compiling host development tools
 TOOLS =
+ifeq ($(CLANG_BUILD_PLUGIN),y)
+TOOLS += clang-profile-plugin
+endif
 ifeq ($(QEMU_BUILD_PLUGIN),y)
 TOOLS += qemu-profile-plugin
 endif

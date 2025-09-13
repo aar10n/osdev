@@ -1,0 +1,38 @@
+Checks: 'osdev-fmt-string'
+WarningsAsErrors: ''
+HeaderFilterRegex: '.*'
+CheckOptions:
+  - key: osdev-fmt-string.Functions
+    value: 'kprintf,panic,log_error'
+  - key: osdev-fmt-string.CustomTypes
+    value: 'err=int,test=struct test*,td=struct thread *'
+
+# format of osdev-fmt-string.Functions
+#
+# '<function>[:<format_index>[:<first_arg_index>]],...'
+
+# format of osdev-fmt-string.CustomTypes
+#
+# '<fmt_type>=<c_type>,<fmt_type>=<ctype>,...`
+#
+# Where <fmt_type> is the string used in the format string to represent the type
+# and <ctype> is one of the following:
+#   'char'            -> ArgumentType::Char
+#   'uchar'           -> ArgumentType::UnsignedChar
+#   'short'           -> ArgumentType::Short
+#   'ushort'          -> ArgumentType::UnsignedShort
+#   'int'             -> ArgumentType::Int
+#   'uint'            -> ArgumentType::UnsignedInt
+#   'long'            -> ArgumentType::Long
+#   'ulong'           -> ArgumentType::UnsignedLong
+#   'longlong'        -> ArgumentType::LongLong
+#   'ulonglong'       -> ArgumentType::UnsignedLongLong
+#   'size_t'          -> ArgumentType::SizeType
+#   'ssize_t'         -> ArgumentType::SignedSizeType
+#   'double'          -> ArgumentType::Double
+#   'pointer'         -> ArgumentType::PointerType
+#   'void*'           -> ArgumentType::VoidPointer
+#   'cstring'         -> ArgumentType::CString
+#   'struct <name>'   -> ArgumentType::CustomStructType (where <name> is the name of the struct)
+#   'struct <name>*'  -> ArgumentType::CustomStructPType (where <name> is the name of the struct)
+

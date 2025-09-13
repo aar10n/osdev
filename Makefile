@@ -285,7 +285,15 @@ $(BUILD_DIR)/ext2.img: $(call pairs-src-paths, $(EXT2_DEPS))
 # development tools
 #
 
-tools: qemu-profile-plugin
+tools: qemu-profile-plugin clang-tidy-plugin
+
+# clang tidy plugin
+ifeq ($(CLANG_BUILD_PLUGIN),y)
+clang-tidy-plugin:
+	$(MAKE) -C tools/clang-tidy-plugin
+else
+clang-tidy-plugin:
+endif
 
 # qemu profiling plugin
 ifeq ($(QEMU_BUILD_PLUGIN),y)

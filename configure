@@ -94,14 +94,6 @@ if check_command "python"; then
   fi
 fi
 
-echo ""
-if [ $missing_deps -eq 0 ]; then
-  echo -e "${GREEN}All dependencies are installed!${NC}"
-else
-  echo -e "${RED}Missing $missing_deps dependencies.${NC}"
-  exit 1
-fi
-
 #
 # Create Configuration File
 #
@@ -143,10 +135,25 @@ function prompt_line() {
 }
 
 # additional options
+CLANG_BUILD_PLUGIN=$(prompt_yn "build the clang-tidy plugin?")
+if [ "$CLANG_BUILD_PLUGIN" = "y" ]; then
+  check_dependency "clang-tidy" "clang-tidy"
+  check_dependency "llvm-config" "llvm"
+fi
+
 QEMU_BUILD_PLUGIN=$(prompt_yn "build the QEMU profiling plugin?")
 if [ "$QEMU_BUILD_PLUGIN" = "y" ]; then
   QEMU_INCLUDE_DIR=$(prompt_line "QEMU include directory: ")
   QEMU_INCLUDE_DIR="$(realpath "$QEMU_INCLUDE_DIR")"
+fi
+
+# Now validate that all dependencies are available
+echo ""
+if [ $missing_deps -eq 0 ]; then
+  echo -e "${GREEN}All dependencies are installed!${NC}"
+else
+  echo -e "${RED}Missing $missing_deps dependencies.${NC}"
+  exit 1
 fi
 
 config_content="ARCH := $ARCH
@@ -155,7 +162,16 @@ PROJECT_DIR := $PROJECT_DIR
 BUILD_DIR := $BUILD_DIR
 TOOL_ROOT := $TOOL_ROOT
 SYS_ROOT := $SYS_ROOT
-QEMU := $QEMU"
+QEMU := $QEMU
+"
+
+if [ "$CLANG_BUILD_PLUGIN" = "y" ]; then
+  config_content="$config_content
+CLANG_BUILD_PLUGIN := y"
+else
+  config_content="$config_content
+CLANG_BUILD_PLUGIN := n"
+fi
 
 if [ "$QEMU_BUILD_PLUGIN" = "y" ]; then
   config_content="$config_content
