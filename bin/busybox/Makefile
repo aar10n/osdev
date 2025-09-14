@@ -16,12 +16,13 @@ BIN_APPLETS = \
 SBIN_APPLETS =
 
 USR_BIN_APPLETS = \
-	awk base32 base64 bunzip2 bzcat bzip2 cksum cmp comm crc32 diff \
-	egrep factor fgrep find fold gunzip gzip head lzcat lzma md5sum \
-	nproc paste printenv printf realpath sed seq sha1sum sha256sum \
-	sha3sum sha512sum shred shuf sort split stat stty sum tac tail tar \
-	tee timeout truncate tsort unexpand uniq unlink unlzma unxz unzip \
-	usleep uuencode which xargs xz xzcat yes zcat
+	ascii awk base32 base64 bc bzcat bunzip2 bzip2 cksum cmp comm crc32 dc \
+	diff df ed egrep factor fallocate fgrep find fold gunzip gzip head \
+	hexdump hexedit lzcat lzma less man md5sum microcom nproc paste patch \
+	printenv printf realpath sed seq sha1sum sha256sum sha3sum sha512sum sh \
+	shred shuf sort split stat strings stty sum tac tail tar tee time \
+	timeout tree truncate tsort unexpand uniq unlink unlzma unxz unzip \
+	usleep uuencode vi which xargs xz xzcat yes zcat
 
 USR_SBIN_APPLETS =
 
