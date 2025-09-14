@@ -76,8 +76,8 @@ _used noreturn void double_fault_handler() {
 }
 
 _used noreturn void infinite_loop_handler(void *gs_base, void *kernel_gs_base) {
-  kprintf_kputs("!!! INFINITE EXCEPTION LOOP !!!\n");
   __assert_stack_is_aligned();
+  kprintf_kputs("!!! INFINITE EXCEPTION LOOP !!!\n");
   kprintf("  CPU#%d\n", curcpu_id);
   kprintf("  GS_BASE = %018p  KERNEL_GS_BASE = %018p\n", gs_base, kernel_gs_base);
   WHILE_TRUE;

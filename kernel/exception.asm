@@ -168,7 +168,7 @@ common_interrupt_handler:
   ; INTERRUPT LOOP DEBUGGING
   inc qword [rel interrupt_nest_count] ; increment the nested interrupt count
   cmp qword [rel interrupt_nest_count], 3 ; check if we are in a nested interrupt
-  jne .skip_loop_debug
+  jl .skip_loop_debug
 
   ; load gs_base into rdi
   mov ecx, 0xC0000101    ; IA32_GS_BASE MSR

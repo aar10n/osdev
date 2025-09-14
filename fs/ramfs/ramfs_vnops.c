@@ -25,7 +25,18 @@ ssize_t ramfs_vn_read(vnode_t *vn, off_t off, kio_t *kio) {
 ssize_t ramfs_vn_write(vnode_t *vn, off_t off, kio_t *kio) {
   ramfs_node_t *node = vn->data;
   memfile_t *memf = node->n_file;
-  return memfile_write(memf, off, kio);
+  ssize_t res = memfile_write(memf, off, kio);
+  if (res > 0) {
+    // update both vnode and ramfs node size if write extended the file
+    size_t new_size = off + res;
+    if (new_size > vn->size) {
+      vn->size = new_size;
+    }
+    if (new_size > node->size) {
+      node->size = new_size;
+    }
+  }
+  return res;
 }
 
 int ramfs_vn_getpage(vnode_t *vn, off_t off, __move page_t **result) {
@@ -43,10 +54,17 @@ int ramfs_vn_falloc(vnode_t *vn, size_t len) {
   ramfs_node_t *node = vn->data;
   memfile_t *memf = node->n_file;
 
+  // len is the delta size to add, so calculate the new absolute size
+  size_t new_size = memf->size + len;
+
   int res;
-  if ((res = memfile_falloc(memf, len)) < 0) {
+  if ((res = memfile_falloc(memf, new_size)) < 0) {
     return res; // failed to resize the file
   }
+
+  // update the vnode and ramfs node sizes
+  vn->size = new_size;
+  node->size = new_size;
   return 0;
 }
 

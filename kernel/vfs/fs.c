@@ -755,6 +755,7 @@ int fs_ftruncate(int fd, off_t length) {
   if (res < 0) {
     DPRINTF("failed to truncate file {:err}\n", res);
   }
+  f_unlock(file);
 
 LABEL(ret);
   fde_putref(&fde);
@@ -959,6 +960,10 @@ int fs_poll(struct pollfd *fds, size_t nfds, struct timespec *timeout) {
   // register events and wait for ready events
   ssize_t nready = kqueue_wait(kq, changelist, nchanges, eventlist, nfds * 2, timeout);
   if (nready < 0) {
+    if (nready == -ETIMEDOUT) {
+      // timeout expired without any events - this is normal for poll
+      goto_res(ret, 0);
+    }
     EPRINTF("kqueue_wait failed: {:err}\n", nready);
     goto_res(ret, (int)nready);
   } else if (nready == 0) {
@@ -1480,6 +1485,11 @@ SYSCALL_ALIAS(dup, fs_dup);
 SYSCALL_ALIAS(dup2, fs_dup2);
 SYSCALL_ALIAS(pipe, fs_pipe);
 SYSCALL_ALIAS(pipe2, fs_pipe2);
+
+DEFINE_SYSCALL(access, int, const char *pathname, int mode) {
+  DPRINTF("access: TODO implement me\n");
+  return 0;
+}
 
 DEFINE_SYSCALL(poll, int, struct pollfd *fds, nfds_t nfds, int timeout) {
   struct timespec ts;

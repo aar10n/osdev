@@ -768,10 +768,14 @@ ssize_t vn_f_read(file_t *file, kio_t *kio) {
   f_lock(file);
 
   if (res < 0) {
-    EPRINTF("failed to read from file %p at offset %lld [vn {:+vn}] {:err}\n", file, file->offset, vn, res);
+    EPRINTF("failed to read from file %p at offset %lld [vn {:+vn}] {:err}\n", file, file->offset, vn, (int)res);
   }
 
   vn_unlock(vn);
+  if (res > 0) {
+    // update the file offset
+    file->offset += res;
+  }
   return res;
 }
 
@@ -798,7 +802,7 @@ ssize_t vn_f_write(file_t *file, kio_t *kio) {
   f_lock(file);
 
   if (res < 0) {
-    EPRINTF("failed to write to file %p at offset %lld [vn {:+vn}] {:err}\n", file, file->offset, vn, res);
+    EPRINTF("failed to write to file %p at offset %lld [vn {:+vn}] {:err}\n", file, file->offset, vn, (int)res);
   }
 
   vn_unlock(vn);
@@ -833,7 +837,7 @@ ssize_t vn_f_readdir(file_t *file, kio_t *kio) {
 
   vn_unlock(vn);
   if (res < 0) {
-    EPRINTF("failed to read directory from file %p at offset %lld [vn {:+vn}] {:err}\n", file, file->offset, vn, res);
+    EPRINTF("failed to read directory from file %p at offset %lld [vn {:+vn}] {:err}\n", file, file->offset, vn, (int)res);
     return res;
   }
 

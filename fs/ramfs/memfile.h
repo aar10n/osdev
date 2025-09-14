@@ -14,7 +14,8 @@
  */
 typedef struct memfile {
   uintptr_t base;
-  size_t size;
+  size_t size;        // current file size
+  size_t mapped_size; // current VM mapping size
 } memfile_t;
 
 // memfile api
