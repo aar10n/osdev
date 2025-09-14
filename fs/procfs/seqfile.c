@@ -32,7 +32,7 @@ void *seq_simple_start(seqfile_t *sf, off_t *pos) {
   off_t index = *pos;
   if (index == 0) {
     *pos = 1; // next position
-    return sf->data;
+    return sf->data ? sf->data : (void *)1; // return data or dummy pointer
   }
   return NULL; // EOF
 }
@@ -135,7 +135,7 @@ static ssize_t seq_read(seqfile_t *sf, kio_t *kio, off_t *ppos) {
   sf->index = pos;
 
   // start iteration
-  DPRINTF("seq_read: starting iteration at index %lld\n", sf->index);
+  DPRINTF("seq_read: calling sf->ops->start(sf=%p, index=%lld)\n", sf, sf->index);
   void *p = sf->ops->start(sf, &sf->index);
   while (p) {
     DPRINTF("seq_read: showing item at index %lld\n", sf->index);
