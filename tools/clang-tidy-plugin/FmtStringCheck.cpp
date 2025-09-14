@@ -863,8 +863,10 @@ FmtStringCheck::ArgumentType FmtStringCheck::getArgumentType(const Expr *Arg, co
   std::string TypeName = Type.getAsString();
 
   // Check for typedef'd types by name before canonicalizing
-  if (TypeName == "size_t" || TypeName == "ssize_t") {
+  if (TypeName == "size_t") {
     return ArgumentType::SizeType;
+  } else if (TypeName == "ssize_t") {
+    return ArgumentType::SignedSizeType;
   } else if (TypeName == "uintptr_t" || TypeName == "intptr_t") {
     return ArgumentType::PointerType;
   }
@@ -954,13 +956,15 @@ bool FmtStringCheck::isTypeCompatible(ArgumentType expected, ArgumentType actual
       return actual == ArgumentType::UnsignedInt;
     case ArgumentType::UnsignedInt:
       return actual == ArgumentType::Int;
+    case ArgumentType::Long:
+      return actual == ArgumentType::LongLong;
     case ArgumentType::UnsignedLong:
-      return actual == ArgumentType::Long || actual == ArgumentType::UnsignedLongLong ||
-            actual == ArgumentType::LongLong || actual == ArgumentType::SizeType ||
+      return actual == ArgumentType::UnsignedLongLong || actual == ArgumentType::SizeType ||
             actual == ArgumentType::VoidPointer || actual == ArgumentType::PointerType;
+    case ArgumentType::LongLong:
+      return actual == ArgumentType::Long;
     case ArgumentType::UnsignedLongLong:
-      return actual == ArgumentType::LongLong || actual == ArgumentType::UnsignedLong ||
-            actual == ArgumentType::Long || actual == ArgumentType::SizeType ||
+      return actual == ArgumentType::UnsignedLong || actual == ArgumentType::SizeType ||
             actual == ArgumentType::VoidPointer || actual == ArgumentType::PointerType;
     case ArgumentType::SizeType:
       return actual == ArgumentType::UnsignedLong || actual == ArgumentType::UnsignedLongLong ||

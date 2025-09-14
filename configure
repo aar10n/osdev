@@ -28,6 +28,8 @@ if [ -z "$ARCH" ] || [ -z "$BUILD_DIR" ]; then
     exit 1
 fi
 
+BUILD_DIR="$(realpath "$BUILD_DIR")"
+
 #
 # Check Host Dependencies
 #
@@ -101,7 +103,7 @@ fi
 PROJECT_DIR="$(pwd)"
 
 # defaults
-BUILD_DIR="$BUILD_DIR/build"
+BUILD_DIR="$BUILD_DIR"
 TOOL_ROOT="$BUILD_DIR/toolchain"
 SYS_ROOT="$BUILD_DIR/sysroot"
 TOOLCHAIN="$ARCH-linux-musl"

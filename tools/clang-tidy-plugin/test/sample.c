@@ -4,6 +4,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <unistd.h>
 
 #define __fmt_format(str_idx, first_arg) \
       __attribute__((annotate("fmt_format:" #str_idx ":" #first_arg)))
@@ -30,12 +31,14 @@ void test_printf_formats() {
     int x = 42;
     const char *str = "hello";
     size_t sz = 100;
+    ssize_t ssz = -100;
     
     // Valid printf formats
     kprintf("Simple string\n");
     kprintf("Integer: %d\n", x);
     kprintf("String: %s, Number: %d\n", str, x);
     kprintf("Hex: %x, Pointer: %p\n", x, &x);
+    kprintf("%zd\n", ssz);
     kprintf("%u%u\n", x, x);
     
     // Extended format specifiers from fmtlib
@@ -55,7 +58,7 @@ void test_printf_formats() {
     kprintf("Incomplete specifier: %");  // Incomplete
 }
 
-void test_rust_formats() {
+void test_fmt_formats() {
     int a = 1, b = 2, c = 3;
     char buffer[256];
     
