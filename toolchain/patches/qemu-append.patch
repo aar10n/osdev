@@ -1,0 +1,63 @@
+This patch allows custom bootloaders to access command-line parameters passed
+from the QEMU command line via the fw_cfg interface. It removes the arbitrary
+validation check that prevents using -append without -kernel, and exposes the
+kernel command line via fw_cfg even when no kernel is specified.
+---
+ hw/i386/microvm.c |  6 ++++++
+ hw/i386/pc.c      |  6 ++++++
+ system/vl.c       |  6 ------
+ 3 files changed, 12 insertions(+), 6 deletions(-)
+
+diff --git a/hw/i386/microvm.c b/hw/i386/microvm.c
+index e0daf0d4fc..a5f6f0bd96 100644
+--- a/hw/i386/microvm.c
++++ b/hw/i386/microvm.c
+@@ -330,6 +330,12 @@ static void microvm_memory_init(MicrovmMachineState *mms)
+
+     if (machine->kernel_filename != NULL) {
+         mmc->x86_load_linux(x86ms, fw_cfg, 0, true);
++    } else if (machine->kernel_cmdline && *machine->kernel_cmdline) {
++        /* Expose kernel command line via fw_cfg even without -kernel */
++        fw_cfg_add_i32(fw_cfg, FW_CFG_CMDLINE_SIZE,
++                       strlen(machine->kernel_cmdline) + 1);
++        fw_cfg_add_string(fw_cfg, FW_CFG_CMDLINE_DATA,
++                          machine->kernel_cmdline);
+     }
+
+     if (mms->option_roms) {
+diff --git a/hw/i386/pc.c b/hw/i386/pc.c
+index b211633575..e59357f6e9 100644
+--- a/hw/i386/pc.c
++++ b/hw/i386/pc.c
+@@ -994,6 +994,12 @@ void pc_memory_init(PCMachineState *pcms,
+
+     if (linux_boot) {
+         x86_load_linux(x86ms, fw_cfg, PC_FW_DATA, pcmc->pvh_enabled);
++    } else if (machine->kernel_cmdline && *machine->kernel_cmdline) {
++        /* Expose kernel command line via fw_cfg even without -kernel */
++        fw_cfg_add_i32(fw_cfg, FW_CFG_CMDLINE_SIZE,
++                       strlen(machine->kernel_cmdline) + 1);
++        fw_cfg_add_string(fw_cfg, FW_CFG_CMDLINE_DATA,
++                          machine->kernel_cmdline);
+     }
+
+     for (i = 0; i < nb_option_roms; i++) {
+diff --git a/system/vl.c b/system/vl.c
+index 3b7057e6c6..bac8c48213 100644
+--- a/system/vl.c
++++ b/system/vl.c
+@@ -2498,14 +2498,8 @@ static void qemu_validate_options(const QDict *machine_opts)
+     const char *kernel_filename = qdict_get_try_str(machine_opts, "kernel");
+     const char *shim_filename = qdict_get_try_str(machine_opts, "shim");
+     const char *initrd_filename = qdict_get_try_str(machine_opts, "initrd");
+-    const char *kernel_cmdline = qdict_get_try_str(machine_opts, "append");
+
+     if (kernel_filename == NULL) {
+-        if (kernel_cmdline != NULL) {
+-            error_report("-append only allowed with -kernel option");
+-            exit(1);
+-        }
+-
+         if (shim_filename != NULL) {
+             error_report("-shim only allowed with -kernel option");
+             exit(1);

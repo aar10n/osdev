@@ -15,6 +15,7 @@
 [Sources]
   Config.c
   File.c
+  FwCfg.c
   Loader.c
   Main.c
   Memory.c
@@ -23,6 +24,7 @@
   Common.h
   Config.h
   File.h
+  FwCfg.h
   Loader.h
   Memory.h
   Video.h

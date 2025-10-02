@@ -20,4 +20,4 @@ BOOT_INCLUDE = $(INCLUDE) -Iinclude/boot \
 
 
 # boot/
-boot += Main.c Config.c File.c Loader.c Memory.c Video.c
+boot += Main.c Config.c File.c FwCfg.c Loader.c Memory.c Video.c

@@ -5,6 +5,7 @@
 #include <Common.h>
 #include <Config.h>
 #include <File.h>
+#include <FwCfg.h>
 #include <Memory.h>
 #include <Loader.h>
 #include <Video.h>
@@ -13,6 +14,7 @@
 #include <Guid/SmBios.h>
 
 #include <Library/SerialPortLib.h>
+#include <Library/PrintLib.h>
 
 #define CHECK_ERROR(status) \
   if (EFI_ERROR(status)) { \
@@ -60,6 +62,33 @@ EFI_STATUS EFIAPI AllocateBootInfoStruct(OUT boot_info_v2_t **BootInfo) {
   (*BootInfo)->magic[2] = 'O';
   (*BootInfo)->magic[3] = 'T';
   return EFI_SUCCESS;
+}
+
+CHAR8 *EFIAPI GetKernelCmdline(VOID) {
+  CHAR8 *qemu_cmdline = FwCfgReadCmdline();
+  CHAR8 *config_cmdline = ConfigGet("cmdline");
+  CHAR8 *final_cmdline = NULL;
+
+  if (qemu_cmdline != NULL && config_cmdline != NULL) {
+    // Merge both command lines: <config> <qemu>
+    UINTN qemu_len = AsciiStrLen(qemu_cmdline);
+    UINTN config_len = AsciiStrLen(config_cmdline);
+    UINTN total_len = config_len + 1 + qemu_len;
+
+    final_cmdline = AllocateRuntimePool(total_len + 1);
+    if (final_cmdline != NULL) {
+      AsciiSPrint(final_cmdline, total_len + 1, "%a %a", config_cmdline, qemu_cmdline);
+      PRINT_INFO("Merged command line: %a", final_cmdline);
+    }
+  } else if (qemu_cmdline != NULL) {
+    PRINT_INFO("Using command line from QEMU: %a", qemu_cmdline);
+    final_cmdline = qemu_cmdline;
+  } else if (config_cmdline != NULL) {
+    PRINT_INFO("Using command line from config: %a", config_cmdline);
+    final_cmdline = config_cmdline;
+  }
+
+  return final_cmdline;
 }
 
 //
@@ -144,12 +173,13 @@ EFI_STATUS EFIMAIN UefiMain(IN EFI_HANDLE ImageHandle, IN EFI_SYSTEM_TABLE *Syst
 
   // --------------------------------------------------
 
-  // Allocate memory for the command line parameters
+  CHAR8 *final_cmdline = GetKernelCmdline();
+
   void *cmd_line = NULL;
   UINT32 cmdline_len = 0;
-  CHAR8 *cmdline_value = ConfigGet("cmdline");
-  if (cmdline_value) {
-    UINTN len = AsciiStrLen(cmdline_value);
+
+  if (final_cmdline != NULL) {
+    UINTN len = AsciiStrLen(final_cmdline);
     ASSERT(len <= UINT32_MAX);
 
     cmd_line = AllocateRuntimePool(len + 1);
@@ -157,10 +187,10 @@ EFI_STATUS EFIMAIN UefiMain(IN EFI_HANDLE ImageHandle, IN EFI_SYSTEM_TABLE *Syst
       PRINT_ERROR("Failed to allocate memory for command line parameters");
       return EFI_OUT_OF_RESOURCES;
     }
-    cmdline_len = (UINT32) len;
-    // Copy the kernel params into the allocated memory
-    CopyMem(cmd_line, cmdline_value, len);
-    ((CHAR8 *) cmd_line)[len] = '\0'; // null-terminate the string
+
+    cmdline_len = (UINT32)len;
+    CopyMem(cmd_line, final_cmdline, len);
+    ((CHAR8 *)cmd_line)[len] = '\0';
   }
 
   // Allocate memory for boot structure
