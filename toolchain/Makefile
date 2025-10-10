@@ -1,24 +1,30 @@
 # This makefile is for compiling the development toolchain
 include ../.config
 
+HOST_OS = $(shell uname -s | tr 'A-Z' 'a-z')
+HOST_ARCH = $(shell uname -m)
+
 CROSS_PREFIX = $(TOOL_ROOT)/bin/$(TOOLCHAIN)-
 
 AUTOCONF_DIR = $(BUILD_DIR)/autoconf/build
 BINUTILS_DIR = $(BUILD_DIR)/binutils/$(TOOLCHAIN)
 GCC_DIR = $(BUILD_DIR)/gcc/$(TOOLCHAIN)
+MAKEPKG_DIR = $(BUILD_DIR)/makepkg
 MUSL_DIR = $(BUILD_DIR)/musl/$(TOOLCHAIN)
 PKGCONFIG_DIR = $(BUILD_DIR)/pkgconfig/build
+LIBTOOL_DIR = $(BUILD_DIR)/libtool/build
 LIBDWARF_DIR = $(BUILD_DIR)/libdwarf/build
 
 
 .NOTPARALLEL:
-all: autoconf binutils gcc musl libdwarf musl-shared
+all: autoconf binutils gcc musl libtool libdwarf musl-shared makepkg
 
 clean:
 	rm -rf $(BINUTILS_DIR)
 	rm -rf $(GCC_DIR)
 	rm -rf $(MUSL_DIR)
 	rm -rf $(PKGCONFIG_DIR)
+	rm -rf $(LIBTOOL_DIR)
 	rm -rf $(LIBDWARF_DIR)
 	rm -rf $(BUILD_DIR)/toolchain
 	rm -f $(GCC_SRC_DIR)/.setup
@@ -31,7 +37,10 @@ musl: $(MUSL_DIR)/.install
 musl-headers: $(MUSL_DIR)/.install-headers
 musl-shared: $(MUSL_DIR)/.install-shared
 pkg-config: $(PKGCONFIG_DIR)/.install
+libtool: $(LIBTOOL_DIR)/.install
 libdwarf: $(LIBDWARF_DIR)/.install
+makepkg: $(MAKEPKG_DIR)/.install
+
 
 #
 # autoconf
@@ -150,7 +159,7 @@ $(GCC_DIR)/.build: $(GCC_DIR)/.libgcc $(MUSL_DIR)/.install
 	@touch $@
 
 $(GCC_DIR)/.install: $(GCC_DIR)/.build
-	cd $(@D) && $(MAKE) install-gcc install-target-libgcc
+	cd $(@D) && $(MAKE) install-gcc install-target-libgcc install-target-libstdc++-v3
 	@touch $@
 
 #
@@ -268,6 +277,34 @@ $(PKGCONFIG_DIR)/.install: $(PKGCONFIG_DIR)/.build
 	@touch $@
 
 #
+# libtool
+#
+
+LIBTOOL_VERSION = 2.4.7
+LIBTOOL_ARCHIVE = libtool-$(LIBTOOL_VERSION).tar.gz
+LIBTOOL_SOURCE = http://ftp.gnu.org/gnu/libtool/$(LIBTOOL_ARCHIVE)
+LIBTOOL_SRC_DIR = $(BUILD_DIR)/libtool/src
+LIBTOOL_PREFIX = $(TOOL_ROOT)
+
+LIBTOOL_CONFIG = \
+	--prefix=$(LIBTOOL_PREFIX) \
+	--srcdir=$(LIBTOOL_SRC_DIR) \
+	--with-sysroot=$(TOOL_ROOT)
+
+$(LIBTOOL_DIR)/.configure: | $(LIBTOOL_SRC_DIR)
+	mkdir -p $(@D)
+	cd $(@D) && $(LIBTOOL_SRC_DIR)/configure $(LIBTOOL_CONFIG)
+	@touch $@
+
+$(LIBTOOL_DIR)/.build: $(LIBTOOL_DIR)/.configure
+	cd $(@D) && $(MAKE)
+	@touch $@
+
+$(LIBTOOL_DIR)/.install: $(LIBTOOL_DIR)/.build
+	cd $(@D) && $(MAKE) install
+	@touch $@
+
+#
 # libdwarf
 #
 
@@ -307,6 +344,27 @@ $(LIBDWARF_DIR)/.build: $(LIBDWARF_DIR)/.configure
 
 $(LIBDWARF_DIR)/.install: $(LIBDWARF_DIR)/.build
 	cd $(@D) && $(MAKE) install
+	@touch $@
+
+#
+# makepkg
+#
+
+MAKEPKG_VERSION = 0.1.2
+MAKEPKG_ARCHIVE = makepkg_$(MAKEPKG_VERSION)_$(HOST_OS)_$(HOST_ARCH).tar.gz
+MAKEPKG_SOURCE = https://github.com/aar10n/makepkg/releases/download/v$(MAKEPKG_VERSION)/makepkg_$(MAKEPKG_VERSION)_$(HOST_OS)_$(HOST_ARCH).tar.gz
+MAKEPKG_SRC_DIR = $(BUILD_DIR)/makepkg/makepkg_$(MAKEPKG_VERSION)_$(HOST_OS)_$(HOST_ARCH)
+MAKEPKG_PREFIX = $(TOOL_ROOT)/bin
+
+$(MAKEPKG_SRC_DIR).tar.gz:
+	@mkdir -p $(@D)
+	wget -nc $(MAKEPKG_SOURCE) -O $@
+
+
+$(MAKEPKG_DIR)/.install: | $(MAKEPKG_SRC_DIR).tar.gz
+	tar -xf $(MAKEPKG_SRC_DIR).tar.gz -C $(@D)
+	cp $(MAKEPKG_DIR)/makepkg $(MAKEPKG_PREFIX)/makepkg
+	chmod +x $(MAKEPKG_PREFIX)/makepkg
 	@touch $@
 
 #

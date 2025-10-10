@@ -293,10 +293,13 @@ $(BUILD_DIR)/linux-headers-$(LINUX_HEADERS_VERSION).apk:
 # userspace
 #
 
-userspace: $(USERSPACE_DIRS:%=userspace-dir-%)
+userspace: packages $(USERSPACE_DIRS:%=userspace-dir-%)
 install-userspace: install-etc install-headers $(USERSPACE_DIRS:%=userspace-dir-install-%)
 clean-userspace: $(USERSPACE_DIRS:%=userspace-dir-clean-%)
 clean-sbin: userspace-dir-clean-sbin
+
+packages:
+	 makepkg -b $(BUILD_DIR)/packages/ -s $(SYS_ROOT) -t toolchain/toolchain.$(ARCH).yaml
 
 userspace-dir-%:
 	$(MAKE) -C $*

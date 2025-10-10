@@ -1,0 +1,8 @@
+arch: x86_64
+bin: ${FILE_DIR}/../build/toolchain/bin/
+host: ${PKGS_ARCH}-linux-musl
+cross_prefix: ${PKGS_HOST}-
+extra_programs:
+  - autoconf
+  - libtool
+  - pkg-config

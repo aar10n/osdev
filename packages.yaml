@@ -1,0 +1,224 @@
+# Build configuration for makepkg
+# https://github.com/aar10n/makepkg/
+
+packages:
+  - name: zlib
+    url: https://zlib.net/zlib-1.3.1.tar.gz
+    build: |
+      CFLAGS="-fPIC $CFLAGS" ./configure --prefix=/usr --static
+      make AR="$AR rc" ARFLAGS=""
+    install: |
+      make install DESTDIR=$SYS_ROOT AR="$AR rc" ARFLAGS=""
+
+  - name: brotli
+    url: https://github.com/google/brotli/archive/refs/tags/v1.1.0.tar.gz
+    build: |
+      cmake -B build -S . \
+        -DCMAKE_SYSTEM_NAME=Linux \
+        -DCMAKE_C_COMPILER="$CC" \
+        -DCMAKE_AR="$AR" \
+        -DCMAKE_FIND_ROOT_PATH="$SYS_ROOT" \
+        -DCMAKE_FIND_ROOT_PATH_MODE_PROGRAM=NEVER \
+        -DCMAKE_FIND_ROOT_PATH_MODE_LIBRARY=ONLY \
+        -DCMAKE_FIND_ROOT_PATH_MODE_INCLUDE=ONLY \
+        -DCMAKE_INSTALL_PREFIX=/usr \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+        -DBUILD_SHARED_LIBS=OFF
+      cmake --build build
+    install: |
+      DESTDIR="$SYS_ROOT" cmake --install build --prefix /usr
+
+  - name: libpng
+    url: https://github.com/pnggroup/libpng/archive/refs/tags/v1.6.40.tar.gz
+    env:
+      - CPPFLAGS=-I${SYS_ROOT}/usr/include
+      - LDFLAGS=-L${SYS_ROOT}/usr/lib
+    build: |
+      ./configure --prefix=/usr --host=${PKGS_HOST} --enable-static --disable-shared
+      make
+    install: |
+      make install DESTDIR=$SYS_ROOT
+    depends_on:
+      - zlib
+
+  - name: file
+    url: http://ftp.astron.com/pub/file/file-5.45.tar.gz
+    build: |
+      ./configure --prefix=/usr --host=${PKGS_HOST} --enable-static --disable-shared --disable-libseccomp
+      touch aclocal.m4 configure Makefile.in src/Makefile.in magic/Makefile.in config.h.in
+      make -C src magic.h libmagic.la
+      make -C src file LDFLAGS="-all-static"
+    install: |
+      make -C src install DESTDIR=$SYS_ROOT
+    depends_on:
+      - zlib
+
+  - name: curl
+    url: https://curl.se/download/curl-8.5.0.tar.gz
+    build: |
+      ./configure --host=${PKGS_HOST} --prefix=/usr --enable-static --disable-shared \
+        --with-zlib --with-brotli \
+        --without-ssl --without-libpsl --without-libidn2 --disable-ldap --disable-rtsp --disable-manual \
+        LIBS="-lbrotlidec -lbrotlicommon -lz"
+      make curl_LDFLAGS="-all-static"
+    install: |
+      make install DESTDIR=$SYS_ROOT
+    depends_on:
+      - brotli
+      - zlib
+
+  - name: ncurses
+    url: https://mirrors.kernel.org/gnu/ncurses/ncurses-6.4.tar.gz
+    build: |
+      ./configure --host=${PKGS_HOST} --prefix=/usr --srcdir=. \
+        --without-cxx --without-cxx-binding \
+        --without-ada --without-manpages --without-progs --without-tests \
+        --with-termlib --enable-widec \
+        --enable-static --disable-shared \
+        --disable-db-install
+      make
+    install: |
+      make install DESTDIR=$SYS_ROOT
+    depends_on:
+      - zlib
+
+  - name: readline
+    url: https://mirrors.kernel.org/gnu/readline/readline-8.3.tar.gz
+    env:
+      - CPPFLAGS=-I${SYS_ROOT}/usr/include
+      - LDFLAGS=-L${SYS_ROOT}/usr/lib
+    build: |
+      ./configure --host=${PKGS_HOST} --prefix=/usr --enable-static --disable-shared
+      make
+    install: |
+      make install DESTDIR=$SYS_ROOT
+    depends_on:
+      - ncurses
+
+  - name: vim
+    url: https://github.com/vim/vim/archive/refs/tags/v9.1.0.tar.gz
+    env:
+      - vim_cv_uname_output=Linux
+      - vim_cv_uname_r_output=5.0.0
+      - vim_cv_uname_m_output=x86_64
+      - vim_cv_toupper_broken=no
+      - vim_cv_terminfo=yes
+      - vim_cv_tgetent=zero
+      - vim_cv_tty_group=world
+      - vim_cv_tty_mode=0620
+      - vim_cv_getcwd_broken=no
+      - vim_cv_stat_ignores_slash=no
+      - vim_cv_memmove_handles_overlap=yes
+      - ac_cv_sizeof_int=4
+      - ac_cv_small_wchar_t=no
+    build: |
+      cd src
+      rm -f auto/config.cache
+      ./configure --host=${PKGS_HOST} --prefix=/usr \
+        --with-features=huge \
+        --with-tlib=ncursesw \
+        --with-compiledby="makepkg" --disable-gui --without-x \
+        --disable-netbeans --disable-channel --disable-gpm \
+        --disable-nls --disable-acl --disable-sysmouse \
+        --enable-multibyte \
+        CPPFLAGS="-I$SYS_ROOT/usr/include" \
+        LDFLAGS="-L$SYS_ROOT/usr/lib -static" \
+        LIBS="-lncursesw -ltinfow"
+      touch auto/config.mk Makefile
+      make vim CONF_OPT_MULTIBYTE=--enable-multibyte
+    install: |
+      cd src && make install DESTDIR=$SYS_ROOT
+    depends_on:
+      - zlib
+      - ncurses
+
+  - name: sqlite3  # Requires Tcl 8.6+ on build host for autosetup configure system
+    url: https://sqlite.org/2025/sqlite-autoconf-3500400.tar.gz
+    env:
+      - CPPFLAGS=-I${SYS_ROOT}/usr/include
+      - LDFLAGS=-L${SYS_ROOT}/usr/lib -lreadline -lncursesw -ltinfow
+      - CFLAGS=-DSQLITE_ENABLE_FTS3 -DSQLITE_ENABLE_FTS4 -DSQLITE_ENABLE_FTS5 -DSQLITE_ENABLE_RTREE -DSQLITE_ENABLE_JSON1 -DSQLITE_ENABLE_MATH_FUNCTIONS -DSQLITE_ENABLE_COLUMN_METADATA -DSQLITE_ENABLE_DBSTAT_VTAB -DSQLITE_HAVE_ZLIB
+    build: |
+      ./configure --host=${PKGS_HOST} --prefix=/usr \
+        --enable-static --disable-shared \
+        --with-readline-header=${SYS_ROOT}/usr/include/readline/readline.h \
+        --with-readline-ldflags="-lreadline -lncursesw -ltinfow"
+      make
+    install: |
+      make install DESTDIR=$SYS_ROOT
+    depends_on:
+      - zlib
+      - ncurses
+      - readline
+
+  - name: harfbuzz
+    url: https://github.com/harfbuzz/harfbuzz/releases/download/12.1.0/harfbuzz-12.1.0.tar.xz
+    build: |
+      cat > cross-file.txt <<EOF
+      [binaries]
+      c = '$CC'
+      cpp = '$CXX'
+      ar = '$AR'
+      strip = '$STRIP'
+      pkgconfig = 'pkg-config'
+
+      [host_machine]
+      system = 'linux'
+      cpu_family = '${PKGS_ARCH}'
+      cpu = '${PKGS_ARCH}'
+      endian = 'little'
+      EOF
+
+      meson setup build \
+        --cross-file=cross-file.txt \
+        --prefix=/usr \
+        --buildtype=minsize \
+        --default-library=static \
+        -Dcpp_args="-Wno-redundant-decls" \
+        -Dglib=disabled \
+        -Dgobject=disabled \
+        -Dcairo=disabled \
+        -Dchafa=disabled \
+        -Dicu=disabled \
+        -Dgraphite2=disabled \
+        -Dfreetype=disabled \
+        -Dtests=disabled \
+        -Dintrospection=disabled \
+        -Ddocs=disabled \
+        -Dutilities=disabled \
+        -Dbenchmark=disabled
+      meson compile -C build
+    install: |
+      meson install -C build --destdir=$SYS_ROOT
+
+  - name: freetype
+    url: https://download.savannah.gnu.org/releases/freetype/freetype-2.13.3.tar.gz
+    env:
+      - PKG_CONFIG_PATH=${SYS_ROOT}/usr/lib/pkgconfig
+      - CPPFLAGS=-I${SYS_ROOT}/usr/include
+      - LDFLAGS=-L${SYS_ROOT}/usr/lib
+      - ZLIB_CFLAGS=-I${SYS_ROOT}/usr/include
+      - ZLIB_LIBS=-L${SYS_ROOT}/usr/lib -lz
+      - HARFBUZZ_CFLAGS=-I${SYS_ROOT}/usr/include/harfbuzz
+      - HARFBUZZ_LIBS=-L${SYS_ROOT}/usr/lib -lharfbuzz
+      - BROTLI_CFLAGS=-I${SYS_ROOT}/usr/include/brotli
+      - BROTLI_LIBS=-L${SYS_ROOT}/usr/lib -lbrotlidec -lbrotlicommon
+      - PNG_CFLAGS=-I${SYS_ROOT}/usr/include
+      - PNG_LIBS=-L${SYS_ROOT}/usr/lib -lpng16
+    build: |
+      ./configure --host=${PKGS_HOST} --prefix=/usr \
+        --enable-static --disable-shared \
+        --with-zlib=yes \
+        --with-png=yes \
+        --with-harfbuzz=yes \
+        --with-brotli=yes \
+        --with-bzip2=no
+      make
+    install: |
+      make install DESTDIR=$SYS_ROOT
+    depends_on:
+      - zlib
+      - brotli
+      - libpng
+      - harfbuzz
