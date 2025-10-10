@@ -5,6 +5,10 @@
 *.log
 compile_commands.json
 
+include/uapi/asm
+include/uapi/asm-generic
+include/uapi/linux
+
 # Build system related files
 Makefile.local
 .config

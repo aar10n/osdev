@@ -37,7 +37,7 @@ include $(dir $(lastword $(MAKEFILE_LIST)))/../.config
 include $(PROJECT_DIR)/scripts/defs.mk
 include $(PROJECT_DIR)/scripts/utils.mk
 
-INCLUDE += -I$(PROJECT_DIR)/include/uapi
+INCLUDE += -I$(SYS_ROOT)/usr/include
 
 # Default values
 INSTALL_TARGETS ?= $(NAME)

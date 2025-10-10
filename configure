@@ -165,6 +165,9 @@ BUILD_DIR := $BUILD_DIR
 TOOL_ROOT := $TOOL_ROOT
 SYS_ROOT := $SYS_ROOT
 QEMU := $QEMU
+
+DEBUG := y
+QEMU_DEBUG := y
 "
 
 if [ "$CLANG_BUILD_PLUGIN" = "y" ]; then

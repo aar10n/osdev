@@ -26,62 +26,39 @@ STRIP = $(CROSS_PREFIX)strip
 STRINGS = $(CROSS_PREFIX)strings
 RANLIB = $(CROSS_PREFIX)ranlib
 
-CLANG ?= clang
-CLANGXX ?= clang++
-LLD_LINK ?= lld-link
+CLANG = clang
+CLANGXX = clang++
+LLD_LINK = lld-link
 NASM ?= nasm
 
-GDB ?= gdb
-QEMU ?= qemu-system-$(ARCH)
-SSH ?= ssh
-RSYNC ?= rsync
+GDB = gdb
+QEMU = qemu-system-$(ARCH)
+SSH = ssh
+RSYNC = rsync
 
-EDK2_BUILD ?= RELEASE
+EDK2_BUILD = RELEASE
 
 # -------------- #
 #  QEMU Options  #
 # -------------- #
 
 ifeq ($(ARCH),x86_64)
-QEMU_CPU ?= Nehalem
+QEMU_CPU = Nehalem
 endif
 
-DEBUG_DIR ?= $(BUILD_DIR)
+DEBUG_DIR = $(BUILD_DIR)
 
-QEMU_NCORES ?= 1
-QEMU_NTHREADS ?= 2
-QEMU_SMP ?= cores=$(QEMU_NCORES),threads=$(QEMU_NTHREADS),sockets=1
-QEMU_MEM ?= 256M
-QEMU_MACHINE ?= q35
+QEMU_NCORES = 1
+QEMU_NTHREADS = 2
+QEMU_SMP = cores=$(QEMU_NCORES),threads=$(QEMU_NTHREADS),sockets=1
+QEMU_MEM = 256M
+QEMU_MACHINE = q35
 
-QEMU_DEVICES ?= -device ahci,id=ahci -device qemu-xhci,id=xhci
+QEMU_DEVICES = \
+	-device ahci,id=ahci -device qemu-xhci,id=xhci \
+	-rtc base=localtime,clock=vm
 
-ifndef QEMU_SERIAL_DEVICES
-QEMU_SERIAL_DEVICES ?= \
-	-serial file:$(BUILD_DIR)/kernel.log \
-	-serial file:$(BUILD_DIR)/loader.log \
- 	-serial telnet:127.0.0.1:8008,server,nowait
-#	-serial pty
-endif
+QEMU_SERIAL_DEVICES = \
+	-serial $(or $(QEMU_SHELL_DEVICE),$(error QEMU_SHELL_DEVICE is not set)) \
+	-serial file:$(BUILD_DIR)/kernel.log
 
-ifeq ($(QEMU_DEBUG),1)
-QEMU_DEBUG_OPTIONS ?= \
-	-global isa-debugcon.iobase=0x402 \
-	-debugcon file:$(DEBUG_DIR)/uefi_debug.log
-
-ifdef QEMU_TRACE_FILE
-QEMU_DEBUG_OPTIONS += -trace events=$(QEMU_TRACE_FILE),file=$(BUILD_DIR)/events.out
-endif
-endif
-
-QEMU_OPTIONS ?= \
-	-cpu $(QEMU_CPU) \
-	-smp $(QEMU_SMP) \
-	-m $(QEMU_MEM) \
-	-machine $(QEMU_MACHINE) \
-	-bios $(BUILD_DIR)/OVMF_$(WINARCH).fd \
-	-drive file=$(BUILD_DIR)/osdev.img,id=boot,format=raw,if=none \
-	$(QEMU_DEVICES) \
-	$(QEMU_SERIAL_DEVICES) \
-	$(QEMU_DEBUG_OPTIONS) \
-	$(QEMU_EXTRA_OPTIONS)

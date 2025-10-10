@@ -45,7 +45,7 @@ CXXFLAGS += -std=gnu++17 -Wall -MMD -ffreestanding -nostdlib -fno-rtti -fno-exce
 LDFLAGS +=
 ASFLAGS +=
 NASMFLAGS +=
-INCLUDE += -I$(PROJECT_DIR)/ -Iinclude/
+INCLUDE += -I$(PROJECT_DIR)/ -Iinclude/ -Iinclude/uapi/
 
 # arch-specific flags
 ifeq ($(ARCH),x86_64)
@@ -58,16 +58,41 @@ else
 $(error "Unsupported architecture: $(ARCH)")
 endif
 
-include Makefile.local
 include scripts/defs.mk
+include Makefile.local
 
-ifeq ($(DEBUG),1)
+ifeq ($(DEBUG),y)
 CFLAGS += -gdwarf-5
 CXXFLAGS += -gdwarf-5
 LDFLAGS += -g
 ASFLAGS += -gdwarf-5
 NASMFLAGS += -g -F dwarf -O0
 endif
+
+# QEMU options
+
+ifeq ($(QEMU_DEBUG),y)
+QEMU_DEBUG_OPTIONS += \
+	-global isa-debugcon.iobase=0xe9 \
+	-debugcon file:$(DEBUG_DIR)/debugcon.log
+
+ifdef QEMU_TRACE_FILE
+QEMU_DEBUG_OPTIONS += -trace events=$(QEMU_TRACE_FILE),file=$(BUILD_DIR)/events.out
+endif
+endif
+
+QEMU_OPTIONS ?= \
+	-cpu $(QEMU_CPU) \
+	-smp $(QEMU_SMP) \
+	-m $(QEMU_MEM) \
+	-machine $(QEMU_MACHINE) \
+	-bios $(BUILD_DIR)/OVMF_$(WINARCH).fd \
+	-drive file=$(BUILD_DIR)/osdev.img,id=boot,format=raw,if=none \
+	-no-shutdown -no-reboot -action panic=pause \
+	$(QEMU_DEVICES) \
+	$(QEMU_SERIAL_DEVICES) \
+	$(QEMU_DEBUG_OPTIONS) \
+	$(QEMU_EXTRA_OPTIONS)
 
 
 # kernel + bootloader sources
@@ -83,15 +108,22 @@ USERSPACE_DIRS = sbin bin usr.bin
 
 all: $(BUILD_DIR)/osdev.img tools
 
+run: QEMU_SHELL_DEVICE = telnet:127.0.0.1:8008,server,nowait
 run: $(BUILD_DIR)/osdev.img
-	$(QEMU) $(QEMU_OPTIONS) $(if $(QEMU_GDB),-s,) -monitor $(QEMU_MONITOR) $(if $(QEMU_NOGRAPHICS),-nographic,)
+	$(QEMU) $(QEMU_OPTIONS) $(if $(QEMU_GDB),-s,) -monitor $(QEMU_MONITOR) $(if $(QEMU_NOGRAPHICS),-nographic,) $(EXTRA_OPTIONS)
 
+run-shell: QEMU_SHELL_DEVICE = mon:stdio
+run-shell: $(BUILD_DIR)/osdev.img
+	$(QEMU) $(QEMU_OPTIONS) $(EXTRA_OPTIONS) -s -nographic
+
+debug: QEMU_SHELL_DEVICE = mon:stdio
 debug: $(BUILD_DIR)/osdev.img
 	$(QEMU) -s -S $(QEMU_OPTIONS) &
 	$(GDB) -w \
 		-ex "target remote localhost:1234" \
 		-ex "add-symbol-file $(BUILD_DIR)/kernel.elf"
 
+run-debug: QEMU_SHELL_DEVICE = mon:stdio
 run-debug: $(BUILD_DIR)/osdev.img
 	$(QEMU) -s -S $(QEMU_OPTIONS) -monitor $(QEMU_MONITOR) 2>&1 > $(BUILD_DIR)/qemu.log &
 
@@ -143,6 +175,8 @@ clean: clean-bootloader clean-kernel clean-userspace
 
 
 # efi bootable image
+.PHONY: osdev.img
+osdev.img: $(BUILD_DIR)/osdev.img
 $(BUILD_DIR)/osdev.img: config.ini $(BUILD_DIR)/boot$(WINARCH).efi $(BUILD_DIR)/kernel.elf $(BUILD_DIR)/initrd.img
 	dd if=/dev/zero of=$@ bs=1M count=256
 # 	256M -> 268435456 / 512 = 524288 sectors
@@ -213,11 +247,54 @@ $(TOOL_ROOT)/lib/libdwarf.a:
 	$(MAKE) -C toolchain libdwarf
 
 #
+# linux headers
+#
+
+# Using prebuilt headers from Alpine Linux instead of building from source
+ALPINE_VERSION = 3.20
+LINUX_HEADERS_VERSION = 6.6-r0
+
+linux-headers: $(BUILD_DIR)/linux-headers
+	rm -f $(PROJECT_DIR)/include/uapi/linux
+	rm -f $(PROJECT_DIR)/include/uapi/asm
+	rm -f $(PROJECT_DIR)/include/uapi/asm-generic
+	ln -sf $(BUILD_DIR)/linux-headers/linux $(PROJECT_DIR)/include/uapi/linux
+	ln -sf $(BUILD_DIR)/linux-headers/asm $(PROJECT_DIR)/include/uapi/asm
+	ln -sf $(BUILD_DIR)/linux-headers/asm-generic $(PROJECT_DIR)/include/uapi/asm-generic
+
+# Download and extract prebuilt Linux headers from Alpine Linux
+$(BUILD_DIR)/linux-headers: $(BUILD_DIR)/linux-headers-$(LINUX_HEADERS_VERSION).apk
+	@echo "Extracting prebuilt Linux headers..."
+	@rm -rf $@
+	@mkdir -p $@
+	@tar -xzf $< -C $@ 2>/dev/null || true
+	@# Move headers to the expected structure
+	@if [ -d "$@/usr/include/linux" ]; then \
+		mv $@/usr/include/linux $@/linux; \
+	fi
+	@if [ -d "$@/usr/include/asm" ]; then \
+		mv $@/usr/include/asm $@/asm; \
+	fi
+	@if [ -d "$@/usr/include/asm-generic" ]; then \
+		mv $@/usr/include/asm-generic $@/asm-generic; \
+	fi
+	@# Clean up extra directories
+	@rm -rf $@/usr $@/.PKGINFO $@/.SIGN.*
+	@echo "Linux headers extracted successfully"
+
+.PRECIOUS: $(BUILD_DIR)/linux-headers-$(LINUX_HEADERS_VERSION).apk
+$(BUILD_DIR)/linux-headers-$(LINUX_HEADERS_VERSION).apk:
+	@mkdir -p $(BUILD_DIR)
+	@echo "Downloading prebuilt Linux headers package..."
+	wget https://dl-cdn.alpinelinux.org/alpine/v$(ALPINE_VERSION)/main/$(ARCH)/linux-headers-$(LINUX_HEADERS_VERSION).apk -O $@
+
+
+#
 # userspace
 #
 
 userspace: $(USERSPACE_DIRS:%=userspace-dir-%)
-install-userspace: $(USERSPACE_DIRS:%=userspace-dir-install-%)
+install-userspace: install-etc install-headers $(USERSPACE_DIRS:%=userspace-dir-install-%)
 clean-userspace: $(USERSPACE_DIRS:%=userspace-dir-clean-%)
 clean-sbin: userspace-dir-clean-sbin
 
@@ -238,15 +315,24 @@ userspace-dir-clean-%:
 
 sysroot: $(SYS_ROOT)
 
-.PHONY: $(SYS_ROOT)
-$(SYS_ROOT): install-userspace
-	mkdir -p $(SYS_ROOT)/lib
-	mkdir -p $(SYS_ROOT)/usr/lib
+install-etc: $(wildcard etc/*)
+	mkdir -p $(SYS_ROOT)/etc
+	cp -r etc/* $(SYS_ROOT)/etc/
+
+install-headers: $(BUILD_DIR)/linux-headers
 	mkdir -p $(SYS_ROOT)/usr/include
+	rm -f $(SYS_ROOT)/usr/include/{linux,asm,asm-generic}
 
 	$(MAKE) -C toolchain musl-headers DESTDIR=$(SYS_ROOT)/usr
-	rm -rf $(SYS_ROOT)/usr/include/osdev
-	cp -r $(PROJECT_DIR)/include/uapi/osdev $(SYS_ROOT)/usr/include/osdev
+	ln -sf $(BUILD_DIR)/linux-headers/linux $(SYS_ROOT)/usr/include/linux
+	ln -sf $(BUILD_DIR)/linux-headers/asm-generic $(SYS_ROOT)/usr/include/asm-generic
+	ln -sf $(BUILD_DIR)/linux-headers/asm $(SYS_ROOT)/usr/include/asm
+
+.PHONY: $(SYS_ROOT)
+$(SYS_ROOT): install-headers install-userspace
+	mkdir -p $(SYS_ROOT)/lib
+	mkdir -p $(SYS_ROOT)/usr/lib
+
 	cp $(TOOL_ROOT)/usr/lib/libc.so $(SYS_ROOT)/usr/lib/libc.so
 	$(STRIP) $(SYS_ROOT)/usr/lib/libc.so
 	ln -sf /usr/lib/libc.so $(SYS_ROOT)/lib/ld-musl-$(ARCH).so.1 || true
