@@ -35,35 +35,55 @@ packages:
       - CPPFLAGS=-I${SYS_ROOT}/usr/include
       - LDFLAGS=-L${SYS_ROOT}/usr/lib
     build: |
-      ./configure --prefix=/usr --host=${PKGS_HOST} --enable-static --disable-shared
+      mkpkg::configure --enable-static --disable-shared
       make
     install: |
-      make install DESTDIR=$SYS_ROOT
+      mkpkg::make_install
     depends_on:
       - zlib
+
+  # host build of file to generate magic.mgc
+  - name: file-magic
+    native: true
+    url: http://ftp.astron.com/pub/file/file-5.45.tar.gz
+    env:
+      - CFLAGS=
+      - CXXFLAGS=
+      - CPPFLAGS=
+      - LDFLAGS=
+    build: |
+      autoreconf -f -i
+      ./configure --prefix=/usr --disable-libseccomp
+      make -C src
+      make -C magic
+    install: |
+      mkpkg::write_artifact magic/magic.mgc 
 
   - name: file
     url: http://ftp.astron.com/pub/file/file-5.45.tar.gz
     build: |
-      ./configure --prefix=/usr --host=${PKGS_HOST} --enable-static --disable-shared --disable-libseccomp
+      mkpkg::configure --enable-static --disable-shared --disable-libseccomp
       touch aclocal.m4 configure Makefile.in src/Makefile.in magic/Makefile.in config.h.in
       make -C src magic.h libmagic.la
       make -C src file LDFLAGS="-all-static"
     install: |
-      make -C src install DESTDIR=$SYS_ROOT
+      mkpkg::make_install
+      mkpkg::get_artifact file-magic magic.mgc
+      mkpkg::install_file magic.mgc /usr/share/misc/magic.mgc
     depends_on:
       - zlib
+      - file-magic
 
   - name: curl
     url: https://curl.se/download/curl-8.5.0.tar.gz
     build: |
-      ./configure --host=${PKGS_HOST} --prefix=/usr --enable-static --disable-shared \
+      mkpkg::configure --enable-static --disable-shared \
         --with-zlib --with-brotli \
         --without-ssl --without-libpsl --without-libidn2 --disable-ldap --disable-rtsp --disable-manual \
         LIBS="-lbrotlidec -lbrotlicommon -lz"
       make curl_LDFLAGS="-all-static"
     install: |
-      make install DESTDIR=$SYS_ROOT
+      mkpkg::make_install
     depends_on:
       - brotli
       - zlib
@@ -71,7 +91,7 @@ packages:
   - name: ncurses
     url: https://mirrors.kernel.org/gnu/ncurses/ncurses-6.4.tar.gz
     build: |
-      ./configure --host=${PKGS_HOST} --prefix=/usr --srcdir=. \
+      mkpkg::configure \
         --without-cxx --without-cxx-binding \
         --without-ada --without-manpages --without-progs --without-tests \
         --with-termlib --enable-widec \
@@ -79,7 +99,7 @@ packages:
         --disable-db-install
       make
     install: |
-      make install DESTDIR=$SYS_ROOT
+      mkpkg::make_install
     depends_on:
       - zlib
 
@@ -89,22 +109,24 @@ packages:
       - CPPFLAGS=-I${SYS_ROOT}/usr/include
       - LDFLAGS=-L${SYS_ROOT}/usr/lib
     build: |
-      ./configure --host=${PKGS_HOST} --prefix=/usr --enable-static --disable-shared
+      mkpkg::configure --enable-static --disable-shared
       make
     install: |
-      make install DESTDIR=$SYS_ROOT
+      mkpkg::make_install
     depends_on:
       - ncurses
 
   - name: vim
     url: https://github.com/vim/vim/archive/refs/tags/v9.1.0.tar.gz
     env:
+      - CPPFLAGS=-I${SYS_ROOT}/usr/include
       - vim_cv_uname_output=Linux
       - vim_cv_uname_r_output=5.0.0
       - vim_cv_uname_m_output=x86_64
       - vim_cv_toupper_broken=no
       - vim_cv_terminfo=yes
       - vim_cv_tgetent=zero
+      - vim_cv_tgetent_zero=yes
       - vim_cv_tty_group=world
       - vim_cv_tty_mode=0620
       - vim_cv_getcwd_broken=no
@@ -115,7 +137,7 @@ packages:
     build: |
       cd src
       rm -f auto/config.cache
-      ./configure --host=${PKGS_HOST} --prefix=/usr \
+      mkpkg::configure \
         --with-features=huge \
         --with-tlib=ncursesw \
         --with-compiledby="makepkg" --disable-gui --without-x \
@@ -128,7 +150,7 @@ packages:
       touch auto/config.mk Makefile
       make vim CONF_OPT_MULTIBYTE=--enable-multibyte
     install: |
-      cd src && make install DESTDIR=$SYS_ROOT
+      cd src && mkpkg::make_install
     depends_on:
       - zlib
       - ncurses
@@ -140,13 +162,13 @@ packages:
       - LDFLAGS=-L${SYS_ROOT}/usr/lib -lreadline -lncursesw -ltinfow
       - CFLAGS=-DSQLITE_ENABLE_FTS3 -DSQLITE_ENABLE_FTS4 -DSQLITE_ENABLE_FTS5 -DSQLITE_ENABLE_RTREE -DSQLITE_ENABLE_JSON1 -DSQLITE_ENABLE_MATH_FUNCTIONS -DSQLITE_ENABLE_COLUMN_METADATA -DSQLITE_ENABLE_DBSTAT_VTAB -DSQLITE_HAVE_ZLIB
     build: |
-      ./configure --host=${PKGS_HOST} --prefix=/usr \
+      mkpkg::configure \
         --enable-static --disable-shared \
         --with-readline-header=${SYS_ROOT}/usr/include/readline/readline.h \
         --with-readline-ldflags="-lreadline -lncursesw -ltinfow"
       make
     install: |
-      make install DESTDIR=$SYS_ROOT
+      mkpkg::make_install
     depends_on:
       - zlib
       - ncurses
@@ -207,7 +229,7 @@ packages:
       - PNG_CFLAGS=-I${SYS_ROOT}/usr/include
       - PNG_LIBS=-L${SYS_ROOT}/usr/lib -lpng16
     build: |
-      ./configure --host=${PKGS_HOST} --prefix=/usr \
+      mkpkg::configure \
         --enable-static --disable-shared \
         --with-zlib=yes \
         --with-png=yes \
@@ -216,7 +238,7 @@ packages:
         --with-bzip2=no
       make
     install: |
-      make install DESTDIR=$SYS_ROOT
+      mkpkg::make_install
     depends_on:
       - zlib
       - brotli

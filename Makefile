@@ -299,7 +299,7 @@ clean-userspace: $(USERSPACE_DIRS:%=userspace-dir-clean-%)
 clean-sbin: userspace-dir-clean-sbin
 
 packages:
-	 makepkg -b $(BUILD_DIR)/packages/ -s $(SYS_ROOT) -t toolchain/toolchain.$(ARCH).yaml
+	 $(TOOL_ROOT)/bin/makepkg -b $(BUILD_DIR)/packages/ -s $(SYS_ROOT) -t toolchain/toolchain.$(ARCH).yaml
 
 userspace-dir-%:
 	$(MAKE) -C $*

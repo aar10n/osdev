@@ -350,7 +350,7 @@ $(LIBDWARF_DIR)/.install: $(LIBDWARF_DIR)/.build
 # makepkg
 #
 
-MAKEPKG_VERSION = 0.1.2
+MAKEPKG_VERSION = 0.1.5
 MAKEPKG_ARCHIVE = makepkg_$(MAKEPKG_VERSION)_$(HOST_OS)_$(HOST_ARCH).tar.gz
 MAKEPKG_SOURCE = https://github.com/aar10n/makepkg/releases/download/v$(MAKEPKG_VERSION)/makepkg_$(MAKEPKG_VERSION)_$(HOST_OS)_$(HOST_ARCH).tar.gz
 MAKEPKG_SRC_DIR = $(BUILD_DIR)/makepkg/makepkg_$(MAKEPKG_VERSION)_$(HOST_OS)_$(HOST_ARCH)
