@@ -32,6 +32,7 @@ packages:
   - name: libpng
     url: https://github.com/pnggroup/libpng/archive/refs/tags/v1.6.40.tar.gz
     env:
+      - CFLAGS=-fPIC ${CFLAGS}
       - CPPFLAGS=-I${SYS_ROOT}/usr/include
       - LDFLAGS=-L${SYS_ROOT}/usr/lib
     build: |
@@ -61,11 +62,13 @@ packages:
 
   - name: file
     url: http://ftp.astron.com/pub/file/file-5.45.tar.gz
+    env:
+      - CFLAGS=-fPIE ${CFLAGS}
     build: |
       mkpkg::configure --enable-static --disable-shared --disable-libseccomp
       touch aclocal.m4 configure Makefile.in src/Makefile.in magic/Makefile.in config.h.in
       make -C src magic.h libmagic.la
-      make -C src file LDFLAGS="-all-static"
+      make -C src file LDFLAGS="-static-pie"
     install: |
       mkpkg::make_install
       mkpkg::get_artifact file-magic magic.mgc
@@ -76,12 +79,14 @@ packages:
 
   - name: curl
     url: https://curl.se/download/curl-8.5.0.tar.gz
+    env:
+      - CFLAGS=-fPIE ${CFLAGS}
     build: |
       mkpkg::configure --enable-static --disable-shared \
         --with-zlib --with-brotli \
         --without-ssl --without-libpsl --without-libidn2 --disable-ldap --disable-rtsp --disable-manual \
         LIBS="-lbrotlidec -lbrotlicommon -lz"
-      make curl_LDFLAGS="-all-static"
+      make curl_LDFLAGS="-static-pie"
     install: |
       mkpkg::make_install
     depends_on:
@@ -90,6 +95,8 @@ packages:
 
   - name: ncurses
     url: https://mirrors.kernel.org/gnu/ncurses/ncurses-6.4.tar.gz
+    env:
+      - CFLAGS=-fPIC ${CFLAGS}
     build: |
       mkpkg::configure \
         --without-cxx --without-cxx-binding \
@@ -106,6 +113,7 @@ packages:
   - name: readline
     url: https://mirrors.kernel.org/gnu/readline/readline-8.3.tar.gz
     env:
+      - CFLAGS=-fPIC ${CFLAGS}
       - CPPFLAGS=-I${SYS_ROOT}/usr/include
       - LDFLAGS=-L${SYS_ROOT}/usr/lib
     build: |
@@ -116,9 +124,54 @@ packages:
     depends_on:
       - ncurses
 
+  - name: openssl
+    url: https://github.com/openssl/openssl/releases/download/openssl-3.6.0/openssl-3.6.0.tar.gz
+    build: |
+      ./Configure linux-${PKGS_ARCH} \
+        --prefix=/usr \
+        --openssldir=/etc/ssl \
+        --libdir=/usr/lib \
+        --with-zlib-include=${SYS_ROOT}/usr/include \
+        --with-zlib-lib=${SYS_ROOT}/usr/lib \
+        --with-brotli-include=${SYS_ROOT}/usr/include \
+        --with-brotli-lib=${SYS_ROOT}/usr/lib \
+        -L${SYS_ROOT}/usr/lib \
+        -I${SYS_ROOT}/usr/include \
+        no-shared \
+        enable-brotli \
+        zlib
+      make
+    install: |
+      make install_sw install_ssldirs DESTDIR=${SYS_ROOT}
+    depends_on:
+      - zlib
+      - brotli
+
+  - name: liburcu
+    url: https://lttng.org/files/urcu/userspace-rcu-0.15.3.tar.bz2
+    env:
+      - CFLAGS=-fPIC ${CFLAGS}
+    build: |
+      mkpkg::configure --enable-static --disable-shared
+      make
+    install: |
+      mkpkg::make_install
+
+  - name: libuv
+    url: https://dist.libuv.org/dist/v1.51.0/libuv-v1.51.0.tar.gz
+    env:
+      - CFLAGS=-fPIC ${CFLAGS}
+    build: |
+      sh autogen.sh
+      mkpkg::configure --enable-static --disable-shared
+      make
+    install: |
+      mkpkg::make_install
+
   - name: vim
     url: https://github.com/vim/vim/archive/refs/tags/v9.1.0.tar.gz
     env:
+      - CFLAGS=-fPIE ${CFLAGS}
       - CPPFLAGS=-I${SYS_ROOT}/usr/include
       - vim_cv_uname_output=Linux
       - vim_cv_uname_r_output=5.0.0
@@ -136,6 +189,7 @@ packages:
       - ac_cv_small_wchar_t=no
     build: |
       cd src
+      make distclean || true
       rm -f auto/config.cache
       mkpkg::configure \
         --with-features=huge \
@@ -145,7 +199,7 @@ packages:
         --disable-nls --disable-acl --disable-sysmouse \
         --enable-multibyte \
         CPPFLAGS="-I$SYS_ROOT/usr/include" \
-        LDFLAGS="-L$SYS_ROOT/usr/lib -static" \
+        LDFLAGS="-L$SYS_ROOT/usr/lib -pie" \
         LIBS="-lncursesw -ltinfow"
       touch auto/config.mk Makefile
       make vim CONF_OPT_MULTIBYTE=--enable-multibyte
@@ -160,13 +214,16 @@ packages:
     env:
       - CPPFLAGS=-I${SYS_ROOT}/usr/include
       - LDFLAGS=-L${SYS_ROOT}/usr/lib -lreadline -lncursesw -ltinfow
-      - CFLAGS=-DSQLITE_ENABLE_FTS3 -DSQLITE_ENABLE_FTS4 -DSQLITE_ENABLE_FTS5 -DSQLITE_ENABLE_RTREE -DSQLITE_ENABLE_JSON1 -DSQLITE_ENABLE_MATH_FUNCTIONS -DSQLITE_ENABLE_COLUMN_METADATA -DSQLITE_ENABLE_DBSTAT_VTAB -DSQLITE_HAVE_ZLIB
+      - >-
+        CFLAGS=-fPIE -DSQLITE_ENABLE_FTS3 -DSQLITE_ENABLE_FTS4 -DSQLITE_ENABLE_FTS5 
+        -DSQLITE_ENABLE_RTREE -DSQLITE_ENABLE_JSON1 -DSQLITE_ENABLE_MATH_FUNCTIONS 
+        -DSQLITE_ENABLE_COLUMN_METADATA -DSQLITE_ENABLE_DBSTAT_VTAB -DSQLITE_HAVE_ZLIB
     build: |
       mkpkg::configure \
         --enable-static --disable-shared \
         --with-readline-header=${SYS_ROOT}/usr/include/readline/readline.h \
         --with-readline-ldflags="-lreadline -lncursesw -ltinfow"
-      make
+      make LDFLAGS="-L${SYS_ROOT}/usr/lib -static-pie"
     install: |
       mkpkg::make_install
     depends_on:
