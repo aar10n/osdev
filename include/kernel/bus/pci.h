@@ -47,6 +47,7 @@
 #define PCI_CAP_MSI      0x05
 #define PCI_CAP_MSIX     0x11
 
+struct pci_segment_group;
 
 typedef struct pci_bar {
   uint8_t num: 3;      // bar number
@@ -85,10 +86,18 @@ typedef struct pci_device {
   pci_bar_t *bars;
   pci_cap_t *caps;
 
+  bool is_bridge;
+  uint8_t primary_bus;
+  uint8_t secondary_bus;
+  uint8_t subordinate_bus;
+
   bool registered;
 } pci_device_t;
 
 void register_pci_segment_group(uint16_t number, uint8_t start_bus, uint8_t end_bus, uintptr_t address);
+
+struct pci_segment_group *get_segment_group_for_bus_number(uint8_t bus);
+void *pci_device_address(struct pci_segment_group *group, uint8_t bus, uint8_t device, uint8_t function);
 
 void pci_enable_msi_vector(pci_device_t *pci_dev, uint8_t index, uint8_t vector);
 void pci_disable_msi_vector(pci_device_t *pci_dev, uint8_t index);

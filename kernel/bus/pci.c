@@ -54,7 +54,7 @@ static void remap_pcie_address_space(void *data) {
   seg->address = vmap_phys(seg->phys_addr, 0, PCIE_MMIO_SIZE, VM_RDWR|VM_NOCACHE|VM_HUGE_2MB, "pcie");
 }
 
-static struct pci_segment_group *get_segment_group_for_bus_number(uint8_t bus) {
+struct pci_segment_group *get_segment_group_for_bus_number(uint8_t bus) {
   struct pci_segment_group *group;
   LIST_FOREACH(group, &segment_groups, list) {
     if (bus >= group->bus_start && bus <= group->bus_end) {
@@ -64,7 +64,7 @@ static struct pci_segment_group *get_segment_group_for_bus_number(uint8_t bus) {
   return NULL;
 }
 
-static void *pci_device_address(struct pci_segment_group *group, uint8_t bus, uint8_t device, uint8_t function) {
+void *pci_device_address(struct pci_segment_group *group, uint8_t bus, uint8_t device, uint8_t function) {
   kassert(bus >= group->bus_start && bus <= group->bus_end);
   return ((void *)(group->address | ((uint64_t)(bus - group->bus_start) << 20) |
                    ((uint64_t)(device) << 15) | ((uint64_t)(function) << 12)));
@@ -75,6 +75,7 @@ static pci_bar_t *get_device_bars(uint32_t *bar_ptr, int bar_count) {
   pci_bar_t *bars = NULL;
   for (int i = 0; i < bar_count; i++) {
     uint32_t v32 = bar_ptr[i];
+    DPRINTF("  BAR%d: 0x%08x\n", i, v32);
 
     // ensure it is a non-empty bar
     if (is_bar_valid(v32)) {
@@ -143,6 +144,13 @@ static pci_cap_t *get_device_caps(uintptr_t config_base, uintptr_t cap_off) {
     if (id > 0x15) {
       break;
     } else if (id == 0) {
+      // check if this is just an invalid capability entry
+      // or if we have reached the end of the list
+      if (next == 0) {
+        break;
+      }
+
+      ptr = offset_ptr(config_base, next);
       continue;
     }
 
@@ -163,6 +171,7 @@ static pci_cap_t *get_device_caps(uintptr_t config_base, uintptr_t cap_off) {
     }
     ptr = offset_ptr(config_base, next);
   }
+
   return first;
 }
 
@@ -240,27 +249,59 @@ void pci_disable_msi_vector(pci_device_t *pci_dev, uint8_t index) {
 // MARK: Device Bus API
 //
 
-static int pci_bus_probe(struct device_bus *bus) {
-  pci_bus_type_t *pci_bus = bus->data;
-  struct pci_segment_group *seg = pci_bus->segment_group;
+static int configure_bridge(struct pci_segment_group *seg, uint8_t bus, uint8_t dev, uint8_t func, uint8_t *next_bus) {
+  struct pci_header_bridge *bridge = pci_device_address(seg, bus, dev, func);
 
-  DPRINTF("probing segment group %d\n", seg->num);
-  for (int bus_num = seg->bus_start; bus_num < seg->bus_end; bus_num++) {
-    // probe devices on bus
-    for (int d = 0; d < 32; d++) { // device
-      for (int f = 0; f < 8; f++) { // function
-        struct pci_header *header = pci_device_address(seg, bus_num, d, f);
-        if (header->vendor_id == 0xFFFF || header->type != 0) {
+  uint8_t secondary = *next_bus;
+  (*next_bus)++;
+
+  bridge->primary_bus = bus;
+  bridge->secondary_bus = secondary;
+  bridge->subordinate_bus = 0xFF;
+
+  DPRINTF("configured bridge %02x:%02x.%x: primary=%d secondary=%d\n",
+          bus, dev, func, bus, secondary);
+
+  return secondary;
+}
+
+static int scan_bus(struct pci_segment_group *seg, uint8_t bus_num, struct pci_device **devices, int *device_count, uint8_t *next_bus) {
+  uint8_t max_subordinate = bus_num;
+
+  for (int d = 0; d < 32; d++) {
+    for (int f = 0; f < 8; f++) {
+      struct pci_header *header = pci_device_address(seg, bus_num, d, f);
+
+      if (header->vendor_id == 0xFFFF) {
+        continue;
+      }
+
+      if ((header->type & 0x7F) > 1) {
+        continue;
+      }
+
+      bool is_bridge = (header->class_code == PCI_BRIDGE_DEVICE &&
+                       header->subclass == PCI_PCI_BRIDGE);
+      if (is_bridge) {
+        DPRINTF("found bridge on bus %d: %02X.%X\n", bus_num, d, f);
+        int secondary = configure_bridge(seg, bus_num, d, f, next_bus);
+        if (secondary < 0) {
           continue;
         }
 
-        if (header->class_code == PCI_BRIDGE_DEVICE) {
-          continue;
+        uint8_t subordinate = scan_bus(seg, secondary, devices, device_count, next_bus);
+        struct pci_header_bridge *bridge = pci_device_address(seg, bus_num, d, f);
+        bridge->subordinate_bus = subordinate;
+
+        if (subordinate > max_subordinate) {
+          max_subordinate = subordinate;
         }
 
+        DPRINTF("bridge %02x:%02x.%x: subordinate=%d\n", bus_num, d, f, subordinate);
+      } else {
         struct pci_header_normal *config = (void *) header;
-        DPRINTF("found device on bus %d: %02X.%X: %s\n", bus_num, d, f, pci_get_device_desc(header->class_code, header->subclass, header->prog_if));
-        DPRINTF("    (%02X.%02x.%02X)\n", header->class_code, header->subclass, header->prog_if);
+        DPRINTF("found device on bus %d: %02X.%X: %s\n", bus_num, d, f,
+                pci_get_device_desc(header->class_code, header->subclass, header->prog_if));
 
         struct pci_device *dev = kmallocz(sizeof(struct pci_device));
         dev->bus = bus_num;
@@ -269,9 +310,9 @@ static int pci_bus_probe(struct device_bus *bus) {
         dev->class_code = header->class_code;
         dev->subclass = header->subclass;
         dev->prog_if = header->prog_if;
-
         dev->device_id = header->device_id;
         dev->vendor_id = header->vendor_id;
+        dev->is_bridge = false;
 
         dev->int_line = config->int_line;
         dev->int_pin = config->int_pin;
@@ -281,22 +322,49 @@ static int pci_bus_probe(struct device_bus *bus) {
         dev->bars = get_device_bars(config->bars, 6);
         dev->caps = get_device_caps((uintptr_t) header, MASK_PTR(config->cap_ptr));
 
-        if (register_bus_device(bus, dev) < 0) {
-          EPRINTF("failed to register device %02X:%02X.%X\n", bus_num, d, f);
-          kfree(dev);
-        }
-
-        if (!header->multifn) {
-          break;
+        if (*device_count < 256) {
+          devices[(*device_count)++] = dev;
         }
       }
-    }
 
-    // TODO: figure out why there are extra busses that are duplicated
-    break;
+      if (!header->multifn) {
+        break;
+      }
+    }
   }
+
+  return max_subordinate;
+}
+
+static int pci_bus_probe(struct device_bus *bus) {
+  pci_bus_type_t *pci_bus = bus->data;
+  struct pci_segment_group *seg = pci_bus->segment_group;
+
+  struct pci_device *devices_to_register[256];
+  int device_count = 0;
+  uint8_t next_bus = seg->bus_start + 1;
+
+  DPRINTF("probing segment group %d starting at bus %d\n", seg->num, seg->bus_start);
+  scan_bus(seg, seg->bus_start, devices_to_register, &device_count, &next_bus);
+
+  DPRINTF("registering %d collected PCI devices\n", device_count);
+  for (int i = 0; i < device_count; i++) {
+    struct pci_device *dev = devices_to_register[i];
+    DPRINTF("registering device %d/%d: %02X:%02X.%X\n", i+1, device_count, dev->bus, dev->device, dev->function);
+
+    int ret = register_bus_device(bus, dev);
+    if (ret < 0) {
+      EPRINTF("failed to register device %02X:%02X.%X\n", dev->bus, dev->device, dev->function);
+      kfree(dev);
+    } else {
+      DPRINTF("successfully registered device %02X:%02X.%X\n", dev->bus, dev->device, dev->function);
+    }
+  }
+
   return 0;
 }
+
+// MARK: Initialization
 
 void module_init_pci_register_bus() {
   LIST_FOR_IN(seg, &segment_groups, list) {
