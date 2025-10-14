@@ -1,7 +1,6 @@
 #!/usr/bin/env python
-from typing import Optional, Dict, List, Set, Iterable, Tuple
+from typing import Optional, Dict, List, Set, Tuple
 from struct import calcsize, pack
-from collections import defaultdict
 import posixpath
 import argparse
 import os

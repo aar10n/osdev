@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 from typing import List
 import argparse
+import fnmatch
 import select
 import sys
 import os
@@ -45,6 +46,22 @@ def unchecked_directives_from_stdin() -> List[str]:
     return [line.rstrip() for line in sys.stdin]
 
 
+def should_exclude(directive: str, exclude_patterns: List[str]) -> bool:
+    if not exclude_patterns or not directive:
+        return False
+
+    if ':' not in directive:
+        return False
+
+    dest_path = directive.split(':', 1)[1]
+
+    for pattern in exclude_patterns:
+        if fnmatch.fnmatch(dest_path, pattern):
+            return True
+
+    return False
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(usage='%(prog)s <file> [flags] [-d dir:dest ...] [-f file:dest ...]\n',
                                      description='Generates directives for building initrd images.')
@@ -55,6 +72,8 @@ if __name__ == '__main__':
     parser.add_argument('-n', action='store_true', default=False,
                         help='Print the directives to stdout but do not write to the file')
     parser.add_argument('-S', metavar='sysroot', help='Use `sysroot` as the root path when handling symlinks')
+    parser.add_argument('-E', '--exclude', action='append', default=[], metavar='pattern',
+                        help='Exclude files matching the glob pattern (can be specified multiple times)')
 
     parser.add_argument('-d', action='append', default=[], metavar='dir:dest',
                         help='Add directives for all files in `dir` into `dest`')
@@ -98,6 +117,10 @@ if __name__ == '__main__':
     directives += unchecked_directives_from_stdin()
     if not directives:
         parser.error('no directives specified')
+
+    # filter out excluded files
+    if args.exclude:
+        directives = [d for d in directives if not should_exclude(d, args.exclude)]
 
     if args.n:
         print('\n'.join(directives))
