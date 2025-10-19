@@ -82,10 +82,9 @@ void vm_file_free(vm_file_t **fileref) {
   vm_file_t *file = moveref(*fileref);
   if (file->vnode != NULL) {
     vn_putref(&file->vnode);
-    file->pgcache = NULL;
-  } else {
-    pgcache_free(&file->pgcache);
   }
+  pgcache_free(&file->pgcache);
+  kfree(file);
 }
 
 __ref page_t *vm_file_getpage(vm_file_t *file, size_t off) {

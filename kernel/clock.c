@@ -205,3 +205,20 @@ DEFINE_SYSCALL(clock_gettime, int, int clockid, struct timespec *tp) {
   *tp = timespec_from_nanos(now_ns);
   return 0;
 }
+
+DEFINE_SYSCALL(clock_getres, int, int clockid, struct timespec *res) {
+  if (res != NULL && vm_validate_ptr((uintptr_t) res, /*write=*/true) < 0) {
+    DPRINTF("clock_getres: invalid user pointer %p\n", res);
+    return -EFAULT;
+  }
+
+  if (!clock_initialized) {
+    return -EINVAL;
+  }
+
+  if (res != NULL) {
+    uint64_t resolution_ns = current_clock_source->scale_ns;
+    *res = timespec_from_nanos(resolution_ns);
+  }
+  return 0;
+}

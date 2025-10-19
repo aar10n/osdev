@@ -24,6 +24,7 @@ int irq_must_reserve_irqnum(uint8_t irq);
 
 int irq_register_handler(uint8_t irq, irq_handler_t handler, void *data);
 int irq_register_handler_affinity(uint8_t irq, irq_handler_t handler, void *data, uint8_t cpu_id);
+int irq_unregister_handler(uint8_t irq);
 int irq_enable_interrupt(uint8_t irq);
 int irq_disable_interrupt(uint8_t irq);
 int irq_set_affinity(uint8_t irq, uint8_t cpu_id);

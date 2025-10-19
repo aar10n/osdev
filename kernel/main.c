@@ -38,7 +38,9 @@ KERNEL_PARAM("init.tty", str_t, init_tty_device, str_null);
 //
 
 _used void kmain() {
+  QEMU_CLEAR_TRACES();
   QEMU_DEBUG_CHARP("kmain\n");
+
   // before anything else we need to make sure we can use panic, kprintf.
   panic_early_init();
   kprintf_early_init();
@@ -91,7 +93,7 @@ _used void kmain() {
   fs_setup_mounts();
 
   cpu_enable_interrupts();
-//  probe_all_buses();
+  probe_all_buses();
   alarm_source_enable(alarm_tick_source());
 
   kprintf("{:$=^49}\n");

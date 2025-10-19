@@ -197,7 +197,7 @@ int exec_image_setup_stack(
       VM_TYPE_PAGE,
       stack_top,
       args_size,
-      VM_USER|VM_READ|VM_FIXED,
+      VM_USER|VM_READ|VM_WRITE|VM_FIXED,
       "arg",
       moveref(arg_pages)),
       next
@@ -223,7 +223,7 @@ int exec_image_setup_stack(
       VM_TYPE_PAGE,
       stack_top+args_size,
       env_size,
-      VM_USER|VM_READ|VM_FIXED,
+      VM_USER|VM_READ|VM_WRITE|VM_FIXED,
       "env",
       moveref(env_pages)),
       next

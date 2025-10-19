@@ -41,6 +41,7 @@
 #define FS_TO_NS(fs) ((uint64_t)(fs) / (FS_PER_SEC / NS_PER_SEC))
 #define MS_TO_US(ms) ((uint64_t)(ms) * (US_PER_SEC / MS_PER_SEC))
 #define NS_TO_MS(ns) ((uint64_t)(ns) / (NS_PER_SEC / MS_PER_SEC))
+#define NS_TO_US(ns) ((uint64_t)(ns) / (NS_PER_SEC / US_PER_SEC))
 
 #define SIZE_1KB  0x400ULL
 #define SIZE_2KB  0x800ULL
@@ -104,6 +105,12 @@
     uint32_t: bswap32(v), \
     uint64_t: bswap64(v) \
   )
+
+// network byte order conversions (big endian)
+#define htons(v) bswap16(v)
+#define ntohs(v) bswap16(v)
+#define htonl(v) bswap32(v)
+#define ntohl(v) bswap32(v)
 
 #define container_of(ptr, type, member) ({ \
     const typeof(((type *)0)->member) *__mptr = (ptr); \
@@ -180,7 +187,7 @@
 // Other Assertion/Safety Macros
 //
 
-#define todo(msg, ...) ({ kprintf("TODO: %s:%d: " msg "\n", __FILE__, __LINE__, ##__VA_ARGS__); WHILE_TRUE; })
+#define todo(msg, ...) ({ panic("TODO: %s:%d: " msg "\n", __FILE__, __LINE__, ##__VA_ARGS__); })
 
 #define __assert_stack_is_aligned() ({ \
   uintptr_t sp; \
@@ -316,7 +323,7 @@ noreturn void panic(const char *fmt, ...);
 // Debug Macros
 //
 
-#define QEMU_DEBUG_CHARP(str) qemu_debug_string(str, strlen(str))
+#define QEMU_CLEAR_TRACES() __asm__ __volatile__ ("out dx, al" : : "a"(0), "d"(0x402))
 
 static inline void qemu_debug_string(const char *s, uint16_t len) {
   asm volatile (
@@ -326,5 +333,13 @@ static inline void qemu_debug_string(const char *s, uint16_t len) {
     : "memory"
   );
 }
+
+static inline size_t __strlen(const char *s) {
+  size_t len = 0;
+  while (*s++) len++;
+  return len;
+}
+
+#define QEMU_DEBUG_CHARP(str) qemu_debug_string(str, __strlen(str))
 
 #endif

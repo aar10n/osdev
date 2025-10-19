@@ -26,11 +26,16 @@ int fs_mount(cstr_t source, cstr_t mount, const char *fs_type, int flags);
 int fs_replace_root(cstr_t new_root);
 int fs_unmount(cstr_t path);
 
+int fs_proc_alloc_fd(struct proc *proc);
+void fs_proc_free_fd(struct proc *proc, int fd);
+__ref fd_entry_t *fs_proc_get_fdentry(struct proc *proc, int fd);
+void fs_proc_add_fdentry(struct proc *proc, __ref fd_entry_t *fde);
+
 int fs_proc_open(struct proc *proc, int fd, cstr_t path, int flags, mode_t mode);
 int fs_proc_close(struct proc *proc, int fd);
 int fs_open(cstr_t path, int flags, mode_t mode);
 int fs_close(int fd);
-struct vm_file *fs_get_vmfile(int fd, size_t off, size_t len);
+struct vm_file *fs_get_vmfile(int fd, size_t off, size_t len, int mmap_flags, int prot);
 __ref struct page *fs_getpage(int fd, off_t off);
 __ref struct page *fs_getpage_cow(int fd, off_t off);
 ssize_t fs_kread(int fd, kio_t *kio);
@@ -39,6 +44,8 @@ ssize_t fs_read(int fd, void *buf, size_t len);
 ssize_t fs_write(int fd, const void *buf, size_t len);
 ssize_t fs_readv(int fd, const struct iovec *iov, int iovcnt);
 ssize_t fs_writev(int fd, const struct iovec *iov, int iovcnt);
+ssize_t fs_pread(int fd, void *buf, size_t len, off_t offset);
+ssize_t fs_pwrite(int fd, const void *buf, size_t len, off_t offset);
 ssize_t fs_readdir(int fd, void *dirp, size_t len);
 off_t fs_lseek(int fd, off_t offset, int whence);
 int fs_ioctl(int fd, unsigned int request, void *argp);

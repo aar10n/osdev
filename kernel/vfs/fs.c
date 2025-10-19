@@ -282,6 +282,23 @@ LABEL(ret);
 
 //
 
+int fs_proc_alloc_fd(proc_t *proc) {
+  return ftable_alloc_fd(proc->files, 0);
+}
+
+void fs_proc_free_fd(struct proc *proc, int fd) {
+  ftable_free_fd(proc->files, fd);
+}
+
+__ref fd_entry_t *fs_proc_get_fdentry(struct proc *proc, int fd) {
+  return ftable_get_entry(proc->files, fd);
+}
+
+void fs_proc_add_fdentry(struct proc *proc, __ref fd_entry_t *fde) {
+  ASSERT(fde != NULL && fde->fd >= 0);
+  ftable_add_entry(proc->files, moveref(fde));
+}
+
 int fs_proc_open(proc_t *proc, int fd, cstr_t path, int flags, mode_t mode) {
   ventry_t *at_ve = ve_getref(proc->pwd);
   ventry_t *ve = NULL;
@@ -449,7 +466,7 @@ int fs_close(int fd) {
   return fs_proc_close(curproc, fd);
 }
 
-vm_file_t *fs_get_vmfile(int fd, size_t off, size_t len) {
+vm_file_t *fs_get_vmfile(int fd, size_t off, size_t len, int mmap_flags, int prot) {
   fd_entry_t *fde = ftable_get_entry(FTABLE, fd);
   if (fde == NULL)
     return NULL;
@@ -461,7 +478,18 @@ vm_file_t *fs_get_vmfile(int fd, size_t off, size_t len) {
     return NULL; // file is closed
 
   vnode_t *vn = file->data;
-  vm_file_t *vm_file = vm_file_alloc_vnode(vn_getref(vn), off, len);
+  vm_file_t *vm_file;
+
+  // to prevent sharing modified pages between processes
+  if ((mmap_flags & 0x0F) == 0x02 && (prot & 0x02)) {  // MAP_PRIVATE and PROT_WRITE
+    kprintf("fs: fs_get_vmfile: MAP_PRIVATE+WRITE detected, cloning page cache (mmap_flags=0x%x, prot=0x%x)\n", mmap_flags, prot);
+    vm_file_t *shared = vm_file_alloc_vnode(vn_getref(vn), off, len);
+    vm_file = vm_file_alloc_clone(shared);
+    vm_file_free(&shared);
+  } else {
+    vm_file = vm_file_alloc_vnode(vn_getref(vn), off, len);
+  }
+
   f_unlock(file);
   fde_putref(&fde);
   return vm_file;
@@ -577,6 +605,66 @@ ssize_t fs_writev(int fd, const struct iovec *iov, int iovcnt) {
 
   kio_t kio = kio_new_readablev(iov, (uint32_t) iovcnt);
   return fs_kwrite(fd, &kio);
+}
+
+ssize_t fs_pread(int fd, void *buf, size_t len, off_t offset) {
+  if (offset < 0)
+    return -EINVAL;
+
+  fd_entry_t *fde = ftable_get_entry(FTABLE, fd);
+  if (fde == NULL)
+    return -EBADF;
+
+  ssize_t res;
+  file_t *file = fde->file;
+  if (!f_lock(file))
+    goto_res(ret, -EBADF);
+  if (file->flags & O_WRONLY)
+    goto_res(ret_unlock, -EBADF);
+  if (file->type != FT_VNODE)
+    goto_res(ret_unlock, -ESPIPE);
+
+  vnode_t *vn = file->data;
+  kio_t kio = kio_new_writable(buf, len);
+  vn_begin_data_read(vn);
+  res = vn_read(vn, offset, &kio);
+  vn_end_data_read(vn);
+
+LABEL(ret_unlock);
+  f_unlock(file);
+LABEL(ret);
+  fde_putref(&fde);
+  return res;
+}
+
+ssize_t fs_pwrite(int fd, const void *buf, size_t len, off_t offset) {
+  if (offset < 0)
+    return -EINVAL;
+
+  fd_entry_t *fde = ftable_get_entry(FTABLE, fd);
+  if (fde == NULL)
+    return -EBADF;
+
+  ssize_t res;
+  file_t *file = fde->file;
+  if (!f_lock(file))
+    goto_res(ret, -EBADF);
+  if (file->flags & O_RDONLY)
+    goto_res(ret_unlock, -EBADF);
+  if (file->type != FT_VNODE)
+    goto_res(ret_unlock, -ESPIPE);
+
+  vnode_t *vn = file->data;
+  kio_t kio = kio_new_readable(buf, len);
+  vn_begin_data_write(vn);
+  res = vn_write(vn, offset, &kio);
+  vn_end_data_write(vn);
+
+LABEL(ret_unlock);
+  f_unlock(file);
+LABEL(ret);
+  fde_putref(&fde);
+  return res;
 }
 
 ssize_t fs_readdir(int fd, void *dirp, size_t len) {
@@ -1475,6 +1563,8 @@ SYSCALL_ALIAS(read, fs_read);
 SYSCALL_ALIAS(write, fs_write);
 SYSCALL_ALIAS(readv, fs_readv);
 SYSCALL_ALIAS(writev, fs_writev);
+SYSCALL_ALIAS(pread64, fs_pread);
+SYSCALL_ALIAS(pwrite64, fs_pwrite);
 SYSCALL_ALIAS(getdents64, fs_readdir);
 SYSCALL_ALIAS(lseek, fs_lseek);
 SYSCALL_ALIAS(ioctl, fs_ioctl);

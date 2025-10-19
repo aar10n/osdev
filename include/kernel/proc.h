@@ -119,6 +119,7 @@ typedef struct proc {
 
   str_t name;                       // process name
   sigqueue_t sigqueue;              // blocked pending signals
+  mode_t umask;                     // file creation mode mask
 
   id_t pending_alarm;               // id of pending alarm or 0 if none
   id_t itimer_alarms[1];            // pending itimer alarm ids

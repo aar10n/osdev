@@ -611,6 +611,7 @@ __ref proc_t *proc_alloc_internal(
     proc->limit = kmallocz(sizeof(struct rlimit));
     proc->stats = kmallocz(sizeof(struct pstats));
     proc->sigacts = sigacts_alloc();
+    proc->umask = 0022;
   }
 
   sigqueue_init(&proc->sigqueue);
@@ -678,6 +679,7 @@ __ref proc_t *proc_fork() {
   new_proc->brk_max = proc->brk_max;
 
   new_proc->name = str_dup(proc->name);
+  new_proc->umask = proc->umask;
   new_proc->parent = pr_getref(proc);
   LIST_ADD(&proc->children, pr_getref(new_proc), chldlist);
 
@@ -2462,6 +2464,15 @@ DEFINE_SYSCALL(getgid, gid_t) {
 
 DEFINE_SYSCALL(getegid, gid_t) {
   return curproc->creds->egid;
+}
+
+DEFINE_SYSCALL(umask, mode_t, mode_t mask) {
+  proc_t *proc = curproc;
+  pr_lock(proc);
+  mode_t old_mask = proc->umask;
+  proc->umask = mask & 0777;
+  pr_unlock(proc);
+  return old_mask;
 }
 
 DEFINE_SYSCALL(getpgid, pid_t, pid_t pid) {

@@ -31,6 +31,8 @@ char *strchr(const char *s, int c);
 int strlen(const char *s);
 size_t strlcpy(char *dest, const char *src, size_t n);
 void *strcpy(char *dest, const char *src);
+char *strncpy(char *dest, const char *src, size_t n);
+
 char *strdup(const char *s);
 void reverse(char *s);
 

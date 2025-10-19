@@ -54,13 +54,13 @@ void handle_cmdline_param(cstr_t key, cstr_t value) {
 }
 
 void parse_cmdline_params(const char *cmdline, uint32_t len) {
+#define SKIP_SPACES() while (p < end && (*p == ' ' || *p == '\t' || *p == '\n')) p++;
   const char *p = cmdline;
   const char *end = cmdline + len;
 
   while (p < end) {
     // skip leading whitespace or newlines
-    while (p < end && (*p == ' ' || *p == '\t' || *p == '\n'))
-      p++;
+    SKIP_SPACES();
     if (p >= end)
       break;
 
@@ -71,15 +71,13 @@ void parse_cmdline_params(const char *cmdline, uint32_t len) {
     const char *key_end = p;
 
     // skip '='
-    while (p < end && (*p == ' ' || *p == '\t'))
-      p++;
+    SKIP_SPACES();
     if (p < end && *p == '=')
       p++;
     else
       continue;
 
-    while (p < end && (*p == ' ' || *p == '\t'))
-      p++;
+    SKIP_SPACES();
     if (p >= end)
       break;
 

@@ -348,6 +348,7 @@ void sched_again(sched_reason_t reason) {
   switch (reason) {
     case SCHED_PREEMPTED:
       ASSERT(!curcpu_is_interrupt);
+      DPRINTF("preempting thread {:td} for {:td}\n", oldtd, newtd);
       TD_SET_STATE(oldtd, TDS_READY);
       atomic_fetch_or(&oldtd->flags2, TDF2_TRAPFRAME);
       sched_submit_ready_thread(oldtd);

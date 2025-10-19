@@ -146,6 +146,25 @@ void *strcpy(char *dest, const char *src) {
   return dest;
 }
 
+char *strncpy(char *dest, const char *src, size_t n) {
+  char *d = dest;
+  const char *s = src;
+
+  // copy characters from src to dest, up to n characters or until null terminator
+  while (n > 0 && *s != '\0') {
+    *d++ = *s++;
+    n--;
+  }
+
+  // if we haven't copied n characters yet, pad with null bytes
+  while (n > 0) {
+    *d++ = '\0';
+    n--;
+  }
+
+  return dest;
+}
+
 char *strdup(const char *s) {
   if (s == NULL) {
     return NULL;
