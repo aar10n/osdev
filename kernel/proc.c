@@ -5,6 +5,7 @@
 #include <kernel/proc.h>
 #include <kernel/sched.h>
 #include <kernel/tqueue.h>
+#include <kernel/cond.h>
 #include <kernel/alarm.h>
 #include <kernel/exec.h>
 #include <kernel/mm.h>
@@ -478,9 +479,9 @@ void pgrp_remove_proc(pgroup_t *pg, proc_t *proc) {
   pgrp_lock_assert(pg, MA_OWNED);
   pr_lock_assert(proc, MA_OWNED);
 
-  pgrp_putref(&proc->group);
-  pg->num_procs--;
   LIST_REMOVE(&pg->procs, proc, pglist);
+  pg->num_procs--;
+  pgrp_putref(&proc->group);
 }
 
 int pgrp_signal(pgroup_t *pg, siginfo_t *info) {
@@ -929,6 +930,14 @@ void proc_terminate(proc_t *proc, int ret, int sig) {
     }
   }
 
+  if (curthread->proc == proc && curthread->wchan) {
+    cond_t *cond = (cond_t *)curthread->wchan;
+    DPRINTF("proc_terminate: thread {:td} was interrupted from cond %p, decrementing waiters from %d\n",
+            curthread, cond, cond->waiters);
+//    cond->waiters--;
+  }
+
+
   // close all files
   ftable_close_all(proc->files);
 
@@ -1132,7 +1141,7 @@ LABEL(ret);
 
 int proc_wait_signal(proc_t *proc) {
   pr_lock(proc);
-  cond_wait(&proc->signal_cond, &proc->lock);
+  cond_wait_sig(&proc->signal_cond, &proc->lock);
   // proc is locked
   pr_unlock(proc);
   return 0;
@@ -1150,7 +1159,7 @@ int proc_syscall_wait4(pid_t pid, int *status, int options, struct rusage *rusag
   pid_t child_pid;
   int wstatus;
   struct pchild_status event;
-  int rx_opts = (options & WNOHANG) ? CHAN_RX_NOBLOCK : 0;
+  int rx_opts = ((options & WNOHANG) ? CHAN_RX_NOBLOCK : 0) | CHAN_RX_WAITSIG;
   while ((res = chan_recv_opts(proc->wait_status_ch, &event, rx_opts)) >= 0) {
     ASSERT(event.pid != 0 && event.pid != cur_pid);
     child_pid = event.pid;
@@ -1240,7 +1249,6 @@ int proc_syscall_wait4(pid_t pid, int *status, int options, struct rusage *rusag
 
   pr_putref(&child);
   return child_pid;
-
 }
 
 int proc_syscall_execve(cstr_t path, char *const argv[], char *const envp[]) {
@@ -1397,6 +1405,265 @@ LABEL(crash);
   EPRINTF("execve failed, crashing process {:pr}: {:err}\n", proc, res);
   proc_terminate(proc, 0, SIGKILL); // forcefully terminate the process
   unreachable;
+}
+
+int proc_syscall_kill(pid_t pid, int sig) {
+  if (sig < 0 || sig >= NSIG) {
+    return -EINVAL; // invalid signal
+  }
+
+  proc_t *proc = curproc;
+  siginfo_t info = {
+    .si_signo = sig,
+    .si_code = SI_USER,
+    .si_pid = proc->pid,
+    .si_uid = proc->creds->uid,
+  };
+
+  int res = 0;
+
+  if (pid > 0) {
+    // send signal to process with pid
+    proc_t *target = proc_lookup(pid);
+    if (target == NULL) {
+      return -ESRCH; // process not found
+    }
+
+    pr_lock(target);
+    res = proc_signal(target, &info);
+    pr_unlock(target);
+    pr_putref(&target);
+  } else if (pid == 0) {
+    // send signal to all processes in caller's process group
+    pr_lock(proc);
+    pgroup_t *pgrp = pgrp_getref(proc->group);
+    pr_unlock(proc);
+
+    pgrp_lock(pgrp);
+    // send signal to all processes except the caller (to avoid self-locking)
+    LIST_FOR_IN(target, &pgrp->procs, pglist) {
+      if (target == proc) {
+        continue; // skip the caller process, signal it separately
+      }
+
+      if (target->state != PRS_EXITED && target->state != PRS_ZOMBIE) {
+        res = proc_signal(target, &info);
+      }
+
+      if (res < 0) {
+        EPRINTF("failed to signal process {:pr}: {:err}\n", &target, res);
+        pgrp_unlock(pgrp);
+        pgrp_putref(&pgrp);
+        return res;
+      }
+    }
+    pgrp_unlock(pgrp);
+    pgrp_putref(&pgrp);
+
+    // now signal the caller itself (proc_signal handles locking for curproc)
+    if (proc->state != PRS_EXITED && proc->state != PRS_ZOMBIE) {
+      res = proc_signal(proc, &info);
+    }
+  } else if (pid == -1) {
+    // send signal to all processes (except init)
+    // TODO: implement broadcast signal
+    todo("proc_syscall_kill: pid == -1 (broadcast)");
+    return -ENOSYS; // not implemented yet
+  } else {
+    // pid < -1: send signal to process group with pgid = -pid
+    pid_t pgid = -pid;
+
+    // find the process group in the caller's session
+    pr_lock(proc);
+    session_t *sess = sess_getref(proc->group->session);
+    pr_unlock(proc);
+
+    sess_lock(sess);
+    pgroup_t *target_pgrp = NULL;
+    LIST_FOR_IN(pg, &sess->pgroups, sslist) {
+      if (pg->pgid == pgid) {
+        target_pgrp = pgrp_getref(pg);
+        break;
+      }
+    }
+    sess_unlock(sess);
+    sess_putref(&sess);
+
+    if (target_pgrp == NULL) {
+      return -ESRCH; // process group not found
+    }
+
+    // check if caller is in the target process group
+    bool caller_in_pgrp = (proc->group == target_pgrp);
+
+    pgrp_lock(target_pgrp);
+    // send signal to all processes except the caller (to avoid self-locking)
+    LIST_FOR_IN(target, &target_pgrp->procs, pglist) {
+      if (caller_in_pgrp && target == proc) {
+        continue; // skip the caller process, signal it separately
+      }
+
+      pr_lock(target);
+      if (target->state != PRS_EXITED && target->state != PRS_ZOMBIE) {
+        res = proc_signal(target, &info);
+      }
+      pr_unlock(target);
+
+      if (res < 0) {
+        EPRINTF("failed to signal process {:pr}: {:err}\n", &target, res);
+        pgrp_unlock(target_pgrp);
+        pgrp_putref(&target_pgrp);
+        return res;
+      }
+    }
+    pgrp_unlock(target_pgrp);
+    pgrp_putref(&target_pgrp);
+
+    // now signal the caller itself if it's in the target group (proc_signal handles locking for curproc)
+    if (caller_in_pgrp) {
+      if (proc->state != PRS_EXITED && proc->state != PRS_ZOMBIE) {
+        res = proc_signal(proc, &info);
+      }
+    }
+  }
+
+  return res;
+}
+
+int proc_syscall_setpgid(pid_t pid, pid_t pgid) {
+  proc_t *target_proc = NULL;
+  proc_t *pgid_proc = NULL;
+  pgroup_t *old_pgrp = NULL;
+  pgroup_t *new_pgrp = NULL;
+  bool need_putref_target = false;
+  bool need_putref_pgid = false;
+  int res = 0;
+
+  // validate pgid
+  if (pgid < 0) {
+    return -EINVAL;
+  }
+
+  // if pid == 0, use the calling process
+  if (pid == 0) {
+    target_proc = curproc;
+  } else {
+    target_proc = proc_lookup(pid);
+    if (target_proc == NULL) {
+      return -ESRCH;
+    }
+    need_putref_target = true;
+  }
+
+  pr_lock(target_proc);
+
+  // check if the target process is the calling process or a child
+  if (target_proc != curproc && target_proc->parent != curproc) {
+    res = -ESRCH;
+    goto ret_unlock_target;
+  }
+
+  // check if the child has already called exec
+  if (target_proc != curproc && target_proc->parent == curproc) {
+    if (PRF_HAS_RUN(target_proc)) {
+      res = -EACCES;
+      goto ret_unlock_target;
+    }
+  }
+
+  // check if the target process is a session leader
+  if (proc_is_sess_leader(target_proc)) {
+    res = -EPERM;
+    goto ret_unlock_target;
+  }
+
+  // if pgid == 0, use the target process's pid
+  if (pgid == 0) {
+    pgid = target_proc->pid;
+  }
+
+  // check if already in the requested process group
+  if (target_proc->group->pgid == pgid) {
+    res = 0;
+    goto ret_unlock_target;
+  }
+
+  // if pgid == target_proc->pid, create a new process group
+  if (pgid == target_proc->pid) {
+    // remove from old process group
+    old_pgrp = pgrp_getref(target_proc->group);
+    pgrp_lock(old_pgrp);
+    pgrp_remove_proc(old_pgrp, target_proc);
+    pgrp_unlock(old_pgrp);
+
+    // create new process group in the same session
+    session_t *sess = sess_getref(old_pgrp->session);
+    new_pgrp = kmallocz(sizeof(pgroup_t));
+    new_pgrp->pgid = pgid;
+    new_pgrp->num_procs = 0;
+    LIST_INIT(&new_pgrp->procs);
+    mtx_init(&new_pgrp->lock, 0, "pgroup_lock");
+    ref_init(&new_pgrp->refcount);
+    PGRP_DPRINTF("ref init: pgid=%d pgrp=%p [1]", pgid, new_pgrp);
+
+    pgrp_lock(new_pgrp);
+    pgrp_add_proc(new_pgrp, target_proc);
+    target_proc->flags |= PRF_LEADER;
+    pgrp_unlock(new_pgrp);
+
+    sess_lock(sess);
+    session_add_pgroup(sess, new_pgrp);
+    sess_unlock(sess);
+
+    pgrp_putref(&old_pgrp);
+    pgrp_putref(&new_pgrp);
+    sess_putref(&sess);
+  } else {
+    // join an existing process group
+    // find the process group by looking up the pgid process
+    pgid_proc = proc_lookup(pgid);
+    if (pgid_proc == NULL) {
+      res = -EPERM; // process group does not exist
+      goto ret_unlock_target;
+    }
+    need_putref_pgid = true;
+
+    pr_lock(pgid_proc);
+    new_pgrp = pgrp_getref(pgid_proc->group);
+    pr_unlock(pgid_proc);
+
+    // verify the target process group is in the same session
+    if (new_pgrp->session != target_proc->group->session) {
+      res = -EPERM;
+      goto ret_unlock_target;
+    }
+
+    // remove from old process group
+    old_pgrp = pgrp_getref(target_proc->group);
+    pgrp_lock(old_pgrp);
+    pgrp_remove_proc(old_pgrp, target_proc);
+    pgrp_unlock(old_pgrp);
+
+    // add to new process group
+    pgrp_lock(new_pgrp);
+    pgrp_add_proc(new_pgrp, target_proc);
+    pgrp_unlock(new_pgrp);
+
+    pgrp_putref(&old_pgrp);
+    pgrp_putref(&new_pgrp);
+  }
+
+  res = 0;
+
+ret_unlock_target:
+  pr_unlock(target_proc);
+  if (need_putref_target) {
+    pr_putref(&target_proc);
+  }
+  if (need_putref_pgid) {
+    pr_putref(&pgid_proc);
+  }
+  return res;
 }
 
 ///////////////////
@@ -1621,6 +1888,7 @@ void thread_kill(thread_t *td) {
 
   // remove the thread from the process thread list
   proc_do_remove_thread(proc, td);
+  DPRINTF("thread_kill: killing thread {:td} in state %d, wchan=%p [{:td}]\n", td, td->state, td->wchan, curthread);
   if (TDS_IS_RUNNING(td)) {
     // stop an active thread
     if (td == curthread) {
@@ -1660,12 +1928,23 @@ void thread_kill(thread_t *td) {
     } else if (TDS_IS_WAITING(td)) {
       // remove thread from the associated waitqueue
       struct waitqueue *wq = waitq_lookup(td->wchan);
-      if (wq->type == WQ_SLEEP) {
-        // cancel the pending alarm
-        alarm_t *alarm = td->wchan;
-        alarm_unregister(alarm->id);
+      if (wq != NULL) {
+        if (wq->type == WQ_SLEEP) {
+          // cancel the pending alarm
+          alarm_t *alarm = td->wchan;
+          alarm_unregister(alarm->id);
+        } else if (wq->type == WQ_CONDV) {
+          // decrement the condition variable's waiters count
+          // since the thread won't return to do it itself
+          cond_t *cond = (cond_t *)td->wchan;
+          DPRINTF("thread_kill: {:td} waiters for cond %p from %d [%s]\n", curthread, cond, cond->waiters, cond->name);
+          // only decrement if thread is still truly waiting (not interrupted)
+          if (td->errno != EINTR) {
+            cond->waiters--;
+          }
+        }
+        waitq_remove(wq, td);
       }
-      waitq_remove(wq, td);
       td->wchan = NULL;
       td->wdmsg = NULL;
     }
@@ -1754,20 +2033,25 @@ int thread_signal(thread_t *td, siginfo_t *info) {
   sigqueue_push(&td->sigqueue, info);
   td->flags2 |= TDF2_SIGPEND;
 
-  // if the signal is not masked and the tread is waiting (and wakeable),
-  // we can deliver it immediately and interrupt the thread
+  // if the signal is not masked and the thread is waiting (and wakeable)
+  // we can interrupt the thread and deliver it immediately
   if (!masked && TDS_IS_WAITING(td) && TDF2_IS_WAKEABLE(td)) {
+    ASSERT(td->wchan != NULL);
     struct waitqueue *waitq = waitq_lookup(td->wchan);
     if (waitq != NULL) {
       DPRINTF("waiting thread {:td} [%s] interrupted by signal %d\n", td, td->wdmsg, info->si_signo);
+      if (waitq->type == WQ_CONDV && td != curthread) {
+        cond_t *cond = (cond_t *)td->wchan;
+        DPRINTF("thread_signal: cond %p waiters = %d [%s]\n", cond, cond->waiters, cond->name);
+        cond->waiters--;
+      }
+
       waitq_remove(waitq, td);
 
       // mark as interrupted
       td->errno = EINTR;
-      td->wchan = NULL;
-      td->wdmsg = NULL;
 
-      // make the thread ready to run
+      // submit the thread to run
       TD_SET_STATE(td, TDS_READY);
       sched_submit_ready_thread(td);
     }
@@ -2182,22 +2466,35 @@ DEFINE_SYSCALL(getegid, gid_t) {
 
 DEFINE_SYSCALL(getpgid, pid_t, pid_t pid) {
   DPRINTF("syscall: getpgid pid=%d\n", pid);
-  proc_t *proc = proc_lookup(pid);
-  if (proc == NULL) {
-    return -ESRCH; // process not found
+  proc_t *proc;
+  bool need_putref = false;
+
+  if (pid == 0) {
+    // pid == 0 means get the caller's pgid
+    proc = curproc;
+  } else {
+    proc = proc_lookup(pid);
+    if (proc == NULL) {
+      return -ESRCH; // process not found
+    }
+    need_putref = true;
   }
 
   pr_lock(proc);
   pid_t pgid = proc->group->pgid;
   pr_unlock(proc);
-  pr_putref(&proc);
+
+  if (need_putref) {
+    pr_putref(&proc);
+  }
+
   DPRINTF("syscall: getpgid -> res=%d\n", pgid);
   return pgid;
 }
 
 DEFINE_SYSCALL(setpgid, int, pid_t pid, pid_t pgid) {
   DPRINTF("syscall: setpgid pid=%d pgid=%d\n", pid, pgid);
-  todo("setpgid: not implemented");
+  return proc_syscall_setpgid(pid, pgid);
 }
 
 DEFINE_SYSCALL(getsid, pid_t, pid_t pid) {
@@ -2321,3 +2618,8 @@ DEFINE_SYSCALL(execve, int, const char *filename, char *const *argv, char *const
   DPRINTF("syscall: execve filename=%s\n", filename);
   return proc_syscall_execve(cstr_make(filename), argv, envp);
 }
+DEFINE_SYSCALL(kill, int, pid_t pid, int sig) {
+  DPRINTF("syscall: kill pid=%d sig=%d\n", pid, sig);
+  return proc_syscall_kill(pid, sig);
+}
+

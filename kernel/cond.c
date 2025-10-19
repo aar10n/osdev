@@ -43,6 +43,8 @@ void cond_wait(cond_t *cond, mtx_t *lock) {
   } else {
     mtx_lock(lock);
   }
+
+  cond->waiters--;
 }
 
 int cond_wait_timeout(cond_t *cond, mtx_t *lock, struct timespec *ts) {
@@ -86,7 +88,11 @@ int cond_wait_sig(cond_t *cond, mtx_t *lock) {
     mtx_lock(lock);
   }
 
-  cond->waiters--;
+  DPRINTF("cond_wait_sig: woke up from cond %p [%s], ret=%d\n", cond, cond->name, ret);
+  if (ret >= 0) {
+    // if we were interrupted, cond->waiters was already decremented
+    cond->waiters--;
+  }
   return ret;
 }
 
@@ -121,7 +127,7 @@ void cond_signal(cond_t *cond) {
   struct waitqueue *waitq = waitq_lookup(cond);
   if (waitq != NULL) {
     waitq_signal(waitq);
-    cond->waiters--;
+    // don't decrement waiters here - the waiting thread will do it when it wakes up
   }
 }
 
@@ -133,6 +139,6 @@ void cond_broadcast(cond_t *cond) {
   struct waitqueue *waitq = waitq_lookup(cond);
   if (waitq != NULL) {
     waitq_broadcast(waitq);
-    cond->waiters = 0;
+    // don't reset waiters here - each waiting thread will decrement it when it wakes up
   }
 }

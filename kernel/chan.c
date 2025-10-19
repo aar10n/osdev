@@ -173,13 +173,66 @@ int _chan_send(chan_t *ch, void *obj, size_t objsz) {
 }
 
 int _chan_recv(chan_t *ch, void *obj, size_t objsz) {
+  return _chan_recv_opts(ch, obj, objsz, 0);
+}
+
+int _chan_recvn(chan_t *ch, size_t n, void *results, size_t objsz) {
+  ASSERT(ch != NULL);
+  ASSERT(n <= INT32_MAX);
+  ASSERT(objsz == ch->objsize);
+  if (!results || n == 0)
+    return -EINVAL;
+
+  mtx_spin_lock(&ch->lock);
+
+  size_t received = 0;
+  while (received < n) {
+    while (chan_count(ch) == 0 && !chan_is_closed(ch))
+      if (cond_wait_sig(&ch->send_cond, &ch->lock) < 0) {
+        // interrupted by signal
+        mtx_spin_unlock(&ch->lock);
+        return received > 0 ? (int)received : -EINTR;
+      }
+
+    if (chan_count(ch) == 0 && chan_is_closed(ch)) {
+      mtx_spin_unlock(&ch->lock);
+      return received > 0 ? (int)received : -EPIPE;
+    }
+
+    void *dst = (char *)results + (received * ch->objsize);
+    void *src = get_slot_ptr(ch, ch->read_idx);
+    memcpy(dst, src, ch->objsize);
+    ch->read_idx = get_next_index(ch, ch->read_idx);
+    received++;
+
+    cond_signal(&ch->recv_cond);
+  }
+
+  mtx_spin_unlock(&ch->lock);
+  return received > 0 ? (int)received : -EPIPE;
+}
+
+int _chan_recv_opts(chan_t *ch, void *obj, size_t objsz, int opts) {
+  if (opts & CHAN_RX_NOBLOCK) {
+    return _chan_recv_noblock(ch, obj, objsz);
+  }
+
   ASSERT(ch != NULL);
   ASSERT(objsz == ch->objsize);
   mtx_spin_lock(&ch->lock);
 
   // wait for data to become available
-  while (chan_count(ch) == 0 && !chan_is_closed(ch))
-    cond_wait(&ch->send_cond, &ch->lock);
+  while (chan_count(ch) == 0 && !chan_is_closed(ch)) {
+    if (opts & CHAN_RX_WAITSIG) {
+      if (cond_wait_sig(&ch->send_cond, &ch->lock) < 0) {
+        // interrupted by signal
+        mtx_spin_unlock(&ch->lock);
+        return -EINTR;
+      }
+    } else {
+      cond_wait(&ch->send_cond, &ch->lock);
+    }
+  }
 
   if (chan_count(ch) == 0 && chan_is_closed(ch)) {
     mtx_spin_unlock(&ch->lock);
@@ -198,38 +251,6 @@ int _chan_recv(chan_t *ch, void *obj, size_t objsz) {
   cond_signal(&ch->recv_cond);
   mtx_spin_unlock(&ch->lock);
   return 0;
-}
-
-int _chan_recvn(chan_t *ch, size_t n, void *results, size_t objsz) {
-  ASSERT(ch != NULL);
-  ASSERT(n <= INT32_MAX);
-  ASSERT(objsz == ch->objsize);
-  if (!results || n == 0)
-    return -EINVAL;
-
-  mtx_spin_lock(&ch->lock);
-
-  size_t received = 0;
-  while (received < n) {
-    while (chan_count(ch) == 0 && !chan_is_closed(ch))
-      cond_wait(&ch->send_cond, &ch->lock);
-
-    if (chan_count(ch) == 0 && chan_is_closed(ch)) {
-      mtx_spin_unlock(&ch->lock);
-      return received > 0 ? (int)received : -EPIPE;
-    }
-
-    void *dst = (char *)results + (received * ch->objsize);
-    void *src = get_slot_ptr(ch, ch->read_idx);
-    memcpy(dst, src, ch->objsize);
-    ch->read_idx = get_next_index(ch, ch->read_idx);
-    received++;
-
-    cond_signal(&ch->recv_cond);
-  }
-
-  mtx_spin_unlock(&ch->lock);
-  return received > 0 ? (int)received : -EPIPE;
 }
 
 int _chan_recv_noblock(chan_t *ch, void *obj, size_t objsz) {
@@ -259,14 +280,6 @@ int _chan_recv_noblock(chan_t *ch, void *obj, size_t objsz) {
   cond_signal(&ch->recv_cond);
   mtx_spin_unlock(&ch->lock);
   return 0;
-}
-
-int _chan_recv_opts(chan_t *ch, void *obj, size_t objsz, int opts) {
-  if (opts & CHAN_RX_NOBLOCK) {
-    return _chan_recv_noblock(ch, obj, objsz);
-  } else {
-    return _chan_recv(ch, obj, objsz);
-  }
 }
 
 int chan_wait(chan_t *ch) {

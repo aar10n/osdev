@@ -364,10 +364,63 @@ int tty_ioctl(tty_t *tty, unsigned long request, void *arg) {
       DPRINTF("TIOCGPGRP ioctl pgid=%d\n", tty->pgrp->pgid);
       return 0; // success
     }
-    case TIOCSPGRP:
-      todo("TIOCSPGRP ioctl not implemented");
-    case TIOCGSID:
-      todo("TIOCGSID ioctl not implemented");
+    case TIOCSPGRP: {
+      if (vm_validate_ptr((uintptr_t) arg, /*write=*/false) < 0) {
+        EPRINTF("TIOCSPGRP ioctl requires a valid argument\n");
+        return -EINVAL; // invalid argument
+      }
+
+      pid_t pgid = *((pid_t *)arg);
+      DPRINTF("TIOCSPGRP ioctl pgid=%d\n", pgid);
+
+      // validate that the caller is in the same session as the tty
+      pr_lock(proc);
+      session_t *proc_sess = proc->group->session;
+      session_t *tty_sess = tty->session;
+
+      if (proc_sess != tty_sess) {
+        EPRINTF("process {:pr} is not in the same session as the tty\n", proc);
+        pr_unlock(proc);
+        return -ENOTTY; // not a tty
+      }
+
+      // look up the process group in the session
+      pgroup_t *new_pgrp = NULL;
+      sess_lock(proc_sess);
+      LIST_FOR_IN(pg, &proc_sess->pgroups, sslist) {
+        if (pg->pgid == pgid && pg->num_procs > 0) {
+          new_pgrp = pgrp_getref(pg);
+          break;
+        }
+      }
+      sess_unlock(proc_sess);
+      pr_unlock(proc);
+
+      if (new_pgrp == NULL) {
+        EPRINTF("process group %d not found in session\n", pgid);
+        return -EPERM; // operation not permitted
+      }
+
+      // update the tty's foreground process group
+      pgrp_putref(&tty->pgrp);
+      tty->pgrp = new_pgrp;
+      DPRINTF("TIOCSPGRP ioctl set pgrp to pgid=%d\n", pgid);
+      return 0; // success
+    }
+    case TIOCGSID: {
+      if (vm_validate_ptr((uintptr_t) arg, /*write=*/true) < 0) {
+        EPRINTF("TIOCGSID ioctl requires a valid argument\n");
+        return -EINVAL; // invalid argument
+      }
+      if (tty->session == NULL) {
+        EPRINTF("tty does not have a session\n");
+        return -ENOTTY; // not a tty
+      }
+      DPRINTF("TIOCGSID ioctl\n");
+      *((pid_t *)arg) = tty->session->sid;
+      DPRINTF("TIOCGSID ioctl sid=%d\n", tty->session->sid);
+      return 0; // success
+    }
     // Exclusive mode
     case TIOCEXCL:
       todo("TIOCEXCL ioctl not implemented");
@@ -393,6 +446,7 @@ int tty_wait_cond(tty_t *tty, cond_t *cond) {
   tty_assert_owned(tty);
 
   cond_wait(cond, &tty->lock);
+  tty_assert_owned(tty);
   // check tty flags again after wakeup
   if (tty->flags & TTYF_GONE) {
     EPRINTF("tty device is gone\n");

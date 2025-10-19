@@ -544,7 +544,7 @@ static void itimer_get_update(int which, struct itimerval *curr_value, const str
     proc->itimer_vals[which] = *new_value;
     if (!timeval_is_zero(&new_value->it_value)) {
       // register a new alarm
-      uint64_t expires_ns = timeval_to_nanos(&new_value->it_value);
+      uint64_t expires_ns = clock_get_nanos() + timeval_to_nanos(&new_value->it_value);
       alarm_t *alarm = alarm_alloc_absolute(expires_ns, alarm_cb(
         alarm_cb_handle_itimer,
         proc->pid,
@@ -626,7 +626,7 @@ DEFINE_SYSCALL(setitimer, int, int which, const struct itimerval *new_value, str
   }
 
   if ((vm_validate_ptr((uintptr_t) new_value, /*write=*/false) < 0) ||
-      (old_value == NULL || vm_validate_ptr((uintptr_t) old_value, /*write=*/true) < 0)) {
+      (old_value != NULL && vm_validate_ptr((uintptr_t) old_value, /*write=*/true) < 0)) {
     return -EFAULT;
   }
 

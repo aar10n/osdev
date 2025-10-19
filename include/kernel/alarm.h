@@ -12,7 +12,7 @@
 #include <kernel/time.h>
 
 // if defined the kernel runs in tickless mode
-//#define CONFIG_TICKLESS
+#define CONFIG_TICKLESS
 #ifndef CONFIG_TICKLESS
 #define TICK_PERIOD  MS_TO_NS(50)
 #endif

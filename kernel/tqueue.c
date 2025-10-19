@@ -368,8 +368,9 @@ static void waitq_remove_internal(struct waitqueue *waitq, struct waitqueue_chai
     own_waitq = LIST_REMOVE(&chain->head, waitq, chain_list);
   } else {
     // take a waitqueue from the free list
-    own_waitq = LIST_REMOVE(&chain->free, own_waitq, chain_list);
+    own_waitq = LIST_FIRST(&chain->free);
     ASSERT(own_waitq != NULL);
+    LIST_REMOVE(&chain->free, own_waitq, chain_list);
   }
 
   td->own_waitq = own_waitq;

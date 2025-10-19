@@ -6,6 +6,7 @@
 #include <kernel/proc.h>
 #include <kernel/init.h>
 #include <kernel/mm.h>
+#include <kernel/tqueue.h>
 #include <kernel/cpu/cpu.h>
 
 #include <kernel/printf.h>
@@ -38,10 +39,20 @@ _used void signal_dispatch() {
 
   // hold the thread lock while we process the signal queue
   td_lock(td);
+  td->flags2 |= TDF2_SIGCTX;
+
+  if (td->wchan != NULL) {
+    struct waitqueue *wq = waitq_lookup(td->wchan);
+    if (wq != NULL && wq->type == WQ_CONDV) {
+      cond_t *cond = (cond_t *) td->wchan;
+      DPRINTF("interrupting cond wait on %p [waiters=%d] for thread {:td}\n", cond, cond->waiters, td);
+    }
+    waitq_release(&wq);
+  }
 
   int remaining;
   struct siginfo info = {};
-  while ((remaining = sigqueue_pop(&td->sigqueue, &info, &td->sigmask)) >= 0) {
+  while (sigqueue_pop(&td->sigqueue, &info, &td->sigmask) >= 0) {
     // sigqueue_pop should only ever return an unmasked signal
     ASSERT(!sigset_masked(td->sigmask, info.si_signo));
     int sig = info.si_signo;
@@ -49,7 +60,7 @@ _used void signal_dispatch() {
 
     // get the signal action for this signal
     struct sigaction act;
-    if ((res = sigacts_get(td->proc->sigacts, sig, &act)) < 0) {
+    if (sigacts_get(td->proc->sigacts, sig, &act) < 0) {
       continue;
     }
 
@@ -61,16 +72,36 @@ _used void signal_dispatch() {
 
     DPRINTF("dispatching signal %d for thread {:td}\n", sig, td);
 
-    uintptr_t kstack_ptr = td->kstack_ptr; // save kstack pointer
+    uintptr_t current_rbp;
+    asm volatile("mov %0, rbp" : "=r"(current_rbp));
+    DPRINTF("signal %d: current_rbp=%p\n", sig, (void *)current_rbp);
+
+    uintptr_t current_kstack;
+    asm volatile("mov %0, rsp" : "=r"(current_kstack));
+    DPRINTF("signal %d: current_kstack=%p\n", sig, (void *)current_kstack);
+    DPRINTF("address of info=%p, act=%p, td=%p\n", (void *)&info, (void *)&act, (void *)&td);
+
+    ASSERT(is_aligned(current_kstack, 16));
+    // Set kstack_ptr to point below our entire stack frame.
+    // The local variables (info, act) are allocated above the current rsp,
+    // between rsp and rbp. To ensure syscalls don't corrupt our stack frame,
+    // we need to set kstack_ptr below the lowest point we're using.
+    // Using the address of the lowest local variable with additional margin.
+    uintptr_t lowest_stack_addr = (uintptr_t)&info;
+    // Align down to 16 bytes and subtract safety margin for nested calls
+    td->kstack_ptr = (lowest_stack_addr & ~0xF) - 1024;
+
+    DPRINTF("signal %d: kstack_ptr=%p\n", sig, (void *)td->kstack_ptr);
     bool user_mode = !(act.sa_flags & SA_KERNHAND);
     td_unlock(td); // unlock the thread while the signal is handled
     sigtramp_entry(&info, &act, user_mode); // execute the signal handler
-    td_lock(td); // relock it in case there are more signals to handle
-    td->kstack_ptr = kstack_ptr; // restore kstack pointer
 
-    DPRINTF("signal %d handled by thread {:td}\n", sig, td);
+    DPRINTF("signal %d handled\n", sig);
+//    DPRINTF("signal %d handled by thread {:td}\n", sig, td);
+    td_lock(td); // relock it in case there are more signals to handle
   }
 
+  td->flags2 &= ~TDF2_SIGCTX;
   if (td->sigqueue.count == 0) {
     // we can clear the thread TDF2_SIGPEND flag
     td->flags2 &= ~TDF2_SIGPEND;
@@ -177,6 +208,7 @@ int signal_deliver_self_sync(siginfo_t *info) {
     proc_coredump(proc, info);
     return 0;
   } else if (disp == SIGDISP_STOP) {
+    pr_unlock(proc);
     proc_stop(proc, sig);
     return 0;
   } else if (disp == SIGDISP_CONT) {

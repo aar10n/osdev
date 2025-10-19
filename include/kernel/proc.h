@@ -414,6 +414,8 @@ int proc_wait_signal(proc_t *proc);
 
 pid_t proc_syscall_wait4(pid_t pid, int *status, int options, struct rusage *rusage);
 int proc_syscall_execve(cstr_t path, char *const argv[], char *const envp[]);
+int proc_syscall_kill(pid_t pid, int sig);
+int proc_syscall_setpgid(pid_t pid, pid_t pgid);
 
 // #define PR_DPRINTF(fmt, ...) kprintf("proc: " fmt " [%s:%d]\n", ##__VA_ARGS__, __FILE__, __LINE__)
 #define PR_DPRINTF(fmt, ...)

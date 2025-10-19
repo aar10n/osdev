@@ -24,6 +24,7 @@ typedef void (*chan_free_cb_t)(void *data);
 
 // recv_opts
 #define CHAN_RX_NOBLOCK 0x01 // the recv operation does not block
+#define CHAN_RX_WAITSIG 0x02 // when waiting, allow signals to interrupt
 
 typedef struct chan {
   uint32_t flags;

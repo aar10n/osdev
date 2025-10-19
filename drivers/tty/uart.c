@@ -230,7 +230,7 @@ bool uart_hw_init_probe(int port) {
   io_outb(port + 1, 0x00);                // divisor MSB
 
   io_outb(port + UART_LINE_CTRL, 0x03);   // 8 bits, no parity, one stop bit, DLAB = 0
-  io_outb(port + UART_FIFO_CTRL, 0xC7);   // enable FIFO, clear RX/TX, 14-byte threshold
+  io_outb(port + UART_FIFO_CTRL, 0xC1);   // enable FIFO, clear RX/TX, 1-byte threshold
   io_outb(port + UART_MODEM_CTRL, 0x1E);  // loopback mode, set OUT2
 
   io_outb(port + UART_DATA, 0xAE);        // send test byte
@@ -302,15 +302,20 @@ int uart_hw_configure(int port, const struct termios *tio) {
 
   unsigned short divisor = 115200 / baud;
 
+  // save current interrupt enable register
+  uint8_t ier = io_inb(port + UART_INTR_EN);
+
   // enable DLAB
   io_outb(port + UART_LINE_CTRL, lcr | 0x80);
   io_outb(port + UART_DATA, divisor & 0xFF);
   io_outb(port + UART_INTR_EN, (divisor >> 8) & 0xFF);
   io_outb(port + UART_LINE_CTRL, lcr);
 
-  // enable FIFO, clear TX/RX queues, 14-byte threshold
-  io_outb(port + UART_FIFO_CTRL, 0xC7);
-//  io_outb(port + UART_FIFO_CTRL, 0x00); // disable FIFO
+  // restore interrupt enable register
+  io_outb(port + UART_INTR_EN, ier);
+
+  // enable FIFO, clear TX/RX queues, 1-byte threshold
+  io_outb(port + UART_FIFO_CTRL, 0xC1);
 
   // modem control: DTR, RTS, OUT2
   io_outb(port + UART_MODEM_CTRL, 0xf);

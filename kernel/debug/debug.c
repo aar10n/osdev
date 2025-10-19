@@ -207,9 +207,10 @@ LABEL(INVALID);
 int debug_unwind(uintptr_t rip, uintptr_t rbp) {
   kprintf_raw("backtrace\n");
 
+  int depth = 0;
   stackframe_t *frame = (void *) rbp;
   uint64_t prev_rbp = 0;
-  while (is_kernel_code_ptr((uintptr_t) frame->rip)) {
+  while (is_kernel_code_ptr((uintptr_t) frame->rip) && depth++ < MAX_DEPTH) {
     dwarf_function_t *func = locate_or_load_dwarf_function(rip);
     if (func == NULL) {
       kprintf_raw("    ?? %018p\n", rip);
@@ -239,14 +240,14 @@ int debug_unwind(uintptr_t rip, uintptr_t rbp) {
 
 void debug_unwind_any(uintptr_t rip, uintptr_t rbp) {
   stackframe_t *frame = (void *) rbp;
-  kprintf("backtrace\n");
-  kprintf("    ?? %018p\n", rip);
+  kprintf_raw("backtrace\n");
+  kprintf_raw("    ?? %018p\n", rip);
   if (vm_validate_ptr(rbp, /*write=*/false) != 0) {
     return;
   }
 
   for (int i = 0; i < MAX_DEPTH && is_sensible_pointer((uintptr_t) frame->rip); i++) {
-    kprintf("    ?? %018p\n", frame->rip);
+    kprintf_raw("    ?? %018p\n", frame->rip);
     if (vm_validate_ptr((uintptr_t) frame->rbp, /*write=*/false) != 0) {
       break;
     }
