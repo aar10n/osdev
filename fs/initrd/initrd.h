@@ -10,6 +10,7 @@
 
 #include <fs/ramfs/ramfs.h>
 
+// V1 format structures
 typedef struct initrd_header {
   char signature[6];       // the signature 'I' 'N' 'I' 'T' 'v' '1'
   uint16_t flags;          // initrd flags
@@ -31,9 +32,42 @@ typedef struct initrd_entry {
 static_assert(sizeof(struct initrd_entry) == 12);
 // stride = sizeof(struct initrd_entry) + entry.path_len + 1
 
+// V2 format structures
+typedef struct initrd_header_v2 {
+  char signature[6];       // the signature 'I' 'N' 'I' 'T' 'v' '2'
+  uint16_t flags;          // image flags
+  uint32_t total_size;     // total size of the initrd image
+  uint32_t data_offset;    // offset to data section
+  uint16_t entry_count;    // number of entries
+  uint32_t metadata_size;  // size of metadata section
+  uint32_t data_size;      // size of data section
+  uint32_t checksum;       // CRC32 of entire data section (0 = no checksum)
+  uint32_t reserved[4];    // reserved for future use
+} initrd_header_v2_t;
+static_assert(sizeof(struct initrd_header_v2) == 48);
+
+typedef struct initrd_entry_v2 {
+  uint8_t entry_type;      // 'f'=file | 'd'=directory | 'l'=symlink
+  uint8_t reserved;        // reserved
+  uint16_t path_len;       // length of path
+  uint16_t mode;           // unix permission bits
+  uint16_t reserved2;      // reserved
+  uint32_t uid;            // user id
+  uint32_t gid;            // group id
+  uint32_t mtime;          // modification timestamp
+  uint32_t data_offset;    // offset from data section start
+  uint32_t data_size;      // size of file data
+  uint32_t checksum;       // CRC32 checksum of file data (0 = no checksum)
+  uint32_t reserved3;      // reserved
+  char path[];             // null-terminated full path
+} initrd_entry_v2_t;
+static_assert(sizeof(struct initrd_entry_v2) == 36);
+// stride = sizeof(struct initrd_v2_entry) + entry.path_len + 1
+
 typedef struct initrd_node {
-  uint32_t entry_offset;
-  uint32_t data_offset;
+  uint32_t data_offset;    // absolute offset to file data
+  uint32_t data_size;      // size of file data
+  uint32_t checksum;       // CRC32 checksum of file data
 } initrd_node_t;
 
 // vfs operations

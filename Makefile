@@ -188,7 +188,7 @@ $(BUILD_DIR)/osdev.img: config.ini $(BUILD_DIR)/boot$(WINARCH).efi $(BUILD_DIR)/
 # initrd filesystem image
 initrd: $(BUILD_DIR)/initrd.img
 $(BUILD_DIR)/initrd.img: .initrdrc $(BUILD_DIR)/initrdrc
-	scripts/mkinitrd.py -o $@ $(foreach file,$^,-f $(file))
+	scripts/mkinitrd2.py -o $@ $(foreach file,$^,-f $(file))
 
 #
 # bootloader
@@ -360,7 +360,7 @@ ext2_img: $(BUILD_DIR)/ext2.img
 
 # sysroot initrd manifest
 $(BUILD_DIR)/initrdrc: $(BUILD_DIR)/sysroot_sha1 | $(SYS_ROOT)
-	scripts/gen_initrdrc.py $@ -S $(SYS_ROOT) -d $(SYS_ROOT):/
+	scripts/gen_initrdrc.py $@ -S $(SYS_ROOT) -d $(SYS_ROOT):/ -E "*.a"
 
 # edk2 ovmf firmware
 $(BUILD_DIR)/OVMF_$(WINARCH).fd:

@@ -26,18 +26,7 @@
 #define CHECK_SUPPORTED(vn, op) if (!(vn)->ops->op) return -ENOTSUP;
 
 static inline mode_t vn_to_mode(vnode_t *vnode) {
-  mode_t mode = 0;
-  switch (vnode->type) {
-    case V_REG: mode |= S_IFREG; break;
-    case V_DIR: mode |= S_IFDIR; break;
-    case V_LNK: mode |= S_IFLNK; break;
-    case V_BLK: mode |= S_IFBLK; break;
-    case V_CHR: mode |= S_IFCHR; break;
-    case V_FIFO: mode |= S_IFIFO; break;
-    case V_SOCK: mode |= S_IFSOCK; break;
-    default: panic("invalid vnode type");
-  }
-  return mode;
+  return vnode->mode;
 }
 
 //
@@ -63,6 +52,7 @@ __ref vnode_t *vn_alloc_empty(enum vtype type) {
 __ref vnode_t *vn_alloc(id_t id, struct vattr *vattr) {
   vnode_t *vnode = vn_alloc_empty(vattr->type);
   vnode->id = id;
+  vnode->mode = vattr->mode;
   return vnode;
 }
 
@@ -259,7 +249,10 @@ void vn_stat(vnode_t *vn, struct stat *statbuf) {
   statbuf->st_nlink = vn->nlink;
   statbuf->st_rdev = vn->device ? make_dev(vn->device) : 0;
 
-  // TODO: rest of the fields
+  // timestamps
+  statbuf->st_atim.tv_sec = vn->atime;
+  statbuf->st_mtim.tv_sec = vn->mtime;
+  statbuf->st_ctim.tv_sec = vn->ctime;
 }
 
 //

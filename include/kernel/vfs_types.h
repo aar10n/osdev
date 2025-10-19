@@ -194,12 +194,15 @@ typedef struct vnode {
   struct vnode_ops *ops;          // vnode operations
 
   /* attributes */
+  mode_t mode;                    // file mode and permissions
   size_t nlink;                   // number of hard links
   size_t size;                    // size in bytes
   size_t blocks;                  // number of blocks
   time_t atime;                   // last access time
   time_t mtime;                   // last modification time
   time_t ctime;                   // last status change time
+  uid_t uid;                      // owner user id
+  gid_t gid;                      // owner group id
 
   /* associated data */
   struct pgcache *pgcache;        // vnode page cache

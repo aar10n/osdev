@@ -143,6 +143,7 @@ int ramfs_vn_lookup(vnode_t *dir, cstr_t name, __move ventry_t **result) {
   vnode_t *vn = vn_alloc(node->id, &make_vattr(node->type, node->mode));
   vn->data = node;
   vn->size = node->size;
+  vn->mtime = node->mtime;
   vn->ops = node->ops; // a per-vnode ops table may be provided
   DPRINTF("lookup found node (%u:%u)\n", dir->vfs->id, node->id);
 

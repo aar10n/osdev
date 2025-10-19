@@ -28,6 +28,7 @@ typedef struct ramfs_node {
   id_t id;
   enum vtype type;
   mode_t mode;
+  time_t mtime;
   size_t size;
   void *data; // embedded data
 
