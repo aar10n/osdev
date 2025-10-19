@@ -143,6 +143,7 @@ void knlist_init(struct knlist *knl, struct lock_object *lo) {
   struct lock_class *lc = lock_class_lookup(LO_LOCK_CLASS(lo));
   knl->lock_object = lo;
   knl->lock_class = lc;
+  knl->count = 0;
   LIST_INIT(&knl->knotes);
 }
 
@@ -176,8 +177,8 @@ void knlist_add(struct knlist *knl, knote_t *kn) {
 }
 
 void knlist_remove(struct knlist *knl, knote_t *kn) {
+  ASSERT(knl != NULL);
   ASSERT(kn->filt_ops != NULL);
-  ASSERT(kn->knlist != NULL);
 
   struct lock_class *lc = knl->lock_class;
   struct lock_object *lo = knl->lock_object;
@@ -390,7 +391,7 @@ static int kqueue_register(kqueue_t *kq, struct kevent *kev) {
     kn->event.fflags = kev->fflags;
   }
 
-  if (!(kn->flags & KNF_ACTIVE) && kn->filt_ops->f_event(kn, 0)) {
+  if (kn && !(kn->flags & KNF_ACTIVE) && kn->filt_ops->f_event(kn, 0)) {
     DPRINTF("kqueue_wait: knote for ident %p, filter %s is ready\n", kev->ident, evfilt_to_string(kev->filter));
     knlist_activate_notes(kn->knlist, 0);
   }

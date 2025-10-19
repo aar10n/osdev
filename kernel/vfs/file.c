@@ -4,6 +4,7 @@
 
 #include <kernel/vfs/file.h>
 #include <kernel/vfs/vnode.h>
+#include <kernel/vfs/pipe.h>
 
 #include <kernel/proc.h>
 #include <kernel/panic.h>
@@ -498,6 +499,13 @@ int file_kqfilt_attach(knote_t *kn) {
       EPRINTF("failed to attach knote to vnode {:err}\n", res);
       goto_res(ret, res);
     }
+  } else if (F_ISPIPE(file)) {
+    // for pipe files, use the pipe_t structure
+    pipe_t *pipe = (pipe_t *)file->data;
+    kn->filt_ops_data = pipe_getref(pipe);
+    kn->knlist = &pipe->knlist;
+    knlist_add(&pipe->knlist, kn);
+    res = 0;
   } else {
     // handle other file types (pipe, pts, etc.)
     todo("file_kqfilt_attach: implement for file type: %d", file->type);
@@ -525,12 +533,21 @@ void file_kqfilt_detach(knote_t *kn) {
       device_t *device = vn->v_dev;
       D_OPS(device)->d_kqdetach(device, kn);
     } else {
+      knote_remove_list(kn);
       vnode_t *vnref = moveref(kn->filt_ops_data);
-      knlist_remove(&vn->knlist, kn);
       vn_putref(&vnref);
     }
+  } else if (F_ISPIPE(file)) {
+    // for pipe files, first remove from whichever list it's on
+    knote_remove_list(kn);
+
+    // then release the pipe reference
+    pipe_t *pipe_ref = moveref(kn->filt_ops_data);
+    if (pipe_ref) {
+      pipe_putref(&pipe_ref);
+    }
   } else {
-    // handle other file types (pipe, pts, etc.)
+    // handle other file types (pts, etc.)
     todo("file_kqfilt_detach: implement for file type: %d", file->type);
   }
 

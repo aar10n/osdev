@@ -35,7 +35,8 @@ typedef struct pipe {
   mtx_t lock;                   // pipe lock
   cond_t read_cond;             // readers wait here
   cond_t write_cond;            // writers wait here
-  
+  struct knlist knlist;         // knote list for kqueue events
+
   _refcount;                    // reference count
 } pipe_t;
 

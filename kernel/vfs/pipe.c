@@ -57,7 +57,8 @@ __ref pipe_t *pipe_alloc(size_t buffer_size) {
   mtx_init(&pipe->lock, 0, "pipe_lock");
   cond_init(&pipe->read_cond, "pipe_read");
   cond_init(&pipe->write_cond, "pipe_write");
-  
+  knlist_init(&pipe->knlist, &pipe->lock.lo);
+
   DPRINTF("allocated pipe %p with buffer at %p size %zu\n", pipe, pipe->buffer, buffer_size);
   return pipe;
 }
@@ -74,10 +75,11 @@ void _pipe_cleanup(__move pipe_t **piperef) {
     vmap_free((uintptr_t)pipe->buffer, pipe->buffer_size);
   }
   
+  knlist_destroy(&pipe->knlist);
   mtx_destroy(&pipe->lock);
   cond_destroy(&pipe->read_cond);
   cond_destroy(&pipe->write_cond);
-  
+
   kfree(pipe);
 }
 
@@ -124,6 +126,8 @@ int pipe_f_close(file_t *file) {
       pipe->flags |= PIPE_WRITE_CLOSED;
       // wake up any waiting readers
       cond_broadcast(&pipe->read_cond);
+      // notify kqueue watchers of EOF
+      knlist_activate_notes(&pipe->knlist, 0);
     }
   } else {
     ASSERT(pipe->readers > 0);
@@ -132,9 +136,11 @@ int pipe_f_close(file_t *file) {
       pipe->flags |= PIPE_READ_CLOSED;
       // wake up any waiting writers
       cond_broadcast(&pipe->write_cond);
+      // notify kqueue watchers of broken pipe
+      knlist_activate_notes(&pipe->knlist, 0);
     }
   }
-  
+
   mtx_unlock(&pipe->lock);
   
   DPRINTF("closed pipe %p (%s end), readers=%u writers=%u\n",
@@ -212,11 +218,13 @@ ssize_t pipe_f_read(file_t *file, kio_t *kio) {
     pipe->count -= chunk;
     total_read += chunk;
     to_read -= chunk;
-    
+
     // wake up waiting writers
     cond_broadcast(&pipe->write_cond);
+    // notify kqueue watchers that space is available
+    knlist_activate_notes(&pipe->knlist, 0);
   }
-  
+
   mtx_unlock(&pipe->lock);
   
   return (ssize_t) total_read;
@@ -307,11 +315,13 @@ ssize_t pipe_f_write(file_t *file, kio_t *kio) {
     pipe->count += chunk;
     total_written += chunk;
     to_write -= chunk;
-    
+
     // wake up waiting readers
     cond_broadcast(&pipe->read_cond);
+    // notify kqueue watchers that data is available
+    knlist_activate_notes(&pipe->knlist, 0);
   }
-  
+
   mtx_unlock(&pipe->lock);
   
   return (ssize_t) total_written;
