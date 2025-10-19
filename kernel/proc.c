@@ -94,7 +94,7 @@ void proc0_init() {
   set_curthread(maintd);
   set_curproc(proc0);
   set_kernel_sp(thread_get_kstack_top(maintd));
-  set_tss_rsp0_ptr(offset_addr(maintd->frame, sizeof(struct trapframe)));
+  set_tss_rsp0_ptr(curcpu_area->irq_stack_top);
   // we cant insert proc0 into the ptable yet since it hasnt been initialized
 }
 
@@ -110,7 +110,7 @@ void proc0_ap_init() {
   maintd->state = TDS_RUNNING;
   set_curproc(proc0);
   set_kernel_sp(thread_get_kstack_top(maintd));
-  set_tss_rsp0_ptr(offset_addr(maintd->frame, sizeof(struct trapframe)));
+  set_tss_rsp0_ptr(curcpu_area->irq_stack_top);
 }
 
 /////////////////
@@ -1345,14 +1345,13 @@ int proc_syscall_execve(cstr_t path, char *const argv[], char *const envp[]) {
   proc->brk_start = last_segment_end;
   proc->brk_end = last_segment_end;
   proc->brk_max = last_segment_end + PROC_BRK_MAX;
-  proc->binpath = str_dup(image->path);
 
   td->tid = 1; // the calling thread becomes the main thread
   td->ustack_base = stack->base;
   td->ustack_size = stack->size;
   if (!str_isnull(td->name))
     str_free(&td->name);
-  td->name = str_dup(image->path);
+  td->name = str_dup(proc->binpath);
 
   // reset the threads trapframe and clear it
   uintptr_t kstack_top = td->kstack_base + td->kstack_size;

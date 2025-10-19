@@ -65,7 +65,7 @@ extern signal_dispatch
 extern sigreturn
 
 
-global syscall_handler:
+global syscall_handler
 syscall_handler:
   swapgs
 
@@ -79,10 +79,10 @@ syscall_handler:
   mov PERCPU_SCRATCH_RAX, rax     ; save current syscall number
 
   mov rax, PERCPU_THREAD
+  sub qword THREAD_KSTACK_PTR(rax), TRAPFRAME_SIZE
   mov rsp, THREAD_KSTACK_PTR(rax) ; swap to the thread kernel stack
 
   ; setup a trapframe
-  sub rsp, TRAPFRAME_SIZE
   mov qword TRAPFRAME_SS(rsp), 0
   ; move user rsp, rip and rflags into the trapframe
   mov rax, PERCPU_USER_SP

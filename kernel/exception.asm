@@ -75,7 +75,7 @@
 %define TRAPFRAME_FIX_OFF     0x90
 
 ; trapframe flag bits
-%define TF_SYSRET   0 ; needs sysret
+%define TF_SYSRET             0 ; needs sysret
 
 %define SCHED_PREEMPTED       0
 
@@ -198,18 +198,32 @@ common_interrupt_handler:
 .noswapgs:
   pop rax ; pop saved rax
   mov qword PERCPU_SCRATCH_RAX, rax ; move to percpu scratch
-  pop rax ; pop saved has_ist
-  ; now rsp points to the pushed frame
+  ; now rsp points to has_ist (not popped yet)
+  ; rsp+8 points to the pushed frame (data field)
 
-  ; if we came from user mode, we are already using the thread trapframe
-  ; loaded from the tss rsp0. ZF is still valid from the previous test
-  jnz .done_stack_change ; we were in user mode (ZF=0)
+  ; if we came from user mode without an IST, the CPU has pushed to the IRQ stack
+  ; (if we came from user mode WITH an IST, we're already on the correct IST stack)
+  ; ZF is still valid from the CPL test: ZF=1 means kernel, ZF=0 means user
+  jz .check_kernel_stack_switch ; we were in kernel mode, check normal conditions
 
+  ; we came from user mode (CPL=3)
+  ; check if we are on an ist stack (check has_ist on stack without popping)
+  cmp qword [rsp], 0 ; has_ist=0 -> ZF=1, has_ist=1 -> ZF=0
+  pop rax ; pop has_ist (we're done with it)
+  jnz .done_stack_change ; we are on an ist stack (ZF=0), no change needed
+
+  ; we came from userspace without IST, so the CPU pushed to the IRQ stack (at tss->rsp0)
+  ; the IRQ stack already contains the CPU-pushed frame, so we just continue using it
+  ; no stack switch or copying needed - we're already on the correct stack
+  jmp .done_stack_change
+
+.check_kernel_stack_switch:
   ; if we came from kernel mode, we only should switch stacks if
   ; we are not already on an IST stack or in a nested interrupt.
 
-  ; check if we are on an ist stack
-  test rax, rax ; has_ist=0 -> ZF=1, has_ist=1 -> ZF=0
+  ; check if we are on an ist stack (check has_ist on stack without popping)
+  cmp qword [rsp], 0 ; has_ist=0 -> ZF=1, has_ist=1 -> ZF=0
+  pop rax ; pop has_ist (we're done with it)
   jnz .done_stack_change ; we are on an ist stack (ZF=0)
 
   ; check if we are in a nested interrupt
@@ -217,6 +231,7 @@ common_interrupt_handler:
   test ax, ax ; intr_level=0 -> ZF=1, intr_level>0 -> ZF=0
   jnz .done_stack_change ; we are in a nested interrupt (ZF=0)
 
+.do_stack_switch:
   ; we need to switch to the irq stack
   mov rax, rsp ; rax = current rsp
   mov rsp, PERCPU_IRQ_STACK_TOP ; switch to the irq stack

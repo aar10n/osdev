@@ -24,15 +24,15 @@
 %define SIGACT_RESTORER(x)    [x+0x90]
 
 ; signal flags
-%define SA_NOCLDSTOP  1
-%define SA_NOCLDWAIT  2
-%define SA_SIGINFO    4
-%define SA_ONSTACK    0x08000000
-%define SA_RESTART    0x10000000
-%define SA_NODEFER    0x40000000
-%define SA_RESETHAND  0x80000000
-%define SA_RESTORER   0x04000000
-%define SA_KERNHAND   0x02000000
+%define SA_NOCLDSTOP          1
+%define SA_NOCLDWAIT          2
+%define SA_SIGINFO            4
+%define SA_ONSTACK            0x08000000
+%define SA_RESTART            0x10000000
+%define SA_NODEFER            0x40000000
+%define SA_RESETHAND          0x80000000
+%define SA_RESTORER           0x04000000
+%define SA_KERNHAND           0x02000000
 
 ; struct sigcontext offsets
 %define SIGCTX_R8(x)          [x+0x00]
@@ -94,7 +94,7 @@ sigtramp_entry:
 
   sub r9, SIGFRAME_SIZE ; r9 = sigframe pointer
 
-  push rcx ; preserve user_mode
+  push rdx ; preserve user_mode
   push rdi ; preserve siginfo
 
   ; zero out the sigframe
@@ -138,11 +138,6 @@ sigtramp_entry:
   mov rdi, SIGINFO_SIGNO(rsi) ; int signo              (arg1)
 
   pop rcx                     ; pop user_mode
-
-  ; before we switch jmp to the handler we need to save THREAD_KSTACK_PTR
-  ; on the kernel stack (we we are currently on) and update it to rsp
-  push qword THREAD_KSTACK_PTR(r8)
-  mov THREAD_KSTACK_PTR(r8), rsp ; update thread's kernel stack pointer
 
   cmp rcx, 0                  ; check if we are in kernel mode
   jz .kernel_trampoline       ;   yes - jump to trampoline

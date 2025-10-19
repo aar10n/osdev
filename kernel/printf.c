@@ -26,7 +26,7 @@ static struct early_kprintf {
   uint16_t port;
   bool prefix;
 } early_kprintf = {
-  .port = COM1,
+  .port = COM2,
   .prefix = false,
 };
 

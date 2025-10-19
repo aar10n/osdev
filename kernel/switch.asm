@@ -7,6 +7,7 @@
 %define PERCPU_USER_SP        gs:0x40
 %define PERCPU_KERNEL_SP      gs:0x48
 %define PERCPU_TSS_RSP0_PTR   gs:0x50
+%define PERCPU_IRQ_STACK_TOP  gs:0x58
 %define PERCPU_RFLAGS         gs:0x68
 
 ; struct proc offsets
@@ -124,6 +125,9 @@ switch_thread:
   mov r11, PERCPU_RFLAGS
   mov TCB_RFLAGS(r8), r11
 
+;  ; update the thread's kernel stack pointer
+;  mov qword THREAD_KSTACK_PTR(rdi), rsp
+
   ; ==== save base registers
   bt dword TCB_FLAGS(r8), TCB_KERNEL
   jc .done_save_base ; skip it for kernel threads
@@ -210,7 +214,6 @@ switch_thread:
   mov PERCPU_SPACE, rax ; update percpu address space pointer
 .skip_cr3_switch:
 
-
   ; update curthread and curproc
   mov PERCPU_THREAD, rsi
   mov rax, THREAD_PROC(rsi)
@@ -219,9 +222,9 @@ switch_thread:
   mov rax, THREAD_USTACK_PTR(rsi)
   mov PERCPU_USER_SP, rax
 
-  ; update tss rsp0 to point at the top of the thread trapframe
-  mov rax, THREAD_FRAME(rsi)
-  add rax, TRAPFRAME_SIZE
+  ; update tss rsp0 to point at the top of the IRQ stack
+  ; this ensures that any exception from userspace pushes to the IRQ stack
+  mov rax, PERCPU_IRQ_STACK_TOP
   mov r8, PERCPU_TSS_RSP0_PTR
   mov [r8], rax
 
@@ -246,13 +249,18 @@ switch_thread:
   ; ==== dispatch pending signals
   bt dword THREAD_FLAGS2(rsi), TDF2_SIGPEND
   jnc .skip_handle_signals
-  mov r15, rsp ; save the current stack pointer
-  and rsp, -16 ; align stack to 16 bytes
+  mov r14, THREAD_KSTACK_PTR(rsi) ; save current kstack_ptr
+  mov rax, TCB_RSP(r8)            ; update it so we dont overwrite the stack of the original context
+  mov THREAD_KSTACK_PTR(rsi), rax
+  mov rsp, THREAD_KSTACK_PTR(rsi) ; switch to this updated kernel stack pointer
+  mov r15, rsp                    ; save stack pointer
+  and rsp, -16                    ; align stack to 16 bytes
   call signal_dispatch
-  mov rsp, r15 ; restore the stack pointer
-  ; restore rsi and r8
+  mov rsp, r15                    ; restore stack pointer
+  ; restore rsi and r8 first
   mov rsi, PERCPU_THREAD
   mov r8, THREAD_TCB(rsi)
+  mov THREAD_KSTACK_PTR(rsi), r14 ; restore the original kstack_ptr
 .skip_handle_signals:
 
   ; ==== check if we should restore from trapframe

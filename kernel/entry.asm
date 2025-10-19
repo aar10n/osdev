@@ -1,11 +1,11 @@
 extern kmain
 extern ap_main
 
-%define PAGE_SIZE 0x1000
-%define GS_BASE_MSR 0xC0000101
+%define PAGE_SIZE       0x1000
+%define GS_BASE_MSR     0xC0000101
 
-%define PERCPU_ID_OFF         0x00
-%define PERCPU_SELF_OFF       0x08
+%define PERCPU_ID_OFF   0x00
+%define PERCPU_SELF_OFF 0x08
 
 %define TCB_SIZE        0xa0 ; 0x98 aligned to 16 bytes
 %define TRAPFRAME_SIZE  0xc0
