@@ -352,12 +352,15 @@ static vm_file_t *file_type_fork_internal(vm_mapping_t *vm) {
 
 static void file_type_map_internal(vm_mapping_t *vm, size_t size, size_t off) {
   struct file_cb_data data = {vm, off, /*unmap=*/false};
-  vm_file_visit_pages(vm->vm_file, off, off+vm->size, file_map_update_cb, &data);
+  // visit pages in the page cache at the correct offset for this vm_file
+  vm_file_visit_pages(vm->vm_file, vm->vm_file->off + off, vm->vm_file->off + off + vm->size, file_map_update_cb, &data);
 }
 
 static void file_type_unmap_internal(vm_mapping_t *vm, size_t size, size_t off) {
   struct file_cb_data data = {vm, off, /*unmap=*/true};
-  vm_file_visit_pages(vm->vm_file, off, off+vm->size, file_map_update_cb, &data);
+  // visit pages in the page cache at the correct offset for this vm_file
+  vm_file_visit_pages(vm->vm_file, vm->vm_file->off + off, vm->vm_file->off + off + vm->size, file_map_update_cb, &data);
+  cpu_flush_tlb();
 }
 
 static __ref page_t *file_type_getpage_internal(vm_mapping_t *vm, size_t off) {
@@ -477,6 +480,7 @@ static void vm_join_internal(vm_mapping_t *vm, vm_mapping_t *other) {
 
 static void vm_free_internal(vm_mapping_t *vm) {
   space_lock_assert(vm->space, MA_OWNED);
+  DPRINTF("vm_free_internal: type=%d, addr=%p, size=%zu, flags=%#x\n", vm->type, vm->address, vm->size, vm->flags);
   switch (vm->type) {
     case VM_TYPE_PHYS:
       phys_type_unmap_internal(vm, vm->size, 0);
@@ -487,7 +491,12 @@ static void vm_free_internal(vm_mapping_t *vm) {
       page_list_free(&vm->vm_pages);
       break;
     case VM_TYPE_FILE:
-      file_type_unmap_internal(vm, vm->size, 0);
+      DPRINTF("vm_free_internal: calling file_type_unmap_internal, vm_file=%p, vm_file->off=%zu, vm_file->size=%zu\n",
+              vm->vm_file, vm->vm_file->off, vm->vm_file->size);
+      // only unmap if pages were actually mapped to page tables
+      if (vm->flags & VM_MAPPED) {
+        file_type_unmap_internal(vm, vm->size, 0);
+      }
       vm_file_free(&vm->vm_file);
       break;
     default:
@@ -824,11 +833,15 @@ static void free_mapping(vm_mapping_t **vmp) {
   address_space_t *space = vm->space;
   space_lock_assert(space, MA_OWNED);
 
+  DPRINTF("free_mapping: addr=%p, size=%zu, virt_size=%zu, type=%d, flags=%#x, name={:str}\n",
+          vm->address, vm->size, vm->virt_size, vm->type, vm->flags, &vm->name);
+
   LIST_REMOVE(&space->mappings, vm, vm_list);
   intvl_tree_delete(space->new_tree, vm_virt_interval(vm));
   space->num_mappings--;
 
   if (vm->flags & VM_MAPPED) {
+    DPRINTF("free_mapping: calling vm_free_internal\n");
     vm_free_internal(vm);
   }
   str_free(&vm->name);
@@ -910,6 +923,65 @@ static bool are_valid_vmap_args(enum vm_type type, uintptr_t hint, size_t size, 
       unreachable;
   }
   return true;
+}
+
+static int vmap_unmap_range(address_space_t *space, uintptr_t vaddr, size_t size) {
+  space_lock_assert(space, MA_OWNED);
+
+  interval_t unmap_range = intvl(vaddr, vaddr + size);
+  vm_mapping_t *vm = space_get_mapping(space, vaddr);
+  if (vm == NULL) {
+    return 0;
+  }
+
+  vm_mapping_t *curr = vm;
+  while (curr != NULL && vm_virt_interval(curr).start < unmap_range.end) {
+    vm_mapping_t *next = LIST_NEXT(curr, vm_list);
+    interval_t vm_range = vm_virt_interval(curr);
+
+    if (curr->type == VM_TYPE_RSVD) {
+      EPRINTF("cannot unmap reserved region for MAP_FIXED [vaddr=%p, len=%zu]\n", vaddr, size);
+      return -EINVAL;
+    }
+
+    if (overlaps(vm_range, unmap_range)) {
+      // determine how to unmap
+      if (contains(unmap_range, vm_range)) {
+        // free whole mapping
+        //   |-- mapping --|
+        //   |~~~~unmap~~~~|
+        free_mapping(&curr);
+      } else if (vm_range.start < unmap_range.start && vm_range.end > unmap_range.end) {
+        // split in three and free middle
+        //   |------------- mapping ------------|
+        //   |-- first --|~~~unmap~~~|-- last --|
+        size_t split_off = unmap_range.start - vm_range.start;
+        vm_mapping_t *middle = split_mapping(curr, split_off);
+        size_t middle_split = unmap_range.end - middle->address;
+        split_mapping(middle, middle_split);
+        free_mapping(&middle);
+      } else if (vm_range.start < unmap_range.start) {
+        // split and free tail
+        //   |--------- mapping ---------|
+        //   |-- first --|~~~~~unmap~~~~~|
+        DPRINTF("  case: unmap at end, splitting and freeing tail\n");
+        size_t split_off = unmap_range.start - vm_range.start;
+        vm_mapping_t *tail = split_mapping(curr, split_off);
+        free_mapping(&tail);
+      } else {
+        // split and free head
+        //   |--------- mapping ---------|
+        //   |~~~~~unmap~~~~~~|-- tail --|
+        size_t split_off = unmap_range.end - vm_range.start;
+        split_mapping(curr, split_off);
+        free_mapping(&curr);
+      }
+    }
+
+    curr = next;
+  }
+
+  return 0;
 }
 
 // creates a new virtual mapping. if the VM_USER flag is set, the mapping will be
@@ -997,10 +1069,21 @@ static int vmap_internal(
   if (vm_flags & VM_FIXED) {
     // make sure the requested range is free
     if (!check_range_free(space, virt_base, virt_size, vm_flags, &closest)) {
-      EPRINTF("requested fixed address range is not free %018p-%018p [name=%s]\n",
-              virt_base, virt_base+virt_size, name);
-      res = -EADDRNOTAVAIL;
-      goto ret;
+      // try to unmap any existing mappings in the requested range
+      if ((res = vmap_unmap_range(space, virt_base, virt_size)) < 0) {
+        DPRINTF("MAP_FIXED: failed to unmap range %018p-%018p [name=%s]: {:err}\n",
+                virt_base, virt_base+virt_size, name, res);
+        res = -EADDRNOTAVAIL;
+        goto ret;
+      }
+
+      // verify the range is now free
+      if (!check_range_free(space, virt_base, virt_size, vm_flags, &closest)) {
+        EPRINTF("MAP_FIXED: range still not free after unmap %018p-%018p [name=%s]\n",
+                virt_base, virt_base+virt_size, name);
+        res = -EADDRNOTAVAIL;
+        goto ret;
+      }
     }
   } else {
     // dynamically allocated (use virt_base as a starting point)
@@ -1385,7 +1468,7 @@ uintptr_t vmap_pages(__ref page_t *pages, uintptr_t hint, size_t size, uint32_t 
   uintptr_t vaddr;
   page_list_t *pagelist = page_list_alloc_from(pages);
   if ((res = vmap_internal(curspace, VM_TYPE_PAGE, hint, size, size, vm_flags, name, pagelist, &vaddr)) < 0) {
-    ALLOC_ERROR("vmap: failed to make pages mapping %s [page=%p] {:err}\n", name, pages, res);
+    EPRINTF("failed to make pages mapping %s [page=%p] {:err}\n", name, pages, res);
     pg_putref(&pages); // release the reference
     return 0;
   }
@@ -1396,7 +1479,8 @@ uintptr_t vmap_file(vm_file_t *file, uintptr_t hint, size_t vm_size, uint32_t vm
   int res;
   uintptr_t vaddr;
   if ((res = vmap_internal(curspace, VM_TYPE_FILE, hint, file->size, vm_size, vm_flags, name, file, &vaddr)) < 0) {
-    ALLOC_ERROR("vmap: failed to make file mapping %s [file=%p] {:err}\n", name, file, res);
+    EPRINTF("failed to make file mapping %s [file=%p] {:err}\n", name, file, res);
+    vm_file_free(&file);
     return 0;
   }
   return vaddr;
@@ -1435,7 +1519,7 @@ void *vm_mmap(uintptr_t addr, size_t len, int prot, int flags, int fd, off_t off
     return (void *) res;
   }
 
-  vm_file_t *vm_file = fs_get_vmfile(fd, off, len);
+  vm_file_t *vm_file = fs_get_vmfile(fd, off, len, flags, prot);
   uintptr_t res = vmap_file(vm_file, addr, 0, vm_flags, "mmap file");
   if (res == 0) {
     DPRINTF("failed to map file\n");
