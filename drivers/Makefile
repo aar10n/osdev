@@ -17,3 +17,6 @@ drivers += usb/host/xhci.c
 
 # drivers/usb/msd
 drivers += usb/msd/scsi.c
+
+# drivers/net
+drivers += net/loopback.c
