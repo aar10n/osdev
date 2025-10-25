@@ -19,7 +19,7 @@
 
 #define NRUNQS 64
 
-/*
+/**
  * A scheduler on a cpu.
  */
 typedef struct sched {

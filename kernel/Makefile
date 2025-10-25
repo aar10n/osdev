@@ -48,7 +48,7 @@ kernel += tty/tty.c tty/ttydisc.c tty/ttyqueue.c
 kernel += usb/usb.c
 
 # kernel/net
-kernel += net/skbuff.c net/netdev.c net/socket.c
+kernel += net/skbuff.c net/netdev.c net/in_dev.c net/socket.c net/ip.c net/arp.c net/eth.c
 
 # kernel/vfs
 kernel += vfs/file.c vfs/fs.c vfs/path.c vfs/pipe.c vfs/vcache.c vfs/ventry.c \

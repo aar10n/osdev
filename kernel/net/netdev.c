@@ -23,16 +23,46 @@ static LIST_HEAD(netdev_t) netdev_list;
 static mtx_t netdev_list_lock;
 static int next_ifindex = 1;
 
+static LIST_HEAD(link_type_t) ltype_list;
+static mtx_t ltype_list_lock;
+
 static LIST_HEAD(packet_type_t) ptype_list;
 static mtx_t ptype_list_lock;
 
 void netdev_static_init() {
   LIST_INIT(&netdev_list);
   mtx_init(&netdev_list_lock, 0, "netdev_list");
+  LIST_INIT(&ltype_list);
+  mtx_init(&ltype_list_lock, 0, "ltype_list");
   LIST_INIT(&ptype_list);
   mtx_init(&ptype_list_lock, 0, "ptype_list");
 }
 STATIC_INIT(netdev_static_init);
+
+//
+// MARK: Link-Layer Handler Registration
+//
+
+void netdev_add_link_type(link_type_t *lt) {
+  ASSERT(lt != NULL);
+  ASSERT(lt->func != NULL);
+
+  mtx_lock(&ltype_list_lock);
+  LIST_ADD(&ltype_list, lt, list);
+  mtx_unlock(&ltype_list_lock);
+
+  DPRINTF("registered link type %d\n", lt->type);
+}
+
+void netdev_remove_link_type(link_type_t *lt) {
+  ASSERT(lt != NULL);
+
+  mtx_lock(&ltype_list_lock);
+  LIST_REMOVE(&ltype_list, lt, list);
+  mtx_unlock(&ltype_list_lock);
+
+  DPRINTF("unregistered link type %d\n", lt->type);
+}
 
 //
 // MARK: Protocol Handler Registration
@@ -270,16 +300,20 @@ int netdev_rx(netdev_t *dev, sk_buff_t *skb) {
   }
 
   skb->dev = dev;
-  int ret = netdev_receive_skb(skb);
-  if (ret == 0) {
-    dev->stats.rx_packets++;
-    dev->stats.rx_bytes += skb->len;
-  } else {
-    dev->stats.rx_errors++;
-    dev->stats.rx_dropped++;
+
+  // lookup link-layer handler for this device type
+  mtx_lock(&ltype_list_lock);
+  link_type_t *lt = LIST_FIND(_lt, &ltype_list, list, _lt->type == dev->type);
+  mtx_unlock(&ltype_list_lock);
+
+  if (lt) {
+    return lt->func(skb);
   }
 
-  return ret;
+  // no link-layer handler registered - assume protocol is already set and pass through
+  dev->stats.rx_packets++;
+  dev->stats.rx_bytes += skb->len;
+  return netdev_receive_skb(skb);
 }
 
 int netdev_ioctl(unsigned long request, uintptr_t argp) {

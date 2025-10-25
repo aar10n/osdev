@@ -39,7 +39,6 @@ static int loopback_tx(netdev_t *dev, sk_buff_t *skb) {
     return -ENOMEM;
   }
 
-  rx_skb->protocol = ETH_P_IP;
   netdev_rx(dev, rx_skb);
   return 0;
 }

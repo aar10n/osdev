@@ -41,6 +41,18 @@ struct netdev_stats {
 };
 
 /**
+ * Link-layer type registration.
+ *
+ * Link-layer handlers register to process packets for specific hardware types.
+ * When a packet is received on a device, the handler for that device's type is invoked.
+ */
+typedef struct link_type {
+  uint16_t type;                        // hardware type (ARPHRD_ETHER, ARPHRD_LOOPBACK, etc.)
+  int (*func)(sk_buff_t *skb);          // receive handler function
+  LIST_ENTRY(struct link_type) list;    // registry linkage
+} link_type_t;
+
+/**
  * Packet type registration.
  *
  * Packet type handlers register to receive packets of a specific ethernet type.
@@ -113,6 +125,9 @@ struct netdev_ops {
 //
 // Network Device API
 //
+
+void netdev_add_link_type(link_type_t *lt);
+void netdev_remove_link_type(link_type_t *lt);
 
 void netdev_add_packet_type(packet_type_t *pt);
 void netdev_remove_packet_type(packet_type_t *pt);

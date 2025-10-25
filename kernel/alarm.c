@@ -16,8 +16,8 @@
 #include <rb_tree.h>
 
 #define ASSERT(x) kassert(x)
-#define DPRINTF(x, ...)
-//#define DPRINTF(x, ...) kprintf("alarm: " x, ##__VA_ARGS__)
+//#define DPRINTF(x, ...)
+#define DPRINTF(x, ...) kprintf("alarm: " x, ##__VA_ARGS__)
 
 #define HANDLER_FN(fn) ((void (*)(alarm_t *, void *, void *, void *))(fn))
 
@@ -99,7 +99,7 @@ static inline void handle_expired_alarms(uint64_t clock_now, uint64_t *next_expi
 static void alarm_tick_irq_handler(struct trapframe *frame) {
   thread_t *td = curthread;
   uint64_t clock_now = clock_get_nanos();
-  DPRINTF("tick IRQ [%llu]\n", clock_now);
+//  DPRINTF("tick IRQ [%llu]\n", clock_now);
 
   last_tick = clock_now;
   uint64_t next_expiry = 0;
@@ -485,6 +485,7 @@ static void alarm_cb_deliver_signal(alarm_t *alarm, pid_t pid) {
 }
 
 static void alarm_cb_handle_itimer(alarm_t *alarm, pid_t pid, int which) {
+  DPRINTF("alarm_cb_handle_itimer: called for pid %d, which %d\n", pid, which);
   proc_t *proc = proc_lookup(pid);
   if (proc == NULL) {
     DPRINTF("alarm_cb_handle_itimer: process %d not found\n", pid);
@@ -492,10 +493,12 @@ static void alarm_cb_handle_itimer(alarm_t *alarm, pid_t pid, int which) {
   }
 
   int res;
+  DPRINTF("alarm_cb_handle_itimer: calling proc_signal for SIGALRM\n");
   if ((res = proc_signal(proc, &(siginfo_t){.si_signo = SIGALRM})) < 0) {
     DPRINTF("alarm_cb_handle_itimer: failed to deliver signal: {:err}\n", res);
     goto done;
   }
+  DPRINTF("alarm_cb_handle_itimer: proc_signal succeeded\n");
 
   // reload the timer if it is periodic
   struct itimerval *itv = &proc->itimer_vals[which];
