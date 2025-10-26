@@ -89,6 +89,8 @@ int ip_route_iterate(int (*callback)(route_t *route, void *data), void *data);
 int ip_register_protocol(uint8_t protocol, int (*handler)(sk_buff_t *skb));
 void ip_unregister_protocol(uint8_t protocol);
 
+uint16_t ip_checksum(const void *data, size_t len);
+int ip_rcv(sk_buff_t *skb);
 int ip_output(sk_buff_t *skb, uint32_t saddr, uint32_t daddr, uint8_t protocol, netdev_t *dev);
 
 #endif

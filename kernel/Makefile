@@ -49,6 +49,7 @@ kernel += usb/usb.c
 
 # kernel/net
 kernel += net/skbuff.c net/netdev.c net/in_dev.c net/socket.c net/ip.c net/arp.c net/eth.c
+kernel += net/skbuff.c net/netdev.c net/in_dev.c net/socket.c net/ip.c net/arp.c net/eth.c net/icmp.c net/raw.c net/inet.c
 
 # kernel/vfs
 kernel += vfs/file.c vfs/fs.c vfs/path.c vfs/pipe.c vfs/vcache.c vfs/ventry.c \

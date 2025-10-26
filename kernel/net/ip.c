@@ -169,7 +169,7 @@ void ip_unregister_protocol(uint8_t protocol) {
 // MARK: IP Packet Processing
 //
 
-static uint16_t ip_checksum(const void *data, size_t len) {
+uint16_t ip_checksum(const void *data, size_t len) {
   const uint16_t *ptr = (const uint16_t *)data;
   uint32_t sum = 0;
   while (len > 1) {
