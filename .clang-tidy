@@ -90,5 +90,7 @@ cstr=struct cstr *,
 path=struct path *,
 time=struct tm *,
 epoc=ulonglong,
-file=struct file *
+file=struct file *,
+ip=uint,
+mac=void*
 '

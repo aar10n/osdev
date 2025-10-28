@@ -12,6 +12,7 @@
 #include <abi/fcntl.h>
 #include <abi/poll.h>
 #include <abi/resource.h>
+#include <abi/sched.h>
 #include <abi/stat.h>
 #include <abi/statfs.h>
 #include <abi/select.h>

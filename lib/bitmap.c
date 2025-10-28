@@ -276,6 +276,63 @@ index_t bitmap_get_set_free_at(bitmap_t *bmp, index_t index) {
   return -1;
 }
 
+index_t bitmap_get_set_free_range(bitmap_t *bmp, index_t start, index_t min, index_t max) {
+  if (bmp->free == 0) {
+    return -1;
+  }
+
+  size_t total_bits = (bmp->used + bmp->free);
+  if (min > max || max >= total_bits) {
+    return -1;
+  }
+  if (start < min || start > max) {
+    return -1;
+  }
+
+  uint64_t *array = (uint64_t *) bmp->map;
+
+  index_t index = start;
+  index_t end = max;
+  bool wrapped = false;
+
+  while (true) {
+    size_t word_idx = index / BIT_SIZE;
+    size_t bit_offset = index % BIT_SIZE;
+    size_t word_end = (end / BIT_SIZE) + 1;
+
+    for (size_t i = word_idx; i < word_end; i++) {
+      uint64_t qw = array[i];
+      size_t start_bit = (i == word_idx) ? bit_offset : 0;
+      size_t end_bit = (i == word_end - 1 && end % BIT_SIZE != BIT_SIZE - 1) ? (end % BIT_SIZE + 1) : BIT_SIZE;
+
+      if (start_bit > 0 || end_bit < BIT_SIZE) {
+        uint64_t start_mask = (start_bit > 0) ? ((1ULL << start_bit) - 1) : 0;
+        uint64_t end_mask = (end_bit < BIT_SIZE) ? ~((1ULL << end_bit) - 1) : 0;
+        uint64_t mask = start_mask | end_mask;
+        qw |= mask;
+      }
+
+      if (qw != MAX_NUM) {
+        size_t offset = __bsf64(~qw);
+        array[i] |= (1ULL << offset);
+        bmp->used++;
+        bmp->free--;
+        return (i * BIT_SIZE) + offset;
+      }
+    }
+
+    if (wrapped || min == start) {
+      break;
+    }
+
+    index = min;
+    end = start - 1;
+    wrapped = true;
+  }
+
+  return -1;
+}
+
 /*
  * Returns the start index of the next region of `n` consecutive
  * 0 bits. If no such region could be found, `-1` is returned.
