@@ -23,6 +23,7 @@ static const struct proto_ops *proto_families[AF_MAX] = { NULL };
 static mtx_t proto_lock;
 
 // socket file operations
+static int socket_open(file_t *file, int flags);
 static ssize_t socket_read(file_t *file, kio_t *kio);
 static ssize_t socket_write(file_t *file, kio_t *kio);
 static int socket_ioctl(file_t *file, unsigned int request, void *arg);
@@ -31,6 +32,7 @@ static int socket_close(file_t *file);
 static void socket_cleanup(file_t *file);
 
 static const struct file_ops socket_file_ops = {
+  .f_open = socket_open,
   .f_read = socket_read,
   .f_write = socket_write,
   .f_ioctl = socket_ioctl,
@@ -114,6 +116,10 @@ void socket_free(sock_t *sock) {
 //
 // MARK: File Operations
 //
+
+static int socket_open(file_t *file, int flags) {
+  return 0;
+}
 
 static ssize_t socket_read(file_t *file, kio_t *kio) {
   sock_t *sock = (sock_t *)file->data;

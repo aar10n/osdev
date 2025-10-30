@@ -3,6 +3,7 @@
 //
 
 #include <kernel/net/in_dev.h>
+#include <kernel/net/ip.h>
 #include <kernel/net/netdev.h>
 
 #include <kernel/mm.h>
@@ -105,9 +106,10 @@ int inet_addr_add(netdev_t *dev, uint32_t addr, uint8_t prefixlen, uint32_t broa
   uint32_t mask = inet_make_mask(prefixlen);
   uint32_t network = addr & mask;
 
-  // TODO: add route
-  // ip_route_add(network, mask, 0, dev, 0);
-  DPRINTF("added route for network {:ip}/%d via {:str}\n", network, prefixlen, &dev->name);
+  int ret = ip_route_add(network, mask, 0, dev, 0);
+  if (ret < 0) {
+    EPRINTF("failed to add route for network {:ip}/%d: {:err}\n", network, prefixlen, ret);
+  }
   return 0;
 }
 
@@ -124,6 +126,15 @@ int inet_addr_del(netdev_t *dev, uint32_t addr, uint8_t prefixlen) {
   mtx_spin_unlock(&in_dev_lock);
 
   DPRINTF("deleted address {:ip}/%d from device {:str}\n", addr, prefixlen, &dev->name);
+
+  uint32_t mask = inet_make_mask(prefixlen);
+  uint32_t network = addr & mask;
+
+  int ret = ip_route_del(network, mask);
+  if (ret < 0) {
+    EPRINTF("failed to delete route for network {:ip}/%d: {:err}\n", network, prefixlen, ret);
+  }
+
   ifa_putref(&ifa);
   return 0;
 }
