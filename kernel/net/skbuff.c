@@ -5,6 +5,7 @@
 #include <kernel/net/skbuff.h>
 
 #include <kernel/mm.h>
+#include <kernel/mm/pool.h>
 #include <kernel/clock.h>
 #include <kernel/panic.h>
 
@@ -21,16 +22,46 @@ struct skb_data {
   uint8_t buffer[];     // buffer data
 };
 
+// memory pools
+static pool_t *skb_pool;       // pool for sk_buff structures
+static pool_t *skb_data_pool;  // pool for skb_data buffers
+
+static void skb_init_pools() {
+  skb_pool = pool_create("skb", pool_sizes(sizeof(sk_buff_t)), 0);
+  if (!skb_pool) {
+    panic("skb_init_pools: failed to create skb pool");
+  }
+
+  // common skb_data sizes: header + 1500, 2048, 4096, 9000 (jumbo frames)
+  size_t default_size = sizeof(skb_data_t) + SKB_DEFAULT_SIZE + SKB_DEFAULT_HEADROOM;
+  skb_data_pool = pool_create("skb_data", pool_sizes(
+    default_size,
+    sizeof(skb_data_t) + 2048,
+    sizeof(skb_data_t) + 4096,
+    sizeof(skb_data_t) + 9000
+  ), 0);
+  if (!skb_data_pool) {
+    panic("skb_init_pools: failed to create skb_data pool");
+  }
+
+  // preload some buffers for the default size
+  pool_preload_cache(skb_pool, sizeof(sk_buff_t), 32);
+  pool_preload_cache(skb_data_pool, default_size, 32);
+}
+STATIC_INIT(skb_init_pools);
+
 //
 // MARK: Socket Buffer API
 //
 
 static __ref skb_data_t *skb_data_alloc(size_t size) {
-  skb_data_t *buf = kmallocz(sizeof(skb_data_t) + size);
+  size_t total_size = sizeof(skb_data_t) + size;
+  skb_data_t *buf = pool_alloc(skb_data_pool, total_size);
   if (!buf) {
     return NULL;
   }
 
+  memset(buf, 0, total_size);
   initref(buf);
   buf->size = size;
   return buf;
@@ -41,16 +72,18 @@ sk_buff_t *skb_alloc(size_t size) {
     size = SKB_DEFAULT_SIZE;
   }
 
-  sk_buff_t *skb = kmallocz(sizeof(sk_buff_t));
+  sk_buff_t *skb = pool_alloc(skb_pool, sizeof(sk_buff_t));
   if (!skb) {
     return NULL;
   }
+
+  memset(skb, 0, sizeof(sk_buff_t));
 
   // allocate the skb_data buffer
   size_t total_size = size + SKB_DEFAULT_HEADROOM;
   skb_data_t *buf = skb_data_alloc(total_size);
   if (!buf) {
-    kfree(skb);
+    pool_free(skb_pool, skb);
     return NULL;
   }
 
@@ -79,14 +112,18 @@ sk_buff_t *skb_alloc(size_t size) {
   return skb;
 }
 
+static void skb_data_free(skb_data_t *buf) {
+  pool_free(skb_data_pool, buf);
+}
+
 void skb_free(sk_buff_t **skbp) {
   sk_buff_t *skb = moveptr(*skbp);
   if (!skb) {
     return;
   }
 
-  putref(&skb->buf, kfree);
-  kfree(skb);
+  putref(&skb->buf, skb_data_free);
+  pool_free(skb_pool, skb);
 }
 
 sk_buff_t *skb_clone(sk_buff_t *skb) {
@@ -95,8 +132,9 @@ sk_buff_t *skb_clone(sk_buff_t *skb) {
   // grab reference to underlying buffer
   getref(skb->buf);
 
-  sk_buff_t *clone = kmalloc(sizeof(sk_buff_t));
+  sk_buff_t *clone = pool_alloc(skb_pool, sizeof(sk_buff_t));
   if (!clone) {
+    putref(&skb->buf, skb_data_free);
     return NULL;
   }
 
