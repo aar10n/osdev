@@ -294,7 +294,7 @@ $(BUILD_DIR)/linux-headers-$(LINUX_HEADERS_VERSION).apk:
 #
 
 userspace: packages $(USERSPACE_DIRS:%=userspace-dir-%)
-install-userspace: install-etc install-headers $(USERSPACE_DIRS:%=userspace-dir-install-%)
+install-userspace: install-headers $(USERSPACE_DIRS:%=userspace-dir-install-%)
 clean-userspace: $(USERSPACE_DIRS:%=userspace-dir-clean-%)
 clean-sbin: userspace-dir-clean-sbin
 
@@ -317,10 +317,6 @@ userspace-dir-clean-%:
 #
 
 sysroot: $(SYS_ROOT)
-
-install-etc: $(wildcard etc/*)
-	mkdir -p $(SYS_ROOT)/etc
-	cp -r etc/* $(SYS_ROOT)/etc/
 
 install-headers: $(BUILD_DIR)/linux-headers
 	mkdir -p $(SYS_ROOT)/usr/include
