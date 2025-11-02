@@ -154,6 +154,7 @@ netdev_t *netdev_alloc(str_t name, size_t priv_size) {
   dev->netdev_ops = NULL;
   dev->ifindex = 0;
 
+  mtx_init(&dev->lock, MTX_RECURSIVE, "netdev");
   initref(dev);
   return dev;
 }
@@ -172,6 +173,7 @@ void _netdev_free(netdev_t **devp) {
     kfree(dev->data);
   }
 
+  mtx_destroy(&dev->lock);
   kfree(dev);
 }
 
@@ -214,7 +216,10 @@ __ref netdev_t *netdev_get_by_index(int ifindex) {
 int netdev_open(netdev_t *dev) {
   ASSERT(dev != NULL);
   ASSERT(dev->netdev_ops != NULL);
+
+  mtx_lock(&dev->lock);
   if (dev->flags & NETDEV_UP) {
+    mtx_unlock(&dev->lock);
     return 0;  // already up
   }
 
@@ -222,11 +227,14 @@ int netdev_open(netdev_t *dev) {
   if (dev->netdev_ops->net_open) {
     ret = dev->netdev_ops->net_open(dev);
     if (ret < 0) {
+      mtx_unlock(&dev->lock);
       return ret;
     }
   }
 
   dev->flags |= NETDEV_UP | NETDEV_RUNNING;
+  mtx_unlock(&dev->lock);
+
   DPRINTF("device {:str} opened\n", &dev->name);
   return 0;
 }
@@ -234,7 +242,10 @@ int netdev_open(netdev_t *dev) {
 int netdev_close(netdev_t *dev) {
   ASSERT(dev != NULL);
   ASSERT(dev->netdev_ops != NULL);
+
+  mtx_lock(&dev->lock);
   if (!(dev->flags & NETDEV_UP)) {
+    mtx_unlock(&dev->lock);
     return 0;  // already down
   }
 
@@ -242,6 +253,7 @@ int netdev_close(netdev_t *dev) {
   if (dev->netdev_ops->net_close) {
     dev->netdev_ops->net_close(dev);
   }
+  mtx_unlock(&dev->lock);
 
   DPRINTF("device {:str} closed\n", &dev->name);
   return 0;
@@ -251,10 +263,14 @@ int netdev_tx(netdev_t *dev, sk_buff_t *skb) {
   ASSERT(skb != NULL);
   ASSERT(dev != NULL);
   ASSERT(dev->netdev_ops != NULL);
+
+  mtx_lock(&dev->lock);
   if (!(dev->flags & NETDEV_RUNNING)) {
+    mtx_unlock(&dev->lock);
     skb_free(&skb);
     return -ENETDOWN;
   }
+  mtx_unlock(&dev->lock);
 
   skb->dev = dev;
 
@@ -265,6 +281,7 @@ int netdev_tx(netdev_t *dev, sk_buff_t *skb) {
     ret = -EOPNOTSUPP;
   }
 
+  mtx_lock(&dev->lock);
   if (ret == 0) {
     dev->stats.tx_packets++;
     dev->stats.tx_bytes += skb->len;
@@ -272,6 +289,7 @@ int netdev_tx(netdev_t *dev, sk_buff_t *skb) {
     dev->stats.tx_errors++;
     dev->stats.tx_dropped++;
   }
+  mtx_unlock(&dev->lock);
 
   return ret;
 }
@@ -294,25 +312,39 @@ int netdev_rx(netdev_t *dev, sk_buff_t *skb) {
   ASSERT(skb != NULL);
   ASSERT(dev != NULL);
   ASSERT(dev->netdev_ops != NULL);
+
+  mtx_lock(&dev->lock);
   if (!(dev->flags & NETDEV_RUNNING)) {
+    mtx_unlock(&dev->lock);
     skb_free(&skb);
     return -ENETDOWN;
   }
+  uint16_t dev_type = dev->type;
+  mtx_unlock(&dev->lock);
 
   skb->dev = dev;
 
   // lookup link-layer handler for this device type
   mtx_lock(&ltype_list_lock);
-  link_type_t *lt = LIST_FIND(_lt, &ltype_list, list, _lt->type == dev->type);
+  link_type_t *lt = LIST_FIND(_lt, &ltype_list, list, _lt->type == dev_type);
   mtx_unlock(&ltype_list_lock);
 
   if (lt) {
-    return lt->func(skb);
+    int ret = lt->func(skb);
+    if (ret == 0) {
+      mtx_lock(&dev->lock);
+      dev->stats.rx_packets++;
+      dev->stats.rx_bytes += skb->len;
+      mtx_unlock(&dev->lock);
+    }
+    return ret;
   }
 
   // no link-layer handler registered - assume protocol is already set and pass through
+  mtx_lock(&dev->lock);
   dev->stats.rx_packets++;
   dev->stats.rx_bytes += skb->len;
+  mtx_unlock(&dev->lock);
   return netdev_receive_skb(skb);
 }
 
@@ -331,13 +363,21 @@ int netdev_ioctl(unsigned long request, uintptr_t argp) {
 
       short flags = ifr->ifr_flags;
       int ret = 0;
+
+      mtx_lock(&dev->lock);
       if (flags & IFF_UP) {
         if (!(dev->flags & NETDEV_UP)) {
+          mtx_unlock(&dev->lock);
           ret = netdev_open(dev);
+        } else {
+          mtx_unlock(&dev->lock);
         }
       } else {
         if (dev->flags & NETDEV_UP) {
+          mtx_unlock(&dev->lock);
           ret = netdev_close(dev);
+        } else {
+          mtx_unlock(&dev->lock);
         }
       }
 
@@ -355,6 +395,7 @@ int netdev_ioctl(unsigned long request, uintptr_t argp) {
         return -ENODEV;
       }
 
+      mtx_lock(&dev->lock);
       short flags = 0;
       if (dev->flags & NETDEV_UP) {
         flags |= IFF_UP;
@@ -365,6 +406,7 @@ int netdev_ioctl(unsigned long request, uintptr_t argp) {
       if (dev->flags & NETDEV_LOOPBACK) {
         flags |= IFF_LOOPBACK;
       }
+      mtx_unlock(&dev->lock);
 
       ifr->ifr_flags = flags;
       netdev_putref(&dev);

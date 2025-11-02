@@ -9,6 +9,7 @@
 #include <kernel/ref.h>
 #include <kernel/str.h>
 #include <kernel/queue.h>
+#include <kernel/mutex.h>
 
 #include <kernel/net/skbuff.h>
 
@@ -83,6 +84,7 @@ typedef struct netdev {
   const struct netdev_ops *netdev_ops;   // device operations
   void *data;                       // private driver data
 
+  mtx_t lock;                       // protects device state
   _refcount;
 
   /* registration */
