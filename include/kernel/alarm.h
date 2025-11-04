@@ -86,7 +86,7 @@ alarm_t *alarm_alloc_relative(uint64_t offset_ns, struct callback cb);
 void alarm_free(alarm_t **alarmp);
 
 id_t alarm_register(alarm_t *alarm);
-int alarm_unregister(id_t alarm_id);
+int alarm_unregister(id_t alarm_id, struct callback *callback);
 
 int alarm_sleep_ms(uint64_t ms);
 int alarm_sleep_ns(uint64_t ns);

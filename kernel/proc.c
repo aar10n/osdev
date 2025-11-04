@@ -949,13 +949,13 @@ void proc_terminate(proc_t *proc, int ret, int sig) {
   // cancel signal and itimer alarms
   if (proc->pending_alarm > 0) {
     // cancel pending signal alarm
-    alarm_unregister(proc->pending_alarm);
+    alarm_unregister(proc->pending_alarm, NULL);
     proc->pending_alarm = 0;
   }
   for (int i = 0; i < ARRAY_SIZE(proc->itimer_alarms); i++) {
     if (proc->itimer_alarms[i] > 0) {
       // cancel pending interval timer alarms
-      alarm_unregister(proc->itimer_alarms[i]);
+      alarm_unregister(proc->itimer_alarms[i], NULL);
       proc->itimer_alarms[i] = 0;
     }
   }
@@ -1314,7 +1314,7 @@ int proc_syscall_execve(cstr_t path, char *const argv[], char *const envp[]) {
 
   // 5. cancel process pending alarms
   if (proc->pending_alarm > 0) {
-    alarm_unregister(proc->pending_alarm);
+    alarm_unregister(proc->pending_alarm, NULL);
     proc->pending_alarm = 0;
   }
 
@@ -1891,6 +1891,7 @@ void thread_kill(thread_t *td) {
   // remove the thread from the process thread list
   proc_do_remove_thread(proc, td);
   DPRINTF("thread_kill: killing thread {:td} in state %d, wchan=%p [{:td}]\n", td, td->state, td->wchan, curthread);
+
   if (TDS_IS_RUNNING(td)) {
     // stop an active thread
     if (td == curthread) {
@@ -1934,7 +1935,7 @@ void thread_kill(thread_t *td) {
         if (wq->type == WQ_SLEEP) {
           // cancel the pending alarm
           alarm_t *alarm = td->wchan;
-          alarm_unregister(alarm->id);
+          alarm_unregister(alarm->id, NULL);
         } else if (wq->type == WQ_CONDV) {
           // decrement the condition variable's waiters count
           // since the thread won't return to do it itself

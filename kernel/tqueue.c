@@ -545,7 +545,7 @@ int waitq_wait_timeout(struct waitqueue *waitq, const char *wdmsg, uint64_t time
   } else {
     // normal wakeup, cancel the alarm
     if (td->timeout_alarm_id != 0) {
-      alarm_unregister(td->timeout_alarm_id);
+      alarm_unregister(td->timeout_alarm_id, NULL);
     }
   }
   td->timeout_alarm_id = 0;
@@ -632,12 +632,12 @@ int waitq_wait_sigtimeout(struct waitqueue *waitq, const char *wdmsg, uint64_t t
     td->errno = 0;
     // signal interrupted us, cancel the alarm
     if (td->timeout_alarm_id != 0) {
-      alarm_unregister(td->timeout_alarm_id);
+      alarm_unregister(td->timeout_alarm_id, NULL);
     }
   } else {
     // normal wakeup, cancel the alarm
     if (td->timeout_alarm_id != 0) {
-      alarm_unregister(td->timeout_alarm_id);
+      alarm_unregister(td->timeout_alarm_id, NULL);
     }
   }
   td->timeout_alarm_id = 0;

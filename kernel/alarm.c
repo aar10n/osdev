@@ -374,7 +374,7 @@ id_t alarm_register(alarm_t *alarm) {
   return alarm->id;
 }
 
-int alarm_unregister(id_t alarm_id) {
+int alarm_unregister(id_t alarm_id, struct callback *callback) {
   mtx_spin_lock(&alarm_lock);
   id_t expires_ns = (id_t)(uintptr_t)rb_tree_find(alarm_expiries, alarm_id);
   if (expires_ns == 0) {
@@ -403,6 +403,10 @@ int alarm_unregister(id_t alarm_id) {
   mtx_spin_unlock(&alarm_lock);
 
   DPRINTF("alarm_unregister: alarm %d unregistered\n", alarm->id);
+  if (callback) {
+    callback->function = alarm->function;
+    memcpy(callback->args, alarm->args, sizeof(alarm->args));
+  }
   alarm_free(&alarm);
   return 0;
 
@@ -459,7 +463,7 @@ int alarm_sleep_ns(uint64_t ns) {
 
   // unregister the alarm if it hasn't fired yet
   if (ret != 0) {
-    alarm_unregister(alarm_id);
+    alarm_unregister(alarm_id, NULL);
   }
 
   return ret;
@@ -540,7 +544,7 @@ static void itimer_get_update(int which, struct itimerval *curr_value, const str
   if (new_value != NULL) {
     // cancel previous alarm if it exists
     if (proc->itimer_alarms[which] > 0) {
-      alarm_unregister(proc->itimer_alarms[which]);
+      alarm_unregister(proc->itimer_alarms[which], NULL);
       proc->itimer_alarms[which] = 0;
     }
 
@@ -574,7 +578,7 @@ DEFINE_SYSCALL(alarm, int, unsigned int seconds) {
 
   // cancel any existing pending alarm
   if (proc->pending_alarm > 0) {
-    alarm_unregister(proc->pending_alarm);
+    alarm_unregister(proc->pending_alarm, NULL);
     proc->pending_alarm = 0;
   }
 

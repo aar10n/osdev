@@ -496,7 +496,7 @@ const struct proto_ops udp_dgram_ops = {
 
 void udp_init() {
   ip_register_protocol(IPPROTO_UDP, udp_rcv);
-  inet_register_protocol(SOCK_DGRAM, IPPROTO_UDP, &udp_dgram_ops);
+  inet_register_protocol(SOCK_DGRAM, 0, &udp_dgram_ops);
 
   DPRINTF("UDP protocol initialized\n");
 }

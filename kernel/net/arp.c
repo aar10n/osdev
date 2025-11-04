@@ -56,7 +56,7 @@ static void arp_entry_free(arp_entry_t *entry) {
 
   // cancel timer
   if (entry->timer_id) {
-    alarm_unregister(entry->timer_id);
+    alarm_unregister(entry->timer_id, NULL);
   }
 
   // free queued packets
@@ -87,7 +87,7 @@ static void arp_entry_timeout(alarm_t *alarm, void *data) {
       }
 
       // reset timer for next retry
-      alarm_unregister(entry->timer_id);
+      alarm_unregister(entry->timer_id, NULL);
       alarm_t *new_alarm = alarm_alloc_relative(ARP_RETRY_INTERVAL * 1000000000ULL, alarm_cb(arp_entry_timeout, entry));
       entry->timer_id = new_alarm->id;
       alarm_register(new_alarm);
@@ -135,7 +135,7 @@ arp_entry_t *arp_cache_lookup(uint32_t ip_addr) {
 
       // refresh timer for reachable entries
       if (entry->state == ARP_STATE_REACHABLE) {
-        alarm_unregister(entry->timer_id);
+        alarm_unregister(entry->timer_id, NULL);
         alarm_t *alarm = alarm_alloc_relative(ARP_CACHE_TIMEOUT * 1000000000ULL, alarm_cb(arp_entry_timeout, entry));
         entry->timer_id = alarm->id;
         alarm_register(alarm);
@@ -161,7 +161,7 @@ arp_entry_t *arp_cache_add(netdev_t *dev, uint32_t ip_addr, uint8_t *hw_addr) {
       eth_addr_copy(entry->hw_addr, hw_addr);
       entry->state = ARP_STATE_REACHABLE;
       entry->retries = 0;
-      alarm_unregister(entry->timer_id);
+      alarm_unregister(entry->timer_id, NULL);
       alarm_t *alarm = alarm_alloc_relative(ARP_CACHE_TIMEOUT * 1000000000ULL, alarm_cb(arp_entry_timeout, entry));
       entry->timer_id = alarm->id;
       alarm_register(alarm);
@@ -405,7 +405,7 @@ int arp_resolve(netdev_t *dev, uint32_t ip_addr, sk_buff_t *skb) {
     }
 
     // update timer
-    alarm_unregister(entry->timer_id);
+    alarm_unregister(entry->timer_id, NULL);
     alarm_t *alarm = alarm_alloc_relative(ARP_INCOMPLETE_TIMEOUT * 1000000000ULL, alarm_cb(arp_entry_timeout, entry));
     entry->timer_id = alarm->id;
     alarm_register(alarm);

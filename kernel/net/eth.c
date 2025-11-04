@@ -60,8 +60,6 @@ uint16_t eth_type_trans(sk_buff_t *skb, netdev_t *dev) {
   }
 
   struct ethhdr *eth = (struct ethhdr *)skb->data;
-  skb_pull(skb, ETH_HLEN);
-
   uint16_t protocol = ntohs(eth->h_proto);
   skb->protocol = protocol;
 
@@ -75,6 +73,7 @@ uint16_t eth_type_trans(sk_buff_t *skb, netdev_t *dev) {
     skb->pkt_type = PACKET_OTHERHOST;
   }
 
+  skb_pull(skb, ETH_HLEN);
   return protocol;
 }
 
