@@ -18,6 +18,7 @@
 #define ASSERT(x) kassert(x)
 //#define DPRINTF(x, ...)
 #define DPRINTF(x, ...) kprintf("alarm: " x, ##__VA_ARGS__)
+#define EPRINTF(x, ...) kprintf("alarm: %s: " x, __func__, ##__VA_ARGS__)
 
 #define HANDLER_FN(fn) ((void (*)(alarm_t *, void *, void *, void *))(fn))
 
@@ -61,11 +62,26 @@ static inline void maybe_rearm_tickless_alarm(uint64_t expiry, uint64_t clock_no
 
 
 static inline void handle_expired_alarms(uint64_t clock_now, uint64_t *next_expiry) {
-  // handle any expired alarms
   alarm_t *alarm;
   uint64_t min_expiry = 0;
-  while ((alarm = pending_alarms->min->data) && alarm->expires_ns <= clock_now) {
+
+  while (true) {
     mtx_spin_lock(&alarm_lock);
+
+    if (pending_alarms->min == pending_alarms->nil) {
+      mtx_spin_unlock(&alarm_lock);
+      break;
+    }
+
+    alarm = pending_alarms->min->data;
+    if (alarm->expires_ns > clock_now) {
+      if (pending_alarms->min != pending_alarms->nil) {
+        min_expiry = pending_alarms->min->key;
+      }
+      mtx_spin_unlock(&alarm_lock);
+      break;
+    }
+
     rb_tree_delete_node(pending_alarms, pending_alarms->min);
     rb_tree_delete(alarm_expiries, alarm->id);
     if (pending_alarms->min != pending_alarms->nil) {
@@ -270,20 +286,21 @@ int alarm_source_setval_abs_ns(alarm_source_t *as, uint64_t abs_ns) {
   }
 
   DPRINTF("alarm source '%s' setval_abs_ns: %llu\n", as->name, abs_ns);
-  uint64_t value = abs_ns / as->scale_ns;
+  uint64_t value_ns = abs_ns;
   if (!(as->cap_flags & ALARM_CAP_ABSOLUTE)) {
-    // correct the value to be relative current time
+    // correct the value to be relative to current time
     uint64_t clock_now = clock_get_nanos();
-    if (value < clock_now) {
-      DPRINTF("alarm source '%s' value %llu is in the past [%llu]\n", as->name, value, clock_now);
+    if (abs_ns < clock_now) {
+      EPRINTF("alarm source '%s' value %llu is in the past [%llu]\n", as->name, abs_ns, clock_now);
       return -EINVAL;
     }
 
-    value -= clock_now;
+    value_ns = abs_ns - clock_now;
   }
 
+  uint64_t value = value_ns / as->scale_ns;
   if (value < as->scale_ns || value > as->value_mask) {
-    DPRINTF("alarm source '%s' value %llu out of range [min=%llu, max=%llu]\n",
+    EPRINTF("alarm source '%s' value %llu out of range [min=%u, max=%llu]\n",
             as->name, value, as->scale_ns, as->value_mask);
     return -ERANGE;
   }
@@ -309,7 +326,7 @@ int alarm_source_setval_rel_ns(alarm_source_t *as, uint64_t rel_ns) {
   }
 
   if (value < as->scale_ns || value > as->value_mask) {
-    DPRINTF("alarm source '%s' value %llu out of range [min=%llu, max=%llu]\n",
+    DPRINTF("alarm source '%s' value %llu out of range [min=%u, max=%llu]\n",
             as->name, value, as->scale_ns, as->value_mask);
     return -ERANGE;
   }
