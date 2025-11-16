@@ -115,15 +115,19 @@
         (head)->first = NULL;                             \
         (head)->last = NULL;                              \
       } else {                                            \
+        kassert(__el->name.next != NULL);                 \
         __el->name.next->name.prev = NULL;                \
         (head)->first = __el->name.next;                  \
         __el->name.next = NULL;                           \
       }                                                   \
     } else if (__el == (head)->last) {                    \
+      kassert(__el->name.prev != NULL);                   \
       __el->name.prev->name.next = NULL;                  \
       (head)->last = __el->name.prev;                     \
       __el->name.prev = NULL;                             \
     } else {                                              \
+      kassert(__el->name.next != NULL);                   \
+      kassert(__el->name.prev != NULL);                   \
       __el->name.next->name.prev = __el->name.prev;       \
       __el->name.prev->name.next = __el->name.next;       \
       __el->name.next = NULL;                             \

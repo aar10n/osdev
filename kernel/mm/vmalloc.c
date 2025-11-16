@@ -327,7 +327,7 @@ static void file_map_update_cb(page_t **pageref, size_t off, void *data) {
     }
 
     page_t *table_pages = NULL;
-    uint64_t *entry = recursive_map_entry(vm->address + cb->off, page->address, vm_flags, &table_pages);
+    recursive_map_entry(vm->address + cb->off, page->address, vm_flags, &table_pages);
     if (table_pages != NULL) {
       page_t *last_page = SLIST_GET_LAST(table_pages, next);
       SLIST_ADD_SLIST(&vm->space->table_pages, table_pages, last_page, next);
@@ -478,23 +478,20 @@ static void vm_join_internal(vm_mapping_t *vm, vm_mapping_t *other) {
   }
 }
 
-static void vm_free_internal(vm_mapping_t *vm) {
+static void vm_free_internal(vm_mapping_t *vm, bool unmap) {
   space_lock_assert(vm->space, MA_OWNED);
-  DPRINTF("vm_free_internal: type=%d, addr=%p, size=%zu, flags=%#x\n", vm->type, vm->address, vm->size, vm->flags);
   switch (vm->type) {
     case VM_TYPE_PHYS:
-      phys_type_unmap_internal(vm, vm->size, 0);
+      if (unmap) phys_type_unmap_internal(vm, vm->size, 0);
       vm->vm_phys = 0;
       break;
     case VM_TYPE_PAGE:
-      page_type_unmap_internal(vm, vm->size, 0);
+      if (unmap) page_type_unmap_internal(vm, vm->size, 0);
       page_list_free(&vm->vm_pages);
       break;
     case VM_TYPE_FILE:
-      DPRINTF("vm_free_internal: calling file_type_unmap_internal, vm_file=%p, vm_file->off=%zu, vm_file->size=%zu\n",
-              vm->vm_file, vm->vm_file->off, vm->vm_file->size);
       // only unmap if pages were actually mapped to page tables
-      if (vm->flags & VM_MAPPED) {
+      if (vm->flags & VM_MAPPED && unmap) {
         file_type_unmap_internal(vm, vm->size, 0);
       }
       vm_file_free(&vm->vm_file);
@@ -518,7 +515,7 @@ static int vm_handle_non_present_fault(vm_mapping_t *vm, size_t off) {
 
   // map the page into the address space
   page_t *table_pages = NULL;
-  uint64_t *entry = recursive_map_entry(vm->address+off, page->address, vm->flags, &table_pages);
+  recursive_map_entry(vm->address+off, page->address, vm->flags, &table_pages);
   if (table_pages != NULL) {
     page_t *last_page = SLIST_GET_LAST(table_pages, next);
     SLIST_ADD_SLIST(&vm->space->table_pages, table_pages, last_page, next);
@@ -828,21 +825,17 @@ static bool move_mapping(vm_mapping_t *vm, size_t newsize) {
   return true;
 }
 
-static void free_mapping(vm_mapping_t **vmp) {
+static void free_mapping(vm_mapping_t **vmp, bool unmap) {
   vm_mapping_t *vm = *vmp;
   address_space_t *space = vm->space;
   space_lock_assert(space, MA_OWNED);
-
-  DPRINTF("free_mapping: addr=%p, size=%zu, virt_size=%zu, type=%d, flags=%#x, name={:str}\n",
-          vm->address, vm->size, vm->virt_size, vm->type, vm->flags, &vm->name);
 
   LIST_REMOVE(&space->mappings, vm, vm_list);
   intvl_tree_delete(space->new_tree, vm_virt_interval(vm));
   space->num_mappings--;
 
   if (vm->flags & VM_MAPPED) {
-    DPRINTF("free_mapping: calling vm_free_internal\n");
-    vm_free_internal(vm);
+    vm_free_internal(vm, unmap);
   }
   str_free(&vm->name);
   kfree(vm);
@@ -950,7 +943,7 @@ static int vmap_unmap_range(address_space_t *space, uintptr_t vaddr, size_t size
         // free whole mapping
         //   |-- mapping --|
         //   |~~~~unmap~~~~|
-        free_mapping(&curr);
+        free_mapping(&curr,/*unmap=*/true);
       } else if (vm_range.start < unmap_range.start && vm_range.end > unmap_range.end) {
         // split in three and free middle
         //   |------------- mapping ------------|
@@ -959,7 +952,7 @@ static int vmap_unmap_range(address_space_t *space, uintptr_t vaddr, size_t size
         vm_mapping_t *middle = split_mapping(curr, split_off);
         size_t middle_split = unmap_range.end - middle->address;
         split_mapping(middle, middle_split);
-        free_mapping(&middle);
+        free_mapping(&middle,/*unmap=*/true);
       } else if (vm_range.start < unmap_range.start) {
         // split and free tail
         //   |--------- mapping ---------|
@@ -967,14 +960,14 @@ static int vmap_unmap_range(address_space_t *space, uintptr_t vaddr, size_t size
         DPRINTF("  case: unmap at end, splitting and freeing tail\n");
         size_t split_off = unmap_range.start - vm_range.start;
         vm_mapping_t *tail = split_mapping(curr, split_off);
-        free_mapping(&tail);
+        free_mapping(&tail,/*unmap=*/true);
       } else {
         // split and free head
         //   |--------- mapping ---------|
         //   |~~~~~unmap~~~~~~|-- tail --|
         size_t split_off = unmap_range.end - vm_range.start;
         split_mapping(curr, split_off);
-        free_mapping(&curr);
+        free_mapping(&curr,/*unmap=*/true);
       }
     }
 
@@ -1330,7 +1323,7 @@ void init_address_space() {
   address_space_t *user_space = vm_fork_space(default_user_space, /*fork_user=*/false);
   set_current_pgtable(user_space->page_table);
   set_curspace(user_space);
-  curproc->space = user_space;
+  curproc->space = moveref(user_space);
   space_unlock(default_user_space);
 
   vm_print_address_space();
@@ -1348,7 +1341,7 @@ void init_ap_address_space() {
   space_lock(default_user_space);
   address_space_t *user_space = vm_fork_space(default_user_space, /*fork_user=*/true);
   set_curspace(user_space);
-  curproc->space = user_space;
+  curproc->space = moveref(user_space);
   space_unlock(default_user_space);
 }
 
@@ -1365,6 +1358,7 @@ address_space_t *vm_new_space(uintptr_t min_addr, uintptr_t max_addr, uintptr_t 
   space->new_tree = create_intvl_tree();
   space->page_table = page_table;
   mtx_init(&space->lock, MTX_RECURSIVE, "vm_space_lock");
+  ref_init(&space->refcount);
   return space;
 }
 
@@ -1403,7 +1397,7 @@ address_space_t *vm_fork_space(address_space_t *space, bool fork_user) {
   newspace->page_table = pgtable;
   SLIST_ADD_SLIST(&newspace->table_pages, meta_pages, SLIST_GET_LAST(meta_pages, next), next);
 
-  return newspace;
+  return moveref(newspace);
 }
 
 address_space_t *vm_new_empty_space() {
@@ -1421,6 +1415,7 @@ address_space_t *vm_new_empty_space() {
   space->page_table = pml4->address;
   mtx_init(&space->lock, MTX_RECURSIVE, "vm_space_lock");
   SLIST_ADD(&space->table_pages, pml4, next);
+  ref_init(&space->refcount);
   return space;
 }
 
@@ -1433,10 +1428,39 @@ void vm_clear_user_space(address_space_t *space) {
     vm_mapping_t *next = LIST_NEXT(vm, vm_list);
     // don't clear reserved mappings
     if (vm->type != VM_TYPE_RSVD)
-      free_mapping(&vm);
+      free_mapping(&vm,/*unmap=*/true);
     vm = next;
   }
   space_unlock(space);
+}
+
+void _address_space_cleanup(__move address_space_t **asref) {
+  address_space_t *space = moveref(*asref);
+  DPRINTF("!!! address_space_cleanup: space=%p, refcount=%d !!!\n", space, ref_count(&space->refcount));
+  ASSERT(space->refcount == 0);
+
+  // acquire the lock if we dont already own it
+  if (mtx_owner(&space->lock) == NULL) {
+    mtx_lock(&space->lock);
+  }
+  ASSERT(mtx_owner(&space->lock) == curthread);
+
+  // free all remaining mappings
+  LIST_FOR_IN_SAFE(vm, &space->mappings, vm_list) {
+    // we aren't running in this address space and we are freeing the page
+    // tables anyways so free the mapping without unmapping
+    free_mapping(&vm,/*unmap=*/false);
+  }
+
+  // free page table pages
+  SLIST_FOR_IN_SAFE(page, LIST_FIRST(&space->table_pages), next) {
+    pg_putref(&page);
+  }
+
+  rb_tree_free(space->new_tree);
+  mtx_unlock(&space->lock);
+  mtx_destroy(&space->lock);
+  kfree(space);
 }
 
 //
@@ -1579,10 +1603,10 @@ int vmap_free(uintptr_t vaddr, size_t size) {
   // free all the mappings
   while (vm != vm_end) {
     vm_mapping_t *next = LIST_NEXT(vm, vm_list);
-    free_mapping(&vm);
+    free_mapping(&vm,/*unmap=*/true);
     vm = next;
   }
-  free_mapping(&vm_end);
+  free_mapping(&vm_end,/*unmap=*/true);
   vm_end = NULL;
 
 LABEL(ret);
@@ -2182,7 +2206,7 @@ void vfree(void *ptr) {
     DPANICF("vfree: invalid pointer: {:018p} is not the start of a vmalloc mapping\n", ptr);
   }
 
-  free_mapping(&vm);
+  free_mapping(&vm,/*unmap=*/true);
   space_unlock(space);
 }
 

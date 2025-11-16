@@ -592,14 +592,14 @@ void proc_free_pid(pid_t pid) {
 
 __ref proc_t *proc_alloc_internal(
   pid_t pid,
-  struct address_space *space,
+  __move struct address_space *space,
   struct pcreds *creds,
   struct ventry *pwd,
   bool fork
 ) {
   proc_t *proc = kmallocz(sizeof(proc_t));
   proc->pid = pid;
-  proc->space = space;
+  proc->space = moveref(space);
   proc->creds = getref(creds);
   proc->pwd = fs_root_getref();
   proc->state = PRS_EMPTY;
@@ -700,6 +700,7 @@ void _proc_cleanup(__move proc_t **procp) {
   proc_free_pid(proc->pid);
   pcreds_release(&proc->creds);
   ve_putref(&proc->pwd);
+  as_putref(&proc->space);
 
   ftable_free(&proc->files);
   sigacts_free(&proc->sigacts);
@@ -932,14 +933,6 @@ void proc_terminate(proc_t *proc, int ret, int sig) {
     }
   }
 
-  if (curthread->proc == proc && curthread->wchan) {
-    cond_t *cond = (cond_t *)curthread->wchan;
-    DPRINTF("proc_terminate: thread {:td} was interrupted from cond %p, decrementing waiters from %d\n",
-            curthread, cond, cond->waiters);
-//    cond->waiters--;
-  }
-
-
   // close all files
   ftable_close_all(proc->files);
 
@@ -1065,7 +1058,7 @@ void proc_cont(proc_t *proc) {
 
   // notify parent process of the continue
   proc_child_notify_parent(proc, proc->pid, W_CONTINUED);
-//  proc_signal(proc, NULL);
+  //  proc_signal(proc, NULL);
 
   // start all the threads
   LIST_FOR_IN(td, &proc->threads, plist) {

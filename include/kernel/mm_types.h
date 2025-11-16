@@ -99,6 +99,7 @@ typedef struct address_space {
 
   uintptr_t page_table;
   LIST_HEAD(struct page) table_pages;
+  _refcount;
 } address_space_t;
 static_assert(offsetof(struct address_space, page_table) == 0x48);
 
