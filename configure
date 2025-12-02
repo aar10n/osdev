@@ -28,6 +28,7 @@ if [ -z "$ARCH" ] || [ -z "$BUILD_DIR" ]; then
     exit 1
 fi
 
+mkdir -p "$BUILD_DIR"
 BUILD_DIR="$(realpath "$BUILD_DIR")"
 
 #
@@ -146,6 +147,10 @@ fi
 QEMU_BUILD_PLUGIN=$(prompt_yn "build the QEMU profiling plugin?")
 if [ "$QEMU_BUILD_PLUGIN" = "y" ]; then
   QEMU_INCLUDE_DIR=$(prompt_line "QEMU include directory: ")
+  if [ ! -d "$QEMU_INCLUDE_DIR" ]; then
+    echo -e "${RED}error: directory $QEMU_INCLUDE_DIR does not exist${NC}"
+    exit 1
+  fi
   QEMU_INCLUDE_DIR="$(realpath "$QEMU_INCLUDE_DIR")"
 fi
 
