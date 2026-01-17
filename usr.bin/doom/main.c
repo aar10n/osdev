@@ -14,14 +14,15 @@
 #include <doomgeneric.h>
 #include <doomkeys.h>
 
-#include <osdev/framebuf.h>
-#include <osdev/input.h>
-#include <osdev/input-event-codes.h>
+#include <linux/fb.h>
+#include <linux/input.h>
+#include <linux/input-event-codes.h>
 
 #define _used __attribute__((used))
 
 static int fb_fd = -1;
-static struct fb_info fbinfo;
+static struct fb_var_screeninfo var_info;
+static struct fb_fix_screeninfo fix_info;
 static char *fb_ptr = NULL;
 static size_t fb_width = 0;
 static size_t fb_height = 0;
@@ -54,15 +55,15 @@ void D_DoomMain();
 
 static unsigned char keycode_to_doom(int code) {
   switch(code) {
-    case KEY_LCTRL:
-    case KEY_RCTRL:
+    case KEY_LEFTCTRL:
+    case KEY_RIGHTCTRL:
       return DOOM_KEY_FIRE;
-    case KEY_LSHIFT:
-    case KEY_RSHIFT:
+    case KEY_LEFTSHIFT:
+    case KEY_RIGHTSHIFT:
       return DOOM_KEY_USE;
-    case KEY_LALT:
+    case KEY_LEFTALT:
       return DOOM_KEY_STRAFE_L;
-    case KEY_RALT:
+    case KEY_RIGHTALT:
       return DOOM_KEY_STRAFE_R;
 
     case KEY_W:
@@ -76,24 +77,49 @@ static unsigned char keycode_to_doom(int code) {
     case KEY_E:
       return DOOM_KEY_USE;
 
-    case KEY_B:
-    case KEY_C:
-    case KEY_F ... KEY_R:
-    case KEY_T ... KEY_V:
-    case KEY_X ... KEY_Z:
-      return 'A' + (code - KEY_A);
+    case KEY_B: return 'b';
+    case KEY_C: return 'c';
+    case KEY_F: return 'f';
+    case KEY_G: return 'g';
+    case KEY_H: return 'h';
+    case KEY_I: return 'i';
+    case KEY_J: return 'j';
+    case KEY_K: return 'k';
+    case KEY_L: return 'l';
+    case KEY_M: return 'm';
+    case KEY_N: return 'n';
+    case KEY_O: return 'o';
+    case KEY_P: return 'p';
+    case KEY_Q: return 'q';
+    case KEY_R: return 'r';
+    case KEY_T: return 't';
+    case KEY_U: return 'u';
+    case KEY_V: return 'v';
+    case KEY_X: return 'x';
+    case KEY_Y: return 'y';
+    case KEY_Z: return 'z';
 
     case KEY_1 ... KEY_9:
       return '1' + (code - KEY_1);
     case KEY_0:
       return '0';
 
-    case KEY_F1 ... KEY_F12:
-      return DOOM_KEY_F1 + (code - KEY_F1);
+    case KEY_F1: return DOOM_KEY_F1;
+    case KEY_F2: return DOOM_KEY_F2;
+    case KEY_F3: return DOOM_KEY_F3;
+    case KEY_F4: return DOOM_KEY_F4;
+    case KEY_F5: return DOOM_KEY_F5;
+    case KEY_F6: return DOOM_KEY_F6;
+    case KEY_F7: return DOOM_KEY_F7;
+    case KEY_F8: return DOOM_KEY_F8;
+    case KEY_F9: return DOOM_KEY_F9;
+    case KEY_F10: return DOOM_KEY_F10;
+    case KEY_F11: return DOOM_KEY_F11;
+    case KEY_F12: return DOOM_KEY_F12;
 
     case KEY_ENTER:
       return DOOM_KEY_ENTER;
-    case KEY_ESCAPE:
+    case KEY_ESC:
       return DOOM_KEY_ESCAPE;
     case KEY_BACKSPACE:
       return DOOM_KEY_BACKSPACE;
@@ -208,15 +234,19 @@ void DG_Init() {
   }
 
   // get screen info
-  if (ioctl(fb_fd, FBIOGETINFO, &fbinfo) < 0) {
-    perror("Error reading information");
+  if (ioctl(fb_fd, FBIOGET_VSCREENINFO, &var_info) < 0) {
+    perror("Error reading variable screen info");
+    exit(1);
+  }
+  if (ioctl(fb_fd, FBIOGET_FSCREENINFO, &fix_info) < 0) {
+    perror("Error reading fixed screen info");
     exit(1);
   }
 
-  fb_width = fbinfo.xres;
-  fb_height = fbinfo.yres;
-  fb_bytesperpixel = fbinfo.bits_per_pixel / 8;
-  fb_stride = fb_width * fb_bytesperpixel;
+  fb_width = var_info.xres;
+  fb_height = var_info.yres;
+  fb_bytesperpixel = var_info.bits_per_pixel / 8;
+  fb_stride = fix_info.line_length;
 
   if (!scale_to_fullscreen) {
     // to center the image on screen
@@ -228,7 +258,7 @@ void DG_Init() {
     fb_yoffset = 0;
   }
 
-  fb_ptr = mmap(0, fbinfo.size, PROT_READ | PROT_WRITE, MAP_PRIVATE, fb_fd, 0);
+  fb_ptr = mmap(0, fix_info.smem_len, PROT_READ | PROT_WRITE, MAP_PRIVATE, fb_fd, 0);
   if (fb_ptr == MAP_FAILED) {
     perror("Error mapping framebuffer");
     exit(1);

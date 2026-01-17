@@ -9,9 +9,17 @@
 #include <kernel/chan.h>
 #include <abi/ioctl.h>
 
-#include <uapi/osdev/input.h>
-#include <uapi/osdev/input-event-codes.h>
+#include <linux/input-event-codes.h>
 
+// input ioctls
+#define EVIOCGNAME(len) _IOC(_IOC_READ, 'E', 0x06, len)
+
+struct input_event {
+  struct timeval time;
+  uint16_t type;
+  uint16_t code;
+  int32_t value;
+};
 
 //
 // event flags

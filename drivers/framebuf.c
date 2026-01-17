@@ -6,9 +6,10 @@
 #include <kernel/mm.h>
 #include <kernel/printf.h>
 #include <kernel/panic.h>
+#include <kernel/string.h>
 
 #include <fs/devfs/devfs.h>
-#include <uapi/osdev/framebuf.h>
+#include <linux/fb.h>
 
 #define ASSERT(x) kassert(x)
 #define DPRINTF(fmt, ...) kprintf("framebuf: " fmt, ##__VA_ARGS__)
@@ -20,6 +21,7 @@ struct framebuf {
   uint32_t width;   // width of the framebuffer
   uint32_t height;  // height of the framebuffer
   uint32_t bits_per_pixel; // bits per pixel (bpp)
+  uint32_t stride;  // bytes per line
 };
 
 // MARK: Device API
@@ -65,23 +67,44 @@ void framebuf_d_stat(device_t *dev, struct stat *st) {
 
 int framebuf_d_ioctl(device_t *dev, unsigned int request, void *arg) {
   struct framebuf *fb = dev->data;
-  DPRINTF("framebuf_d_ioctl: request %llu, arg %p\n", request, arg);
-  if (request == FBIOGETINFO) {
-    if (vm_validate_ptr((uintptr_t) arg, /*write=*/true) < 0) {
-      EPRINTF("FBIOGETINFO ioctl requires a valid argument\n");
-      return -EINVAL; // invalid argument
-    }
+  if (vm_validate_ptr((uintptr_t) arg, /*write=*/true) < 0) {
+    return -EINVAL;
+  }
 
-    DPRINTF("FBIOGETINFO ioctl\n");
-    struct fb_info *fb_info = arg;
-    fb_info->size = fb->size;
-    fb_info->xres = fb->width;
-    fb_info->yres = fb->height;
-    fb_info->bits_per_pixel = fb->bits_per_pixel;
+  switch (request) {
+  case FBIOGET_VSCREENINFO: {
+    struct fb_var_screeninfo *var = arg;
+    memset(var, 0, sizeof(*var));
+    var->xres = fb->width;
+    var->yres = fb->height;
+    var->xres_virtual = fb->width;
+    var->yres_virtual = fb->height;
+    var->bits_per_pixel = fb->bits_per_pixel;
+    // BGRA format (UEFI GOP default)
+    var->red.offset = 16;
+    var->red.length = 8;
+    var->green.offset = 8;
+    var->green.length = 8;
+    var->blue.offset = 0;
+    var->blue.length = 8;
+    var->transp.offset = 24;
+    var->transp.length = 8;
     return 0;
-  } else {
-    EPRINTF("framebuf_d_ioctl: unsupported request %llu\n", request);
-    return -ENOTTY; // not a tty device or not supported
+  }
+  case FBIOGET_FSCREENINFO: {
+    struct fb_fix_screeninfo *fix = arg;
+    memset(fix, 0, sizeof(*fix));
+    strncpy(fix->id, "UEFI GOP", sizeof(fix->id));
+    fix->smem_start = boot_info_v2->fb_addr;
+    fix->smem_len = fb->size;
+    fix->type = FB_TYPE_PACKED_PIXELS;
+    fix->visual = FB_VISUAL_TRUECOLOR;
+    fix->line_length = fb->stride;
+    fix->accel = FB_ACCEL_NONE;
+    return 0;
+  }
+  default:
+    return -ENOTTY;
   }
 }
 
@@ -116,6 +139,7 @@ static void framebuf_module_init() {
   fb->width = boot_info_v2->fb_width;
   fb->height = boot_info_v2->fb_height;
   fb->bits_per_pixel = 32;
+  fb->stride = fb->width * (fb->bits_per_pixel / 8);
 
   devfs_register_class(dev_major_by_name("framebuf"), -1, "fb", DEVFS_NUMBERED);
 

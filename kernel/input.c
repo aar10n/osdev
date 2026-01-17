@@ -13,8 +13,6 @@
 
 #include <fs/devfs/devfs.h>
 
-#include <uapi/osdev/input.h>
-
 #include <bitmap.h>
 #include <rb_tree.h>
 
@@ -27,14 +25,14 @@
 #define EVSTREAM_MOUSE    ((void *)2)
 
 static const char *input_code_to_name[] = {
-  [KEY_LCTRL] = "KEY_LCTRL",
-  [KEY_LSHIFT] = "KEY_LSHIFT",
-  [KEY_LALT] = "KEY_LALT",
-  [KEY_LMETA] = "KEY_LMETA",
-  [KEY_RCTRL] = "KEY_RCTRL",
-  [KEY_RSHIFT] = "KEY_RSHIFT",
-  [KEY_RALT] = "KEY_RALT",
-  [KEY_RMETA] = "KEY_RMETA",
+  [KEY_LEFTCTRL] = "KEY_LEFTCTRL",
+  [KEY_LEFTSHIFT] = "KEY_LEFTSHIFT",
+  [KEY_LEFTALT] = "KEY_LEFTALT",
+  [KEY_LEFTMETA] = "KEY_LEFTMETA",
+  [KEY_RIGHTCTRL] = "KEY_RIGHTCTRL",
+  [KEY_RIGHTSHIFT] = "KEY_RIGHTSHIFT",
+  [KEY_RIGHTALT] = "KEY_RIGHTALT",
+  [KEY_RIGHTMETA] = "KEY_RIGHTMETA",
 
   [KEY_A] = "KEY_A",
   [KEY_B] = "KEY_B",
@@ -87,23 +85,23 @@ static const char *input_code_to_name[] = {
   [KEY_F11] = "KEY_F11",
   [KEY_F12] = "KEY_F12",
 
-  [KEY_ENTER] = "KEY_RETURN",
-  [KEY_ESCAPE] = "KEY_ESCAPE",
-  [KEY_BACKSPACE] = "KEY_DELETE",
+  [KEY_ENTER] = "KEY_ENTER",
+  [KEY_ESC] = "KEY_ESC",
+  [KEY_BACKSPACE] = "KEY_BACKSPACE",
   [KEY_TAB] = "KEY_TAB",
   [KEY_SPACE] = "KEY_SPACE",
   [KEY_CAPSLOCK] = "KEY_CAPSLOCK",
 
   [KEY_MINUS] = "KEY_MINUS",
   [KEY_EQUAL] = "KEY_EQUAL",
-  [KEY_LSQUARE] = "KEY_LSQUARE",
-  [KEY_RSQUARE] = "KEY_RSQUARE",
+  [KEY_LEFTBRACE] = "KEY_LEFTBRACE",
+  [KEY_RIGHTBRACE] = "KEY_RIGHTBRACE",
   [KEY_BACKSLASH] = "KEY_BACKSLASH",
   [KEY_SEMICOLON] = "KEY_SEMICOLON",
   [KEY_APOSTROPHE] = "KEY_APOSTROPHE",
-  [KEY_GRAVE] = "KEY_TILDE",
+  [KEY_GRAVE] = "KEY_GRAVE",
   [KEY_COMMA] = "KEY_COMMA",
-  [KEY_PERIOD] = "KEY_PERIOD",
+  [KEY_DOT] = "KEY_DOT",
   [KEY_SLASH] = "KEY_SLASH",
 
   [KEY_RIGHT] = "KEY_RIGHT",
@@ -111,19 +109,19 @@ static const char *input_code_to_name[] = {
   [KEY_DOWN] = "KEY_DOWN",
   [KEY_UP] = "KEY_UP",
 
-  [KEY_PRINTSCR] = "KEY_PRINTSCR",
-  [KEY_SCROLL_LOCK] = "KEY_SCROLL_LOCK",
+  [KEY_SYSRQ] = "KEY_SYSRQ",
+  [KEY_SCROLLLOCK] = "KEY_SCROLLLOCK",
   [KEY_PAUSE] = "KEY_PAUSE",
   [KEY_INSERT] = "KEY_INSERT",
   [KEY_HOME] = "KEY_HOME",
   [KEY_END] = "KEY_END",
-  [KEY_PAGE_UP] = "KEY_PAGE_UP",
-  [KEY_PAGE_DOWN] = "KEY_PAGE_DOWN",
-  [KEY_DELETE] = "KEY_DELETE_FWD",
+  [KEY_PAGEUP] = "KEY_PAGEUP",
+  [KEY_PAGEDOWN] = "KEY_PAGEDOWN",
+  [KEY_DELETE] = "KEY_DELETE",
 
-  [BTN_MOUSE1] = "BTN_MOUSE1",
-  [BTN_MOUSE2] = "BTN_MOUSE2",
-  [BTN_MOUSE3] = "BTN_MOUSE3",
+  [BTN_LEFT] = "BTN_LEFT",
+  [BTN_RIGHT] = "BTN_RIGHT",
+  [BTN_MIDDLE] = "BTN_MIDDLE",
 };
 
 static inline char key_to_char_lower(uint16_t key) {
@@ -173,14 +171,14 @@ static inline char key_to_char_lower(uint16_t key) {
 
     case KEY_MINUS: return '-';
     case KEY_EQUAL: return '=';
-    case KEY_LSQUARE: return '[';
-    case KEY_RSQUARE: return ']';
+    case KEY_LEFTBRACE: return '[';
+    case KEY_RIGHTBRACE: return ']';
     case KEY_BACKSLASH: return '\\';
     case KEY_SEMICOLON: return ';';
     case KEY_APOSTROPHE: return '\'';
     case KEY_GRAVE: return '`';
     case KEY_COMMA: return ',';
-    case KEY_PERIOD: return '.';
+    case KEY_DOT: return '.';
     case KEY_SLASH: return '/';
     default: return 0;
   }
@@ -233,14 +231,14 @@ static inline char key_to_char_upper(uint16_t key) {
 
     case KEY_MINUS: return '_';
     case KEY_EQUAL: return '+';
-    case KEY_LSQUARE: return '{';
-    case KEY_RSQUARE: return '}';
+    case KEY_LEFTBRACE: return '{';
+    case KEY_RIGHTBRACE: return '}';
     case KEY_BACKSLASH: return '|';
     case KEY_SEMICOLON: return ':';
     case KEY_APOSTROPHE: return '"';
     case KEY_GRAVE: return '~';
     case KEY_COMMA: return '<';
-    case KEY_PERIOD: return '>';
+    case KEY_DOT: return '>';
     case KEY_SLASH: return '?';
     default: return 0;
   }
@@ -248,17 +246,17 @@ static inline char key_to_char_upper(uint16_t key) {
 
 static inline uint8_t key_to_modifier_bit(uint16_t key) {
   switch (key) {
-    case KEY_LCTRL:
-    case KEY_RCTRL:
+    case KEY_LEFTCTRL:
+    case KEY_RIGHTCTRL:
       return MOD_CTRL;
-    case KEY_LSHIFT:
-    case KEY_RSHIFT:
+    case KEY_LEFTSHIFT:
+    case KEY_RIGHTSHIFT:
       return MOD_SHIFT;
-    case KEY_LALT:
-    case KEY_RALT:
+    case KEY_LEFTALT:
+    case KEY_RIGHTALT:
       return MOD_ALT;
-    case KEY_LMETA:
-    case KEY_RMETA:
+    case KEY_LEFTMETA:
+    case KEY_RIGHTMETA:
       return MOD_META;
     case KEY_CAPSLOCK:
       return MOD_CAPS;

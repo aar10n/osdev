@@ -10,20 +10,20 @@
 #include <string.h>
 #include <stdbool.h>
 
-#include <osdev/input.h>
-#include <osdev/input-event-codes.h>
+#include <linux/input.h>
+#include <linux/input-event-codes.h>
 
 // map key codes to characters
 const char *keymap[][2] = {
   // modifiers (not printable, handled separately)
-  [KEY_LCTRL] = {NULL, NULL},
-  [KEY_LSHIFT] = {NULL, NULL},
-  [KEY_LALT] = {NULL, NULL},
-  [KEY_LMETA] = {NULL, NULL},
-  [KEY_RCTRL] = {NULL, NULL},
-  [KEY_RSHIFT] = {NULL, NULL},
-  [KEY_RALT] = {NULL, NULL},
-  [KEY_RMETA] = {NULL, NULL},
+  [KEY_LEFTCTRL] = {NULL, NULL},
+  [KEY_LEFTSHIFT] = {NULL, NULL},
+  [KEY_LEFTALT] = {NULL, NULL},
+  [KEY_LEFTMETA] = {NULL, NULL},
+  [KEY_RIGHTCTRL] = {NULL, NULL},
+  [KEY_RIGHTSHIFT] = {NULL, NULL},
+  [KEY_RIGHTALT] = {NULL, NULL},
+  [KEY_RIGHTMETA] = {NULL, NULL},
   // letters
   [KEY_A] = {"a", "A"},
   [KEY_B] = {"b", "B"},
@@ -65,14 +65,14 @@ const char *keymap[][2] = {
   // special
   [KEY_MINUS] = {"-", "_"},
   [KEY_EQUAL] = {"=", "+"},
-  [KEY_LSQUARE] = {"[", "{"},
-  [KEY_RSQUARE] = {"]", "}"},
+  [KEY_LEFTBRACE] = {"[", "{"},
+  [KEY_RIGHTBRACE] = {"]", "}"},
   [KEY_BACKSLASH] = {"\\", "|"},
   [KEY_SEMICOLON] = {";", ":"},
   [KEY_APOSTROPHE] = {"'", "\""},
   [KEY_GRAVE] = {"`", "~"},
   [KEY_COMMA] = {",", "<"},
-  [KEY_PERIOD] = {".", ">"},
+  [KEY_DOT] = {".", ">"},
   [KEY_SLASH] = {"/", "?"},
   // other
   [KEY_SPACE] = {" ", " "},
@@ -81,14 +81,14 @@ const char *keymap[][2] = {
 // map key codes to names for special keys
 const char *keynames[] = {
   // modifiers
-  [KEY_LCTRL] = "KEY_LCTRL",
-  [KEY_LSHIFT] = "KEY_LSHIFT",
-  [KEY_LALT] = "KEY_LALT",
-  [KEY_LMETA] = "KEY_LMETA",
-  [KEY_RCTRL] = "KEY_RCTRL",
-  [KEY_RSHIFT] = "KEY_RSHIFT",
-  [KEY_RALT] = "KEY_RALT",
-  [KEY_RMETA] = "KEY_RMETA",
+  [KEY_LEFTCTRL] = "KEY_LEFTCTRL",
+  [KEY_LEFTSHIFT] = "KEY_LEFTSHIFT",
+  [KEY_LEFTALT] = "KEY_LEFTALT",
+  [KEY_LEFTMETA] = "KEY_LEFTMETA",
+  [KEY_RIGHTCTRL] = "KEY_RIGHTCTRL",
+  [KEY_RIGHTSHIFT] = "KEY_RIGHTSHIFT",
+  [KEY_RIGHTALT] = "KEY_RIGHTALT",
+  [KEY_RIGHTMETA] = "KEY_RIGHTMETA",
   // function keys
   [KEY_F1] = "KEY_F1",
   [KEY_F2] = "KEY_F2",
@@ -104,7 +104,7 @@ const char *keynames[] = {
   [KEY_F12] = "KEY_F12",
   // other
   [KEY_ENTER] = "KEY_ENTER",
-  [KEY_ESCAPE] = "KEY_ESCAPE",
+  [KEY_ESC] = "KEY_ESC",
   [KEY_BACKSPACE] = "KEY_BACKSPACE",
   [KEY_TAB] = "KEY_TAB",
   [KEY_CAPSLOCK] = "KEY_CAPSLOCK",
@@ -114,14 +114,14 @@ const char *keynames[] = {
   [KEY_DOWN] = "KEY_DOWN",
   [KEY_UP] = "KEY_UP",
   // media keys
-  [KEY_PRINTSCR] = "KEY_PRINTSCR",
-  [KEY_SCROLL_LOCK] = "KEY_SCROLL_LOCK",
+  [KEY_SYSRQ] = "KEY_SYSRQ",
+  [KEY_SCROLLLOCK] = "KEY_SCROLLLOCK",
   [KEY_PAUSE] = "KEY_PAUSE",
   [KEY_INSERT] = "KEY_INSERT",
   [KEY_HOME] = "KEY_HOME",
   [KEY_END] = "KEY_END",
-  [KEY_PAGE_UP] = "KEY_PAGE_UP",
-  [KEY_PAGE_DOWN] = "KEY_PAGE_DOWN",
+  [KEY_PAGEUP] = "KEY_PAGEUP",
+  [KEY_PAGEDOWN] = "KEY_PAGEDOWN",
   [KEY_DELETE] = "KEY_DELETE",
 };
 
@@ -153,7 +153,7 @@ int main(int argc, char **argv) {
   while (read(fd, &ev, sizeof(ev)) == sizeof(ev)) {
     if (ev.type == EV_KEY) {
       // track modifier states
-      if (ev.code == KEY_LSHIFT || ev.code == KEY_RSHIFT) {
+      if (ev.code == KEY_LEFTSHIFT || ev.code == KEY_RIGHTSHIFT) {
         shift_held = (ev.value != 0);
       } else if (ev.code == KEY_CAPSLOCK && ev.value == 1) {
         caps_on = !caps_on;

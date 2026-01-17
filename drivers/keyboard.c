@@ -8,7 +8,7 @@
 #include <kernel/panic.h>
 #include <kernel/printf.h>
 
-#include <uapi/osdev/input-event-codes.h>
+#include <linux/input-event-codes.h>
 
 #define ASSERT(x) kassert(x)
 #define DPRINTF(fmt, ...) kprintf("keyboard: " fmt, ##__VA_ARGS__)
@@ -56,9 +56,9 @@
 #define SCANCODE_EXTENDED     0xE0
 #define SCANCODE_RELEASE_MASK 0x80
 
-// scan code translation table (PS/2 scan code set 1 to key codes)
+// scan code translation table (PS/2 scan code set 1 to Linux key codes)
 static uint16_t scancode_to_keycode[256] = {
-  [0x01] = KEY_ESCAPE,
+  [0x01] = KEY_ESC,
   [0x02] = KEY_1,
   [0x03] = KEY_2,
   [0x04] = KEY_3,
@@ -83,10 +83,10 @@ static uint16_t scancode_to_keycode[256] = {
   [0x17] = KEY_I,
   [0x18] = KEY_O,
   [0x19] = KEY_P,
-  [0x1A] = KEY_LSQUARE,
-  [0x1B] = KEY_RSQUARE,
+  [0x1A] = KEY_LEFTBRACE,
+  [0x1B] = KEY_RIGHTBRACE,
   [0x1C] = KEY_ENTER,
-  [0x1D] = KEY_LCTRL,
+  [0x1D] = KEY_LEFTCTRL,
   [0x1E] = KEY_A,
   [0x1F] = KEY_S,
   [0x20] = KEY_D,
@@ -99,7 +99,7 @@ static uint16_t scancode_to_keycode[256] = {
   [0x27] = KEY_SEMICOLON,
   [0x28] = KEY_APOSTROPHE,
   [0x29] = KEY_GRAVE,
-  [0x2A] = KEY_LSHIFT,
+  [0x2A] = KEY_LEFTSHIFT,
   [0x2B] = KEY_BACKSLASH,
   [0x2C] = KEY_Z,
   [0x2D] = KEY_X,
@@ -109,11 +109,11 @@ static uint16_t scancode_to_keycode[256] = {
   [0x31] = KEY_N,
   [0x32] = KEY_M,
   [0x33] = KEY_COMMA,
-  [0x34] = KEY_PERIOD,
+  [0x34] = KEY_DOT,
   [0x35] = KEY_SLASH,
-  [0x36] = KEY_RSHIFT,
-  [0x37] = KEY_KP_ASTERISK, // keypad *
-  [0x38] = KEY_LALT,
+  [0x36] = KEY_RIGHTSHIFT,
+  [0x37] = KEY_KPASTERISK,
+  [0x38] = KEY_LEFTALT,
   [0x39] = KEY_SPACE,
   [0x3A] = KEY_CAPSLOCK,
   [0x3B] = KEY_F1,
@@ -126,44 +126,44 @@ static uint16_t scancode_to_keycode[256] = {
   [0x42] = KEY_F8,
   [0x43] = KEY_F9,
   [0x44] = KEY_F10,
-  [0x45] = KEY_NUM_LOCK,
-  [0x46] = KEY_SCROLL_LOCK,
-  [0x47] = KEY_KP_7,      // keypad 7
-  [0x48] = KEY_KP_8,      // keypad 8
-  [0x49] = KEY_KP_9,      // keypad 9
-  [0x4A] = KEY_KP_MINUS,  // keypad minus
-  [0x4B] = KEY_KP_4,      // keypad 4
-  [0x4C] = KEY_KP_5,      // keypad 5
-  [0x4D] = KEY_KP_6,      // keypad 6
-  [0x4E] = KEY_KP_PLUS,   // keypad plus
-  [0x4F] = KEY_KP_1,      // keypad 1
-  [0x50] = KEY_KP_2,      // keypad 2
-  [0x51] = KEY_KP_3,      // keypad 3
-  [0x52] = KEY_KP_0,      // keypad 0
-  [0x53] = KEY_KP_PERIOD, // keypad decimal
+  [0x45] = KEY_NUMLOCK,
+  [0x46] = KEY_SCROLLLOCK,
+  [0x47] = KEY_KP7,
+  [0x48] = KEY_KP8,
+  [0x49] = KEY_KP9,
+  [0x4A] = KEY_KPMINUS,
+  [0x4B] = KEY_KP4,
+  [0x4C] = KEY_KP5,
+  [0x4D] = KEY_KP6,
+  [0x4E] = KEY_KPPLUS,
+  [0x4F] = KEY_KP1,
+  [0x50] = KEY_KP2,
+  [0x51] = KEY_KP3,
+  [0x52] = KEY_KP0,
+  [0x53] = KEY_KPDOT,
   [0x57] = KEY_F11,
   [0x58] = KEY_F12,
 };
 
 // extended scan codes (prefixed with 0xE0)
 static uint16_t extended_scancode_to_keycode[256] = {
-  [0x1C] = KEY_KP_ENTER,  // keypad enter
-  [0x1D] = KEY_RCTRL,     // right control
-  [0x35] = KEY_KP_SLASH,  // keypad /
-  [0x37] = KEY_PRINTSCR,  // print screen
-  [0x38] = KEY_RALT,      // right alt
-  [0x47] = KEY_HOME,      // home (not keypad)
-  [0x48] = KEY_UP,        // up arrow (not keypad)
-  [0x49] = KEY_PAGE_UP,   // page up (not keypad)
-  [0x4B] = KEY_LEFT,      // left arrow (not keypad)
-  [0x4D] = KEY_RIGHT,     // right arrow (not keypad)
-  [0x4F] = KEY_END,       // end (not keypad)
-  [0x50] = KEY_DOWN,      // down arrow (not keypad)
-  [0x51] = KEY_PAGE_DOWN, // page down (not keypad)
-  [0x52] = KEY_INSERT,    // insert (not keypad)
-  [0x53] = KEY_DELETE,    // delete (not keypad)
-  [0x5B] = KEY_LMETA,     // left windows key
-  [0x5C] = KEY_RMETA,     // right windows key
+  [0x1C] = KEY_KPENTER,
+  [0x1D] = KEY_RIGHTCTRL,
+  [0x35] = KEY_KPSLASH,
+  [0x37] = KEY_SYSRQ,
+  [0x38] = KEY_RIGHTALT,
+  [0x47] = KEY_HOME,
+  [0x48] = KEY_UP,
+  [0x49] = KEY_PAGEUP,
+  [0x4B] = KEY_LEFT,
+  [0x4D] = KEY_RIGHT,
+  [0x4F] = KEY_END,
+  [0x50] = KEY_DOWN,
+  [0x51] = KEY_PAGEDOWN,
+  [0x52] = KEY_INSERT,
+  [0x53] = KEY_DELETE,
+  [0x5B] = KEY_LEFTMETA,
+  [0x5C] = KEY_RIGHTMETA,
 };
 
 static inline uint8_t io_inb(uint16_t port) {
@@ -280,18 +280,17 @@ static void keyboard_process_scancode(uint8_t scancode) {
         update_leds = true;
         DPRINTF("caps lock %s\n", caps_lock_state ? "on" : "off");
         break;
-      case KEY_NUM_LOCK:
+      case KEY_NUMLOCK:
         num_lock_state = !num_lock_state;
         update_leds = true;
         DPRINTF("num lock %s\n", num_lock_state ? "on" : "off");
         break;
-      case KEY_SCROLL_LOCK:
+      case KEY_SCROLLLOCK:
         scroll_lock_state = !scroll_lock_state;
         update_leds = true;
         DPRINTF("scroll lock %s\n", scroll_lock_state ? "on" : "off");
         break;
       default:
-        // no special handling for other keys
         break;
     }
     
