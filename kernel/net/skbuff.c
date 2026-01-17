@@ -45,8 +45,8 @@ static void skb_init_pools() {
   }
 
   // preload some buffers for the default size
-  pool_preload_cache(skb_pool, sizeof(sk_buff_t), 32);
-  pool_preload_cache(skb_data_pool, default_size, 32);
+  pool_preload_cache(skb_pool, sizeof(sk_buff_t), 256);
+  pool_preload_cache(skb_data_pool, default_size, 256);
 }
 STATIC_INIT(skb_init_pools);
 
@@ -140,38 +140,64 @@ sk_buff_t *skb_clone(sk_buff_t *skb) {
 
   // shallow copy skb
   memcpy(clone, skb, sizeof(sk_buff_t));
+
+  // clear list pointers to avoid corrupting lists
+  LIST_ENTRY_INIT(&clone->list);
+
   return clone;
 }
 
 sk_buff_t *skb_copy(sk_buff_t *skb) {
   ASSERT(skb != NULL);
 
-  size_t buffer_size = skb->end - skb->head;
+  // save critical pointers before allocation (which might corrupt the original skb)
+  uint8_t *orig_head = skb->head;
+  uint8_t *orig_data = skb->data;
+  uint8_t *orig_tail = skb->tail;
+  uint8_t *orig_end = skb->end;
+  uint8_t *orig_network_header = skb->network_header;
+  uint8_t *orig_transport_header = skb->transport_header;
+  size_t orig_len = skb->len;
+  size_t orig_data_len = skb->data_len;
+  uint16_t orig_protocol = skb->protocol;
+  uint16_t orig_pkt_type = skb->pkt_type;
+  uint16_t orig_csum = skb->csum;
+  uint8_t orig_ip_summed = skb->ip_summed;
+
+  size_t buffer_size = orig_end - orig_head;
   sk_buff_t *new_skb = skb_alloc(buffer_size - SKB_DEFAULT_HEADROOM);
   if (!new_skb) {
     return NULL;
   }
 
-  size_t head_offset = skb->data - skb->head;
-  size_t total_size = skb->tail - skb->head;
+  // check if we got the same skb back (pool corruption)
+  if (new_skb == skb) {
+    DPRINTF("skb_copy: pool returned the same skb! (skb=%p)\n", skb);
+    return NULL;
+  }
+
+  size_t head_offset = orig_data - orig_head;
+  size_t total_size = orig_tail - orig_head;
   new_skb->data = new_skb->head + head_offset;
-  new_skb->tail = new_skb->data + skb->len;
-  memcpy(new_skb->head, skb->head, total_size);
+  new_skb->tail = new_skb->data + orig_len;
+  memcpy(new_skb->head, orig_head, total_size);
 
   // copy metadata
-  new_skb->len = skb->len;
-  new_skb->data_len = skb->data_len;
-  new_skb->protocol = skb->protocol;
-  new_skb->pkt_type = skb->pkt_type;
-  new_skb->csum = skb->csum;
-  new_skb->ip_summed = skb->ip_summed;
+  new_skb->len = orig_len;
+  new_skb->data_len = orig_data_len;
+  new_skb->protocol = orig_protocol;
+  new_skb->pkt_type = orig_pkt_type;
+  new_skb->csum = orig_csum;
+  new_skb->ip_summed = orig_ip_summed;
 
   // adjust header pointers if they were set
-  if (skb->network_header) {
-    new_skb->network_header = new_skb->data + (skb->network_header - skb->data);
+  if (orig_network_header && orig_network_header >= orig_head && orig_network_header < orig_end) {
+    size_t offset = orig_network_header - orig_head;
+    new_skb->network_header = new_skb->head + offset;
   }
-  if (skb->transport_header) {
-    new_skb->transport_header = new_skb->data + (skb->transport_header - skb->data);
+  if (orig_transport_header && orig_transport_header >= orig_head && orig_transport_header < orig_end) {
+    size_t offset = orig_transport_header - orig_head;
+    new_skb->transport_header = new_skb->head + offset;
   }
 
   return new_skb;
@@ -229,4 +255,61 @@ void skb_trim(sk_buff_t *skb, size_t len) {
 
   skb->len = len;
   skb->tail = skb->data + len;
+}
+
+size_t skb_copy_from_iovec(sk_buff_t *skb, const struct iovec *iov, size_t offset, size_t len) {
+  ASSERT(skb != NULL);
+  ASSERT(iov != NULL);
+
+  if (offset >= iov->iov_len) {
+    return 0;
+  }
+
+  size_t available = iov->iov_len - offset;
+  size_t to_copy = len < available ? len : available;
+
+  if (to_copy > skb_tailroom(skb)) {
+    to_copy = skb_tailroom(skb);
+  }
+
+  if (to_copy == 0) {
+    return 0;
+  }
+
+  uint8_t *dst = skb_put_data(skb, to_copy);
+  memcpy(dst, (uint8_t *)iov->iov_base + offset, to_copy);
+  return to_copy;
+}
+
+size_t skb_copy_to_iovec(sk_buff_t *skb, struct iovec *iov, size_t offset, size_t len, bool consume) {
+  ASSERT(skb != NULL);
+  ASSERT(iov != NULL);
+
+  if (offset >= iov->iov_len) {
+    return 0;
+  }
+
+  size_t available_iov = iov->iov_len - offset;
+  size_t available_skb = skb->len;
+  size_t to_copy = len;
+
+  if (to_copy > available_iov) {
+    to_copy = available_iov;
+  }
+  if (to_copy > available_skb) {
+    to_copy = available_skb;
+  }
+
+  if (to_copy == 0) {
+    return 0;
+  }
+
+  memcpy((uint8_t *)iov->iov_base + offset, skb->data, to_copy);
+
+  if (consume) {
+    skb->data += to_copy;
+    skb->len -= to_copy;
+  }
+
+  return to_copy;
 }

@@ -79,6 +79,10 @@ void *skb_push(sk_buff_t *skb, size_t len);
 void *skb_pull(sk_buff_t *skb, size_t len);
 void skb_trim(sk_buff_t *skb, size_t len);
 
+// iovec operations
+size_t skb_copy_from_iovec(sk_buff_t *skb, const struct iovec *iov, size_t offset, size_t len);
+size_t skb_copy_to_iovec(sk_buff_t *skb, struct iovec *iov, size_t offset, size_t len, bool consume);
+
 static inline void skb_set_network_header(sk_buff_t *skb, int offset) {
   skb->network_header = skb->data + offset;
 }
