@@ -283,16 +283,28 @@ void delete_fixup(rb_tree_t *tree, rb_node_t *x) {
 void delete_node(rb_tree_t *tree, rb_node_t *z) {
   callback(pre_delete_node, tree, z);
 
+  if (z->prev == NULL || z->next == NULL) {
+    panic("delete_node: z=%p has NULL prev=%p or next=%p (nil=%p, key=%llu)\n",
+          z, z->prev, z->next, tree->nil, z->key);
+  }
+
   // update linked list pointers
+  // DPRINTF("delete_node: z=%p key=%llu prev=%p next=%p (nil=%p, min=%p, max=%p, nodes=%zu)\n",
+  //         z, z->key, z->prev, z->next, tree->nil, tree->min, tree->max, tree->nodes);
+
   if (z->prev != tree->nil) {
+    // DPRINTF("  updating z->prev->next (prev=%p)\n", z->prev);
     z->prev->next = z->next;
   } else {
+    // DPRINTF("  z is min, setting tree->min = z->next (%p)\n", z->next);
     tree->min = z->next;
   }
 
   if (z->next != tree->nil) {
+    // DPRINTF("  updating z->next->prev (next=%p)\n", z->next);
     z->next->prev = z->prev;
   } else {
+    // DPRINTF("  z is max, setting tree->max = z->prev (%p)\n", z->prev);
     tree->max = z->prev;
   }
 
@@ -308,6 +320,7 @@ void delete_node(rb_tree_t *tree, rb_node_t *z) {
     replace_node(tree, z, z->left);
   } else {
     y = minimum(tree, z->right);
+    // DPRINTF("  two-children case: z->next=%p y=%p (should be equal)\n", z->next, y);
     orig_color = y->color;
     x = y->right;
     if (y->parent == z) {
@@ -416,6 +429,8 @@ rb_tree_t *create_rb_tree() {
   nil->left = nil;
   nil->right = nil;
   nil->parent = nil;
+  nil->next = nil;
+  nil->prev = nil;
 
   rb_tree_t *tree = kmalloc(sizeof(rb_tree_t));
   tree->root = nil;
@@ -462,34 +477,11 @@ rb_node_t *rb_tree_find_node(rb_tree_t *tree, uint64_t key) {
 
 void rb_tree_insert_node(rb_tree_t *tree, rb_node_t *node) {
   insert_node(tree, node);
-  if (tree->nodes == 0) {
-    tree->min = node;
-    tree->max = node;
-  } else if (node->key < tree->min->key) {
-    tree->min = node;
-  } else if (node->key >= tree->max->key) {
-    tree->max = node;
-  }
-  tree->nodes++;
 }
 
 void *rb_tree_delete_node(rb_tree_t *tree, rb_node_t *node) {
-  delete_node(tree, node);
-  if (tree->nodes == 1) {
-    tree->min = tree->nil;
-    tree->max = tree->nil;
-  } else if (node == tree->min) {
-    if (tree->nodes == 2) {
-      tree->min = tree->max;
-    } else {
-      tree->min = node->parent;
-    }
-  } else if (node == tree->max) {
-    tree->max = node->parent;
-  }
-  tree->nodes--;
-
   void *data = node->data;
+  delete_node(tree, node);
   kfree(node);
   return data;
 }

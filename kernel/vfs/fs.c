@@ -1038,10 +1038,8 @@ int fs_poll(struct pollfd *fds, size_t nfds, struct timespec *timeout) {
              EV_ADD | EV_ONESHOT, 0, 0, (void *)i);
     }
     if (fds[i].events & POLLPRI) {
-      DPRINTF("fs_poll: adding fd %d for POLLPRI\n", fds[i].fd);
-      EPRINTF("POLLPRI not supported yet\n");
-      // TODO: handle POLLPRI
-      todo("fs_poll: handle POLLPRI");
+      // POLLPRI (priority data) is not supported, just ignore it
+      DPRINTF("fs_poll: POLLPRI requested for fd %d but not supported, ignoring\n", fds[i].fd);
     }
   }
 

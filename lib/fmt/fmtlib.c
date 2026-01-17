@@ -628,6 +628,12 @@ static size_t format_ftype(fmt_buffer_t *buffer, const fmt_spec_t *spec) {
     case FT_SOCK:
       n += fmtlib_buffer_write(buffer, (upper ? "SOCK" : "sock"), 5);
       return n;
+    case FT_EPOLL:
+      n += fmtlib_buffer_write(buffer, (upper ? "EPOLL" : "epoll"), 5);
+      return n;
+    case FT_EVENTFD:
+      n += fmtlib_buffer_write(buffer, (upper ? "EVENTFD" : "eventfd"), 7);
+      return n;
     default:
       n += fmtlib_buffer_write(buffer, upper ? "INVALID FTYPE<" : "invalid ftype<", 14);
       n += fmtlib_buffer_write_u64(buffer, ftype);
@@ -750,10 +756,10 @@ static size_t format_file(fmt_buffer_t *buffer, const fmt_spec_t *spec) {
 static size_t format_ipv4(fmt_buffer_t *buffer, const fmt_spec_t *spec) {
   uint32_t ip = spec->value.uint64_value;
   uint8_t octets[4] = {
-    (ip >> 0) & 0xFF,
-    (ip >> 8) & 0xFF,
+    (ip >> 24) & 0xFF,
     (ip >> 16) & 0xFF,
-    (ip >> 24) & 0xFF
+    (ip >> 8) & 0xFF,
+    (ip >> 0) & 0xFF
   };
 
   char temp[TEMP_BUFFER_SIZE];

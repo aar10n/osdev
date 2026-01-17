@@ -251,6 +251,8 @@ int _mtx_wait_trylock(mtx_t *mtx, const char *file, int line) {
   MTX_DEBUGF(mtx, file, line, "wait_trylock {:#Lo} curthread={:td}", &mtx->lo, curthread);
   ASSERT(mtx->mtx_lock != MTX_DESTROYED, "_mtx_wait_trylock() on destroyed mutex, %s:%d", file, line);
   ASSERT(mtx_get_lc(mtx) == MUTEX_LOCKCLASS, "_mtx_wait_trylock() on non-wait mutex, %s:%d", file, line);
+  // TODO: re-enable this assertion
+  // ASSERT(!curcpu_is_interrupt, "_mtx_wait_trylock() in interrupt context, %s:%d", file, line);
 
   WAIT_CLAIMS_ADD(&mtx->lo, file, line);
 
@@ -278,6 +280,8 @@ void _mtx_wait_lock(mtx_t *mtx, const char *file, int line) {
   MTX_DEBUGF(mtx, file, line, "wait_lock {:#Lo} lock={:p} owner={:td} curthread={:td}", &mtx->lo, mtx->mtx_lock, mtx_lock_owner(mtx->mtx_lock), curthread);
   ASSERT(mtx->mtx_lock != MTX_DESTROYED, "_mtx_wait_lock() on destroyed mutex %s, %s:%d", mtx->lo.name, file, line);
   ASSERT(mtx_get_lc(mtx) == MUTEX_LOCKCLASS, "_mtx_wait_lock() on non-wait mutex %p %s, %s:%d", mtx, mtx->lo.name, file, line);
+  // TODO: re-enable this assertion
+  // ASSERT(!curcpu_is_interrupt, "_mtx_wait_lock() in interrupt context, %s:%d", file, line);
 
   WAIT_CLAIMS_ADD(&mtx->lo, file, line);
 
@@ -320,6 +324,8 @@ void _mtx_wait_unlock(mtx_t *mtx, const char *file, int line) {
   ASSERT(mtx->mtx_lock != MTX_DESTROYED, "_mtx_wait_unlock() on destroyed mutex");
   ASSERT(mtx_get_lc(mtx) == MUTEX_LOCKCLASS, "_mtx_wait_unlock() on non-wait mutex");
   ASSERT(owner == curthread, "_mtx_wait_unlock() by {:td} on mutex owned by {:td}", curthread, owner);
+  // TODO: re-enable this assertion
+  // ASSERT(!curcpu_is_interrupt, "_mtx_wait_unlock() in interrupt context");
 
   mtx->lo.data--;
   curthread->lock_count--;
