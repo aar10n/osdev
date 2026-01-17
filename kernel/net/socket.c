@@ -148,7 +148,8 @@ static ssize_t socket_read(file_t *file, kio_t *kio) {
     msg.msg_iovlen = 1;
   }
 
-  ssize_t ret = sock->ops->recvmsg(sock, &msg, kio_remaining(kio), 0);
+  size_t remaining = kio_remaining(kio);
+  ssize_t ret = sock->ops->recvmsg(sock, &msg, remaining, 0);
   if (ret > 0) {
     // update kio to reflect data received
     if (kio->kind == KIO_BUF) {
@@ -729,7 +730,47 @@ int net_setsockopt(int sockfd, int level, int optname, const void *optval, sockl
 }
 
 int net_getsockopt(int sockfd, int level, int optname, void *optval, socklen_t *optlen) {
-  return -EOPNOTSUPP;  // not implemented for initial version
+  proc_t *proc = curproc;
+  fd_entry_t *fde = fs_proc_get_fdentry(proc, sockfd);
+  if (!fde) {
+    return -EBADF;
+  }
+
+  file_t *file = fde->file;
+  if (!F_ISSOCK(file)) {
+    fde_putref(&fde);
+    return -ENOTSOCK;
+  }
+
+  sock_t *sock = file->data;
+
+  // handle SOL_SOCKET level options
+  if (level == SOL_SOCKET) {
+    if (optname == SO_ERROR) {
+      // return 0 (no error) for now
+      if (*optlen < sizeof(int)) {
+        fde_putref(&fde);
+        return -EINVAL;
+      }
+      *(int *)optval = 0;
+      *optlen = sizeof(int);
+      fde_putref(&fde);
+      return 0;
+    }
+    // other SOL_SOCKET options not supported yet
+    fde_putref(&fde);
+    return -ENOPROTOOPT;
+  }
+
+  // delegate to protocol-specific getsockopt if available
+  if (sock->ops->getsockopt) {
+    int ret = sock->ops->getsockopt(sock, level, optname, optval, optlen);
+    fde_putref(&fde);
+    return ret;
+  }
+
+  fde_putref(&fde);
+  return -ENOPROTOOPT;
 }
 
 int net_getsockname(int sockfd, struct sockaddr *addr, socklen_t *addrlen) {

@@ -404,8 +404,13 @@ LABEL(ret);
 ssize_t kqueue_wait(kqueue_t *kq, struct kevent *changelist, size_t nchanges,
                     struct kevent *eventlist, size_t nevents, struct timespec *timeout) {
   uint64_t timeout_ns = timeout ? timespec_to_nanos(timeout) : 0;
-  DPRINTF("kqueue_wait: kq=%p, nchanges=%zu, nevents=%zu, timeout=%lld\n",
-          kq, nchanges, nevents, timeout_ns, timeout != NULL ? timeout_ns : -1);
+  if (timeout) {
+    EPRINTF("kqueue_wait: kq=%p, nchanges=%zu, nevents=%zu, timeout_ns=%llu (sec=%lld, nsec=%lld)\n",
+            kq, nchanges, nevents, timeout_ns, timeout->tv_sec, timeout->tv_nsec);
+  } else {
+    DPRINTF("kqueue_wait: kq=%p, nchanges=%zu, nevents=%zu, timeout=NULL\n",
+            kq, nchanges, nevents);
+  }
   ssize_t count = 0;
   int res = 0;
   
@@ -498,6 +503,10 @@ LABEL(process_events);
   }
 
   if (res < 0) {
+    if (res == -ETIMEDOUT) {
+      // timeout is not an error - return any events collected before timeout
+      return count;
+    }
     EPRINTF("kqueue_wait: waitq_wait_sig failed: {:err}\n", res);
     if (res == -EINTR && count > 0) {
       // even if we were interrupted, we can still return events we collected
