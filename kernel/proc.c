@@ -25,6 +25,8 @@
 
 #include <fs/procfs/procfs.h>
 
+#include <linux/sched.h>
+
 #include <bitmap.h>
 
 noreturn void idle_thread_entry();
@@ -623,6 +625,8 @@ __ref proc_t *proc_alloc_internal(
   proc->wait_status_ch = chan_alloc(64, sizeof(struct pchild_status), CHAN_NOBLOCK, "proc_child_sts_ch");
   cond_init(&proc->signal_cond, "proc_signal_cond");
   cond_init(&proc->td_exit_cond, "proc_td_exit_cond");
+  cond_init(&proc->vfork_done, "proc_vfork_done");
+  proc->vfork_parent = NULL;
 
   if (!fork) {
     // on fork the process joins the parent's process group
@@ -715,6 +719,8 @@ void _proc_cleanup(__move proc_t **procp) {
   chan_free(proc->wait_status_ch);
   cond_destroy(&proc->signal_cond);
   cond_destroy(&proc->td_exit_cond);
+  cond_destroy(&proc->vfork_done);
+  pr_putref(&proc->vfork_parent);
 
   kfree(proc);
 }
@@ -955,6 +961,14 @@ void proc_terminate(proc_t *proc, int ret, int sig) {
 
   // notify parent process of the termination
   proc_child_notify_parent(proc, proc->pid, wstatus);
+
+  // signal vfork parent if this is a vfork child
+  if (proc->vfork_parent != NULL) {
+    proc_t *parent = proc->vfork_parent;
+    pr_lock(parent);
+    cond_signal(&parent->vfork_done);
+    pr_unlock(parent);
+  }
 
   if (proc == curproc) {
     // exit the current thread, this will release
@@ -1314,6 +1328,15 @@ int proc_syscall_execve(cstr_t path, char *const argv[], char *const envp[]) {
   // 6. clear all existing user vm mappings
   vm_clear_user_space(curspace);
 
+  // 7. signal vfork parent if this is a vfork child
+  if (proc->vfork_parent != NULL) {
+    proc_t *parent = proc->vfork_parent;
+    pr_lock(parent);
+    cond_signal(&parent->vfork_done);
+    pr_unlock(parent);
+    pr_putref(&proc->vfork_parent);
+  }
+
   // TODO: handle set_tid_address, clear_child_tid
   // TODO: reset floating point environment
 
@@ -1659,6 +1682,187 @@ ret_unlock_target:
     pr_putref(&pgid_proc);
   }
   return res;
+}
+
+int proc_syscall_clone(int flags, void *child_stack, int *ptid, int *ctid, unsigned long newtls) {
+  proc_t *proc = curproc;
+
+  uint32_t namespace_flags = CLONE_NEWNS | CLONE_NEWCGROUP | CLONE_NEWUTS |
+                              CLONE_NEWIPC | CLONE_NEWUSER | CLONE_NEWPID |
+                              CLONE_NEWNET | CLONE_NEWTIME;
+  if (flags & namespace_flags) {
+    EPRINTF("clone: namespace flags not supported (flags=0x%x)\n", flags);
+    return -ENOSYS;
+  }
+
+  if (flags & CLONE_PIDFD) {
+    EPRINTF("clone: CLONE_PIDFD not supported\n");
+    return -ENOSYS;
+  }
+
+  if ((flags & CLONE_SIGHAND) && !(flags & CLONE_VM)) {
+    return -EINVAL;
+  }
+
+  if ((flags & CLONE_THREAD) && !(flags & CLONE_SIGHAND)) {
+    return -EINVAL;
+  }
+
+  if (flags & CLONE_THREAD) {
+    if (!(flags & CLONE_VM)) {
+      return -EINVAL;
+    }
+    if (flags & CLONE_VFORK) {
+      return -EINVAL;
+    }
+
+    if (flags & CLONE_PARENT) {
+      EPRINTF("clone: CLONE_PARENT with CLONE_THREAD not supported\n");
+    }
+    // CLONE_FS, CLONE_FILES, CLONE_SYSVSEM, and CLONE_IO are implicitly handled:
+    // threads in the same process automatically share the file descriptor table
+    // (proc->files), working directory (proc->pwd), umask (proc->umask), and
+    // SysV semaphore undo values
+
+    thread_t *new_td = thread_syscall_fork();
+
+    if (child_stack != NULL) {
+      new_td->frame->rsp = (uint64_t)child_stack;
+    }
+
+    if (flags & CLONE_SETTLS) {
+      new_td->tcb->fsbase = newtls;
+    }
+
+    if (flags & CLONE_CHILD_SETTID && ctid) {
+      new_td->frame->rax = new_td->tid;
+      *ctid = new_td->tid;
+    }
+
+    if (flags & CLONE_CHILD_CLEARTID) {
+      new_td->clear_child_tid = ctid;
+    }
+
+    if (flags & CLONE_PARENT_SETTID && ptid) {
+      *ptid = new_td->tid;
+    }
+
+    proc_add_thread(proc, new_td);
+
+    return new_td->tid;
+  } else {
+    if (flags & CLONE_VM) {
+      todo("clone: CLONE_VM without CLONE_THREAD not supported");
+    }
+    if (flags & CLONE_VFORK) {
+      EPRINTF("clone: CLONE_VFORK not fully supported\n");
+    }
+    if (flags & CLONE_PARENT) {
+      EPRINTF("clone: CLONE_PARENT not supported\n");
+    }
+    if (flags & CLONE_FS) {
+      EPRINTF("clone: CLONE_FS not handled\n");
+    }
+    if (flags & CLONE_FILES) {
+      EPRINTF("clone: CLONE_FILES not handled\n");
+    }
+    if (flags & CLONE_SIGHAND) {
+      EPRINTF("clone: CLONE_SIGHAND without CLONE_VM not supported\n");
+    }
+    if (flags & CLONE_PTRACE) {
+      EPRINTF("clone: CLONE_PTRACE not supported\n");
+    }
+    if (flags & CLONE_UNTRACED) {
+      EPRINTF("clone: CLONE_UNTRACED not supported\n");
+    }
+
+    proc_t *fork = proc_fork();
+    thread_t *fork_td = thread_syscall_fork();
+
+    if (child_stack != NULL) {
+      fork_td->frame->rsp = (uint64_t)child_stack;
+    }
+
+    if (flags & CLONE_SETTLS) {
+      fork_td->tcb->fsbase = newtls;
+    }
+
+    if (flags & CLONE_CHILD_SETTID && ctid) {
+      *ctid = fork_td->tid;
+    }
+
+    if (flags & CLONE_CHILD_CLEARTID) {
+      fork_td->clear_child_tid = ctid;
+    }
+
+    if (flags & CLONE_PARENT_SETTID && ptid) {
+      *ptid = fork->pid;
+    }
+
+    proc_setup_add_thread(fork, fork_td);
+    proc_finish_setup_and_submit_all(fork);
+
+    return fork->pid;
+  }
+}
+
+int proc_syscall_vfork() {
+  proc_t *proc = curproc;
+  pr_lock(proc);
+  address_space_t *space = proc->space;
+
+  // create child process with shared address space (not a fork)
+  proc_t *new_proc = proc_alloc_internal(
+    proc_alloc_pid(),
+    as_getref(space),  // share parent's address space
+    getref(proc->creds),
+    ve_getref(proc->pwd),
+    /*fork=*/true
+  );
+  ASSERT(new_proc != NULL);
+
+  // copy process state similar to proc_fork
+  new_proc->files = ftable_clone(proc->files);
+  new_proc->usage = kmalloc_cp(proc->usage, sizeof(struct rusage));
+  new_proc->limit = kmalloc_cp(proc->limit, sizeof(struct rlimit));
+  new_proc->stats = kmalloc_cp(proc->stats, sizeof(struct pstats));
+  new_proc->sigacts = sigacts_clone(proc->sigacts);
+
+  pgrp_lock(proc->group);
+  pgrp_add_proc(proc->group, new_proc);
+  pgrp_unlock(proc->group);
+
+  new_proc->args = pstrings_copy(proc->args);
+  new_proc->env = pstrings_copy(proc->env);
+  new_proc->binpath = str_dup(proc->binpath);
+
+  new_proc->brk_start = proc->brk_start;
+  new_proc->brk_end = proc->brk_end;
+  new_proc->brk_max = proc->brk_max;
+
+  new_proc->name = str_dup(proc->name);
+  new_proc->umask = proc->umask;
+  new_proc->parent = pr_getref(proc);
+  LIST_ADD(&proc->children, pr_getref(new_proc), chldlist);
+
+  pr_unlock(proc);
+
+  // set up the vfork parent reference in the child
+  pr_lock(new_proc);
+  new_proc->vfork_parent = pr_getref(proc);
+  pr_unlock(new_proc);
+
+  // create the child thread
+  thread_t *child_td = thread_syscall_fork();
+  proc_setup_add_thread(new_proc, child_td);
+  proc_finish_setup_and_submit_all(new_proc);
+
+  // block the parent process until child calls exec or exits
+  pr_lock(proc);
+  cond_wait(&proc->vfork_done, &proc->lock);
+  pr_unlock(proc);
+
+  return new_proc->pid;
 }
 
 ///////////////////
@@ -2560,6 +2764,21 @@ DEFINE_SYSCALL(set_tid_address, long, const int *tidptr) {
   return td->tid;
 }
 
+DEFINE_SYSCALL(exit, void, int error_code) {
+  DPRINTF("syscall: exit error_code=%d\n", error_code);
+  proc_t *proc = curproc;
+
+  pr_lock(proc);
+  uint32_t num_threads = proc->num_threads;
+  if (num_threads > 1) {
+    thread_kill(curthread);
+    unreachable;
+  } else {
+    pr_unlock(proc);
+    proc_terminate(proc, error_code, 0);
+  }
+}
+
 DEFINE_SYSCALL(exit_group, void, int error_code) {
   DPRINTF("syscall: exit_group error_code=%d\n", error_code);
   proc_t *proc = curproc;
@@ -2617,6 +2836,25 @@ DEFINE_SYSCALL(fork, pid_t) {
   proc_finish_setup_and_submit_all(fork);
   // parent process returns the child's pid
   return fork->pid;
+}
+
+DEFINE_SYSCALL(clone, int, int flags, void *child_stack, int *ptid, int *ctid, unsigned long newtls) {
+  DPRINTF("syscall: clone flags=0x%x child_stack=%p ptid=%p ctid=%p newtls=%p\n",
+          flags, child_stack, ptid, ctid, (void *)newtls);
+
+  if (ptid != NULL && vm_validate_ptr((uintptr_t)ptid, true) < 0) {
+    return -EFAULT;
+  }
+  if (ctid != NULL && vm_validate_ptr((uintptr_t)ctid, true) < 0) {
+    return -EFAULT;
+  }
+
+  return proc_syscall_clone(flags, child_stack, ptid, ctid, newtls);
+}
+
+DEFINE_SYSCALL(vfork, pid_t) {
+  DPRINTF("syscall: vfork\n");
+  return proc_syscall_vfork();
 }
 
 DEFINE_SYSCALL(execve, int, const char *filename, char *const *argv, char *const *envp) {

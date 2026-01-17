@@ -107,6 +107,8 @@ typedef struct proc {
   chan_t *wait_status_ch;           // child process wait status channel (used by wait4, etc)
   cond_t signal_cond;               // signal condition (used by sigwait, pause, etc)
   cond_t td_exit_cond;              // thread exit condition
+  cond_t vfork_done;                // vfork completion condition
+  struct proc *vfork_parent;        // parent process blocked on vfork (ref)
 
   /* starts zeroed */
   struct pstrings *args;            // process arguments
@@ -232,6 +234,7 @@ typedef struct thread {
   int errno;                            // last thread errno
   sigset_t sigmask;                     // signal mask
   stack_t sigstack;                     // signal stack
+  int *clear_child_tid;                 // clear and futex wake on exit (CLONE_CHILD_CLEARTID)
 
   struct runqueue *runq;                // runqueue (if ready)
   struct lock_object *contested_lock;   // contested lock (if blocked)
@@ -417,6 +420,7 @@ pid_t proc_syscall_wait4(pid_t pid, int *status, int options, struct rusage *rus
 int proc_syscall_execve(cstr_t path, char *const argv[], char *const envp[]);
 int proc_syscall_kill(pid_t pid, int sig);
 int proc_syscall_setpgid(pid_t pid, pid_t pgid);
+int proc_syscall_clone(int flags, void *child_stack, int *ptid, int *ctid, unsigned long newtls);
 
 // #define PR_DPRINTF(fmt, ...) kprintf("proc: " fmt " [%s:%d]\n", ##__VA_ARGS__, __FILE__, __LINE__)
 #define PR_DPRINTF(fmt, ...)
