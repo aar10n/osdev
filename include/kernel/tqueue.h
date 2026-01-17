@@ -108,6 +108,7 @@ void lockq_update_priority(struct lockqueue *lockq, struct thread *td);
 #define WQ_SLEEP  0x1 // wchan is a sleep channel
 #define WQ_CONDV  0x2 // wchan is cond var channel
 #define WQ_SEMA   0x3 // wchan is semaphore channel
+#define WQ_FUTEX  0x4 // wchan is futex channel
 
 /*
  * A waitqueue is a queue for threads waiting on a condition (or sleeping).
@@ -171,6 +172,12 @@ void waitq_remove(struct waitqueue *waitq, struct thread *td);
 /// Signals the first thread on the waitqueue and unblocks it. This function should
 /// be called with both the lock and chain lock held and will return with both unlocked.
 void waitq_signal(struct waitqueue *waitq);
+
+/// Signals up to n threads on the waitqueue and unblocks them. If n <= 0, wakes all threads
+/// (equivalent to waitq_broadcast). If a higher priority thread on the same cpu is woken up,
+/// it will preempt the current thread. This function should be called with both the lock and
+/// chain lock held and will return with both unlocked. Returns the number of threads woken.
+int waitq_broadcast_n(struct waitqueue *waitq, int n);
 
 /// Signals all threads on the waitqueue and unblocks them. If a higher priority thread
 /// on the same cpu is woken up, it will preempt the current thread. This function should

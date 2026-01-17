@@ -3,6 +3,7 @@
 //
 
 #include <kernel/tqueue.h>
+#include <kernel/clock.h>
 #include <kernel/proc.h>
 #include <kernel/sched.h>
 #include <kernel/panic.h>
@@ -382,18 +383,21 @@ static void waitq_timeout_callback(alarm_t *alarm, thread_t *td) {
   // remove the thread from the waitqueue if it's still waiting
   if (!TDS_IS_WAITING(td)) {
     // thread already woken up normally, nothing to do
+    kprintf("waitq_timeout_callback: thread %p not waiting, returning\n", td);
     return;
   }
 
   struct waitqueue *waitq = waitq_lookup(td->wchan);
   if (waitq == NULL) {
     // waitqueue already destroyed
+    kprintf("waitq_timeout_callback: waitq for wchan %p already destroyed\n", td->wchan);
     return;
   }
 
   td_lock(td);
   if (td->wchan == NULL || !TDS_IS_WAITING(td)) {
     // thread was already woken up, race condition
+    kprintf("waitq_timeout_callback: thread %p woken up before timeout, race condition\n", td);
     td_unlock(td);
     waitq_release(&waitq);
     return;
@@ -403,6 +407,7 @@ static void waitq_timeout_callback(alarm_t *alarm, thread_t *td) {
   waitq_remove_internal(waitq, WQC_LOOKUP(waitq->wchan), td);
 
   // mark that we timed out
+  kprintf("waitq_timeout_callback: marking thread %p as ETIMEDOUT\n", td);
   td->errno = ETIMEDOUT;
 
   // make thread ready
@@ -467,7 +472,7 @@ void waitq_release(struct waitqueue **waitqp) {
 }
 
 struct waitqueue *waitq_lookup_or_default(int type, const void *wchan, struct waitqueue *default_waitq) {
-  ASSERT(type == WQ_SLEEP || type == WQ_CONDV || type == WQ_SEMA);
+  ASSERT(type == WQ_SLEEP || type == WQ_CONDV || type == WQ_SEMA || type == WQ_FUTEX);
   struct waitqueue_chain *chain = WQC_LOOKUP(wchan);
   mtx_spin_lock(&chain->lock);
 
@@ -592,26 +597,35 @@ int waitq_wait_sigtimeout(struct waitqueue *waitq, const char *wdmsg, uint64_t t
   struct waitqueue_chain *chain = WQC_LOOKUP(waitq->wchan);
   mtx_assert(&chain->lock, MA_OWNED);
   mtx_assert(&waitq->lock, MA_OWNED);
-  
-  // create timeout alarm
+
   thread_t *td = curthread;
-  alarm_t *alarm = alarm_alloc_relative(timeout_ns, alarm_cb(waitq_timeout_callback, td));
-  if (alarm == NULL) {
-    return -ENOMEM;
-  }
+  kprintf("waitq_wait_sigtimeout: wchan=%p, wdmsg=%s, timeout_ns=%llu, td=%p\n",
+          waitq->wchan, wdmsg, timeout_ns, td);
 
   td_lock(td);
   ASSERT(td->timeout_alarm_id == 0);
-
-  id_t alarm_id = alarm_register(alarm);
-  td->timeout_alarm_id = alarm_id;
   td->errno = 0;
   td->flags2 |= TDF2_WAKEABLE;  // mark as interruptible by signals
   waitq_add_internal(waitq, chain, td, wdmsg);
 
+  // calculate absolute expiry time right before creating alarm
+  uint64_t clock_now = clock_get_nanos();
+  uint64_t expiry_ns = clock_now + timeout_ns;
+  alarm_t *alarm = alarm_alloc_absolute(expiry_ns, alarm_cb(waitq_timeout_callback, td));
+  if (alarm == NULL) {
+    waitq_remove_internal(waitq, chain, td);
+    td->flags2 &= ~TDF2_WAKEABLE;
+    td_unlock(td);
+    return -ENOMEM;
+  }
+
+  id_t alarm_id = alarm_register(alarm);
+  kprintf("waitq_wait_sigtimeout: registered alarm %u for thread %p\n", alarm_id, td);
+  td->timeout_alarm_id = alarm_id;
+
   mtx_spin_unlock(&waitq->lock);
   mtx_spin_unlock(&chain->lock);
-  WQ_DPRINTF("waitq_wait_sigtimeout: wchan=%p, waitq=%p, wdmsg=%s, timeout_ns=%llu, td={:td}\n", 
+  WQ_DPRINTF("waitq_wait_sigtimeout: wchan=%p, waitq=%p, wdmsg=%s, timeout_ns=%llu, td=%p\n",
              waitq->wchan, waitq, wdmsg, timeout_ns, td);
 
   // td is locked on call to sched_again
@@ -686,21 +700,28 @@ void waitq_signal(struct waitqueue *waitq) {
   }
 }
 
-void waitq_broadcast(struct waitqueue *waitq) {
+int waitq_broadcast_n(struct waitqueue *waitq, int n) {
   struct waitqueue_chain *chain = WQC_LOOKUP(waitq->wchan);
   mtx_assert(&chain->lock, MA_OWNED);
   mtx_assert(&waitq->lock, MA_OWNED);
-  WQ_DPRINTF("waitq_broadcast: wchan=%p, waitq=%p\n", waitq->wchan, waitq);
+  WQ_DPRINTF("waitq_broadcast_n: wchan=%p, waitq=%p, n=%d\n", waitq->wchan, waitq, n);
 
   bool preempt = false;
+  int woken = 0;
   thread_t *td = NULL;
+
   while ((td = LIST_FIRST(&waitq->queue))) {
+    if (n > 0 && woken >= n) {
+      break;  // reached limit
+    }
+
     td_lock(td);
     waitq_remove_internal(waitq, chain, td);
     TD_SET_STATE(td, TDS_READY);
     sched_submit_ready_thread(td);
     td_unlock(td);
 
+    woken++;
     if (td->priority > curthread->priority && td->cpu_id == curcpu_id) {
       preempt = true;
     }
@@ -712,4 +733,10 @@ void waitq_broadcast(struct waitqueue *waitq) {
   if (preempt) {
     sched_again(SCHED_PREEMPTED);
   }
+
+  return woken;
+}
+
+void waitq_broadcast(struct waitqueue *waitq) {
+  waitq_broadcast_n(waitq, 0);
 }
