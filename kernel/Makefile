@@ -11,11 +11,13 @@ KERNEL_INCLUDE = $(INCLUDE) -Ilib -I$(TOOL_ROOT)/include
 
 KERNEL_DEFINES = $(DEFINES) -D__KERNEL__
 
+KERNEL_NASMFLAGS += -D__KERNEL__
+
 
 # kernel/
 kernel += \
 	entry.asm exception.asm memory.asm sigtramp.asm smpboot.asm syscall.asm switch.asm \
-	alarm.c chan.c clock.c cond.c console.c device.c errno.c exec.c fs_utils.c init.c \
+	alarm.c chan.c clock.c cond.c console.c device.c errno.c exec.c fs_utils.c futex.c init.c \
 	input.c ipi.c irq.c kevent.c kio.c loadelf.c lock.c main.c mutex.c panic.c params.c \
 	percpu.c printf.c proc.c rwlock.c sched.c sem.c signal.c smpboot.c string.c syscall.c \
 	sysinfo.c time.c tqueue.c
@@ -50,7 +52,11 @@ kernel += usb/usb.c
 # kernel/net
 kernel += net/skbuff.c net/netdev.c net/in_dev.c net/socket.c net/ip.c net/arp.c net/eth.c net/icmp.c \
  	net/raw.c net/inet.c net/udp.c net/unix.c net/netlink.c
+kernel += net/tcp.c
+
+# kernel/net_debug_test
+kernel += net_debug_test.c
 
 # kernel/vfs
-kernel += vfs/file.c vfs/fs.c vfs/path.c vfs/pipe.c vfs/vcache.c vfs/ventry.c \
+kernel += vfs/file.c vfs/fs.c vfs/path.c vfs/pipe.c vfs/poll.c vfs/vcache.c vfs/ventry.c \
 	vfs/vfs.c vfs/vnode.c vfs/vresolve.c
