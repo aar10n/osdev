@@ -9,6 +9,7 @@
 #include <kernel/queue.h>
 #include <kernel/mutex.h>
 #include <kernel/alarm.h>
+#include <kernel/ref.h>
 
 // temporarily undefine packed to avoid conflicts with Linux headers
 #pragma push_macro("packed")
@@ -71,8 +72,8 @@ int arp_rcv(struct sk_buff *skb);
 int arp_lookup(netdev_t *dev, uint32_t ip_addr, uint8_t *hw_addr);
 int arp_resolve(netdev_t *dev, uint32_t ip_addr, sk_buff_t *skb);
 
-struct arp_entry *arp_cache_lookup(uint32_t ip_addr);
-struct arp_entry *arp_cache_add(netdev_t *dev, uint32_t ip_addr, uint8_t *hw_addr);
+__ref struct arp_entry *arp_cache_lookup(uint32_t ip_addr);
+__ref struct arp_entry *arp_cache_add(netdev_t *dev, uint32_t ip_addr, uint8_t *hw_addr);
 void arp_cache_update(uint32_t ip_addr, uint8_t *hw_addr);
 void arp_cache_delete(uint32_t ip_addr);
 void arp_cache_flush(netdev_t *dev);
