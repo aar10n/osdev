@@ -19,4 +19,4 @@ drivers += usb/host/xhci.c
 drivers += usb/msd/scsi.c
 
 # drivers/net
-drivers += net/loopback.c
+drivers += net/loopback.c net/virtio.c
