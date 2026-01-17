@@ -187,7 +187,20 @@ int ttydisc_rint(tty_t *tty, uint8_t ch, int flags) {
 
     if (signal != 0) {
       DPRINTF("sending signal %d\n", signal);
+
+      // flush the input queue unless NOFLSH is set
+      if (!(t->c_lflag & NOFLSH)) {
+        ttyinq_flush(tty->inq);
+      }
+
+      // echo the signal character if ECHO is set
+      ttydisc_echo(tty, ch, quote);
+
+      // send the signal to the foreground process group
       tty_signal_pgrp(tty, signal);
+
+      // do not add the signal character to the input buffer
+      return 0;
     }
   }
 

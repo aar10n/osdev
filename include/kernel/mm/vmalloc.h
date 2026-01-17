@@ -17,13 +17,33 @@ void switch_address_space(address_space_t *new_space) _used;
 
 void init_address_space();
 void init_ap_address_space();
-address_space_t *alloc_ap_address_space();
+__ref address_space_t *alloc_ap_address_space();
 uintptr_t get_default_ap_pml4();
 
-address_space_t *vm_new_space(uintptr_t min_addr, uintptr_t max_addr, uintptr_t page_table);
-address_space_t *vm_fork_space(address_space_t *space, bool fork_user);
-address_space_t *vm_new_empty_space();
+__ref address_space_t *vm_new_space(uintptr_t min_addr, uintptr_t max_addr, uintptr_t page_table);
+__ref address_space_t *vm_fork_space(address_space_t *space, bool fork_user);
+__ref address_space_t *vm_new_empty_space();
 void vm_clear_user_space(address_space_t *space);
+void _address_space_cleanup(__move address_space_t **asref);
+
+#define as_getref(as) ({ \
+  ASSERT_IS_TYPE(address_space_t *, as); \
+  address_space_t *__as = (as); \
+  if (__as) kassert(__as->refcount > 0); \
+  __as ? ref_get(&__as->refcount) : NULL; \
+  __as; \
+})
+#define as_putref(asref) ({ \
+  ASSERT_IS_TYPE(address_space_t **, asref); \
+  address_space_t *__as = *(asref); \
+  *(asref) = NULL; \
+  if (__as) { \
+    kassert(__as->refcount > 0); \
+    if (ref_put(&__as->refcount)) { \
+      _address_space_cleanup(&__as); \
+    } \
+  } \
+})
 
 //     vmap api
 //

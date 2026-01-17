@@ -12,6 +12,7 @@
 #include <abi/fcntl.h>
 #include <abi/poll.h>
 #include <abi/resource.h>
+#include <abi/sched.h>
 #include <abi/stat.h>
 #include <abi/statfs.h>
 #include <abi/select.h>
@@ -20,6 +21,7 @@
 #include <abi/time.h>
 #include <abi/wait.h>
 #include <abi/utsname.h>
+#include <sys/socket.h>
 
 typedef uint64_t (*syscall_t)(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
 

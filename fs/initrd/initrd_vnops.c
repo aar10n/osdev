@@ -15,7 +15,7 @@
 
 ssize_t initrd_vn_read(vnode_t *vn, off_t off, kio_t *kio) {
   if (off >= vn->size) {
-    return -ERANGE;
+    return 0;
   }
 
   device_t *device = vn->device;

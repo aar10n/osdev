@@ -348,7 +348,6 @@ int pipe_f_kqevent(file_t *file, knote_t *kn) {
   pipe_t *pipe = (pipe_t *)file->data;
   int ret = 0;
 
-  mtx_lock(&pipe->lock);
   switch (kn->event.filter) {
     case EVFILT_READ: {
       int accmode = file->flags & O_ACCMODE;
@@ -385,8 +384,7 @@ int pipe_f_kqevent(file_t *file, knote_t *kn) {
       ret = -EINVAL;
       break;
   }
-  
-  mtx_unlock(&pipe->lock);
+
   return ret;
 }
 

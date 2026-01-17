@@ -147,10 +147,10 @@ static inline void mask_irq(uint8_t irq) {
 }
 
 static inline void unmask_irq(uint8_t irq) {
-  irq = get_real_irqnum(irq);
-  ignored_irqs[irq] = 0;
-  if (irq <= irq_external_max) {
-    ioapic_set_irq_mask(irq, 0);
+  uint8_t real_irq = get_real_irqnum(irq);
+  ignored_irqs[real_irq] = 0;
+  if (real_irq <= irq_external_max) {
+    ioapic_set_irq_mask(real_irq, 0);
   }
 }
 

@@ -89,8 +89,36 @@ int main(int argc, char* argv[]) {
   printf("Starting shell: %s\n\n", shell_path);
   fflush(stdout);
 
-  // start the shell
-  execl(shell_path, shell_path, NULL);
+  // Parse shell command with potential arguments
+  char shell_copy[256];
+  char shell_binary[256];
+  strncpy(shell_copy, shell_path, sizeof(shell_copy) - 1);
+  shell_copy[sizeof(shell_copy) - 1] = '\0';
+
+  // Build argv array - need stable strings since execv doesn't copy them
+  static char arg_storage[16][64];  // Storage for argument strings
+  char *shell_argv[16];
+  int shell_argc = 0;
+
+  char *token = strtok(shell_copy, " ");
+  if (token) {
+    // Save the binary path
+    strncpy(shell_binary, token, sizeof(shell_binary) - 1);
+    shell_binary[sizeof(shell_binary) - 1] = '\0';
+
+    // Copy each argument to stable storage
+    while (token != NULL && shell_argc < 15) {
+      strncpy(arg_storage[shell_argc], token, sizeof(arg_storage[0]) - 1);
+      arg_storage[shell_argc][sizeof(arg_storage[0]) - 1] = '\0';
+      shell_argv[shell_argc] = arg_storage[shell_argc];
+      shell_argc++;
+      token = strtok(NULL, " ");
+    }
+  }
+  shell_argv[shell_argc] = NULL;  // NULL-terminate
+
+  // start the shell with parsed arguments
+  execv(shell_binary, shell_argv);
 
   // exec failed
   perror("getty: failed to exec shell");

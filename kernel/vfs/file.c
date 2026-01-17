@@ -5,6 +5,9 @@
 #include <kernel/vfs/file.h>
 #include <kernel/vfs/vnode.h>
 #include <kernel/vfs/pipe.h>
+#include <kernel/net/socket.h>
+#include <kernel/net/tcp.h>
+#include <kernel/net/udp.h>
 
 #include <kernel/proc.h>
 #include <kernel/panic.h>
@@ -457,6 +460,10 @@ int file_kqfilt_attach(knote_t *kn) {
   fde_lock(fde);
   file_t *file = fde->file;
 
+  // set fde early to avoid race condition with interrupt handlers
+  // that might trigger knote events before we finish attaching
+  kn->fde = fde_getref(fde);
+
   if (F_ISVNODE(file)) {
     if (filter == EVFILT_READ) {
       // check if file is open for reading
@@ -506,14 +513,36 @@ int file_kqfilt_attach(knote_t *kn) {
     kn->knlist = &pipe->knlist;
     knlist_add(&pipe->knlist, kn);
     res = 0;
+  } else if (F_ISSOCK(file)) {
+    // for socket files, use the protocol socket (e.g., tcp_sock_t, udp_sock_t)
+    sock_t *sock = (sock_t *)file->data;
+    if (sock->type == SOCK_STREAM && sock->sk) {
+      tcp_sock_t *tcp_sk = (tcp_sock_t *)sock->sk;
+      kn->filt_ops_data = tcp_sock_getref(tcp_sk);
+      kn->knlist = &tcp_sk->knlist;
+      knlist_add(&tcp_sk->knlist, kn);
+      res = 0;
+    } else if (sock->type == SOCK_DGRAM && sock->sk) {
+      udp_sock_t *udp_sk = (udp_sock_t *)sock->sk;
+      kn->filt_ops_data = udp_sock_getref(udp_sk);
+      kn->knlist = &udp_sk->knlist;
+      knlist_add(&udp_sk->knlist, kn);
+      res = 0;
+    } else {
+      // other socket types not yet supported
+      goto_res(ret, -EOPNOTSUPP);
+    }
   } else {
-    // handle other file types (pipe, pts, etc.)
+    // handle other file types (pts, etc.)
     todo("file_kqfilt_attach: implement for file type: %d", file->type);
   }
 
-  kn->fde = fde_getref(fde);
-
 LABEL(ret);
+  if (res < 0 && kn->fde != NULL) {
+    // if we hit an error after setting fde, we need to release it
+    fde_putref(&kn->fde);
+    kn->fde = NULL;
+  }
   fde_unlock(fde);
   fde_putref(&fde);
   return res;
@@ -546,6 +575,23 @@ void file_kqfilt_detach(knote_t *kn) {
     if (pipe_ref) {
       pipe_putref(&pipe_ref);
     }
+  } else if (F_ISSOCK(file)) {
+    // for socket files, first remove from whichever list it's on
+    knote_remove_list(kn);
+
+    // then release the protocol socket reference
+    sock_t *sock = (sock_t *)file->data;
+    if (sock->type == SOCK_STREAM) {
+      tcp_sock_t *tcp_sk_ref = moveref(kn->filt_ops_data);
+      if (tcp_sk_ref) {
+        tcp_sock_putref(&tcp_sk_ref);
+      }
+    } else if (sock->type == SOCK_DGRAM) {
+      udp_sock_t *udp_sk_ref = moveref(kn->filt_ops_data);
+      if (udp_sk_ref) {
+        udp_sock_putref(&udp_sk_ref);
+      }
+    }
   } else {
     // handle other file types (pts, etc.)
     todo("file_kqfilt_detach: implement for file type: %d", file->type);
@@ -560,14 +606,23 @@ int file_kqfilt_event(knote_t *kn, long hint) {
   ASSERT(fde->file != NULL);
 
   file_t *file = fde->file;
+
+  // check if we already own the file lock (e.g., called during close)
+  // if so, just report EOF without trying to re-lock
+  if (mtx_owner(&file->lock) == curthread) {
+    kn->event.flags |= EV_EOF;
+    return 1;
+  }
+
+  // acquire the file lock to safely access file state
   if (!f_lock(file)) {
     EPRINTF("file is already closed\n");
-    kn->event.flags |= EV_EOF; // file is closed, report EOF
+    kn->event.flags |= EV_EOF;
     return 1;
   } else if (F_OPS(file)->f_kqevent == NULL) {
     EPRINTF("no kqevent handler for file type %d\n", file->type);
     f_unlock(file);
-    return -ENOSYS; // no kqevent handler available
+    return -ENOSYS;
   }
 
   // defer to the file's kqevent handler
@@ -576,8 +631,8 @@ int file_kqfilt_event(knote_t *kn, long hint) {
   int report = 0;
   if (res < 0) {
     EPRINTF("kqevent handler failed with error {:err}\n", res);
-    kn->event.flags |= EV_ERROR; // mark as error
-    kn->event.data = (intptr_t)res; // store the error code
+    kn->event.flags |= EV_ERROR;
+    kn->event.data = (intptr_t)res;
     report = 1;
   } else if (res > 0) {
     report = 1;

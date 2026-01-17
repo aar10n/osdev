@@ -11,6 +11,7 @@ int __popcnt64(uint64_t qword);
 
 #define bit_ffs32(x) __bsf32((uint32_t)(x))
 #define bit_ffs64(x) __bsf64((uint64_t)(x))
+#define bit_popcnt32(x) __popcnt64((uint32_t)(x))
 #define bit_popcnt64(x) __popcnt64((uint64_t)(x))
 
 #endif

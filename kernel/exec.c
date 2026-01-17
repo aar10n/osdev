@@ -80,6 +80,12 @@ int exec_load_image(enum exec_type type, uintptr_t base, cstr_t path, __out stru
       base = 0x1000000;
     } else if (strncmp(realpath, "/usr/bin/doom", 12) == 0) {
       base = 0x1400000;
+    }  else if (strncmp(realpath, "/usr/bin/timertest", 18) == 0) {
+      base = 0x1800000;
+    } else if (strncmp(realpath, "/usr/bin/signaltest", 19) == 0) {
+      base = 0x1C00000;
+    } else if (strncmp(realpath, "/usr/bin/dig", 12) == 0) {
+      base = 0x2000000;
     }
 
     DPRINTF("exec: binary {:cstr} [%s] with base %p\n", &path, realpath, base);

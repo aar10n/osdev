@@ -625,6 +625,15 @@ static size_t format_ftype(fmt_buffer_t *buffer, const fmt_spec_t *spec) {
     case FT_PTS:
       n += fmtlib_buffer_write(buffer, (upper ? "PTS" : "pts"), 6);
       return n;
+    case FT_SOCK:
+      n += fmtlib_buffer_write(buffer, (upper ? "SOCK" : "sock"), 5);
+      return n;
+    case FT_EPOLL:
+      n += fmtlib_buffer_write(buffer, (upper ? "EPOLL" : "epoll"), 5);
+      return n;
+    case FT_EVENTFD:
+      n += fmtlib_buffer_write(buffer, (upper ? "EVENTFD" : "eventfd"), 7);
+      return n;
     default:
       n += fmtlib_buffer_write(buffer, upper ? "INVALID FTYPE<" : "invalid ftype<", 14);
       n += fmtlib_buffer_write_u64(buffer, ftype);
@@ -740,6 +749,46 @@ static size_t format_file(fmt_buffer_t *buffer, const fmt_spec_t *spec) {
     n += fmtlib_buffer_write_char(buffer, '<');
     n += format_hex(buffer, &mk_fmtlib_spec_pointer(f));
     n += fmtlib_buffer_write_char(buffer, '>');
+  }
+  return n;
+}
+
+static size_t format_ipv4(fmt_buffer_t *buffer, const fmt_spec_t *spec) {
+  uint32_t ip = spec->value.uint64_value;
+  uint8_t octets[4] = {
+    (ip >> 24) & 0xFF,
+    (ip >> 16) & 0xFF,
+    (ip >> 8) & 0xFF,
+    (ip >> 0) & 0xFF
+  };
+
+  char temp[TEMP_BUFFER_SIZE];
+  size_t n = 0;
+  for (int i = 0; i < 4; i++) {
+    size_t len = u64_to_str(octets[i], temp, &decimal_format);
+    n += fmtlib_buffer_write(buffer, temp, len);
+    if (i < 3) {
+      n += fmtlib_buffer_write_char(buffer, '.');
+    }
+  }
+  return n;
+}
+
+static size_t format_mac(fmt_buffer_t *buffer, const fmt_spec_t *spec) {
+  const uint8_t *mac = spec->value.voidptr_value;
+  if (mac == NULL) {
+    return fmtlib_buffer_write(buffer, "(null)", 6);
+  }
+
+  size_t n = 0;
+  for (int i = 0; i < 6; i++) {
+    fmt_spec_t byte_spec = mk_fmtlib_spec_u64(mac[i], 2);
+    byte_spec.flags = FMT_FLAG_ZERO;
+    byte_spec.fill_char = '0';
+    n += format_hex(buffer, &byte_spec);
+    if (i < 5) {
+      n += fmtlib_buffer_write_char(buffer, ':');
+    }
   }
   return n;
 }
@@ -937,10 +986,22 @@ int fmtlib_resolve_type(fmt_spec_t *spec) {
     spec->formatter = format_time_unix;
     return 1;
   }
-  // file -> struct file
+  // file -> struct file*
   if (strncmp("file", spec->type, 4) == 0) {
     spec->argtype = FMT_ARGTYPE_VOIDPTR;
     spec->formatter = format_file;
+    return 1;
+  }
+  // ip -> uint32_t
+  if (strncmp("ip", spec->type, 2) == 0) {
+    spec->argtype = FMT_ARGTYPE_INT32;
+    spec->formatter = format_ipv4;
+    return 1;
+  }
+  // mac -> uint8_t[6]
+  if (strncmp("mac", spec->type, 3) == 0) {
+    spec->argtype = FMT_ARGTYPE_VOIDPTR;
+    spec->formatter = format_mac;
     return 1;
   }
 

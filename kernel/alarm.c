@@ -16,8 +16,9 @@
 #include <rb_tree.h>
 
 #define ASSERT(x) kassert(x)
-#define DPRINTF(x, ...)
-//#define DPRINTF(x, ...) kprintf("alarm: " x, ##__VA_ARGS__)
+//#define DPRINTF(x, ...)
+#define DPRINTF(x, ...) kprintf("alarm: " x, ##__VA_ARGS__)
+#define EPRINTF(x, ...) kprintf("alarm: %s: " x, __func__, ##__VA_ARGS__)
 
 #define HANDLER_FN(fn) ((void (*)(alarm_t *, void *, void *, void *))(fn))
 
@@ -61,11 +62,26 @@ static inline void maybe_rearm_tickless_alarm(uint64_t expiry, uint64_t clock_no
 
 
 static inline void handle_expired_alarms(uint64_t clock_now, uint64_t *next_expiry) {
-  // handle any expired alarms
   alarm_t *alarm;
   uint64_t min_expiry = 0;
-  while ((alarm = pending_alarms->min->data) && alarm->expires_ns <= clock_now) {
+
+  while (true) {
     mtx_spin_lock(&alarm_lock);
+
+    if (pending_alarms->min == pending_alarms->nil) {
+      mtx_spin_unlock(&alarm_lock);
+      break;
+    }
+
+    alarm = pending_alarms->min->data;
+    if (alarm->expires_ns > clock_now) {
+      if (pending_alarms->min != pending_alarms->nil) {
+        min_expiry = pending_alarms->min->key;
+      }
+      mtx_spin_unlock(&alarm_lock);
+      break;
+    }
+
     rb_tree_delete_node(pending_alarms, pending_alarms->min);
     rb_tree_delete(alarm_expiries, alarm->id);
     if (pending_alarms->min != pending_alarms->nil) {
@@ -99,7 +115,7 @@ static inline void handle_expired_alarms(uint64_t clock_now, uint64_t *next_expi
 static void alarm_tick_irq_handler(struct trapframe *frame) {
   thread_t *td = curthread;
   uint64_t clock_now = clock_get_nanos();
-  DPRINTF("tick IRQ [%llu]\n", clock_now);
+//  DPRINTF("tick IRQ [%llu]\n", clock_now);
 
   last_tick = clock_now;
   uint64_t next_expiry = 0;
@@ -270,20 +286,21 @@ int alarm_source_setval_abs_ns(alarm_source_t *as, uint64_t abs_ns) {
   }
 
   DPRINTF("alarm source '%s' setval_abs_ns: %llu\n", as->name, abs_ns);
-  uint64_t value = abs_ns / as->scale_ns;
+  uint64_t value_ns = abs_ns;
   if (!(as->cap_flags & ALARM_CAP_ABSOLUTE)) {
-    // correct the value to be relative current time
+    // correct the value to be relative to current time
     uint64_t clock_now = clock_get_nanos();
-    if (value < clock_now) {
-      DPRINTF("alarm source '%s' value %llu is in the past [%llu]\n", as->name, value, clock_now);
+    if (abs_ns < clock_now) {
+      EPRINTF("alarm source '%s' value %llu is in the past [%llu]\n", as->name, abs_ns, clock_now);
       return -EINVAL;
     }
 
-    value -= clock_now;
+    value_ns = abs_ns - clock_now;
   }
 
+  uint64_t value = value_ns / as->scale_ns;
   if (value < as->scale_ns || value > as->value_mask) {
-    DPRINTF("alarm source '%s' value %llu out of range [min=%llu, max=%llu]\n",
+    EPRINTF("alarm source '%s' value %llu out of range [min=%u, max=%llu]\n",
             as->name, value, as->scale_ns, as->value_mask);
     return -ERANGE;
   }
@@ -309,7 +326,7 @@ int alarm_source_setval_rel_ns(alarm_source_t *as, uint64_t rel_ns) {
   }
 
   if (value < as->scale_ns || value > as->value_mask) {
-    DPRINTF("alarm source '%s' value %llu out of range [min=%llu, max=%llu]\n",
+    DPRINTF("alarm source '%s' value %llu out of range [min=%u, max=%llu]\n",
             as->name, value, as->scale_ns, as->value_mask);
     return -ERANGE;
   }
@@ -374,7 +391,7 @@ id_t alarm_register(alarm_t *alarm) {
   return alarm->id;
 }
 
-int alarm_unregister(id_t alarm_id) {
+int alarm_unregister(id_t alarm_id, struct callback *callback) {
   mtx_spin_lock(&alarm_lock);
   id_t expires_ns = (id_t)(uintptr_t)rb_tree_find(alarm_expiries, alarm_id);
   if (expires_ns == 0) {
@@ -403,6 +420,10 @@ int alarm_unregister(id_t alarm_id) {
   mtx_spin_unlock(&alarm_lock);
 
   DPRINTF("alarm_unregister: alarm %d unregistered\n", alarm->id);
+  if (callback) {
+    callback->function = alarm->function;
+    memcpy(callback->args, alarm->args, sizeof(alarm->args));
+  }
   alarm_free(&alarm);
   return 0;
 
@@ -459,7 +480,7 @@ int alarm_sleep_ns(uint64_t ns) {
 
   // unregister the alarm if it hasn't fired yet
   if (ret != 0) {
-    alarm_unregister(alarm_id);
+    alarm_unregister(alarm_id, NULL);
   }
 
   return ret;
@@ -485,6 +506,7 @@ static void alarm_cb_deliver_signal(alarm_t *alarm, pid_t pid) {
 }
 
 static void alarm_cb_handle_itimer(alarm_t *alarm, pid_t pid, int which) {
+  DPRINTF("alarm_cb_handle_itimer: called for pid %d, which %d\n", pid, which);
   proc_t *proc = proc_lookup(pid);
   if (proc == NULL) {
     DPRINTF("alarm_cb_handle_itimer: process %d not found\n", pid);
@@ -492,10 +514,12 @@ static void alarm_cb_handle_itimer(alarm_t *alarm, pid_t pid, int which) {
   }
 
   int res;
+  DPRINTF("alarm_cb_handle_itimer: calling proc_signal for SIGALRM\n");
   if ((res = proc_signal(proc, &(siginfo_t){.si_signo = SIGALRM})) < 0) {
     DPRINTF("alarm_cb_handle_itimer: failed to deliver signal: {:err}\n", res);
     goto done;
   }
+  DPRINTF("alarm_cb_handle_itimer: proc_signal succeeded\n");
 
   // reload the timer if it is periodic
   struct itimerval *itv = &proc->itimer_vals[which];
@@ -537,7 +561,7 @@ static void itimer_get_update(int which, struct itimerval *curr_value, const str
   if (new_value != NULL) {
     // cancel previous alarm if it exists
     if (proc->itimer_alarms[which] > 0) {
-      alarm_unregister(proc->itimer_alarms[which]);
+      alarm_unregister(proc->itimer_alarms[which], NULL);
       proc->itimer_alarms[which] = 0;
     }
 
@@ -571,7 +595,7 @@ DEFINE_SYSCALL(alarm, int, unsigned int seconds) {
 
   // cancel any existing pending alarm
   if (proc->pending_alarm > 0) {
-    alarm_unregister(proc->pending_alarm);
+    alarm_unregister(proc->pending_alarm, NULL);
     proc->pending_alarm = 0;
   }
 

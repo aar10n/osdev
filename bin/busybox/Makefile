@@ -16,13 +16,18 @@ BIN_APPLETS = \
 SBIN_APPLETS =
 
 USR_BIN_APPLETS = \
-	ascii awk base32 base64 bc bzcat bunzip2 bzip2 cksum cmp comm crc32 dc \
-	diff df ed egrep factor fallocate fgrep find fold gunzip gzip head \
-	hexdump hexedit lzcat lzma less man md5sum microcom nproc paste patch \
-	printenv printf realpath sed seq sha1sum sha256sum sha3sum sha512sum sh \
-	shred shuf sort split stat strings stty sum tac tail tar tee time \
-	timeout tree truncate tsort unexpand uniq unlink unlzma unxz unzip \
-	usleep uuencode vi which xargs xz xzcat yes zcat
+	arp arping ascii awk base32 base64 bc brctl bunzip2 bzcat bzip2 cksum \
+	cmp comm crc32 dc diff df dnsdomainname dnsd ed egrep ether-wake factor \
+	fakeidentd fallocate fgrep find fold ftpd ftpget ftpput gunzip gzip head \
+	hexdump hexedit hostname httpd ifconfig ifdown ifenslave ifplugd \
+	ifup ip ipcalc less lzcat lzma man md5sum microcom nameif nc \
+	netcat netstat nproc nslookup ntpd paste patch ping printenv printf \
+	pscan realpath route sed seq sh sha1sum sha256sum sha3sum sha512sum shred \
+	shuf slattach sort split ssl_client stat strings stty sum tac tail tar \
+	tcpsvd tee telnet telnetd tftp tftpd time timeout traceroute tree truncate \
+	tsort udpsvd unexpand uniq unlink unlzma unxz unzip usleep uuencode vconfig \
+	vi wget which whois xargs xz xzcat yes zcat zcip
+
 
 USR_SBIN_APPLETS =
 
@@ -48,7 +53,7 @@ configure-extra:
 # Required: Main build command
 .PHONY: build-main
 build-main:
-	$(MAKE) -C $(SOURCE_PATH) CC="$(CC)" AR="$(AR)" STRIP="$(STRIP)"
+	$(MAKE) -C $(SOURCE_PATH) CC="$(CC)" AR="$(AR)" STRIP="$(STRIP)" CFLAGS="$(CFLAGS) $(INCLUDE) -fPIE" EXTRA_CFLAGS="-gdwarf-5"
 	@if [ -f $(SOURCE_PATH)/busybox_unstripped ]; then \
 		cp $(SOURCE_PATH)/busybox_unstripped $(OBJ_DIR)/busybox; \
 	elif [ -f $(SOURCE_PATH)/busybox ]; then \

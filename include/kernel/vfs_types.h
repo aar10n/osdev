@@ -333,14 +333,20 @@ struct ventry_ops {
 // =================================
 
 enum ftype {
-  FT_VNODE, // vnode file (files or devices)
-  FT_PIPE,  // pipe file
-  FT_PTS,   // pseudo-terminal slave file
+  FT_VNODE,   // vnode file (files or devices)
+  FT_PIPE,    // pipe file
+  FT_PTS,     // pseudo-terminal slave file
+  FT_SOCK,    // socket file
+  FT_EPOLL,   // epoll instance file
+  FT_EVENTFD, // eventfd file
 };
 
 #define F_ISVNODE(f) ((f)->type == FT_VNODE)
 #define F_ISPIPE(f) ((f)->type == FT_PIPE)
 #define F_ISPTS(f) ((f)->type == FT_PTS)
+#define F_ISSOCK(f) ((f)->type == FT_SOCK)
+#define F_ISEPOLL(f) ((f)->type == FT_EPOLL)
+#define F_ISEVENTFD(f) ((f)->type == FT_EVENTFD)
 
 /*
  * A file backing a file descriptor.

@@ -6,6 +6,7 @@
 #include <kernel/proc.h>
 #include <kernel/clock.h>
 #include <kernel/ipi.h>
+#include <kernel/futex.h>
 
 #include <kernel/panic.h>
 #include <kernel/printf.h>
@@ -19,7 +20,7 @@
 
 #define NRUNQS 64
 
-/*
+/**
  * A scheduler on a cpu.
  */
 typedef struct sched {
@@ -372,6 +373,10 @@ void sched_again(sched_reason_t reason) {
       break;
     case SCHED_EXITED:
       ASSERT(TDF2_IS_STOPPED(oldtd));
+
+      // handle CLONE_CHILD_CLEARTID: clear tid and wake futex
+      futex_wake_on_exit(oldtd->clear_child_tid);
+
       TD_SET_STATE(oldtd, TDS_EXITED);
       atomic_fetch_add(&oldtd->proc->num_exited, 1);
       cond_broadcast(&oldtd->proc->td_exit_cond);
