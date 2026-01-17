@@ -153,21 +153,27 @@ int icmp_rcv(struct sk_buff *skb) {
   switch (icmph->type) {
     case ICMP_ECHO:
       DPRINTF("received echo request (id=%u, seq=%u)\n", ntohs(icmph->un.echo.id), ntohs(icmph->un.echo.sequence));
-      return icmp_send_echo_reply(skb);
+      icmp_send_echo_reply(skb);
+      skb_free(&skb);
+      break;
     case ICMP_ECHOREPLY:
       DPRINTF("received echo reply (id=%u, seq=%u)\n", ntohs(icmph->un.echo.id), ntohs(icmph->un.echo.sequence));
       raw_rcv(skb, IPPROTO_ICMP);
+      skb_free(&skb);
       break;
     case ICMP_DEST_UNREACH:
       EPRINTF("received destination unreachable (code=%u)\n", icmph->code);
       // TODO: Notify higher layers
+      skb_free(&skb);
       break;
     case ICMP_TIME_EXCEEDED:
       EPRINTF("received time exceeded (code=%u)\n", icmph->code);
       // TODO: Notify higher layers
+      skb_free(&skb);
       break;
     default:
       EPRINTF("unsupported ICMP type %u\n", icmph->type);
+      skb_free(&skb);
       break;
   }
 
