@@ -169,7 +169,7 @@ static inline unsigned int dev_get_flags(netdev_t *dev) {
 static int netlink_create(sock_t *sock, int protocol);
 static int netlink_release(sock_t *sock);
 static int netlink_bind(sock_t *sock, struct sockaddr *addr, int addrlen);
-static int netlink_sendmsg(sock_t *sock, struct msghdr *msg, size_t len);
+static int netlink_sendmsg(sock_t *sock, struct msghdr *msg, size_t len, int flags);
 static int netlink_recvmsg(sock_t *sock, struct msghdr *msg, size_t len, int flags);
 
 static int netlink_getsockname(sock_t *sock, struct sockaddr *addr, socklen_t *addr_len) {
@@ -276,7 +276,7 @@ static int netlink_bind(sock_t *sock, struct sockaddr *addr, int addrlen) {
   return 0;
 }
 
-static int netlink_sendmsg(sock_t *sock, struct msghdr *msg, size_t len) {
+static int netlink_sendmsg(sock_t *sock, struct msghdr *msg, size_t len, int flags) {
   ASSERT(sock != NULL);
   ASSERT(msg != NULL);
 

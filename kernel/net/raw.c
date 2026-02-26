@@ -352,7 +352,7 @@ static int raw_getpeername(sock_t *sock, struct sockaddr *addr, socklen_t *addrl
   return 0;
 }
 
-int raw_sendmsg(sock_t *sock, struct msghdr *msg, size_t len) {
+int raw_sendmsg(sock_t *sock, struct msghdr *msg, size_t len, int flags) {
   raw_sock_t *raw_sk = (raw_sock_t *)sock->sk;
 
   if (raw_sk->shutdown == SHUT_WR || raw_sk->shutdown == SHUT_RDWR) {

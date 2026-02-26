@@ -255,7 +255,7 @@ int udp_rcv(sk_buff_t *skb) {
   return 0;
 }
 
-int udp_sendmsg(sock_t *sock, struct msghdr *msg, size_t len) {
+int udp_sendmsg(sock_t *sock, struct msghdr *msg, size_t len, int flags) {
   ASSERT(sock != NULL);
   ASSERT(msg != NULL);
 
@@ -442,6 +442,7 @@ static int udp_create(sock_t *sock, int protocol) {
   LIST_ADD(&udp_sockets, udp_sk, link);
   mtx_unlock(&socket_lock);
   sock->sk = moveref(udp_sk);
+  sock->knlist = &((udp_sock_t *)sock->sk)->knlist;
 
   DPRINTF("created UDP socket\n");
   return 0;

@@ -76,7 +76,8 @@ typedef struct unix_socket {
 
   _refcount;
 
-  LIST_ENTRY(struct unix_socket) link;  // for accept queue
+  LIST_ENTRY(struct unix_socket) link;     // global unix_sockets list
+  LIST_ENTRY(struct unix_socket) aq_link;  // accept queue entry
 } unix_socket_t;
 
 static LIST_HEAD(unix_socket_t) unix_sockets;
@@ -224,8 +225,8 @@ static void _unix_sock_cleanup(unix_socket_t **usockp) {
     }
 
     // free pending accept queue
-    LIST_FOR_IN_SAFE(pending, &usock->stream.accept_queue, link) {
-      LIST_REMOVE(&usock->stream.accept_queue, pending, link);
+    LIST_FOR_IN_SAFE(pending, &usock->stream.accept_queue, aq_link) {
+      LIST_REMOVE(&usock->stream.accept_queue, pending, aq_link);
       unix_sock_putref(&pending);
     }
   }
@@ -238,12 +239,30 @@ static void _unix_sock_cleanup(unix_socket_t **usockp) {
 }
 
 static unix_socket_t *unix_find_bound_socket(const struct sockaddr_un *addr, socklen_t addrlen) {
+  size_t path_offset = offsetof(struct sockaddr_un, sun_path);
+  bool abstract = addrlen > path_offset && addr->sun_path[0] == '\0';
+  size_t name_len = addrlen - path_offset;
+
   mtx_lock(&unix_sockets_lock);
   LIST_FOR_IN(usock, &unix_sockets, link) {
-    if (usock->bound && usock->addrlen == addrlen && memcmp(&usock->addr, addr, addrlen) == 0) {
-      usock = unix_sock_getref(usock);
-      mtx_unlock(&unix_sockets_lock);
-      return usock;
+    if (!usock->bound)
+      continue;
+
+    if (abstract) {
+      // abstract sockets: compare by exact abstract name bytes
+      size_t bound_len = usock->addrlen - path_offset;
+      if (bound_len == name_len && memcmp(usock->addr.sun_path, addr->sun_path, name_len) == 0) {
+        usock = unix_sock_getref(usock);
+        mtx_unlock(&unix_sockets_lock);
+        return usock;
+      }
+    } else {
+      // pathname sockets: compare by string
+      if (usock->addr.sun_path[0] != '\0' && strcmp(usock->addr.sun_path, addr->sun_path) == 0) {
+        usock = unix_sock_getref(usock);
+        mtx_unlock(&unix_sockets_lock);
+        return usock;
+      }
     }
   }
 
@@ -291,6 +310,7 @@ static int unix_create(sock_t *sock, int protocol) {
   knlist_init(&usock->knlist, &usock->lock.lo);
 
   sock->sk = usock;
+  sock->knlist = &usock->knlist;
 
   mtx_lock(&unix_sockets_lock);
   LIST_ADD(&unix_sockets, usock, link);
@@ -407,18 +427,21 @@ static int unix_connect(sock_t *sock, struct sockaddr *addr, int addrlen, int fl
     return -ECONNREFUSED;
   }
 
-  mtx_lock(&usock->lock);
-  usock->stream.peer = unix_sock_getref(peer);
-  mtx_unlock(&usock->lock);
-
   unix_sock_getref(usock);
-  LIST_ADD(&peer->stream.accept_queue, usock, link);
+  LIST_ADD(&peer->stream.accept_queue, usock, aq_link);
   peer->stream.accept_queue_len++;
 
   cond_broadcast(&peer->rx_cond);
   knlist_activate_notes(&peer->knlist, 0);
 
   mtx_unlock(&peer->lock);
+
+  // wait for the server to accept and wire up usock->stream.peer
+  mtx_lock(&usock->lock);
+  while (!usock->stream.peer) {
+    cond_wait(&usock->rx_cond, &usock->lock);
+  }
+  mtx_unlock(&usock->lock);
 
   sock->state = SS_CONNECTED;
   DPRINTF("connected STREAM socket\n");
@@ -468,7 +491,7 @@ static int unix_accept(sock_t *sock, sock_t *newsock, int flags) {
     cond_wait(&usock->rx_cond, &usock->lock);
   }
 
-  unix_socket_t *client = LIST_REMOVE_FIRST(&usock->stream.accept_queue, link);
+  unix_socket_t *client = LIST_REMOVE_FIRST(&usock->stream.accept_queue, aq_link);
   usock->stream.accept_queue_len--;
 
   mtx_unlock(&usock->lock);
@@ -503,19 +526,24 @@ static int unix_accept(sock_t *sock, sock_t *newsock, int flags) {
   accepted->stream.peer = unix_sock_getref(client);
 
   mtx_lock(&client->lock);
-  unix_sock_putref(&client->stream.peer);
   client->stream.peer = unix_sock_getref(accepted);
+  cond_broadcast(&client->rx_cond);
   mtx_unlock(&client->lock);
 
   newsock->sk = accepted;
+  newsock->knlist = &accepted->knlist;
   newsock->state = SS_CONNECTED;
   unix_sock_putref(&client);
+
+  mtx_lock(&unix_sockets_lock);
+  LIST_ADD(&unix_sockets, accepted, link);
+  mtx_unlock(&unix_sockets_lock);
 
   DPRINTF("accepted connection\n");
   return 0;
 }
 
-static int unix_sendmsg(sock_t *sock, struct msghdr *msg, size_t len) {
+static int unix_sendmsg(sock_t *sock, struct msghdr *msg, size_t len, int flags) {
   unix_socket_t *usock = sock->sk;
   ASSERT(usock != NULL);
 
@@ -624,7 +652,7 @@ static int unix_sendmsg(sock_t *sock, struct msghdr *msg, size_t len) {
 
     while (available == 0) {
       // buffer full, wait
-      if (sock->flags & O_NONBLOCK) {
+      if (flags & MSG_DONTWAIT) {
         if (total_written > 0) {
           mtx_unlock(&peer->lock);
           return (int)total_written;
@@ -668,7 +696,7 @@ static int unix_recvmsg(sock_t *sock, struct msghdr *msg, size_t len, int flags)
     mtx_lock(&usock->lock);
 
     while (usock->dgram.rx_queue_len == 0) {
-      if (sock->flags & O_NONBLOCK) {
+      if (flags & MSG_DONTWAIT) {
         mtx_unlock(&usock->lock);
         return -EAGAIN;
       }
@@ -726,7 +754,7 @@ static int unix_recvmsg(sock_t *sock, struct msghdr *msg, size_t len, int flags)
         return (int)total_read;
       }
 
-      if (sock->flags & O_NONBLOCK) {
+      if (flags & MSG_DONTWAIT) {
         if (total_read > 0) {
           mtx_unlock(&usock->lock);
           return (int)total_read;
@@ -971,6 +999,73 @@ static int unix_getpeername(sock_t *sock, struct sockaddr *addr, socklen_t *addr
   return 0;
 }
 
+static int unix_kqevent(sock_t *sock, knote_t *kn) {
+  unix_socket_t *usock = sock->sk;
+  if (!usock)
+    return -EBADF;
+
+  bool locked = mtx_owner(&usock->lock) != curthread;
+  if (locked)
+    mtx_lock(&usock->lock);
+  int ret = 0;
+
+  if (usock->type == SOCK_STREAM) {
+    unix_stream_t *st = &usock->stream;
+    bool listening = st->backlog > 0;
+    switch (kn->event.filter) {
+      case EVFILT_READ:
+        if (listening) {
+          if (st->accept_queue_len > 0) {
+            kn->event.data = (intptr_t)st->accept_queue_len;
+            ret = 1;
+          }
+        } else if (st->count > 0) {
+          kn->event.data = (intptr_t)st->count;
+          ret = 1;
+        } else if (!st->peer || (st->shutdown_flags & SHUT_RD)) {
+          kn->event.flags |= EV_EOF;
+          ret = 1;
+        }
+        break;
+      case EVFILT_WRITE:
+        if (listening) {
+          break;
+        } else if (!st->peer || (st->shutdown_flags & SHUT_WR)) {
+          kn->event.flags |= EV_EOF;
+          ret = 1;
+        } else if (st->buffer_size - st->count > 0) {
+          kn->event.data = (intptr_t)(st->buffer_size - st->count);
+          ret = 1;
+        }
+        break;
+      default:
+        ret = -EINVAL;
+        break;
+    }
+  } else {
+    unix_dgram_t *dg = &usock->dgram;
+    switch (kn->event.filter) {
+      case EVFILT_READ:
+        if (dg->rx_queue_len > 0) {
+          kn->event.data = (intptr_t)dg->rx_queue_len;
+          ret = 1;
+        }
+        break;
+      case EVFILT_WRITE:
+        kn->event.data = UNIX_MAX_DGRAM_SIZE;
+        ret = 1;
+        break;
+      default:
+        ret = -EINVAL;
+        break;
+    }
+  }
+
+  if (locked)
+    mtx_unlock(&usock->lock);
+  return ret;
+}
+
 static const struct proto_ops unix_proto_ops = {
   .family = AF_UNIX,
   .create = unix_create,
@@ -986,6 +1081,7 @@ static const struct proto_ops unix_proto_ops = {
   .getsockopt = unix_getsockopt,
   .getsockname = unix_getsockname,
   .getpeername = unix_getpeername,
+  .kqevent = unix_kqevent,
 };
 
 //

@@ -31,6 +31,7 @@ typedef struct sock {
 
   struct proto_ops *ops;        // protocol operations
   void *sk;                     // protocol specific socket
+  struct knlist *knlist;        // kevent notification list
 
   _refcount;                    // reference counting
 } sock_t;
@@ -43,18 +44,19 @@ struct proto_ops {
   int (*connect)(struct sock *sock, struct sockaddr *addr, int addrlen, int flags);
   int (*listen)(struct sock *sock, int backlog);
   int (*accept)(struct sock *sock, struct sock *newsock, int flags);
-  int (*sendmsg)(struct sock *sock, struct msghdr *msg, size_t len);
+  int (*sendmsg)(struct sock *sock, struct msghdr *msg, size_t len, int flags);
   int (*recvmsg)(struct sock *sock, struct msghdr *msg, size_t len, int flags);
   int (*shutdown)(struct sock *sock, int how);
   int (*setsockopt)(struct sock *sock, int level, int optname, const void *optval, socklen_t optlen);
   int (*getsockopt)(struct sock *sock, int level, int optname, void *optval, socklen_t *optlen);
   int (*getsockname)(struct sock *sock, struct sockaddr *addr, socklen_t *addrlen);
   int (*getpeername)(struct sock *sock, struct sockaddr *addr, socklen_t *addrlen);
+  int (*kqevent)(struct sock *sock, struct knote *kn);
 };
 
 #define sock_getref(sock) ({ \
   ASSERT_IS_TYPE(sock_t *, sock); \
-  socket_t *__sock = (sock); \
+  sock_t *__sock = (sock); \
   __sock ? ref_get(&__sock->refcount) : NULL; \
   __sock; \
 })

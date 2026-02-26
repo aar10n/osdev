@@ -131,6 +131,10 @@ static ssize_t socket_read(file_t *file, kio_t *kio) {
     return -EOPNOTSUPP;
   }
 
+  int msg_flags = 0;
+  if (file->flags & O_NONBLOCK)
+    msg_flags |= MSG_DONTWAIT;
+
   // implement read as recvfrom with no address
   struct msghdr msg = { 0 };
 
@@ -149,7 +153,7 @@ static ssize_t socket_read(file_t *file, kio_t *kio) {
   }
 
   size_t remaining = kio_remaining(kio);
-  ssize_t ret = sock->ops->recvmsg(sock, &msg, remaining, 0);
+  ssize_t ret = sock->ops->recvmsg(sock, &msg, remaining, msg_flags);
   if (ret > 0) {
     // update kio to reflect data received
     if (kio->kind == KIO_BUF) {
@@ -174,6 +178,10 @@ static ssize_t socket_write(file_t *file, kio_t *kio) {
     return -EOPNOTSUPP;
   }
 
+  int msg_flags = 0;
+  if (file->flags & O_NONBLOCK)
+    msg_flags |= MSG_DONTWAIT;
+
   // implement write as sendto with no address
   struct msghdr msg = { 0 };
 
@@ -191,7 +199,7 @@ static ssize_t socket_write(file_t *file, kio_t *kio) {
     msg.msg_iovlen = 1;
   }
 
-  ssize_t ret = sock->ops->sendmsg(sock, &msg, kio_remaining(kio));
+  ssize_t ret = sock->ops->sendmsg(sock, &msg, kio_remaining(kio), msg_flags);
   if (ret > 0) {
     // update kio to reflect data sent
     if (kio->kind == KIO_BUF) {
@@ -227,11 +235,16 @@ static int socket_kqevent(file_t *file, knote_t *kn) {
     return -EBADF;
   }
 
-  // for TCP sockets, check the protocol socket directly
+  if (sock->ops && sock->ops->kqevent) {
+    return sock->ops->kqevent(sock, kn);
+  }
+
+  // legacy path for protocols that don't implement kqevent
   if (sock->type == SOCK_STREAM && sock->sk) {
     tcp_sock_t *tcp_sk = (tcp_sock_t *)sock->sk;
 
-    mtx_lock(&tcp_sk->lock);
+    bool locked = mtx_owner(&tcp_sk->lock) != curthread;
+    if (locked) mtx_lock(&tcp_sk->lock);
     int ret = 0;
 
     switch (kn->event.filter) {
@@ -297,7 +310,7 @@ static int socket_kqevent(file_t *file, knote_t *kn) {
         break;
     }
 
-    mtx_unlock(&tcp_sk->lock);
+    if (locked) mtx_unlock(&tcp_sk->lock);
     return ret;
   } else if (sock->type == SOCK_DGRAM && sock->sk) {
     udp_sock_t *udp_sk = sock->sk;
@@ -561,9 +574,18 @@ int net_accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen) {
 
   // optionally fill in the peer address
   if (addr && addrlen) {
-    EPRINTF("getpeername not yet implemented\n");
-    // todo: implement getpeername functionality
-    *addrlen = 0;
+    sock_t *newsock = newfile->data;
+    if (newsock->ops->getpeername) {
+      socklen_t len = *addrlen;
+      int r = newsock->ops->getpeername(newsock, addr, &len);
+      if (r == 0) {
+        *addrlen = len;
+      } else {
+        *addrlen = 0;
+      }
+    } else {
+      *addrlen = 0;
+    }
   }
 
   fde_putref(&fde);
@@ -598,7 +620,7 @@ ssize_t net_sendto(int sockfd, const void *buf, size_t len, int flags, const str
   msg.msg_iov = &iov;
   msg.msg_iovlen = 1;
 
-  int ret = sock->ops->sendmsg(sock, &msg, len);
+  int ret = sock->ops->sendmsg(sock, &msg, len, flags);
   fde_putref(&fde);
   return ret;
 }
@@ -661,7 +683,7 @@ ssize_t net_sendmsg(int sockfd, const struct msghdr *msg, int flags) {
     for (int i = 0; i < msg->msg_iovlen; i++) {
       len += msg->msg_iov[i].iov_len;
     }
-    ret = sock->ops->sendmsg(sock, (struct msghdr *)msg, len);
+    ret = sock->ops->sendmsg(sock, (struct msghdr *)msg, len, flags);
   }
 
   fde_putref(&fde);
@@ -809,8 +831,38 @@ int net_getsockname(int sockfd, struct sockaddr *addr, socklen_t *addrlen) {
 }
 
 int net_getpeername(int sockfd, struct sockaddr *addr, socklen_t *addrlen) {
-  EPRINTF("net_getpeername: not implemented\n");
-  return -EOPNOTSUPP;
+  proc_t *proc = curproc;
+  fd_entry_t *fde = fs_proc_get_fdentry(proc, sockfd);
+  if (!fde) {
+    return -EBADF;
+  }
+
+  file_t *file = fde->file;
+  if (!F_ISSOCK(file)) {
+    fde_putref(&fde);
+    return -ENOTSOCK;
+  }
+
+  sock_t *sock = file->data;
+  if (!sock->ops->getpeername) {
+    fde_putref(&fde);
+    return -EOPNOTSUPP;
+  }
+
+  socklen_t len;
+  if (addrlen) {
+    len = *addrlen;
+  } else {
+    len = 0;
+  }
+
+  int ret = sock->ops->getpeername(sock, addr, &len);
+  if (ret == 0 && addrlen) {
+    *addrlen = len;
+  }
+
+  fde_putref(&fde);
+  return ret;
 }
 
 int net_socketpair(int domain, int type, int protocol, int sv[2]) {

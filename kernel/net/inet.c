@@ -143,11 +143,11 @@ static int inet_connect(sock_t *sock, struct sockaddr *addr, int addrlen, int fl
   return sock->ops->connect(sock, addr, addrlen, flags);
 }
 
-static int inet_sendmsg(sock_t *sock, struct msghdr *msg, size_t len) {
+static int inet_sendmsg(sock_t *sock, struct msghdr *msg, size_t len, int flags) {
   if (!sock->ops || !sock->ops->sendmsg) {
     return -EOPNOTSUPP;
   }
-  return sock->ops->sendmsg(sock, msg, len);
+  return sock->ops->sendmsg(sock, msg, len, flags);
 }
 
 static int inet_recvmsg(sock_t *sock, struct msghdr *msg, size_t len, int flags) {

@@ -514,22 +514,13 @@ int file_kqfilt_attach(knote_t *kn) {
     knlist_add(&pipe->knlist, kn);
     res = 0;
   } else if (F_ISSOCK(file)) {
-    // for socket files, use the protocol socket (e.g., tcp_sock_t, udp_sock_t)
     sock_t *sock = (sock_t *)file->data;
-    if (sock->type == SOCK_STREAM && sock->sk) {
-      tcp_sock_t *tcp_sk = (tcp_sock_t *)sock->sk;
-      kn->filt_ops_data = tcp_sock_getref(tcp_sk);
-      kn->knlist = &tcp_sk->knlist;
-      knlist_add(&tcp_sk->knlist, kn);
-      res = 0;
-    } else if (sock->type == SOCK_DGRAM && sock->sk) {
-      udp_sock_t *udp_sk = (udp_sock_t *)sock->sk;
-      kn->filt_ops_data = udp_sock_getref(udp_sk);
-      kn->knlist = &udp_sk->knlist;
-      knlist_add(&udp_sk->knlist, kn);
+    if (sock->sk && sock->knlist) {
+      kn->filt_ops_data = sock_getref(sock);
+      kn->knlist = sock->knlist;
+      knlist_add(sock->knlist, kn);
       res = 0;
     } else {
-      // other socket types not yet supported
       goto_res(ret, -EOPNOTSUPP);
     }
   } else {
@@ -576,21 +567,10 @@ void file_kqfilt_detach(knote_t *kn) {
       pipe_putref(&pipe_ref);
     }
   } else if (F_ISSOCK(file)) {
-    // for socket files, first remove from whichever list it's on
     knote_remove_list(kn);
-
-    // then release the protocol socket reference
-    sock_t *sock = (sock_t *)file->data;
-    if (sock->type == SOCK_STREAM) {
-      tcp_sock_t *tcp_sk_ref = moveref(kn->filt_ops_data);
-      if (tcp_sk_ref) {
-        tcp_sock_putref(&tcp_sk_ref);
-      }
-    } else if (sock->type == SOCK_DGRAM) {
-      udp_sock_t *udp_sk_ref = moveref(kn->filt_ops_data);
-      if (udp_sk_ref) {
-        udp_sock_putref(&udp_sk_ref);
-      }
+    sock_t *sock_ref = moveref(kn->filt_ops_data);
+    if (sock_ref) {
+      sock_putref(&sock_ref);
     }
   } else {
     // handle other file types (pts, etc.)

@@ -77,7 +77,7 @@ int udp_bind(udp_sock_t *udp_sk, uint32_t addr, uint16_t port);
 int udp_connect(udp_sock_t *udp_sk, uint32_t addr, uint16_t port);
 
 int udp_rcv(sk_buff_t *skb);
-int udp_sendmsg(sock_t *sock, struct msghdr *msg, size_t len);
+int udp_sendmsg(sock_t *sock, struct msghdr *msg, size_t len, int flags);
 int udp_recvmsg(sock_t *sock, struct msghdr *msg, size_t len, int flags);
 
 #endif

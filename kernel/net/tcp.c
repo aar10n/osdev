@@ -764,6 +764,7 @@ static int inet_stream_create(sock_t *sock, int protocol) {
   }
 
   sock->sk = tcp_sk;
+  sock->knlist = &tcp_sk->knlist;
 
   // add to socket list
   mtx_lock(&socket_lock);
@@ -1070,6 +1071,7 @@ static int inet_stream_accept(sock_t *sock, sock_t *newsock, int flags) {
   tcp_sk->accept_queue_len--;
 
   newsock->sk = moveref(new_sk);
+  newsock->knlist = &((tcp_sock_t *)newsock->sk)->knlist;
 
   DPRINTF("accepted connection\n");
   res = 0; // success
@@ -1078,7 +1080,7 @@ LABEL(ret_unlock);
   return res;
 }
 
-static int inet_stream_sendmsg(sock_t *sock, struct msghdr *msg, size_t len) {
+static int inet_stream_sendmsg(sock_t *sock, struct msghdr *msg, size_t len, int flags) {
   ASSERT(sock != NULL);
   ASSERT(sock->sk != NULL);
   ASSERT(msg != NULL);
