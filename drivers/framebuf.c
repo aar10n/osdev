@@ -91,6 +91,10 @@ int framebuf_d_ioctl(device_t *dev, unsigned int request, void *arg) {
     var->transp.length = 8;
     return 0;
   }
+  case FBIOPUT_VSCREENINFO: {
+    // accept but ignore mode changes since we can't change the UEFI GOP mode
+    return 0;
+  }
   case FBIOGET_FSCREENINFO: {
     struct fb_fix_screeninfo *fix = arg;
     memset(fix, 0, sizeof(*fix));
