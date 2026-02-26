@@ -95,6 +95,25 @@ _used void interrupt_handler(struct trapframe *frame) {
 }
 
 noreturn void default_exception_handler(struct trapframe *frame) {
+  if (frame->cs & 3) {
+    // userspace exception - deliver signal
+    int signo;
+    if (frame->vector == 6 || frame->vector == 13) {
+      signo = 4; // SIGILL
+    } else {
+      signo = SIGSEGV;
+    }
+    kprintf("exception %d in userspace: delivering signal %d [RIP=%018p]\n",
+      frame->vector, signo, frame->rip);
+    siginfo_t info = {
+      .si_signo = signo,
+      .si_code = SI_KERNEL,
+      .si_addr = (void *) frame->rip,
+    };
+    proc_coredump(curproc, &info);
+    unreachable;
+  }
+
   kprintf_raw("!!! EXCEPTION %d !!!\n", frame->vector);
   kprintf_raw("  CPU#%d - %#llx\n", curcpu_id, frame->error);
   kprintf_raw("  RIP = %018p  RSP = %018p\n", frame->rip, frame->rsp);

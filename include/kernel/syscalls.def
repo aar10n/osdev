@@ -307,7 +307,7 @@ SYSCALL(pwritev, 5, ssize_t, PARAM(unsigned long, fd, "%llu"), PARAM(const struc
 // SYSCALL(recvmmsg, 5, int, PARAM(int, fd, "%d"), PARAM(struct mmsghdr *, mmsg, "%p"), PARAM(unsigned int, vlen, "%u"), PARAM(unsigned int, flags, "%u"), PARAM(struct timespec *, timeout, "%p"))
 // SYSCALL(fanotify_init, 2, int, PARAM(unsigned int, flags, "%u"), PARAM(unsigned int, event_f_flags, "%u"))
 // SYSCALL(fanotify_mark, 5, int, PARAM(int, fanotify_fd, "%d"), PARAM(unsigned int, flags, "%u"), PARAM(uint64_t, mask, "<?>%p"), PARAM(int, fd, "%d"), PARAM(const char *, pathname, "%s"))
-// SYSCALL(prlimit64, 4, int, PARAM(pid_t, pid, "<?>%p"), PARAM(unsigned int, resource, "%u"), PARAM(const struct rlimit64 *, new_rlim, "%p"), PARAM(struct rlimit64 *, old_rlim, "%p"))
+SYSCALL(prlimit64, 4, int, PARAM(pid_t, pid, "<?>%p"), PARAM(unsigned int, resource, "%u"), PARAM(const struct rlimit *, new_rlim, "%p"), PARAM(struct rlimit *, old_rlim, "%p"))
 // SYSCALL(name_to_handle_at, 5, int, PARAM(int, dfd, "%d"), PARAM(const char *, name, "%s"), PARAM(struct file_handle *, handle, "%p"), PARAM(int *, mnt_id, "%p"), PARAM(int, flag, "%d"))
 // SYSCALL(open_by_handle_at, 3, int, PARAM(int, mountdirfd, "%d"), PARAM(struct file_handle *, handle, "%p"), PARAM(int, flags, "%d"))
 // SYSCALL(clock_adjtime, 2, int, PARAM(clockid_t, which_clock, "<?>%p"), PARAM(struct timex *, tx, "%p"))

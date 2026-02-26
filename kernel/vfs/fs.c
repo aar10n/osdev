@@ -11,6 +11,7 @@
 #include <kernel/str.h>
 #include <kernel/kio.h>
 #include <kernel/time.h>
+#include <kernel/clock.h>
 
 #include <kernel/vfs/file.h>
 #include <kernel/vfs/pipe.h>
@@ -342,12 +343,23 @@ int fs_proc_open(proc_t *proc, int fd, cstr_t path, int flags, mode_t mode) {
 
   // resolve the path
   res = vresolve_fullpath(fs_vcache, at_ve, path, vrflags, &rpath_buf, &ve);
-  if (res < 0 && flags & O_CREAT) {
+
+  // determine if we need to create the file:
+  // - res < 0: file doesn't exist (VR_PARENT returned parent with error)
+  // - res == 0 && V_ISDIR(ve): file doesn't exist (VR_EXCLUSV returned parent with success)
+  bool need_create = (flags & O_CREAT) &&
+                     ((res < 0) || ((flags & O_EXCL) && ve && V_ISDIR(ve)));
+
+  // O_EXCL with existing file should fail
+  if ((flags & O_EXCL) && res == 0 && ve && !V_ISDIR(ve))
+    goto_res(ret_unlock, -EEXIST);
+
+  if (need_create) {
     // the path does not exist, but we want to create it
     if (ve == NULL)
       goto ret;
 
-    // ve is current set to the locked parent directory
+    // ve is currently set to the locked parent directory
     ventry_t *dve = moveref(ve);
     vnode_t *dvn = VN(dve);
     vn_begin_data_write(dvn);
@@ -1163,6 +1175,59 @@ LABEL(ret);
   return res;
 }
 
+int fs_chmod(cstr_t path, mode_t mode) {
+  ventry_t *at_ve = ve_getref(curproc->pwd);
+  ventry_t *ve = NULL;
+  int res;
+
+  if ((res = vresolve(fs_vcache, at_ve, path, 0, &ve)) < 0)
+    goto ret;
+
+  vnode_t *vn = VN(ve);
+  vn_lock(vn);
+  vn->mode = (vn->mode & S_IFMT) | (mode & ~S_IFMT);
+  vn->ctime = clock_nano_time().tv_sec;
+  vn->flags |= VN_DIRTY;
+  vn_unlock(vn);
+
+  res = 0;
+  ve_unlock(ve);
+LABEL(ret);
+  ve_putref(&ve);
+  ve_putref(&at_ve);
+  return res;
+}
+
+int fs_fchmod(int fd, mode_t mode) {
+  int res;
+  fd_entry_t *fde = ftable_get_entry(FTABLE, fd);
+  if (fde == NULL)
+    return -EBADF;
+
+  file_t *file = fde->file;
+  if (!f_lock(file))
+    goto_res(ret, -EBADF);
+
+  if (!F_ISVNODE(file)) {
+    res = -EINVAL;
+    goto unlock;
+  }
+
+  vnode_t *vn = file->data;
+  vn_lock(vn);
+  vn->mode = (vn->mode & S_IFMT) | (mode & ~S_IFMT);
+  vn->ctime = clock_nano_time().tv_sec;
+  vn->flags |= VN_DIRTY;
+  vn_unlock(vn);
+  res = 0;
+
+LABEL(unlock);
+  f_unlock(file);
+LABEL(ret);
+  fde_putref(&fde);
+  return res;
+}
+
 int fs_create(cstr_t path, mode_t mode) {
   return fs_open(path, O_CREAT | O_WRONLY | O_TRUNC, mode);
 }
@@ -1663,4 +1728,12 @@ DEFINE_SYSCALL(getcwd, int, char *buf, size_t bufsiz) {
   if (res < 0)
     return -ERANGE;
   return (int) res;
+}
+
+DEFINE_SYSCALL(chmod, int, const char *filename, mode_t mode) {
+  return fs_chmod(cstr_make(filename), mode);
+}
+
+DEFINE_SYSCALL(fchmod, int, int fd, mode_t mode) {
+  return fs_fchmod(fd, mode);
 }

@@ -61,6 +61,8 @@ int fs_utimensat(int dirfd, cstr_t filename, struct timespec *utimes, int flags)
 
 int fs_stat(cstr_t path, struct stat *stat);
 int fs_lstat(cstr_t path, struct stat *stat);
+int fs_chmod(cstr_t path, mode_t mode);
+int fs_fchmod(int fd, mode_t mode);
 int fs_create(cstr_t path, mode_t mode);
 int fs_truncate(cstr_t path, off_t length);
 int fs_mknod(cstr_t path, mode_t mode, dev_t dev);

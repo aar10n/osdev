@@ -7,11 +7,13 @@
 #include <kernel/mm.h>
 #include <kernel/proc.h>
 #include <kernel/fs.h>
+#include <kernel/alarm.h>
 #include <kernel/panic.h>
 #include <kernel/printf.h>
 #include <kernel/string.h>
 
 #include <abi/epoll.h>
+#include <abi/select.h>
 #include <uapi/sys/eventfd.h>
 
 #define ASSERT(x) kassert(x)
@@ -235,7 +237,7 @@ static const struct file_ops epoll_file_ops = {
 // epoll system calls
 //
 
-int sys_epoll_create1(int flags) {
+int poll_epoll_create1(int flags) {
   // validate flags - only EPOLL_CLOEXEC is allowed
   if (flags & ~EPOLL_CLOEXEC) {
     return -EINVAL;
@@ -295,7 +297,7 @@ int sys_epoll_create1(int flags) {
 // eventfd system calls
 //
 
-int sys_eventfd2(unsigned int count, int flags) {
+int poll_eventfd2(unsigned int count, int flags) {
   if (flags & ~(EFD_CLOEXEC | EFD_NONBLOCK | EFD_SEMAPHORE)) {
     return -EINVAL;
   }
@@ -347,3 +349,141 @@ int sys_eventfd2(unsigned int count, int flags) {
   DPRINTF("eventfd2: created eventfd fd %d with count=%u flags=0x%x\n", fd, count, flags);
   return fd;
 }
+
+int poll_eventfd(unsigned int count) {
+  return poll_eventfd2(count, 0);
+}
+
+//
+// select system call
+//
+
+int poll_select(int nfds, fd_set *readfds, fd_set *writefds, fd_set *exceptfds, struct timeval *timeout) {
+  DPRINTF("select: nfds=%d readfds=%p writefds=%p exceptfds=%p timeout=%p\n",
+          nfds, readfds, writefds, exceptfds, timeout);
+
+  if (nfds < 0 || nfds > FD_SETSIZE) {
+    return -EINVAL;
+  }
+
+  if ((readfds && vm_validate_ptr((uintptr_t)readfds, true) < 0) ||
+      (writefds && vm_validate_ptr((uintptr_t)writefds, true) < 0) ||
+      (exceptfds && vm_validate_ptr((uintptr_t)exceptfds, true) < 0) ||
+      (timeout && vm_validate_ptr((uintptr_t)timeout, true) < 0)) {
+    return -EFAULT;
+  }
+
+  if (timeout && (timeout->tv_sec < 0 || timeout->tv_usec < 0 || timeout->tv_usec >= 1000000)) {
+    return -EINVAL;
+  }
+
+  // count how many fds we need to poll
+  int poll_count = 0;
+  for (int fd = 0; fd < nfds; fd++) {
+    bool want_read = readfds && FD_ISSET(fd, readfds);
+    bool want_write = writefds && FD_ISSET(fd, writefds);
+    bool want_except = exceptfds && FD_ISSET(fd, exceptfds);
+    if (want_read || want_write || want_except) {
+      poll_count++;
+    }
+  }
+
+  if (poll_count == 0) {
+    if (timeout) {
+      uint64_t sleep_ns = (uint64_t)timeout->tv_sec * NS_PER_SEC + (uint64_t)timeout->tv_usec * 1000;
+      if (sleep_ns > 0) {
+        alarm_sleep_ns(sleep_ns);
+      }
+    }
+    return 0;
+  }
+
+  struct pollfd *pollfds = kmallocz(sizeof(struct pollfd) * poll_count);
+  if (!pollfds) {
+    return -ENOMEM;
+  }
+
+  int *fd_map = kmallocz(sizeof(int) * poll_count);
+  if (!fd_map) {
+    kfree(pollfds);
+    return -ENOMEM;
+  }
+
+  int idx = 0;
+  for (int fd = 0; fd < nfds; fd++) {
+    bool want_read = readfds && FD_ISSET(fd, readfds);
+    bool want_write = writefds && FD_ISSET(fd, writefds);
+    bool want_except = exceptfds && FD_ISSET(fd, exceptfds);
+    if (want_read || want_write || want_except) {
+      pollfds[idx].fd = fd;
+      pollfds[idx].events = 0;
+      pollfds[idx].revents = 0;
+      if (want_read) {
+        pollfds[idx].events |= POLLIN;
+      }
+      if (want_write) {
+        pollfds[idx].events |= POLLOUT;
+      }
+      if (want_except) {
+        pollfds[idx].events |= POLLPRI;
+      }
+      fd_map[idx] = fd;
+      idx++;
+    }
+  }
+
+  struct timespec ts;
+  struct timespec *tsp = NULL;
+  if (timeout) {
+    ts.tv_sec = timeout->tv_sec;
+    ts.tv_nsec = timeout->tv_usec * 1000;
+    tsp = &ts;
+  }
+
+  int res = fs_poll(pollfds, poll_count, tsp);
+
+  if (readfds) FD_ZERO(readfds);
+  if (writefds) FD_ZERO(writefds);
+  if (exceptfds) FD_ZERO(exceptfds);
+
+  if (res > 0) {
+    int ready_count = 0;
+    for (int i = 0; i < poll_count; i++) {
+      int fd = fd_map[i];
+      short revents = pollfds[i].revents;
+
+      if (revents & (POLLIN | POLLHUP | POLLERR)) {
+        if (readfds) {
+          FD_SET(fd, readfds);
+          ready_count++;
+        }
+      }
+      if (revents & (POLLOUT | POLLERR)) {
+        if (writefds) {
+          FD_SET(fd, writefds);
+          ready_count++;
+        }
+      }
+      if (revents & POLLPRI) {
+        if (exceptfds) {
+          FD_SET(fd, exceptfds);
+          ready_count++;
+        }
+      }
+    }
+    res = ready_count;
+  }
+
+  kfree(pollfds);
+  kfree(fd_map);
+  return res;
+}
+
+//
+// System call exports
+//
+
+SYSCALL_ALIAS(epoll_create1, poll_epoll_create1);
+SYSCALL_ALIAS(eventfd, poll_eventfd);
+SYSCALL_ALIAS(eventfd2, poll_eventfd2);
+SYSCALL_ALIAS(select, poll_select);

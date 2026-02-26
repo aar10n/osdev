@@ -47,7 +47,7 @@ extern void kernel_thread_entry();
 #define PROC_BRK_MAX  SIZE_16MB
 
 #define PROC_USTACK_BASE 0x8000000
-#define PROC_USTACK_SIZE SIZE_16KB
+#define PROC_USTACK_SIZE (512 * SIZE_1KB)
 
 /* child process events sent over proc->wait_status_ch */
 struct pchild_status {
@@ -2664,6 +2664,18 @@ DEFINE_SYSCALL(getegid, gid_t) {
   return curproc->creds->egid;
 }
 
+DEFINE_SYSCALL(setuid, int, uid_t uid) {
+  curproc->creds->uid = uid;
+  curproc->creds->euid = uid;
+  return 0;
+}
+
+DEFINE_SYSCALL(setgid, int, gid_t gid) {
+  curproc->creds->gid = gid;
+  curproc->creds->egid = gid;
+  return 0;
+}
+
 DEFINE_SYSCALL(umask, mode_t, mode_t mask) {
   proc_t *proc = curproc;
   pr_lock(proc);
@@ -2864,5 +2876,11 @@ DEFINE_SYSCALL(execve, int, const char *filename, char *const *argv, char *const
 DEFINE_SYSCALL(kill, int, pid_t pid, int sig) {
   DPRINTF("syscall: kill pid=%d sig=%d\n", pid, sig);
   return proc_syscall_kill(pid, sig);
+}
+
+DEFINE_SYSCALL(prlimit64, int, pid_t pid, unsigned int resource, const struct rlimit *new_rlim, struct rlimit *old_rlim) {
+  DPRINTF("syscall: prlimit64 pid=%d resource=%u new_rlim=%p old_rlim=%p\n", pid, resource, new_rlim, old_rlim);
+  DPRINTF("  TODO: prlimit64 not implemented, returning 0\n");
+  return 0;
 }
 
