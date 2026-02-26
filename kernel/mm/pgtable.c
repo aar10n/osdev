@@ -282,12 +282,22 @@ uint64_t *recursive_map_entry(uintptr_t vaddr, uintptr_t paddr, uint32_t vm_flag
 }
 
 void recursive_unmap_entry(uintptr_t vaddr, uint32_t vm_flags) {
-  pg_level_t map_level = PG_LEVEL_PT;
   pg_level_t level = PG_LEVEL_PT;
   if (vm_flags & VM_HUGE_2MB) {
     level = PG_LEVEL_PD;
   } else if (vm_flags & VM_HUGE_1GB) {
     level = PG_LEVEL_PDP;
+  }
+
+  // check that intermediate page table entries are present before
+  // accessing the leaf. with demand-paged mappings, some pages may
+  // never have been faulted in and won't have page tables.
+  for (pg_level_t l = PG_LEVEL_PML4; l > level; l--) {
+    uint64_t *table = get_pgtable_address(vaddr, l);
+    int idx = index_for_pg_level(vaddr, l);
+    if (!(table[idx] & PE_PRESENT)) {
+      return;
+    }
   }
 
   int index = index_for_pg_level(vaddr, level);

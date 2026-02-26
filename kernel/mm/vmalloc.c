@@ -309,7 +309,8 @@ static void file_fork_cb(page_t **pageref, size_t off, void *data) {
   struct file_cb_data *cb = data;
   vm_mapping_t *vm = cb->vm;
   page->flags |= PG_COW;
-  recursive_update_entry_flags(vm->address + off, vm->flags & ~VM_WRITE);
+  recursive_update_entry_flags(vm->address + cb->off, vm->flags & ~VM_WRITE);
+  cb->off += pg_flags_to_size(page->flags);
 }
 
 static void file_map_update_cb(page_t **pageref, size_t off, void *data) {
@@ -327,7 +328,7 @@ static void file_map_update_cb(page_t **pageref, size_t off, void *data) {
     }
 
     page_t *table_pages = NULL;
-    recursive_map_entry(vm->address + cb->off, page->address, vm_flags, &table_pages);
+    recursive_map_entry(vaddr, page->address, vm_flags, &table_pages);
     if (table_pages != NULL) {
       page_t *last_page = SLIST_GET_LAST(table_pages, next);
       SLIST_ADD_SLIST(&vm->space->table_pages, table_pages, last_page, next);
@@ -352,14 +353,19 @@ static vm_file_t *file_type_fork_internal(vm_mapping_t *vm) {
 
 static void file_type_map_internal(vm_mapping_t *vm, size_t size, size_t off) {
   struct file_cb_data data = {vm, off, /*unmap=*/false};
-  // visit pages in the page cache at the correct offset for this vm_file
   vm_file_visit_pages(vm->vm_file, vm->vm_file->off + off, vm->vm_file->off + off + vm->size, file_map_update_cb, &data);
 }
 
 static void file_type_unmap_internal(vm_mapping_t *vm, size_t size, size_t off) {
-  struct file_cb_data data = {vm, off, /*unmap=*/true};
-  // visit pages in the page cache at the correct offset for this vm_file
-  vm_file_visit_pages(vm->vm_file, vm->vm_file->off + off, vm->vm_file->off + off + vm->size, file_map_update_cb, &data);
+  // unmap all page table entries in the virtual address range, not just
+  // pages present in the pgcache. demand-paged mappings may have pages
+  // mapped in the page tables that aren't tracked by the pgcache visitor.
+  size_t pg_size = vm_flags_to_size(vm->flags);
+  uintptr_t start = vm->address + off;
+  uintptr_t end = start + size;
+  for (uintptr_t addr = start; addr < end; addr += pg_size) {
+    recursive_unmap_entry(addr, vm->flags);
+  }
   cpu_flush_tlb();
 }
 
@@ -522,13 +528,10 @@ static int vm_handle_non_present_fault(vm_mapping_t *vm, size_t off) {
   }
 
   if (vm->flags & VM_ZERO) {
-    // zero the page if the VM_ZERO flag is set
     size_t pg_size = pg_flags_to_size(page->flags);
     if (vm->flags & VM_WRITE) {
-      // we can zero it normally
       memset((void *)(vm->address + off), 0, pg_size);
     } else {
-      // we must enter a critical section, disable write protection, then zero
       critical_enter();
       cpu_disable_write_protection();
       memset((void *)(vm->address + off), 0, pg_size);
@@ -1584,9 +1587,21 @@ int vmap_free(uintptr_t vaddr, size_t size) {
     goto ret;
   }
 
-  // make sure that the range starts and ends exactly on the mapping boundaries
-  interval_t full = intvl(i_start.start, i_end.end);
-  if (!intvl_eq(i, full)) {
+  // handle partial unmapping by splitting mappings as needed
+  if (vm == vm_end && i.start == i_start.start && i.end < i_end.end) {
+    // unmap the beginning of a single mapping, keep the tail
+    split_mapping(vm, size);
+  } else if (vm == vm_end && i.start > i_start.start && i.end == i_end.end) {
+    // unmap the tail of a single mapping, keep the beginning
+    vm = split_mapping(vm, i.start - i_start.start);
+    vm_end = vm;
+  } else if (vm == vm_end && i.start > i_start.start && i.end < i_end.end) {
+    // unmap the middle of a single mapping
+    vm_mapping_t *mid = split_mapping(vm, i.start - i_start.start);
+    split_mapping(mid, size);
+    vm = mid;
+    vm_end = mid;
+  } else if (i.start != i_start.start || i.end != i_end.end) {
     EPRINTF("invalid request: not aligned to mapping boundary [vaddr=%p, len=%zu]\n", vaddr, size);
     return -EINVAL;
   }

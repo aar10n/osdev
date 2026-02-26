@@ -178,7 +178,14 @@ void pgcache_free(struct pgcache **cacheptr) {
 }
 
 void pgcache_resize(struct pgcache *cache, uint16_t new_order) {
-  todo("pgcache resizing");
+  kassert(new_order > cache->order);
+  while (cache->order < new_order) {
+    struct pgcache_node *new_root = kmallocz(sizeof(struct pgcache_node));
+    new_root->slots[0] = cache->root;
+    cache->root = new_root;
+    cache->order++;
+  }
+  cache->max_capacity = (1ULL << ((cache->order + 1) * cache->bits_per_lvl)) * cache->pg_size;
 }
 
 __ref page_t *pgcache_lookup(struct pgcache *cache, size_t off) {
