@@ -26,7 +26,18 @@
 #define CHECK_SUPPORTED(vn, op) if (!(vn)->ops->op) return -ENOTSUP;
 
 static inline mode_t vn_to_mode(vnode_t *vnode) {
-  return vnode->mode;
+  mode_t mode = vnode->mode & 07777;
+  switch (vnode->type) {
+    case V_REG:  mode |= S_IFREG; break;
+    case V_DIR:  mode |= S_IFDIR; break;
+    case V_LNK:  mode |= S_IFLNK; break;
+    case V_BLK:  mode |= S_IFBLK; break;
+    case V_CHR:  mode |= S_IFCHR; break;
+    case V_FIFO: mode |= S_IFIFO; break;
+    case V_SOCK: mode |= S_IFSOCK; break;
+    default: break;
+  }
+  return mode;
 }
 
 //
@@ -518,7 +529,10 @@ int vn_hardlink(ventry_t *dve, vnode_t *dvn, cstr_t name, vnode_t *target, __mov
     return res;
   }
 
-  assert_new_ventry_valid(ve);
+  // for hardlinks, the ventry is new but points to an existing (alive) vnode
+  ve_syncvn(ve);
+  ASSERT(VE_ISLINKED(ve));
+  ASSERT(VN(ve)->state == V_ALIVE);
   ve_add_child(dve, ve);
   vfs_end_write_op(vfs);
   // WRITE END

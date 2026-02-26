@@ -77,7 +77,9 @@ void ramfs_free_node(ramfs_node_t *node) {
 void ramfs_add_dentry(ramfs_node_t *dir, ramfs_dentry_t *dentry) {
   ASSERT(dir->type == V_DIR);
   LOCK_NODE(dir);
-  dentry->node->parent = dir;
+  // only set parent if not already set (for hardlinks, keep original parent)
+  if (dentry->node->parent == NULL)
+    dentry->node->parent = dir;
   LIST_ADD(&dir->n_dir, dentry, list);
   UNLOCK_NODE(dir);
 }
@@ -85,8 +87,9 @@ void ramfs_add_dentry(ramfs_node_t *dir, ramfs_dentry_t *dentry) {
 void ramfs_remove_dentry(ramfs_node_t *dir, ramfs_dentry_t *dentry) {
   ASSERT(dir->type == V_DIR);
   LOCK_NODE(dir);
-  ASSERT(dentry->node->parent == dir);
-  dentry->node->parent = NULL;
+  // only clear parent if this dentry was the original (for hardlinks)
+  if (dentry->node->parent == dir)
+    dentry->node->parent = NULL;
   LIST_REMOVE(&dir->n_dir, dentry, list);
   UNLOCK_NODE(dir);
 }
