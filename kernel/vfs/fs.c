@@ -1082,14 +1082,20 @@ int fs_poll(struct pollfd *fds, size_t nfds, struct timespec *timeout) {
       case EVFILT_READ:
         if (eventlist[i].flags & EV_EOF)
           fds[idx].revents |= POLLHUP;
-        else
-          fds[idx].revents |= POLLIN | POLLRDNORM;
+        else {
+          fds[idx].revents |= POLLIN;
+          if (fds[idx].events & POLLRDNORM)
+            fds[idx].revents |= POLLRDNORM;
+        }
         break;
       case EVFILT_WRITE:
         if (eventlist[i].flags & EV_EOF)
           fds[idx].revents |= POLLHUP;
-        else
-          fds[idx].revents |= POLLOUT | POLLWRNORM;
+        else {
+          fds[idx].revents |= POLLOUT;
+          if (fds[idx].events & POLLWRNORM)
+            fds[idx].revents |= POLLWRNORM;
+        }
         break;
       default:
         EPRINTF("unknown filter %d in kevent\n", eventlist[i].filter);
