@@ -5,6 +5,7 @@
 #include "mouse.h"
 #include "hid-usage.h"
 
+#include <kernel/input.h>
 #include <kernel/mm.h>
 #include <kernel/string.h>
 #include <kernel/printf.h>

@@ -12,7 +12,19 @@
 #include <linux/input-event-codes.h>
 
 // input ioctls
-#define EVIOCGNAME(len) _IOC(_IOC_READ, 'E', 0x06, len)
+#define EVIOCGNAME(len)     _IOC(_IOC_READ, 'E', 0x06, len)
+#define EVIOCGRAB           _IOW('E', 0x90, int)
+#define EVIOCGBIT(ev, len)  _IOC(_IOC_READ, 'E', 0x20 + (ev), (len))
+#define EVIOCGABS(code)     _IOR('E', 0x40 + (code), struct input_absinfo)
+
+struct input_absinfo {
+  int32_t value;
+  int32_t minimum;
+  int32_t maximum;
+  int32_t fuzz;
+  int32_t flat;
+  int32_t resolution;
+};
 
 struct input_event {
   struct timeval time;

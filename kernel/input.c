@@ -10,6 +10,7 @@
 #include <kernel/vfs_types.h>
 #include <kernel/vfs/file.h>
 #include <kernel/vfs/vnode.h>
+#include <kernel/kevent.h>
 
 #include <fs/devfs/devfs.h>
 
@@ -268,12 +269,14 @@ static inline uint8_t key_to_modifier_bit(uint16_t key) {
 static bitmap_t *key_states;
 static uint8_t key_modifiers;
 chan_t *key_event_stream;
+chan_t *mouse_event_stream;
 
 //
 
 void input_static_init() {
   key_states = create_bitmap(KEY_MAX + 1);
   key_event_stream = chan_alloc(128, sizeof(struct input_event), 0, "key_event_stream_ch");
+  mouse_event_stream = chan_alloc(256, sizeof(struct input_event), 0, "mouse_event_stream_ch");
 }
 STATIC_INIT(input_static_init);
 
@@ -323,18 +326,33 @@ static int input_process_key_event(uint16_t code, int32_t value) {
 
 //
 
+static int input_forward_mouse_event(uint16_t type, uint16_t code, int32_t value) {
+  struct input_event event = {
+    .time = {0},
+    .type = type,
+    .code = code,
+    .value = value,
+  };
+  int res = chan_send(mouse_event_stream, &event);
+  if (res < 0) {
+    DPRINTF("failed to send mouse event to stream: {:err}\n", res);
+  }
+  return 0;
+}
+
 int input_event(uint16_t type, uint16_t code, int32_t value) {
   switch (type) {
     case EV_KEY:
+      if (code >= BTN_MOUSE && code < BTN_JOYSTICK)
+        return input_forward_mouse_event(type, code, value);
       return input_process_key_event(code, value);
+    case EV_SYN:
     case EV_REL:
-      todo();
     case EV_ABS:
-      todo();
+      return input_forward_mouse_event(type, code, value);
     default:
-      panic("input_event: unknown event type %d", type);
+      return 0;
   }
-  return 0;
 }
 
 int input_getkey(uint16_t key) {
@@ -362,45 +380,54 @@ static mtx_t ev_streams_lock;
 struct event_stream {
   void *stream; // identifier for the event stream (keyboard or mouse)
   chan_t *chan; // channel for this event stream
+  vnode_t *vn; // vnode for kqueue notification
   LIST_ENTRY(struct event_stream) list; // event streams list entry
 };
 
-static int notify_event_streams() {
-  DPRINTF("starting event stream notification process\n");
-
-  struct input_event event;
-  while (chan_recv(key_event_stream, &event) == 0) {
-    DPRINTF("distributing key event [type=%d, code=%d, value=0x%x]\n", event.type, event.code, event.value);
-
-    // iterate through all event streams to find keyboard ones
-    mtx_lock(&ev_streams_lock);
-    LIST_FOR_IN(evs, &ev_streams_list, list) {
-      if (evs->stream == EVSTREAM_KEYBOARD) {
-        // send event to this event stream
-        int res = chan_send(evs->chan, &event);
-        if (res < 0) {
-          DPRINTF("failed to send event to stream %p: {:err}\n", evs, res);
-        }
+static void distribute_event(struct input_event *event, void *stream_type) {
+  mtx_lock(&ev_streams_lock);
+  LIST_FOR_IN(evs, &ev_streams_list, list) {
+    if (evs->stream == stream_type) {
+      int res = chan_send(evs->chan, event);
+      if (res < 0) {
+        DPRINTF("failed to send event to stream %p: {:err}\n", evs, res);
+      } else if (evs->vn) {
+        knlist_activate_notes(&evs->vn->knlist, 0);
       }
     }
-    mtx_unlock(&ev_streams_lock);
   }
-  
-  DPRINTF("event stream notification process exiting\n");
+  mtx_unlock(&ev_streams_lock);
+}
+
+static int notify_key_event_streams() {
+  struct input_event event;
+  while (chan_recv(key_event_stream, &event) == 0) {
+    distribute_event(&event, EVSTREAM_KEYBOARD);
+  }
   return 0;
 }
 
+static int notify_mouse_event_streams() {
+  struct input_event event;
+  while (chan_recv(mouse_event_stream, &event) == 0) {
+    distribute_event(&event, EVSTREAM_MOUSE);
+  }
+  return 0;
+}
+
+static void spawn_kthread(uintptr_t entry, const char *name) {
+  __ref proc_t *p = proc_alloc_new(getref(curproc->creds));
+  proc_setup_add_thread(p, thread_alloc(TDF_KTHREAD, SIZE_16KB));
+  proc_setup_entry(p, entry, 0);
+  proc_setup_name(p, cstr_make(name));
+  proc_finish_setup_and_submit_all(moveref(p));
+}
+
 static void event_streams_init() {
-  // initialize event streams list
   mtx_init(&ev_streams_lock, 0, "ev_streams_lock");
   LIST_INIT(&ev_streams_list);
-  
-  // create event stream notification process
-  __ref proc_t *notify_proc = proc_alloc_new(getref(curproc->creds));
-  proc_setup_add_thread(notify_proc, thread_alloc(TDF_KTHREAD, SIZE_16KB));
-  proc_setup_entry(notify_proc, (uintptr_t) notify_event_streams, 0);
-  proc_setup_name(notify_proc, cstr_make("event_stream_notify"));
-  proc_finish_setup_and_submit_all(moveref(notify_proc));
+  spawn_kthread((uintptr_t)notify_key_event_streams, "key_event_notify");
+  spawn_kthread((uintptr_t)notify_mouse_event_streams, "mouse_event_notify");
 }
 MODULE_INIT(event_streams_init);
 
@@ -422,6 +449,7 @@ int event_stream_f_open(file_t *file, int flags) {
   struct event_stream *evs = kmallocz(sizeof(struct event_stream));
   evs->stream = event_stream;
   evs->chan = chan_alloc(128, sizeof(struct input_event), 0, "event_stream_ch");
+  evs->vn = vn;
   LIST_ENTRY_INIT(&evs->list);
   
   // add to event streams list
@@ -529,8 +557,9 @@ int event_stream_f_ioctl(file_t *file, unsigned int request, void *arg) {
            file, request, evs, evs->stream);
 
   size_t req_size = _IOC_SIZE(request);
-  if ((unsigned int)(request & ~_IOC_SIZEMASK) == EVIOCGNAME(0)) {
-    // get name
+  unsigned int nr = _IOC_NR(request);
+
+  if ((request & ~(_IOC_SIZEMASK << _IOC_SIZESHIFT)) == (EVIOCGNAME(0) & ~(_IOC_SIZEMASK << _IOC_SIZESHIFT))) {
     const char *name;
     if (evs->stream == EVSTREAM_KEYBOARD) {
       name = "keyboard";
@@ -538,18 +567,61 @@ int event_stream_f_ioctl(file_t *file, unsigned int request, void *arg) {
       name = "mouse";
     }
 
-    size_t name_len = sizeof(name)+1;
-    if (req_size < name_len) {
-      EPRINTF("ioctl request %#llx size %zu too small for name\n", request, req_size);
-      return -EINVAL; // buffer too small
-    }
-
+    size_t name_len = strlen(name) + 1;
+    if (req_size < name_len)
+      name_len = req_size;
     memcpy(arg, name, name_len);
     return (int) name_len;
-  } else {
+  } else if (request == EVIOCGRAB) {
+    return 0;
+  } else if (nr >= 0x20 && nr < 0x40) {
+    // EVIOCGBIT
+    unsigned int ev = nr - 0x20;
+    if (req_size == 0 || arg == NULL)
+      return -EINVAL;
+    memset(arg, 0, req_size);
 
+    if (ev == EV_SYN) {
+      uint8_t *bits = arg;
+      if (req_size > EV_SYN / 8) bits[EV_SYN / 8] |= (1 << (EV_SYN % 8));
+      if (req_size > EV_KEY / 8) bits[EV_KEY / 8] |= (1 << (EV_KEY % 8));
+      if (evs->stream == EVSTREAM_KEYBOARD) {
+        if (req_size > EV_REP / 8) bits[EV_REP / 8] |= (1 << (EV_REP % 8));
+      }
+      if (evs->stream == EVSTREAM_MOUSE) {
+        if (req_size > EV_REL / 8) bits[EV_REL / 8] |= (1 << (EV_REL % 8));
+      }
+    } else if (ev == EV_KEY && evs->stream == EVSTREAM_KEYBOARD) {
+      uint8_t *bits = arg;
+      size_t max_code = req_size * 8;
+      for (size_t i = 0; i < ARRAY_SIZE(input_code_to_name); i++) {
+        if (input_code_to_name[i] != NULL && i < max_code)
+          bits[i / 8] |= (1 << (i % 8));
+      }
+    } else if (ev == EV_KEY && evs->stream == EVSTREAM_MOUSE) {
+      uint8_t *bits = arg;
+      size_t max_bit = req_size * 8;
+      uint16_t btns[] = { BTN_LEFT, BTN_RIGHT, BTN_MIDDLE };
+      for (size_t i = 0; i < ARRAY_SIZE(btns); i++) {
+        if (btns[i] < max_bit)
+          bits[btns[i] / 8] |= (1 << (btns[i] % 8));
+      }
+    } else if (ev == EV_REL && evs->stream == EVSTREAM_MOUSE) {
+      uint8_t *bits = arg;
+      if (req_size > REL_X / 8) bits[REL_X / 8] |= (1 << (REL_X % 8));
+      if (req_size > REL_Y / 8) bits[REL_Y / 8] |= (1 << (REL_Y % 8));
+    }
+    return 0;
+  } else if (nr >= 0x40 && nr < 0x80) {
+    // EVIOCGABS
+    if (req_size < sizeof(struct input_absinfo))
+      return -EINVAL;
+    memset(arg, 0, sizeof(struct input_absinfo));
+    return 0;
   }
-  return 0;
+
+  DPRINTFF("unhandled ioctl %#x\n", request);
+  return -ENOTTY;
 }
 
 int event_stream_f_kqevent(file_t *file, knote_t *kn) {
@@ -557,27 +629,13 @@ int event_stream_f_kqevent(file_t *file, knote_t *kn) {
   ASSERT(V_ISDEV((vnode_t *)file->data));
   ASSERT(kn->event.filter == EVFILT_READ);
 
-  // called from the file `event` filter_ops method
-  vnode_t *vn = file->data;
   struct event_stream *evs = file->udata;
-  DPRINTFF("checking kqevent for file %p [evs %p, event_stream %p, filter %s]\n",
-           file, evs, evs->stream, evfilt_to_string(kn->event.filter));
-
-  int res;
-  todo();
-
-  if (res < 0) {
-    EPRINTF("failed to get kqevent for file %p [evs %p, event_stream %p] {:err}\n",
-            file, evs, evs->stream, res);
-  } else if (res == 0) {
-    kn->event.data = 0;
-    DPRINTFF("no data available for file %p [evs %p, event_stream %p]\n",
-             file, evs, evs->stream);
-  } else {
-    DPRINTFF("%d bytes available for file %p [evs %p, event_stream %p]\n",
-             res, file, evs, evs->stream);
+  uint16_t count = chan_length(evs->chan);
+  if (count > 0) {
+    kn->event.data = count * sizeof(struct input_event);
+    return 1;
   }
-  return res;
+  return 0;
 }
 
 struct file_ops event_stream_f_ops = {
@@ -598,6 +656,11 @@ static void event_stream_module_init() {
   kprintf("input: registering keyboard event_stream\n");
   if (register_dev("input", alloc_device(EVSTREAM_KEYBOARD, NULL, &event_stream_f_ops)) < 0) {
     panic("failed to register keyboard event stream");
+  }
+
+  kprintf("input: registering mouse event_stream\n");
+  if (register_dev("input", alloc_device(EVSTREAM_MOUSE, NULL, &event_stream_f_ops)) < 0) {
+    panic("failed to register mouse event stream");
   }
 }
 MODULE_INIT(event_stream_module_init);
