@@ -25,6 +25,8 @@
 
 typedef uint64_t (*syscall_t)(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
 
+extern void sys_rt_sigreturn_impl(struct trapframe *frame);
+
 #define ASSERT(x) kassert(x)
 #define DPRINTF(x, ...) kprintf(x, ##__VA_ARGS__)
 
@@ -53,6 +55,13 @@ _used uint64_t handle_syscall(uint64_t syscall, struct trapframe *frame) {
   if (syscall > SYS_MAX) {
     DPRINTF("!!! invalid syscall: %lu !!!\n", syscall);
     return -ENOSYS;
+  }
+
+  // rt_sigreturn restores the full register context from the sigframe,
+  // bypassing the normal syscall return path's sign-extension
+  if (syscall == SYS_rt_sigreturn) {
+    sys_rt_sigreturn_impl(frame);
+    return frame->rax;
   }
 
   syscall_t fn = syscall_handlers[syscall];

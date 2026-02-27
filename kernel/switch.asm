@@ -31,6 +31,7 @@
 ; thread flags2 bits
 %define TDF2_SIGPEND          3
 %define TDF2_TRAPFRAME        4
+%define TDF2_SIGCTX           6
 
 ; struct tcb offsets
 %define TCB_RIP(x)            [x+0x00]
@@ -69,7 +70,7 @@
 ; top of the thread stack sits below the trapframe and tcb
 %define STACK_TOP_OFF   (TCB_SIZE + TRAPFRAME_SIZE)
 
-; void signal_dispatch()
+; void signal_dispatch(struct trapframe *frame)
 ;   defined in signal.c
 extern signal_dispatch
 
@@ -246,34 +247,7 @@ switch_thread:
   wrmsr
 .skip_load_base:
 
-  ; ==== dispatch pending signals
-  bt dword THREAD_FLAGS2(rsi), TDF2_SIGPEND
-  jnc .skip_handle_signals
-  mov r14, THREAD_KSTACK_PTR(rsi) ; save current kstack_ptr
-  mov rax, TCB_RSP(r8)            ; update it so we dont overwrite the stack of the original context
-  mov THREAD_KSTACK_PTR(rsi), rax
-  mov rsp, THREAD_KSTACK_PTR(rsi) ; switch to this updated kernel stack pointer
-  mov r15, rsp                    ; save stack pointer
-  and rsp, -16                    ; align stack to 16 bytes
-  call signal_dispatch
-  mov rsp, r15                    ; restore stack pointer
-  ; restore rsi and r8 first
-  mov rsi, PERCPU_THREAD
-  mov r8, THREAD_TCB(rsi)
-  mov THREAD_KSTACK_PTR(rsi), r14 ; restore the original kstack_ptr
-.skip_handle_signals:
-
-  ; ==== check if we should restore from trapframe
-  bt dword THREAD_FLAGS2(rsi), TDF2_TRAPFRAME
-  jnc .skip_trapframe_restore
-  and dword THREAD_FLAGS2(rsi), ~(1 << TDF2_TRAPFRAME) ; clear the flag
-  mov rsp, THREAD_FRAME(rsi) ; rsp = trapframe
-  mov r8, PERCPU_THREAD      ; r8 = thread pointer
-  jmp trapframe_restore
-  ; unreachable
-.skip_trapframe_restore:
-
-  ; ==== load debug registers
+  ; ==== load debug registers (before signal dispatch so trapframe_restore has them)
   bt dword TCB_FLAGS(r8), TCB_DEBUG
   jnc .skip_load_debug ; skip it
   mov rax, dr7
@@ -289,12 +263,40 @@ switch_thread:
   mov dr7, rax
 .skip_load_debug:
 
- ; ==== load fpu registers
+  ; ==== load fpu registers (before signal dispatch so trapframe_restore has them)
   bt dword TCB_FLAGS(r8), TCB_FPU
   jnc .skip_load_fpu
   mov r9, TCB_FPUSTATE(r8)
   fxrstor [r9]
 .skip_load_fpu:
+
+  ; ==== check if we should restore from trapframe (preempted thread)
+  bt dword THREAD_FLAGS2(rsi), TDF2_TRAPFRAME
+  jnc .skip_trapframe_restore
+  and dword THREAD_FLAGS2(rsi), ~(1 << TDF2_TRAPFRAME) ; clear the flag
+
+  ; dispatch pending signals before restoring the preempted thread.
+  ; for preempted threads, the trapframe has the full user-mode state.
+  bt dword THREAD_FLAGS2(rsi), TDF2_SIGPEND
+  jnc .trapframe_restore_now
+
+  mov r15, THREAD_FRAME(rsi) ; r15 = trapframe pointer
+  mov rax, TCB_RSP(r8)
+  mov rsp, rax               ; use the TCB's kernel stack for the call
+  mov rdi, r15               ; arg1: trapframe pointer
+  and rsp, -16               ; align stack to 16 bytes
+  call signal_dispatch
+  mov rsp, r15               ; rsp = trapframe pointer
+  mov r8, PERCPU_THREAD      ; r8 = thread pointer
+  jmp trapframe_restore
+  ; unreachable
+
+.trapframe_restore_now:
+  mov rsp, THREAD_FRAME(rsi) ; rsp = trapframe
+  mov r8, PERCPU_THREAD      ; r8 = thread pointer
+  jmp trapframe_restore
+  ; unreachable
+.skip_trapframe_restore:
 
   ; ==== load general registers
   mov rax, TCB_RIP(r8)

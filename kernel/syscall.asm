@@ -16,6 +16,7 @@
 
 ; thread flags2 bits
 %define TDF2_SIGPEND          3
+%define TDF2_TRAPFRAME        4
 
 ; struct trapframe offsets
 %define TRAPFRAME_PARENT(x)   [x+0x00]
@@ -50,28 +51,27 @@
 
 %define TRAPFRAME_SIZE        0xd0
 
+; trapframe flag bits
+%define TF_SYSRET             0
+
 %define NR_rt_sigreturn       15
 
-; void handle_syscall(uint64_t syscall, struct trapframe *frame)
+; uint64_t handle_syscall(uint64_t syscall, struct trapframe *frame)
 ;   defined in syscall.c
 extern handle_syscall
 
-; void signal_dispatch()
+; void signal_dispatch(struct trapframe *frame)
 ;   defined in signal.c
 extern signal_dispatch
 
-; sigreturn
-;   defined in sigtramp.asm
-extern sigreturn
+; trapframe_restore
+;   defined in exception.asm
+extern trapframe_restore
 
 
 global syscall_handler
 syscall_handler:
   swapgs
-
-  ; handle sigreturn as a special case
-  cmp rax, NR_rt_sigreturn
-  je sigreturn
 
   cli                             ; disable interrupts during trapframe setup
 
@@ -133,21 +133,31 @@ syscall_handler:
   mov rdi, TRAPFRAME_RAX(rsp)
   mov rsi, rsp
   mov r15, rsp        ; save trapframe pointer
+  mov r13, rdi        ; save syscall number (callee-saved)
   and rsp, -16        ; align stack
   sti                 ; re-enable interrupts before calling C code
   call handle_syscall
   ; eax = return value
-  movsxd rax, eax ; sign-extend eax to rax
+
+  ; rt_sigreturn restores rax from sigcontext, skip sign-extension
+  cmp r13, NR_rt_sigreturn
+  je .skip_sign_extend
+  movsxd rax, eax     ; sign-extend eax to rax for normal syscalls
+.skip_sign_extend:
+
+  ; store return value into trapframe
+  mov TRAPFRAME_RAX(r15), rax
 
   ; ==== dispatch pending signals
   mov r14, PERCPU_THREAD
   bt dword THREAD_FLAGS2(r14), TDF2_SIGPEND
   jnc .skip_handle_signals
-  push rax            ; save syscall return, stack becomes 8-byte aligned
-  sub rsp, 8          ; make stack 16-byte aligned (8 + 8 = 16)
+  push rax            ; save return value
+  mov rdi, r15        ; arg1: trapframe pointer
+  sub rsp, 8          ; align stack (push + sub = 16)
   call signal_dispatch
-  add rsp, 8          ; remove alignment padding
-  pop rax             ; restore syscall return value
+  add rsp, 8
+  pop rax             ; restore return value (may have been changed by signal_dispatch)
 .skip_handle_signals:
 
   cli                 ; disable interrupts during trapframe restore
@@ -159,8 +169,38 @@ syscall_handler:
   mov rsp, r15        ; restore trapframe pointer
 
   ; restore thread->frame to parent frame
+  mov r14, PERCPU_THREAD
   mov r13, TRAPFRAME_PARENT(rsp)
   mov THREAD_FRAME(r14), r13
+
+  ; check if signal_dispatch set TF_SYSRET (trapframe may have been redirected)
+  bt dword TRAPFRAME_FLAGS(rsp), TF_SYSRET
+  jnc .restore_normal
+
+  ; sysret path: signal_dispatch redirected to trampoline
+  and dword TRAPFRAME_FLAGS(rsp), ~(1 << TF_SYSRET)
+
+  ; restore callee-saved regs that the trampoline may use
+  mov rbx, TRAPFRAME_RBX(rsp)
+  mov rbp, TRAPFRAME_RBP(rsp)
+  mov r12, TRAPFRAME_R12(rsp)
+  mov r13, TRAPFRAME_R13(rsp)
+  mov r14, TRAPFRAME_R14(rsp)
+  mov r15, TRAPFRAME_R15(rsp)
+
+  mov rcx, TRAPFRAME_RIP(rsp)
+  mov r11, TRAPFRAME_RFLAGS(rsp)
+  mov rdi, TRAPFRAME_RDI(rsp)
+  mov rsi, TRAPFRAME_RSI(rsp)
+  mov rdx, TRAPFRAME_RDX(rsp)
+  mov rsp, TRAPFRAME_RSP(rsp)
+
+  swapgs
+  o64 sysret
+
+.restore_normal:
+  ; normal return path (no signal or rt_sigreturn)
+  mov rax, TRAPFRAME_RAX(rsp)
 
   ; restore the trapframe
   mov r15, TRAPFRAME_R15(rsp)

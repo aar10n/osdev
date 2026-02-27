@@ -8,6 +8,7 @@
 #include <kernel/mm.h>
 #include <kernel/tqueue.h>
 #include <kernel/cpu/cpu.h>
+#include <kernel/cpu/trapframe.h>
 
 #include <kernel/printf.h>
 #include <kernel/panic.h>
@@ -18,96 +19,164 @@
 #define DPRINTF(x, ...) kprintf("signal: " x, ##__VA_ARGS__)
 #define EPRINTF(x, ...) kprintf("signal: %s: " x, __func__, ##__VA_ARGS__)
 
-extern void sigtramp_entry(struct siginfo *info, const struct sigaction *act, bool user_mode);
+extern char sigtramp_trampoline[];
 
 void static_init_setup_sigtramp(void *_) {
-  ASSERT(is_aligned((uintptr_t) sigtramp_entry, PAGE_SIZE));
+  ASSERT(is_aligned((uintptr_t) sigtramp_trampoline, PAGE_SIZE));
 
   int res;
-  if ((res = vmap_protect((uintptr_t) sigtramp_entry, PAGE_SIZE, VM_RDEXC|VM_USER)) < 0) {
+  if ((res = vmap_protect((uintptr_t) sigtramp_trampoline, PAGE_SIZE, VM_RDEXC|VM_USER)) < 0) {
     panic("failed to protect sigtramp page {:err}", res);
   }
 };
 STATIC_INIT(static_init_setup_sigtramp);
 
 
-// called from switch.asm
-_used void signal_dispatch() {
+// called from switch.asm and syscall.asm with a trapframe pointer.
+// for user-mode signals: builds a sigframe on the user stack and modifies the
+// trapframe to redirect userspace return to the trampoline. returns immediately
+// so the kernel stack is fully unwound before the handler runs.
+// for kernel-mode signals (SA_KERNHAND): calls the handler directly.
+_used void signal_dispatch(struct trapframe *frame) {
   __assert_stack_is_aligned();
-  // this function executes all pending signals for the current thread
   thread_t *td = curthread;
 
-  // hold the thread lock while we process the signal queue
   td_lock(td);
-  td->flags2 |= TDF2_SIGCTX;
 
-  if (td->wchan != NULL) {
-    struct waitqueue *wq = waitq_lookup(td->wchan);
-    if (wq != NULL && wq->type == WQ_CONDV) {
-      cond_t *cond = (cond_t *) td->wchan;
-      DPRINTF("interrupting cond wait on %p [waiters=%d] for thread {:td}\n", cond, cond->waiters, td);
-    }
-    waitq_release(&wq);
-  }
-
-  int remaining;
   struct siginfo info = {};
   while (sigqueue_pop(&td->sigqueue, &info, &td->sigmask) >= 0) {
-    // sigqueue_pop should only ever return an unmasked signal
     ASSERT(!sigset_masked(td->sigmask, info.si_signo));
     int sig = info.si_signo;
-    int res;
 
-    // get the signal action for this signal
     struct sigaction act;
     if (sigacts_get(td->proc->sigacts, sig, &act) < 0) {
       continue;
     }
 
     if (act.sa_handler == SIG_IGN) {
-      // signal is ignored
       DPRINTF("signal %d ignored by thread {:td}\n", sig, td);
       continue;
     }
 
     DPRINTF("dispatching signal %d for thread {:td}\n", sig, td);
 
-    uintptr_t current_rbp;
-    asm volatile("mov %0, rbp" : "=r"(current_rbp));
-    DPRINTF("signal %d: current_rbp=%p\n", sig, (void *)current_rbp);
+    sigset_t saved_mask = td->sigmask;
+    if (!(act.sa_flags & SA_NODEFER)) {
+      sigset_mask(td->sigmask, sig);
+    }
+    sigset_block(&td->sigmask, &act.sa_mask);
 
-    uintptr_t current_kstack;
-    asm volatile("mov %0, rsp" : "=r"(current_kstack));
-    DPRINTF("signal %d: current_kstack=%p\n", sig, (void *)current_kstack);
-    DPRINTF("address of info=%p, act=%p, td=%p\n", (void *)&info, (void *)&act, (void *)&td);
+    if (act.sa_flags & SA_KERNHAND) {
+      td_unlock(td);
+      act.sa_handler(sig);
+      td_lock(td);
+      td->sigmask = saved_mask;
+      continue;
+    }
 
-    ASSERT(is_aligned(current_kstack, 16));
-    // Set kstack_ptr to point below our entire stack frame.
-    // The local variables (info, act) are allocated above the current rsp,
-    // between rsp and rbp. To ensure syscalls don't corrupt our stack frame,
-    // we need to set kstack_ptr below the lowest point we're using.
-    // Using the address of the lowest local variable with additional margin.
-    uintptr_t lowest_stack_addr = (uintptr_t)&info;
-    // Align down to 16 bytes and subtract safety margin for nested calls
-    td->kstack_ptr = (lowest_stack_addr & ~0xF) - 1024;
+    // user-mode signal: build sigframe on user stack, modify trapframe
+    uintptr_t usp = (frame->rsp - sizeof(struct sigframe)) & ~0xFUL;
+    struct sigframe *sf = (struct sigframe *) usp;
 
-    DPRINTF("signal %d: kstack_ptr=%p\n", sig, (void *)td->kstack_ptr);
-    bool user_mode = !(act.sa_flags & SA_KERNHAND);
-    td_unlock(td); // unlock the thread while the signal is handled
-    sigtramp_entry(&info, &act, user_mode); // execute the signal handler
+    if (vm_validate_ptr(usp, /*write=*/true) < 0) {
+      EPRINTF("sigframe at %p is not writable, killing thread {:td}\n", (void *)usp, td);
+      td_unlock(td);
+      proc_terminate(td->proc, 0, SIGSEGV);
+      return;
+    }
 
-    DPRINTF("signal %d handled\n", sig);
-//    DPRINTF("signal %d handled by thread {:td}\n", sig, td);
-    td_lock(td); // relock it in case there are more signals to handle
+    memset(sf, 0, sizeof(struct sigframe));
+    sf->info = info;
+    sf->act = act;
+
+    // save full register state into sigcontext
+    struct sigcontext *ctx = &sf->ctx;
+    ctx->r8 = frame->r8;
+    ctx->r9 = frame->r9;
+    ctx->r10 = frame->r10;
+    ctx->r11 = frame->r11;
+    ctx->r12 = frame->r12;
+    ctx->r13 = frame->r13;
+    ctx->r14 = frame->r14;
+    ctx->r15 = frame->r15;
+    ctx->rdi = frame->rdi;
+    ctx->rsi = frame->rsi;
+    ctx->rbp = frame->rbp;
+    ctx->rbx = frame->rbx;
+    ctx->rdx = frame->rdx;
+    ctx->rax = frame->rax;
+    ctx->rcx = frame->rcx;
+    ctx->rsp = frame->rsp;
+    ctx->rip = frame->rip;
+    ctx->eflags = frame->rflags;
+    ctx->oldmask = saved_mask.__bits[0];
+    ctx->__reserved1[0] = saved_mask.__bits[1];
+
+    // redirect trapframe to trampoline
+    frame->rip = (uint64_t) sigtramp_trampoline;
+    frame->rsp = usp;
+    frame->rdi = sig;
+    frame->rsi = (uint64_t) &sf->info;
+    frame->rdx = (uint64_t) &sf->ctx;
+    frame->rflags = 0x202; // IF set
+    frame->flags |= TF_SYSRET;
+
+    // only deliver one user-mode signal per call
+    if (td->sigqueue.count == 0) {
+      td->flags2 &= ~TDF2_SIGPEND;
+    }
+    td_unlock(td);
+    return;
   }
 
-  td->flags2 &= ~TDF2_SIGCTX;
+  // no signals dispatched (all ignored/masked)
   if (td->sigqueue.count == 0) {
-    // we can clear the thread TDF2_SIGPEND flag
     td->flags2 &= ~TDF2_SIGPEND;
   }
 
-  // finally unlock the thread
+  td_unlock(td);
+}
+
+// called from handle_syscall when the user invokes rt_sigreturn.
+// restores the original register context from the sigframe on the user stack.
+_used void sys_rt_sigreturn_impl(struct trapframe *frame) {
+  // the user's rsp at syscall entry points to the sigframe (trampoline restored
+  // rsp to sigframe pointer before the syscall instruction)
+  struct sigframe *sf = (struct sigframe *) frame->rsp;
+
+  if (vm_validate_ptr((uintptr_t) sf, /*write=*/false) < 0) {
+    EPRINTF("invalid sigframe at %p\n", sf);
+    proc_terminate(curproc, 0, SIGSEGV);
+    return;
+  }
+
+  struct sigcontext *ctx = &sf->ctx;
+
+  // restore all registers into trapframe
+  frame->r8 = ctx->r8;
+  frame->r9 = ctx->r9;
+  frame->r10 = ctx->r10;
+  frame->r11 = ctx->r11;
+  frame->r12 = ctx->r12;
+  frame->r13 = ctx->r13;
+  frame->r14 = ctx->r14;
+  frame->r15 = ctx->r15;
+  frame->rdi = ctx->rdi;
+  frame->rsi = ctx->rsi;
+  frame->rbp = ctx->rbp;
+  frame->rbx = ctx->rbx;
+  frame->rdx = ctx->rdx;
+  frame->rax = ctx->rax;
+  frame->rcx = ctx->rcx;
+  frame->rsp = ctx->rsp;
+  frame->rip = ctx->rip;
+  frame->rflags = ctx->eflags;
+
+  // restore signal mask
+  thread_t *td = curthread;
+  td_lock(td);
+  td->sigmask.__bits[0] = ctx->oldmask;
+  td->sigmask.__bits[1] = ctx->__reserved1[0];
   td_unlock(td);
 }
 
