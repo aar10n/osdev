@@ -108,10 +108,7 @@ void knote_activate(knote_t *kn) {
   knlist_add(&kq->active, kn);
 
   // wake up any threads waiting on this kqueue
-  struct waitqueue *wq = waitq_lookup(kq);
-  if (wq != NULL) {
-    waitq_broadcast(wq);
-  }
+  cond_broadcast(&kq->cond);
 }
 
 void knote_add_list(knote_t *kn, struct knlist *knl) {
@@ -287,6 +284,7 @@ kqueue_t *kqueue_alloc() {
   
   kq->state = 0;
   mtx_init(&kq->lock, 0, "kqueue");
+  cond_init(&kq->cond, "kqueue");
   knlist_init(&kq->active, &kq->lock.lo);
   for (int i = 0; i < KQUEUE_HASH_SIZE; i++) {
     LIST_INIT(&kq->knhash[i]);
@@ -310,6 +308,7 @@ void kqueue_free(kqueue_t **kqp) {
   }
 
   knlist_destroy(&kq->active);
+  cond_destroy(&kq->cond);
   mtx_destroy(&kq->lock);
   kfree(kq);
 }
@@ -404,13 +403,6 @@ LABEL(ret);
 ssize_t kqueue_wait(kqueue_t *kq, struct kevent *changelist, size_t nchanges,
                     struct kevent *eventlist, size_t nevents, struct timespec *timeout) {
   uint64_t timeout_ns = timeout ? timespec_to_nanos(timeout) : 0;
-  if (timeout) {
-    EPRINTF("kqueue_wait: kq=%p, nchanges=%zu, nevents=%zu, timeout_ns=%llu (sec=%lld, nsec=%lld)\n",
-            kq, nchanges, nevents, timeout_ns, timeout->tv_sec, timeout->tv_nsec);
-  } else {
-    DPRINTF("kqueue_wait: kq=%p, nchanges=%zu, nevents=%zu, timeout=NULL\n",
-            kq, nchanges, nevents);
-  }
   ssize_t count = 0;
   int res = 0;
   
@@ -487,32 +479,30 @@ LABEL(process_events);
     }
   }
   
-  mtx_unlock(&kq->lock);
   if (count > 0 || (timeout && timespec_is_zero(timeout))) {
+    mtx_unlock(&kq->lock);
     DPRINTF("kqueue_wait: returning %zu events\n", count);
     return count;
   }
 
-  // now we need to wait for events, with a timeout if specified
-  // but in both cases we allow signals to interrupt the wait
-  struct waitqueue *waitq = waitq_lookup_or_default(WQ_CONDV, kq, curthread->own_waitq);
+  // wait for events while holding kq->lock — cond_wait atomically
+  // releases the lock and sleeps, preventing lost wakeups
   if (timeout == NULL) {
-    res = waitq_wait_sig(waitq, "kqueue_wait");
+    res = cond_wait_sig(&kq->cond, &kq->lock);
   } else {
-    res = waitq_wait_sigtimeout(waitq, "kqueue_wait", timeout_ns);
+    struct timespec ts = timespec_from_nanos(timeout_ns);
+    res = cond_wait_sigtimeout(&kq->cond, &kq->lock, &ts);
   }
+  mtx_unlock(&kq->lock);
 
   if (res < 0) {
     if (res == -ETIMEDOUT) {
-      // timeout is not an error - return any events collected before timeout
       return count;
     }
-    EPRINTF("kqueue_wait: waitq_wait_sig failed: {:err}\n", res);
     if (res == -EINTR && count > 0) {
-      // even if we were interrupted, we can still return events we collected
       return count;
     }
-    return res; // error occurred
+    return res;
   }
   goto process_events; // re-check for events after waking up
 }

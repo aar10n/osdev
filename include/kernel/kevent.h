@@ -8,6 +8,7 @@
 #include <kernel/base.h>
 #include <kernel/queue.h>
 #include <kernel/mutex.h>
+#include <kernel/cond.h>
 #include <kernel/ref.h>
 #include <abi/kevent.h>
 #include <abi/poll.h>
@@ -55,6 +56,7 @@ struct knlist {
 typedef struct kqueue {
   int state;                        // queue state flags
   struct mtx lock;                  // queue mutex
+  struct cond cond;                 // wakeup condition variable
   struct knlist active;             // active events list
   LIST_HEAD(struct knote) knhash[]; // knote hash table
 } kqueue_t;
