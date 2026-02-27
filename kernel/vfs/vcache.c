@@ -202,8 +202,8 @@ static inline int vcache_put_nolock(vcache_t *vcache, cstr_t path, ventry_t *ve)
   if (ve->type == V_DIR) {
     // if entry is a directory, add it to the directory map by its vnode id
     if (rb_tree_find(vcache->dir_map, ve_unique_id(ve)) != NULL) {
-      panic("vcache: directory already exists in dir_map {:ve}\n", ve);
-      return -1;
+      // directory already cached under a different path, skip caching this alias
+      return 0;
     }
 
     struct vcache_dir *direntry = vcache_dir_alloc();

@@ -611,6 +611,9 @@ ssize_t net_sendto(int sockfd, const void *buf, size_t len, int flags, const str
     return -EOPNOTSUPP;
   }
 
+  if (file->flags & O_NONBLOCK)
+    flags |= MSG_DONTWAIT;
+
   // build message structure
   struct msghdr msg = { 0 };
   struct iovec iov = { .iov_base = (void *)buf, .iov_len = len };
@@ -644,6 +647,9 @@ ssize_t net_recvfrom(int sockfd, void *buf, size_t len, int flags, struct sockad
     return -EOPNOTSUPP;
   }
 
+  if (file->flags & O_NONBLOCK)
+    flags |= MSG_DONTWAIT;
+
   // build message structure
   struct msghdr msg = { 0 };
   struct iovec iov = { .iov_base = buf, .iov_len = len };
@@ -676,6 +682,9 @@ ssize_t net_sendmsg(int sockfd, const struct msghdr *msg, int flags) {
   }
 
   sock_t *sock = file->data;
+  if (file->flags & O_NONBLOCK)
+    flags |= MSG_DONTWAIT;
+
   ssize_t ret = -EOPNOTSUPP;
   if (sock->ops->sendmsg) {
     // calculate total message size
@@ -714,6 +723,9 @@ ssize_t net_recvmsg(int sockfd, struct msghdr *msg, int flags) {
   for (int i = 0; i < msg->msg_iovlen; i++) {
     total_len += msg->msg_iov[i].iov_len;
   }
+
+  if (file->flags & O_NONBLOCK)
+    flags |= MSG_DONTWAIT;
 
   DPRINTF("net_recvmsg: calling socket recvmsg, total_len=%zu\n", total_len);
   int ret = sock->ops->recvmsg(sock, msg, total_len, flags);

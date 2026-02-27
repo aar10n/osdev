@@ -75,6 +75,9 @@ ssize_t procfs_f_read(file_t *file, kio_t *kio) {
     return vn_f_read(file, kio);
   }
 
+  if (!obj->ops->proc_read)
+    return -EISDIR;
+
   procfs_handle_t *handle = &(procfs_handle_t){obj, file->udata};
   ssize_t res = obj->ops->proc_read(handle, file->offset, kio);
 

@@ -599,9 +599,6 @@ int waitq_wait_sigtimeout(struct waitqueue *waitq, const char *wdmsg, uint64_t t
   mtx_assert(&waitq->lock, MA_OWNED);
 
   thread_t *td = curthread;
-  kprintf("waitq_wait_sigtimeout: wchan=%p, wdmsg=%s, timeout_ns=%llu, td=%p\n",
-          waitq->wchan, wdmsg, timeout_ns, td);
-
   td_lock(td);
   ASSERT(td->timeout_alarm_id == 0);
   td->errno = 0;
@@ -620,7 +617,6 @@ int waitq_wait_sigtimeout(struct waitqueue *waitq, const char *wdmsg, uint64_t t
   }
 
   id_t alarm_id = alarm_register(alarm);
-  kprintf("waitq_wait_sigtimeout: registered alarm %u for thread %p\n", alarm_id, td);
   td->timeout_alarm_id = alarm_id;
 
   mtx_spin_unlock(&waitq->lock);

@@ -1062,7 +1062,6 @@ int fs_poll(struct pollfd *fds, size_t nfds, struct timespec *timeout) {
       // timeout expired without any events - this is normal for poll
       goto_res(ret, 0);
     }
-    EPRINTF("kqueue_wait failed: {:err}\n", nready);
     goto_res(ret, (int)nready);
   } else if (nready == 0) {
     goto_res(ret, 0); // no events (timeout)
@@ -1361,7 +1360,7 @@ int fs_link(cstr_t oldpath, cstr_t newpath) {
 
   // resolve the parent directory
   if ((res = vresolve_fullpath(fs_vcache, at_ve, newpath, VR_EXCLUSV|VR_DIR, &rpath_buf, &dve)) < 0)
-    goto ret;
+    goto ret_unlock_ove;
 
   ventry_t *ve = NULL;
   vnode_t *dvn = VN(dve);
@@ -1384,8 +1383,9 @@ int fs_link(cstr_t oldpath, cstr_t newpath) {
   ve_putref(&ve);
   res = 0; // success
 LABEL(ret_unlock);
-  ve_unlock(ove);
   ve_unlock(dve);
+LABEL(ret_unlock_ove);
+  ve_unlock(ove);
 LABEL(ret);
   ve_putref(&ove);
   ve_putref(&dve);

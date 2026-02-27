@@ -497,6 +497,7 @@ int file_kqfilt_attach(knote_t *kn) {
       ASSERT(kn->filt_ops_data != NULL);
     } else {
       kn->filt_ops_data = vn_getref(vn);
+      kn->knlist = &vn->knlist;
       knlist_add(&vn->knlist, kn);
       res = 0; // success
     }
@@ -586,6 +587,23 @@ int file_kqfilt_event(knote_t *kn, long hint) {
   ASSERT(fde->file != NULL);
 
   file_t *file = fde->file;
+
+  // socket files use their own protocol-level locking in kqevent handlers,
+  // so skip file->lock to avoid ABBA deadlock with the socket lock (which
+  // knlist_activate_notes may already hold on the calling thread)
+  if (F_ISSOCK(file)) {
+    if (file->closed || F_OPS(file)->f_kqevent == NULL) {
+      kn->event.flags |= EV_EOF;
+      return 1;
+    }
+    int res = F_OPS(file)->f_kqevent(file, kn);
+    if (res < 0) {
+      kn->event.flags |= EV_ERROR;
+      kn->event.data = (intptr_t)res;
+      return 1;
+    }
+    return res > 0 ? 1 : 0;
+  }
 
   // check if we already own the file lock (e.g., called during close)
   // if so, just report EOF without trying to re-lock

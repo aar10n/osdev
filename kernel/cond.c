@@ -22,7 +22,9 @@ void cond_init(cond_t *cond, const char *name) {
 }
 
 void cond_destroy(cond_t *cond) {
-  ASSERT(cond->waiters == 0);
+  if (cond->waiters != 0) {
+    panic("cond_destroy: cond %p [%s] has %d waiters\n", cond, cond->name, cond->waiters);
+  }
   cond->name = NULL;
 }
 
@@ -88,11 +90,7 @@ int cond_wait_sig(cond_t *cond, mtx_t *lock) {
     mtx_lock(lock);
   }
 
-  DPRINTF("cond_wait_sig: woke up from cond %p [%s], ret=%d\n", cond, cond->name, ret);
-  if (ret >= 0) {
-    // if we were interrupted, cond->waiters was already decremented
-    cond->waiters--;
-  }
+  cond->waiters--;
   return ret;
 }
 

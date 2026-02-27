@@ -748,6 +748,11 @@ static int unix_recvmsg(sock_t *sock, struct msghdr *msg, size_t len, int flags)
 
   while (to_read > 0) {
     while (usock->stream.count == 0) {
+      if (total_read > 0) {
+        // return partial read instead of blocking for more
+        goto out;
+      }
+
       // check if peer closed
       if (usock->stream.shutdown_flags & SHUT_WR) {
         mtx_unlock(&usock->lock);
@@ -755,10 +760,6 @@ static int unix_recvmsg(sock_t *sock, struct msghdr *msg, size_t len, int flags)
       }
 
       if (flags & MSG_DONTWAIT) {
-        if (total_read > 0) {
-          mtx_unlock(&usock->lock);
-          return (int)total_read;
-        }
         mtx_unlock(&usock->lock);
         return -EAGAIN;
       }
@@ -779,6 +780,8 @@ static int unix_recvmsg(sock_t *sock, struct msghdr *msg, size_t len, int flags)
       cond_broadcast(&peer->tx_cond);
     }
   }
+
+out:
 
   mtx_unlock(&usock->lock);
   return (int)total_read;

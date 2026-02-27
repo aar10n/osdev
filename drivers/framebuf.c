@@ -54,7 +54,7 @@ ssize_t framebuf_d_write(device_t *dev, size_t off, size_t nmax, kio_t *kio) {
     return 0;
   }
 
-  size_t len = max(kio_remaining(kio), fb->size - off);
+  size_t len = min(kio_remaining(kio), fb->size - off);
   return (ssize_t) kio_nread_out((void *)fb->base, len, off, nmax, kio);
 }
 

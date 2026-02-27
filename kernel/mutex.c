@@ -306,7 +306,7 @@ void _mtx_wait_lock(mtx_t *mtx, const char *file, int line) {
     }
 
     // lock is contended - wait for it
-    kprintf("mtx_wait_lock: waiting for lock {:#Lo} owned by {:td}\n", &mtx->lo, mtx_get_owner(mtx));
+    // kprintf("mtx_wait_lock: waiting for lock {:#Lo} owned by {:td}\n", &mtx->lo, mtx_get_owner(mtx));
     struct thread *owner = mtx_get_owner(mtx);
     struct lockqueue *lockq = lockq_lookup_or_default(&mtx->lo, td->own_lockq);
     lockq_wait(lockq, owner, LQ_EXCL);

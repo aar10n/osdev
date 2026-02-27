@@ -117,8 +117,9 @@ static void uart_irq_port_handler(int port, int index, int irr) {
   int data = 0;
   switch ((irr & 0x6) >> 1) { // bits 1 and 2 indicate interrupt state
     case 0: // modem status change
-      DPRINTF("port %d: modem status change\n", port);
       status = io_inb(port + UART_MODEM_STATUS); // read modem status register to clear
+      // disable modem status interrupts to prevent IRQ storm
+      io_outb(port + UART_INTR_EN, io_inb(port + UART_INTR_EN) & ~0x08);
       uint8_t dcd_delta = (status >> 3) & 1; // bit 3 indicates DCD change since last read
       if (dcd_delta) {
         event = UART_IRQ_DCD;
@@ -352,8 +353,8 @@ int uart_hw_set_irq_handler(int port, void (*handler)(int ev, int ev_data, void 
   uart_irq_handler_data[index] = data;
   irq_enable_interrupt(port_irq);
 
-  // enable data available/can transmit/modem status irqs
-  io_outb(port + UART_INTR_EN, 0b1011);
+  // enable data available/can transmit irqs (no modem status - causes IRQ storm in QEMU)
+  io_outb(port + UART_INTR_EN, 0b0011);
   // io_outb(port + UART_INTR_EN, 0b1101);
   mtx_spin_unlock(&irq_lock);
   return 0;

@@ -428,7 +428,6 @@ int alarm_unregister(id_t alarm_id, struct callback *callback) {
   return 0;
 
 LABEL(not_found);
-  DPRINTF("alarm_unregister: alarm %d not found\n", alarm_id);
   mtx_spin_unlock(&alarm_lock);
   return -ENOENT;
 }

@@ -2093,12 +2093,12 @@ void thread_kill(thread_t *td) {
     // stop an active thread
     if (td == curthread) {
       // the current thread is exiting so we must force the release
-      // of the process lock and reference held by the caller since
-      // this function will not return
+      // of the process lock held by the caller since this function
+      // will not return. the thread's proc ref is released later
+      // by thread_free_exited in the idle thread.
       pr_lock_assert(proc, LA_OWNED);
       pr_lock_assert(proc, LA_NOTRECURSED);
       pr_unlock(proc);
-      pr_putref(&proc);
       // thread cleanup is deferred to the scheduler
       sched_again(SCHED_EXITED);
       unreachable;
@@ -2240,12 +2240,6 @@ int thread_signal(thread_t *td, siginfo_t *info) {
     struct waitqueue *waitq = waitq_lookup(td->wchan);
     if (waitq != NULL) {
       DPRINTF("waiting thread {:td} [%s] interrupted by signal %d\n", td, td->wdmsg, info->si_signo);
-      if (waitq->type == WQ_CONDV && td != curthread) {
-        cond_t *cond = (cond_t *)td->wchan;
-        DPRINTF("thread_signal: cond %p waiters = %d [%s]\n", cond, cond->waiters, cond->name);
-        cond->waiters--;
-      }
-
       waitq_remove(waitq, td);
 
       // mark as interrupted
