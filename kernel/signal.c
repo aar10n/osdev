@@ -10,6 +10,7 @@
 #include <kernel/cpu/cpu.h>
 #include <kernel/cpu/trapframe.h>
 
+#include <kernel/mm/pool.h>
 #include <kernel/printf.h>
 #include <kernel/panic.h>
 
@@ -18,6 +19,13 @@
 #define ASSERT(x) kassert(x)
 #define DPRINTF(x, ...) kprintf("signal: " x, ##__VA_ARGS__)
 #define EPRINTF(x, ...) kprintf("signal: %s: " x, __func__, ##__VA_ARGS__)
+
+static pool_t *ksiginfo_pool;
+
+static void ksiginfo_pool_init() {
+  ksiginfo_pool = pool_create("ksiginfo", pool_sizes(sizeof(ksiginfo_t)), 0);
+}
+STATIC_INIT(ksiginfo_pool_init);
 
 extern char sigtramp_trampoline[];
 
@@ -250,7 +258,7 @@ enum sigdisp sigaction_to_disp(int sig, const struct sigaction *sa) {
 
 //
 
-int signal_deliver_self_sync(siginfo_t *info) {
+int signal_deliver_self_sync(siginfo_t *info, struct trapframe *frame) {
   thread_t *td = curthread;
   proc_t *proc = td->proc;
   td_lock_assert(td, LA_OWNED);
@@ -265,7 +273,6 @@ int signal_deliver_self_sync(siginfo_t *info) {
 
   enum sigdisp disp = sigaction_to_disp(sig, &act);
   if (disp == SIGDISP_IGN) {
-    // signal was explicitly ignored, or the default action is to ignore it
     EPRINTF("signal %s ignored by thread {:td}\n", sig_name(sig), td);
     return 0;
   } else if (disp == SIGDISP_TERM) {
@@ -283,12 +290,61 @@ int signal_deliver_self_sync(siginfo_t *info) {
   } else if (disp == SIGDISP_CONT) {
     proc_cont(proc);
     if (act.sa_handler == SIG_DFL || act.sa_handler == SIG_IGN) {
-      // no user handler
       return 0;
     }
   }
 
-  todo("synchronous user handled signals not supported");
+  // set up user signal handler via trapframe, same as signal_dispatch
+  sigset_t saved_mask = td->sigmask;
+  if (!(act.sa_flags & SA_NODEFER)) {
+    sigset_mask(td->sigmask, sig);
+  }
+  sigset_block(&td->sigmask, &act.sa_mask);
+
+  uintptr_t usp = (frame->rsp - sizeof(struct sigframe)) & ~0xFUL;
+  struct sigframe *sf = (struct sigframe *) usp;
+
+  if (vm_validate_ptr(usp, /*write=*/true) < 0) {
+    EPRINTF("sigframe at %p is not writable, killing thread {:td}\n", (void *)usp, td);
+    td_unlock(td);
+    proc_terminate(td->proc, 0, SIGSEGV);
+    return 0;
+  }
+
+  memset(sf, 0, sizeof(struct sigframe));
+  sf->info = *info;
+  sf->act = act;
+
+  struct sigcontext *ctx = &sf->ctx;
+  ctx->r8 = frame->r8;
+  ctx->r9 = frame->r9;
+  ctx->r10 = frame->r10;
+  ctx->r11 = frame->r11;
+  ctx->r12 = frame->r12;
+  ctx->r13 = frame->r13;
+  ctx->r14 = frame->r14;
+  ctx->r15 = frame->r15;
+  ctx->rdi = frame->rdi;
+  ctx->rsi = frame->rsi;
+  ctx->rbp = frame->rbp;
+  ctx->rbx = frame->rbx;
+  ctx->rdx = frame->rdx;
+  ctx->rax = frame->rax;
+  ctx->rcx = frame->rcx;
+  ctx->rsp = frame->rsp;
+  ctx->rip = frame->rip;
+  ctx->eflags = frame->rflags;
+  ctx->oldmask = saved_mask.__bits[0];
+  ctx->__reserved1[0] = saved_mask.__bits[1];
+
+  frame->rip = (uint64_t) sigtramp_trampoline;
+  frame->rsp = usp;
+  frame->rdi = sig;
+  frame->rsi = (uint64_t) &sf->info;
+  frame->rdx = (uint64_t) &sf->ctx;
+  frame->rflags = 0x202;
+  frame->flags |= TF_SYSRET;
+
   return 1;
 }
 
@@ -430,14 +486,14 @@ void sigqueue_clear(sigqueue_t *queue) {
   ksiginfo_t *ksig;
   while ((ksig = LIST_FIRST(&queue->list)) != NULL) {
     SLIST_REMOVE(&queue->list, ksig, next);
-    kfree(ksig);
+    pool_free(ksiginfo_pool, ksig);
   }
   queue->count = 0;
 }
 
 void sigqueue_push(sigqueue_t *queue, struct siginfo *info) {
   ASSERT(queue->count < INT32_MAX);
-  ksiginfo_t *ksig = kmallocz(sizeof(ksiginfo_t));
+  ksiginfo_t *ksig = pool_alloc(ksiginfo_pool, sizeof(ksiginfo_t));
   ASSERT(ksig != NULL);
   ksig->info = *info;
   queue->count++;
@@ -458,7 +514,7 @@ int sigqueue_pop(sigqueue_t *queue, struct siginfo *info, const sigset_t *mask) 
   queue->count--;
 
   *info = ksig->info;
-  kfree(ksig);
+  pool_free(ksiginfo_pool, ksig);
   return 0;
 }
 

@@ -27,7 +27,8 @@ const char *sig_name(int sig);
 enum sigdisp sig_to_dfl_disp(int sig);
 enum sigdisp sigaction_to_disp(int sig, const struct sigaction *sa);
 
-int signal_deliver_self_sync(siginfo_t *info);
+struct trapframe;
+int signal_deliver_self_sync(siginfo_t *info, struct trapframe *frame);
 
 #define sigset_masked(set, sig) ((set).__bits[(sig) / 64] & (1ULL << ((sig) % 64)))
 #define sigset_mask(set, sig) ((set).__bits[(sig) / 64] |= (1ULL << ((sig) % 64)))

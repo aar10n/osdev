@@ -1233,7 +1233,7 @@ LABEL(unhandled);
     // synchronously deliver the thread a SIGSEGV signal
     td_lock(td);
     td->flags2 |= TDF2_SIGSEV; // prevent nested SIGSEV handling
-    int res = signal_deliver_self_sync(&info);
+    int res = signal_deliver_self_sync(&info, frame);
     td->flags2 &= ~TDF2_SIGSEV;
     td_unlock(td);
     if (res > 0) {
