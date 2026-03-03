@@ -49,8 +49,21 @@
 #define KBD_LED_NUM_LOCK        0x02
 #define KBD_LED_CAPS_LOCK       0x04
 
-// keyboard irq number (standard pc irq 1)
+// irq numbers
 #define KEYBOARD_IRQ 1
+#define MOUSE_IRQ    12
+
+// i8042 controller commands
+#define I8042_CMD_READ_CONFIG   0x20
+#define I8042_CMD_WRITE_CONFIG  0x60
+#define I8042_CMD_DISABLE_AUX   0xA7
+#define I8042_CMD_ENABLE_AUX    0xA8
+#define I8042_CMD_WRITE_AUX     0xD4
+
+// PS/2 mouse commands
+#define MOUSE_CMD_SET_DEFAULTS  0xF6
+#define MOUSE_CMD_ENABLE        0xF4
+#define MOUSE_CMD_RESET         0xFF
 
 // special scan codes
 #define SCANCODE_EXTENDED     0xE0
@@ -182,20 +195,64 @@ static bool caps_lock_state = false;
 static bool num_lock_state = true;   // typically starts enabled
 static bool scroll_lock_state = false;
 
+// mouse state
+static uint8_t mouse_packet[3];
+static int mouse_packet_idx = 0;
+
 static void keyboard_irq_handler(struct trapframe *frame);
+static void mouse_irq_handler(struct trapframe *frame);
 static void keyboard_send_command(uint8_t command);
 static void keyboard_update_leds(void);
+static uint8_t keyboard_read_data(void);
+static void keyboard_wait_input_ready(void);
+
+static void i8042_send_command(uint8_t cmd) {
+  keyboard_wait_input_ready();
+  io_outb(KEYBOARD_COMMAND_PORT, cmd);
+}
+
+static void mouse_send_command(uint8_t cmd) {
+  i8042_send_command(I8042_CMD_WRITE_AUX);
+  keyboard_wait_input_ready();
+  io_outb(KEYBOARD_DATA_PORT, cmd);
+  keyboard_read_data(); // read ACK
+}
+
+static void mouse_init() {
+  // enable auxiliary port
+  i8042_send_command(I8042_CMD_ENABLE_AUX);
+
+  // enable IRQ12 in controller config
+  i8042_send_command(I8042_CMD_READ_CONFIG);
+  uint8_t config = keyboard_read_data();
+  config |= 0x02; // enable auxiliary interrupt
+  config &= ~0x20; // clear auxiliary clock disable
+  i8042_send_command(I8042_CMD_WRITE_CONFIG);
+  keyboard_wait_input_ready();
+  io_outb(KEYBOARD_DATA_PORT, config);
+
+  // set defaults and enable data reporting
+  mouse_send_command(MOUSE_CMD_SET_DEFAULTS);
+  mouse_send_command(MOUSE_CMD_ENABLE);
+
+  irq_must_reserve_irqnum(MOUSE_IRQ);
+  irq_register_handler(MOUSE_IRQ, mouse_irq_handler, NULL);
+  irq_enable_interrupt(MOUSE_IRQ);
+
+  DPRINTF("PS/2 mouse initialized\n");
+}
 
 static void keyboard_static_init() {
   // reserve and register keyboard irq
   irq_must_reserve_irqnum(KEYBOARD_IRQ);
   irq_register_handler(KEYBOARD_IRQ, keyboard_irq_handler, NULL);
   irq_enable_interrupt(KEYBOARD_IRQ);
-  
+
   // initialize LEDs to reflect initial state
   keyboard_update_leds();
-  
   DPRINTF("AT keyboard driver initialized\n");
+
+  mouse_init();
 }
 STATIC_INIT(keyboard_static_init);
 
@@ -314,11 +371,49 @@ static void keyboard_irq_handler(struct trapframe *frame) {
   }
   
   if (status & KBD_STATUS_MOUSE_DATA) {
-    // this is mouse data, not keyboard data - read and discard
     io_inb(KEYBOARD_DATA_PORT);
     return;
   }
   
   uint8_t scancode = io_inb(KEYBOARD_DATA_PORT);
   keyboard_process_scancode(scancode);
+}
+
+static void mouse_process_packet() {
+  uint8_t flags = mouse_packet[0];
+  int dx = (int)mouse_packet[1] - ((flags & 0x10) ? 256 : 0);
+  int dy = (int)mouse_packet[2] - ((flags & 0x20) ? 256 : 0);
+
+  static uint8_t prev_buttons = 0;
+  uint8_t buttons = flags & 0x07;
+  if ((buttons ^ prev_buttons) & 0x01)
+    input_event(EV_KEY, BTN_LEFT, (buttons & 0x01) ? 1 : 0);
+  if ((buttons ^ prev_buttons) & 0x02)
+    input_event(EV_KEY, BTN_RIGHT, (buttons & 0x02) ? 1 : 0);
+  if ((buttons ^ prev_buttons) & 0x04)
+    input_event(EV_KEY, BTN_MIDDLE, (buttons & 0x04) ? 1 : 0);
+  prev_buttons = buttons;
+
+  if (dx)
+    input_event(EV_REL, REL_X, dx);
+  if (dy)
+    input_event(EV_REL, REL_Y, -dy); // PS/2 Y is inverted
+  input_event(EV_SYN, SYN_REPORT, 0);
+}
+
+static void mouse_irq_handler(struct trapframe *frame) {
+  while (io_inb(KEYBOARD_STATUS_PORT) & KBD_STATUS_OUTPUT_FULL) {
+    uint8_t data = io_inb(KEYBOARD_DATA_PORT);
+
+    // byte 0 must have bit 3 set (always-one bit in PS/2 protocol)
+    if (mouse_packet_idx == 0 && !(data & 0x08)) {
+      continue;
+    }
+
+    mouse_packet[mouse_packet_idx++] = data;
+    if (mouse_packet_idx >= 3) {
+      mouse_packet_idx = 0;
+      mouse_process_packet();
+    }
+  }
 }
