@@ -82,7 +82,7 @@
 
 ; void double_fault_handler()
 extern double_fault_handler
-; void infinite_loop_handler(void *gs_base, void *kernel_gs_base)
+; void infinite_loop_handler(void *gs_base, void *kernel_gs_base, uint64_t vector, uint64_t rip, uint64_t error, uint64_t cr2)
 extern infinite_loop_handler
 ; void interrupt_handler(struct trapframe *frame)
 extern interrupt_handler
@@ -91,7 +91,13 @@ extern sched_again
 
 ; DEBUGGING
 section .data
+global interrupt_nest_count
 interrupt_nest_count dq 0 ; used to track interrupt nesting level
+
+; saved context for each nesting level (3 entries x 4 fields x 8 bytes = 96 bytes)
+; fields: vector, rip, error, cr2
+global exception_save_area
+exception_save_area: times 12 dq 0
 
 section .text
 
@@ -167,7 +173,27 @@ common_interrupt_handler:
 
   ; INTERRUPT LOOP DEBUGGING
   inc qword [rel interrupt_nest_count] ; increment the nested interrupt count
-  cmp qword [rel interrupt_nest_count], 3 ; check if we are in a nested interrupt
+
+  ; save exception info for this nesting level
+  ; stack layout: rsp+0=saved_rax, rsp+8=has_ist, rsp+16=data, rsp+24=vector, rsp+32=error, rsp+40=rip
+  mov rax, [rel interrupt_nest_count]
+  cmp rax, 4
+  jge .skip_save
+  dec rax               ; 0-indexed
+  shl rax, 5            ; x 32 (4 fields x 8 bytes)
+  lea r9, [rel exception_save_area]
+  add r9, rax
+  mov rax, [rsp+24]     ; vector
+  mov [r9+0], rax
+  mov rax, [rsp+40]     ; rip
+  mov [r9+8], rax
+  mov rax, [rsp+32]     ; error
+  mov [r9+16], rax
+  mov rax, cr2
+  mov [r9+24], rax
+.skip_save:
+
+  cmp qword [rel interrupt_nest_count], 3
   jl .skip_loop_debug
 
   ; load gs_base into rdi
@@ -184,9 +210,15 @@ common_interrupt_handler:
   or rax, rdx            ; Combine into 64-bit value
   mov rsi, rax           ; Store kernel_gs_base in rsi
 
-  ; we are in a nested interrupt loop
-  ; align rsp to 16 bytes
+  ; pass exception context from the current frame
+  mov r8, rsp            ; save original rsp before alignment
   and rsp, -16
+  mov rdx, [r8+24]      ; rdx = vector (arg3)
+  mov rcx, [r8+40]      ; rcx = rip (arg4)
+  mov r9, [r8+32]       ; r9 = error code -- temporarily in r9
+  mov r8, r9             ; r8 = error code (arg5)
+  mov rax, cr2
+  mov r9, rax            ; r9 = cr2 (arg6)
   call infinite_loop_handler
 .skip_loop_debug:
 
@@ -355,6 +387,7 @@ common_interrupt_handler:
 ;
 global trapframe_restore
 trapframe_restore:
+  mov qword [rel interrupt_nest_count], 0 ; reset nest count on trapframe restore
   ; restore the parent trapframe pointer
   mov rax, TRAPFRAME_PARENT(rsp) ; rax = parent trapframe
   mov rbx, THREAD_FRAME(r8) ; rbx = current trapframe

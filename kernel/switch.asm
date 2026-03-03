@@ -90,6 +90,9 @@ extern proc_kill_tid
 ;   defined in exception.asm
 extern trapframe_restore
 
+; interrupt_nest_count
+;   defined in exception.asm
+extern interrupt_nest_count
 
 section .data
 FILENAME db __FILE__, 0
@@ -206,6 +209,7 @@ switch_thread:
   ;  al = switch cr3
 
 .restore_thread:
+  mov qword [rel interrupt_nest_count], 0 ; reset nest count on thread switch
   cmp al, 0 ; check if we need to switch cr3
   jnz .skip_cr3_switch ; al=1 if we can skip cr3 switch
   mov rax, THREAD_PROC(rsi)

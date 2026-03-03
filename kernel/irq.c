@@ -9,6 +9,7 @@
 #include <kernel/panic.h>
 #include <kernel/debug/debug.h>
 
+#include <kernel/cpu/io.h>
 #include <kernel/hw/apic.h>
 #include <kernel/hw/ioapic.h>
 
@@ -69,17 +70,119 @@ static struct isa_irq_override irq_isa_overrides[NUM_ISA_IRQS];
 
 
 void page_fault_handler(struct trapframe *frame);
+extern uint64_t exception_save_area[12]; // 3 entries x 4 fields (vector, rip, error, cr2)
+
+// GS-safe UART output for use in double fault / infinite loop handlers
+// where GS_BASE may be invalid and kprintf would triple fault
+#define PANIC_UART_PORT 0x2F8
+#define UART_LINE_STATUS_OFF 5
+
+static void panic_uart_putc(char c) {
+  while (!(inb(PANIC_UART_PORT + UART_LINE_STATUS_OFF) & 0x20));
+  outb(PANIC_UART_PORT, c);
+}
+
+static void panic_uart_puts(const char *s) {
+  while (*s) {
+    if (*s == '\n')
+      panic_uart_putc('\r');
+    panic_uart_putc(*s++);
+  }
+}
+
+static void panic_uart_hex(uint64_t val) {
+  panic_uart_puts("0x");
+  if (val == 0) {
+    panic_uart_putc('0');
+    return;
+  }
+  // find highest non-zero nibble
+  int started = 0;
+  for (int i = 60; i >= 0; i -= 4) {
+    int nibble = (val >> i) & 0xf;
+    if (nibble || started) {
+      started = 1;
+      panic_uart_putc(nibble < 10 ? '0' + nibble : 'a' + nibble - 10);
+    }
+  }
+}
+
+static void panic_uart_dec(uint64_t val) {
+  if (val == 0) {
+    panic_uart_putc('0');
+    return;
+  }
+  char buf[20];
+  int i = 0;
+  while (val > 0) {
+    buf[i++] = '0' + (val % 10);
+    val /= 10;
+  }
+  while (--i >= 0)
+    panic_uart_putc(buf[i]);
+}
+
+static void panic_dump_exception_save_area(void) {
+  for (int i = 0; i < 3; i++) {
+    uint64_t vec = exception_save_area[i*4];
+    uint64_t rip = exception_save_area[i*4+1];
+    uint64_t err = exception_save_area[i*4+2];
+    uint64_t cr2val = exception_save_area[i*4+3];
+    if (vec == 0 && rip == 0)
+      break;
+    panic_uart_puts("  [");
+    panic_uart_dec(i);
+    panic_uart_puts("] vector=");
+    panic_uart_dec(vec);
+    panic_uart_puts("  rip=");
+    panic_uart_hex(rip);
+    panic_uart_puts("  error=");
+    panic_uart_hex(err);
+    panic_uart_puts("  cr2=");
+    panic_uart_hex(cr2val);
+    panic_uart_puts("\n");
+  }
+}
 
 _used noreturn void double_fault_handler() {
-  kprintf_kputs("!!! DOUBLE FAULT !!!\n");
+  panic_uart_puts("!!! DOUBLE FAULT !!!\n");
+
+  uint32_t lo, hi;
+  __asm__ volatile("rdmsr" : "=a"(lo), "=d"(hi) : "c"(0xC0000101));
+  uint64_t gs_base = ((uint64_t)hi << 32) | lo;
+  __asm__ volatile("rdmsr" : "=a"(lo), "=d"(hi) : "c"(0xC0000102));
+  uint64_t kernel_gs_base = ((uint64_t)hi << 32) | lo;
+
+  panic_uart_puts("  GS_BASE=");
+  panic_uart_hex(gs_base);
+  panic_uart_puts("  KERNEL_GS_BASE=");
+  panic_uart_hex(kernel_gs_base);
+  panic_uart_puts("\n");
+  panic_dump_exception_save_area();
+
   WHILE_TRUE;
 }
 
-_used noreturn void infinite_loop_handler(void *gs_base, void *kernel_gs_base) {
-  __assert_stack_is_aligned();
-  kprintf_kputs("!!! INFINITE EXCEPTION LOOP !!!\n");
-  kprintf("  CPU#%d\n", curcpu_id);
-  kprintf("  GS_BASE = %018p  KERNEL_GS_BASE = %018p\n", gs_base, kernel_gs_base);
+_used noreturn void infinite_loop_handler(
+    void *gs_base, void *kernel_gs_base,
+    uint64_t vector, uint64_t rip, uint64_t error, uint64_t cr2
+) {
+  panic_uart_puts("!!! INFINITE EXCEPTION LOOP !!!\n");
+  panic_uart_puts("  GS_BASE=");
+  panic_uart_hex((uint64_t)gs_base);
+  panic_uart_puts("  KERNEL_GS_BASE=");
+  panic_uart_hex((uint64_t)kernel_gs_base);
+  panic_uart_puts("\n  current: vector=");
+  panic_uart_dec(vector);
+  panic_uart_puts("  rip=");
+  panic_uart_hex(rip);
+  panic_uart_puts("  error=");
+  panic_uart_hex(error);
+  panic_uart_puts("  cr2=");
+  panic_uart_hex(cr2);
+  panic_uart_puts("\n");
+  panic_dump_exception_save_area();
+
   WHILE_TRUE;
 }
 
