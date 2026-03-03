@@ -445,6 +445,7 @@ rb_tree_t *create_rb_tree() {
 
 void rb_tree_free(rb_tree_t *tree) {
   ASSERT(tree->root == tree->nil);
+  kfree(tree->events);
   kfree(tree->nil);
   kfree(tree);
 }

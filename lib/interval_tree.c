@@ -276,7 +276,8 @@ void intvl_tree_insert(intvl_tree_t *tree, interval_t interval, void *data) {
 }
 
 void intvl_tree_delete(intvl_tree_t *tree, interval_t interval) {
-  rb_tree_delete(tree, interval.start);
+  intvl_node_t *node_data = rb_tree_delete(tree, interval.start);
+  kfree(node_data);
 }
 
 void intvl_tree_update_interval(intvl_tree_t *tree, intvl_node_t *node, off_t ds, off_t de) {
