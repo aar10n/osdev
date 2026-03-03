@@ -2886,7 +2886,30 @@ DEFINE_SYSCALL(kill, int, pid_t pid, int sig) {
 
 DEFINE_SYSCALL(prlimit64, int, pid_t pid, unsigned int resource, const struct rlimit *new_rlim, struct rlimit *old_rlim) {
   DPRINTF("syscall: prlimit64 pid=%d resource=%u new_rlim=%p old_rlim=%p\n", pid, resource, new_rlim, old_rlim);
-  DPRINTF("  TODO: prlimit64 not implemented, returning 0\n");
+
+  #define RLIMIT_NOFILE  7
+  #define RLIMIT_STACK   3
+  #define RLIMIT_AS      9
+  #define RLIM_INFINITY  (~0ULL)
+
+  if (old_rlim) {
+    struct rlimit lim;
+    switch (resource) {
+    case RLIMIT_NOFILE:
+      lim.rlim_cur = 256;
+      lim.rlim_max = 256;
+      break;
+    case RLIMIT_STACK:
+      lim.rlim_cur = 8 * 1024 * 1024;
+      lim.rlim_max = RLIM_INFINITY;
+      break;
+    default:
+      lim.rlim_cur = RLIM_INFINITY;
+      lim.rlim_max = RLIM_INFINITY;
+      break;
+    }
+    *old_rlim = lim;
+  }
   return 0;
 }
 
