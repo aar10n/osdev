@@ -220,7 +220,7 @@ void cpu_early_init() {
   // setup the syscall handler
   kprintf("IA32_LSTAR_MSR = %p\n", syscall_handler);
   cpu_write_msr(IA32_LSTAR_MSR, (uintptr_t) syscall_handler);
-  cpu_write_msr(IA32_SFMASK_MSR, 0);
+  cpu_write_msr(IA32_SFMASK_MSR, 0x200); // mask IF on syscall entry
   cpu_write_msr(IA32_STAR_MSR, UCODE32_SEG << 48 | KCODE_SEG << 32);
 }
 
