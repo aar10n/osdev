@@ -16,6 +16,8 @@
 #include <bitmap.h>
 #include <rb_tree.h>
 
+#include <kernel/mm/pool.h>
+
 #define ASSERT(x) kassert(x)
  #define DPRINTF(fmt, ...) kprintf("file: " fmt, ##__VA_ARGS__)
 //#define DPRINTF(fmt, ...)
@@ -23,6 +25,9 @@
 
 #define FTABLE_LOCK(ftable) mtx_spin_lock(&(ftable)->lock)
 #define FTABLE_UNLOCK(ftable) mtx_spin_unlock(&(ftable)->lock)
+
+static pool_t *file_pool;
+static pool_t *fd_entry_pool;
 
 extern struct file_ops dev_file_ops;
 extern struct file_ops vnode_file_ops;
@@ -37,7 +42,7 @@ typedef struct ftable {
 //
 
 __ref fd_entry_t *fd_entry_alloc(int fd, int flags, cstr_t real_path, __ref file_t *file) {
-  fd_entry_t *fde = kmallocz(sizeof(fd_entry_t));
+  fd_entry_t *fde = pool_alloc(fd_entry_pool, sizeof(fd_entry_t));
   fde->fd = fd;
   fde->flags = flags;
   fde->real_path = str_from_cstr(real_path);
@@ -49,7 +54,7 @@ __ref fd_entry_t *fd_entry_alloc(int fd, int flags, cstr_t real_path, __ref file
 
 __ref fd_entry_t *fde_dup(fd_entry_t *fde, int new_fd) {
   file_t *file = fde->file;
-  fd_entry_t *dup = kmallocz(sizeof(fd_entry_t));
+  fd_entry_t *dup = pool_alloc(fd_entry_pool, sizeof(fd_entry_t));
   dup->fd = (new_fd < 0) ? fde->fd : new_fd;
   
   // copy flags under lock
@@ -78,13 +83,13 @@ void _fde_cleanup(__move fd_entry_t **fde_ref) {
   str_free(&fde->real_path);
   f_putref(&fde->file);
   mtx_destroy(&fde->lock);
-  kfree(fde);
+  pool_free(fd_entry_pool, fde);
 }
 
 //
 
 __ref file_t *f_alloc(enum ftype type, int flags, void *data, struct file_ops *ops) {
-  file_t *file = kmallocz(sizeof(file_t));
+  file_t *file = pool_alloc(file_pool, sizeof(file_t));
   file->flags = flags & ~O_CLOEXEC;
   file->type = type;
   file->data = data;
@@ -254,7 +259,7 @@ void _f_cleanup(__move file_t **fref) {
   ASSERT(file->data == NULL);
   ASSERT(file->udata == NULL);
   mtx_destroy(&file->lock);
-  kfree(file);
+  pool_free(file_pool, file);
 }
 
 //
@@ -648,6 +653,8 @@ struct filter_ops file_filter_ops = {
 };
 
 void vnode_static_init() {
+  file_pool = pool_create("file", pool_sizes(sizeof(file_t)), 0);
+  fd_entry_pool = pool_create("fd_entry", pool_sizes(sizeof(fd_entry_t)), 0);
   register_filter_ops(EVFILT_READ, &file_filter_ops);
   register_filter_ops(EVFILT_WRITE, &file_filter_ops);
 }

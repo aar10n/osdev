@@ -10,6 +10,7 @@
 #include <kernel/net/in_dev.h>
 
 #include <kernel/mm.h>
+#include <kernel/mm/pool.h>
 #include <kernel/mutex.h>
 #include <kernel/panic.h>
 #include <kernel/printf.h>
@@ -27,6 +28,12 @@ static uint16_t next_ephemeral_port = UDP_EPHEMERAL_MIN;
 
 static LIST_HEAD(udp_sock_t) udp_sockets;
 static mtx_t socket_lock;
+static pool_t *udp_pool;
+
+static void udp_pool_init() {
+  udp_pool = pool_create("udp", pool_sizes(sizeof(udp_sock_t)), 0);
+}
+STATIC_INIT(udp_pool_init);
 
 static void udp_static_init() {
   port_bitmap = create_bitmap(65536);
@@ -66,7 +73,7 @@ static int udp_check_port(uint16_t port) {
 //
 
 __ref udp_sock_t *udp_sock_alloc() {
-  udp_sock_t *udp_sk = kmallocz(sizeof(udp_sock_t));
+  udp_sock_t *udp_sk = pool_alloc(udp_pool, sizeof(udp_sock_t));
   if (!udp_sk) {
     return NULL;
   }
@@ -105,7 +112,7 @@ void _udp_sock_cleanup(__move udp_sock_t **udp_skp) {
   mtx_destroy(&udp_sk->lock);
   mtx_destroy(&udp_sk->rx_lock);
   cond_destroy(&udp_sk->rx_cond);
-  kfree(udp_sk);
+  pool_free(udp_pool, udp_sk);
 }
 
 int udp_bind(udp_sock_t *udp_sk, uint32_t addr, uint16_t port) {

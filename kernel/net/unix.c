@@ -5,6 +5,7 @@
 #include <kernel/net/socket.h>
 
 #include <kernel/mm.h>
+#include <kernel/mm/pool.h>
 #include <kernel/mutex.h>
 #include <kernel/cond.h>
 #include <kernel/queue.h>
@@ -82,6 +83,12 @@ typedef struct unix_socket {
 
 static LIST_HEAD(unix_socket_t) unix_sockets;
 static mtx_t unix_sockets_lock;
+static pool_t *unix_pool;
+
+static void unix_pool_init() {
+  unix_pool = pool_create("unix", pool_sizes(sizeof(unix_socket_t)), 0);
+}
+STATIC_INIT(unix_pool_init);
 
 #define unix_sock_getref(sock) ({ \
   ASSERT_IS_TYPE(unix_socket_t *, sock); \
@@ -235,7 +242,7 @@ static void _unix_sock_cleanup(unix_socket_t **usockp) {
   mtx_destroy(&usock->lock);
   cond_destroy(&usock->rx_cond);
   cond_destroy(&usock->tx_cond);
-  kfree(usock);
+  pool_free(unix_pool, usock);
 }
 
 static unix_socket_t *unix_find_bound_socket(const struct sockaddr_un *addr, socklen_t addrlen) {
@@ -283,7 +290,7 @@ static int unix_create(sock_t *sock, int protocol) {
     return -ESOCKTNOSUPPORT;
   }
 
-  unix_socket_t *usock = kmallocz(sizeof(unix_socket_t));
+  unix_socket_t *usock = pool_alloc(unix_pool, sizeof(unix_socket_t));
   if (!usock) {
     return -ENOMEM;
   }
@@ -296,7 +303,7 @@ static int unix_create(sock_t *sock, int protocol) {
     // allocate stream buffer
     uintptr_t buffer = vmap_anon(UNIX_BUFFER_SIZE, 0, UNIX_BUFFER_SIZE, VM_RDWR, "unix_stream");
     if (!buffer) {
-      kfree(usock);
+      pool_free(unix_pool, usock);
       return -ENOMEM;
     }
     usock->stream.buffer = (void *)buffer;
@@ -497,7 +504,7 @@ static int unix_accept(sock_t *sock, sock_t *newsock, int flags) {
   mtx_unlock(&usock->lock);
 
   // create new connected socket
-  unix_socket_t *accepted = kmallocz(sizeof(unix_socket_t));
+  unix_socket_t *accepted = pool_alloc(unix_pool, sizeof(unix_socket_t));
   if (!accepted) {
     unix_sock_putref(&client);
     return -ENOMEM;
@@ -510,7 +517,7 @@ static int unix_accept(sock_t *sock, sock_t *newsock, int flags) {
   // allocate stream buffer
   uintptr_t buffer = vmap_anon(UNIX_BUFFER_SIZE, 0, UNIX_BUFFER_SIZE, VM_RDWR, "unix_stream");
   if (!buffer) {
-    kfree(accepted);
+    pool_free(unix_pool, accepted);
     unix_sock_putref(&client);
     return -ENOMEM;
   }
@@ -676,6 +683,9 @@ static int unix_sendmsg(sock_t *sock, struct msghdr *msg, size_t len, int flags)
     total_written += written;
     to_write = len - total_written;
 
+    DPRINTF("sendmsg: wrote %zu to peer=%p, peer->stream.count=%zu\n",
+            written, peer, peer->stream.count);
+
     // wake up reader
     cond_broadcast(&peer->rx_cond);
     knlist_activate_notes(&peer->knlist, 0);
@@ -774,10 +784,11 @@ static int unix_recvmsg(sock_t *sock, struct msghdr *msg, size_t len, int flags)
     total_read += read;
     to_read = len - total_read;
 
-    // wake up writer
+    // wake up writer and notify poll/select
     if (usock->stream.peer) {
       unix_socket_t *peer = usock->stream.peer;
       cond_broadcast(&peer->tx_cond);
+      knlist_activate_notes(&peer->knlist, 0);
     }
   }
 
@@ -1029,6 +1040,8 @@ static int unix_kqevent(sock_t *sock, knote_t *kn) {
           kn->event.flags |= EV_EOF;
           ret = 1;
         }
+        DPRINTF("kqevent READ: usock=%p count=%zu peer=%p listening=%d ret=%d\n",
+                usock, st->count, st->peer, listening, ret);
         break;
       case EVFILT_WRITE:
         if (listening) {
@@ -1036,9 +1049,13 @@ static int unix_kqevent(sock_t *sock, knote_t *kn) {
         } else if (!st->peer || (st->shutdown_flags & SHUT_WR)) {
           kn->event.flags |= EV_EOF;
           ret = 1;
-        } else if (st->buffer_size - st->count > 0) {
-          kn->event.data = (intptr_t)(st->buffer_size - st->count);
-          ret = 1;
+        } else {
+          unix_stream_t *peer_st = &st->peer->stream;
+          size_t space = peer_st->buffer_size - peer_st->count;
+          if (space > 0) {
+            kn->event.data = (intptr_t)space;
+            ret = 1;
+          }
         }
         break;
       default:

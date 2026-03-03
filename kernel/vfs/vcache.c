@@ -6,6 +6,7 @@
 #include <kernel/vfs/ventry.h>
 
 #include <kernel/mm.h>
+#include <kernel/mm/pool.h>
 #include <kernel/panic.h>
 #include <kernel/printf.h>
 #include <kernel/str.h>
@@ -45,6 +46,13 @@ struct vcache_dir {
 
 #define VCACHE_INITIAL_SIZE 1024
 
+static pool_t *vcache_entry_pool;
+
+static void vcache_pool_init() {
+  vcache_entry_pool = pool_create("vcache_entry", pool_sizes(sizeof(struct vcache_entry)), 0);
+}
+STATIC_INIT(vcache_pool_init);
+
 static const char *vtype_to_str[] = {
   [V_NONE] = "none",
   [V_REG] = "file",
@@ -58,7 +66,7 @@ static const char *vtype_to_str[] = {
 
 
 static inline struct vcache_entry *vcache_entry_alloc(cstr_t path, hash_t hash, ventry_t *ve) {
-  struct vcache_entry *entry = kmallocz(sizeof(struct vcache_entry));
+  struct vcache_entry *entry = pool_alloc(vcache_entry_pool, sizeof(struct vcache_entry));
   entry->path = str_from_cstr(path);
   entry->hash = hash;
   entry->ve = ve_getref(ve); // take a reference
@@ -68,7 +76,7 @@ static inline struct vcache_entry *vcache_entry_alloc(cstr_t path, hash_t hash, 
 static inline void vcache_entry_free(struct vcache_entry *entry) {
   str_free(&entry->path);
   ve_putref(&entry->ve);
-  kfree(entry);
+  pool_free(vcache_entry_pool, entry);
 }
 
 static inline struct vcache_dir *vcache_dir_alloc() {

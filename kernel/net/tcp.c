@@ -8,6 +8,7 @@
 #include <kernel/net/netdev.h>
 
 #include <kernel/mm.h>
+#include <kernel/mm/pool.h>
 #include <kernel/alarm.h>
 #include <kernel/clock.h>
 #include <kernel/panic.h>
@@ -26,6 +27,12 @@ static uint16_t next_ephemeral_port = TCP_EPHEMERAL_MIN;
 
 static LIST_HEAD(tcp_sock_t) tcp_sockets;
 static mtx_t socket_lock;
+static pool_t *tcp_pool;
+
+static void tcp_pool_init() {
+  tcp_pool = pool_create("tcp", pool_sizes(sizeof(tcp_sock_t)), 0);
+}
+STATIC_INIT(tcp_pool_init);
 
 static uint32_t tcp_isn_counter = 1;
 
@@ -551,7 +558,7 @@ static tcp_sock_t *tcp_lookup_sock(uint32_t saddr, uint16_t sport, uint32_t dadd
 //
 
 __ref tcp_sock_t *tcp_sock_alloc() {
-  tcp_sock_t *tcp_sk = kmallocz(sizeof(tcp_sock_t));
+  tcp_sock_t *tcp_sk = pool_alloc(tcp_pool, sizeof(tcp_sock_t));
   if (!tcp_sk) {
     return NULL;
   }
@@ -628,7 +635,7 @@ void _tcp_sock_cleanup(__move tcp_sock_t **tcp_skp) {
   cond_destroy(&tcp_sk->recv_cond);
   cond_destroy(&tcp_sk->send_cond);
 
-  kfree(tcp_sk);
+  pool_free(tcp_pool, tcp_sk);
 }
 
 static int tcp_queue_sendmsg(tcp_sock_t *tcp_sk, struct msghdr *msg, size_t len) {

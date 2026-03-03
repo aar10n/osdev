@@ -6,10 +6,13 @@
 #include <kernel/vfs/vnode.h>
 
 #include <kernel/mm.h>
+#include <kernel/mm/pool.h>
 #include <kernel/fs.h>
 #include <kernel/panic.h>
 #include <kernel/printf.h>
 #include <murmur3.h>
+
+static pool_t *ventry_pool;
 
 #define MURMUR3_SEED 0xDEADBEEF
 
@@ -34,7 +37,7 @@ static bool ve_cmp_default(ventry_t *ve, cstr_t str) {
 //
 
 __ref ventry_t *ve_alloc_linked(cstr_t name, vnode_t *vn) {
-  ventry_t *entry = kmallocz(sizeof(ventry_t));
+  ventry_t *entry = pool_alloc(ventry_pool, sizeof(ventry_t));
   entry->type = vn->type;
   entry->state = V_EMPTY;
   entry->name = str_from_cstr(name);
@@ -256,7 +259,7 @@ void _ve_cleanup(__move ventry_t **veref) {
   vn_putref(&ve->vn);
   str_free(&ve->name);
   mtx_destroy(&ve->lock);
-  kfree(ve);
+  pool_free(ventry_pool, ve);
 }
 
 //
@@ -278,3 +281,8 @@ bool ve_validate(ventry_t *ve) {
     return VE_OPS(ve)->v_validate(ve);
   return true;
 }
+
+static void ventry_pool_init() {
+  ventry_pool = pool_create("ventry", pool_sizes(sizeof(ventry_t)), 0);
+}
+STATIC_INIT(ventry_pool_init);

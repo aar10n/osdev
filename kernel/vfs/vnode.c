@@ -9,6 +9,7 @@
 
 #include <kernel/proc.h>
 #include <kernel/mm.h>
+#include <kernel/mm/pool.h>
 #include <kernel/kevent.h>
 #include <kernel/printf.h>
 
@@ -24,6 +25,8 @@
 #define CHECK_DIR(vn) if ((vn)->type != V_DIR) return -ENOTDIR;
 #define CHECK_NAMELEN(name) if (cstr_len(name) > NAME_MAX) return -ENAMETOOLONG;
 #define CHECK_SUPPORTED(vn, op) if (!(vn)->ops->op) return -ENOTSUP;
+
+static pool_t *vnode_pool;
 
 static inline mode_t vn_to_mode(vnode_t *vnode) {
   mode_t mode = vnode->mode & 07777;
@@ -45,7 +48,7 @@ static inline mode_t vn_to_mode(vnode_t *vnode) {
 //
 
 __ref vnode_t *vn_alloc_empty(enum vtype type) {
-  vnode_t *vnode = kmallocz(sizeof(vnode_t));
+  vnode_t *vnode = pool_alloc(vnode_pool, sizeof(vnode_t));
   vnode->id = 0;
   vnode->type = type;
   vnode->state = V_EMPTY;
@@ -125,7 +128,7 @@ void _vn_cleanup(__move vnode_t **vnref) {
   vfs_putref(&vn->vfs);
   mtx_destroy(&vn->lock);
   rw_destroy(&vn->data_lock);
-  kfree(vn);
+  pool_free(vnode_pool, vn);
 }
 
 //
@@ -1002,3 +1005,8 @@ struct file_ops vnode_file_ops = {
   .f_kqevent = vn_f_kqevent,
   .f_cleanup = vn_f_cleanup,
 };
+
+static void vnode_pool_init() {
+  vnode_pool = pool_create("vnode", pool_sizes(sizeof(vnode_t)), 0);
+}
+STATIC_INIT(vnode_pool_init);

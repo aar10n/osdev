@@ -10,6 +10,7 @@
 #include <kernel/kevent.h>
 #include <kernel/proc.h>
 #include <kernel/mm.h>
+#include <kernel/mm/pool.h>
 
 #include <kernel/panic.h>
 #include <kernel/printf.h>
@@ -22,6 +23,12 @@
 #define DPRINTF(fmt, ...) kprintf("pipe: " fmt, ##__VA_ARGS__)
 //#define DPRINTF(fmt, ...)
 
+static pool_t *pipe_pool;
+
+static void pipe_pool_init() {
+  pipe_pool = pool_create("pipe", pool_sizes(sizeof(pipe_t)), 0);
+}
+STATIC_INIT(pipe_pool_init);
 
 // pipe file operations
 struct file_ops pipe_file_ops = {
@@ -48,7 +55,7 @@ __ref pipe_t *pipe_alloc(size_t buffer_size) {
   }
   DPRINTF("allocated pipe buffer at %p with size %zu\n", (void *)buffer, buffer_size);
 
-  pipe_t *pipe = kmallocz(sizeof(pipe_t));
+  pipe_t *pipe = pool_alloc(pipe_pool, sizeof(pipe_t));
   pipe->buffer = (void *) buffer;
   pipe->buffer_size = buffer_size;
   pipe->ctime = clock_nano_time();
@@ -80,7 +87,7 @@ void _pipe_cleanup(__move pipe_t **piperef) {
   cond_destroy(&pipe->read_cond);
   cond_destroy(&pipe->write_cond);
 
-  kfree(pipe);
+  pool_free(pipe_pool, pipe);
 }
 
 //

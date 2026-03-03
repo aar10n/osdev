@@ -9,6 +9,7 @@
 #include <kernel/sched.h>
 #include <kernel/mm.h>
 
+#include <kernel/mm/pool.h>
 #include <kernel/string.h>
 #include <kernel/printf.h>
 #include <kernel/panic.h>
@@ -21,6 +22,13 @@
 #define EPRINTF(x, ...) kprintf("alarm: %s: " x, __func__, ##__VA_ARGS__)
 
 #define HANDLER_FN(fn) ((void (*)(alarm_t *, void *, void *, void *))(fn))
+
+static pool_t *alarm_pool;
+
+static void alarm_pool_init() {
+  alarm_pool = pool_create("alarm", pool_sizes(sizeof(alarm_t)), 0);
+}
+STATIC_INIT(alarm_pool_init);
 
 static LIST_HEAD(alarm_source_t) alarm_sources;
 static alarm_source_t *tickless_source = NULL;
@@ -350,7 +358,7 @@ alarm_t *alarm_alloc_absolute(uint64_t clock_ns, struct callback cb) {
     return NULL;
   }
 
-  alarm_t *alarm = kmallocz(sizeof(alarm_t));
+  alarm_t *alarm = pool_alloc(alarm_pool, sizeof(alarm_t));
   if (alarm == NULL) {
     DPRINTF("alarm_alloc: failed to allocate alarm\n");
     return NULL;
@@ -372,7 +380,7 @@ void alarm_free(alarm_t **alarmp) {
   if (alarm == NULL) {
     return;
   }
-  kfree(alarm);
+  pool_free(alarm_pool, alarm);
 }
 
 id_t alarm_register(alarm_t *alarm) {

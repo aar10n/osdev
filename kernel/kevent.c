@@ -8,6 +8,7 @@
 #include <kernel/tqueue.h>
 #include <kernel/proc.h>
 
+#include <kernel/mm/pool.h>
 #include <kernel/printf.h>
 #include <kernel/panic.h>
 
@@ -18,6 +19,13 @@
 
 #define KQUEUE_HASH_SIZE 256
 #define KQUEUE_HASH(ident, filter) (((ident) ^ (filter)) & (KQUEUE_HASH_SIZE - 1))
+
+static pool_t *knote_pool;
+
+static void knote_pool_init() {
+  knote_pool = pool_create("knote", pool_sizes(sizeof(knote_t)), 0);
+}
+STATIC_INIT(knote_pool_init);
 
 
 struct filter_ops *filter_ops[NEVFILT];
@@ -79,7 +87,7 @@ struct filter_ops *get_filter_ops(int16_t filter) {
 //
 
 knote_t *knote_alloc() {
-  knote_t *kn = kmallocz(sizeof(knote_t));
+  knote_t *kn = pool_alloc(knote_pool, sizeof(knote_t));
   if (kn == NULL) {
     panic("knote_alloc: failed to allocate knote\n");
   }
@@ -97,7 +105,7 @@ void knote_free(knote_t **knp) {
   ASSERT(kn->kq == NULL);
   ASSERT(kn->knlist == NULL);
   ASSERT(kn->fde == NULL);
-  kfree(kn);
+  pool_free(knote_pool, kn);
 }
 
 void knote_activate(knote_t *kn) {
@@ -390,9 +398,11 @@ static int kqueue_register(kqueue_t *kq, struct kevent *kev) {
     kn->event.fflags = kev->fflags;
   }
 
-  if (kn && !(kn->flags & KNF_ACTIVE) && kn->filt_ops->f_event(kn, 0)) {
-    DPRINTF("kqueue_wait: knote for ident %p, filter %s is ready\n", kev->ident, evfilt_to_string(kev->filter));
-    knlist_activate_notes(kn->knlist, 0);
+  if (kn && !(kn->flags & KNF_ACTIVE)) {
+    int ready = kn->filt_ops->f_event(kn, 0);
+    if (ready) {
+      knlist_activate_notes(kn->knlist, 0);
+    }
   }
   res = 0; // success
 LABEL(ret);

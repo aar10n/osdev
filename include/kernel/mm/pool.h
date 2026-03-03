@@ -6,6 +6,7 @@
 #define KERNEL_MM_POOL_H
 
 #include <kernel/base.h>
+#include <kernel/queue.h>
 
 struct pool_cache;
 struct pool_slab;
@@ -33,6 +34,8 @@ typedef struct pool {
   uint64_t frees;
   uint64_t slab_creates;
   uint64_t slab_destroys;
+
+  LIST_ENTRY(struct pool) list;
 } pool_t;
 
 // pool flags

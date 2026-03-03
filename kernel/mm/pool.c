@@ -9,8 +9,17 @@
 #include <kernel/atomic.h>
 #include <kernel/printf.h>
 #include <kernel/panic.h>
+#include <fs/procfs/procfs.h>
 
 #include <asm/bits.h>
+
+static LIST_HEAD(pool_t) all_pools = LIST_HEAD_INITR;
+static mtx_t all_pools_lock;
+
+static void pool_global_init() {
+  mtx_init(&all_pools_lock, MTX_SPIN, "all_pools_lock");
+}
+EARLY_INIT(pool_global_init);
 
 #define ASSERT(x) kassert(x)
 #define DPRINTF(fmt, ...) kprintf("pool: " fmt, ##__VA_ARGS__)
@@ -506,11 +515,19 @@ pool_t *pool_create_tune(const char *name, const size_t *sizes, uint32_t flags,
     }
   }
 
+  mtx_spin_lock(&all_pools_lock);
+  LIST_ADD(&all_pools, pool, list);
+  mtx_spin_unlock(&all_pools_lock);
+
   return pool;
 }
 
 void pool_destroy(pool_t *pool) {
   ASSERT(pool != NULL);
+
+  mtx_spin_lock(&all_pools_lock);
+  LIST_REMOVE(&all_pools, pool, list);
+  mtx_spin_unlock(&all_pools_lock);
 
   // destroy all slabs and magazines
   for (uint32_t i = 0; i < pool->num_classes; i++) {
@@ -576,18 +593,15 @@ void *pool_alloc(pool_t *pool, size_t size) {
   void *obj = NULL;
 
   if (!(pool->flags & POOL_NOCACHE)) {
-    // try the per-cpu pool cache first
     obj = cache_alloc(pool, class);
-    if (obj) {
-      if (!(pool->flags & POOL_NOSTATS))
-        atomic_fetch_add(&pool->allocs, 1);
-      return obj;
-    }
   }
 
-  // otherwise, allocate from the slab
-  obj = backend_alloc(pool, class);
+  if (!obj) {
+    obj = backend_alloc(pool, class);
+  }
+
   if (obj) {
+    memset(obj, 0, class->obj_size);
     if (!(pool->flags & POOL_NOSTATS))
       atomic_fetch_add(&pool->allocs, 1);
   }
@@ -745,3 +759,25 @@ void pool_print_debug_stats(pool_t *pool) {
     kprintf_raw("    slabs: %u full, %u partial, %u empty\n", full, partial, empty);
   }
 }
+
+//
+// MARK: procfs
+//
+
+static int pool_stats_show(seqfile_t *sf, void *_) {
+  mtx_spin_lock(&all_pools_lock);
+  pool_t *pool;
+  LIST_FOREACH(pool, &all_pools, list) {
+    seq_printf(sf, "%-20s  obj_sizes=", pool->name);
+    for (uint32_t i = 0; i < pool->num_classes; i++) {
+      if (i > 0) seq_puts(sf, ",");
+      seq_printf(sf, "%zu", pool->classes[i].obj_size);
+    }
+    seq_printf(sf, "  allocs=%llu  frees=%llu  outstanding=%llu  slabs_created=%llu  slabs_destroyed=%llu\n",
+      pool->allocs, pool->frees, pool->allocs - pool->frees,
+      pool->slab_creates, pool->slab_destroys);
+  }
+  mtx_spin_unlock(&all_pools_lock);
+  return 0;
+}
+PROCFS_REGISTER_SIMPLE(pool_stats, "/pool_stats", pool_stats_show, NULL, 0444);
