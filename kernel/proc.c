@@ -708,6 +708,10 @@ void _proc_cleanup(__move proc_t **procp) {
 
   ftable_free(&proc->files);
   sigacts_free(&proc->sigacts);
+  if (proc->args) pstrings_free(&proc->args);
+  if (proc->env) pstrings_free(&proc->env);
+  str_free(&proc->binpath);
+  str_free(&proc->name);
 
   kfreep(&proc->usage);
   kfreep(&proc->limit);
@@ -721,6 +725,7 @@ void _proc_cleanup(__move proc_t **procp) {
   cond_destroy(&proc->td_exit_cond);
   cond_destroy(&proc->vfork_done);
   pr_putref(&proc->vfork_parent);
+  pr_putref(&proc->parent);
 
   kfree(proc);
 }
@@ -1243,7 +1248,7 @@ int proc_syscall_wait4(pid_t pid, int *status, int options, struct rusage *rusag
     pr_lock(parent);
     LIST_REMOVE(&parent->children, child, chldlist);
     pr_unlock(parent);
-    
+
     // remove from process group before removing from ptable
     pgroup_t *pgrp = child->group;
     if (pgrp != NULL) {
@@ -1251,11 +1256,14 @@ int proc_syscall_wait4(pid_t pid, int *status, int options, struct rusage *rusag
       pgrp_remove_proc(pgrp, child);
       pgrp_unlock(pgrp);
     }
-    
+
     pr_unlock(child);
-    ptable_remove_proc(child_pid, moveref(child));
+    ptable_remove_proc(child_pid, child);
+    // drop children list ref (from fork's pr_getref in LIST_ADD)
+    pr_putref(&child);
   }
 
+  // drop proc_lookup ref
   pr_putref(&child);
   return child_pid;
 }
@@ -1938,7 +1946,7 @@ thread_t *thread_alloc_proc0_main(uintptr_t kstack_base, size_t kstack_size) {
 
 thread_t *thread_alloc_idle(uint8_t cpu_id) {
   // this is called once by each cpu during scheduler initialization
-  thread_t *td = thread_alloc(TDF_KTHREAD|TDF_IDLE|TDF_NOPREEMPT, SIZE_8KB);
+  thread_t *td = thread_alloc(TDF_KTHREAD|TDF_IDLE|TDF_NOPREEMPT, KERNEL_STACK_SIZE);
   td->name = str_fmt("idle thread [CPU#%d]", cpu_id);
 
   thread_setup_entry(td, (uintptr_t) idle_thread_entry, 0);
@@ -1993,6 +2001,10 @@ void thread_free_exited(thread_t **tdp) {
   lockq_free(&td->own_lockq);
   waitq_free(&td->own_waitq);
   cpuset_free(&td->cpuset);
+  str_free(&td->name);
+
+  // free the kernel stack
+  vmap_free(td->kstack_base, td->kstack_size);
 
   mtx_destroy(&td->lock);
   kfree(td);
