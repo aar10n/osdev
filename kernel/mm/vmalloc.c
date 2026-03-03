@@ -25,6 +25,7 @@
 
 #include <abi/mman.h>
 
+
 #define ASSERT(x) kassert(x)
 #define DPRINTF(x, ...) kprintf("vmalloc: " x, ##__VA_ARGS__)
 #define EPRINTF(fmt, ...) kprintf("vmalloc: %s: " fmt, __func__, ##__VA_ARGS__)
@@ -1449,16 +1450,22 @@ void _address_space_cleanup(__move address_space_t **asref) {
   ASSERT(mtx_owner(&space->lock) == curthread);
 
   // free all remaining mappings
+  int nvm = 0;
   LIST_FOR_IN_SAFE(vm, &space->mappings, vm_list) {
     // we aren't running in this address space and we are freeing the page
     // tables anyways so free the mapping without unmapping
     free_mapping(&vm,/*unmap=*/false);
+    nvm++;
   }
 
   // free page table pages
+  int npg = 0;
   SLIST_FOR_IN_SAFE(page, LIST_FIRST(&space->table_pages), next) {
+    page->next = NULL; // detach from list before freeing
     pg_putref(&page);
+    npg++;
   }
+  DPRINTF("address_space_cleanup: freed %d mappings, %d table_pages\n", nvm, npg);
 
   rb_tree_free(space->new_tree);
   mtx_unlock(&space->lock);
@@ -2496,3 +2503,44 @@ DEFINE_SYSCALL(munmap, int, void *addr, size_t len) {
   DPRINTF("munmap: addr=%p, len=%zu\n", addr, len);
   return vmap_free((uintptr_t) addr, len);
 }
+
+//
+// MARK: procfs
+//
+
+#define KVMAPS_MAX_NAMES 128
+
+static int kvmaps_show(seqfile_t *sf, void *_) {
+  struct { const char *name; int count; size_t total_size; } names[KVMAPS_MAX_NAMES];
+  int num_names = 0;
+
+  space_lock(kernel_space);
+  vm_mapping_t *vm;
+  LIST_FOREACH(vm, &kernel_space->mappings, vm_list) {
+    const char *name = str_cptr(vm->name);
+    int found = -1;
+    for (int i = 0; i < num_names; i++) {
+      if (strcmp(names[i].name, name) == 0) {
+        found = i;
+        break;
+      }
+    }
+    if (found >= 0) {
+      names[found].count++;
+      names[found].total_size += vm->size;
+    } else if (num_names < KVMAPS_MAX_NAMES) {
+      names[num_names].name = name;
+      names[num_names].count = 1;
+      names[num_names].total_size = vm->size;
+      num_names++;
+    }
+  }
+  space_unlock(kernel_space);
+
+  seq_printf(sf, "%-24s  %6s  %12s\n", "name", "count", "total_bytes");
+  for (int i = 0; i < num_names; i++) {
+    seq_printf(sf, "%-24s  %6d  %12zu\n", names[i].name, names[i].count, names[i].total_size);
+  }
+  return 0;
+}
+PROCFS_REGISTER_SIMPLE(kvmaps, "/kvmaps", kvmaps_show, NULL, 0444);
