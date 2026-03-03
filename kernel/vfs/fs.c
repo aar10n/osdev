@@ -582,7 +582,7 @@ ssize_t fs_kwrite(int fd, kio_t *kio) {
     goto_res(ret_unlock, -EBADF); // file is not open for writing
 
   res = f_write(file, kio);
-  if (res < 0) {
+  if (res < 0 && res != -EAGAIN) {
     EPRINTF("failed to write file {:err}\n", res);
   }
 
