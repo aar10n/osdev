@@ -67,12 +67,11 @@ void framebuf_d_stat(device_t *dev, struct stat *st) {
 
 int framebuf_d_ioctl(device_t *dev, unsigned int request, void *arg) {
   struct framebuf *fb = dev->data;
-  if (vm_validate_ptr((uintptr_t) arg, /*write=*/true) < 0) {
-    return -EINVAL;
-  }
 
   switch (request) {
   case FBIOGET_VSCREENINFO: {
+    if (vm_validate_ptr((uintptr_t) arg, /*write=*/true) < 0)
+      return -EINVAL;
     struct fb_var_screeninfo *var = arg;
     memset(var, 0, sizeof(*var));
     var->xres = fb->width;
@@ -91,11 +90,11 @@ int framebuf_d_ioctl(device_t *dev, unsigned int request, void *arg) {
     var->transp.length = 8;
     return 0;
   }
-  case FBIOPUT_VSCREENINFO: {
-    // accept but ignore mode changes since we can't change the UEFI GOP mode
+  case FBIOPUT_VSCREENINFO:
     return 0;
-  }
   case FBIOGET_FSCREENINFO: {
+    if (vm_validate_ptr((uintptr_t) arg, /*write=*/true) < 0)
+      return -EINVAL;
     struct fb_fix_screeninfo *fix = arg;
     memset(fix, 0, sizeof(*fix));
     strncpy(fix->id, "UEFI GOP", sizeof(fix->id));
@@ -107,6 +106,11 @@ int framebuf_d_ioctl(device_t *dev, unsigned int request, void *arg) {
     fix->accel = FB_ACCEL_NONE;
     return 0;
   }
+  case FBIOBLANK:
+    return 0;
+  case FBIOGETCMAP:
+  case FBIOPUTCMAP:
+    return 0;
   default:
     return -ENOTTY;
   }
