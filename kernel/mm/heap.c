@@ -125,7 +125,7 @@ uintptr_t kheap_phys_addr() {
 
 // ----- kmalloc -----
 
-void *__kmalloc(mm_heap_t *heap, size_t size, size_t alignment) {
+static void *__kmalloc(mm_heap_t *heap, size_t size, size_t alignment, void *caller) {
   kassert(heap != NULL);
   if (alignment == 0 || (alignment & (alignment - 1)) != 0) {
     panic("[kmalloc] invalid alignment given: %zu\n", alignment);
@@ -170,6 +170,7 @@ void *__kmalloc(mm_heap_t *heap, size_t size, size_t alignment) {
       // if a chunk was found remove it from the list
       LIST_REMOVE(&heap->chunks, chunk, list);
       chunk->free = false;
+      chunk->caller = caller;
 
       heap->used += size + sizeof(mm_chunk_t);
       release_heap(heap);
@@ -231,6 +232,7 @@ void *__kmalloc(mm_heap_t *heap, size_t size, size_t alignment) {
   chunk->magic = CHUNK_MAGIC;
   chunk->size = size;
   chunk->free = false;
+  chunk->caller = caller;
   chunk->list.next = NULL;
   chunk->list.prev = NULL;
   if (heap->last_chunk != NULL) {
@@ -250,28 +252,22 @@ void *__kmalloc(mm_heap_t *heap, size_t size, size_t alignment) {
   return offset_ptr(chunk, sizeof(mm_chunk_t));
 }
 
+void *_kmalloc(size_t size, size_t align, void *caller) {
+  return __kmalloc(&kheap, size, align, caller);
+}
+
+// exported symbols for pre-compiled libraries (libdwarf)
+#undef kmalloc
 void *kmalloc(size_t size) {
-  return __kmalloc(&kheap, size, CHUNK_MIN_ALIGN);
+  return __kmalloc(&kheap, size, CHUNK_SIZE_ALIGN, __builtin_return_address(0));
 }
 
-void *kmallocz(size_t size) {
-  void *p = __kmalloc(&kheap, size, CHUNK_MIN_ALIGN);
-  memset(p, 0, size);
+#undef kcalloc
+void *kcalloc(size_t nmemb, size_t size) {
+  size_t total = nmemb * size;
+  void *p = __kmalloc(&kheap, total, CHUNK_SIZE_ALIGN, __builtin_return_address(0));
+  if (p) memset(p, 0, total);
   return p;
-}
-
-void *kmalloc_cp(const void *obj, size_t size) {
-  if (obj == NULL) {
-    return NULL;
-  }
-
-  void *p = __kmalloc(&kheap, size, CHUNK_MIN_ALIGN);
-  memcpy(p, obj, size);
-  return p;
-}
-
-void *kmalloca(size_t size, size_t alignment) {
-  return __kmalloc(&kheap, size, alignment);
 }
 
 // ----- kfree -----
@@ -314,24 +310,6 @@ void kfree(void *ptr) {
   __kfree(&kheap, ptr);
 }
 
-// ----- kcalloc -----
-
-void *kcalloc(size_t nmemb, size_t size) {
-   if (nmemb == 0 || size == 0) {
-    return NULL;
-  }
-
-  size_t total = nmemb * size;
-  if (total > CHUNK_MAX_SIZE) {
-    panic("[kcalloc] error - request too large (%zu, %zu)\n", nmemb, size);
-  }
-
-  void *ptr = kmalloc(total);
-  if (ptr) {
-    memset(ptr, 0, total);
-  }
-  return ptr;
-}
 
 // --------------------
 
@@ -387,3 +365,66 @@ static int kheap_stats_show(seqfile_t *sf, void *_) {
   return 0;
 }
 PROCFS_REGISTER_SIMPLE(kheap_stats, "/kheap_stats", kheap_stats_show, NULL, 0444);
+
+struct leak_entry {
+  void *caller;
+  size_t count;
+  size_t total_bytes;
+};
+
+static int kheap_leaks_show(seqfile_t *sf, void *_) {
+  #define MAX_CALLERS 256
+  struct leak_entry entries[MAX_CALLERS];
+  int num_entries = 0;
+
+  aquire_heap(&kheap);
+  uintptr_t addr = kheap.virt_addr;
+  uintptr_t end = END_ADDR(&kheap);
+
+  while (addr < end) {
+    if (((uint16_t *)addr)[0] == HOLE_MAGIC) {
+      uint16_t hole_size = ((uint16_t *)addr)[1];
+      addr += hole_size;
+      continue;
+    }
+
+    mm_chunk_t *chunk = (mm_chunk_t *)addr;
+    if (chunk->magic != CHUNK_MAGIC)
+      break;
+
+    if (!chunk->free && chunk->caller) {
+      int found = -1;
+      for (int i = 0; i < num_entries; i++) {
+        if (entries[i].caller == chunk->caller) {
+          found = i;
+          break;
+        }
+      }
+      if (found >= 0) {
+        entries[found].count++;
+        entries[found].total_bytes += chunk->size;
+      } else if (num_entries < MAX_CALLERS) {
+        entries[num_entries].caller = chunk->caller;
+        entries[num_entries].count = 1;
+        entries[num_entries].total_bytes = chunk->size;
+        num_entries++;
+      }
+    }
+
+    addr += sizeof(mm_chunk_t) + chunk->size;
+    if (addr < end && ((uint16_t *)addr)[0] == HOLE_MAGIC) {
+      uint16_t hole_size = ((uint16_t *)addr)[1];
+      addr += hole_size;
+    }
+  }
+  release_heap(&kheap);
+
+  seq_printf(sf, "%-18s %8s %12s\n", "caller", "count", "total_bytes");
+  for (int i = 0; i < num_entries; i++) {
+    seq_printf(sf, "%p %8zu %12zu\n",
+      entries[i].caller, entries[i].count, entries[i].total_bytes);
+  }
+  return 0;
+  #undef MAX_CALLERS
+}
+PROCFS_REGISTER_SIMPLE(kheap_leaks, "/kheap_leaks", kheap_leaks_show, NULL, 0444);

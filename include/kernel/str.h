@@ -11,9 +11,7 @@
 #include <macros.h>
 #include <stdarg.h>
 
-void *kmalloc(size_t size);
-void *kmallocz(size_t size);
-void kfree(void *);
+#include <kernel/mm/heap.h>
 
 
 /**

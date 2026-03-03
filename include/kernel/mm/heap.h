@@ -7,6 +7,7 @@
 
 #include <kernel/base.h>
 #include <kernel/mutex.h>
+#include <kernel/string.h>
 
 // TODO: switch to better allocator for large sizes
 #define CHUNK_MIN_SIZE   8
@@ -24,9 +25,10 @@ typedef struct mm_chunk {
   uint16_t prev_offset;             // offset to previous chunk
   uint32_t size : 31;               // size of chunk
   uint32_t free : 1;                // chunk free/used
+  void *caller;                     // return address of allocator
   LIST_ENTRY(struct mm_chunk) list; // links to free chunks (if free)
 } mm_chunk_t;
-static_assert(sizeof(mm_chunk_t) == 24);
+static_assert(sizeof(mm_chunk_t) == 32);
 
 typedef struct mm_heap {
   uintptr_t phys_addr;          // physical address of heap
@@ -47,13 +49,14 @@ typedef struct mm_heap {
 void mm_init_kheap();
 uintptr_t kheap_phys_addr();
 
-void *kmalloc(size_t size) _malloc_like;
-void *kmallocz(size_t size) _malloc_like;
-void *kmalloca(size_t size, size_t alignment) _malloc_like;
+void *_kmalloc(size_t size, size_t align, void *caller) _malloc_like;
 void kfree(void *ptr);
-void *kcalloc(size_t nmemb, size_t size) _malloc_like;
-void *kmalloc_cp(const void *obj, size_t size) _malloc_like;
 
+#define kmalloc(size)       _kmalloc(size, CHUNK_SIZE_ALIGN, __builtin_return_address(0))
+#define kmallocz(size)      ({ void *_p = kmalloc(size); if (_p) memset(_p, 0, size); _p; })
+#define kmalloca(size, a)   _kmalloc(size, a, __builtin_return_address(0))
+#define kcalloc(n, sz)      kmallocz((n) * (sz))
+#define kmalloc_cp(p, sz)   ({ void *_p = kmalloc(sz); if (_p && (p)) memcpy(_p, (p), sz); _p; })
 
 #define kfreep(ptr) do { \
   kfree(*(ptr)); \
