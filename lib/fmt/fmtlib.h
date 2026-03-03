@@ -25,6 +25,7 @@
 #define FMT_FLAG_SIGN   0x04 // always print sign for numeric values
 #define FMT_FLAG_SPACE  0x08 // leave a space in front of positive numeric values
 #define FMT_FLAG_ZERO   0x10 // pad to width with leading zeros and keeps sign in front
+#define FMT_FLAG_PRINTF 0x20 // printf-style formatting (affects prefix styles)
 
 typedef enum fmt_align {
   FMT_ALIGN_LEFT,
@@ -95,11 +96,9 @@ static inline bool fmtlib_buffer_full(fmt_buffer_t *b) {
 }
 
 static inline size_t fmtlib_buffer_write(fmt_buffer_t *b, const char *data, size_t size) {
-  size_t n = size < b->size ? size : b->size;
-  if (b->size == 0) {
-    b->written += n;
+  if (b->size == 0)
     return 0;
-  }
+  size_t n = size < b->size ? size : b->size;
   memcpy(b->data, data, n);
   b->data += n;
   b->size -= n;
@@ -108,10 +107,8 @@ static inline size_t fmtlib_buffer_write(fmt_buffer_t *b, const char *data, size
 }
 
 static inline size_t fmtlib_buffer_write_char(fmt_buffer_t *b, char c) {
-  if (b->size == 0) {
-    b->written++;
+  if (b->size == 0)
     return 0;
-  }
   *b->data = c;
   b->data++;
   b->size--;

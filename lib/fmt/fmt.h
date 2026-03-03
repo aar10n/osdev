@@ -114,6 +114,12 @@
  *
  *         'f'             - floating point number (double)
  *         'F'             - floating point number capitalized
+ *         'e'             - scientific notation (double)
+ *         'E'             - scientific notation capitalized
+ *         'g'             - general format (shorter of f or e)
+ *         'G'             - general format capitalized
+ *         'a'             - hexadecimal floating point
+ *         'A'             - hexadecimal floating point capitalized
  *
  *         's'             - string
  *         'c'             - character
