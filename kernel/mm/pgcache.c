@@ -71,6 +71,9 @@ static void internal_visit_pages_iter(
     int i = current->slot_index;
 
     if (i >= PGCACHE_FANOUT) {
+      if (free) {
+        kfree(node);
+      }
       top--;
       continue;
     }
