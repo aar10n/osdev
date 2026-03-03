@@ -154,6 +154,17 @@ int devfs_synchronize_main(devfs_mount_t *mount) {
       }
 
       res = fs_mknod(cstr_from_str(dev_path), flags, event.dev);
+      if (res == -ENOENT) {
+        // create intermediate directories
+        cstr_t dp = cstr_from_str(dev_path);
+        for (size_t i = 1; i < dp.len; i++) {
+          if (dp.str[i] == '/') {
+            cstr_t parent = { .str = dp.str, .len = i };
+            fs_mkdir(parent, 0755);
+          }
+        }
+        res = fs_mknod(cstr_from_str(dev_path), flags, event.dev);
+      }
       if (res < 0) {
         EPRINTF("failed to create device node {:str} for dev %lu: {:err}\n", &dev_path, event.dev, res);
       } else {

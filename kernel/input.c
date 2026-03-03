@@ -651,7 +651,7 @@ struct file_ops event_stream_f_ops = {
 // MARK: Device Registration
 
 static void event_stream_module_init() {
-  devfs_register_class(dev_major_by_name("input"), -1, "events", DEVFS_NUMBERED);
+  devfs_register_class(dev_major_by_name("input"), -1, "input/event", DEVFS_NUMBERED);
 
   kprintf("input: registering keyboard event_stream\n");
   if (register_dev("input", alloc_device(EVSTREAM_KEYBOARD, NULL, &event_stream_f_ops)) < 0) {
