@@ -158,7 +158,7 @@ static inline void ptable_add_proc(pid_t pid, __ref proc_t *proc) {
 
 static inline void ptable_remove_proc(pid_t pid, __ref proc_t *proc) {
   DPRINTF("ptable_remove_proc: pid=%d proc={:pr}\n", pid, proc);
-  ASSERT(proc->state == PRS_EXITED);
+  ASSERT(PRS_IS_DEAD(proc));
   ASSERT(pid < PROCS_MAX);
   struct ptable_entry *entry = &_ptable.entries[pid_index(pid)];
   mtx_spin_lock(&entry->lock);
@@ -700,7 +700,7 @@ void _proc_cleanup(__move proc_t **procp) {
   }
 
   ASSERT(proc->refcount == 0);
-  ASSERT(PRS_IS_EXITED(proc));
+  ASSERT(PRS_IS_DEAD(proc));
   proc_free_pid(proc->pid);
   pcreds_release(&proc->creds);
   ve_putref(&proc->pwd);
