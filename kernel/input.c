@@ -507,40 +507,32 @@ ssize_t event_stream_f_read(file_t *file, kio_t *kio) {
     }
   }
 
-  if (file->flags & O_NONBLOCK) {
-    // file was opened in non-blocking mode
-    if (nbytes == 0) {
-      // no data available, return EAGAIN
-//      DPRINTFF("no data available for file %p [evs %p, event_stream %#x]\n", file, evs, evs->stream);
-      return -EAGAIN;
-    } else {
-      // return the number of bytes read
-      DPRINTFF("read %zu bytes from file %p [evs %p, event_stream %p]\n", nbytes, file, evs, evs->stream);
-      return nbytes;
-    }
-  } else if (kio_remaining(kio) < sizeof(struct input_event)) {
-    // no more space in the buffer we can return
+  if (nbytes > 0) {
+    // return data already read without blocking
     DPRINTFF("read %zu bytes from file %p [evs %p, event_stream %p]\n", nbytes, file, evs, evs->stream);
     return nbytes;
   }
 
-  // at this point we can block on the channel
-  int res;
-  while ((res = chan_recv(evs->chan, &event)) >= 0) {
-    size_t n = kio_write_in(kio, &event, sizeof(event), 0);
-    ASSERT(n > 0);
-    nbytes += (ssize_t) n;
-    if (kio_remaining(kio) < sizeof(struct input_event)) {
-      // no more space in the buffer we can return
-      break;
-    }
+  if (file->flags & O_NONBLOCK) {
+    return -EAGAIN;
   }
 
+  // no data available, block until at least one event arrives
+  int res = chan_recv(evs->chan, &event);
   if (res < 0) {
-    // an error occurred while reading from the channel
-    EPRINTF("failed to read from event stream file %p [evs %p, event_stream %p] {:err}\n",
-            file, evs, evs->stream, res);
+    EPRINTF("failed to read from event stream: {:err}\n", res);
     return res;
+  }
+  size_t n = kio_write_in(kio, &event, sizeof(event), 0);
+  ASSERT(n > 0);
+  nbytes = (ssize_t) n;
+
+  // drain any additional events without blocking
+  while (kio_remaining(kio) >= sizeof(struct input_event) &&
+         chan_recv_noblock(evs->chan, &event) >= 0) {
+    n = kio_write_in(kio, &event, sizeof(event), 0);
+    nbytes += (ssize_t) n;
+    if (n == 0) break;
   }
 
   DPRINTFF("read %zu bytes from file %p [evs %p, event_stream %p]\n", nbytes, file, evs, evs->stream);
