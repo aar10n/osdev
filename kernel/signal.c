@@ -66,6 +66,19 @@ _used void signal_dispatch(struct trapframe *frame) {
       continue;
     }
 
+    if (act.sa_handler == SIG_DFL) {
+      enum sigdisp disp = sig_to_dfl_disp(sig);
+      if (disp == SIGDISP_IGN) {
+        continue;
+      } else if (disp == SIGDISP_TERM || disp == SIGDISP_CORE) {
+        DPRINTF("signal %d default action: terminate thread {:td}\n", sig, td);
+        td_unlock(td);
+        proc_terminate(td->proc, 0, sig);
+        return;
+      }
+      continue;
+    }
+
     DPRINTF("dispatching signal %d for thread {:td}\n", sig, td);
 
     sigset_t saved_mask = td->sigmask;
@@ -86,7 +99,8 @@ _used void signal_dispatch(struct trapframe *frame) {
     uintptr_t usp = (frame->rsp - sizeof(struct sigframe)) & ~0xFUL;
     struct sigframe *sf = (struct sigframe *) usp;
 
-    if (vm_validate_ptr(usp, /*write=*/true) < 0) {
+    if (vm_validate_ptr(usp, /*write=*/true) < 0 ||
+        vm_validate_ptr(usp + sizeof(struct sigframe) - 1, /*write=*/true) < 0) {
       EPRINTF("sigframe at %p is not writable, killing thread {:td}\n", (void *)usp, td);
       td_unlock(td);
       proc_terminate(td->proc, 0, SIGSEGV);
@@ -152,7 +166,8 @@ _used void sys_rt_sigreturn_impl(struct trapframe *frame) {
   // rsp to sigframe pointer before the syscall instruction)
   struct sigframe *sf = (struct sigframe *) frame->rsp;
 
-  if (vm_validate_ptr((uintptr_t) sf, /*write=*/false) < 0) {
+  if (vm_validate_ptr((uintptr_t) sf, /*write=*/false) < 0 ||
+      vm_validate_ptr((uintptr_t) sf + sizeof(struct sigframe) - 1, /*write=*/false) < 0) {
     EPRINTF("invalid sigframe at %p\n", sf);
     proc_terminate(curproc, 0, SIGSEGV);
     return;
@@ -304,7 +319,8 @@ int signal_deliver_self_sync(siginfo_t *info, struct trapframe *frame) {
   uintptr_t usp = (frame->rsp - sizeof(struct sigframe)) & ~0xFUL;
   struct sigframe *sf = (struct sigframe *) usp;
 
-  if (vm_validate_ptr(usp, /*write=*/true) < 0) {
+  if (vm_validate_ptr(usp, /*write=*/true) < 0 ||
+      vm_validate_ptr(usp + sizeof(struct sigframe) - 1, /*write=*/true) < 0) {
     EPRINTF("sigframe at %p is not writable, killing thread {:td}\n", (void *)usp, td);
     td_unlock(td);
     proc_terminate(td->proc, 0, SIGSEGV);

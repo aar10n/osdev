@@ -201,8 +201,8 @@ noreturn void default_exception_handler(struct trapframe *frame) {
   if (frame->cs & 3) {
     // userspace exception - deliver signal
     int signo;
-    if (frame->vector == 6 || frame->vector == 13) {
-      signo = 4; // SIGILL
+    if (frame->vector == 6) {
+      signo = SIGILL;
     } else {
       signo = SIGSEGV;
     }

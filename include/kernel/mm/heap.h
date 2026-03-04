@@ -53,9 +53,10 @@ void *_kmalloc(size_t size, size_t align, void *caller) _malloc_like;
 void kfree(void *ptr);
 
 #define kmalloc(size)       _kmalloc(size, CHUNK_SIZE_ALIGN, __builtin_return_address(0))
-#define kmallocz(size)      ({ void *_p = kmalloc(size); if (_p) memset(_p, 0, size); _p; })
+#define kmallocz(size)      ({ size_t _sz = (size); void *_p = kmalloc(_sz); if (_p) memset(_p, 0, _sz); _p; })
 #define kmalloca(size, a)   _kmalloc(size, a, __builtin_return_address(0))
-#define kcalloc(n, sz)      kmallocz((n) * (sz))
+#define kcalloc(n, sz)      ({ size_t _n = (n), _s = (sz); size_t _t = _n * _s; \
+                               kassert(_n == 0 || _t / _n == _s); kmallocz(_t); })
 #define kmalloc_cp(p, sz)   ({ void *_p = kmalloc(sz); if (_p && (p)) memcpy(_p, (p), sz); _p; })
 
 #define kfreep(ptr) do { \

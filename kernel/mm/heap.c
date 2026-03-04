@@ -374,7 +374,9 @@ struct leak_entry {
 
 static int kheap_leaks_show(seqfile_t *sf, void *_) {
   #define MAX_CALLERS 256
-  struct leak_entry entries[MAX_CALLERS];
+  struct leak_entry *entries = kmalloc(sizeof(struct leak_entry) * MAX_CALLERS);
+  if (!entries)
+    return -ENOMEM;
   int num_entries = 0;
 
   aquire_heap(&kheap);
@@ -424,6 +426,7 @@ static int kheap_leaks_show(seqfile_t *sf, void *_) {
     seq_printf(sf, "%p %8zu %12zu\n",
       entries[i].caller, entries[i].count, entries[i].total_bytes);
   }
+  kfree(entries);
   return 0;
   #undef MAX_CALLERS
 }
