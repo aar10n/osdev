@@ -350,6 +350,14 @@ static int socket_close(file_t *file) {
     return 0;
   }
 
+  // release the protocol socket now rather than waiting for the last
+  // sock_t reference to be dropped. this ensures peer notification
+  // happens immediately even if leaked knotes hold extra references.
+  if (sock->ops && sock->ops->release) {
+    sock->ops->release(sock);
+    sock->ops = NULL;
+  }
+
   sock_putref(&sock);
   return 0;
 }
@@ -727,9 +735,9 @@ ssize_t net_recvmsg(int sockfd, struct msghdr *msg, int flags) {
   if (file->flags & O_NONBLOCK)
     flags |= MSG_DONTWAIT;
 
-  DPRINTF("net_recvmsg: calling socket recvmsg, total_len=%zu\n", total_len);
+  DPRINTF("net_recvmsg: pid=%d calling socket recvmsg, total_len=%zu\n", curproc->pid, total_len);
   int ret = sock->ops->recvmsg(sock, msg, total_len, flags);
-  DPRINTF("net_recvmsg: socket recvmsg returned %d\n", ret);
+  DPRINTF("net_recvmsg: pid=%d socket recvmsg returned %d\n", curproc->pid, ret);
   fde_putref(&fde);
   DPRINTF("net_recvmsg: returning %d\n", ret);
   return ret;

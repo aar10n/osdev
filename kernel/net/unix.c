@@ -1036,7 +1036,7 @@ static int unix_kqevent(sock_t *sock, knote_t *kn) {
         } else if (st->count > 0) {
           kn->event.data = (intptr_t)st->count;
           ret = 1;
-        } else if (!st->peer || (st->shutdown_flags & SHUT_RD)) {
+        } else if (!st->peer || (st->shutdown_flags & (SHUT_RD | SHUT_WR))) {
           kn->event.flags |= EV_EOF;
           ret = 1;
         }
