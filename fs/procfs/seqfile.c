@@ -243,7 +243,7 @@ int seq_proc_open(procfs_object_t *obj, int flags, void **handle_data) {
   ASSERT(!(obj->type == PROCFS_DIR) && !obj->is_static);
   struct seq_ctor *ctor = obj->data;
   struct seq_ops *ops = ctor->ops;
-  void *data = ctor->data;
+  void *data = moveptr(ctor->data);
   ASSERT(ops != NULL);
   ASSERT(ops->start != NULL);
   ASSERT(ops->stop != NULL);
@@ -258,11 +258,11 @@ int seq_proc_open(procfs_object_t *obj, int flags, void **handle_data) {
   // allocate initial buffer
   if (seq_alloc_buf(sf, SEQ_FILE_BUFSIZE_MIN) < 0) {
     EPRINTF("failed to allocate buffer\n");
+    ctor->data = data; // restore on failure
     kfree(sf);
     return -ENOMEM;
   }
 
-  sf->data = data;
   *handle_data = sf;
   return 0;
 }
@@ -286,9 +286,12 @@ int seq_proc_close(procfs_handle_t *h) {
 void seq_proc_cleanup(procfs_object_t *obj) {
   ASSERT(!(obj->type == PROCFS_DIR) && !obj->is_static);
   struct seq_ctor *ctor = moveptr(obj->data);
-  void *data = moveptr(ctor->data);
-  if (ctor->ops->cleanup) {
-    ctor->ops->cleanup(data);
+  if (ctor->data != NULL && ctor->ops->cleanup) {
+    // data was not consumed by open — the file was never opened,
+    // so seq_proc_close didn't run. we need to clean up the data
+    // using a seqfile wrapper since the cleanup expects seqfile_t*.
+    seqfile_t tmp = { .data = moveptr(ctor->data) };
+    ctor->ops->cleanup(&tmp);
   }
   seq_ctor_destroy(&ctor);
 }
