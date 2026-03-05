@@ -301,6 +301,9 @@ clean-sbin: userspace-dir-clean-sbin
 packages:
 	 $(TOOL_ROOT)/bin/makepkg -b $(BUILD_DIR)/packages/ -s $(SYS_ROOT) -t toolchain/toolchain.$(ARCH).yaml
 
+packages-x11:
+	$(TOOL_ROOT)/bin/makepkg -b $(BUILD_DIR)/packages/ -s $(SYS_ROOT) -t toolchain/toolchain.$(ARCH).yaml -f packages-x11.yaml
+
 userspace-dir-%:
 	$(MAKE) -C $*
 

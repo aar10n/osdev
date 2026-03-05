@@ -1,0 +1,609 @@
+# X11/Xorg library packages for graphical environment
+# https://github.com/aar10n/makepkg/
+
+packages:
+  - name: xorgproto
+    url: https://xorg.freedesktop.org/archive/individual/proto/xorgproto-2024.1.tar.xz
+    files:
+      - name: cross-file.txt
+        content: |-
+          [binaries]
+          c = '${CC}'
+          cpp = '${CXX}'
+          ar = '${AR}'
+          strip = '${STRIP}'
+          pkgconfig = 'pkg-config'
+
+          [host_machine]
+          system = 'linux'
+          cpu_family = '${PKGS_ARCH}'
+          cpu = '${PKGS_ARCH}'
+          endian = 'little'
+    build: |
+      meson setup build \
+        --cross-file=cross-file.txt \
+        --prefix=/usr \
+        -Dlegacy=true
+      meson compile -C build
+    install: |
+      meson install -C build --destdir=$SYS_ROOT
+
+  - name: xcb-proto
+    url: https://xorg.freedesktop.org/archive/individual/proto/xcb-proto-1.17.0.tar.xz
+    env:
+      - CFLAGS=-fPIC ${CFLAGS}
+    build: |
+      mkpkg::configure
+      touch aclocal.m4 configure Makefile.in src/Makefile.in xcbgen/Makefile.in
+      make
+    install: |
+      mkpkg::make_install
+
+  - name: libXau
+    url: https://xorg.freedesktop.org/archive/individual/lib/libXau-1.0.11.tar.xz
+    env:
+      - CFLAGS=-fPIC ${CFLAGS}
+      - PKG_CONFIG_PATH=${PKG_CONFIG_PATH}:${SYS_ROOT}/usr/share/pkgconfig
+    build: |
+      mkpkg::configure --enable-static --disable-shared
+      touch aclocal.m4 configure Makefile.in man/Makefile.in config.h.in
+      make
+    install: |
+      mkpkg::make_install
+      rm -f $SYS_ROOT/usr/lib/*.la
+    depends_on:
+      - xorgproto
+
+  - name: libxcb
+    url: https://xorg.freedesktop.org/archive/individual/lib/libxcb-1.17.0.tar.xz
+    env:
+      - CFLAGS=-fPIC ${CFLAGS}
+      - PKG_CONFIG_PATH=${PKG_CONFIG_PATH}:${SYS_ROOT}/usr/share/pkgconfig
+      - PYTHONPATH=${SYS_ROOT}/usr/lib/python3/dist-packages:${SYS_ROOT}/usr/share/xcb
+    build: |
+      mkpkg::configure --enable-static --disable-shared
+      find . \( -name 'configure.ac' -o -name 'acinclude.m4' -o -name '*.am' -o -name '*.m4' \) -exec touch -t 202001010000 {} \;
+      find . -name 'aclocal.m4' -exec touch -t 202001020000 {} \;
+      find . -name 'configure' -type f -exec touch -t 202001030000 {} \;
+      find . \( -name 'Makefile.in' -o -name 'config.h.in' \) -exec touch -t 202001040000 {} \;
+      find . \( -name 'Makefile' -o -name 'config.h' \) -type f -exec touch {} \;
+      make
+    install: |
+      mkpkg::make_install
+      rm -f $SYS_ROOT/usr/lib/*.la
+    depends_on:
+      - xcb-proto
+      - libXau
+
+  - name: xtrans
+    url: https://xorg.freedesktop.org/archive/individual/lib/xtrans-1.5.0.tar.xz
+    env:
+      - CFLAGS=-fPIC ${CFLAGS}
+      - PKG_CONFIG_PATH=${PKG_CONFIG_PATH}:${SYS_ROOT}/usr/share/pkgconfig
+    build: |
+      mkpkg::configure
+      touch aclocal.m4 configure Makefile.in
+      make
+    install: |
+      mkpkg::make_install
+    depends_on:
+      - xorgproto
+
+  - name: libX11
+    url: https://xorg.freedesktop.org/archive/individual/lib/libX11-1.8.10.tar.xz
+    env:
+      - CFLAGS=-fPIC ${CFLAGS}
+      - PKG_CONFIG_PATH=${PKG_CONFIG_PATH}:${SYS_ROOT}/usr/share/pkgconfig
+      - XLOCALEDIR=/usr/share/X11/locale
+      - xorg_cv_malloc0_returns_null=no
+      - MALLOC_ZERO_RETURNS_NULL=no
+    build: |
+      mkpkg::configure \
+        --enable-static --disable-shared \
+        --disable-ipv6 --without-xmlto --without-fop \
+        --with-keysymdefdir=$SYS_ROOT/usr/include/X11 \
+        --disable-specs
+      find . \( -name 'configure.ac' -o -name 'acinclude.m4' -o -name '*.am' -o -name '*.m4' \) -exec touch -t 202001010000 {} \;
+      find . -name '*.in' -exec touch -t 202501010000 {} \;
+      find . \( -name 'Makefile' -o -name 'config.h' -o -name 'config.status' \) -type f -exec touch {} \;
+      make
+    install: |
+      mkpkg::make_install
+      rm -f $SYS_ROOT/usr/lib/*.la
+    depends_on:
+      - xorgproto
+      - libxcb
+      - libXau
+      - xtrans
+
+  - name: libXext
+    url: https://xorg.freedesktop.org/archive/individual/lib/libXext-1.3.6.tar.xz
+    env:
+      - CFLAGS=-fPIC ${CFLAGS}
+      - PKG_CONFIG_PATH=${PKG_CONFIG_PATH}:${SYS_ROOT}/usr/share/pkgconfig
+      - xorg_cv_malloc0_returns_null=no
+      - MALLOC_ZERO_RETURNS_NULL=no
+    build: |
+      mkpkg::configure --enable-static --disable-shared \
+        --without-xmlto --without-fop
+      find . \( -name 'configure.ac' -o -name 'acinclude.m4' -o -name '*.am' -o -name '*.m4' \) -exec touch -t 202001010000 {} \;
+      find . -name '*.in' -exec touch -t 202501010000 {} \;
+      find . \( -name 'Makefile' -o -name 'config.h' -o -name 'config.status' \) -type f -exec touch {} \;
+      make
+    install: |
+      mkpkg::make_install
+      rm -f $SYS_ROOT/usr/lib/*.la
+    depends_on:
+      - libX11
+
+  - name: pixman
+    url: https://cairographics.org/releases/pixman-0.43.4.tar.gz
+    files:
+      - name: cross-file.txt
+        content: |-
+          [binaries]
+          c = '${CC}'
+          cpp = '${CXX}'
+          ar = '${AR}'
+          strip = '${STRIP}'
+          pkgconfig = 'pkg-config'
+
+          [host_machine]
+          system = 'linux'
+          cpu_family = '${PKGS_ARCH}'
+          cpu = '${PKGS_ARCH}'
+          endian = 'little'
+    build: |
+      meson setup build \
+        --cross-file=cross-file.txt \
+        --prefix=/usr \
+        --buildtype=plain \
+        --default-library=static \
+        -Dc_args="-fPIC" \
+        -Dgtk=disabled \
+        -Dlibpng=disabled \
+        -Dtests=disabled \
+        -Ddemos=disabled
+      meson compile -C build
+    install: |
+      meson install -C build --destdir=$SYS_ROOT
+
+  - name: libfontenc
+    url: https://xorg.freedesktop.org/archive/individual/lib/libfontenc-1.1.8.tar.xz
+    env:
+      - CFLAGS=-fPIC ${CFLAGS}
+      - PKG_CONFIG_PATH=${PKG_CONFIG_PATH}:${SYS_ROOT}/usr/share/pkgconfig
+    build: |
+      mkpkg::configure --enable-static --disable-shared
+      find . \( -name 'configure.ac' -o -name 'acinclude.m4' -o -name '*.am' -o -name '*.m4' \) -exec touch -t 202001010000 {} \;
+      find . -name '*.in' -exec touch -t 202501010000 {} \;
+      find . \( -name 'Makefile' -o -name 'config.h' -o -name 'config.status' \) -type f -exec touch {} \;
+      make
+    install: |
+      mkpkg::make_install
+      rm -f $SYS_ROOT/usr/lib/*.la
+    depends_on:
+      - xorgproto
+
+  - name: libXfont
+    url: https://xorg.freedesktop.org/archive/individual/lib/libXfont-1.5.4.tar.bz2
+    env:
+      - CFLAGS=-fPIC ${CFLAGS}
+      - PKG_CONFIG_PATH=${PKG_CONFIG_PATH}:${SYS_ROOT}/usr/share/pkgconfig
+    build: |
+      mkpkg::configure \
+        --enable-static --disable-shared \
+        --disable-devel-docs \
+        --with-bzip2=no
+      find . \( -name 'configure.ac' -o -name 'acinclude.m4' -o -name '*.am' -o -name '*.m4' \) -exec touch -t 202001010000 {} \;
+      find . -name '*.in' -exec touch -t 202501010000 {} \;
+      find . \( -name 'Makefile' -o -name 'config.h' -o -name 'config.status' \) -type f -exec touch {} \;
+      make
+    install: |
+      mkpkg::make_install
+      rm -f $SYS_ROOT/usr/lib/*.la
+    depends_on:
+      - xorgproto
+      - xtrans
+      - libfontenc
+
+  - name: libxkbfile
+    url: https://xorg.freedesktop.org/archive/individual/lib/libxkbfile-1.1.3.tar.xz
+    env:
+      - CFLAGS=-fPIC ${CFLAGS}
+      - PKG_CONFIG_PATH=${PKG_CONFIG_PATH}:${SYS_ROOT}/usr/share/pkgconfig
+    build: |
+      mkpkg::configure --enable-static --disable-shared
+      find . \( -name 'configure.ac' -o -name 'acinclude.m4' -o -name '*.am' -o -name '*.m4' \) -exec touch -t 202001010000 {} \;
+      find . -name '*.in' -exec touch -t 202501010000 {} \;
+      find . \( -name 'Makefile' -o -name 'config.h' -o -name 'config.status' \) -type f -exec touch {} \;
+      make
+    install: |
+      mkpkg::make_install
+      rm -f $SYS_ROOT/usr/lib/*.la
+    depends_on:
+      - libX11
+
+  - name: libxcvt
+    url: https://xorg.freedesktop.org/archive/individual/lib/libxcvt-0.1.2.tar.xz
+    files:
+      - name: cross-file.txt
+        content: |-
+          [binaries]
+          c = '${CC}'
+          cpp = '${CXX}'
+          ar = '${AR}'
+          strip = '${STRIP}'
+          pkgconfig = 'pkg-config'
+
+          [host_machine]
+          system = 'linux'
+          cpu_family = '${PKGS_ARCH}'
+          cpu = '${PKGS_ARCH}'
+          endian = 'little'
+    build: |
+      meson setup build \
+        --cross-file=cross-file.txt \
+        --prefix=/usr \
+        --buildtype=plain \
+        --default-library=static \
+        -Dc_args="-fPIC"
+      meson compile -C build
+    install: |
+      meson install -C build --destdir=$SYS_ROOT
+
+  - name: xorg-server
+    url: https://xorg.freedesktop.org/archive/individual/xserver/xorg-server-1.12.4.tar.bz2
+    env:
+      - CFLAGS=-fPIE -D_GNU_SOURCE ${CFLAGS}
+      - LDFLAGS=-pie ${LDFLAGS}
+      - PKG_CONFIG_PATH=${PKG_CONFIG_PATH}:${SYS_ROOT}/usr/share/pkgconfig
+      - xorg_cv_malloc0_returns_null=no
+      - ac_cv_file__dev_urandom=yes
+      - LIBS=-lfreetype -lfontenc -lpng16 -lharfbuzz -lbrotlidec -lbrotlicommon -lz
+    files:
+      - name: hw/kdrive/linux/linux.c
+        content: |-
+          #ifdef HAVE_CONFIG_H
+          #include <kdrive-config.h>
+          #endif
+          #include "kdrive.h"
+          #include <errno.h>
+          #include <signal.h>
+          #include <sys/stat.h>
+          #include <fcntl.h>
+
+          #ifdef KDRIVE_EVDEV
+          extern KdPointerDriver LinuxEvdevMouseDriver;
+          extern KdKeyboardDriver LinuxEvdevKeyboardDriver;
+          #endif
+
+          int LinuxConsoleFd = -1;
+
+          static int LinuxInit(void) {
+              return 1;
+          }
+
+          static void LinuxEnable(void) {
+          }
+
+          static void LinuxDisable(void) {
+          }
+
+          static void LinuxFini(void) {
+          }
+
+          void KdOsAddInputDrivers(void) {
+          #ifdef KDRIVE_EVDEV
+              KdAddPointerDriver(&LinuxEvdevMouseDriver);
+              KdAddKeyboardDriver(&LinuxEvdevKeyboardDriver);
+          #endif
+          }
+
+          static void LinuxBell(int volume, int pitch, int duration) {
+          }
+
+          KdOsFuncs LinuxFuncs = {
+              .Init = LinuxInit,
+              .Enable = LinuxEnable,
+              .Disable = LinuxDisable,
+              .Fini = LinuxFini,
+              .Bell = LinuxBell,
+          };
+
+          void OsVendorInit(void) {
+              KdOsInit(&LinuxFuncs);
+          }
+    build: |
+      curl -sL --connect-timeout 5 'https://git.savannah.gnu.org/cgit/config.git/plain/config.sub' > config.sub.new 2>/dev/null && mv config.sub.new config.sub || true
+      curl -sL --connect-timeout 5 'https://git.savannah.gnu.org/cgit/config.git/plain/config.guess' > config.guess.new 2>/dev/null && mv config.guess.new config.guess || true
+      grep -q 'linux-musl' config.sub || sed -i 's/linux-gnu\*/linux-gnu* | linux-musl*/g' config.sub
+
+      # Fix KdGetOptions including '=' in key name
+      sed -i 's/key = strndup(string, tam_key + 1)/key = strndup(string, tam_key)/' hw/kdrive/src/kinput.c
+
+      mkpkg::configure \
+        --enable-static --disable-shared \
+        --disable-xorg \
+        --disable-xvfb \
+        --disable-xnest \
+        --disable-xephyr \
+        --disable-dmx \
+        --disable-glx \
+        --disable-dri \
+        --disable-dri2 \
+        --enable-kdrive \
+        --enable-xfbdev \
+        --enable-kdrive-evdev \
+        --disable-config-udev \
+        --disable-config-hal \
+        --disable-secure-rpc \
+        --disable-tcp-transport \
+        --disable-ipv6 \
+        --disable-composite \
+        --with-fontrootdir=/usr/share/fonts/X11 \
+        --with-xkb-path=/usr/share/X11/xkb \
+        --with-xkb-output=/var/lib/xkb \
+        --with-default-font-path=/usr/share/fonts/X11/misc
+      find . \( -name 'configure.ac' -o -name 'acinclude.m4' -o -name '*.am' -o -name '*.m4' \) -exec touch -t 202001010000 {} \;
+      find . -name '*.in' -exec touch -t 202501010000 {} \;
+      find . \( -name 'Makefile' -o -name 'config.h' -o -name 'config.status' \) -type f -exec touch {} \;
+      make
+    install: |
+      mkpkg::make_install
+      rm -f $SYS_ROOT/usr/lib/*.la
+    depends_on:
+      - pixman
+      - libXfont
+      - libxkbfile
+      - libX11
+      - libXext
+      - libxcb
+
+  - name: xkbcomp
+    url: https://xorg.freedesktop.org/archive/individual/app/xkbcomp-1.4.7.tar.xz
+    env:
+      - CFLAGS=-fPIE ${CFLAGS}
+      - LDFLAGS=-pie ${LDFLAGS}
+      - PKG_CONFIG_PATH=${PKG_CONFIG_PATH}:${SYS_ROOT}/usr/share/pkgconfig
+      - LIBS=-lxkbfile -lX11 -lxcb -lXau
+    build: |
+      mkpkg::configure
+      find . \( -name 'configure.ac' -o -name 'acinclude.m4' -o -name '*.am' -o -name '*.m4' \) -exec touch -t 202001010000 {} \;
+      find . -name '*.in' -exec touch -t 202501010000 {} \;
+      find . \( -name 'Makefile' -o -name 'config.h' -o -name 'config.status' \) -type f -exec touch {} \;
+      make
+    install: |
+      mkpkg::make_install
+    depends_on:
+      - libX11
+      - libxkbfile
+
+  - name: xkeyboard-config
+    url: https://xorg.freedesktop.org/archive/individual/data/xkeyboard-config/xkeyboard-config-2.43.tar.xz
+    files:
+      - name: cross-file.txt
+        content: |-
+          [binaries]
+          c = '${CC}'
+          cpp = '${CXX}'
+          ar = '${AR}'
+          strip = '${STRIP}'
+          pkgconfig = 'pkg-config'
+
+          [host_machine]
+          system = 'linux'
+          cpu_family = '${PKGS_ARCH}'
+          cpu = '${PKGS_ARCH}'
+          endian = 'little'
+    build: |
+      meson setup build \
+        --cross-file=cross-file.txt \
+        --prefix=/usr \
+        -Dxkb-base=/usr/share/X11/xkb \
+        -Dcompat-rules=true
+      meson compile -C build
+    install: |
+      meson install -C build --destdir=$SYS_ROOT
+
+  # native build of font-util to get host tools (ucs2any, bdftruncate)
+  - name: font-util-native
+    native: true
+    url: https://xorg.freedesktop.org/archive/individual/font/font-util-1.4.1.tar.xz
+    env:
+      - CFLAGS=
+      - CXXFLAGS=
+      - CPPFLAGS=
+      - LDFLAGS=
+    build: |
+      ./configure --prefix=/usr
+      touch aclocal.m4 configure Makefile.in
+      make
+    install: |
+      mkpkg::write_artifact bdftruncate
+      mkpkg::write_artifact ucs2any
+
+  - name: font-util
+    url: https://xorg.freedesktop.org/archive/individual/font/font-util-1.4.1.tar.xz
+    env:
+      - PKG_CONFIG_PATH=${PKG_CONFIG_PATH}:${SYS_ROOT}/usr/share/pkgconfig
+    build: |
+      mkpkg::configure
+      touch aclocal.m4 configure Makefile.in
+      make
+    install: |
+      mkpkg::make_install
+    depends_on:
+      - xorgproto
+
+  - name: font-misc-misc
+    url: https://xorg.freedesktop.org/archive/individual/font/font-misc-misc-1.1.3.tar.xz
+    env:
+      - PKG_CONFIG_PATH=${PKG_CONFIG_PATH}:${SYS_ROOT}/usr/share/pkgconfig
+    build: |
+      export PATH="${BUILD_ARTIFACTS}/font-util-native:${PATH}"
+      mkpkg::configure \
+        --with-fontrootdir=/usr/share/fonts/X11
+      touch aclocal.m4 configure Makefile.in
+      make UTIL_DIR=${SYS_ROOT}/usr/share/fonts/X11/util
+    install: |
+      mkpkg::make_install
+    depends_on:
+      - font-util
+      - font-util-native
+
+  - name: font-cursor-misc
+    url: https://xorg.freedesktop.org/archive/individual/font/font-cursor-misc-1.0.4.tar.xz
+    env:
+      - PKG_CONFIG_PATH=${PKG_CONFIG_PATH}:${SYS_ROOT}/usr/share/pkgconfig
+    build: |
+      export PATH="${BUILD_ARTIFACTS}/font-util-native:${PATH}"
+      mkpkg::configure \
+        --with-fontrootdir=/usr/share/fonts/X11
+      touch aclocal.m4 configure Makefile.in
+      make UTIL_DIR=${SYS_ROOT}/usr/share/fonts/X11/util
+    install: |
+      mkpkg::make_install
+      sed -i '/^cursor /d' $SYS_ROOT/usr/share/fonts/X11/misc/fonts.alias || true
+    depends_on:
+      - font-util
+      - font-util-native
+      - font-misc-misc
+
+  - name: libICE
+    url: https://xorg.freedesktop.org/archive/individual/lib/libICE-1.1.2.tar.xz
+    env:
+      - CFLAGS=-fPIC ${CFLAGS}
+      - PKG_CONFIG_PATH=${PKG_CONFIG_PATH}:${SYS_ROOT}/usr/share/pkgconfig
+    build: |
+      mkpkg::configure --enable-static --disable-shared \
+        --disable-docs --without-xmlto
+      find . \( -name 'configure.ac' -o -name 'acinclude.m4' -o -name '*.am' -o -name '*.m4' \) -exec touch -t 202001010000 {} \;
+      find . -name '*.in' -exec touch -t 202501010000 {} \;
+      find . \( -name 'Makefile' -o -name 'config.h' -o -name 'config.status' \) -type f -exec touch {} \;
+      make
+    install: |
+      mkpkg::make_install
+      rm -f $SYS_ROOT/usr/lib/*.la
+    depends_on:
+      - xorgproto
+      - xtrans
+
+  - name: libSM
+    url: https://xorg.freedesktop.org/archive/individual/lib/libSM-1.2.6.tar.xz
+    env:
+      - CFLAGS=-fPIC ${CFLAGS}
+      - PKG_CONFIG_PATH=${PKG_CONFIG_PATH}:${SYS_ROOT}/usr/share/pkgconfig
+    build: |
+      mkpkg::configure --enable-static --disable-shared \
+        --without-libuuid --disable-docs --without-xmlto
+      find . \( -name 'configure.ac' -o -name 'acinclude.m4' -o -name '*.am' -o -name '*.m4' \) -exec touch -t 202001010000 {} \;
+      find . -name '*.in' -exec touch -t 202501010000 {} \;
+      find . \( -name 'Makefile' -o -name 'config.h' -o -name 'config.status' \) -type f -exec touch {} \;
+      make
+    install: |
+      mkpkg::make_install
+      rm -f $SYS_ROOT/usr/lib/*.la
+    depends_on:
+      - libICE
+
+  - name: libXt
+    url: https://xorg.freedesktop.org/archive/individual/lib/libXt-1.3.1.tar.xz
+    env:
+      - CFLAGS=-fPIC ${CFLAGS}
+      - PKG_CONFIG_PATH=${PKG_CONFIG_PATH}:${SYS_ROOT}/usr/share/pkgconfig
+      - xorg_cv_malloc0_returns_null=no
+      - MALLOC_ZERO_RETURNS_NULL=no
+      - CC_FOR_BUILD=cc
+    build: |
+      mkpkg::configure --enable-static --disable-shared \
+        --disable-docs --without-xmlto --without-fop
+      find . \( -name 'configure.ac' -o -name 'acinclude.m4' -o -name '*.am' -o -name '*.m4' \) -exec touch -t 202001010000 {} \;
+      find . -name '*.in' -exec touch -t 202501010000 {} \;
+      find . \( -name 'Makefile' -o -name 'config.h' -o -name 'config.status' \) -type f -exec touch {} \;
+      make
+    install: |
+      mkpkg::make_install
+      rm -f $SYS_ROOT/usr/lib/*.la
+    depends_on:
+      - libSM
+      - libICE
+      - libX11
+
+  - name: libXmu
+    url: https://xorg.freedesktop.org/archive/individual/lib/libXmu-1.2.1.tar.xz
+    env:
+      - CFLAGS=-fPIC ${CFLAGS}
+      - PKG_CONFIG_PATH=${PKG_CONFIG_PATH}:${SYS_ROOT}/usr/share/pkgconfig
+      - xorg_cv_malloc0_returns_null=no
+      - MALLOC_ZERO_RETURNS_NULL=no
+    build: |
+      mkpkg::configure --enable-static --disable-shared \
+        --disable-docs --without-xmlto
+      find . \( -name 'configure.ac' -o -name 'acinclude.m4' -o -name '*.am' -o -name '*.m4' \) -exec touch -t 202001010000 {} \;
+      find . -name '*.in' -exec touch -t 202501010000 {} \;
+      find . \( -name 'Makefile' -o -name 'config.h' -o -name 'config.status' \) -type f -exec touch {} \;
+      make
+    install: |
+      mkpkg::make_install
+      rm -f $SYS_ROOT/usr/lib/*.la
+    depends_on:
+      - libXt
+      - libXext
+      - libX11
+
+  - name: twm
+    url: https://xorg.freedesktop.org/archive/individual/app/twm-1.0.12.tar.xz
+    env:
+      - CFLAGS=-fPIE ${CFLAGS}
+      - LDFLAGS=-pie ${LDFLAGS}
+      - PKG_CONFIG_PATH=${PKG_CONFIG_PATH}:${SYS_ROOT}/usr/share/pkgconfig
+      - LIBS=-lXmu -lXt -lSM -lICE -lXext -lX11 -lxcb -lXau
+    build: |
+      mkpkg::configure
+      find . \( -name 'configure.ac' -o -name 'acinclude.m4' -o -name '*.am' -o -name '*.m4' \) -exec touch -t 202001010000 {} \;
+      find . -name '*.in' -exec touch -t 202501010000 {} \;
+      find . \( -name 'Makefile' -o -name 'config.h' -o -name 'config.status' \) -type f -exec touch {} \;
+      make
+    install: |
+      mkpkg::make_install
+    depends_on:
+      - libXmu
+      - libXt
+      - libSM
+      - libICE
+      - libXext
+      - libX11
+
+  - name: libXpm
+    url: https://www.x.org/releases/individual/lib/libXpm-3.5.17.tar.xz
+    env:
+      - CFLAGS=-fPIC ${CFLAGS}
+      - PKG_CONFIG_PATH=${PKG_CONFIG_PATH}:${SYS_ROOT}/usr/share/pkgconfig
+    build: |
+      mkpkg::configure --enable-static --disable-shared --disable-open-zfile
+      make -C src
+    install: |
+      make -C src install DESTDIR=$SYS_ROOT
+      make -C include install DESTDIR=$SYS_ROOT
+      make install-pkgconfigDATA DESTDIR=$SYS_ROOT
+    depends_on:
+      - libX11
+
+  - name: libXaw
+    url: https://www.x.org/releases/individual/lib/libXaw-1.0.16.tar.xz
+    env:
+      - CFLAGS=-fPIC ${CFLAGS}
+      - PKG_CONFIG_PATH=${PKG_CONFIG_PATH}:${SYS_ROOT}/usr/share/pkgconfig
+    build: |
+      mkpkg::configure --enable-static --disable-shared \
+        --disable-xaw6 --disable-specs
+      make
+    install: |
+      mkpkg::make_install
+    depends_on:
+      - libXpm
+      - libXmu
+      - libXt
+      - libXext
+      - libX11
