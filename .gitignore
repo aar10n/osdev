@@ -23,5 +23,6 @@ Makefile.local
 # Claude local memory
 CLAUDE.md
 .claude/
+.mcp.json
 
 **/__pycache__/

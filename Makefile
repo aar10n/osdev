@@ -358,8 +358,10 @@ ovmf: $(BUILD_DIR)/OVMF_$(WINARCH).fd
 ext2_img: $(BUILD_DIR)/ext2.img
 
 # sysroot initrd manifest
-$(BUILD_DIR)/initrdrc: $(BUILD_DIR)/sysroot_sha1 | $(SYS_ROOT)
-	scripts/gen_initrdrc.py $@ -S $(SYS_ROOT) -d $(SYS_ROOT):/ -E "*.a"
+$(BUILD_DIR)/initrdrc: $(BUILD_DIR)/sysroot_sha1 $(wildcard etc/*) | $(SYS_ROOT)
+	scripts/gen_initrdrc.py $@ -S $(SYS_ROOT) -d $(SYS_ROOT):/ -d etc/:/etc/ -E "*.a" \
+		-f etc/twmrc:/root/.twmrc
+	echo ':/tmp/' >> $@
 
 # edk2 ovmf firmware
 $(BUILD_DIR)/OVMF_$(WINARCH).fd:

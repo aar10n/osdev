@@ -8,6 +8,7 @@
 #include <kernel/proc.h>
 #include <kernel/fs.h>
 #include <kernel/alarm.h>
+#include <kernel/time.h>
 #include <kernel/panic.h>
 #include <kernel/printf.h>
 #include <kernel/string.h>
@@ -390,7 +391,8 @@ int poll_select(int nfds, fd_set *readfds, fd_set *writefds, fd_set *exceptfds, 
 
   if (poll_count == 0) {
     if (timeout) {
-      uint64_t sleep_ns = (uint64_t)timeout->tv_sec * NS_PER_SEC + (uint64_t)timeout->tv_usec * 1000;
+
+      uint64_t sleep_ns = timeval_to_nanos(timeout);
       if (sleep_ns > 0) {
         alarm_sleep_ns(sleep_ns);
       }
