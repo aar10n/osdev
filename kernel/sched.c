@@ -208,13 +208,20 @@ idle_wait:;
   struct spin_delay delay = new_spin_delay(SHORT_DELAY, MAX_RETRIES);
   for (;;) {
     if (LIST_FIRST(cleanup_queue) != NULL) {
+      // drain the queue under the spin lock
+      typeof(*cleanup_queue) local_queue;
       mtx_spin_lock(cleanup_lock);
+      local_queue = *cleanup_queue;
+      LIST_INIT(cleanup_queue);
+      mtx_spin_unlock(cleanup_lock);
+
+      // free threads without holding the spin lock since
+      // thread_free_exited can block (vmap_free)
       thread_t *td;
-      while ((td = LIST_REMOVE_FIRST(cleanup_queue, plist))) {
+      while ((td = LIST_REMOVE_FIRST(&local_queue, plist))) {
         DPRINTF("idle: cleaning up exited thread {:td}\n", td);
         thread_free_exited(&td);
       }
-      mtx_spin_unlock(cleanup_lock);
     }
 
     if (sched->readymask != 0) {
