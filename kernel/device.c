@@ -60,6 +60,7 @@ struct dev_type dev_types[] = {
   DECLARE_DEV_TYPE("loop"    , 4, D_BLK),
   DECLARE_DEV_TYPE("framebuf", 5, D_BLK),
   DECLARE_DEV_TYPE("input"   , 6, D_CHR),
+  DECLARE_DEV_TYPE("pty"     , 7, D_CHR),
 };
 #undef DECLARE_DEV_TYPE
 

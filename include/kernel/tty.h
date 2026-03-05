@@ -101,6 +101,8 @@ int tty_wait_cond(tty_t *tty, cond_t *cond);
 void tty_signal_cond(tty_t *tty, cond_t *cond);
 int tty_signal_pgrp(tty_t *tty, int signal);
 
+extern struct device_ops tty_dev_ops;
+
 void termios_print_debug(struct termios *t);
 void winsize_print_debug(struct winsize *ws);
 

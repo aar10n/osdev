@@ -32,6 +32,8 @@ static pool_t *fd_entry_pool;
 extern struct file_ops dev_file_ops;
 extern struct file_ops vnode_file_ops;
 
+#include <kernel/pty.h>
+
 typedef struct ftable {
   rb_tree_t *tree;
   bitmap_t *bitmap;
@@ -529,8 +531,14 @@ int file_kqfilt_attach(knote_t *kn) {
     } else {
       goto_res(ret, -EOPNOTSUPP);
     }
+  } else if (F_ISPTS(file)) {
+    // PTY master: use the knlist stored in file->udata
+    struct pty *pty = (struct pty *)file->udata;
+    kn->filt_ops_data = pty;
+    kn->knlist = &pty->master_knlist;
+    knlist_add(&pty->master_knlist, kn);
+    res = 0;
   } else {
-    // handle other file types (pts, etc.)
     todo("file_kqfilt_attach: implement for file type: %d", file->type);
   }
 
@@ -578,8 +586,10 @@ void file_kqfilt_detach(knote_t *kn) {
     if (sock_ref) {
       sock_putref(&sock_ref);
     }
+  } else if (F_ISPTS(file)) {
+    knote_remove_list(kn);
+    kn->filt_ops_data = NULL;
   } else {
-    // handle other file types (pts, etc.)
     todo("file_kqfilt_detach: implement for file type: %d", file->type);
   }
 
@@ -593,10 +603,9 @@ int file_kqfilt_event(knote_t *kn, long hint) {
 
   file_t *file = fde->file;
 
-  // socket files use their own protocol-level locking in kqevent handlers,
-  // so skip file->lock to avoid ABBA deadlock with the socket lock (which
-  // knlist_activate_notes may already hold on the calling thread)
-  if (F_ISSOCK(file)) {
+  // socket and PTY master files use their own protocol-level locking in
+  // kqevent handlers, so skip file->lock to avoid ABBA deadlock
+  if (F_ISSOCK(file) || F_ISPTS(file)) {
     if (file->closed || F_OPS(file)->f_kqevent == NULL) {
       kn->event.flags |= EV_EOF;
       return 1;

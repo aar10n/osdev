@@ -45,7 +45,13 @@ void tty_free(tty_t **ttyp) {
   if (tty == NULL) {
     return;
   }
-  todo();
+  ttyinq_free(&tty->inq);
+  ttyoutq_free(&tty->outq);
+  mtx_destroy(&tty->lock);
+  if (tty->pgrp) {
+    pgrp_putref(&tty->pgrp);
+  }
+  kfree(tty);
 }
 
 int tty_open(tty_t *tty) {
@@ -53,8 +59,8 @@ int tty_open(tty_t *tty) {
 
   int res;
   if (tty->flags & TTYF_OPENED) {
-    EPRINTF("tty is already opened\n");
-    return -EBUSY; // device is already opened
+    tty->owners++;
+    return 0;
   }
 
   ttydisc_open(tty);
@@ -63,6 +69,7 @@ int tty_open(tty_t *tty) {
     return res;
   }
   tty->flags |= TTYF_OPENED;
+  tty->owners++;
   return 0;
 }
 
@@ -71,6 +78,12 @@ int tty_close(tty_t *tty) {
   if (!(tty->flags & TTYF_OPENED)) {
     EPRINTF("tty is not opened\n");
     return -ENODEV; // device is not opened
+  }
+
+  ASSERT(tty->owners > 0);
+  tty->owners--;
+  if (tty->owners > 0) {
+    return 0;
   }
 
   tty->dev_ops->tty_close(tty);
@@ -626,7 +639,7 @@ int tty_dev_kqevent(device_t *dev, knote_t *kn) {
   return report;
 }
 
-static struct device_ops tty_dev_ops = {
+struct device_ops tty_dev_ops = {
   .d_open = tty_dev_open,
   .d_close = tty_dev_close,
   .d_read = tty_dev_read,
