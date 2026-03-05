@@ -558,6 +558,9 @@ ssize_t fs_kread(int fd, kio_t *kio) {
     goto_res(ret, -EBADF); // file is closed
 
   res = f_read(file, kio);
+  if (F_ISSOCK(file) && res > 0) {
+    DPRINTF("socket read: pid=%d fd=%d res=%zd\n", curproc->pid, fd, res);
+  }
   if (res < 0) {
 //    EPRINTF("failed to read file {:err}\n", res);
   }
@@ -582,6 +585,9 @@ ssize_t fs_kwrite(int fd, kio_t *kio) {
     goto_res(ret_unlock, -EBADF); // file is not open for writing
 
   res = f_write(file, kio);
+  if (F_ISSOCK(file) && res > 0) {
+    DPRINTF("socket write: pid=%d fd=%d res=%zd\n", curproc->pid, fd, res);
+  }
   if (res < 0 && res != -EAGAIN) {
     EPRINTF("failed to write file {:err}\n", res);
   }
@@ -1669,7 +1675,7 @@ DEFINE_SYSCALL(poll, int, struct pollfd *fds, nfds_t nfds, int timeout) {
 
 DEFINE_SYSCALL(utimensat, int, int dfd, const char *filename, struct timespec *utimes, int flags) {
   DPRINTF("utimensat: dfd=%d, filename=%s, utimes=%p, flags=%d\n", dfd, filename, utimes, flags);
-  if (vm_validate_ptr((uintptr_t) utimes, /*write=*/true) < 0) {
+  if (utimes != NULL && vm_validate_ptr((uintptr_t) utimes, /*write=*/false) < 0) {
     return -EFAULT;
   }
   return fs_utimensat(dfd, cstr_make(filename), utimes, flags);
