@@ -33,8 +33,6 @@ packages:
     url: https://github.com/pnggroup/libpng/archive/refs/tags/v1.6.40.tar.gz
     env:
       - CFLAGS=-fPIC ${CFLAGS}
-      - CPPFLAGS=-I${SYS_ROOT}/usr/include
-      - LDFLAGS=-L${SYS_ROOT}/usr/lib
     build: |
       mkpkg::configure --enable-static --disable-shared
       make
@@ -58,7 +56,7 @@ packages:
       make -C src
       make -C magic
     install: |
-      mkpkg::write_artifact magic/magic.mgc 
+      mkpkg::write_artifact magic/magic.mgc
 
   - name: file
     url: http://ftp.astron.com/pub/file/file-5.45.tar.gz
@@ -80,16 +78,19 @@ packages:
   - name: curl
     url: https://curl.se/download/curl-8.5.0.tar.gz
     env:
-      - CFLAGS=-fPIE ${CFLAGS}
+      - CFLAGS=-fPIC ${CFLAGS}
     build: |
       mkpkg::configure --enable-static --disable-shared \
         --with-zlib --with-brotli \
-        --without-ssl --without-libpsl --without-libidn2 --disable-ldap --disable-rtsp --disable-manual \
-        LIBS="-lbrotlidec -lbrotlicommon -lz"
-      make curl_LDFLAGS="-static-pie"
+        --with-openssl=${SYS_ROOT}/usr \
+        --without-libpsl --without-libidn2 --disable-ldap --disable-rtsp --disable-manual \
+        --disable-ipv6 \
+        LIBS="-lssl -lcrypto -lbrotlienc -lbrotlidec -lbrotlicommon -lz"
+      make
     install: |
       mkpkg::make_install
     depends_on:
+      - openssl
       - brotli
       - zlib
 
@@ -114,8 +115,6 @@ packages:
     url: https://mirrors.kernel.org/gnu/readline/readline-8.3.tar.gz
     env:
       - CFLAGS=-fPIC ${CFLAGS}
-      - CPPFLAGS=-I${SYS_ROOT}/usr/include
-      - LDFLAGS=-L${SYS_ROOT}/usr/lib
     build: |
       mkpkg::configure --enable-static --disable-shared
       make
@@ -135,8 +134,6 @@ packages:
         --with-zlib-lib=${SYS_ROOT}/usr/lib \
         --with-brotli-include=${SYS_ROOT}/usr/include \
         --with-brotli-lib=${SYS_ROOT}/usr/lib \
-        -L${SYS_ROOT}/usr/lib \
-        -I${SYS_ROOT}/usr/include \
         no-shared \
         enable-brotli \
         zlib
@@ -168,11 +165,38 @@ packages:
     install: |
       mkpkg::make_install
 
+  - name: libcap
+    url: https://www.kernel.org/pub/linux/libs/security/linux-privs/libcap2/libcap-2.70.tar.xz
+    env:
+      - CFLAGS=-fPIC ${CFLAGS}
+    files:
+      - name: indent
+        content: |-
+          #!/bin/sh
+          cat
+    build: |
+      chmod +x indent
+      PATH="$PWD:$PATH" make -C libcap libcap.a \
+        CC="$CC" \
+        AR="$AR" \
+        RANLIB="$RANLIB" \
+        OBJCOPY="$OBJCOPY" \
+        BUILD_CC=gcc \
+        prefix=/usr \
+        lib=lib \
+        GOLANG=no \
+        PAM_CAP=no
+    install: |
+      make -C libcap install-static \
+        DESTDIR=$SYS_ROOT \
+        prefix=/usr \
+        lib=lib \
+        RAISE_SETFCAP=no
+
   - name: vim
     url: https://github.com/vim/vim/archive/refs/tags/v9.1.0.tar.gz
     env:
       - CFLAGS=-fPIE ${CFLAGS}
-      - CPPFLAGS=-I${SYS_ROOT}/usr/include
       - vim_cv_uname_output=Linux
       - vim_cv_uname_r_output=5.0.0
       - vim_cv_uname_m_output=x86_64
@@ -198,10 +222,11 @@ packages:
         --disable-netbeans --disable-channel --disable-gpm \
         --disable-nls --disable-acl --disable-sysmouse \
         --enable-multibyte \
-        CPPFLAGS="-I$SYS_ROOT/usr/include" \
-        LDFLAGS="-L$SYS_ROOT/usr/lib -pie" \
+        LDFLAGS="-pie $LDFLAGS" \
         LIBS="-lncursesw -ltinfow"
       touch auto/config.mk Makefile
+      make auto/osdef.h
+      sed -i '/tgetent\|tgetflag\|tgetnum\|tgoto\|tputs/d' auto/osdef.h
       make vim CONF_OPT_MULTIBYTE=--enable-multibyte
     install: |
       cd src && mkpkg::make_install
@@ -212,18 +237,19 @@ packages:
   - name: sqlite3  # Requires Tcl 8.6+ on build host for autosetup configure system
     url: https://sqlite.org/2025/sqlite-autoconf-3500400.tar.gz
     env:
-      - CPPFLAGS=-I${SYS_ROOT}/usr/include
-      - LDFLAGS=-L${SYS_ROOT}/usr/lib -lreadline -lncursesw -ltinfow
       - >-
-        CFLAGS=-fPIE -DSQLITE_ENABLE_FTS3 -DSQLITE_ENABLE_FTS4 -DSQLITE_ENABLE_FTS5 
-        -DSQLITE_ENABLE_RTREE -DSQLITE_ENABLE_JSON1 -DSQLITE_ENABLE_MATH_FUNCTIONS 
+        CFLAGS=-fPIE -DSQLITE_ENABLE_FTS3 -DSQLITE_ENABLE_FTS4 -DSQLITE_ENABLE_FTS5
+        -DSQLITE_ENABLE_RTREE -DSQLITE_ENABLE_JSON1 -DSQLITE_ENABLE_MATH_FUNCTIONS
         -DSQLITE_ENABLE_COLUMN_METADATA -DSQLITE_ENABLE_DBSTAT_VTAB -DSQLITE_HAVE_ZLIB
+        ${CFLAGS}
     build: |
       mkpkg::configure \
         --enable-static --disable-shared \
+        --fts3 --fts4 --fts5 --rtree \
+        --disable-load-extension \
         --with-readline-header=${SYS_ROOT}/usr/include/readline/readline.h \
-        --with-readline-ldflags="-lreadline -lncursesw -ltinfow"
-      make LDFLAGS="-L${SYS_ROOT}/usr/lib -static-pie"
+        --with-readline-ldflags="-L${SYS_ROOT}/usr/lib -lreadline -lncursesw -ltinfow"
+      make sqlite3 LIBS="-lz -lreadline -lncursesw -ltinfow" LDFLAGS="-static-pie $LDFLAGS"
     install: |
       mkpkg::make_install
     depends_on:
@@ -233,22 +259,22 @@ packages:
 
   - name: harfbuzz
     url: https://github.com/harfbuzz/harfbuzz/releases/download/12.1.0/harfbuzz-12.1.0.tar.xz
+    files:
+      - name: cross-file.txt
+        content: |-
+          [binaries]
+          c = '${CC}'
+          cpp = '${CXX}'
+          ar = '${AR}'
+          strip = '${STRIP}'
+          pkgconfig = 'pkg-config'
+
+          [host_machine]
+          system = 'linux'
+          cpu_family = '${PKGS_ARCH}'
+          cpu = '${PKGS_ARCH}'
+          endian = 'little'
     build: |
-      cat > cross-file.txt <<EOF
-      [binaries]
-      c = '$CC'
-      cpp = '$CXX'
-      ar = '$AR'
-      strip = '$STRIP'
-      pkgconfig = 'pkg-config'
-
-      [host_machine]
-      system = 'linux'
-      cpu_family = '${PKGS_ARCH}'
-      cpu = '${PKGS_ARCH}'
-      endian = 'little'
-      EOF
-
       meson setup build \
         --cross-file=cross-file.txt \
         --prefix=/usr \
@@ -274,9 +300,7 @@ packages:
   - name: freetype
     url: https://download.savannah.gnu.org/releases/freetype/freetype-2.13.3.tar.gz
     env:
-      - PKG_CONFIG_PATH=${SYS_ROOT}/usr/lib/pkgconfig
-      - CPPFLAGS=-I${SYS_ROOT}/usr/include
-      - LDFLAGS=-L${SYS_ROOT}/usr/lib
+      - CFLAGS=-fPIC ${CFLAGS}
       - ZLIB_CFLAGS=-I${SYS_ROOT}/usr/include
       - ZLIB_LIBS=-L${SYS_ROOT}/usr/lib -lz
       - HARFBUZZ_CFLAGS=-I${SYS_ROOT}/usr/include/harfbuzz
@@ -301,3 +325,62 @@ packages:
       - brotli
       - libpng
       - harfbuzz
+#
+#  - name: bind-tools
+#    url: https://ftp.isc.org/isc/bind9/9.20.4/bind-9.20.4.tar.xz
+#    env:
+#      - PKG_CONFIG_PATH=${PKG_CONFIG_PATH}:${SYS_ROOT}/usr/share/pkgconfig
+#      - PKG_CONFIG_LIBDIR=${SYS_ROOT}/usr/lib/pkgconfig:${SYS_ROOT}/usr/share/pkgconfig
+#      - CFLAGS=-fPIE -Wno-error=parentheses ${CFLAGS}
+#      - LDFLAGS=-pie ${LDFLAGS}
+#      - OPENSSL_LIBS=-lssl -lcrypto -lbrotlienc -lbrotlidec -lbrotlicommon -lz
+#      - LD_LIBRARY_PATH=${PWD}/lib/isc/.libs:${PWD}/lib/dns/.libs:${PWD}/lib/ns/.libs:${PWD}/lib/isccfg/.libs:${PWD}/lib/isccc/.libs
+#    build: |
+#      rm -f ${SYS_ROOT}/usr/lib/*.la
+#      export LDFLAGS="$LDFLAGS -Wl,-rpath-link,$PWD/lib/isc/.libs -Wl,-rpath-link,$PWD/lib/dns/.libs -Wl,-rpath-link,$PWD/lib/ns/.libs -Wl,-rpath-link,$PWD/lib/isccfg/.libs -Wl,-rpath-link,$PWD/lib/isccc/.libs"
+#      mkpkg::configure \
+#        --disable-doh \
+#        --disable-geoip \
+#        --without-libxml2 \
+#        --without-json-c \
+#        --without-lmdb \
+#        --without-maxminddb \
+#        --without-gssapi \
+#        --disable-dnstap \
+#        --with-zlib \
+#        --without-readline
+#      make
+#    install: |
+#      make -C lib/isc install DESTDIR=$SYS_ROOT
+#      make -C lib/dns install DESTDIR=$SYS_ROOT
+#      make -C lib/ns install DESTDIR=$SYS_ROOT
+#      make -C lib/isccfg install DESTDIR=$SYS_ROOT
+#      make -C lib/isccc install DESTDIR=$SYS_ROOT
+#      make -C bin/dig install DESTDIR=$SYS_ROOT
+#    depends_on:
+#      - openssl
+#      - liburcu
+#      - libuv
+#      - zlib
+#      - libcap
+
+  - name: ldns
+    url: https://www.nlnetlabs.nl/downloads/ldns/ldns-1.8.4.tar.gz
+    env:
+      - CFLAGS=-fPIE ${CFLAGS}
+      - LDFLAGS=-pie ${LDFLAGS}
+    build: |
+      mkpkg::configure \
+        --enable-static --disable-shared \
+        --with-drill \
+        --with-ssl=${SYS_ROOT}/usr \
+        --disable-dane-ta-usage \
+        LIBS="-lssl -lcrypto -lbrotlienc -lbrotlidec -lbrotlicommon -lz"
+      sed -i.bak 's/^LIBSSL_LIBS.*/LIBSSL_LIBS = -lssl -lcrypto -lbrotlienc -lbrotlidec -lbrotlicommon -lz/' Makefile
+      make
+    install: |
+      mkpkg::make_install
+    depends_on:
+      - openssl
+      - brotli
+      - zlib
