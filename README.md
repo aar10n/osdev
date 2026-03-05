@@ -8,12 +8,13 @@ This also means that any third-party software that can be compiled with musl and
 the custom toolchain should run on the system. In practice, there are still many
 syscalls not implemented and so it is currently expected that many of the programs
 will hit a kernel panic. The operating system currently hosts the busybox toolset,
-and a couple of other userspace programs. It also now runs DOOM!
+and a couple of other userspace programs. It runs doom, and is now able to host X11!
 
 # Screenshots
 
 ![user shell](screenshots/user_shell.png)
 ![doom game](screenshots/doom_game.png)
+![x11 + twm](screenshots/x11_twm.png)
 
 <details>
 
