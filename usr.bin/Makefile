@@ -1,5 +1,5 @@
 # usr/bin binaries
-USR_BIN_PROGS = doom keyboard
+USR_BIN_PROGS = doom keyboard ps
 
 .DEFAULT_GOAL := all
 all: $(USR_BIN_PROGS:%=build-%)
