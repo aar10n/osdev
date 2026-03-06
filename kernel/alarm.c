@@ -401,7 +401,7 @@ id_t alarm_register(alarm_t *alarm) {
 
 int alarm_unregister(id_t alarm_id, struct callback *callback) {
   mtx_spin_lock(&alarm_lock);
-  id_t expires_ns = (id_t)(uintptr_t)rb_tree_find(alarm_expiries, alarm_id);
+  uint64_t expires_ns = (uint64_t)(uintptr_t)rb_tree_find(alarm_expiries, alarm_id);
   if (expires_ns == 0) {
     goto not_found;
   }
