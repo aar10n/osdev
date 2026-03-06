@@ -1115,11 +1115,13 @@ int proc_signal(proc_t *proc, siginfo_t *info) {
     EPRINTF("signal %d ignored by proc {:pr}\n", sig, proc);
     goto_res(ret, 0);
   } else if (disp == SIGDISP_TERM) {
+    if (locked) pr_unlock(proc);
     proc_terminate(proc, 0, sig);
-    goto_res(ret, 0);
+    return 0;
   } else if (disp == SIGDISP_CORE) {
+    if (locked) pr_unlock(proc);
     proc_coredump(proc, info);
-    goto_res(ret, 0);
+    return 0;
   } else if (disp == SIGDISP_STOP) {
     proc_stop(proc, sig);
     goto_res(ret, 0);
@@ -2756,16 +2758,23 @@ DEFINE_SYSCALL(setpgid, int, pid_t pid, pid_t pgid) {
 }
 
 DEFINE_SYSCALL(getsid, pid_t, pid_t pid) {
-  DPRINTF("syscall: getsid pid=%d\n", curproc->pid);
-  proc_t *proc = proc_lookup(pid);
-  if (proc == NULL) {
-    return -ESRCH; // process not found
+  DPRINTF("syscall: getsid pid=%d\n", pid);
+  proc_t *proc;
+  bool need_putref = false;
+  if (pid == 0) {
+    proc = curproc;
+  } else {
+    proc = proc_lookup(pid);
+    if (proc == NULL)
+      return -ESRCH;
+    need_putref = true;
   }
 
   pr_lock(proc);
   pid_t sid = proc->group->session->sid;
   pr_unlock(proc);
-  pr_putref(&proc);
+  if (need_putref)
+    pr_putref(&proc);
   DPRINTF("syscall: getsid -> res=%d\n", sid);
   return sid;
 }
