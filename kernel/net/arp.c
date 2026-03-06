@@ -105,8 +105,10 @@ static id_t arp_setup_cache_timeout_alarm(arp_entry_t *entry, int seconds) {
 
   if (entry->timer_id > 0) {
     // cancel existing timer
+    id_t old_timer_id = entry->timer_id;
+    entry->timer_id = 0;
     struct callback cb;
-    if (alarm_unregister(entry->timer_id, &cb) == 0) {
+    if (alarm_unregister(old_timer_id, &cb) == 0) {
       arp_entry_t *old_entry = (arp_entry_t *)cb.args[0];
       arp_putref(&old_entry);
     }
@@ -157,11 +159,8 @@ static void arp_entry_timeout(__ref arp_entry_t *entry, id_t fired_timer_id) {
         skb_free(&skb);
       }
 
-      // remove from cache (safe to call even if already removed)
-      if (LIST_PREV(entry, link) != NULL) {
-        LIST_REMOVE(&arp_cache.entries, entry, link);
-        arp_cache.num_entries--;
-      }
+      LIST_REMOVE(&arp_cache.entries, entry, link);
+      arp_cache.num_entries--;
       entry->timer_id = 0;
     }
   } else if (entry->state == ARP_STATE_REACHABLE) {
@@ -323,7 +322,7 @@ __ref arp_entry_t *arp_cache_add(netdev_t *dev, uint32_t ip_addr, uint8_t *hw_ad
   DPRINTF("added cache entry: IP {:ip} -> MAC {:mac} (state=%u)\n",
           ip_addr, hw_addr ? hw_addr : entry->hw_addr, entry->state);
 
-  return entry;
+  return getref(entry);
 }
 
 void arp_cache_update(uint32_t ip_addr, uint8_t *hw_addr) {
