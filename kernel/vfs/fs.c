@@ -462,13 +462,8 @@ int fs_proc_close(proc_t *proc, int fd) {
   }
 
   // close the file
-  if ((res = f_close(file)) < 0) {
-    EPRINTF("failed to close file {:err}\n", res);
-    // re-insert the entry back into the ftable
-    ftable_add_entry(proc->files, fde_getref(fde));
-  } else {
-    ftable_free_fd(proc->files, fde->fd);
-  }
+  res = f_close(file);
+  ftable_free_fd(proc->files, fde->fd);
 
   f_unlock(file);
   fde_putref(&fde);
@@ -559,7 +554,11 @@ ssize_t fs_kread(int fd, kio_t *kio) {
 
   ssize_t res;
   file_t *file = fde->file;
-  if (!f_lock(file))
+  // pipes and sockets have their own internal locks and may block
+  // indefinitely in read - holding file->lock would deadlock other
+  // threads trying to close or write to the same file descriptor
+  bool needs_flock = !F_ISPIPE(file) && !F_ISSOCK(file);
+  if (needs_flock && !f_lock(file))
     goto_res(ret, -EBADF); // file is closed
 
   res = f_read(file, kio);
@@ -570,7 +569,8 @@ ssize_t fs_kread(int fd, kio_t *kio) {
 //    EPRINTF("failed to read file {:err}\n", res);
   }
 
-  f_unlock(file);
+  if (needs_flock)
+    f_unlock(file);
 LABEL(ret);
   fde_putref(&fde);
   return res;
@@ -584,7 +584,8 @@ ssize_t fs_kwrite(int fd, kio_t *kio) {
 
   ssize_t res;
   file_t *file = fde->file;
-  if (!f_lock(file))
+  bool needs_flock = !F_ISPIPE(file) && !F_ISSOCK(file);
+  if (needs_flock && !f_lock(file))
     goto_res(ret, -EBADF); // file is closed
   if (file->flags & O_RDONLY)
     goto_res(ret_unlock, -EBADF); // file is not open for writing
@@ -598,7 +599,8 @@ ssize_t fs_kwrite(int fd, kio_t *kio) {
   }
 
 LABEL(ret_unlock);
-  f_unlock(file);
+  if (needs_flock)
+    f_unlock(file);
 LABEL(ret);
   fde_putref(&fde);
   return res;
@@ -898,7 +900,7 @@ int fs_dup(int fd) {
 
   int newfd = ftable_alloc_fd(FTABLE, -1);
   if (newfd < 0)
-    goto_res(ret_unlock, -EMFILE);
+    goto_res(ret, -EMFILE);
 
   fd_entry_t *newfde = fde_dup(fde, newfd);
   mtx_lock(&newfde->lock);
@@ -907,8 +909,7 @@ int fs_dup(int fd) {
   ftable_add_entry(FTABLE, newfde);
 
   res = newfd; // success
-LABEL(ret_unlock);
-  f_unlock(fde->file);
+LABEL(ret);
   fde_putref(&fde);
   return res;
 }
@@ -1530,10 +1531,10 @@ int fs_rmdir(cstr_t path) {
   vn_lock(vn);
   res = vn_rmdir(dve, dvn, ve, vn); // remove the directory
   vn_unlock(vn);
+  ve_unlock(dve);
   vn_end_data_write(dvn);
   if (res < 0) {
     DPRINTF("failed to remove directory\n");
-    ve_unlock(dve);
     goto ret_unlock;
   }
 

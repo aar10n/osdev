@@ -151,12 +151,13 @@ int f_close(file_t *file) {
   int res = F_OPS(file)->f_close(file);
   if (res < 0) {
     EPRINTF("failed to close file {:err}\n", res);
-    return res;
   }
 
+  // always mark as closed - the file cannot be reopened even if the
+  // device callback failed (e.g. device already gone)
   file->nopen--;
   file->closed = true;
-  return 0;
+  return res;
 }
 
 int f_allocate(file_t *file, off_t length) {
@@ -173,7 +174,8 @@ int f_allocate(file_t *file, off_t length) {
 }
 
 ssize_t f_read(file_t *file, kio_t *kio) {
-  f_lock_assert(file, LA_OWNED);
+  if (!F_ISPIPE(file) && !F_ISSOCK(file))
+    f_lock_assert(file, LA_OWNED);
   if (file->flags & O_DIRECTORY) {
     return -EISDIR; // file is a directory
   } else if (file->flags & O_WRONLY) {
@@ -186,7 +188,8 @@ ssize_t f_read(file_t *file, kio_t *kio) {
 }
 
 ssize_t f_write(file_t *file, kio_t *kio) {
-  f_lock_assert(file, LA_OWNED);
+  if (!F_ISPIPE(file) && !F_ISSOCK(file))
+    f_lock_assert(file, LA_OWNED);
   if (file->flags & O_DIRECTORY) {
     return -EISDIR; // file is a directory
   } else if (file->flags & O_RDONLY) {
