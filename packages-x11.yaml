@@ -607,3 +607,36 @@ packages:
       - libXt
       - libXext
       - libX11
+
+  - name: xterm
+    url: https://invisible-mirror.net/archives/xterm/xterm-397.tgz
+    env:
+      - CFLAGS=-fPIE ${CFLAGS}
+      - LDFLAGS=-pie ${LDFLAGS}
+      - PKG_CONFIG_PATH=${PKG_CONFIG_PATH}:${SYS_ROOT}/usr/share/pkgconfig
+      - LIBS=-lXaw7 -lXt -lSM -lICE -lXmu -lXext -lX11 -lxcb -lXau -lXpm -lncursesw -ltinfow
+    build: |
+      mkpkg::configure \
+        --disable-imake \
+        --disable-toolbar \
+        --disable-xft \
+        --disable-fontconfig \
+        --disable-luit \
+        --without-xterm-symlink \
+        --with-app-defaults=/usr/share/X11/app-defaults \
+        --with-terminal-type=xterm
+      find . \( -name 'configure.ac' -o -name 'acinclude.m4' -o -name '*.am' -o -name '*.m4' \) -exec touch -t 202001010000 {} \;
+      find . -name '*.in' -exec touch -t 202501010000 {} \;
+      find . \( -name 'Makefile' -o -name 'config.h' -o -name 'config.status' \) -type f -exec touch {} \;
+      make
+    install: |
+      mkpkg::make_install
+    depends_on:
+      - libXaw
+      - libXt
+      - libXmu
+      - libSM
+      - libICE
+      - libXext
+      - libX11
+      - libXpm
