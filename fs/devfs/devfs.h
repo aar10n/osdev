@@ -28,6 +28,9 @@ typedef struct devfs_class {
 
 int devfs_register_class(int major, int minor, const char *prefix, int attr);
 
+int devfs_mknod(device_t *dev);
+int devfs_unlink(device_t *dev);
+
 int devfs_synchronize_main(devfs_mount_t *mount);
 
 int devfs_vfs_mount(vfs_t *vfs, device_t *device, ventry_t *mount_ve, __move ventry_t **root);

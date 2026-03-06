@@ -5,7 +5,7 @@ $(call register,drivers,KERNEL)
 drivers += framebuf.c keyboard.c memory.c ramdisk.c
 
 # drivers/tty
-drivers += tty/uart.c tty/pty.c
+drivers += tty/pty.c tty/uart.c
 
 # drivers/usb/hid
 drivers += usb/hid/hid.c \

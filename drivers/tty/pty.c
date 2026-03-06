@@ -125,13 +125,7 @@ static int ptmx_f_open(file_t *file, int flags) {
   ASSERT(pty->index > 0 && pty->index < MAX_PTYS);
 
   // create the slave device node synchronously so it's available immediately
-  char path[32];
-  ksnprintf(path, sizeof(path), "/dev/pts/%d", pty->index);
-  fs_mkdir(cstr_make("/dev/pts"), 0755);
-  int mknod_res = fs_mknod(cstr_make(path), S_IFCHR, make_dev(slave_dev));
-  if (mknod_res < 0 && mknod_res != -EEXIST) {
-    EPRINTF("failed to create %s: {:err}\n", path, mknod_res);
-  }
+  devfs_mknod(slave_dev);
 
   mtx_lock(&pty_table_lock);
   pty_table[pty->index] = pty;
@@ -347,6 +341,15 @@ static void ptmx_f_cleanup(file_t *file) {
   pty_table[pty->index] = NULL;
   mtx_unlock(&pty_table_lock);
 
+  device_t *slave_dev = pty->slave_dev;
+  pty->slave_dev = NULL;
+  if (slave_dev) {
+    devfs_unlink(slave_dev);
+    unregister_dev(slave_dev);
+    slave_dev->data = NULL;
+    free_device(slave_dev);
+  }
+
   tty_free(&pty->tty);
   kfree(pty);
 }
@@ -360,6 +363,94 @@ static struct file_ops ptmx_file_ops = {
   .f_ioctl = ptmx_f_ioctl,
   .f_kqevent = ptmx_f_kqevent,
   .f_cleanup = ptmx_f_cleanup,
+};
+
+// =========================================================================
+// /dev/tty - controlling terminal device
+// =========================================================================
+
+static tty_t *ctty_get_tty(file_t *file) {
+  return (tty_t *) file->udata;
+}
+
+static int ctty_f_open(file_t *file, int flags) {
+  f_lock_assert(file, LA_OWNED);
+  session_t *sess = curproc->group->session;
+  sess_lock(sess);
+  tty_t *tty = sess->tty;
+  sess_unlock(sess);
+  if (tty == NULL)
+    return -ENXIO;
+
+  if (!tty_lock(tty))
+    return -ENXIO;
+  int res = tty_open(tty);
+  tty_unlock(tty);
+  if (res < 0)
+    return res;
+
+  file->udata = tty;
+  return 0;
+}
+
+static int ctty_f_close(file_t *file) {
+  f_lock_assert(file, LA_OWNED);
+  tty_t *tty = ctty_get_tty(file);
+  if (tty == NULL)
+    return 0;
+  if (!tty_lock(tty))
+    return 0;
+  int res = tty_close(tty);
+  tty_unlock(tty);
+  file->udata = NULL;
+  return res;
+}
+
+static ssize_t ctty_f_read(file_t *file, kio_t *kio) {
+  tty_t *tty = ctty_get_tty(file);
+  if (tty == NULL)
+    return -ENXIO;
+  if (!tty_lock(tty))
+    return -ENXIO;
+  ssize_t res = ttydisc_read(tty, kio);
+  tty_unlock(tty);
+  return res;
+}
+
+static ssize_t ctty_f_write(file_t *file, kio_t *kio) {
+  tty_t *tty = ctty_get_tty(file);
+  if (tty == NULL)
+    return -ENXIO;
+  if (!tty_lock(tty))
+    return -ENXIO;
+  ssize_t res = ttydisc_write(tty, kio);
+  tty_unlock(tty);
+  return res;
+}
+
+static int ctty_f_ioctl(file_t *file, unsigned int request, void *arg) {
+  tty_t *tty = ctty_get_tty(file);
+  if (tty == NULL)
+    return -ENXIO;
+  if (!tty_lock(tty))
+    return -ENXIO;
+  int res = tty_ioctl(tty, request, arg);
+  tty_unlock(tty);
+  return res;
+}
+
+static void ctty_f_cleanup(file_t *file) {
+  file->data = NULL;
+  file->udata = NULL;
+}
+
+static struct file_ops ctty_file_ops = {
+  .f_open = ctty_f_open,
+  .f_close = ctty_f_close,
+  .f_read = ctty_f_read,
+  .f_write = ctty_f_write,
+  .f_ioctl = ctty_f_ioctl,
+  .f_cleanup = ctty_f_cleanup,
 };
 
 // =========================================================================
@@ -380,9 +471,21 @@ static void pty_module_init() {
   // slave devices at minor 1+: /dev/pts/<minor>
   devfs_register_class(major, -1, "pts/", DEVFS_NUMBERED);
 
+  // pre-create /dev/pts directory so devfs_mknod doesn't need fs_mkdir
+  fs_mkdir(cstr_make("/dev/pts"), 0755);
+
   device_t *ptmx_dev = alloc_device(NULL, NULL, &ptmx_file_ops);
   if (register_dev("pty", ptmx_dev) < 0) {
     panic("pty: failed to register ptmx device");
+  }
+
+  // /dev/tty - controlling terminal device
+  int ctty_major = dev_major_by_name("ctty");
+  ASSERT(ctty_major > 0);
+  devfs_register_class(ctty_major, 0, "tty", 0);
+  device_t *ctty_dev = alloc_device(NULL, NULL, &ctty_file_ops);
+  if (register_dev("ctty", ctty_dev) < 0) {
+    panic("pty: failed to register /dev/tty device");
   }
 
   DPRINTF("initialized (ptmx at major %d)\n", major);

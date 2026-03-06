@@ -127,6 +127,50 @@ int devfs_register_class(int major, int minor, const char *prefix, int attr) {
   return 0;
 }
 
+int devfs_mknod(device_t *dev) {
+  str_t dev_path = devfs_name_for_dev(cstr_make("/dev"), make_dev(dev));
+  if (str_isnull(dev_path))
+    return -ENODEV;
+
+  int flags = 0;
+  switch (dev->dtype) {
+    case D_BLK: flags = S_IFBLK; break;
+    case D_CHR: flags = S_IFCHR; break;
+    default: str_free(&dev_path); return -EINVAL;
+  }
+
+  int res = fs_mknod(cstr_from_str(dev_path), flags, make_dev(dev));
+  if (res == -ENOENT) {
+    cstr_t dp = cstr_from_str(dev_path);
+    for (size_t i = 1; i < dp.len; i++) {
+      if (dp.str[i] == '/') {
+        cstr_t parent = { .str = dp.str, .len = i };
+        fs_mkdir(parent, 0755);
+      }
+    }
+    res = fs_mknod(cstr_from_str(dev_path), flags, make_dev(dev));
+  }
+
+  if (res < 0 && res != -EEXIST) {
+    EPRINTF("failed to create {:str}: {:err}\n", &dev_path, res);
+  }
+  str_free(&dev_path);
+  return res;
+}
+
+int devfs_unlink(device_t *dev) {
+  str_t dev_path = devfs_name_for_dev(cstr_make("/dev"), make_dev(dev));
+  if (str_isnull(dev_path))
+    return -ENODEV;
+
+  int res = fs_unlink(cstr_from_str(dev_path));
+  if (res < 0) {
+    EPRINTF("failed to remove {:str}: {:err}\n", &dev_path, res);
+  }
+  str_free(&dev_path);
+  return res;
+}
+
 int devfs_synchronize_main(devfs_mount_t *mount) {
   cstr_t path = cstr_from_str(mount->path);
   DPRINTF("starting devfs process for '{:cstr}'\n", &path);
@@ -165,7 +209,9 @@ int devfs_synchronize_main(devfs_mount_t *mount) {
         }
         res = fs_mknod(cstr_from_str(dev_path), flags, event.dev);
       }
-      if (res < 0) {
+      if (res == -EEXIST) {
+        // node was already created synchronously via devfs_mknod
+      } else if (res < 0) {
         EPRINTF("failed to create device node {:str} for dev %lu: {:err}\n", &dev_path, event.dev, res);
       } else {
         DPRINTF("created device node {:str} for dev %lu\n", &dev_path, event.dev);

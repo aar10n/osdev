@@ -61,6 +61,7 @@ struct dev_type dev_types[] = {
   DECLARE_DEV_TYPE("framebuf", 5, D_BLK),
   DECLARE_DEV_TYPE("input"   , 6, D_CHR),
   DECLARE_DEV_TYPE("pty"     , 7, D_CHR),
+  DECLARE_DEV_TYPE("ctty"    , 8, D_CHR),
 };
 #undef DECLARE_DEV_TYPE
 
@@ -340,6 +341,30 @@ int register_dev(const char *dev_type, device_t *dev) {
   if (chan_send(device_events, &event) < 0) {
     EPRINTF("failed to send device event for %s device %d\n", dev_type, dev->minor);
     // we don't fail the registration if the event cannot be sent
+  }
+  return 0;
+}
+
+int unregister_dev(device_t *dev) {
+  if (dev->major == 0) {
+    EPRINTF("device is not registered\n");
+    return -EINVAL;
+  }
+
+  struct dev_type *type = &dev_types[dev->major];
+
+  mtx_lock(&type->lock);
+  SLIST_REMOVE(&type->devices, dev, dev_list);
+  mtx_unlock(&type->lock);
+
+  mtx_spin_lock(&device_tree_lock);
+  rb_tree_delete(device_tree, (uint64_t) make_dev(dev));
+  mtx_spin_unlock(&device_tree_lock);
+
+  kprintf("device: unregistered device %d:%d\n", dev->major, dev->minor);
+  struct device_event event = { .type = DEV_EVT_REMOVE, .dev = make_dev(dev) };
+  if (chan_send(device_events, &event) < 0) {
+    EPRINTF("failed to send device event for device %d:%d\n", dev->major, dev->minor);
   }
   return 0;
 }

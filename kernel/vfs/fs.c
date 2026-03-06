@@ -394,11 +394,15 @@ int fs_proc_open(proc_t *proc, int fd, cstr_t path, int flags, mode_t mode) {
   file_t *file = f_alloc_vn(flags, vn);
   f_lock(file);
 
+  // release ventry lock before f_open so device open callbacks can
+  // perform VFS operations (e.g. devfs_mknod) without deadlocking
+  ve_unlock(ve);
+
   // open file
   if ((res = f_open(file, flags)) < 0) {
     EPRINTF("failed to open file {:err}\n", res);
     f_unlock_putref(file); // unlock and release the file
-    goto ret_unlock;
+    goto ret;
   }
 
   // truncate the file if requested and supported
@@ -408,7 +412,7 @@ int fs_proc_open(proc_t *proc, int fd, cstr_t path, int flags, mode_t mode) {
       file->closed = true;
       file->nopen--;
       f_unlock_putref(file); // unlock and release the file
-      goto ret_unlock;
+      goto ret;
     }
   }
   f_unlock(file); // unlock file
@@ -431,6 +435,7 @@ int fs_proc_open(proc_t *proc, int fd, cstr_t path, int flags, mode_t mode) {
 
   f_putref(&file); // release reference, fd_entry holds a reference now
   res = fd;
+  goto ret;
 LABEL(ret_unlock);
   if (ve)
     ve_unlock(ve);

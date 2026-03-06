@@ -162,7 +162,7 @@ struct device_event {
 };
 
 #define DEV_EVT_ADD     1
-#define DEV_EVT_REMOVE  1
+#define DEV_EVT_REMOVE  2
 
 
 static inline dev_t makedev(uint8_t major, uint8_t minor) {
@@ -253,6 +253,7 @@ int register_device_ops(const char *dev_type, struct device_ops *ops);
  * On failure, the device will remain anonymous.
  */
 int register_dev(const char *dev_type, device_t *dev);
+int unregister_dev(device_t *dev);
 
 /// Get the file_ops pointer for a device.
 struct file_ops *device_get_file_ops(device_t *device);
