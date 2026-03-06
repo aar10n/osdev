@@ -2682,6 +2682,37 @@ DEFINE_SYSCALL(setgid, int, gid_t gid) {
   return 0;
 }
 
+DEFINE_SYSCALL(setresuid, int, uid_t ruid, uid_t euid, uid_t suid) {
+  if (ruid != (uid_t)-1) curproc->creds->uid = ruid;
+  if (euid != (uid_t)-1) curproc->creds->euid = euid;
+  return 0;
+}
+
+DEFINE_SYSCALL(getresuid, int, uid_t *ruid, uid_t *euid, uid_t *suid) {
+  if (ruid) *ruid = curproc->creds->uid;
+  if (euid) *euid = curproc->creds->euid;
+  if (suid) *suid = curproc->creds->euid;
+  return 0;
+}
+
+DEFINE_SYSCALL(setresgid, int, gid_t rgid, gid_t egid, gid_t sgid) {
+  if (rgid != (gid_t)-1) curproc->creds->gid = rgid;
+  if (egid != (gid_t)-1) curproc->creds->egid = egid;
+  return 0;
+}
+
+DEFINE_SYSCALL(getresgid, int, gid_t *rgid, gid_t *egid, gid_t *sgid) {
+  if (rgid) *rgid = curproc->creds->gid;
+  if (egid) *egid = curproc->creds->egid;
+  if (sgid) *sgid = curproc->creds->egid;
+  return 0;
+}
+
+DEFINE_SYSCALL(setgroups, int, size_t gidsetsize, const gid_t *grouplist) {
+  DPRINTF("setgroups: TODO implement me\n");
+  return 0;
+}
+
 DEFINE_SYSCALL(umask, mode_t, mode_t mask) {
   proc_t *proc = curproc;
   pr_lock(proc);

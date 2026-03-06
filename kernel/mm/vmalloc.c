@@ -2504,6 +2504,11 @@ DEFINE_SYSCALL(munmap, int, void *addr, size_t len) {
   return vmap_free((uintptr_t) addr, len);
 }
 
+DEFINE_SYSCALL(mremap, void *, void *old_address, size_t old_size, size_t new_size, int flags, void *new_address) {
+  DPRINTF("mremap: TODO implement me\n");
+  return (void *)(intptr_t)-ENOSYS;
+}
+
 //
 // MARK: procfs
 //

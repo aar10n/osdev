@@ -1722,6 +1722,30 @@ DEFINE_SYSCALL(unlink, int, const char *path) {
   return fs_unlink(cstr_make(path));
 }
 
+DEFINE_SYSCALL(rmdir, int, const char *path) {
+  return fs_rmdir(cstr_make(path));
+}
+
+DEFINE_SYSCALL(chown, int, const char *path, uid_t user, gid_t group) {
+  DPRINTF("chown: TODO implement me\n");
+  return 0;
+}
+
+DEFINE_SYSCALL(fchown, int, int fd, uid_t user, gid_t group) {
+  DPRINTF("fchown: TODO implement me\n");
+  return 0;
+}
+
+DEFINE_SYSCALL(lchown, int, const char *path, uid_t user, gid_t group) {
+  DPRINTF("lchown: TODO implement me\n");
+  return 0;
+}
+
+DEFINE_SYSCALL(fchownat, int, int dfd, const char *path, uid_t user, gid_t group, int flag) {
+  DPRINTF("fchownat: TODO implement me\n");
+  return 0;
+}
+
 DEFINE_SYSCALL(chdir, int, const char *path) {
   return fs_chdir(cstr_make(path));
 }
