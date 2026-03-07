@@ -420,6 +420,19 @@ void init_mem_zones() {
   }
 }
 
+void get_pmem_info(size_t *total_bytes, size_t *free_bytes) {
+  size_t total = 0;
+  size_t free = 0;
+  for (int i = 0; i < MAX_ZONE_TYPE; i++) {
+    total += PAGES_TO_SIZE(zone_page_count[i]);
+    LIST_FOR_IN(fa, &mem_zones[i], list) {
+      free += fa->free;
+    }
+  }
+  if (total_bytes) *total_bytes = total;
+  if (free_bytes) *free_bytes = free;
+}
+
 int reserve_pages(enum pg_rsrv_kind kind, uintptr_t address, size_t count, size_t pagesize) {
   ASSERT(pagesize == PAGE_SIZE || pagesize == PAGE_SIZE_2MB || pagesize == PAGE_SIZE_1GB);
   ASSERT(is_aligned(address, pagesize));

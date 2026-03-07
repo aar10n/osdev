@@ -582,6 +582,10 @@ static inline bool sig_has_coredump(int sig) {
 
 // proc api
 
+size_t proc_get_nprocs() {
+  return atomic_load(&_ptable.nprocs);
+}
+
 pid_t proc_alloc_pid() {
   pid_t pid = pidset_alloc();
   ASSERT(pid != -1);

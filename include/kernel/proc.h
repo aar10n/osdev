@@ -390,6 +390,7 @@ int pgrp_signal(pgroup_t *pg, siginfo_t *info);
   } \
 })
 
+size_t proc_get_nprocs();
 pid_t proc_alloc_pid();
 void proc_free_pid(pid_t pid);
 

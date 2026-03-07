@@ -100,6 +100,7 @@ typedef struct page_list {
 
 
 void init_mem_zones();
+void get_pmem_info(size_t *total_bytes, size_t *free_bytes);
 int reserve_pages(enum pg_rsrv_kind kind, uintptr_t address, size_t count, size_t pagesize);
 
 // page allocation api

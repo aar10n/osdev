@@ -7,5 +7,6 @@
 
 #include <kernel/base.h>
 #include <abi/utsname.h>
+#include <abi/sysinfo.h>
 
 #endif

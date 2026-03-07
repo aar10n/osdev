@@ -4,6 +4,8 @@
 
 #include <kernel/sysinfo.h>
 #include <kernel/mm.h>
+#include <kernel/proc.h>
+#include <kernel/clock.h>
 
 #include <kernel/panic.h>
 #include <kernel/printf.h>
@@ -65,5 +67,23 @@ DEFINE_SYSCALL(uname, int, struct utsname *buf) {
   strlcpy(buf->version, "osdev 0.0.0", sizeof(buf->version)); // TODO: use actual version
   strlcpy(buf->machine, "x86_64", sizeof(buf->machine));
   strlcpy(buf->domainname, "localdomain", sizeof(buf->domainname));
+  return 0;
+}
+
+DEFINE_SYSCALL(sysinfo, int, struct sysinfo *info) {
+  if (vm_validate_ptr((uintptr_t) info, /*write=*/true) < 0) {
+    return -EFAULT;
+  }
+
+  memset(info, 0, sizeof(struct sysinfo));
+
+  size_t total_bytes, free_bytes;
+  get_pmem_info(&total_bytes, &free_bytes);
+
+  info->uptime = clock_get_uptime();
+  info->totalram = total_bytes;
+  info->freeram = free_bytes;
+  info->procs = (unsigned short) proc_get_nprocs();
+  info->mem_unit = 1;
   return 0;
 }
