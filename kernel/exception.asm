@@ -176,6 +176,9 @@ common_interrupt_handler:
 
   ; save exception info for this nesting level
   ; stack layout: rsp+0=saved_rax, rsp+8=has_ist, rsp+16=data, rsp+24=vector, rsp+32=error, rsp+40=rip
+  ; NOTE: only rax may be used as scratch here (saved on stack), all other
+  ; registers must be preserved as they are saved to the trapframe later.
+  push r9
   mov rax, [rel interrupt_nest_count]
   cmp rax, 4
   jge .skip_save
@@ -183,15 +186,16 @@ common_interrupt_handler:
   shl rax, 5            ; x 32 (4 fields x 8 bytes)
   lea r9, [rel exception_save_area]
   add r9, rax
-  mov rax, [rsp+24]     ; vector
+  mov rax, [rsp+32]     ; vector (offset +8 for pushed r9)
   mov [r9+0], rax
-  mov rax, [rsp+40]     ; rip
+  mov rax, [rsp+48]     ; rip (offset +8 for pushed r9)
   mov [r9+8], rax
-  mov rax, [rsp+32]     ; error
+  mov rax, [rsp+40]     ; error (offset +8 for pushed r9)
   mov [r9+16], rax
   mov rax, cr2
   mov [r9+24], rax
 .skip_save:
+  pop r9
 
   cmp qword [rel interrupt_nest_count], 3
   jl .skip_loop_debug
