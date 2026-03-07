@@ -100,6 +100,24 @@ static struct ttydev_ops pty_ttydev_ops = {
 static int ptmx_f_open(file_t *file, int flags) {
   f_lock_assert(file, LA_OWNED);
 
+  // find and reserve a free pty index (minor 0 is ptmx, slaves start at 1)
+  static pty_t pty_reserved; // sentinel value for reserving slots
+  mtx_lock(&pty_table_lock);
+  int index = -1;
+  for (int i = 1; i < MAX_PTYS; i++) {
+    if (pty_table[i] == NULL) {
+      pty_table[i] = &pty_reserved;
+      index = i;
+      break;
+    }
+  }
+  mtx_unlock(&pty_table_lock);
+
+  if (index < 0) {
+    EPRINTF("no free pty slots\n");
+    return -ENOSPC;
+  }
+
   pty_t *pty = kmallocz(sizeof(pty_t));
   pty->flags = PTYF_LOCKED;
 
@@ -108,10 +126,13 @@ static int ptmx_f_open(file_t *file, int flags) {
 
   knlist_init(&pty->master_knlist, &tty->lock.lo);
 
-  // register the slave device (gets auto-assigned minor)
+  // register the slave device with the chosen minor number
   device_t *slave_dev = alloc_device(tty, NULL, NULL);
-  if (register_dev("pty", slave_dev) < 0) {
+  if (register_dev_minor("pty", slave_dev, index) < 0) {
     EPRINTF("failed to register slave device\n");
+    mtx_lock(&pty_table_lock);
+    pty_table[index] = NULL;
+    mtx_unlock(&pty_table_lock);
     slave_dev->data = NULL;
     free_device(slave_dev);
     tty_free(&tty);
@@ -120,8 +141,7 @@ static int ptmx_f_open(file_t *file, int flags) {
   }
   pty->slave_dev = slave_dev;
 
-  // the slave minor is the PTY number visible to userspace
-  pty->index = slave_dev->minor;
+  pty->index = index;
   ASSERT(pty->index > 0 && pty->index < MAX_PTYS);
 
   // create the slave device node synchronously so it's available immediately

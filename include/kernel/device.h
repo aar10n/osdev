@@ -253,6 +253,7 @@ int register_device_ops(const char *dev_type, struct device_ops *ops);
  * On failure, the device will remain anonymous.
  */
 int register_dev(const char *dev_type, device_t *dev);
+int register_dev_minor(const char *dev_type, device_t *dev, int minor);
 int unregister_dev(device_t *dev);
 
 /// Get the file_ops pointer for a device.

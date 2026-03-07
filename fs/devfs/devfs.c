@@ -60,7 +60,7 @@ str_t devfs_name_for_dev(cstr_t path, dev_t dev) {
 
     do {
       letters[i++] = (char)('a' + (m % 26));
-      m = m / 26 - 1;
+      m = (m / 26) - 1;
     } while (m != (uint8_t)-1 && i < sizeof(letters) - 1);
     letters[i] = '\0';
 

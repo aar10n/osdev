@@ -307,7 +307,7 @@ int register_device_ops(const char *dev_type, struct device_ops *ops) {
   return 0;
 }
 
-int register_dev(const char *dev_type, device_t *dev) {
+static int register_dev_internal(const char *dev_type, device_t *dev, int minor) {
   struct dev_type *type = hash_map_get(dev_type_by_name, dev_type);
   if (type == NULL) {
     EPRINTF("device type '%s' not found\n", dev_type);
@@ -326,7 +326,11 @@ int register_dev(const char *dev_type, device_t *dev) {
   mtx_lock(&type->lock);
   dev->dtype = type->type;
   dev->major = type->major;
-  dev->minor = type->last_minor++;
+  if (minor >= 0) {
+    dev->minor = (uint8_t)minor;
+  } else {
+    dev->minor = type->last_minor++;
+  }
   dev->bus_list = NULL;
   dev->dev_list = NULL;
   SLIST_ADD(&type->devices, dev, dev_list);
@@ -340,9 +344,16 @@ int register_dev(const char *dev_type, device_t *dev) {
   struct device_event event = { .type = DEV_EVT_ADD, .dev = make_dev(dev) };
   if (chan_send(device_events, &event) < 0) {
     EPRINTF("failed to send device event for %s device %d\n", dev_type, dev->minor);
-    // we don't fail the registration if the event cannot be sent
   }
   return 0;
+}
+
+int register_dev(const char *dev_type, device_t *dev) {
+  return register_dev_internal(dev_type, dev, -1);
+}
+
+int register_dev_minor(const char *dev_type, device_t *dev, int minor) {
+  return register_dev_internal(dev_type, dev, minor);
 }
 
 int unregister_dev(device_t *dev) {
