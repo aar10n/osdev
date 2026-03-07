@@ -137,7 +137,7 @@ SYSCALL(rt_sigpending, 2, int, PARAM(sigset_t *, set, "%p"), PARAM(size_t, sigse
 SYSCALL(rt_sigtimedwait, 4, int, PARAM(const sigset_t *, uthese, "%p"), PARAM(struct siginfo *, uinfo, "%p"), PARAM(const struct timespec *, uts, "%p"), PARAM(size_t, sigsetsize, "%zu"))
 SYSCALL(rt_sigqueueinfo, 3, int, PARAM(pid_t, pid, "<?>%p"), PARAM(int, sig, "%d"), PARAM(struct siginfo *, uinfo, "%p"))
 SYSCALL(rt_sigsuspend, 2, int, PARAM(const sigset_t *, unewset, "%p"), PARAM(size_t, sigsetsize, "%zu"))
-// SYSCALL(sigaltstack, 2, int, PARAM(const stack_t *, ss, "%p"), PARAM(stack_t *, oss, "%p"))
+SYSCALL(sigaltstack, 2, int, PARAM(const stack_t *, ss, "%p"), PARAM(stack_t *, oss, "%p"))
 // /* unused */ SYSCALL(utime, 2, int, PARAM(const char *, filename, "%s"), PARAM(const struct utimbuf *, times, "%p"))
 SYSCALL(mknod, 3, int, PARAM(const char *, filename, "%s"), PARAM(mode_t, mode, "<?>%p"), PARAM(dev_t, dev, "<?>%p"))
 // /* unused */ SYSCALL(uselib, 1, int, PARAM(const char *, library, "%s")) 

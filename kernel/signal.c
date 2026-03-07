@@ -623,6 +623,50 @@ DEFINE_SYSCALL(rt_sigpending, int, sigset_t *set, size_t sigsetsize) {
   return 0;
 }
 
+DEFINE_SYSCALL(sigaltstack, int, const stack_t *ss, stack_t *oss) {
+  if (ss != NULL && vm_validate_ptr((uintptr_t) ss, /*write=*/false) < 0) {
+    return -EFAULT;
+  }
+  if (oss != NULL && vm_validate_ptr((uintptr_t) oss, /*write=*/true) < 0) {
+    return -EFAULT;
+  }
+
+  thread_t *td = curthread;
+
+  if (oss != NULL) {
+    *oss = td->sigstack;
+    if (oss->ss_sp == NULL) {
+      oss->ss_flags = SS_DISABLE;
+    }
+  }
+
+  if (ss != NULL) {
+    if (td->sigstack.ss_flags & SS_ONSTACK) {
+      return -EPERM;
+    }
+
+    int flags = ss->ss_flags & ~SS_ONSTACK;
+    if (flags & ~SS_DISABLE) {
+      return -EINVAL;
+    }
+
+    if (flags & SS_DISABLE) {
+      td->sigstack.ss_sp = NULL;
+      td->sigstack.ss_flags = SS_DISABLE;
+      td->sigstack.ss_size = 0;
+    } else {
+      if (ss->ss_size < MINSIGSTKSZ) {
+        return -ENOMEM;
+      }
+      td->sigstack.ss_sp = ss->ss_sp;
+      td->sigstack.ss_flags = 0;
+      td->sigstack.ss_size = ss->ss_size;
+    }
+  }
+
+  return 0;
+}
+
 DEFINE_SYSCALL(rt_sigsuspend, int, const sigset_t *set, size_t sigsetsize) {
   todo("rt_sigsuspend");
 }

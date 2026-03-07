@@ -153,6 +153,10 @@ _Static_assert(sizeof(struct sigaction) == 32, "sigaction must be 128 bytes");
 /* SA_ flags in addition to ones in <bits/signal.h> */
 #define SA_KERNHAND   0x02000000 // runs in kernel space
 
+#define SS_ONSTACK    1
+#define SS_DISABLE    2
+#define MINSIGSTKSZ   2048
+
 struct sigevent {
   union sigval sigev_value;
   int sigev_signo;
