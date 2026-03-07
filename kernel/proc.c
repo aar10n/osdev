@@ -1765,11 +1765,8 @@ int proc_syscall_clone(int flags, void *child_stack, int *ptid, int *ctid, unsig
 
     return new_td->tid;
   } else {
-    if (flags & CLONE_VM) {
-      todo("clone: CLONE_VM without CLONE_THREAD not supported");
-    }
-    if (flags & CLONE_VFORK) {
-      EPRINTF("clone: CLONE_VFORK not fully supported\n");
+    if ((flags & CLONE_VM) && !(flags & CLONE_VFORK)) {
+      todo("clone: CLONE_VM without CLONE_THREAD or CLONE_VFORK not supported");
     }
     if (flags & CLONE_PARENT) {
       EPRINTF("clone: CLONE_PARENT not supported\n");
@@ -1813,8 +1810,20 @@ int proc_syscall_clone(int flags, void *child_stack, int *ptid, int *ctid, unsig
       *ptid = fork->pid;
     }
 
+    if (flags & CLONE_VFORK) {
+      pr_lock(fork);
+      fork->vfork_parent = pr_getref(proc);
+      pr_unlock(fork);
+    }
+
     proc_setup_add_thread(fork, fork_td);
     proc_finish_setup_and_submit_all(fork);
+
+    if (flags & CLONE_VFORK) {
+      pr_lock(proc);
+      cond_wait(&proc->vfork_done, &proc->lock);
+      pr_unlock(proc);
+    }
 
     return fork->pid;
   }
@@ -2904,10 +2913,10 @@ DEFINE_SYSCALL(clone, int, int flags, void *child_stack, int *ptid, int *ctid, u
   DPRINTF("syscall: clone flags=0x%x child_stack=%p ptid=%p ctid=%p newtls=%p\n",
           flags, child_stack, ptid, ctid, (void *)newtls);
 
-  if (ptid != NULL && vm_validate_ptr((uintptr_t)ptid, true) < 0) {
+  if ((flags & CLONE_PARENT_SETTID) && ptid != NULL && vm_validate_ptr((uintptr_t)ptid, true) < 0) {
     return -EFAULT;
   }
-  if (ctid != NULL && vm_validate_ptr((uintptr_t)ctid, true) < 0) {
+  if ((flags & (CLONE_CHILD_SETTID | CLONE_CHILD_CLEARTID)) && ctid != NULL && vm_validate_ptr((uintptr_t)ctid, true) < 0) {
     return -EFAULT;
   }
 
