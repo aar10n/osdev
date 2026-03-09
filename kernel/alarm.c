@@ -14,7 +14,7 @@
 #include <kernel/printf.h>
 #include <kernel/panic.h>
 
-#include <rb_tree.h>
+#include <rb_tree_v2.h>
 
 #define ASSERT(x) kassert(x)
 //#define DPRINTF(x, ...)
@@ -36,15 +36,55 @@ static alarm_source_t *tick_source = NULL;
 
 static uint64_t last_tick = 0; // last tick time in nanoseconds
 static uint64_t next_tickless_expiry = 0; // next tickless expiry in nanoseconds
-// TODO: switch to a callwheel based approach for storing alarms
-//       https://people.freebsd.org/~davide/asia/calloutng.pdf
-static rb_tree_t *pending_alarms;
-// TODO: switch to a better data structure for mapping ids -> expiries
-static rb_tree_t *alarm_expiries;
-// spinlock for the alarm tree
+
+// pending alarms sorted by expiry time
+static rb_tree_v2_t pending_alarms;
+// alarm id lookup tree
+static rb_tree_v2_t alarm_ids;
+// spinlock for the alarm trees
 static mtx_t alarm_lock;
 // alarm id atomic "allocator"
 static id_t next_alarm_id = 1; // id==0 is invalid
+
+static int expiry_cmp(const rb_node_v2_t *a, const rb_node_v2_t *b) {
+  alarm_t *aa = container_of(a, alarm_t, expiry_node);
+  alarm_t *bb = container_of(b, alarm_t, expiry_node);
+  if (aa->expires_ns < bb->expires_ns) return -1;
+  if (aa->expires_ns > bb->expires_ns) return 1;
+  return 0;
+}
+
+static int expiry_key_cmp(uint64_t key, const rb_node_v2_t *b) {
+  alarm_t *bb = container_of(b, alarm_t, expiry_node);
+  if (key < bb->expires_ns) return -1;
+  if (key > bb->expires_ns) return 1;
+  return 0;
+}
+
+static int id_cmp(const rb_node_v2_t *a, const rb_node_v2_t *b) {
+  alarm_t *aa = container_of(a, alarm_t, id_node);
+  alarm_t *bb = container_of(b, alarm_t, id_node);
+  if (aa->id < bb->id) return -1;
+  if (aa->id > bb->id) return 1;
+  return 0;
+}
+
+static int id_key_cmp(uint64_t key, const rb_node_v2_t *b) {
+  alarm_t *bb = container_of(b, alarm_t, id_node);
+  if (key < (uint64_t)bb->id) return -1;
+  if (key > (uint64_t)bb->id) return 1;
+  return 0;
+}
+
+static inline alarm_t *pending_min(void) {
+  rb_node_v2_t *n = rb_tree_v2_first(&pending_alarms);
+  return n ? container_of(n, alarm_t, expiry_node) : NULL;
+}
+
+static inline alarm_t *alarm_find_by_id(id_t id) {
+  rb_node_v2_t *n = rb_tree_v2_find(&alarm_ids, (uint64_t)id);
+  return n ? container_of(n, alarm_t, id_node) : NULL;
+}
 
 
 static inline void maybe_rearm_tickless_alarm(uint64_t expiry, uint64_t clock_now) {
@@ -76,25 +116,23 @@ static inline void handle_expired_alarms(uint64_t clock_now, uint64_t *next_expi
   while (true) {
     mtx_spin_lock(&alarm_lock);
 
-    if (pending_alarms->min == pending_alarms->nil) {
+    alarm = pending_min();
+    if (!alarm) {
       mtx_spin_unlock(&alarm_lock);
       break;
     }
 
-    alarm = pending_alarms->min->data;
     if (alarm->expires_ns > clock_now) {
-      if (pending_alarms->min != pending_alarms->nil) {
-        min_expiry = pending_alarms->min->key;
-      }
+      min_expiry = alarm->expires_ns;
       mtx_spin_unlock(&alarm_lock);
       break;
     }
 
-    rb_tree_delete_node(pending_alarms, pending_alarms->min);
-    rb_tree_delete(alarm_expiries, alarm->id);
-    if (pending_alarms->min != pending_alarms->nil) {
-      min_expiry = pending_alarms->min->key;
-    }
+    rb_tree_v2_remove(&pending_alarms, &alarm->expiry_node);
+    rb_tree_v2_remove(&alarm_ids, &alarm->id_node);
+    alarm_t *next = pending_min();
+    if (next)
+      min_expiry = next->expires_ns;
     mtx_spin_unlock(&alarm_lock);
 
     DPRINTF("alarm %d expired\n", alarm->id);
@@ -103,11 +141,11 @@ static inline void handle_expired_alarms(uint64_t clock_now, uint64_t *next_expi
     if (alarm->expires_ns > old_expiry) {
       // the callback reprogrammed the alarm to fire again
       mtx_spin_lock(&alarm_lock);
-      rb_tree_insert(pending_alarms, alarm->expires_ns, alarm);
-      rb_tree_insert(alarm_expiries, alarm->id, (void *)alarm->expires_ns);
-      if (pending_alarms->min != pending_alarms->nil) {
-        min_expiry = pending_alarms->min->key;
-      }
+      rb_tree_v2_insert(&pending_alarms, &alarm->expiry_node);
+      rb_tree_v2_insert(&alarm_ids, &alarm->id_node);
+      alarm_t *next = pending_min();
+      if (next)
+        min_expiry = next->expires_ns;
       mtx_spin_unlock(&alarm_lock);
     } else {
       // the alarm was a one-shot so we can now free it
@@ -168,14 +206,8 @@ void register_alarm_source(alarm_source_t *as) {
 //
 
 void alarm_init() {
-  pending_alarms = create_rb_tree();
-  if (pending_alarms == NULL) {
-    panic("failed to create alarm tree");
-  }
-  alarm_expiries = create_rb_tree();
-  if (alarm_expiries == NULL) {
-    panic("failed to create alarm expiries tree");
-  }
+  rb_tree_v2_init(&pending_alarms, expiry_cmp, expiry_key_cmp);
+  rb_tree_v2_init(&alarm_ids, id_cmp, id_key_cmp);
   mtx_init(&alarm_lock, MTX_SPIN, "alarm_lock");
 
   // TODO: take alarm sources from kernel parameters
@@ -391,9 +423,10 @@ id_t alarm_register(alarm_t *alarm) {
 
   uint64_t clock_now = clock_get_nanos();
   mtx_spin_lock(&alarm_lock);
-  rb_tree_insert(pending_alarms, alarm->expires_ns, alarm);
-  rb_tree_insert(alarm_expiries, alarm->id, (void *)alarm->expires_ns);
-  maybe_rearm_tickless_alarm(pending_alarms->min->key + MS_TO_NS(2), clock_now);
+  rb_tree_v2_insert(&pending_alarms, &alarm->expiry_node);
+  rb_tree_v2_insert(&alarm_ids, &alarm->id_node);
+  alarm_t *min = pending_min();
+  maybe_rearm_tickless_alarm(min->expires_ns + MS_TO_NS(2), clock_now);
   mtx_spin_unlock(&alarm_lock);
   DPRINTF("alarm_register: alarm %d expires at %llu\n", alarm->id, alarm->expires_ns);
   return alarm->id;
@@ -401,30 +434,14 @@ id_t alarm_register(alarm_t *alarm) {
 
 int alarm_unregister(id_t alarm_id, struct callback *callback) {
   mtx_spin_lock(&alarm_lock);
-  uint64_t expires_ns = (uint64_t)(uintptr_t)rb_tree_find(alarm_expiries, alarm_id);
-  if (expires_ns == 0) {
-    goto not_found;
+  alarm_t *alarm = alarm_find_by_id(alarm_id);
+  if (!alarm) {
+    mtx_spin_unlock(&alarm_lock);
+    return -ENOENT;
   }
 
-  // locate the alarm expiry by the given id
-  rb_node_t *node = rb_tree_find_node(pending_alarms, expires_ns);
-  if (node == NULL) {
-    goto not_found;
-  }
-
-  // there may be multiple alarms with the same expiration time
-  // locate the right one
-  while (node != pending_alarms->nil && ((alarm_t*)node->data)->id != alarm_id) {
-    node = node->next;
-  }
-  if (node == pending_alarms->nil) {
-    goto not_found;
-  }
-
-  // remove it
-  alarm_t *alarm = node->data;
-  rb_tree_delete_node(pending_alarms, node);
-  rb_tree_delete(alarm_expiries, alarm_id);
+  rb_tree_v2_remove(&pending_alarms, &alarm->expiry_node);
+  rb_tree_v2_remove(&alarm_ids, &alarm->id_node);
   mtx_spin_unlock(&alarm_lock);
 
   DPRINTF("alarm_unregister: alarm %d unregistered\n", alarm->id);
@@ -434,10 +451,6 @@ int alarm_unregister(id_t alarm_id, struct callback *callback) {
   }
   alarm_free(&alarm);
   return 0;
-
-LABEL(not_found);
-  mtx_spin_unlock(&alarm_lock);
-  return -ENOENT;
 }
 
 //

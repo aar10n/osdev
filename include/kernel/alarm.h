@@ -10,6 +10,7 @@
 #include <kernel/mutex.h>
 #include <kernel/irq.h>
 #include <kernel/time.h>
+#include <rb_tree_v2.h>
 
 // if defined the kernel runs in tickless mode
 #define CONFIG_TICKLESS
@@ -65,7 +66,8 @@ typedef struct alarm {
   uint64_t expires_ns;
   uintptr_t function;
   void *args[3];
-  LIST_ENTRY(struct alarm) next;
+  rb_node_v2_t expiry_node;         // node in pending tree (keyed by expires_ns)
+  rb_node_v2_t id_node;             // node in id lookup tree (keyed by id)
 } alarm_t;
 
 void register_alarm_source(alarm_source_t *as);
