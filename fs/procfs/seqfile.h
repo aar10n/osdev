@@ -33,6 +33,7 @@ typedef struct seqfile {
 
   struct seq_ops *ops;  // iterator operations
   void *data;           // private data for iterator
+  void *private;        // per-instance state for iterator implementation
 } seqfile_t;
 
 /*

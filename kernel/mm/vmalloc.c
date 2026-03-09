@@ -22,6 +22,7 @@
 #include <fs/procfs/procfs.h>
 
 #include <interval_tree.h>
+#include <interval_tree_v2.h>
 
 #include <abi/mman.h>
 
@@ -88,8 +89,8 @@ static always_inline address_space_t *select_space(address_space_t *user_space, 
 
 static vm_mapping_t *space_get_mapping(address_space_t *space, uintptr_t vaddr) {
   space_lock_assert(space, MA_OWNED);
-  vm_mapping_t *vm = intvl_tree_get_point(space->new_tree, vaddr);
-  return vm;
+  intvl_node_v2_t *n = intvl_tree_v2_get_point(space->tree, vaddr);
+  return n ? container_of(n, vm_mapping_t, inode) : NULL;
 }
 
 static always_inline uintptr_t vm_virtual_start(vm_mapping_t *vm) {
@@ -107,6 +108,12 @@ static always_inline uintptr_t vm_virtual_start(vm_mapping_t *vm) {
 static always_inline interval_t vm_virt_interval(vm_mapping_t *vm) {
   uintptr_t start = vm_virtual_start(vm);
   return intvl(start, start + vm->virt_size);
+}
+
+static void vm_sync_inode(vm_mapping_t *vm) {
+  uintptr_t start = vm_virtual_start(vm);
+  vm->inode.start = start;
+  vm->inode.end = start + vm->virt_size;
 }
 
 static always_inline interval_t vm_real_interval(vm_mapping_t *vm) {
@@ -619,16 +626,15 @@ static uintptr_t get_free_region(
     panic("no free address space");
   }
 
-  intvl_node_t *closest_node;
-  interval_t intvl = intvl(base, base + size);
-  interval_t range = intvl_tree_find_free_gap(space->new_tree, intvl, align, &closest_node);
+  intvl_node_v2_t *closest_node;
+  uint64_t gap = intvl_tree_v2_find_gap(space->tree, base, size, align, &closest_node);
   if (!closest_node) {
     *closest_vm = NULL;
-    return base;
+    return gap;
   }
 
-  *closest_vm = closest_node->data;
-  return range.start;
+  *closest_vm = container_of(closest_node, vm_mapping_t, inode);
+  return gap;
 }
 
 static bool check_range_free(
@@ -639,15 +645,14 @@ static bool check_range_free(
   vm_mapping_t **closest_vm
 ) {
   space_lock_assert(space, MA_OWNED);
-  intvl_node_t *closest_node;
-  interval_t intvl = intvl(base, base + size);
-  interval_t result = intvl_tree_find_free_gap(space->new_tree, intvl, /*align=*/0, &closest_node);
-  if (!intvl_eq(intvl, result)) {
+  intvl_node_v2_t *closest_node;
+  uint64_t gap = intvl_tree_v2_find_gap(space->tree, base, size, /*align=*/0, &closest_node);
+  if (gap != base) {
     return false;
   }
 
   if (closest_node != NULL) {
-    *closest_vm = closest_node->data;
+    *closest_vm = container_of(closest_node, vm_mapping_t, inode);
   }
   return true;
 }
@@ -655,10 +660,6 @@ static bool check_range_free(
 static bool resize_mapping_inplace(vm_mapping_t *vm, size_t new_size) {
   address_space_t *space = vm->space;
   space_lock_assert(space, MA_OWNED);
-
-  interval_t interval = vm_virt_interval(vm);
-  intvl_node_t *node = intvl_tree_find(space->new_tree, interval);
-  ASSERT(node && node->data == vm);
 
   // if we are shrinking or growing within the existing empty node virtual space
   // we dont need to update the tree just the mapping size and address. for normal
@@ -683,29 +684,27 @@ static bool resize_mapping_inplace(vm_mapping_t *vm, size_t new_size) {
   // but first we need to make sure we dont overlap with the next node
   if (vm->flags & VM_STACK) {
     vm_mapping_t *prev = LIST_PREV(vm, vm_list);
-    intvl_node_t *prev_node = intvl_tree_find(space->new_tree, vm_virt_interval(prev));
 
     // |--prev--| empty space |---vm---|
-    size_t empty_space = interval.start - prev_node->interval.end + vm_empty_space(vm);
+    size_t empty_space = vm->inode.start - prev->inode.end + vm_empty_space(vm);
     if (empty_space < delta) {
       return false;
     }
 
-    intvl_tree_update_interval(space->new_tree, node, -delta, 0);
+    intvl_tree_v2_update(space->tree, &vm->inode, -delta, 0);
     vm->address -= new_size - vm->size;
     vm->size = new_size;
     vm->virt_size = max(vm->virt_size, new_size);
   } else {
     vm_mapping_t *next = LIST_NEXT(vm, vm_list);
-    intvl_node_t *next_node = intvl_tree_find(space->new_tree, vm_virt_interval(next));
 
     // |---vm---| empty space |--next--|
-    size_t empty_space = next_node->interval.start - interval.end + vm_empty_space(vm);
+    size_t empty_space = next->inode.start - vm->inode.end + vm_empty_space(vm);
     if (empty_space < delta) {
       return false;
     }
 
-    intvl_tree_update_interval(space->new_tree, node, 0, delta);
+    intvl_tree_v2_update(space->tree, &vm->inode, 0, delta);
     vm->size = new_size;
     vm->virt_size = max(vm->virt_size, new_size);
   }
@@ -721,7 +720,6 @@ static vm_mapping_t *split_mapping(vm_mapping_t *vm, size_t off) {
   space_lock_assert(space, MA_OWNED);
 
   ASSERT(off % vm_flags_to_size(vm->flags) == 0);
-  interval_t intvl = vm_virt_interval(vm);
 
   // create new mapping
   vm_mapping_t *new_vm = kmallocz(sizeof(vm_mapping_t));
@@ -745,10 +743,10 @@ static vm_mapping_t *split_mapping(vm_mapping_t *vm, size_t off) {
   }
 
   // resize current interval down and insert new node
-  intvl_node_t *node = intvl_tree_find(space->new_tree, intvl);
-  off_t delta_end = magnitude(intvl) - off;
-  intvl_tree_update_interval(space->new_tree, node, 0, -delta_end);
-  intvl_tree_insert(space->new_tree, vm_virt_interval(new_vm), new_vm);
+  off_t delta_end = (off_t)vm->inode.end - (off_t)vm->inode.start - off;
+  intvl_tree_v2_update(space->tree, &vm->inode, 0, -delta_end);
+  vm_sync_inode(new_vm);
+  intvl_tree_v2_insert(space->tree, &new_vm->inode);
   space->num_mappings++;
   ASSERT(contiguous(vm_virt_interval(vm), vm_virt_interval(new_vm)));
 
@@ -767,14 +765,11 @@ static vm_mapping_t *join_mappings(vm_mapping_t *vm_a, vm_mapping_t *vm_b) {
   // vm_a and vm_b should both be locked while calling this
   ASSERT((vm_a->flags & VM_LINKED) != 0);
   ASSERT((vm_b->flags & VM_SPLIT) != 0);
-  interval_t intvl_a = vm_virt_interval(vm_a);
-  interval_t intvl_b = vm_virt_interval(vm_b);
 
   // remove node_b and update node_a to fill its space
-  intvl_node_t *node = intvl_tree_find(space->new_tree, intvl_a);
-  intvl_tree_delete(space->new_tree, intvl_b);
-  off_t delta_end = (off_t) magnitude(intvl_b);
-  intvl_tree_update_interval(space->new_tree, node, 0, delta_end);
+  off_t delta_end = (off_t)(vm_b->inode.end - vm_b->inode.start);
+  intvl_tree_v2_remove(space->tree, &vm_b->inode);
+  intvl_tree_v2_update(space->tree, &vm_a->inode, 0, delta_end);
 
   // remove vm_b from the space list
   LIST_REMOVE(&space->mappings, vm_b, vm_list);
@@ -811,8 +806,10 @@ static bool move_mapping(vm_mapping_t *vm, size_t newsize) {
   }
 
   // remove from the old node tree and insert the new one
-  intvl_tree_delete(space->new_tree, vm_virt_interval(vm));
-  intvl_tree_insert(space->new_tree, intvl(virt_addr, virt_addr + virt_size), vm);
+  intvl_tree_v2_remove(space->tree, &vm->inode);
+  vm->inode.start = virt_addr;
+  vm->inode.end = virt_addr + virt_size;
+  intvl_tree_v2_insert(space->tree, &vm->inode);
 
   // switch place of the mapping in the space list
   LIST_REMOVE(&space->mappings, vm, vm_list);
@@ -835,7 +832,7 @@ static void free_mapping(vm_mapping_t **vmp, bool unmap) {
   space_lock_assert(space, MA_OWNED);
 
   LIST_REMOVE(&space->mappings, vm, vm_list);
-  intvl_tree_delete(space->new_tree, vm_virt_interval(vm));
+  intvl_tree_v2_remove(space->tree, &vm->inode);
   space->num_mappings--;
 
   if (vm->flags & VM_MAPPED) {
@@ -1104,7 +1101,8 @@ static int vmap_internal(
     default: unreachable;
   }
 
-  intvl_tree_insert(space->new_tree, vm_virt_interval(vm), vm);
+  vm_sync_inode(vm);
+  intvl_tree_v2_insert(space->tree, &vm->inode);
   space->num_mappings++;
 
   // add it to the mappings list
@@ -1359,7 +1357,8 @@ address_space_t *vm_new_space(uintptr_t min_addr, uintptr_t max_addr, uintptr_t 
   address_space_t *space = kmallocz(sizeof(address_space_t));
   space->min_addr = min_addr;
   space->max_addr = max_addr;
-  space->new_tree = create_intvl_tree();
+  space->tree = kmalloc(sizeof(intvl_tree_v2_t));
+  intvl_tree_v2_init(space->tree);
   space->page_table = page_table;
   mtx_init(&space->lock, MTX_RECURSIVE, "vm_space_lock");
   ref_init(&space->refcount);
@@ -1382,7 +1381,8 @@ address_space_t *vm_fork_space(address_space_t *space, bool fork_user) {
     vm_fork_internal(vm, newvm);
 
     // insert into new space
-    intvl_tree_insert(newspace->new_tree, vm_virt_interval(newvm), newvm);
+    vm_sync_inode(newvm);
+    intvl_tree_v2_insert(newspace->tree, &newvm->inode);
     if (prev_newvm) {
       LIST_INSERT(&newspace->mappings, newvm, vm_list, prev_newvm);
     } else {
@@ -1415,7 +1415,8 @@ address_space_t *vm_new_empty_space() {
   address_space_t *space = kmallocz(sizeof(address_space_t));
   space->min_addr = USER_SPACE_START;
   space->max_addr = USER_SPACE_END;
-  space->new_tree = create_intvl_tree();
+  space->tree = kmalloc(sizeof(intvl_tree_v2_t));
+  intvl_tree_v2_init(space->tree);
   space->page_table = pml4->address;
   mtx_init(&space->lock, MTX_RECURSIVE, "vm_space_lock");
   SLIST_ADD(&space->table_pages, pml4, next);
@@ -1440,7 +1441,6 @@ void vm_clear_user_space(address_space_t *space) {
 
 void _address_space_cleanup(__move address_space_t **asref) {
   address_space_t *space = moveref(*asref);
-  DPRINTF("!!! address_space_cleanup: space=%p, refcount=%d !!!\n", space, ref_count(&space->refcount));
   ASSERT(space->refcount == 0);
 
   // acquire the lock if we dont already own it
@@ -1465,9 +1465,7 @@ void _address_space_cleanup(__move address_space_t **asref) {
     pg_putref(&page);
     npg++;
   }
-  DPRINTF("address_space_cleanup: freed %d mappings, %d table_pages\n", nvm, npg);
-
-  rb_tree_free(space->new_tree);
+  kfree(space->tree);
   mtx_unlock(&space->lock);
   mtx_destroy(&space->lock);
   kfree(space);
@@ -2377,16 +2375,18 @@ void *vmspace_seq_start(seqfile_t *sf, off_t *pos) {
     space = kernel_space;
   }
 
-  struct vmspace_seq_iter *iter = kmalloc(sizeof(*iter));
+  struct vmspace_seq_iter *iter = sf->private;
   if (!iter) {
-    return NULL;
+    iter = kmalloc(sizeof(*iter));
+    if (!iter)
+      return NULL;
+    sf->private = iter;
   }
 
   iter->space = space;
   space_lock(iter->space);
   iter->current = LIST_FIRST(&iter->space->mappings);
-  
-  // skip to the requested position
+
   off_t index = 0;
   while (iter->current && index < sf->index) {
     iter->current = LIST_NEXT(iter->current, vm_list);
@@ -2394,18 +2394,24 @@ void *vmspace_seq_start(seqfile_t *sf, off_t *pos) {
   }
 
   if (!iter->current) {
-    space_unlock(iter->space);
-    kfree(iter);
     return NULL;
   }
   return iter;
 }
 
 void vmspace_seq_stop(seqfile_t *sf, void *v) {
-  if (v) {
-    struct vmspace_seq_iter *iter = v;
+  struct vmspace_seq_iter *iter = sf->private;
+  if (iter && iter->space) {
     space_unlock(iter->space);
+    iter->space = NULL;
+  }
+}
+
+static void vmspace_seq_cleanup(seqfile_t *sf) {
+  struct vmspace_seq_iter *iter = sf->private;
+  if (iter) {
     kfree(iter);
+    sf->private = NULL;
   }
 }
 
@@ -2413,7 +2419,7 @@ void *vmspace_seq_next(seqfile_t *sf, void *v, off_t *pos) {
   struct vmspace_seq_iter *iter = v;
   iter->current = LIST_NEXT(iter->current, vm_list);
   (*pos)++;
-  
+
   if (!iter->current) {
     return NULL;
   }
@@ -2461,10 +2467,11 @@ int vmspace_seq_show(seqfile_t *sf, void *v) {
 }
 
 static struct seq_ops vmspace_seq_ops = {
-  .start = vmspace_seq_start,
-  .stop  = vmspace_seq_stop,
-  .next  = vmspace_seq_next,
-  .show  = vmspace_seq_show,
+  .start   = vmspace_seq_start,
+  .stop    = vmspace_seq_stop,
+  .next    = vmspace_seq_next,
+  .show    = vmspace_seq_show,
+  .cleanup = vmspace_seq_cleanup,
 };
 PROCFS_REGISTER_SEQFILE(vmspace, "/sys/kernel/maps", &vmspace_seq_ops, 0444);
 

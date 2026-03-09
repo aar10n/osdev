@@ -10,6 +10,7 @@
 #include <kernel/str.h>
 #include <kernel/ref.h>
 #include <kernel/mutex.h>
+#include <interval_tree_v2.h>
 
 #ifndef PAGE_SIZE
 #define PAGE_SIZE 0x1000
@@ -28,7 +29,6 @@
 
 struct address_space;
 struct frame_allocator;
-struct rb_tree;
 struct page;
 struct page_list;
 struct pte;
@@ -95,7 +95,7 @@ typedef struct address_space {
 
   size_t num_mappings;
   LIST_HEAD(struct vm_mapping) mappings;
-  struct rb_tree *new_tree;
+  intvl_tree_v2_t *tree;
 
   uintptr_t page_table;
   LIST_HEAD(struct page) table_pages;
@@ -143,7 +143,8 @@ typedef struct vm_mapping {
     struct vm_file *vm_file;      // VM_TYPE_FILE
   };
 
-  LIST_ENTRY(struct vm_mapping) vm_list; // entry in list of vm mappings
+  intvl_node_v2_t inode;                  // interval tree node
+  LIST_ENTRY(struct vm_mapping) vm_list;  // entry in list of vm mappings
 } vm_mapping_t;
 
 /////////////

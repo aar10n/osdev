@@ -2431,12 +2431,20 @@ static int proc_cmdline_show(seqfile_t *sf, void *data) {
 PROCFS_SIMPLE_OPS(cmdline_ops, proc_cmdline_show, NULL, proc_file_cleanup);
 
 // /pid/N/maps
+static void proc_maps_cleanup(seqfile_t *sf) {
+  if (sf->private) {
+    kfree(sf->private);
+    sf->private = NULL;
+  }
+  proc_file_cleanup(sf);
+}
+
 struct seq_ops vmspace_seq_ops = {
   .start = vmspace_seq_start,
   .stop = vmspace_seq_stop,
   .next = vmspace_seq_next,
   .show = vmspace_seq_show,
-  .cleanup = proc_file_cleanup,
+  .cleanup = proc_maps_cleanup,
 };
 
 // /pid/N/status
