@@ -57,6 +57,7 @@ typedef struct device {
   LIST_HEAD(struct device) children;
   LIST_HEAD(struct ventry) entries;
 
+  rb_node_v2_t dev_tree_node;
   SLIST_ENTRY(struct device) dev_list;
   SLIST_ENTRY(struct device) bus_list;
 } device_t;

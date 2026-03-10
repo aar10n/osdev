@@ -13,7 +13,7 @@
 #include <kernel/vfs/file.h>
 #include <kernel/vfs/vnode.h>
 
-#include <rb_tree.h>
+#include <rb_tree_v2.h>
 
 #define HMAP_TYPE void *
 #include <hash_map.h>
@@ -66,8 +66,26 @@ struct dev_type dev_types[] = {
 #undef DECLARE_DEV_TYPE
 
 chan_t *device_events;
-static rb_tree_t *device_tree;
+static rb_tree_v2_t device_tree;
 static mtx_t device_tree_lock;
+
+static int dev_tree_cmp(const rb_node_v2_t *a, const rb_node_v2_t *b) {
+  device_t *da = container_of(a, device_t, dev_tree_node);
+  device_t *db = container_of(b, device_t, dev_tree_node);
+  dev_t ka = make_dev(da);
+  dev_t kb = make_dev(db);
+  if (ka < kb) return -1;
+  if (ka > kb) return 1;
+  return 0;
+}
+
+static int dev_tree_key_cmp(uint64_t key, const rb_node_v2_t *b) {
+  device_t *db = container_of(b, device_t, dev_tree_node);
+  dev_t kb = make_dev(db);
+  if (key < kb) return -1;
+  if (key > kb) return 1;
+  return 0;
+}
 static hash_map_t *bus_type_by_name;
 static hash_map_t *dev_type_by_name;
 
@@ -105,7 +123,7 @@ static inline bool is_valid_device_driver(device_driver_t *driver) {
 
 static void device_static_init() {
   device_events = chan_alloc(256, sizeof(struct device_event), 0, "device_events");
-  device_tree = create_rb_tree();
+  rb_tree_v2_init(&device_tree, dev_tree_cmp, dev_tree_key_cmp);
   mtx_init(&device_tree_lock, MTX_SPIN, "device_tree_lock");
 
   bus_type_by_name = hash_map_new();
@@ -188,9 +206,9 @@ void probe_all_buses() {
 
 device_t *device_get(dev_t dev) {
   mtx_spin_lock(&device_tree_lock);
-  device_t *device = rb_tree_find(device_tree, (uint64_t) dev);
+  rb_node_v2_t *n = rb_tree_v2_find(&device_tree, (uint64_t)dev);
   mtx_spin_unlock(&device_tree_lock);
-  return device;
+  return n ? container_of(n, device_t, dev_tree_node) : NULL;
 }
 
 int dev_major_by_name(const char *name) {
@@ -337,7 +355,7 @@ static int register_dev_internal(const char *dev_type, device_t *dev, int minor)
   mtx_unlock(&type->lock);
 
   mtx_spin_lock(&device_tree_lock);
-  rb_tree_insert(device_tree, (uint64_t) make_dev(dev), dev);
+  rb_tree_v2_insert(&device_tree, &dev->dev_tree_node);
   mtx_spin_unlock(&device_tree_lock);
 
   kprintf("device: registered %s device %d\n", dev_type, dev->minor);
@@ -369,7 +387,7 @@ int unregister_dev(device_t *dev) {
   mtx_unlock(&type->lock);
 
   mtx_spin_lock(&device_tree_lock);
-  rb_tree_delete(device_tree, (uint64_t) make_dev(dev));
+  rb_tree_v2_remove(&device_tree, &dev->dev_tree_node);
   mtx_spin_unlock(&device_tree_lock);
 
   kprintf("device: unregistered device %d:%d\n", dev->major, dev->minor);
