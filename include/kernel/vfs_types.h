@@ -12,6 +12,7 @@
 #include <kernel/kio.h>
 #include <kernel/ref.h>
 #include <kernel/str.h>
+#include <rb_tree_v2.h>
 
 #include <abi/dirent.h>
 #include <abi/fcntl.h>
@@ -213,6 +214,7 @@ typedef struct vnode {
   };
 
   struct knlist knlist;           // knote list
+  rb_node_v2_t vtable_node;      // vtable tree node (keyed by id)
   LIST_ENTRY(struct vnode) list;  // vfs vnode list (non-ref)
 } vnode_t;
 

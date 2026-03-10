@@ -11,12 +11,11 @@
 #include <kernel/printf.h>
 #include <kernel/panic.h>
 
-#include <rb_tree.h>
+#include <rb_tree_v2.h>
 
 struct vtable {
-  rb_tree_t *tree;
+  rb_tree_v2_t tree;
   size_t count;
-  mtx_t lock; // spin mutex
 };
 
 #define ASSERT(x) kassert(x)
@@ -26,15 +25,29 @@ struct vtable {
 
 static id_t unique_vfs_id = 1;
 
+static int vtable_cmp(const rb_node_v2_t *a, const rb_node_v2_t *b) {
+  vnode_t *va = container_of(a, vnode_t, vtable_node);
+  vnode_t *vb = container_of(b, vnode_t, vtable_node);
+  if (va->id < vb->id) return -1;
+  if (va->id > vb->id) return 1;
+  return 0;
+}
+
+static int vtable_key_cmp(uint64_t key, const rb_node_v2_t *b) {
+  vnode_t *vb = container_of(b, vnode_t, vtable_node);
+  if (key < vb->id) return -1;
+  if (key > vb->id) return 1;
+  return 0;
+}
+
 static inline struct vtable *vtable_alloc() {
   struct vtable *table = kmallocz(sizeof(struct vtable));
-  table->tree = create_rb_tree();
+  rb_tree_v2_init(&table->tree, vtable_cmp, vtable_key_cmp);
   return table;
 }
 
 static inline void vtable_free(struct vtable *table) {
   ASSERT(table->count == 0);
-  rb_tree_free(table->tree);
   kfree(table);
 }
 
@@ -87,10 +100,11 @@ void vfs_add_node(vfs_t *vfs, ventry_t *ve) {
   vn->device = vfs->device;
 
   struct vtable *table = vfs->vtable;
-  if (rb_tree_find(table->tree, vn->id) != NULL)
+  if (rb_tree_v2_find(&table->tree, vn->id) != NULL)
     panic("vnode already exists in table {:vn}", vn);
 
-  rb_tree_insert(table->tree, vn->id, vn_getref(vn));
+  vn_getref(vn);
+  rb_tree_v2_insert(&table->tree, &vn->vtable_node);
   table->count++;
   LIST_ADD(&vfs->vnodes, vn, list);
   ve_syncvn(ve);
@@ -104,9 +118,9 @@ void vfs_remove_node(vfs_t *vfs, vnode_t *vn) {
   // vn->vfs reference is released on vnode cleanup
 
   struct vtable *table = vfs->vtable;
-  vnode_t *found = rb_tree_delete(table->tree, vn->id);
-  ASSERT(found == vn);
-  vn_putref(&found);
+  rb_tree_v2_remove(&table->tree, &vn->vtable_node);
+  vnode_t *tmp = vn;
+  vn_putref(&tmp);
   table->count--;
   LIST_REMOVE(&vfs->vnodes, vn, list);
   DPRINTF("removed {:+vn} from vfs id=%u [V_ALIVE -> V_DEAD]\n", vn, vfs->id);
