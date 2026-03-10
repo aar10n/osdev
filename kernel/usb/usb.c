@@ -10,8 +10,6 @@
 #include <kernel/panic.h>
 #include <kernel/string.h>
 
-#include <rb_tree.h>
-
 #define ASSERT(x) kassert(x)
 #define DPRINTF(x, ...) kprintf("usb: " x, ##__VA_ARGS__)
 #define EPRINTF(x, ...) kprintf("usb: %s: " x, __func__, ##__VA_ARGS__)
@@ -28,7 +26,6 @@
 
 #define EVT_RING_SIZE 256
 
-static rb_tree_t *tree = NULL;
 static id_t device_id = 0;
 static cond_t init;
 

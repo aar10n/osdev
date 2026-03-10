@@ -10,7 +10,7 @@
 #include <kernel/string.h>
 #include <kernel/printf.h>
 
-#include <interval_tree.h>
+#include <interval_tree_v2.h>
 
 #define MAX_DEPTH 32
 
@@ -25,8 +25,8 @@ static const char *preload_files[] = {
   "kernel/sched/sched.c"
 };
 
-static intvl_tree_t *debug_files;
-static intvl_tree_t *debug_functions;
+static intvl_tree_v2_t debug_files;
+static intvl_tree_v2_t debug_functions;
 static bool has_debug_info = false;
 
 static bool is_sensible_pointer(uintptr_t ptr) {
@@ -50,12 +50,12 @@ static bool matches_suffix(const char *str, const char *suffix, size_t suffix_le
 }
 
 static dwarf_file_t *locate_or_load_dwarf_file(uintptr_t addr) {
-  intvl_node_t *node = intvl_tree_find(debug_files, intvl(addr, addr + 1));
+  intvl_node_v2_t *node = intvl_tree_v2_get_point(&debug_files, addr);
   if (node == NULL) {
     return NULL;
   }
 
-  dwarf_file_t *file = node->data;
+  dwarf_file_t *file = container_of(node, dwarf_file_t, inode);
   if (file->lines == NULL) {
     if (dwarf_file_load_lines(file) < 0) {
       kprintf("debug: failed to load lines for %s\n", file->name);
@@ -68,8 +68,9 @@ static dwarf_file_t *locate_or_load_dwarf_file(uintptr_t addr) {
     }
 
     SLIST_FOR_IN(func, file->functions, next) {
-      // kprintf("debug: function %s [%p]\n", func->name, func->addr_lo);
-      intvl_tree_insert(debug_functions, intvl(func->addr_lo, func->addr_hi), func);
+      func->inode.start = func->addr_lo;
+      func->inode.end = func->addr_hi;
+      intvl_tree_v2_insert(&debug_functions, &func->inode);
     }
   }
 
@@ -81,20 +82,20 @@ static dwarf_function_t *locate_or_load_dwarf_function(uintptr_t addr) {
     return NULL;
   }
 
-  intvl_node_t *node = intvl_tree_find(debug_functions, intvl(addr, addr + 1));
+  intvl_node_v2_t *node = intvl_tree_v2_get_point(&debug_functions, addr);
   if (node == NULL) {
     dwarf_file_t *file = locate_or_load_dwarf_file(addr);
     if (file == NULL) {
       return NULL;
     }
 
-    node = intvl_tree_find(debug_functions, intvl(addr, addr + 1));
+    node = intvl_tree_v2_get_point(&debug_functions, addr);
     if (node) {
-      return node->data;
+      return container_of(node, dwarf_function_t, inode);
     }
     return NULL;
   }
-  return node->data;
+  return container_of(node, dwarf_function_t, inode);
 }
 
 static dwarf_line_t *get_line_by_addr(dwarf_file_t *file, uintptr_t addr) {
@@ -147,10 +148,12 @@ void debug_init() {
   }
 
   has_debug_info = true;
-  debug_files = create_intvl_tree();
-  debug_functions = create_intvl_tree();
+  intvl_tree_v2_init(&debug_files);
+  intvl_tree_v2_init(&debug_functions);
   RLIST_FOR_IN(file, files, list) {
-    intvl_tree_insert(debug_files, intvl(file->addr_lo, file->addr_hi), file);
+    file->inode.start = file->addr_lo;
+    file->inode.end = file->addr_hi;
+    intvl_tree_v2_insert(&debug_files, &file->inode);
 
     // preload files that will almost always be in the call stack
     for (int i = 0; i < ARRAY_SIZE(preload_files); i++) {

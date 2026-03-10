@@ -15,7 +15,6 @@
 #include <fs/devfs/devfs.h>
 
 #include <bitmap.h>
-#include <rb_tree.h>
 
 #define ASSERT(x) kassert(x)
 #define DPRINTF(x, ...) kprintf("input: " x, ##__VA_ARGS__)

@@ -7,6 +7,7 @@
 
 #include <kernel/base.h>
 #include <kernel/queue.h>
+#include <interval_tree_v2.h>
 
 typedef struct dwarf_file dwarf_file_t;
 typedef struct dwarf_function dwarf_function_t;
@@ -27,6 +28,8 @@ typedef struct dwarf_file {
 
   // not valid until dwarf_file_load_functions() call
   dwarf_function_t *functions;
+
+  intvl_node_v2_t inode;
 } dwarf_file_t;
 
 /// a dwarf function (subprogram)
@@ -41,6 +44,8 @@ typedef struct dwarf_function {
 
   dwarf_file_t *file;
   SLIST_ENTRY(dwarf_function_t) next;
+
+  intvl_node_v2_t inode;
 } dwarf_function_t;
 
 /// a dwarf source line
