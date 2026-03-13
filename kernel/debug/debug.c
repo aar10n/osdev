@@ -61,7 +61,9 @@ static dwarf_file_t *locate_or_load_dwarf_file(uintptr_t addr) {
       kprintf("debug: failed to load lines for %s\n", file->name);
       return NULL;
     }
+  }
 
+  if (file->functions == NULL) {
     if (dwarf_file_load_funcs(file) < 0) {
       kprintf("debug: failed to load functions for %s\n", file->name);
       return NULL;
@@ -99,14 +101,17 @@ static dwarf_function_t *locate_or_load_dwarf_function(uintptr_t addr) {
 }
 
 static dwarf_line_t *get_line_by_addr(dwarf_file_t *file, uintptr_t addr) {
-  dwarf_line_t *prev = &file->lines[0];
+  dwarf_line_t *best = NULL;
   for (uint32_t i = 0; i < file->line_count; i++) {
-    if ((file->lines[i].addr == addr) ||
-        (prev && (addr > prev->addr) && (addr < file->lines[i].addr))) {
+    if (file->lines[i].addr == addr) {
       return &file->lines[i];
+    } else if (file->lines[i].addr < addr) {
+      best = &file->lines[i];
+    } else {
+      break;
     }
   }
-  return NULL;
+  return best;
 }
 
 //
@@ -217,6 +222,8 @@ int debug_unwind(uintptr_t rip, uintptr_t rbp) {
     dwarf_function_t *func = locate_or_load_dwarf_function(rip);
     if (func == NULL) {
       kprintf_raw("    ?? %018p\n", rip);
+    } else if (func->file == NULL) {
+      kprintf_raw("    %s %018p\n", func->name, rip);
     } else {
       dwarf_line_t *line = get_line_by_addr(func->file, rip);
       if (line == NULL) {
@@ -229,11 +236,8 @@ int debug_unwind(uintptr_t rip, uintptr_t rbp) {
     if ((uintptr_t) frame->rbp <= prev_rbp) {
       break;
     }
-//    if (virt_to_phys(frame->rbp) == 0) {
-//      kprintf_raw("    ?? %018p\n", frame->rip);
-//      break;
-//    }
 
+    prev_rbp = (uintptr_t) frame;
     rip = frame->rip;
     frame = frame->rbp;
   }

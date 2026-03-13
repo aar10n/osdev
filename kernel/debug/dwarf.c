@@ -16,7 +16,7 @@
 
 #define DEALLOC_DIE(die) ({ if ((die) != NULL) dwarf_dealloc(dwarf_debug, die, DW_DLA_DIE); 0; })
 #define DEALLOC_ERR(err) ({ if ((err) != NULL) dwarf_dealloc(dwarf_debug, err, DW_DLA_ERROR); 0; })
-#define DEALLOC_STR(str) ({ if ((die) != NULL) dwarf_dealloc(dwarf_debug, die, DW_DLA_STRING); 0; })
+#define DEALLOC_STR(str) ({ if ((str) != NULL) dwarf_dealloc(dwarf_debug, str, DW_DLA_STRING); 0; })
 
 #define CHECK_ERROR(expr, label_err) ({ if ((result = (expr)) != DW_DLV_OK) goto label_err; })
 
@@ -223,7 +223,7 @@ static int dwarf_die_pc_range(Dwarf_Die die, Dwarf_Addr *out_lopc, Dwarf_Addr *o
       kprintf("dwarf: no high pc\n");
       // assume lo == hi if no hi entry exists
       *out_lopc = lo;
-      *out_hipc = hi;
+      *out_hipc = lo;
       return DW_DLV_OK;
     }
     return result;
@@ -481,7 +481,7 @@ int dwarf_debug_load_files(dwarf_file_t **out_file) {
   if (result == DW_DLV_ERROR) {
     kprintf("dwarf: failed to load files\n");
     kprintf("        %s\n", dwarf_errmsg(error));
-    DEALLOC_DIE(error);
+    DEALLOC_ERR(error);
     return -1;
   }
   *out_file = LIST_FIRST(&files);
@@ -515,7 +515,7 @@ int dwarf_file_load_lines(dwarf_file_t *file) {
     DEALLOC_DIE(die);
     if (result == DW_DLV_ERROR) {
       kprintf("dwarf: dwarf_srclines_b() failed\n");
-      kprintf("       %s", dwarf_errmsg(error));
+      kprintf("       %s\n", dwarf_errmsg(error));
       DEALLOC_ERR(error);
     }
     return result;
@@ -656,6 +656,7 @@ int dwarf_file_load_funcs(dwarf_file_t *file) {
     func->die_off = off;
     func->line_start = NULL;
     func->line_end = NULL;
+    func->file = NULL;
     func->next = NULL;
     // add in reverse order so we end up with a list
     // in increasing order of addr_lo
@@ -689,14 +690,18 @@ int dwarf_file_load_funcs(dwarf_file_t *file) {
       if (func) {
         if (line->addr == func->addr_lo) {
           func->line_start = line;
+          func->file = file;
         } else if (line->addr >= func->addr_hi) {
           kassert(i > 0);
           func->line_end = &file->lines[i - 1];
-          func->file = file;
           func = func->next;
           goto try_again;
         }
       }
+    }
+    // handle the last function if its end wasn't found
+    if (func && func->line_start && !func->line_end) {
+      func->line_end = &file->lines[file->line_count - 1];
     }
   }
 
@@ -719,7 +724,7 @@ void dwarf_free_file(dwarf_file_t *file) {
 //
 
 // keeping this here because I want to implement dwarf based backtraces
-int dwarf_function_get_frame(dwarf_function_t *func) {
+int dwarf_function_get_frame_base(dwarf_function_t *func) {
   int result;
   Dwarf_Error error = 0;
   Dwarf_Bool is_info = true;
@@ -772,7 +777,7 @@ int dwarf_function_get_frame(dwarf_function_t *func) {
   dwarf_get_FORM_name(value_type, &value_name);
 
   kprintf("       CFA register\n");
-  kprintf("         value type = %d\n", value_name);
+  kprintf("         value type = %s\n", value_name);
   kprintf("         off relevant = %u\n", off_relevant);
   kprintf("         reg = %u\n", reg);
   kprintf("         offset = %u\n", offset);
@@ -842,10 +847,6 @@ int dwarf_function_get_frame(dwarf_function_t *func) {
   kprintf("       cie initial instructions length = %d\n", initial_instructions_length);
   kprintf("       cie offset size = %d\n", offset_size);
   kprintf("\n");
-
-  Dwarf_Half address_size = 8;
-  Dwarf_Small dwarf_version = func->file->version;
-
 
   return 0;
 
