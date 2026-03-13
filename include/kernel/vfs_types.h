@@ -404,6 +404,7 @@ typedef struct fd_entry {
   struct file *file;    // file reference
   _refcount;            // reference count
   mtx_t lock;           // protects flags field
+  rb_node_v2_t fd_node; // ftable tree node (keyed by fd)
 } fd_entry_t;
 
 

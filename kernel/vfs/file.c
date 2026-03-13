@@ -14,7 +14,7 @@
 #include <kernel/printf.h>
 
 #include <bitmap.h>
-#include <rb_tree.h>
+#include <rb_tree_v2.h>
 
 #include <kernel/mm/pool.h>
 
@@ -35,11 +35,26 @@ extern struct file_ops vnode_file_ops;
 #include <kernel/pty.h>
 
 typedef struct ftable {
-  rb_tree_t *tree;
+  rb_tree_v2_t tree;
   bitmap_t *bitmap;
   size_t count;
   mtx_t lock;
 } ftable_t;
+
+static int fd_cmp(const rb_node_v2_t *a, const rb_node_v2_t *b) {
+  fd_entry_t *fa = container_of(a, fd_entry_t, fd_node);
+  fd_entry_t *fb = container_of(b, fd_entry_t, fd_node);
+  if (fa->fd < fb->fd) return -1;
+  if (fa->fd > fb->fd) return 1;
+  return 0;
+}
+
+static int fd_key_cmp(uint64_t key, const rb_node_v2_t *b) {
+  fd_entry_t *fb = container_of(b, fd_entry_t, fd_node);
+  if ((int)key < fb->fd) return -1;
+  if ((int)key > fb->fd) return 1;
+  return 0;
+}
 
 //
 
@@ -271,7 +286,7 @@ void _f_cleanup(__move file_t **fref) {
 
 ftable_t *ftable_alloc() {
   ftable_t *ftable = kmallocz(sizeof(ftable_t));
-  ftable->tree = create_rb_tree();
+  rb_tree_v2_init(&ftable->tree, fd_cmp, fd_key_cmp);
   ftable->bitmap = create_bitmap(FTABLE_MAX_FILES);
   mtx_init(&ftable->lock, MTX_SPIN, "ftable_lock");
   return ftable;
@@ -279,20 +294,19 @@ ftable_t *ftable_alloc() {
 
 ftable_t *ftable_clone(ftable_t *ftable) {
   ftable_t *clone = kmallocz(sizeof(ftable_t));
-  clone->tree = create_rb_tree();
+  rb_tree_v2_init(&clone->tree, fd_cmp, fd_key_cmp);
   mtx_init(&clone->lock, MTX_SPIN, "ftable_lock");
 
   FTABLE_LOCK(ftable);
   clone->bitmap = clone_bitmap(ftable->bitmap);
 
-  rb_node_t *node = ftable->tree->min;
-  while (node != ftable->tree->nil) {
-    fd_entry_t *fde = node->data;
+  rb_node_v2_t *rb = rb_tree_v2_first(&ftable->tree);
+  while (rb) {
+    fd_entry_t *fde = container_of(rb, fd_entry_t, fd_node);
     fd_entry_t *dup = fde_dup(fde, -1);
-    rb_tree_insert(clone->tree, fde->fd, dup);
+    rb_tree_v2_insert(&clone->tree, &dup->fd_node);
     clone->count++;
-
-    node = node->next;
+    rb = rb_tree_v2_next(rb);
   }
 
   FTABLE_UNLOCK(ftable);
@@ -302,7 +316,6 @@ ftable_t *ftable_clone(ftable_t *ftable) {
 void ftable_free(ftable_t **ftablep) {
   ftable_t *ftable = moveref(*ftablep);
   ASSERT(ftable->count == 0);
-  rb_tree_free(ftable->tree);
   bitmap_free(ftable->bitmap);
   kfree(ftable);
 }
@@ -350,7 +363,8 @@ void ftable_free_fd(ftable_t *ftable, int fd) {
 
 __ref fd_entry_t *ftable_get_entry(ftable_t *ftable, int fd) {
   FTABLE_LOCK(ftable);
-  fd_entry_t *fde = rb_tree_find(ftable->tree, fd);
+  rb_node_v2_t *n = rb_tree_v2_find(&ftable->tree, (uint64_t)fd);
+  fd_entry_t *fde = n ? container_of(n, fd_entry_t, fd_node) : NULL;
   fde = fde_getref(fde);
   FTABLE_UNLOCK(ftable);
   return fde;
@@ -358,15 +372,14 @@ __ref fd_entry_t *ftable_get_entry(ftable_t *ftable, int fd) {
 
 __ref fd_entry_t *ftable_get_remove_entry(ftable_t *ftable, int fd) {
   FTABLE_LOCK(ftable);
-  rb_node_t *node = rb_tree_find_node(ftable->tree, fd);
-  if (node == NULL) {
+  rb_node_v2_t *n = rb_tree_v2_find(&ftable->tree, (uint64_t)fd);
+  if (n == NULL) {
     FTABLE_UNLOCK(ftable);
-    return NULL; // entry does not exist
+    return NULL;
   }
 
-  fd_entry_t *fde = node->data;
-  fde = moveref(fde); // move the reference to the caller
-  rb_tree_delete_node(ftable->tree, node);
+  fd_entry_t *fde = container_of(n, fd_entry_t, fd_node);
+  rb_tree_v2_remove(&ftable->tree, n);
   ftable->count--;
   FTABLE_UNLOCK(ftable);
   return fde;
@@ -375,10 +388,10 @@ __ref fd_entry_t *ftable_get_remove_entry(ftable_t *ftable, int fd) {
 void ftable_add_entry(ftable_t *ftable, __ref fd_entry_t *fde) {
   ASSERT(fde->fd >= 0 && fde->fd < FTABLE_MAX_FILES);
   FTABLE_LOCK(ftable);
-  if (rb_tree_find(ftable->tree, fde->fd) != NULL) {
+  if (rb_tree_v2_find(&ftable->tree, (uint64_t)fde->fd) != NULL) {
     panic("entry already exists");
   }
-  rb_tree_insert(ftable->tree, fde->fd, fde);
+  rb_tree_v2_insert(&ftable->tree, &fde->fd_node);
   bitmap_set(ftable->bitmap, (index_t) fde->fd);
   ftable->count++;
   FTABLE_UNLOCK(ftable);
@@ -388,19 +401,19 @@ void ftable_close_exec(ftable_t *ftable) {
   // close directory streams and files opened with the O_CLOEXEC flag
   FTABLE_LOCK(ftable);
 
-  int res;
-  rb_node_t *node = ftable->tree->min;
-  while (node != ftable->tree->nil) {
-    rb_node_t *next = node->next;
-    fd_entry_t *fde = node->data;
-    
+  rb_node_v2_t *rb = rb_tree_v2_first(&ftable->tree);
+  while (rb) {
+    rb_node_v2_t *next = rb_tree_v2_next(rb);
+    fd_entry_t *fde = container_of(rb, fd_entry_t, fd_node);
+
     // check flags under lock
     mtx_lock(&fde->lock);
     bool should_close = fde->flags & (O_DIRECTORY | O_CLOEXEC);
     mtx_unlock(&fde->lock);
 
     if (!should_close) {
-      goto next_entry;
+      rb = next;
+      continue;
     }
 
     DPRINTF("close_exec: closing file descriptor {:d} <{:str}>\n", fde->fd, &fde->real_path);
@@ -412,14 +425,13 @@ void ftable_close_exec(ftable_t *ftable) {
       f_unlock(file);
     }
 
-    rb_tree_delete_node(ftable->tree, node);
+    rb_tree_v2_remove(&ftable->tree, rb);
     bitmap_clear(ftable->bitmap, (index_t) fde->fd);
     ftable->count--;
     fde->fd = -1;
     fde_putref(&fde);
 
-  LABEL(next_entry);
-    node = next;
+    rb = next;
   }
 
   FTABLE_UNLOCK(ftable);
@@ -429,10 +441,10 @@ void ftable_close_all(ftable_t *ftable) {
   // close all files in the file table
   FTABLE_LOCK(ftable);
 
-  rb_node_t *node = ftable->tree->min;
-  while (node != ftable->tree->nil) {
-    rb_node_t *next = node->next;
-    fd_entry_t *fde = node->data;
+  rb_node_v2_t *rb = rb_tree_v2_first(&ftable->tree);
+  while (rb) {
+    rb_node_v2_t *next = rb_tree_v2_next(rb);
+    fd_entry_t *fde = container_of(rb, fd_entry_t, fd_node);
 
     DPRINTF("close_all: closing file descriptor {:d} <{:str}>\n", fde->fd, &fde->real_path);
 
@@ -443,12 +455,12 @@ void ftable_close_all(ftable_t *ftable) {
       f_unlock(file);
     }
 
-    rb_tree_delete_node(ftable->tree, node);
+    rb_tree_v2_remove(&ftable->tree, rb);
     bitmap_clear(ftable->bitmap, (index_t) fde->fd);
     ftable->count--;
     fde_putref(&fde);
 
-    node = next;
+    rb = next;
   }
 
   FTABLE_UNLOCK(ftable);
