@@ -8,6 +8,7 @@
 #include <kernel/device.h>
 #include <kernel/vfs_types.h>
 #include <kernel/str.h>
+#include <rb_tree_v2.h>
 
 typedef struct devfs_mount {
   str_t path;
@@ -19,6 +20,8 @@ typedef struct devfs_class {
   int minor;
   const char *prefix;
   int attr;
+  uint64_t key;
+  rb_node_v2_t rb_node;
   LIST_ENTRY(struct devfs_class) list;
 } devfs_class_t;
 

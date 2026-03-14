@@ -10,16 +10,35 @@
 
 #include <fs/ramfs/ramfs.h>
 
-#include <rb_tree.h>
-
 #define ASSERT(x) kassert(x)
 #define DPRINTF(fmt, ...) kprintf("devfs: " fmt, ##__VA_ARGS__)
 #define EPRINTF(fmt, ...) kprintf("devfs: %s: " fmt, __func__, ##__VA_ARGS__)
 
 
 LIST_HEAD(devfs_class_t) dev_classes;
-rb_tree_t *dev_full_lookup;
-rb_tree_t *dev_major_lookup;
+rb_tree_v2_t dev_full_lookup;
+rb_tree_v2_t dev_major_lookup;
+static bool dev_trees_initialized = false;
+
+static int devfs_class_cmp(const rb_node_v2_t *a, const rb_node_v2_t *b) {
+  devfs_class_t *ca = container_of(a, devfs_class_t, rb_node);
+  devfs_class_t *cb = container_of(b, devfs_class_t, rb_node);
+  if (ca->key < cb->key) return -1;
+  if (ca->key > cb->key) return 1;
+  return 0;
+}
+
+static int devfs_class_key_cmp(uint64_t key, const rb_node_v2_t *b) {
+  devfs_class_t *cb = container_of(b, devfs_class_t, rb_node);
+  if (key < cb->key) return -1;
+  if (key > cb->key) return 1;
+  return 0;
+}
+
+static inline devfs_class_t *devfs_class_find(rb_tree_v2_t *tree, uint64_t key) {
+  rb_node_v2_t *n = rb_tree_v2_find(tree, key);
+  return n ? container_of(n, devfs_class_t, rb_node) : NULL;
+}
 
 
 str_t devfs_name_for_dev(cstr_t path, dev_t dev) {
@@ -30,10 +49,10 @@ str_t devfs_name_for_dev(cstr_t path, dev_t dev) {
   devfs_class_t *class = NULL;
   bool is_fullname = true;
   // first check if an exact <major><minor> match exists
-  class = rb_tree_find(dev_full_lookup, makedev(major, minor));
+  class = devfs_class_find(&dev_full_lookup, makedev(major, minor));
   if (class == NULL) {
     // now check if a <major> match exists
-    class = rb_tree_find(dev_major_lookup, major);
+    class = devfs_class_find(&dev_major_lookup, major);
     is_fullname = false;
   }
   if (class == NULL) {
@@ -99,11 +118,10 @@ int devfs_register_class(int major, int minor, const char *prefix, int attr) {
             major, prefix, attr);
   }
 
-  if (dev_full_lookup == NULL) {
-    // allocate the lookup trees if they are not already allocated
-    ASSERT(dev_major_lookup == NULL);
-    dev_full_lookup = create_rb_tree();
-    dev_major_lookup = create_rb_tree();
+  if (!dev_trees_initialized) {
+    rb_tree_v2_init(&dev_full_lookup, devfs_class_cmp, devfs_class_key_cmp);
+    rb_tree_v2_init(&dev_major_lookup, devfs_class_cmp, devfs_class_key_cmp);
+    dev_trees_initialized = true;
   }
 
   devfs_class_t *class = kmallocz(sizeof(devfs_class_t));
@@ -112,17 +130,16 @@ int devfs_register_class(int major, int minor, const char *prefix, int attr) {
   class->prefix = prefix;
   class->attr = attr;
 
-  uint64_t key;
-  rb_tree_t *tree;
+  rb_tree_v2_t *tree;
   if (minor >= 0) {
-    key = makedev(class->major, class->minor);
-    tree = dev_full_lookup;
+    class->key = makedev(class->major, class->minor);
+    tree = &dev_full_lookup;
   } else {
-    key = major;
-    tree = dev_major_lookup;
+    class->key = major;
+    tree = &dev_major_lookup;
   }
 
-  rb_tree_insert(tree, key, class);
+  rb_tree_v2_insert(tree, &class->rb_node);
   LIST_ADD_FRONT(&dev_classes, class, list);
   return 0;
 }
