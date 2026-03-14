@@ -108,7 +108,7 @@ USERSPACE_DIRS = sbin bin usr.bin
 
 all: $(BUILD_DIR)/osdev.img tools
 
-run: QEMU_SHELL_DEVICE = telnet:127.0.0.1:8008,server,nowait
+run: QEMU_SHELL_DEVICE = mon:stdio
 run: $(BUILD_DIR)/osdev.img
 	$(QEMU) $(QEMU_OPTIONS) $(if $(QEMU_GDB),-s,) -monitor $(QEMU_MONITOR) $(if $(QEMU_NOGRAPHICS),-nographic,) $(EXTRA_OPTIONS)
 
@@ -233,9 +233,9 @@ $(BUILD_DIR)/kernel.elf: $(KERNEL_OBJECTS) $(BUILD_DIR)/libdwarf_kernel.a
 # kernel libdwarf
 $(BUILD_DIR)/libdwarf_kernel.a: $(TOOL_ROOT)/lib/libdwarf.a
 	$(OBJCOPY) $^ $@ \
-		--redefine-sym malloc=kmalloc \
-		--redefine-sym calloc=kcalloc \
-		--redefine-sym free=kfree \
+		--redefine-sym malloc=__dwarf_malloc \
+		--redefine-sym calloc=__dwarf_calloc \
+		--redefine-sym free=__dwarf_free \
 		--redefine-sym printf=kprintf \
 		--redefine-sym realloc=__debug_realloc_stub \
 		--redefine-sym fclose=__debug_fclose_stub \

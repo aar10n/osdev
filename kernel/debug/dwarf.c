@@ -5,6 +5,7 @@
 #include <kernel/debug/dwarf.h>
 #include <kernel/init.h>
 #include <kernel/mm.h>
+#include <kernel/mm/pool.h>
 
 #include <kernel/queue.h>
 #include <kernel/string.h>
@@ -365,6 +366,8 @@ int dwarf_init_debug() {
     kprintf("dwarf: no debugging info available\n");
     return -1;
   }
+
+  dwarf_pool_init();
 
   result = dwarf_object_init_b(&dwarf_interface, debug_dwarf_error_handler, 0, DW_GROUPNUMBER_ANY, &dwarf_debug, &error);
   if (result != DW_DLV_OK) {
@@ -857,22 +860,59 @@ LABEL(FAIL);
 }
 
 //
-// MARK: DWARF Library Stubs
+// MARK: DWARF Pool Allocator
 //
 
-// libdwarf depends on some standard library functions. to get around this,
-// we rewrite some of the symbols to their kernel counterparts using objcopy.
+// libdwarf depends on some standard library functions. we redirect malloc/calloc/free
+// to pool-backed wrappers for performance, falling back to kmalloc for oversized
+// allocations or before the pool is initialized.
 //
-// The following functions are required for basic library function:
-//     malloc -> kmalloc
-//     calloc -> kcalloc
-//     free   -> kfree
-//     strdup -> strdup (unchanged)
-//     strtol -> strtol (unchanged)
-//     qsort  -> qsort  (unchanged)
+// the other required functions are left unchanged:
+//     strdup -> strdup
+//     strtol -> strtol
+//     qsort  -> qsort
+
+static pool_t *dwarf_pool;
+
+// common libdwarf allocation sizes (struct + 16 byte DW_RESERVE prefix):
+//   40, 48, 56, 64, 72, 96, 184, 312, 592
+// plus variable-length strings and pointer arrays
+static const size_t dwarf_pool_sizes[] = {
+  48, 64, 96, 192, 320, 600, 0
+};
+
+void dwarf_pool_init() {
+  dwarf_pool = pool_create("dwarf", dwarf_pool_sizes, POOL_NOCACHE);
+}
+
+_used void *__dwarf_malloc(size_t size) {
+  if (dwarf_pool && size <= 600) {
+    return pool_alloc(dwarf_pool, size);
+  }
+  return kmallocz(size);
+}
+
+_used void *__dwarf_calloc(size_t nmemb, size_t size) {
+  size_t total = nmemb * size;
+  if (dwarf_pool && total <= 600) {
+    return pool_alloc(dwarf_pool, total);
+  }
+  return kmallocz(total);
+}
+
+_used void __dwarf_free(void *ptr) {
+  if (ptr == NULL)
+    return;
+  if (kheap_is_valid_ptr(ptr)) {
+    kfree(ptr);
+  } else {
+    pool_free(dwarf_pool, ptr);
+  }
+}
+
 //
-// the others are not used in any of the functions we're calling so we remap
-// them to a stub to avoid implementing them, as well as to satisfy the linker.
+// MARK: DWARF Library Stubs
+//
 
 #define LIBDWARF_STUB(funcname) \
   _used void __debug_ ##funcname## _stub() { panic(">> debug stub: " #funcname); }
