@@ -21,7 +21,7 @@
 
 #include <fs/procfs/procfs.h>
 
-#include <interval_tree.h>
+#include <interval.h>
 #include <interval_tree_v2.h>
 
 #include <abi/mman.h>
