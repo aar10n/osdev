@@ -44,7 +44,6 @@ and a couple of other userspace programs. It runs doom, and is now able to host 
 │  ├── bus          pci & pcie drivers
 │  ├── cpu          cpu related code and assembly routines
 │  ├── debug        debugging facilities (DWARF, stacktrace, etc)
-│  ├── gui          graphics code (not used yet)
 │  ├── hw           core system hardware drivers (apic, ioapic, etc)
 │  ├── mm           physical and virtual memory management
 │  ├── tty          terminal interface

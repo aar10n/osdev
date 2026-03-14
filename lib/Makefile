@@ -3,8 +3,8 @@ $(call register,lib,KERNEL)
 
 # lib/
 lib += atomic.c bitmap.c hash_table.c \
-	interval_tree.c interval_tree_v2.c \
-	murmur3.c rb_tree.c rb_tree_v2.c sort.c
+	interval_tree_v2.c murmur3.c rb_tree_v2.c \
+	sort.c
 
 # lib/asm
 lib += asm/atomic.asm asm/bits.asm

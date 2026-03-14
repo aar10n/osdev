@@ -125,13 +125,6 @@ static void debug_early_init() {
 EARLY_INIT(debug_early_init);
 
 void debug_init() {
-  // NOTE: Initializing debugging information is quite slow and unbearably so while
-  //   running with a debugger (hence the is_debug_enabled flag). I suspect it is
-  //   due to libdwarf reallocating internal data structures a very large number of
-  //   times as we load in line information top-to-bottom of each file. Maybe the
-  //   library isnt well suited to this type of access, but the kernel heap allocator
-  //   is probably the reason. Maybe it should be benchmarked, or link libdwarf to
-  //   a different specialty allocator.
   if (!is_debug_enabled) {
     has_debug_info = false;
     return;
