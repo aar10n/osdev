@@ -157,7 +157,7 @@ void launch_init_process() {
   init_process_alloc_strings(&init_path, &init_args, &init_env);
 
   int res;
-  kprintf("launching init process\n");
+  kprintf("launching init process (at {:llu}ms)\n", NS_TO_MS(clock_get_nanos()));
   proc_t *init_proc = proc_alloc_new(getref(curproc->creds));
   proc_setup_add_thread(init_proc, thread_alloc(0, SIZE_16KB));
 
