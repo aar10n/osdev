@@ -28,7 +28,8 @@
 
 
 #define ASSERT(x) kassert(x)
-#define DPRINTF(x, ...) kprintf("vmalloc: " x, ##__VA_ARGS__)
+#define LOG_TAG vmalloc
+#include <kernel/log.h>
 #define EPRINTF(fmt, ...) kprintf("vmalloc: %s: " fmt, __func__, ##__VA_ARGS__)
 #define DPANICF(x, ...) panic(x, ##__VA_ARGS__)
 #define ALLOC_ERROR(msg, ...) panic(msg, ##__VA_ARGS__)

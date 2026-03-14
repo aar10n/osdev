@@ -18,7 +18,8 @@
 #include <kernel/string.h>
 
 #define ASSERT(x) kassert(x)
-#define DPRINTF(x, ...) kprintf("hid: " x, ##__VA_ARGS__)
+#define LOG_TAG hid
+#include <kernel/log.h>
 #define EPRINTF(x, ...) kprintf("hid: %s: " x, __func__, ##__VA_ARGS__)
 
 int hid_device_init(usb_device_t *device);

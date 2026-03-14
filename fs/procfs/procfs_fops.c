@@ -15,7 +15,8 @@
 #include "seqfile.h"
 
 #define ASSERT(x) kassert(x)
-#define DPRINTF(fmt, ...) kprintf("procfs: " fmt, ##__VA_ARGS__)
+#define LOG_TAG procfs
+#include <kernel/log.h>
 #define EPRINTF(fmt, ...) kprintf("procfs: %s: " fmt, __func__, ##__VA_ARGS__)
 
 #define PROCFS_OBJECT(vn) ((procfs_object_t *)((ramfs_node_t *)(vn)->data)->data)

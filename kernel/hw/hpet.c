@@ -16,8 +16,8 @@
 #include <asm/bits.h>
 
 #define ASSERT(x) kassert(x)
-#define DPRINTF(x, ...)
-// #define DPRINTF(x, ...) kprintf("hpet: " x, ##__VA_ARGS__)
+#define LOG_TAG hpet
+#include <kernel/log.h>
 
 #define MAX_HPETS 4
 

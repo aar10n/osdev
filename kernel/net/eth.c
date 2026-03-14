@@ -11,7 +11,8 @@
 #include <kernel/string.h>
 
 #define ASSERT(x) kassert(x)
-#define DPRINTF(fmt, ...) kprintf("eth: " fmt, ##__VA_ARGS__)
+#define LOG_TAG eth
+#include <kernel/log.h>
 #define EPRINTF(fmt, ...) kprintf("eth: %s: " fmt, __func__, ##__VA_ARGS__)
 
 const uint8_t eth_broadcast_addr[ETH_ALEN] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff};

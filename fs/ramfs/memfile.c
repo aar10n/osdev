@@ -9,8 +9,8 @@
 #include <kernel/printf.h>
 
 #define ASSERT(x) kassert(x)
-#define DPRINTF(fmt, ...)
-//#define DPRINTF(fmt, ...) kprintf("memfile: " fmt, ##__VA_ARGS__)
+#define LOG_TAG memfile
+#include <kernel/log.h>
 #define EPRINTF(fmt, ...) kprintf("memfile: %s: " fmt, __func__, ##__VA_ARGS__)
 
 //

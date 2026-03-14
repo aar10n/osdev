@@ -16,7 +16,8 @@
 #include <linux/in.h>
 
 #define ASSERT(x) kassert(x)
-#define DPRINTF(fmt, ...) kprintf("icmp: " fmt, ##__VA_ARGS__)
+#define LOG_TAG icmp
+#include <kernel/log.h>
 #define EPRINTF(fmt, ...) kprintf("icmp: %s: " fmt, __func__, ##__VA_ARGS__)
 
 //

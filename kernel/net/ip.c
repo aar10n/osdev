@@ -15,7 +15,8 @@
 #include <kernel/printf.h>
 
 #define ASSERT(x) kassert(x)
-#define DPRINTF(fmt, ...) kprintf("ip: " fmt, ##__VA_ARGS__)
+#define LOG_TAG ip
+#include <kernel/log.h>
 #define EPRINTF(fmt, ...) kprintf("ip: %s: " fmt, __func__, ##__VA_ARGS__)
 
 static LIST_HEAD(route_t) routing_table;

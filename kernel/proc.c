@@ -39,8 +39,8 @@ extern void kernel_thread_entry();
 // #define ASSERT(x)
 #define ASSERT(x) kassert(x)
 #define ASSERTF(x, fmt, ...) kassertf(x, fmt, ##__VA_ARGS__)
-// #define DPRINTF(...)
-#define DPRINTF(x, ...) kprintf("proc: " x, ##__VA_ARGS__)
+#define LOG_TAG proc
+#include <kernel/log.h>
 #define EPRINTF(x, ...) kprintf("proc: %s: " x, __func__, ##__VA_ARGS__)
 
 #define PROCS_MAX     1024

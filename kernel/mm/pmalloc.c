@@ -13,8 +13,8 @@
 #include <bitmap.h>
 
 #define ASSERT(x) kassert(x)
-#define DPRINTF(x, ...) kprintf("pmalloc: " x, ##__VA_ARGS__)
-//#define DPRINTF(x, ...)
+#define LOG_TAG pmalloc
+#include <kernel/log.h>
 
 #define ZONE_ALLOC_DEFAULT ZONE_TYPE_HIGH
 

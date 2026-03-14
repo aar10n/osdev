@@ -12,7 +12,8 @@
 #include "procfs.h"
 
 #define ASSERT(x) kassert(x)
-#define DPRINTF(fmt, ...) kprintf("procfs: " fmt, ##__VA_ARGS__)
+#define LOG_TAG procfs
+#include <kernel/log.h>
 
 // example: multi-item file using full seq_ops iterator
 // this demonstrates a file that lists multiple items

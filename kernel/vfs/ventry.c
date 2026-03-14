@@ -17,8 +17,8 @@ static pool_t *ventry_pool;
 #define MURMUR3_SEED 0xDEADBEEF
 
 #define ASSERT(x) kassert(x)
-//#define DPRINTF(fmt, ...) kprintf("ventry: %s: " fmt, __func__, ##__VA_ARGS__)
-#define DPRINTF(fmt, ...)
+#define LOG_TAG ventry
+#include <kernel/log.h>
 
 static struct ventry_ops ve_default_ops = {
   .v_cleanup = NULL,
@@ -54,7 +54,7 @@ __ref ventry_t *ve_alloc_linked(cstr_t name, vnode_t *vn) {
   ve_link_vnode(entry, vn);
   ve_syncvn(entry);
 
-  DPRINTF("allocated {:+ve} and linked to {:+vn}\n", entry, vn);
+  DPRINTF_FUNC("allocated {:+ve} and linked to {:+vn}\n", entry, vn);
   return entry;
 }
 
@@ -70,7 +70,7 @@ void ve_link_vnode(ventry_t *ve, vnode_t *vn) {
 }
 
 void ve_unlink_vnode(ventry_t *ve, vnode_t *vn) {
-  DPRINTF("unlinked {:ve} from {:vn}\n", ve, vn);
+  DPRINTF_FUNC("unlinked {:ve} from {:vn}\n", ve, vn);
   ve->flags &= ~VE_LINKED;
   vn->nlink--;
   vn->flags |= VN_DIRTY;
@@ -244,7 +244,7 @@ void _ve_cleanup(__move ventry_t **veref) {
   // saved in-memory and so no other ventries reference it. in this
   // case, we want to unlink the vnode before calling v_cleanup.
 
-  DPRINTF("!!! ventry cleanup !!! {:+ve}\n", ve);
+  DPRINTF_FUNC("!!! ventry cleanup !!! {:+ve}\n", ve);
   if (VE_ISLINKED(ve)) {
     vnode_t *vn = VN(ve);
     ve_unlink_vnode(ve, vn);

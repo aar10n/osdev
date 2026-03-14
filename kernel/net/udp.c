@@ -19,7 +19,8 @@
 #include <bitmap.h>
 
 #define ASSERT(x) kassert(x)
-#define DPRINTF(fmt, ...) kprintf("udp: " fmt, ##__VA_ARGS__)
+#define LOG_TAG udp
+#include <kernel/log.h>
 #define EPRINTF(fmt, ...) kprintf("udp: %s: " fmt, __func__, ##__VA_ARGS__)
 
 static bitmap_t *port_bitmap;

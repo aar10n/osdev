@@ -21,7 +21,8 @@
 #include <linux/if_addr.h>
 
 #define ASSERT(x) kassert(x)
-#define DPRINTF(fmt, ...) kprintf("netlink: " fmt, ##__VA_ARGS__)
+#define LOG_TAG netlink
+#include <kernel/log.h>
 #define EPRINTF(fmt, ...) kprintf("netlink: %s: " fmt, __func__, ##__VA_ARGS__)
 
 #define NLMSG_DEFAULT_SIZE 1024

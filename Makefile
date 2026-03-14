@@ -101,6 +101,10 @@ TARGETS = boot fs kernel lib drivers
 include $(foreach target,$(TARGETS),$(target)/Makefile)
 $(call init-modules,$(MODULES))
 
+# ensure per-tag log headers exist before compiling kernel sources
+$(KERNEL_OBJECTS): | generate-log-tags
+$(KERNEL_OBJECTS:.o=.d): | generate-log-tags
+
 # directories with userspace binaries
 USERSPACE_DIRS = sbin bin usr.bin
 
@@ -220,7 +224,7 @@ $(BUILD_DIR)/static_library_files.lst: boot/LoaderPkg.dsc boot/Loader.inf
 # kernel
 #
 
-kernel: $(BUILD_DIR)/kernel.elf
+kernel: generate-log-tags $(BUILD_DIR)/kernel.elf
 
 clean-kernel:
 	rm -f $(BUILD_DIR)/kernel.elf
@@ -396,6 +400,9 @@ endif
 #
 # misc. targets
 #
+
+list-log-tags:
+	@grep -rh '#define LOG_TAG' kernel/ drivers/ fs/ | sed 's/.*LOG_TAG //' | sort -u
 
 tail-logs:
 	tail -f $(BUILD_DIR)/kernel.log

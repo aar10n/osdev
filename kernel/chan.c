@@ -11,8 +11,8 @@
 #include <kernel/atomic.h>
 
 #define ASSERT(x) kassert(x)
-#define DPRINTF(x, ...)
-// #define DPRINTF(x, ...) kprintf("chan: " x, ##__VA_ARGS__)
+#define LOG_TAG chan
+#include <kernel/log.h>
 #define EPRINTF(x, ...) kprintf("chan: %s: " x, __func__, ##__VA_ARGS__)
 
 // private flags

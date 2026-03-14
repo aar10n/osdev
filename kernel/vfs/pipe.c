@@ -20,8 +20,8 @@
 #include <abi/fcntl.h>
 
 #define ASSERT(x) kassert(x)
-#define DPRINTF(fmt, ...) kprintf("pipe: " fmt, ##__VA_ARGS__)
-//#define DPRINTF(fmt, ...)
+#define LOG_TAG pipe
+#include <kernel/log.h>
 
 static pool_t *pipe_pool;
 

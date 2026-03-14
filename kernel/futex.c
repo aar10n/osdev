@@ -14,7 +14,8 @@
 #include <linux/futex.h>
 
 #define ASSERT(x) kassert(x)
-#define DPRINTF(fmt, ...) kprintf("futex: " fmt, ##__VA_ARGS__)
+#define LOG_TAG futex
+#include <kernel/log.h>
 #define EPRINTF(fmt, ...) kprintf("futex: %s: " fmt, __func__, ##__VA_ARGS__)
 
 // compute stable wait channel from futex key

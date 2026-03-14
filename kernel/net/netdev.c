@@ -16,7 +16,8 @@
 #include <linux/route.h>
 
 #define ASSERT(x) kassert(x)
-#define DPRINTF(fmt, ...) kprintf("netdev: " fmt, ##__VA_ARGS__)
+#define LOG_TAG netdev
+#include <kernel/log.h>
 #define EPRINTF(fmt, ...) kprintf("netdev: %s: " fmt, __func__, ##__VA_ARGS__)
 
 static LIST_HEAD(netdev_t) netdev_list;

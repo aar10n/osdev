@@ -7,7 +7,8 @@
 #include <kernel/panic.h>
 
 #define ASSERT(x) kassert(x)
-#define DPRINTF(x, ...) kprintf("sem: " x, ##__VA_ARGS__)
+#define LOG_TAG sem
+#include <kernel/log.h>
 
 
 static inline void acquire_sem_lock(sem_t *sem) {

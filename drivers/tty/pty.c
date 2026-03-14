@@ -24,7 +24,8 @@
 #include <bits/fcntl.h>
 
 #define ASSERT(x) kassert(x)
-#define DPRINTF(fmt, ...) kprintf("pty: " fmt, ##__VA_ARGS__)
+#define LOG_TAG pty
+#include <kernel/log.h>
 #define EPRINTF(fmt, ...) kprintf("pty: %s: " fmt, __func__, ##__VA_ARGS__)
 
 // =========================================================================

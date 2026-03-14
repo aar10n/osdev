@@ -62,8 +62,8 @@ static inline struct vcache_dir *vcache_dir_find(vcache_t *vcache, uint64_t key)
 #define VCACHE_UNLOCK(vcache) mtx_spin_unlock(&(vcache)->lock)
 
 #define ASSERT(x) kassert(x)
-#define DPRINTF(str, args...)
-// #define DPRINTF(fmt, ...) kprintf("vcache: %s: " fmt, __func__, ##__VA_ARGS__)
+#define LOG_TAG vcache
+#include <kernel/log.h>
 #define EPRINTF(fmt, ...) kprintf("vcache: %s: " fmt, __func__, ##__VA_ARGS__)
 
 #define VCACHE_INITIAL_SIZE 1024
@@ -157,7 +157,7 @@ static inline void vcache_remove_entry(vcache_t *vcache, struct vcache_entry *en
 
 static int vcache_invalidate_nolock(vcache_t *vcache, cstr_t path) {
   hash_t hash = ve_hash_cstr(vcache->root, path);
-  DPRINTF("invalidating {:cstr} [hash=%llu]\n", &path, hash);
+  DPRINTF_FUNC("invalidating {:cstr} [hash=%llu]\n", &path, hash);
   struct vcache_entry *entry = vcache_find_entry(vcache, path, hash);
   if (!entry) {
     return -1;
@@ -199,7 +199,7 @@ static int vcache_invalidate_nolock(vcache_t *vcache, cstr_t path) {
   struct vcache_entry *parent = vcache_find_entry(vcache, parent_path, parent_hash);
   if (parent) {
     struct vcache_dir *pdirentry = vcache_dir_find(vcache, ve_unique_id(parent->ve));
-    DPRINTF("removing entry %llu from parent dir {:ve} [%p]\n", hash, parent->ve, pdirentry);
+    DPRINTF_FUNC("removing entry %llu from parent dir {:ve} [%p]\n", hash, parent->ve, pdirentry);
     vcache_dir_remove(pdirentry, hash);
   }
 
@@ -219,7 +219,7 @@ static int vcache_invalidate_all_nolock(vcache_t *vcache) {
 
 static inline int vcache_put_nolock(vcache_t *vcache, cstr_t path, ventry_t *ve) {
   hash_t hash = ve_hash_cstr(ve, path);
-  DPRINTF("caching {:ve} at path {:cstr} [hash=%llu]\n", ve, &path, hash);
+  DPRINTF_FUNC("caching {:ve} at path {:cstr} [hash=%llu]\n", ve, &path, hash);
   struct vcache_entry *entry = vcache_find_entry(vcache, path, hash);
   if (entry) {
     if (entry->ve == ve) {
@@ -237,7 +237,7 @@ static inline int vcache_put_nolock(vcache_t *vcache, cstr_t path, ventry_t *ve)
     }
 
     struct vcache_dir *direntry = vcache_dir_alloc(ve_unique_id(ve));
-    // DPRINTF("allocated dir for {:ve} [%p]\n", ve, direntry);
+    // DPRINTF_FUNC("allocated dir for {:ve} [%p]\n", ve, direntry);
     rb_tree_v2_insert(&vcache->dir_map, &direntry->dir_node);
   }
 
@@ -254,7 +254,7 @@ static inline int vcache_put_nolock(vcache_t *vcache, cstr_t path, ventry_t *ve)
   struct vcache_entry *parent = vcache_find_entry(vcache, parent_path, parent_hash);
   if (parent) {
     struct vcache_dir *pdirentry = vcache_dir_find(vcache, ve_unique_id(parent->ve));
-    DPRINTF("adding entry %llu to parent dir {:ve} [%p]\n", hash, parent->ve, pdirentry);
+    DPRINTF_FUNC("adding entry %llu to parent dir {:ve} [%p]\n", hash, parent->ve, pdirentry);
     vcache_dir_add(pdirentry, hash);
   }
   return 0;

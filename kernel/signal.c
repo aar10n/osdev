@@ -17,7 +17,8 @@
 #include <kernel/mm/pgtable.h>
 
 #define ASSERT(x) kassert(x)
-#define DPRINTF(x, ...) kprintf("signal: " x, ##__VA_ARGS__)
+#define LOG_TAG signal
+#include <kernel/log.h>
 #define EPRINTF(x, ...) kprintf("signal: %s: " x, __func__, ##__VA_ARGS__)
 
 static pool_t *ksiginfo_pool;

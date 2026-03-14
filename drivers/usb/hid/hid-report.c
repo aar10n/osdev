@@ -10,7 +10,8 @@
 #include <kernel/string.h>
 
 #define ASSERT(x) kassert(x)
-#define DPRINTF(fmt, ...) kprintf("hid-report: " fmt, ##__VA_ARGS__)
+#define LOG_TAG hid_report
+#include <kernel/log.h>
 #define EPRINTF(fmt, ...) kprintf("hid-report: %s: " fmt, __func__, ##__VA_ARGS__)
 
 #define as_base(n) ((base_node_t *)(n))

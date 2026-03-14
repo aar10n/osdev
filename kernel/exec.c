@@ -15,7 +15,8 @@
 #include <elf.h>
 
 #define ASSERT(x) kassert(x)
-#define DPRINTF(fmt, ...) kprintf("exec: " fmt, ##__VA_ARGS__)
+#define LOG_TAG exec
+#include <kernel/log.h>
 #define EPRINTF(fmt, ...) kprintf("exec: %s: " fmt, __func__, ##__VA_ARGS__)
 
 #define AUXV_COUNT 12
@@ -86,6 +87,8 @@ int exec_load_image(enum exec_type type, uintptr_t base, cstr_t path, __out stru
       base = 0x1C00000;
     } else if (strncmp(realpath, "/usr/bin/dig", 12) == 0) {
       base = 0x2000000;
+    } else if (strncmp(realpath, "/usr/bin/xtest", 14) == 0) {
+      base = 0x2C00000;
     }
 
     DPRINTF("exec: binary {:cstr} [%s] with base %p\n", &path, realpath, base);
@@ -337,7 +340,7 @@ int exec_free_stack(struct exec_stack **stackp) {
 
 void exec_print_debug_stack(uintptr_t rsp) {
   if (vm_validate_ptr(rsp, /*write=*/false) < 0) {
-    kprintf("exec: invalid stack pointer: %p (not mapped in)\n", (void *)rsp);
+    DPRINTF("invalid stack pointer: %p (not mapped in)\n", (void *)rsp);
     return;
   }
 
@@ -345,56 +348,56 @@ void exec_print_debug_stack(uintptr_t rsp) {
 
   // read argc
   uint64_t argc = *stack_ptr++;
-  kprintf("argc: %llu\n", argc);
+  DPRINTF("argc: %llu\n", argc);
 
   // read argv pointers and strings
-  kprintf("argv:\n");
+  DPRINTF("argv:\n");
   for (uint64_t i = 0; i < argc; i++) {
     char *arg_str = (char *)(*stack_ptr);
-    kprintf("  [%llu]: %p -> \"%s\"\n", i, (void *)(*stack_ptr), arg_str);
+    DPRINTF("  [%llu]: %p -> \"%s\"\n", i, (void *)(*stack_ptr), arg_str);
     stack_ptr++;
   }
 
   // validate and skip null terminator for argv
   if (*stack_ptr == 0) {
-    kprintf("  argv null terminator found\n");
+    DPRINTF("  argv null terminator found\n");
     stack_ptr++;
   } else {
-    kprintf("  ERROR: argv null terminator missing, value: 0x%llx\n", *stack_ptr);
+    DPRINTF("  ERROR: argv null terminator missing, value: 0x%llx\n", *stack_ptr);
     return;
   }
 
   // read envp pointers and strings
-  kprintf("envp:\n");
+  DPRINTF("envp:\n");
   uint64_t env_count = 0;
   while (*stack_ptr != 0) {
     char *env_str = (char *)(*stack_ptr);
-    kprintf("  [%llu]: %p -> \"%s\"\n", env_count, (void *)(*stack_ptr), env_str);
+    DPRINTF("  [%llu]: %p -> \"%s\"\n", env_count, (void *)(*stack_ptr), env_str);
     stack_ptr++;
     env_count++;
   }
 
   // validate and skip null terminator for envp
   if (*stack_ptr == 0) {
-    kprintf("  envp null terminator found\n");
+    DPRINTF("  envp null terminator found\n");
     stack_ptr++;
   } else {
-    kprintf("  ERROR: envp null terminator missing, value: 0x%llx\n", *stack_ptr);
+    DPRINTF("  ERROR: envp null terminator missing, value: 0x%llx\n", *stack_ptr);
     return;
   }
 
   // read auxv entries
-  kprintf("auxv:\n");
+  DPRINTF("auxv:\n");
   while (*stack_ptr != 0) {
     uint64_t type = *stack_ptr++;
     uint64_t value = *stack_ptr++;
-    kprintf("  type: %llu, value: 0x%llx\n", type, value);
+    DPRINTF("  type: %llu, value: 0x%llx\n", type, value);
   }
 
   // validate final null auxv
   if (*stack_ptr == 0) {
-    kprintf("  auxv null terminator found\n");
+    DPRINTF("  auxv null terminator found\n");
   } else {
-    kprintf("  ERROR: auxv null terminator missing, value: 0x%llx\n", *stack_ptr);
+    DPRINTF("  ERROR: auxv null terminator missing, value: 0x%llx\n", *stack_ptr);
   }
 }

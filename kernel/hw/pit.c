@@ -12,7 +12,8 @@
 
 
 #define ASSERT(x) kassert(x)
-#define DPRINTF(x, ...) kprintf("pit: " x, ##__VA_ARGS__)
+#define LOG_TAG pit
+#include <kernel/log.h>
 
 #define PIT_CHANNEL_0 0x40
 #define PIT_CHANNEL_1 0x41

@@ -17,8 +17,8 @@
 #include <rb_tree_v2.h>
 
 #define ASSERT(x) kassert(x)
-//#define DPRINTF(x, ...)
-#define DPRINTF(x, ...) kprintf("alarm: " x, ##__VA_ARGS__)
+#define LOG_TAG alarm
+#include <kernel/log.h>
 #define EPRINTF(x, ...) kprintf("alarm: %s: " x, __func__, ##__VA_ARGS__)
 
 #define HANDLER_FN(fn) ((void (*)(alarm_t *, void *, void *, void *))(fn))

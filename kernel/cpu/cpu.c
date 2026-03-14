@@ -16,7 +16,8 @@
 #include <kernel/panic.h>
 #include <kernel/printf.h>
 
-#define DPRINTF(x, ...) kprintf("cpu: " x, ##__VA_ARGS__)
+#define LOG_TAG cpu
+#include <kernel/log.h>
 
 // prctl.h bits
 #define ARCH_SET_GS			0x1001

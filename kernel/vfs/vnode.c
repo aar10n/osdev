@@ -16,8 +16,8 @@
 #include <abi/termios.h>
 
 #define ASSERT(x) kassert(x)
-//#define DPRINTF(fmt, ...) kprintf("vnode: " fmt, ##__VA_ARGS__)
-#define DPRINTF(fmt, ...)
+#define LOG_TAG vnode
+#include <kernel/log.h>
 #define EPRINTF(fmt, ...) kprintf("vnode: %s: " fmt, __func__, ##__VA_ARGS__)
 
 #define CHECK_SAMEDEV(vn1, vn2) if ((vn1)->vfs != (vn2)->vfs) return -EXDEV;

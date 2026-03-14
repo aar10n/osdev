@@ -7,11 +7,18 @@ KERNEL_CFLAGS = $(CFLAGS) -mcmodel=large -mno-red-zone -fno-stack-protector \
 
 KERNEL_LDFLAGS = $(LDFLAGS) -Tlinker.ld -nostdlib -z max-page-size=0x1000 -L$(BUILD_DIR)
 
-KERNEL_INCLUDE = $(INCLUDE) -Ilib -I$(TOOL_ROOT)/include
+KERNEL_INCLUDE = $(INCLUDE) -Ilib -I$(TOOL_ROOT)/include -I$(BUILD_DIR)
 
 KERNEL_DEFINES = $(DEFINES) -D__KERNEL__
 
 KERNEL_NASMFLAGS += -D__KERNEL__
+
+# generate per-tag headers in build/log_tags/ — each source file includes only
+# its own tag header, so the .d dependency tracking ensures only files whose
+# tag was added/removed from LOG_TAGS are rebuilt.
+generate-log-tags: FORCE
+	@scripts/gen_log_tags.sh $(BUILD_DIR) $(LOG_TAGS)
+.PHONY: FORCE
 
 
 # kernel/
@@ -37,9 +44,6 @@ kernel += debug/debug.c debug/dwarf.c
 # kernel/hw
 kernel += hw/apic.c hw/hpet.c hw/ioapic.c hw/rtc.c hw/pit.c
 
-# kernel/gui
-kernel += gui/screen.c
-
 # kernel/mm
 kernel += mm/file.c mm/heap.c mm/init.c mm/pgcache.c mm/pmalloc.c mm/pgtable.c mm/pool.c mm/vmalloc.c
 
@@ -53,9 +57,6 @@ kernel += usb/usb.c
 kernel += net/skbuff.c net/netdev.c net/in_dev.c net/socket.c net/ip.c net/arp.c net/eth.c net/icmp.c \
  	net/raw.c net/inet.c net/udp.c net/unix.c net/netlink.c
 kernel += net/tcp.c
-
-# kernel/net_debug_test
-kernel += net_debug_test.c
 
 # kernel/vfs
 kernel += vfs/file.c vfs/fs.c vfs/path.c vfs/pipe.c vfs/poll.c vfs/vcache.c vfs/ventry.c \

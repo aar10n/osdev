@@ -19,8 +19,8 @@
 #include <kernel/mm/pool.h>
 
 #define ASSERT(x) kassert(x)
- #define DPRINTF(fmt, ...) kprintf("file: " fmt, ##__VA_ARGS__)
-//#define DPRINTF(fmt, ...)
+#define LOG_TAG file
+#include <kernel/log.h>
 #define EPRINTF(fmt, ...) kprintf("file: %s: " fmt, __func__, ##__VA_ARGS__)
 
 #define FTABLE_LOCK(ftable) mtx_spin_lock(&(ftable)->lock)

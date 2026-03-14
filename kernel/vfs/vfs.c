@@ -19,8 +19,8 @@ struct vtable {
 };
 
 #define ASSERT(x) kassert(x)
-//#define DPRINTF(fmt, ...) kprintf("vfs: %s: " fmt, __func__, ##__VA_ARGS__)
-#define DPRINTF(fmt, ...)
+#define LOG_TAG vfs
+#include <kernel/log.h>
 #define EPRINTF(fmt, ...) kprintf("vfs: %s: " fmt, __func__, ##__VA_ARGS__)
 
 static id_t unique_vfs_id = 1;
@@ -64,7 +64,7 @@ __ref vfs_t *vfs_alloc(struct fs_type *type, int mount_flags) {
   mtx_init(&vfs->lock, MTX_RECURSIVE, "vfs_lock");
   ref_init(&vfs->refcount);
   VN_DPRINTF("ref init id=%u<%p> [1]", vfs->id, vfs);
-  DPRINTF("allocated vfs id=%u <%p>\n", vfs->id, vfs);
+  DPRINTF_FUNC("allocated vfs id=%u <%p>\n", vfs->id, vfs);
   return vfs;
 }
 
@@ -83,11 +83,11 @@ void vfs_activate_node(vfs_t *vfs, ventry_t *ve) {
   vn->device = vfs->device;
 
   ve_syncvn(ve);
-  DPRINTF("activated {:+ve} in vfs id=%u [V_EMPTY -> V_ALIVE]\n", ve, vfs->id);
+  DPRINTF_FUNC("activated {:+ve} in vfs id=%u [V_EMPTY -> V_ALIVE]\n", ve, vfs->id);
 }
 
 void vfs_add_node(vfs_t *vfs, ventry_t *ve) {
-  DPRINTF("adding {:+ve} to vfs id=%u\n", ve, vfs->id);
+  DPRINTF_FUNC("adding {:+ve} to vfs id=%u\n", ve, vfs->id);
   ASSERT(VE_ISLINKED(ve));
   vnode_t *vn = VN(ve);
   ASSERT(vn->state == V_EMPTY);
@@ -108,11 +108,11 @@ void vfs_add_node(vfs_t *vfs, ventry_t *ve) {
   table->count++;
   LIST_ADD(&vfs->vnodes, vn, list);
   ve_syncvn(ve);
-  DPRINTF("added {:+vn} to vfs id=%u [V_EMPTY -> V_ALIVE]\n", vn, vfs->id);
+  DPRINTF_FUNC("added {:+vn} to vfs id=%u [V_EMPTY -> V_ALIVE]\n", vn, vfs->id);
 }
 
 void vfs_remove_node(vfs_t *vfs, vnode_t *vn) {
-  DPRINTF("removing {:+vn} from vfs=%u\n", vn, vfs->id);
+  DPRINTF_FUNC("removing {:+vn} from vfs=%u\n", vn, vfs->id);
   ASSERT(vn->state == V_ALIVE || vn->state == V_DEAD);
   vn->state = V_DEAD;
   // vn->vfs reference is released on vnode cleanup
@@ -123,7 +123,7 @@ void vfs_remove_node(vfs_t *vfs, vnode_t *vn) {
   vn_putref(&tmp);
   table->count--;
   LIST_REMOVE(&vfs->vnodes, vn, list);
-  DPRINTF("removed {:+vn} from vfs id=%u [V_ALIVE -> V_DEAD]\n", vn, vfs->id);
+  DPRINTF_FUNC("removed {:+vn} from vfs id=%u [V_ALIVE -> V_DEAD]\n", vn, vfs->id);
 }
 
 void _vfs_cleanup(__move vfs_t **vfsref) {
@@ -136,7 +136,7 @@ void _vfs_cleanup(__move vfs_t **vfsref) {
     mtx_unlock(&vfs->lock);
   }
 
-  DPRINTF("!!! vfs cleanup !!! id=%u<%p>\n", vfs->id, vfs);
+  DPRINTF_FUNC("!!! vfs cleanup !!! id=%u<%p>\n", vfs->id, vfs);
   if (VFS_OPS(vfs)->v_cleanup)
     VFS_OPS(vfs)->v_cleanup(vfs);
 
@@ -148,7 +148,7 @@ void _vfs_cleanup(__move vfs_t **vfsref) {
 //
 
 int vfs_mount(vfs_t *vfs, device_t *device, ventry_t *mount_ve) {
-  DPRINTF("mounting vfs id=%u at {:ve}\n", vfs->id, mount_ve);
+  DPRINTF_FUNC("mounting vfs id=%u at {:ve}\n", vfs->id, mount_ve);
   int res;
   if (!V_ISDIR(mount_ve)) {
     EPRINTF("mount point is not a directory\n");
@@ -179,7 +179,7 @@ int vfs_mount(vfs_t *vfs, device_t *device, ventry_t *mount_ve) {
     return res;
   }
   assert_new_ventry_valid(root_ve);
-  DPRINTF("mounted vfs id=%u at {:+ve} with root {:+ve}\n", vfs->id, mount_ve, root_ve);
+  DPRINTF_FUNC("mounted vfs id=%u at {:+ve} with root {:+ve}\n", vfs->id, mount_ve, root_ve);
   root_ve->parent = ve_getref(mount_ve); // allow us to traverse back to the mount point
 
   vnode_t *root_vn = VN(root_ve);
@@ -206,7 +206,7 @@ int vfs_unmount(vfs_t *vfs, ventry_t *mount_ve) {
   //   5. unshadow mount point
   //   6. tear down the ventry tree
   //
-  DPRINTF("unmounting vfs id=%u at {:ve}\n", vfs->id, mount_ve);
+  DPRINTF_FUNC("unmounting vfs id=%u at {:ve}\n", vfs->id, mount_ve);
   int res;
   if (!V_ISDIR(mount_ve)) {
     EPRINTF("mount point is not a directory\n");
@@ -280,7 +280,7 @@ int vfs_unmount(vfs_t *vfs, ventry_t *mount_ve) {
   ve_putref(&vfs->root_ve);
 
   vn_putref(&root_vn);
-  DPRINTF("unmounted vfs id=%u\n", vfs->id);
+  DPRINTF_FUNC("unmounted vfs id=%u\n", vfs->id);
   return 0;
 }
 

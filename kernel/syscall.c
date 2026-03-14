@@ -28,7 +28,8 @@ typedef uint64_t (*syscall_t)(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, 
 extern void sys_rt_sigreturn_impl(struct trapframe *frame);
 
 #define ASSERT(x) kassert(x)
-#define DPRINTF(x, ...) kprintf(x, ##__VA_ARGS__)
+#define LOG_TAG syscall
+#include <kernel/log.h>
 
 
 #define PARAM(type, name, fmt) type name

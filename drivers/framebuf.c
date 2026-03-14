@@ -12,7 +12,8 @@
 #include <linux/fb.h>
 
 #define ASSERT(x) kassert(x)
-#define DPRINTF(fmt, ...) kprintf("framebuf: " fmt, ##__VA_ARGS__)
+#define LOG_TAG framebuf
+#include <kernel/log.h>
 #define EPRINTF(fmt, ...) kprintf("framebuf: %s: " fmt, __func__, ##__VA_ARGS__)
 
 struct framebuf {

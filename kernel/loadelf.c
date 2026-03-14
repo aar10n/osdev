@@ -14,7 +14,8 @@
 
 #define ASSERT(x) kassert(x)
 #define EPRINTF(fmt, ...) kprintf("loadelf: " fmt, ##__VA_ARGS__)
-#define DPRINTF(fmt, ...) kprintf("loadelf: %s: " fmt, __func__, ##__VA_ARGS__)
+#define LOG_TAG loadelf
+#include <kernel/log.h>
 
 static inline bool is_elf_magic(Elf64_Ehdr *elf) {
   return elf->e_ident[EI_MAG0] == ELFMAG0 &&
@@ -74,7 +75,7 @@ bool elf_needs_base(void *file_base, size_t len) {
 int elf_load_image(enum exec_type type, int fd, void *file_base, size_t len, uintptr_t base, __inout struct exec_image *image) {
   Elf64_Ehdr *ehdr = file_base;
   if (len < elf_get_image_filesz(ehdr)) {
-    DPRINTF("malformed elf file\n");
+    DPRINTF_FUNC("malformed elf file\n");
     return -EINVAL;
   }
   
@@ -82,19 +83,19 @@ int elf_load_image(enum exec_type type, int fd, void *file_base, size_t len, uin
   if (ehdr->e_phoff > len || 
       ehdr->e_phnum > (len - ehdr->e_phoff) / sizeof(Elf64_Phdr) ||
       ehdr->e_phoff + (ehdr->e_phnum * sizeof(Elf64_Phdr)) > len) {
-    DPRINTF("program headers extend beyond file bounds\n");
+    DPRINTF_FUNC("program headers extend beyond file bounds\n");
     return -EINVAL;
   } else if (ehdr->e_type == ET_DYN && base == 0) {
     // dynamic executables must have a base address specified
-    DPRINTF("dynamic executable requires a base address\n");
+    DPRINTF_FUNC("dynamic executable requires a base address\n");
     return -EINVAL;
   }
 
   if (type == EXEC_BIN && !elf_is_executable(ehdr)) {
-    DPRINTF("program is not an executable\n");
+    DPRINTF_FUNC("program is not an executable\n");
     return -ENOEXEC;
   } else if (type == EXEC_DYN && !elf_is_shared_object(ehdr)) {
-    DPRINTF("program is not a shared object\n");
+    DPRINTF_FUNC("program is not a shared object\n");
     return -ENOEXEC;
   }
 
@@ -116,7 +117,7 @@ int elf_load_image(enum exec_type type, int fd, void *file_base, size_t len, uin
         ASSERT(str_isnull(interp));
         // bounds check interpreter string
         if (phdr[i].p_offset >= len || phdr[i].p_offset + phdr[i].p_filesz > len) {
-          DPRINTF("interpreter string extends beyond file bounds\n");
+          DPRINTF_FUNC("interpreter string extends beyond file bounds\n");
           res = -EINVAL;
           goto ret;
         }
@@ -132,7 +133,7 @@ int elf_load_image(enum exec_type type, int fd, void *file_base, size_t len, uin
     if (phdr[i].p_offset >= len || 
         phdr[i].p_filesz > len - phdr[i].p_offset ||
         phdr[i].p_offset + phdr[i].p_filesz > len) {
-      DPRINTF("loadable segment extends beyond file bounds\n");
+      DPRINTF_FUNC("loadable segment extends beyond file bounds\n");
       res = -EINVAL;
       goto ret;
     }
@@ -271,7 +272,7 @@ int elf_load_image(enum exec_type type, int fd, void *file_base, size_t len, uin
   if (!str_isnull(interp)) {
     // handle the interpreter
     if ((res = exec_load_image(EXEC_DYN, LIBC_BASE_ADDR, cstr_from_str(interp), &image->interp)) < 0) {
-      DPRINTF("failed to load interpreter '{:str}' {:err}\n", &interp, res);
+      DPRINTF_FUNC("failed to load interpreter '{:str}' {:err}\n", &interp, res);
       vm_desc_free_all(&image->descs); // free the descriptors we already moved
       goto ret;
     }

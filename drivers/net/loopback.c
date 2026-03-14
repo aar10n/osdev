@@ -9,7 +9,8 @@
 #include <linux/sockios.h>
 
 #define ASSERT(x) kassert(x)
-#define DPRINTF(fmt, ...) kprintf("loopback: " fmt, ##__VA_ARGS__)
+#define LOG_TAG loopback
+#include <kernel/log.h>
 #define EPRINTF(fmt, ...) kprintf("loopback: %s: " fmt, __func__, ##__VA_ARGS__)
 
 static netdev_t *loopback_dev = NULL;

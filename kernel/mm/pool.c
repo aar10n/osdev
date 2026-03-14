@@ -22,7 +22,8 @@ static void pool_global_init() {
 EARLY_INIT(pool_global_init);
 
 #define ASSERT(x) kassert(x)
-#define DPRINTF(fmt, ...) kprintf("pool: " fmt, ##__VA_ARGS__)
+#define LOG_TAG pool
+#include <kernel/log.h>
 #define EPRINTF(fmt, ...) kprintf("pool: %s: " fmt, __func__, ##__VA_ARGS__)
 
 // per-cpu cache for lockless allocation

@@ -11,8 +11,8 @@
 #include <kernel/panic.h>
 
 #define ASSERT(x) kassert(x)
-#define DPRINTF(fmt, ...) kprintf("tty_disc: " fmt, ##__VA_ARGS__)
-//#define DPRINTF(fmt, ...)
+#define LOG_TAG tty_disc
+#include <kernel/log.h>
 #define EPRINTF(fmt, ...) kprintf("tty_disc: %s: " fmt, __func__, ##__VA_ARGS__)
 
 #define TAB_WIDTH 8

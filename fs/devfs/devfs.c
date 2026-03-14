@@ -11,7 +11,8 @@
 #include <fs/ramfs/ramfs.h>
 
 #define ASSERT(x) kassert(x)
-#define DPRINTF(fmt, ...) kprintf("devfs: " fmt, ##__VA_ARGS__)
+#define LOG_TAG devfs
+#include <kernel/log.h>
 #define EPRINTF(fmt, ...) kprintf("devfs: %s: " fmt, __func__, ##__VA_ARGS__)
 
 

@@ -22,7 +22,8 @@
 #include <kernel/vfs/vresolve.h>
 
 #define ASSERT(x) kassert(x)
-#define DPRINTF(fmt, ...) kprintf("fs: " fmt, ##__VA_ARGS__)
+#define LOG_TAG fs
+#include <kernel/log.h>
 #define EPRINTF(fmt, ...) kprintf("fs: %s: " fmt, __func__, ##__VA_ARGS__)
 
 #define FTABLE (curproc->files)

@@ -20,7 +20,8 @@
 #include <linux/if.h>
 
 #define ASSERT(x) kassert(x)
-#define DPRINTF(fmt, ...) kprintf("virtio: " fmt, ##__VA_ARGS__)
+#define LOG_TAG virtio
+#include <kernel/log.h>
 #define EPRINTF(fmt, ...) kprintf("virtio: ERROR: " fmt, ##__VA_ARGS__)
 
 #define VIRTIO_NET_QUEUE_RX         0

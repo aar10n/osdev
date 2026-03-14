@@ -13,7 +13,8 @@
 #include <kernel/panic.h>
 
 #define ASSERT(x) kassert(x)
-#define DPRINTF(fmt, ...) kprintf("console: " fmt, ##__VA_ARGS__)
+#define LOG_TAG console
+#include <kernel/log.h>
 #define EPRINTF(fmt, ...) kprintf("console: %s: " fmt, __func__, ##__VA_ARGS__)
 
 KERNEL_PARAM("console.driver", str_t, console_driver_param, str_null);

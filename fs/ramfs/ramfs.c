@@ -10,8 +10,8 @@
 #include <kernel/printf.h>
 
 #define ASSERT(x) kassert(x)
-// #define DPRINTF(fmt, ...) kprintf("ramfs: " fmt, ##__VA_ARGS__)
-#define DPRINTF(fmt, ...)
+#define LOG_TAG ramfs
+#include <kernel/log.h>
 
 #define LOCK_MOUNT(mount) mtx_spin_lock(&(mount)->lock)
 #define UNLOCK_MOUNT(mount) mtx_spin_unlock(&(mount)->lock)

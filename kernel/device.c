@@ -19,8 +19,8 @@
 #include <hash_map.h>
 
 #define ASSERT(x) kassert(x)
-//#define DPRINTF(fmt, ...) kprintf("device: " fmt, ##__VA_ARGS__)
-#define DPRINTF(fmt, ...)
+#define LOG_TAG device
+#include <kernel/log.h>
 #define EPRINTF(fmt, ...) kprintf("device: %s: " fmt, __func__, ##__VA_ARGS__)
 
 #define DEV_FOPS(device, op) ((device)->f_ops && (device)->f_ops->op)
@@ -262,7 +262,7 @@ int register_driver(const char *bus_type, device_driver_t *driver) {
   hash_map_set(type->driver_by_name, driver->name, driver);
   mtx_unlock(&type->lock);
 
-  kprintf("device: registered driver '%s' for bus type '%s'\n", driver->name, bus_type);
+  DPRINTF("registered driver '%s' for bus type '%s'\n", driver->name, bus_type);
   return 0;
 }
 
@@ -358,7 +358,7 @@ static int register_dev_internal(const char *dev_type, device_t *dev, int minor)
   rb_tree_v2_insert(&device_tree, &dev->dev_tree_node);
   mtx_spin_unlock(&device_tree_lock);
 
-  kprintf("device: registered %s device %d\n", dev_type, dev->minor);
+  DPRINTF("registered %s device %d\n", dev_type, dev->minor);
   struct device_event event = { .type = DEV_EVT_ADD, .dev = make_dev(dev) };
   if (chan_send(device_events, &event) < 0) {
     EPRINTF("failed to send device event for %s device %d\n", dev_type, dev->minor);
@@ -390,7 +390,7 @@ int unregister_dev(device_t *dev) {
   rb_tree_v2_remove(&device_tree, &dev->dev_tree_node);
   mtx_spin_unlock(&device_tree_lock);
 
-  kprintf("device: unregistered device %d:%d\n", dev->major, dev->minor);
+  DPRINTF("unregistered device %d:%d\n", dev->major, dev->minor);
   struct device_event event = { .type = DEV_EVT_REMOVE, .dev = make_dev(dev) };
   if (chan_send(device_events, &event) < 0) {
     EPRINTF("failed to send device event for device %d:%d\n", dev->major, dev->minor);

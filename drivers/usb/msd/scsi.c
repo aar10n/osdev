@@ -12,7 +12,8 @@
 #include <kernel/string.h>
 
 #define ASSERT(x) kassert(x)
-#define DPRINTF(x, ...) kprintf("scsi: " x, ##__VA_ARGS__)
+#define LOG_TAG scsi
+#include <kernel/log.h>
 #define EPRINTF(x, ...) kprintf("scsi: %s: " x, __func__, ##__VA_ARGS__)
 
 #define SCSI_MAX_XFER 64

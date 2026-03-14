@@ -16,7 +16,8 @@
 #include <kernel/chan.h>
 
 #define ASSERT(x) kassert(x)
-#define DPRINTF(fmt, ...) kprintf("arp: " fmt, ##__VA_ARGS__)
+#define LOG_TAG arp
+#include <kernel/log.h>
 #define EPRINTF(fmt, ...) kprintf("arp: %s: " fmt, __func__, ##__VA_ARGS__)
 
 #define ARP_CACHE_MAX_ENTRIES 256

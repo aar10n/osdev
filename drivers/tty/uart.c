@@ -18,8 +18,8 @@
 #include <fs/devfs/devfs.h>
 
 #define ASSERT(x) kassert(x)
-#define DPRINTF(fmt, ...) kprintf("uart: " fmt, ##__VA_ARGS__)
-//#define DPRINTF(fmt, ...)
+#define LOG_TAG uart
+#include <kernel/log.h>
 #define EPRINTF(fmt, ...) kprintf("uart: %s: " fmt, __func__, ##__VA_ARGS__)
 
 #define IS_VALID_PORT(port) \

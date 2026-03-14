@@ -15,8 +15,8 @@
 #include <kernel/printf.h>
 
 #define ASSERT(x) kassert(x)
-#define DPRINTF(fmt, ...)
-// #define DPRINTF(fmt, ...) kprintf("initrd: " fmt, ##__VA_ARGS__)
+#define LOG_TAG initrd
+#include <kernel/log.h>
 #define EPRINTF(fmt, ...) kprintf("initrd: " fmt, ##__VA_ARGS__)
 
 #define HMAP_TYPE ramfs_node_t *

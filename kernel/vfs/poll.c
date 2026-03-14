@@ -18,7 +18,8 @@
 #include <uapi/sys/eventfd.h>
 
 #define ASSERT(x) kassert(x)
-#define DPRINTF(fmt, ...) kprintf("poll: " fmt, ##__VA_ARGS__)
+#define LOG_TAG poll
+#include <kernel/log.h>
 
 //
 // eventfd structure

@@ -11,7 +11,8 @@
 #include <kernel/string.h>
 
 #define ASSERT(x) kassert(x)
-#define DPRINTF(x, ...) kprintf("usb: " x, ##__VA_ARGS__)
+#define LOG_TAG usb
+#include <kernel/log.h>
 #define EPRINTF(x, ...) kprintf("usb: %s: " x, __func__, ##__VA_ARGS__)
 
 // #define USB_DEBUG

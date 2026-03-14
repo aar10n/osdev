@@ -12,7 +12,8 @@
 #include <linux/in.h>
 
 #define ASSERT(x) kassert(x)
-#define DPRINTF(fmt, ...) kprintf("inet: " fmt, ##__VA_ARGS__)
+#define LOG_TAG inet
+#include <kernel/log.h>
 #define EPRINTF(fmt, ...) kprintf("inet: %s: " fmt, __func__, ##__VA_ARGS__)
 
 typedef struct inet_protocol {

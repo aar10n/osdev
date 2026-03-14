@@ -10,7 +10,8 @@
 #include <kernel/panic.h>
 
 #define ASSERT(x) kassert(x)
-#define DPRINTF(fmt, ...) kprintf("skbuff: " fmt, ##__VA_ARGS__)
+#define LOG_TAG skbuff
+#include <kernel/log.h>
 
 // default buffer sizes
 #define SKB_DEFAULT_HEADROOM 64

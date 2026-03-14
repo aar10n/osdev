@@ -14,7 +14,8 @@
 #include <kernel/vfs/file.h>
 
 #define ASSERT(x) kassert(x)
-#define DPRINTF(fmt, ...) kprintf("seqfile: " fmt, ##__VA_ARGS__)
+#define LOG_TAG seqfile
+#include <kernel/log.h>
 #define EPRINTF(fmt, ...) kprintf("seqfile: %s: " fmt, __func__, ##__VA_ARGS__)
 
 // seq_ctor is used to pass constructor arguments to the open function it is

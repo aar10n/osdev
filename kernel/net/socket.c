@@ -15,7 +15,8 @@
 #include <kernel/printf.h>
 
 #define ASSERT(x) kassert(x)
-#define DPRINTF(fmt, ...) kprintf("socket: " fmt, ##__VA_ARGS__)
+#define LOG_TAG socket
+#include <kernel/log.h>
 #define EPRINTF(fmt, ...) kprintf("socket: %s: " fmt, __func__, ##__VA_ARGS__)
 
 // protocol family registry

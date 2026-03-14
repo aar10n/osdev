@@ -17,7 +17,8 @@
 #include <fs/procfs/procfs.h>
 
 #define ASSERT(x) kassert(x)
-#define DPRINTF(x, ...) kprintf("clock: " x, ##__VA_ARGS__)
+#define LOG_TAG clock
+#include <kernel/log.h>
 
 static struct tm boot_time_tm;    // time at boot as struct tm
 static uint64_t boot_time_epoch;  // boot time in seconds since epoch

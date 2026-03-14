@@ -11,7 +11,8 @@
 #include <kernel/printf.h>
 
 #define ASSERT(x) kassert(x)
-#define DPRINTF(x, ...) kprintf("mouse: " x, ##__VA_ARGS__)
+#define LOG_TAG mouse
+#include <kernel/log.h>
 #define EPRINTF(x, ...) kprintf("mouse: %s: " x, __func__, ##__VA_ARGS__)
 
 uint16_t mouse_x = 0;

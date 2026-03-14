@@ -17,8 +17,8 @@
 #include <bitmap.h>
 
 #define ASSERT(x) kassert(x)
-#define DPRINTF(x, ...) kprintf("input: " x, ##__VA_ARGS__)
-#define DPRINTFF(x, ...) kprintf("input: %s: " x, __func__, ##__VA_ARGS__)
+#define LOG_TAG input
+#include <kernel/log.h>
 #define EPRINTF(x, ...) kprintf("input: %s: " x, __func__, ##__VA_ARGS__)
 
 #define EVSTREAM_KEYBOARD ((void *)1)
@@ -458,7 +458,7 @@ int event_stream_f_open(file_t *file, int flags) {
   
   file->udata = evs;
 
-  DPRINTFF("opening file %p with flags 0x%x [evs %p, event_stream %p]\n", file, flags, evs, event_stream);
+  DPRINTF_FUNC("opening file %p with flags 0x%x [evs %p, event_stream %p]\n", file, flags, evs, event_stream);
   return 0;
 }
 
@@ -469,7 +469,7 @@ int event_stream_f_close(file_t *file) {
   ASSERT(V_ISDEV((vnode_t *)file->data));
 
   struct event_stream *evs = moveptr(file->udata);
-  DPRINTFF("closing file %p [evs %p, event_stream %p]\n", file, evs, evs->stream);
+  DPRINTF_FUNC("closing file %p [evs %p, event_stream %p]\n", file, evs, evs->stream);
 
   // remove from event streams list
   mtx_lock(&ev_streams_lock);
@@ -492,7 +492,7 @@ ssize_t event_stream_f_read(file_t *file, kio_t *kio) {
     return -ENOSPC; // not enough space in the buffer to read an event
 
   struct event_stream *evs = file->udata;
-//  DPRINTFF("reading from file %p at offset %lld [evs %p, event_stream %#x]\n", file, file->offset, evs, evs->stream);
+//  DPRINTF_FUNC("reading from file %p at offset %lld [evs %p, event_stream %#x]\n", file, file->offset, evs, evs->stream);
 
   ssize_t nbytes = 0;
   struct input_event event;
@@ -508,7 +508,7 @@ ssize_t event_stream_f_read(file_t *file, kio_t *kio) {
 
   if (nbytes > 0) {
     // return data already read without blocking
-    DPRINTFF("read %zu bytes from file %p [evs %p, event_stream %p]\n", nbytes, file, evs, evs->stream);
+    DPRINTF_FUNC("read %zu bytes from file %p [evs %p, event_stream %p]\n", nbytes, file, evs, evs->stream);
     return nbytes;
   }
 
@@ -534,7 +534,7 @@ ssize_t event_stream_f_read(file_t *file, kio_t *kio) {
     if (n == 0) break;
   }
 
-  DPRINTFF("read %zu bytes from file %p [evs %p, event_stream %p]\n", nbytes, file, evs, evs->stream);
+  DPRINTF_FUNC("read %zu bytes from file %p [evs %p, event_stream %p]\n", nbytes, file, evs, evs->stream);
   return nbytes;
 }
 
@@ -544,7 +544,7 @@ int event_stream_f_ioctl(file_t *file, unsigned int request, void *arg) {
   ASSERT(V_ISDEV((vnode_t *)file->data));
 
   struct event_stream *evs = file->udata;
-  DPRINTFF("ioctl on file %p with request %#llx [evs %p, event_stream %p]\n",
+  DPRINTF_FUNC("ioctl on file %p with request %#llx [evs %p, event_stream %p]\n",
            file, request, evs, evs->stream);
 
   size_t req_size = _IOC_SIZE(request);
@@ -611,7 +611,7 @@ int event_stream_f_ioctl(file_t *file, unsigned int request, void *arg) {
     return 0;
   }
 
-  DPRINTFF("unhandled ioctl %#x\n", request);
+  DPRINTF_FUNC("unhandled ioctl %#x\n", request);
   return -ENOTTY;
 }
 
@@ -644,12 +644,12 @@ struct file_ops event_stream_f_ops = {
 static void event_stream_module_init() {
   devfs_register_class(dev_major_by_name("input"), -1, "input/event", DEVFS_NUMBERED);
 
-  kprintf("input: registering keyboard event_stream\n");
+  DPRINTF("registering keyboard event_stream\n");
   if (register_dev("input", alloc_device(EVSTREAM_KEYBOARD, NULL, &event_stream_f_ops)) < 0) {
     panic("failed to register keyboard event stream");
   }
 
-  kprintf("input: registering mouse event_stream\n");
+  DPRINTF("registering mouse event_stream\n");
   if (register_dev("input", alloc_device(EVSTREAM_MOUSE, NULL, &event_stream_f_ops)) < 0) {
     panic("failed to register mouse event stream");
   }

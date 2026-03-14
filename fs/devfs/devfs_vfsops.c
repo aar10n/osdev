@@ -13,8 +13,8 @@
 #include <fs/ramfs/ramfs.h>
 
 #define ASSERT(x) kassert(x)
-// #define DPRINTF(fmt, ...) kprintf("devfs: " fmt, ##__VA_ARGS__)
-#define DPRINTF(fmt, ...)
+#define LOG_TAG devfs_vfsops
+#include <kernel/log.h>
 #define EPRINTF(fmt, ...) kprintf("devfs: " fmt, ##__VA_ARGS__)
 
 

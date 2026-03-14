@@ -14,7 +14,8 @@
 #include <fs/procfs/procfs.h>
 
 #define ASSERT(x) kassert(x)
-#define DPRINTF(fmt, ...) kprintf("sysinfo: " fmt, ##__VA_ARGS__)
+#define LOG_TAG sysinfo
+#include <kernel/log.h>
 #define EPRINTF(fmt, ...) kprintf("sysinfo: %s: " fmt, __func__, ##__VA_ARGS__)
 
 static char hostname[256] = "localhost";

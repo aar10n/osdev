@@ -20,8 +20,8 @@
 #include <bitmap.h>
 
 #define ASSERT(x) kassert(x)
-#define DPRINTF(fmt, ...)
-// #define DPRINTF(fmt, ...) kprintf("xhci: " fmt, ##__VA_ARGS__)
+#define LOG_TAG xhci
+#include <kernel/log.h>
 #define EPRINTF(fmt, ...) kprintf("xhci: %s: " fmt, __func__, ##__VA_ARGS__)
 
 #define usb_host_to_host(host) ((xhci_controller_t *)((host)->data))

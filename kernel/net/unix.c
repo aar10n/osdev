@@ -17,7 +17,8 @@
 #include <sys/un.h>
 
 #define ASSERT(x) kassert(x)
-#define DPRINTF(fmt, ...) kprintf("unix: " fmt, ##__VA_ARGS__)
+#define LOG_TAG af_unix
+#include <kernel/log.h>
 #define EPRINTF(fmt, ...) kprintf("unix: %s: " fmt, __func__, ##__VA_ARGS__)
 
 #define UNIX_BUFFER_SIZE (64 * 1024UL)  // 64KB for stream sockets

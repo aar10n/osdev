@@ -15,8 +15,8 @@
 #define MAX_LOOP 32 // resolve depth limit
 
 #define ASSERT(x) kassert(x)
-//#define DPRINTF(fmt, ...) kprintf("vresolve: %s: " fmt, __func__, ##__VA_ARGS__)
-#define DPRINTF(fmt, ...)
+#define LOG_TAG vresolve
+#include <kernel/log.h>
 
 #undef goto_res
 #define goto_res(err) do { res = err; goto error; } while (0)
@@ -43,7 +43,7 @@ static int vresolve_internal(vcache_t *vcache, ventry_t *at, cstr_t path, int fl
 
   // try the cache first
   if (vresolve_cache(vcache, path, flags, depth, result) == 0) {
-    DPRINTF("cache hit: {:cstr} -> {:ve}\n", &path, *result);
+    DPRINTF_FUNC("cache hit: {:cstr} -> {:ve}\n", &path, *result);
 
     if (fullpath != NULL) // path is already a full path
       sbuf_write_cstr(fullpath, path);
@@ -101,9 +101,9 @@ static int vresolve_follow(vcache_t *vc, __move ventry_t **veref, int flags, boo
     // READ END
 
     // follow the symlink (and get locked result)
-    DPRINTF("following symlink '{:str}' -> '%s'\n", &ve->name, linkbuf);
+    DPRINTF_FUNC("following symlink '{:str}' -> '%s'\n", &ve->name, linkbuf);
     if ((res = vresolve_internal(vc, at_ve, cstr_new(linkbuf, kio_transfered(&kio)), 0, depth++, fullpath, &next_ve)) < 0) {
-      DPRINTF("failed to follow symlink: %s\n", linkbuf, res);
+      DPRINTF_FUNC("failed to follow symlink: %s\n", linkbuf, res);
       goto error;
     }
 
@@ -184,7 +184,7 @@ LABEL(error);
 }
 
 int vresolve_fullwalk(vcache_t *vc, ventry_t *at, cstr_t path, int flags, int depth, sbuf_t *fullpath, __move ventry_t **result) {
-  DPRINTF("fullwalk: at={:+ve} path='{:cstr}' flags=0x%x depth=%d\n", at, &path, flags, depth);
+  DPRINTF_FUNC("fullwalk: at={:+ve} path='{:cstr}' flags=0x%x depth=%d\n", at, &path, flags, depth);
   ventry_t *ve = NULL; // ref
   int res;
   if (cstr_isnull(path)) {
@@ -288,7 +288,7 @@ int vresolve_fullwalk(vcache_t *vc, ventry_t *at, cstr_t path, int flags, int de
     goto error;
 
 LABEL(success);
-  DPRINTF("resolved '{:cstr}' [len=%d] ve=%p\n", &path, cstr_len(path), ve);
+  DPRINTF_FUNC("resolved '{:cstr}' [len=%d] ve=%p\n", &path, cstr_len(path), ve);
   ASSERT(ve != NULL && ve->vn != NULL);
   if (VN_ISROOT(VN(ve)) && (flags & VR_NOFOLLOW)) {
     // if the NOFOLLOW flag is set make sure we're returning the containing

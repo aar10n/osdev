@@ -6,8 +6,8 @@
 
 #include <fs/procfs/procfs.h>
 
-#define DPRINTF(x, ...) kprintf("params: " x, ##__VA_ARGS__)
-// #define DPRINTF(x, ...)
+#define LOG_TAG params
+#include <kernel/log.h>
 #define EPRINTF(x, ...) kprintf("params: error: " x, ##__VA_ARGS__)
 // #define EPRINTF(x, ...)
 

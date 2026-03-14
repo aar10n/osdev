@@ -14,7 +14,8 @@
 #include <kernel/string.h>
 
 #define ASSERT(x) kassert(x)
-#define DPRINTF(fmt, ...) kprintf("pci: " fmt, ##__VA_ARGS__)
+#define LOG_TAG pci
+#include <kernel/log.h>
 #define EPRINTF(fmt, ...) kprintf("pci: %s: " fmt, __func__, ##__VA_ARGS__)
 
 #define MAX_PCIE_SEG_GROUPS 1

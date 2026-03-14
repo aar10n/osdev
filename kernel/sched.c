@@ -16,7 +16,8 @@
 #include <kernel/cpu/cpu.h>
 
 #define ASSERT(x) kassert(x)
-#define DPRINTF(x, ...) kprintf("sched: " x, ##__VA_ARGS__)
+#define LOG_TAG sched
+#include <kernel/log.h>
 
 #define NRUNQS 64
 

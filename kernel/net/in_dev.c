@@ -12,7 +12,8 @@
 #include <kernel/string.h>
 
 #define ASSERT(x) kassert(x)
-#define DPRINTF(fmt, ...) kprintf("in_dev: " fmt, ##__VA_ARGS__)
+#define LOG_TAG in_dev
+#include <kernel/log.h>
 #define EPRINTF(fmt, ...) kprintf("in_dev: %s: " fmt, __func__, ##__VA_ARGS__)
 
 static mtx_t in_dev_lock;

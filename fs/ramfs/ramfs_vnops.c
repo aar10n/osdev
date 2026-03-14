@@ -12,8 +12,8 @@
 #include <kernel/printf.h>
 
 #define ASSERT(x) kassert(x)
-// #define DPRINTF(fmt, ...) kprintf("ramfs_vnops: " fmt, ##__VA_ARGS__)
-#define DPRINTF(fmt, ...)
+#define LOG_TAG ramfs_vnops
+#include <kernel/log.h>
 
 
 ssize_t ramfs_vn_read(vnode_t *vn, off_t off, kio_t *kio) {

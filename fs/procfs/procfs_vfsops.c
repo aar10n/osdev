@@ -16,7 +16,8 @@
 #include <kernel/printf.h>
 
 #define ASSERT(x) kassert(x)
-#define DPRINTF(fmt, ...) kprintf("procfs: " fmt, ##__VA_ARGS__)
+#define LOG_TAG procfs
+#include <kernel/log.h>
 
 extern procfs_dir_t *global_procfs_root_dir;
 extern struct vnode_ops procfs_vn_ops;

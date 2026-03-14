@@ -22,7 +22,8 @@
 #define IOAPIC_DEST_LOGICAL  1
 
 #define ASSERT(x) kassert(x)
-#define DPRINTF(x, ...) kprintf("irq: " x, ##__VA_ARGS__)
+#define LOG_TAG irq
+#include <kernel/log.h>
 
 // this code deals with two different concepts: interrupt vectors and IRQ numbers.
 //

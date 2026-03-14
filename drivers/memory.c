@@ -13,7 +13,8 @@
 #include <fs/devfs/devfs.h>
 
 #define ASSERT(x) kassert(x)
-#define DPRINTF(fmt, ...) kprintf("memory: " fmt, ##__VA_ARGS__)
+#define LOG_TAG memory
+#include <kernel/log.h>
 #define EPRINTF(fmt, ...) kprintf("memory: %s: " fmt, __func__, ##__VA_ARGS__)
 
 static int default_d_open(device_t *dev, int flags) { return 0; }

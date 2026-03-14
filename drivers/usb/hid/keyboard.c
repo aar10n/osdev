@@ -12,7 +12,8 @@
 #include <asm/bits.h>
 
 #define ASSERT(x) kassert(x)
-#define DPRINTF(x, ...) kprintf("keyboard: " x, ##__VA_ARGS__)
+#define LOG_TAG usbkbd
+#include <kernel/log.h>
 #define EPRINTF(x, ...) kprintf("keyboard: %s: " x, __func__, ##__VA_ARGS__)
 
 uint16_t hid_keyboard_to_input_key[] = {

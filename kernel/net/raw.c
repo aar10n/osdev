@@ -16,7 +16,8 @@
 #include <linux/icmp.h>
 
 #define ASSERT(x) kassert(x)
-#define DPRINTF(fmt, ...) kprintf("raw: " fmt, ##__VA_ARGS__)
+#define LOG_TAG raw
+#include <kernel/log.h>
 #define EPRINTF(fmt, ...) kprintf("raw: %s: " fmt, __func__, ##__VA_ARGS__)
 
 #define RAW_DEFAULT_TTL 64

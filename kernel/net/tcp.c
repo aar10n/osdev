@@ -18,7 +18,8 @@
 #include <bitmap.h>
 
 #define ASSERT(x) kassert(x)
-#define DPRINTF(fmt, ...) kprintf("tcp: " fmt, ##__VA_ARGS__)
+#define LOG_TAG tcp
+#include <kernel/log.h>
 #define EPRINTF(fmt, ...) kprintf("tcp: %s: " fmt, __func__, ##__VA_ARGS__)
 
 static bitmap_t *port_bitmap;

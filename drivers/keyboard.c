@@ -11,7 +11,8 @@
 #include <linux/input-event-codes.h>
 
 #define ASSERT(x) kassert(x)
-#define DPRINTF(fmt, ...) kprintf("keyboard: " fmt, ##__VA_ARGS__)
+#define LOG_TAG keyboard
+#include <kernel/log.h>
 #define EPRINTF(fmt, ...) kprintf("keyboard: %s: " fmt, __func__, ##__VA_ARGS__)
 
 // AT keyboard controller ports
