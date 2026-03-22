@@ -196,6 +196,7 @@ static mtx_t _pidset_lock; // pid set lock
 static void pidset_static_init() {
   _pidset = create_bitmap(PROCS_MAX);
   bitmap_set(_pidset, 0); // pid 0 is reserved
+  bitmap_set(_pidset, 1); // pid 1 is reserved for init
   mtx_init(&_pidset_lock, MTX_SPIN, "pidset_lock");
 }
 STATIC_INIT(pidset_static_init);
@@ -643,6 +644,16 @@ __ref proc_t *proc_alloc_internal(
 __ref proc_t *proc_alloc_new(struct pcreds *creds) {
   return proc_alloc_internal(
     proc_alloc_pid(),
+    vm_new_empty_space(),
+    creds ? creds : pcreds_alloc(0, 0),
+    fs_root_getref(),
+    /*fork=*/false
+  );
+}
+
+__ref proc_t *proc_alloc_pid1(struct pcreds *creds) {
+  return proc_alloc_internal(
+    1,
     vm_new_empty_space(),
     creds ? creds : pcreds_alloc(0, 0),
     fs_root_getref(),
@@ -1339,16 +1350,23 @@ int proc_syscall_execve(cstr_t path, char *const argv[], char *const envp[]) {
     proc->pending_alarm = 0;
   }
 
-  // 6. clear all existing user vm mappings
-  vm_clear_user_space(curspace);
-
-  // 7. signal vfork parent if this is a vfork child
+  // 6. handle vfork: allocate a new address space so we don't destroy the parent's
   if (proc->vfork_parent != NULL) {
+    address_space_t *new_space = vm_new_empty_space();
+    address_space_t *old_space = proc->space;
+    proc->space = new_space;
+    switch_address_space(new_space);
+
+    // wake the parent now that we have our own address space
     proc_t *parent = proc->vfork_parent;
     pr_lock(parent);
     cond_signal(&parent->vfork_done);
     pr_unlock(parent);
     pr_putref(&proc->vfork_parent);
+    as_putref(&old_space);
+  } else {
+    // normal exec: clear existing user mappings in place
+    vm_clear_user_space(curspace);
   }
 
   // TODO: handle set_tid_address, clear_child_tid
@@ -1834,7 +1852,6 @@ int proc_syscall_vfork() {
   pr_lock(proc);
   address_space_t *space = proc->space;
 
-  // create child process with shared address space (not a fork)
   proc_t *new_proc = proc_alloc_internal(
     proc_alloc_pid(),
     as_getref(space),  // share parent's address space

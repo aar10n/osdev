@@ -395,6 +395,7 @@ pid_t proc_alloc_pid();
 void proc_free_pid(pid_t pid);
 
 __ref proc_t *proc_alloc_new(struct pcreds *creds);
+__ref proc_t *proc_alloc_pid1(struct pcreds *creds);
 __ref proc_t *proc_fork();
 void _proc_cleanup(__move proc_t **procp);
 void   proc_setup_add_thread(proc_t *proc, thread_t *td);
