@@ -1,0 +1,7 @@
+# /etc/inittab - busybox init configuration
+
+# system setup
+::sysinit:/bin/ash /etc/rc
+
+# login shell on serial console
+ttyS0::respawn:-/bin/ash

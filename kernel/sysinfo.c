@@ -71,6 +71,11 @@ DEFINE_SYSCALL(uname, int, struct utsname *buf) {
   return 0;
 }
 
+DEFINE_SYSCALL(reboot, int, int magic1, int magic2, unsigned int cmd, void *arg) {
+  DPRINTF("syscall: reboot magic1=%d magic2=%d cmd=%u\n", magic1, magic2, cmd);
+  return 0;
+}
+
 DEFINE_SYSCALL(sysinfo, int, struct sysinfo *info) {
   if (vm_validate_ptr((uintptr_t) info, /*write=*/true) < 0) {
     return -EFAULT;

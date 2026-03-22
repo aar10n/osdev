@@ -605,6 +605,59 @@ DEFINE_SYSCALL(rt_sigprocmask, int, int how, const sigset_t *set, sigset_t *oset
   return 0;
 }
 
+DEFINE_SYSCALL(rt_sigtimedwait, int, const sigset_t *uthese, struct siginfo *uinfo, const struct timespec *uts, size_t sigsetsize) {
+  DPRINTF("syscall: rt_sigtimedwait\n");
+  if (uthese == NULL) {
+    return -EINVAL;
+  }
+  if (vm_validate_ptr((uintptr_t) uthese, /*write=*/false) < 0) {
+    return -EFAULT;
+  }
+  if (uinfo != NULL && vm_validate_ptr((uintptr_t) uinfo, /*write=*/true) < 0) {
+    return -EFAULT;
+  }
+  if (uts != NULL && vm_validate_ptr((uintptr_t) uts, /*write=*/false) < 0) {
+    return -EFAULT;
+  }
+
+  sigset_t these = *uthese;
+  proc_t *proc = curproc;
+  thread_t *td = curthread;
+
+  // try to dequeue a matching signal
+  siginfo_t info;
+  while (true) {
+    // scan the queue for a signal in the requested set
+    SLIST_FOR_IN(ksig, LIST_FIRST(&td->sigqueue.list), next) {
+      if (sigset_masked(these, ksig->info.si_signo)) {
+        info = ksig->info;
+        SLIST_REMOVE(&td->sigqueue.list, ksig, next);
+        td->sigqueue.count--;
+        pool_free(ksiginfo_pool, ksig);
+        if (uinfo != NULL) {
+          *uinfo = info;
+        }
+        return info.si_signo;
+      }
+    }
+
+    // no matching signal pending, wait for one
+    pr_lock(proc);
+    int res;
+    if (uts != NULL) {
+      struct timespec ts = *uts;
+      res = cond_wait_sigtimeout(&proc->signal_cond, &proc->lock, &ts);
+    } else {
+      res = cond_wait_sig(&proc->signal_cond, &proc->lock);
+    }
+    pr_unlock(proc);
+
+    if (res == -ETIMEDOUT) {
+      return -EAGAIN;
+    }
+  }
+}
+
 DEFINE_SYSCALL(rt_sigpending, int, sigset_t *set, size_t sigsetsize) {
   if (set == NULL) {
     return -EINVAL;

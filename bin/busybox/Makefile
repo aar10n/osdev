@@ -13,7 +13,7 @@ BIN_APPLETS = \
 	grep link ln ls mkdir mkfifo mknod mktemp mv nice nl nohup od \
 	pwd readlink rm rmdir sh sleep test touch tr true uname wc
 
-SBIN_APPLETS =
+SBIN_APPLETS = init
 
 USR_BIN_APPLETS = \
 	arp arping ascii awk base32 base64 bc brctl bunzip2 bzcat bzip2 cksum \

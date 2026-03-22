@@ -158,7 +158,7 @@ void launch_init_process() {
 
   int res;
   kprintf("launching init process (at {:llu}ms)\n", NS_TO_MS(clock_get_nanos()));
-  proc_t *init_proc = proc_alloc_new(getref(curproc->creds));
+  proc_t *init_proc = proc_alloc_pid1(getref(curproc->creds));
   proc_setup_add_thread(init_proc, thread_alloc(0, SIZE_16KB));
 
   res = proc_setup_exec_args(init_proc, init_args);
@@ -205,10 +205,11 @@ void init_process_alloc_strings(char **out_path, char ***out_args, char ***out_e
   kassert(args != NULL && "failed to allocate args for init process");
   args[0] = path;
 
-  char **env = kmallocz(sizeof(const char *) * 3);
+  char **env = kmallocz(sizeof(const char *) * 4);
   kassert(env != NULL && "failed to allocate env for init process");
-  env[0] = kasprintf("SHELL={:cstr}", &shell_path);
-  env[1] = kasprintf("TTY={:cstr}", &tty_dev_path);
+  env[0] = kasprintf("CONSOLE={:cstr}", &tty_dev_path);
+  env[1] = kasprintf("SHELL={:cstr}", &shell_path);
+  env[2] = kasprintf("TTY={:cstr}", &tty_dev_path);
 
   *out_path = path;
   *out_args = args;

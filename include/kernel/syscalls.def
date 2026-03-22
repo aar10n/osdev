@@ -175,7 +175,7 @@ SYSCALL(mount, 5, int, PARAM(const char *, dev_name, "%s"), PARAM(const char *, 
 SYSCALL(umount2, 2, int, PARAM(const char *, target, "%s"), PARAM(int, flags, "%d"))
 // SYSCALL(swapon, 2, int, PARAM(const char *, path, "%s"), PARAM(int, swapflags, "%d"))
 // SYSCALL(swapoff, 1, int, PARAM(const char *, path, "%s"))
-// SYSCALL(reboot, 4, int, PARAM(int, magic1, "%d"), PARAM(int, magic2, "%d"), PARAM(unsigned int, cmd, "%u"), PARAM(void *, arg, "%p"))
+SYSCALL(reboot, 4, int, PARAM(int, magic1, "%d"), PARAM(int, magic2, "%d"), PARAM(unsigned int, cmd, "%u"), PARAM(void *, arg, "%p"))
 // SYSCALL(sethostname, 2, int, PARAM(const char *, name, "%s"), PARAM(size_t, len, "%zu"))
 // SYSCALL(setdomainname, 2, int, PARAM(const char *, name, "%s"), PARAM(size_t, len, "%zu"))
 // SYSCALL(iopl, 1, int, PARAM(int, level, "%d"))

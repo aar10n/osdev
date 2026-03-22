@@ -1,0 +1,11 @@
+#!/bin/sh
+
+# Configure loopback interface
+ip link set lo up
+ip addr add 127.0.0.1/8 dev lo
+
+# Configure external interface
+ip link set eth0 up
+ip addr add 10.0.2.15/24 dev eth0
+ip route add default via 10.0.2.2 dev eth0
+echo "Network initialized"
