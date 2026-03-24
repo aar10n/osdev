@@ -566,6 +566,16 @@ static int proc_child_notify_parent(proc_t *proc, pid_t pid, int status) {
     EPRINTF("failed to send child wait status to parent proc {:pr}\n", parent);
     return -EPIPE;
   }
+
+  // deliver SIGCHLD to the parent
+  siginfo_t info = {
+    .si_signo = SIGCHLD,
+    .si_code = WIFSIGNALED(status) ? CLD_KILLED : CLD_EXITED,
+    .si_pid = pid,
+    .si_uid = proc->creds->uid,
+    .si_status = WIFSIGNALED(status) ? WTERMSIG(status) : WEXITSTATUS(status),
+  };
+  proc_signal(parent, &info);
   return 0;
 }
 
@@ -979,6 +989,19 @@ void proc_terminate(proc_t *proc, int ret, int sig) {
     }
   }
 
+  // if the process is a session leader, release the controlling tty
+  session_t *sess = proc->group->session;
+  if (sess != NULL && sess->leader == proc && sess->tty != NULL) {
+    struct tty *tty = sess->tty;
+    tty_lock(tty);
+    sess_lock(sess);
+    sess->tty = NULL;
+    pgrp_putref(&tty->pgrp);
+    sess_putref(&tty->session);
+    sess_unlock(sess);
+    tty_unlock(tty);
+  }
+
   // notify parent process of the termination
   proc_child_notify_parent(proc, proc->pid, wstatus);
 
@@ -1125,8 +1148,7 @@ int proc_signal(proc_t *proc, siginfo_t *info) {
   }
 
   enum sigdisp disp = sigaction_to_disp(sig, &sa);
-  if (disp == SIGDISP_IGN) {
-    // signal was explicitly ignored, or the default action is to ignore it
+  if (disp == SIGDISP_IGN && sig != SIGCHLD) {
     EPRINTF("signal %d ignored by proc {:pr}\n", sig, proc);
     goto_res(ret, 0);
   } else if (disp == SIGDISP_TERM) {

@@ -30,9 +30,9 @@ enum sigdisp sigaction_to_disp(int sig, const struct sigaction *sa);
 struct trapframe;
 int signal_deliver_self_sync(siginfo_t *info, struct trapframe *frame);
 
-#define sigset_masked(set, sig) ((set).__bits[(sig) / 64] & (1ULL << ((sig) % 64)))
-#define sigset_mask(set, sig) ((set).__bits[(sig) / 64] |= (1ULL << ((sig) % 64)))
-#define sigset_unmask(set, sig) ((set).__bits[(sig) / 64] &= ~(1ULL << ((sig) % 64)))
+#define sigset_masked(set, sig) ((set).__bits[((sig)-1) / 64] & (1ULL << (((sig)-1) % 64)))
+#define sigset_mask(set, sig) ((set).__bits[((sig)-1) / 64] |= (1ULL << (((sig)-1) % 64)))
+#define sigset_unmask(set, sig) ((set).__bits[((sig)-1) / 64] &= ~(1ULL << (((sig)-1) % 64)))
 static inline void sigset_block(sigset_t *set, const sigset_t *mask) {
   for (int i = 0; i < sizeof(sigset_t) / sizeof(uint64_t); i++) {
     set->__bits[i] |= mask->__bits[i];
