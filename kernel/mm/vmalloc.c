@@ -1537,6 +1537,7 @@ void *vm_mmap(uintptr_t addr, size_t len, int prot, int flags, int fd, off_t off
   vm_flags |= prot & PROT_WRITE ? VM_WRITE : 0;
   vm_flags |= prot & PROT_EXEC ? VM_EXEC : 0;
   vm_flags |= flags & MAP_FIXED ? VM_FIXED : 0;
+  vm_flags |= flags & MAP_SHARED ? VM_SHARED : 0;
   if (fd == -1)
     flags |= MAP_ANON;
 

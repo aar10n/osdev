@@ -142,17 +142,24 @@ static void framebuf_module_init() {
     panic("framebuffer not found");
   }
 
+  uintptr_t fb_va = vmap_phys(boot_info_v2->fb_addr, FRAMEBUFFER_VA,
+                              boot_info_v2->fb_size, VM_RDWR | VM_NOCACHE, "framebuffer");
+  if (!fb_va) {
+    panic("failed to map framebuffer");
+  }
+
   struct framebuf *fb = kmallocz(sizeof(struct framebuf));
-  fb->base = FRAMEBUFFER_VA;
+  fb->base = fb_va;
   fb->size = boot_info_v2->fb_size;
   fb->width = boot_info_v2->fb_width;
   fb->height = boot_info_v2->fb_height;
   fb->bits_per_pixel = 32;
-  fb->stride = fb->width * (fb->bits_per_pixel / 8);
+  fb->stride = boot_info_v2->fb_stride;
 
   devfs_register_class(dev_major_by_name("framebuf"), -1, "fb", DEVFS_NUMBERED);
 
-  kprintf("framebuf: registering framebuffer\n");
+  kprintf("framebuf: %ux%u stride=%u addr=0x%lx\n",
+          fb->width, fb->height, fb->stride, boot_info_v2->fb_addr);
   device_t *dev = alloc_device(fb, &framebuf_ops, NULL);
   if (register_dev("framebuf", dev) < 0) {
     panic("failed to register framebuf");
