@@ -1566,31 +1566,32 @@ int proc_syscall_kill(pid_t pid, int sig) {
     // check if caller is in the target process group
     bool caller_in_pgrp = (proc->group == target_pgrp);
 
+    // collect process references under the lock, then signal outside it.
+    // proc_signal may call proc_terminate inline, which can re-acquire
+    // the pgroup lock (e.g. via pty_tty_close), so we must not hold it.
+    proc_t *targets[32];
+    int ntargets = 0;
+
     pgrp_lock(target_pgrp);
-    // send signal to all processes except the caller (to avoid self-locking)
     LIST_FOR_IN(target, &target_pgrp->procs, pglist) {
-      if (caller_in_pgrp && target == proc) {
-        continue; // skip the caller process, signal it separately
-      }
-
-      pr_lock(target);
+      if (caller_in_pgrp && target == proc)
+        continue;
       if (target->state != PRS_EXITED && target->state != PRS_ZOMBIE) {
-        res = proc_signal(target, &info);
-      }
-      pr_unlock(target);
-
-      if (res < 0) {
-        EPRINTF("failed to signal process {:pr}: {:err}\n", &target, res);
-        pgrp_unlock(target_pgrp);
-        pgrp_putref(&target_pgrp);
-        return res;
+        if (ntargets < 32)
+          targets[ntargets++] = pr_getref(target);
       }
     }
     pgrp_unlock(target_pgrp);
     pgrp_putref(&target_pgrp);
 
-    // now signal the caller itself if it's in the target group (proc_signal handles locking for curproc)
-    if (caller_in_pgrp) {
+    for (int i = 0; i < ntargets; i++) {
+      res = proc_signal(targets[i], &info);
+      pr_putref(&targets[i]);
+      if (res < 0)
+        break;
+    }
+
+    if (caller_in_pgrp && res >= 0) {
       if (proc->state != PRS_EXITED && proc->state != PRS_ZOMBIE) {
         res = proc_signal(proc, &info);
       }
