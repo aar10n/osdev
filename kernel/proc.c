@@ -1548,21 +1548,16 @@ int proc_syscall_kill(pid_t pid, int sig) {
     // pid < -1: send signal to process group with pgid = -pid
     pid_t pgid = -pid;
 
-    // find the process group in the caller's session
-    pr_lock(proc);
-    session_t *sess = sess_getref(proc->group->session);
-    pr_unlock(proc);
-
-    sess_lock(sess);
-    pgroup_t *target_pgrp = NULL;
-    LIST_FOR_IN(pg, &sess->pgroups, sslist) {
-      if (pg->pgid == pgid) {
-        target_pgrp = pgrp_getref(pg);
-        break;
-      }
+    // find the process group leader (pid == pgid) and use its group
+    proc_t *leader = proc_lookup(pgid);
+    if (leader == NULL) {
+      return -ESRCH;
     }
-    sess_unlock(sess);
-    sess_putref(&sess);
+
+    pr_lock(leader);
+    pgroup_t *target_pgrp = pgrp_getref(leader->group);
+    pr_unlock(leader);
+    pr_putref(&leader);
 
     if (target_pgrp == NULL) {
       return -ESRCH; // process group not found
