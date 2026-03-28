@@ -993,13 +993,16 @@ void proc_terminate(proc_t *proc, int ret, int sig) {
   session_t *sess = proc->group->session;
   if (sess != NULL && sess->leader == proc && sess->tty != NULL) {
     struct tty *tty = sess->tty;
-    tty_lock(tty);
+    // use mtx_lock directly because tty_lock checks TTYF_GONE and silently
+    // releases the lock if set, causing a lock count imbalance when called
+    // inline from ptmx_f_close which already holds the tty lock.
+    mtx_lock(&tty->lock);
     sess_lock(sess);
     sess->tty = NULL;
     pgrp_putref(&tty->pgrp);
     sess_putref(&tty->session);
     sess_unlock(sess);
-    tty_unlock(tty);
+    mtx_unlock(&tty->lock);
   }
 
   // notify parent process of the termination
