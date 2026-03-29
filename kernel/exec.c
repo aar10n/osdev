@@ -94,13 +94,22 @@ int exec_load_image(enum exec_type type, uintptr_t base, cstr_t path, __out stru
     DPRINTF("exec: binary {:cstr} [%s] with base %p\n", &path, realpath, base);
   }
 
+  int res;
+
+  // check execute permission
+  struct stat st;
+  if ((res = fs_stat(path, &st)) < 0) {
+    return res;
+  }
+  if (!(st.st_mode & (S_IXUSR | S_IXGRP | S_IXOTH))) {
+    return -EACCES;
+  }
+
   int fd = fs_open(path, O_RDONLY, 0);
   if (fd < 0) {
     EPRINTF("failed to open file '{:cstr}' {:err}\n", &path, fd);
     return fd;
   }
-
-  int res;
   void *file_base = NULL;
   size_t file_size = 0;
   if ((res = exec_map_file_full(fd, &file_base, &file_size)) < 0) {

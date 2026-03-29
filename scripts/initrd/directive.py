@@ -46,16 +46,6 @@ class Directive:
         self.gid = gid
         self.mtime = mtime or int(time.time())
 
-        if mode is None:
-            if kind == 'f':
-                self.mode = DEFAULT_FILE_MODE
-            elif kind == 'd':
-                self.mode = DEFAULT_DIR_MODE
-            else:
-                self.mode = DEFAULT_LINK_MODE
-        else:
-            self.mode = mode
-
         if kind == 'f':
             assert operand is not None
             try:
@@ -64,6 +54,10 @@ class Directive:
                 self.size = os.path.getsize(operand)
                 if mtime is None:
                     self.mtime = int(os.path.getmtime(operand))
+                if mode is None:
+                    src_mode = os.stat(operand).st_mode
+                    if src_mode & 0o111:
+                        mode = DEFAULT_FILE_MODE | 0o111
             except FileNotFoundError:
                 raise argparse.ArgumentTypeError(f'file not found: {operand}')
             except Exception as e:
@@ -73,6 +67,16 @@ class Directive:
             self.size = len(operand) + 1
         elif kind != 'd':
             raise ValueError(f'invalid directive kind: {kind}')
+
+        if mode is None:
+            if kind == 'f':
+                self.mode = DEFAULT_FILE_MODE
+            elif kind == 'd':
+                self.mode = DEFAULT_DIR_MODE
+            else:
+                self.mode = DEFAULT_LINK_MODE
+        else:
+            self.mode = mode
 
     def isfile(self) -> bool:
         return self.kind == 'f'
