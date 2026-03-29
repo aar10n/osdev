@@ -361,7 +361,7 @@ int pipe_f_kqevent(file_t *file, knote_t *kn) {
       if (accmode == O_RDONLY || accmode == O_RDWR) {
         // check if data is available
         if (pipe->count > 0) {
-          kn->event.udata = (void *) pipe->count;
+          kn->event.data = (intptr_t) pipe->count;
           ret = 1;
         } else if (pipe->flags & PIPE_WRITE_CLOSED) {
           // EOF condition
@@ -377,7 +377,7 @@ int pipe_f_kqevent(file_t *file, knote_t *kn) {
         // check if space is available
         size_t space = pipe->buffer_size - pipe->count;
         if (space > 0) {
-          kn->event.udata = (void *)space;
+          kn->event.data = (intptr_t)space;
           ret = 1;
         } else if (pipe->flags & PIPE_READ_CLOSED) {
           // broken pipe
