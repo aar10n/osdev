@@ -44,6 +44,7 @@ CHAR16 *InitrdImagePath;
 UINT64 FramebufferBase;
 UINT32 ScreenWidth;
 UINT32 ScreenHeight;
+UINT32 FramebufferStride;
 CHAR8 DebugBuffer[1024];
 
 BOOLEAN PostExitBootServices = FALSE;
@@ -128,7 +129,7 @@ EFI_STATUS EFIMAIN UefiMain(IN EFI_HANDLE ImageHandle, IN EFI_SYSTEM_TABLE *Syst
     CHECK_ERROR(Status);
   }
 
-  Status = GetFramebufferInfo(&FramebufferBase, &FramebufferSize, &ScreenWidth, &ScreenHeight);
+  Status = GetFramebufferInfo(&FramebufferBase, &FramebufferSize, &ScreenWidth, &ScreenHeight, &FramebufferStride);
   CHECK_ERROR(Status);
 
   // Get initial memory map
@@ -210,6 +211,7 @@ EFI_STATUS EFIMAIN UefiMain(IN EFI_HANDLE ImageHandle, IN EFI_SYSTEM_TABLE *Syst
   BootInfo->fb_size = FramebufferSize;
   BootInfo->fb_width = ScreenWidth;
   BootInfo->fb_height = ScreenHeight;
+  BootInfo->fb_stride = FramebufferStride;
   BootInfo->fb_pixel_format = GetBootInfoPixelFormat(GraphicsMode->PixelFormat);
 
   BootInfo->initrd_addr = InitrdPhysAddr;

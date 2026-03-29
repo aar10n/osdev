@@ -96,7 +96,7 @@ typedef struct boot_info_v2 {
   uint32_t fb_width;              // framebuffer width
   uint32_t fb_height;             // framebuffer height
   uint32_t fb_pixel_format;       // framebuffer pixel format
-  uint32_t : 32;                  // reserved
+  uint32_t fb_stride;             // framebuffer stride in bytes
   // initrd
   uint64_t initrd_addr;           // initrd address
   uint64_t initrd_size;           // initrd size in bytes
