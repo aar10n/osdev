@@ -182,9 +182,9 @@ clean: clean-bootloader clean-kernel clean-userspace
 .PHONY: osdev.img
 osdev.img: $(BUILD_DIR)/osdev.img
 $(BUILD_DIR)/osdev.img: config.ini $(BUILD_DIR)/boot$(WINARCH).efi $(BUILD_DIR)/kernel.elf $(BUILD_DIR)/initrd.img
-	dd if=/dev/zero of=$@ bs=1M count=256
+	dd if=/dev/zero of=$@ bs=1M count=512
 # 	256M -> 268435456 / 512 = 524288 sectors
-	mformat -i $@ -F -h 64 -s 32 -T 524288 -c 1 -v osdev :: # format as FAT32
+	mformat -i $@ -F -h 64 -s 32 -T 1048576 -c 1 -v osdev :: # format as FAT32
 	mmd -i $@ ::/EFI
 	mmd -i $@ ::/EFI/BOOT
 	mcopy -i $@ $^ ::/EFI/BOOT
@@ -364,7 +364,8 @@ ext2_img: $(BUILD_DIR)/ext2.img
 # sysroot initrd manifest
 $(BUILD_DIR)/initrdrc: $(BUILD_DIR)/sysroot_sha1 $(wildcard etc/*) | $(SYS_ROOT)
 	scripts/gen_initrdrc.py $@ -S $(SYS_ROOT) -d $(SYS_ROOT):/ -d etc/:/etc/ -E "*.a" \
-		-f etc/twmrc:/root/.twmrc
+		-f etc/twmrc:/root/.twmrc \
+		-f etc/fvwmrc:/root/.fvwm/config
 	echo ':/tmp/' >> $@
 
 # edk2 ovmf firmware

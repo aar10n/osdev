@@ -1,0 +1,179 @@
+# FVWM3 configuration
+
+# -- Fonts (core X11 fonts) --
+DefaultFont "-misc-fixed-medium-r-semicondensed--13-120-75-75-c-60-iso8859-1"
+WindowFont "-misc-fixed-bold-r-semicondensed--13-120-75-75-c-60-iso8859-1"
+
+# -- Virtual Desktops --
+DesktopSize 1x1
+EdgeScroll 0 0
+EwmhBaseStruts 0 0 0 28
+
+# -- Colorsets --
+# 0 = default (menus)
+Colorset 0 fg #d4d4d4, bg #252526, sh #1a1a1a, hi #3c3c3c
+# 1 = active/focused window border
+Colorset 1 fg #ffffff, bg #264f78
+# 2 = inactive window border
+Colorset 2 fg #969696, bg #2d2d2d
+# 3 = menu highlight
+Colorset 3 fg #ffffff, bg #264f78
+# 4 = taskbar background
+Colorset 4 fg #cccccc, bg #1e1e1e
+# 5 = taskbar button (inactive)
+Colorset 5 fg #969696, bg #2d2d2d
+# 6 = taskbar button (focused)
+Colorset 6 fg #ffffff, bg #264f78
+# 7 = title active
+Colorset 7 fg #ffffff, bg #264f78
+# 8 = title active down (pressed)
+Colorset 8 fg #ffffff, bg #1b3a57
+# 9 = title inactive
+Colorset 9 fg #969696, bg #2d2d2d
+# 10 = pager background
+Colorset 10 fg #808080, bg #1e1e1e
+# 11 = pager highlight
+Colorset 11 fg #cccccc, bg #264f78
+# 12 = close button hover
+Colorset 12 fg #ffffff, bg #c42b1c
+
+# -- Focus and Placement --
+Style * ClickToFocus, ClickToFocusPassesClick
+Style * SmartPlacement
+Style * DecorateTransient
+Style * !UsePPosition
+Style * ResizeHintOverride
+Style * Colorset 2, HilightColorset 1
+
+# -- Window Decorations --
+Style * BorderWidth 1, HandleWidth 3
+
+TitleStyle Centered
+TitleStyle Height 22
+AddTitleStyle ActiveUp Colorset 7
+AddTitleStyle ActiveDown Colorset 8
+AddTitleStyle Inactive Colorset 9
+ButtonStyle All -- Flat
+
+# Button layout: Title [4][6][2]
+#   4 = minimize, 6 = maximize, 2 = close (rightmost)
+
+# close button (X) - rightmost right
+ButtonStyle 2 ActiveUp Vector 5 30x30@1 70x70@1 50x50@1 70x30@1 30x70@1
+ButtonStyle 2 ActiveDown Vector 5 30x30@1 70x70@1 50x50@1 70x30@1 30x70@1
+ButtonStyle 2 Inactive Vector 5 30x30@1 70x70@1 50x50@1 70x30@1 30x70@1
+
+# maximize button - right side
+ButtonStyle 6 ActiveUp Vector 5 25x25@1 75x25@1 75x75@1 25x75@1 25x25@1
+ButtonStyle 6 ActiveDown Vector 5 25x25@1 75x25@1 75x75@1 25x75@1 25x25@1
+ButtonStyle 6 Inactive Vector 5 25x25@1 75x25@1 75x75@1 25x75@1 25x25@1
+
+# minimize button - right side
+ButtonStyle 4 ActiveUp Vector 2 25x60@1 75x60@1
+ButtonStyle 4 ActiveDown Vector 2 25x60@1 75x60@1
+ButtonStyle 4 Inactive Vector 2 25x60@1 75x60@1
+
+# -- Taskbar (FvwmButtons at bottom) --
+Style FvwmButtons !Title, !Handles, Sticky, WindowListSkip, NeverFocus
+Style FvwmButtons StaysOnBottom, FixedPosition, FixedSize
+
+# -- Pager --
+Style FvwmPager !Title, !Handles, Sticky, WindowListSkip
+
+# -- Key Bindings --
+Key Tab A M WindowList Root c c NoDeskSort
+Key F4 A M Close
+Key F1 A M Exec exec xterm
+
+# -- Functions --
+DestroyFunc MoveOrRaise
+AddToFunc MoveOrRaise
++ I Raise
++ M Move
+
+DestroyFunc ResizeOrLower
+AddToFunc ResizeOrLower
++ I Raise
++ M Resize
+
+# -- Mouse Bindings --
+Mouse 3 R A Menu RootMenu
+Mouse 1 R A WindowList
+Mouse 1 T A MoveOrRaise
+Mouse 2 T A WindowShade
+Mouse 3 T A RaiseLower
+Mouse 1 SF A ResizeOrLower
+Mouse 1 2 A Close
+Mouse 1 4 A Iconify
+Mouse 1 6 A Maximize
+
+# -- Menus --
+MenuStyle * Font "-misc-fixed-medium-r-semicondensed--13-120-75-75-c-60-iso8859-1"
+MenuStyle * Colorset 0, ActiveColorset 3
+MenuStyle * BorderWidth 1, SeparatorsShort
+MenuStyle * ItemFormat "  %l%>  "
+
+DestroyMenu RootMenu
+AddToMenu RootMenu "System" Title
++ "XTerm" Exec exec xterm &
++ "" Nop
++ "Restart FVWM" Restart
++ "Exit" Quit
+
+DestroyMenu WindowOpsMenu
+AddToMenu WindowOpsMenu "Window" Title
++ "Move" Move
++ "Resize" Resize
++ "Iconify" Iconify
++ "Maximize" Maximize
++ "" Nop
++ "Close" Close
++ "Destroy" Destroy
+
+# -- Taskbar Module --
+DestroyModuleConfig FvwmButtons: *
+*FvwmButtons: Geometry 1024x28+0-0
+*FvwmButtons: BoxSize smart
+*FvwmButtons: Rows 1
+*FvwmButtons: Columns 20
+*FvwmButtons: Colorset 4
+*FvwmButtons: Frame 0
+*FvwmButtons: Font "-misc-fixed-medium-r-semicondensed--13-120-75-75-c-60-iso8859-1"
+
+# Menu button
+*FvwmButtons: (2x1, Title "Menu", Action(Mouse 1) 'Popup RootMenu 0 100', Colorset 5)
+
+# Spacer / window list area (managed by FvwmIconMan below)
+*FvwmButtons: (16x1, Swallow "FvwmIconMan" 'Module FvwmIconMan')
+
+# Pager
+*FvwmButtons: (2x1, Swallow "FvwmPager" 'Module FvwmPager 0 0')
+
+# -- Icon Manager (window list in taskbar) --
+DestroyModuleConfig FvwmIconMan: *
+*FvwmIconMan: Resolution global
+*FvwmIconMan: NumManagers 1
+*FvwmIconMan: ManagerGeometry 1x1+0+0
+*FvwmIconMan: ButtonGeometry 120x24
+*FvwmIconMan: MaxButtonWidth 200
+*FvwmIconMan: Font "-misc-fixed-medium-r-semicondensed--13-120-75-75-c-60-iso8859-1"
+*FvwmIconMan: Colorset 4
+*FvwmIconMan: FocusColorset 6
+*FvwmIconMan: PlainColorset 5
+*FvwmIconMan: SelectColorset 5
+*FvwmIconMan: FocusAndSelectColorset 6
+*FvwmIconMan: Action Mouse 1 A sendcommand "Iconify off, Raise, WarpToWindow 50 50"
+*FvwmIconMan: DontShow FvwmButtons, FvwmPager
+*FvwmIconMan: DrawIcons always
+*FvwmIconMan: Sort name
+
+# -- Pager Settings --
+*FvwmPager: Colorset 10
+*FvwmPager: HilightColorset 11
+*FvwmPager: Font none
+*FvwmPager: Balloons
+*FvwmPager: SmallFont "-misc-fixed-medium-r-normal--8-80-75-75-c-50-iso8859-1"
+
+# -- Startup --
+AddToFunc StartFunction
++ I Module FvwmButtons

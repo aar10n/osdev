@@ -1,3 +1,13 @@
 export HOME=/root
 export SHELL=/bin/ash
 export TERM=xterm
+
+startx() {
+  Xfbdev :0 -ac -s 0 \
+    -keybd evdev,,device=/dev/input/event0 \
+    -mouse evdev,,device=/dev/input/event1 &
+  sleep 2
+  DISPLAY=:0 fvwm3 &
+  sleep 1
+  DISPLAY=:0 xterm &
+}

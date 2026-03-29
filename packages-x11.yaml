@@ -159,11 +159,14 @@ packages:
         --prefix=/usr \
         --buildtype=plain \
         --default-library=static \
-        -Dc_args="-fPIC" \
+        -Dc_args="-fPIC -O2" \
         -Dgtk=disabled \
         -Dlibpng=disabled \
         -Dtests=disabled \
-        -Ddemos=disabled
+        -Ddemos=disabled \
+        -Dsse2=disabled \
+        -Dssse3=disabled \
+        -Dmmx=disabled
       meson compile -C build
     install: |
       meson install -C build --destdir=$SYS_ROOT
@@ -608,6 +611,222 @@ packages:
       - libXext
       - libX11
 
+  - name: expat
+    url: https://github.com/libexpat/libexpat/releases/download/R_2_7_5/expat-2.7.5.tar.gz
+    env:
+      - CFLAGS=-fPIC ${CFLAGS}
+    build: |
+      mkpkg::configure --enable-static --disable-shared \
+        --without-docbook --without-examples --without-tests --without-xmlwf
+      find . \( -name 'configure.ac' -o -name 'acinclude.m4' -o -name '*.am' -o -name '*.m4' \) -exec touch -t 202001010000 {} \;
+      find . -name '*.in' -exec touch -t 202501010000 {} \;
+      find . \( -name 'Makefile' -o -name 'config.h' -o -name 'config.status' \) -type f -exec touch {} \;
+      make
+    install: |
+      mkpkg::make_install
+
+  - name: fontconfig
+    url: https://www.freedesktop.org/software/fontconfig/release/fontconfig-2.15.0.tar.gz
+    files:
+      - name: cross-file.txt
+        content: |-
+          [binaries]
+          c = '${CC}'
+          cpp = '${CXX}'
+          ar = '${AR}'
+          strip = '${STRIP}'
+          pkgconfig = 'pkg-config'
+
+          [host_machine]
+          system = 'linux'
+          cpu_family = '${PKGS_ARCH}'
+          cpu = '${PKGS_ARCH}'
+          endian = 'little'
+    build: |
+      meson setup build \
+        --cross-file=cross-file.txt \
+        --prefix=/usr \
+        --buildtype=plain \
+        --default-library=static \
+        -Dc_args="-fPIC" \
+        -Ddoc=disabled \
+        -Dtests=disabled \
+        -Dtools=disabled \
+        -Dcache-build=disabled \
+        -Dnls=disabled
+      meson compile -C build
+    install: |
+      meson install -C build --destdir=$SYS_ROOT
+    depends_on:
+      - expat
+
+  - name: libXrender
+    url: https://xorg.freedesktop.org/archive/individual/lib/libXrender-0.9.12.tar.xz
+    env:
+      - CFLAGS=-fPIC ${CFLAGS}
+      - PKG_CONFIG_PATH=${PKG_CONFIG_PATH}:${SYS_ROOT}/usr/share/pkgconfig
+      - xorg_cv_malloc0_returns_null=no
+      - MALLOC_ZERO_RETURNS_NULL=no
+    build: |
+      mkpkg::configure --enable-static --disable-shared
+      find . \( -name 'configure.ac' -o -name 'acinclude.m4' -o -name '*.am' -o -name '*.m4' \) -exec touch -t 202001010000 {} \;
+      find . -name '*.in' -exec touch -t 202501010000 {} \;
+      find . \( -name 'Makefile' -o -name 'config.h' -o -name 'config.status' \) -type f -exec touch {} \;
+      make
+    install: |
+      mkpkg::make_install
+      rm -f $SYS_ROOT/usr/lib/*.la
+    depends_on:
+      - libX11
+
+  - name: libXft
+    url: https://xorg.freedesktop.org/archive/individual/lib/libXft-2.3.9.tar.xz
+    env:
+      - CFLAGS=-fPIC ${CFLAGS}
+      - PKG_CONFIG_PATH=${PKG_CONFIG_PATH}:${SYS_ROOT}/usr/share/pkgconfig
+    build: |
+      mkpkg::configure --enable-static --disable-shared
+      find . \( -name 'configure.ac' -o -name 'acinclude.m4' -o -name '*.am' -o -name '*.m4' \) -exec touch -t 202001010000 {} \;
+      find . -name '*.in' -exec touch -t 202501010000 {} \;
+      find . \( -name 'Makefile' -o -name 'config.h' -o -name 'config.status' \) -type f -exec touch {} \;
+      make
+    install: |
+      mkpkg::make_install
+      rm -f $SYS_ROOT/usr/lib/*.la
+    depends_on:
+      - fontconfig
+      - libXrender
+      - libX11
+
+  - name: libXrandr
+    url: https://xorg.freedesktop.org/archive/individual/lib/libXrandr-1.5.5.tar.xz
+    env:
+      - CFLAGS=-fPIC ${CFLAGS}
+      - PKG_CONFIG_PATH=${PKG_CONFIG_PATH}:${SYS_ROOT}/usr/share/pkgconfig
+      - xorg_cv_malloc0_returns_null=no
+      - MALLOC_ZERO_RETURNS_NULL=no
+    build: |
+      mkpkg::configure --enable-static --disable-shared
+      find . \( -name 'configure.ac' -o -name 'acinclude.m4' -o -name '*.am' -o -name '*.m4' \) -exec touch -t 202001010000 {} \;
+      find . -name '*.in' -exec touch -t 202501010000 {} \;
+      find . \( -name 'Makefile' -o -name 'config.h' -o -name 'config.status' \) -type f -exec touch {} \;
+      make
+    install: |
+      mkpkg::make_install
+      rm -f $SYS_ROOT/usr/lib/*.la
+    depends_on:
+      - libXrender
+      - libXext
+      - libX11
+
+  - name: libxkbcommon
+    url: https://github.com/xkbcommon/libxkbcommon/archive/refs/tags/xkbcommon-1.13.1.tar.gz
+    files:
+      - name: cross-file.txt
+        content: |-
+          [binaries]
+          c = '${CC}'
+          cpp = '${CXX}'
+          ar = '${AR}'
+          strip = '${STRIP}'
+          pkgconfig = 'pkg-config'
+
+          [host_machine]
+          system = 'linux'
+          cpu_family = '${PKGS_ARCH}'
+          cpu = '${PKGS_ARCH}'
+          endian = 'little'
+    build: |
+      meson setup _build \
+        --cross-file=cross-file.txt \
+        --prefix=/usr \
+        --buildtype=plain \
+        --default-library=static \
+        -Dc_args="-fPIC" \
+        -Denable-wayland=false \
+        -Denable-x11=false \
+        -Denable-docs=false \
+        -Denable-tools=false \
+        -Denable-xkbregistry=false \
+        -Denable-bash-completion=false \
+        -Dxkb-config-root=/usr/share/X11/xkb
+      meson compile -C _build
+    install: |
+      meson install -C _build --destdir=$SYS_ROOT
+    depends_on:
+      - xkeyboard-config
+
+  - name: libevent
+    url: https://github.com/libevent/libevent/releases/download/release-2.1.12-stable/libevent-2.1.12-stable.tar.gz
+    env:
+      - CFLAGS=-fPIC ${CFLAGS}
+    build: |
+      mkpkg::configure --enable-static --disable-shared \
+        --disable-openssl --disable-samples --disable-libevent-regress
+      make
+    install: |
+      mkpkg::make_install
+
+  - name: fvwm3
+    url: https://github.com/fvwmorg/fvwm3/releases/download/1.1.4/fvwm3-1.1.4.tar.gz
+    env:
+      - PKG_CONFIG_PATH=${PKG_CONFIG_PATH}:${SYS_ROOT}/usr/share/pkgconfig
+    files:
+      - name: cross-file.txt
+        content: |-
+          [binaries]
+          c = '${CC}'
+          cpp = '${CXX}'
+          ar = '${AR}'
+          strip = '${STRIP}'
+          pkgconfig = 'pkg-config'
+
+          [host_machine]
+          system = 'linux'
+          cpu_family = '${PKGS_ARCH}'
+          cpu = '${PKGS_ARCH}'
+          endian = 'little'
+
+          [properties]
+          sys_root = '${SYS_ROOT}'
+
+          [built-in options]
+          c_args = ['-fPIE', '-D_GNU_SOURCE']
+          c_link_args = ['-pie', '-L${SYS_ROOT}/usr/lib', '-lXrender', '-lxcb', '-lXau', '-lfreetype', '-lexpat', '-lharfbuzz', '-lbrotlidec', '-lbrotlicommon', '-lpng16', '-lz']
+    build: |
+      meson setup _build \
+        --cross-file=cross-file.txt \
+        --prefix=/usr \
+        --buildtype=plain \
+        -Dbidi=disabled \
+        -Dcairo=disabled \
+        -Dcairo-svg=disabled \
+        -Dlibsvg-cairo=disabled \
+        -Dpng=disabled \
+        -Dsvg=disabled \
+        -Dxcursor=disabled \
+        -Dxfixes=disabled \
+        -Dxrender=disabled \
+        -Dnls=disabled \
+        -Dgolang=disabled \
+        -Dmandoc=false \
+        -Dhtmldoc=false
+      meson compile -C _build
+    install: |
+      meson install -C _build --destdir=$SYS_ROOT
+    depends_on:
+      - fontconfig
+      - libICE
+      - libevent
+      - libX11
+      - libXft
+      - libXrandr
+      - libXt
+      - libXext
+      - libxkbcommon
+      - libXpm
+      - libSM
+
   - name: xterm
     url: https://invisible-mirror.net/archives/xterm/xterm-397.tgz
     env:
@@ -640,3 +859,22 @@ packages:
       - libXext
       - libX11
       - libXpm
+
+  - name: xprop
+    url: https://xorg.freedesktop.org/archive/individual/app/xprop-1.2.7.tar.xz
+    env:
+      - CFLAGS=-fPIE ${CFLAGS}
+      - LDFLAGS=-pie ${LDFLAGS}
+      - PKG_CONFIG_PATH=${PKG_CONFIG_PATH}:${SYS_ROOT}/usr/share/pkgconfig
+      - LIBS=-lX11 -lxcb -lXau
+    build: |
+      mkpkg::configure
+      find . \( -name 'configure.ac' -o -name 'acinclude.m4' -o -name '*.am' -o -name '*.m4' \) -exec touch -t 202001010000 {} \;
+      find . -name '*.in' -exec touch -t 202501010000 {} \;
+      find . \( -name 'Makefile' -o -name 'config.h' -o -name 'config.status' \) -type f -exec touch {} \;
+      make
+    install: |
+      mkpkg::make_install
+    depends_on:
+      - libX11
+      - xorgproto
