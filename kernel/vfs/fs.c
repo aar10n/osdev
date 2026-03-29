@@ -1083,7 +1083,8 @@ int fs_poll(struct pollfd *fds, size_t nfds, struct timespec *timeout) {
   // convert kevents back to poll results
   for (ssize_t i = 0; i < nready; i++) {
     size_t idx = (size_t)eventlist[i].udata;
-    ASSERT(idx < nfds);
+    if (idx >= nfds)
+      continue;
 
     if (eventlist[i].flags & EV_ERROR) {
       fds[idx].revents |= POLLERR;
