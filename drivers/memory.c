@@ -25,7 +25,7 @@ static int default_d_close(device_t *dev) { return 0; }
 //
 
 static ssize_t null_d_read(device_t *dev, _unused size_t off, size_t nmax, kio_t *kio) {
-  return (ssize_t) kio_fill(kio, 0, nmax);
+  return 0; // EOF
 }
 
 static ssize_t null_d_write(device_t *dev, _unused size_t off, size_t nmax, kio_t *kio) {
@@ -87,6 +87,25 @@ static struct device_ops debug_ops = {
 };
 
 //
+// MARK: Zero Device
+//
+
+static ssize_t zero_d_read(device_t *dev, _unused size_t off, size_t nmax, kio_t *kio) {
+  return (ssize_t) kio_fill(kio, 0, nmax);
+}
+
+static ssize_t zero_d_write(device_t *dev, _unused size_t off, size_t nmax, kio_t *kio) {
+  return (ssize_t) kio_drain(kio, nmax);
+}
+
+static struct device_ops zero_ops = {
+  .d_open = default_d_open,
+  .d_close = default_d_close,
+  .d_read = zero_d_read,
+  .d_write = zero_d_write,
+};
+
+//
 // MARK: Loopback Device
 //
 
@@ -112,11 +131,13 @@ static struct device_ops loopback_ops = {
 static void memory_module_init() {
   devfs_register_class(dev_major_by_name("memory"), 0, "null", 0);
   devfs_register_class(dev_major_by_name("memory"), 1, "debug", 0);
+  devfs_register_class(dev_major_by_name("memory"), 2, "zero", 0);
   devfs_register_class(dev_major_by_name("loop"), -1, "loop", DEVFS_NUMBERED);
 
   device_t *mem_devs[] = {
     alloc_device(NULL, &null_ops, NULL),
     alloc_device(NULL, &debug_ops, NULL),
+    alloc_device(NULL, &zero_ops, NULL),
   };
   for (size_t i = 0; i < ARRAY_SIZE(mem_devs); i++) {
     if (register_dev("memory", mem_devs[i]) < 0) {
